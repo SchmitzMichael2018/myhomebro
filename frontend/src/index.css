@@ -1,0 +1,95 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* === Base Theme Setup === */
+:root {
+  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: light dark;
+  background-color: #242424;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ✅ Override the global white text color */
+body, html {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background-color: #f9fafb; /* light gray background */
+  color: #1f2937; /* Tailwind's text-gray-800 to ensure readability */
+}
+
+/* === Login Page Layout === */
+.login-page {
+  @apply flex justify-center items-center min-h-screen bg-gradient-to-br from-blue-100 to-blue-300;
+}
+
+/* === Login Form === */
+.login-form {
+  @apply bg-white p-8 rounded-xl shadow-md w-full max-w-md text-center;
+}
+
+.logo {
+  width: 100px;
+  margin: 0 auto 1rem auto;
+}
+
+/* === Button Defaults === */
+button {
+  @apply rounded-lg px-4 py-2 font-semibold transition-colors;
+}
+
+/* === Dashboard Layout === */
+.dashboard-container {
+  @apply p-8;
+}
+
+/* === Stat Cards Grid === */
+.invoice-grid {
+  @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-8;
+}
+
+/* === Individual Stat Card === */
+.invoice-card {
+  @apply bg-white p-6 rounded-xl shadow hover:shadow-lg transition-all duration-300;
+}
+
+.invoice-card h3 {
+  @apply text-blue-600 text-lg font-semibold mb-2;
+}
+
+.invoice-card p {
+  @apply text-gray-600 text-sm;
+}
+
+/* === Responsive Typography Tweaks === */
+@media (max-width: 640px) {
+  .text-3xl {
+    font-size: 1.75rem;
+  }
+
+  .text-2xl {
+    font-size: 1.5rem;
+  }
+
+  .text-xl {
+    font-size: 1.25rem;
+  }
+
+  .p-8 {
+    padding: 1.5rem;
+  }
+
+  .p-6 {
+    padding: 1rem;
+  }
+}
+
+

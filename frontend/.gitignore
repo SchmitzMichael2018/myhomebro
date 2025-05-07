@@ -1,0 +1,16 @@
+# Node Modules (Frontend)
+node_modules/
+.parcel-cache/
+.next/
+dist/
+build/
+
+# Environment Variables (Frontend)
+.env.local
+.env.production
+.env.development
+
+# Generated Files
+*.cache
+*.log
+
