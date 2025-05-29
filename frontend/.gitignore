@@ -1,16 +1,53 @@
-# Node Modules (Frontend)
+# ========================
+# 🌐 Node.js & Frontend
+# ========================
 node_modules/
 .parcel-cache/
 .next/
+out/
 dist/
 build/
 
-# Environment Variables (Frontend)
+# ========================
+# ⚙️ Environment Variables
+# ========================
+.env*
 .env.local
 .env.production
 .env.development
+.env.*.local
 
-# Generated Files
+# ========================
+# 🚀 Build & Cache Files
+# ========================
 *.cache
 *.log
+.cache/
+coverage/
+.vite/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ========================
+# 🔧 Temporary & Backup Files
+# ========================
+*.tmp
+*.swp
+*.bak
+*.log
+
+# ========================
+# ⚠️ Sensitive Files
+# ========================
+credentials.json
+secret-key.txt
+firebase-adminsdk-*.json
+
+# ========================
+# 📦 Package Manager Files
+# ========================
+yarn-error.log
+pnpm-lock.yaml
+package-lock.json
 

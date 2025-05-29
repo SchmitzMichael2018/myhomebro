@@ -1,10 +1,16 @@
-import js from '@eslint/js'
-import globals from 'globals'
-import reactHooks from 'eslint-plugin-react-hooks'
-import reactRefresh from 'eslint-plugin-react-refresh'
+// eslint.config.js
+import js from '@eslint/js';
+import globals from 'globals';
+import react from 'eslint-plugin-react';
+import reactHooks from 'eslint-plugin-react-hooks';
+import jsxA11y from 'eslint-plugin-jsx-a11y';
+import prettier from 'eslint-plugin-prettier';
+import reactRefresh from 'eslint-plugin-react-refresh';
 
 export default [
-  { ignores: ['dist'] },
+  {
+    ignores: ['dist', 'node_modules', 'build', '.next', '.parcel-cache'],
+  },
   {
     files: ['**/*.{js,jsx}'],
     languageOptions: {
@@ -17,17 +23,50 @@ export default [
       },
     },
     plugins: {
+      react,
       'react-hooks': reactHooks,
-      'react-refresh': reactRefresh,
+      'jsx-a11y': jsxA11y,
+      prettier,
+      ...(process.env.NODE_ENV === 'development' && {
+        'react-refresh': reactRefresh,
+      }),
+    },
+    extends: [
+      'eslint:recommended',
+      'plugin:react/recommended',
+      'plugin:jsx-a11y/recommended',
+      'plugin:prettier/recommended',
+    ],
+    settings: {
+      react: {
+        version: 'detect',
+      },
     },
     rules: {
-      ...js.configs.recommended.rules,
-      ...reactHooks.configs.recommended.rules,
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      'no-unused-vars': [
+        'warn',
+        { varsIgnorePattern: '^[A-Z_]', argsIgnorePattern: '^_' },
+      ],
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
+      'react/prop-types': 'off', // Disable if you use TypeScript
+      'react/jsx-key': 'warn',
+      'react/jsx-uses-react': 'off', // No longer needed in React 17+
+      'react/react-in-jsx-scope': 'off', // No longer needed in React 17+
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true },
       ],
+      'prettier/prettier': [
+        'warn',
+        {
+          singleQuote: true,
+          semi: true,
+          trailingComma: 'es5',
+          printWidth: 80,
+        },
+      ],
     },
   },
-]
+];
+

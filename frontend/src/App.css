@@ -1,21 +1,52 @@
+/* 🌐 Global Styles */
 #root {
+  max-width: 100%;
   max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
+  margin: auto;
+  padding: 1rem 2rem;
   text-align: center;
+  box-sizing: border-box;
+}
+
+/* 🎨 Logo Styles */
+:root {
+  --primary-color: #646cff;
+  --secondary-color: #61dafb;
+  --dark-text: #333;
+  --light-text: #f4f4f9;
 }
 
 .logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
+  height: 6rem;
+  padding: 1rem;
+  transition: filter 300ms, transform 300ms;
+  cursor: pointer;
 }
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
+
+.logo:hover,
+.logo:focus {
+  filter: drop-shadow(0 0 1.5rem var(--primary-color));
+  transform: scale(1.05);
+  outline: none;
 }
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+
+.logo.react:hover,
+.logo.react:focus {
+  filter: drop-shadow(0 0 1.5rem var(--secondary-color));
+  transform: scale(1.05);
+}
+
+/* ✅ Accessible Focus for Keyboard Users */
+.logo:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 4px;
+}
+
+/* 🚀 Animated Logo (Optional) */
+@media (prefers-reduced-motion: no-preference) {
+  .logo.spin {
+    animation: logo-spin infinite 20s linear;
+  }
 }
 
 @keyframes logo-spin {
@@ -27,16 +58,41 @@
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
+/* 📦 Card Styles */
+.card {
+  padding: 2rem;
+  background-color: #ffffff;
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  transition: box-shadow 300ms;
+}
+
+.card:hover {
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15);
+}
+
+/* 📝 Text Styles */
+.read-the-docs {
+  color: var(--dark-text);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin-top: 1rem;
+}
+
+/* 🌙 Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: #121212;
+    color: var(--light-text);
+  }
+
+  .card {
+    background-color: #1e1e2d;
+    color: var(--light-text);
+  }
+
+  .read-the-docs {
+    color: #ccc;
   }
 }
 
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
-}

@@ -1,36 +1,45 @@
-"""
-URL configuration for core project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/5.2/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
-"""
 from django.contrib import admin
 from django.urls import path, include
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from accounts.token_views import EmailTokenObtainPairView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
 
-    # App-specific routes
-    path('api/accounts/', include('accounts.urls')),
-    path('api/projects/', include('projects.urls')),
+    # Accounts: registration, password, profile, email verification
+    path(
+        'api/accounts/',
+        include(('accounts.urls', 'accounts_api')),
+        name='accounts_api'
+    ),
 
-    # 🔐 JWT auth endpoints
-    # New (custom email-based login):
-    path('api/token/', EmailTokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    # JWT authentication endpoints (login, refresh, etc.)
+    path(
+        'api/auth/',
+        include(('accounts.auth_urls', 'auth_api')),
+        name='auth_api'
+    ),
+
+    # Project/business logic endpoints
+    path(
+        'api/projects/',
+        include(('projects.urls', 'projects_api')),
+        name='projects_api'
+    ),
+
+    # Optional: DRF browsable-API login/logout
+    path(
+        'api-auth/',
+        include('rest_framework.urls', namespace='rest_framework')
+    ),
 ]
+
+
+
+
+
+
+
+
+
 
 
 

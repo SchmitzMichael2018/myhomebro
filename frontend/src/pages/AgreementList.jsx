@@ -1,30 +1,29 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import InvoiceModal from "../components/InvoiceModal";
+import api from "../api";
 
 export default function AgreementList() {
   const [agreements, setAgreements] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [selectedInvoices, setSelectedInvoices] = useState([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalCategory, setModalCategory] = useState("");
-  const token = localStorage.getItem("access");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedAgreementId, setSelectedAgreementId] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     const fetchAgreements = async () => {
       setLoading(true);
       try {
-        const res = await fetch("http://127.0.0.1:8080/api/projects/agreements/", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        if (!res.ok) throw new Error("Failed to fetch agreements");
-        const data = await res.json();
+        const { data } = await api.get("/projects/agreements/");
         setAgreements(data);
+        setError("");
       } catch (err) {
         console.error("Error fetching agreements:", err);
+        setError("Failed to load agreements. Please try again later.");
         setAgreements([]);
       } finally {
         setLoading(false);
@@ -32,21 +31,60 @@ export default function AgreementList() {
     };
 
     fetchAgreements();
-  }, [token]);
+  }, []);
 
-  const handleViewInvoices = (invoices) => {
-    setSelectedInvoices(invoices);
+  // Filtered Agreements based on Search Term
+  const filteredAgreements = useMemo(() => {
+    if (!searchTerm) return agreements;
+    return agreements.filter(
+      (a) =>
+        (a.project_name || a.project_title || "-").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (a.homeowner_name || a.homeowner?.name || "-").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        String(a.id).includes(searchTerm)
+    );
+  }, [agreements, searchTerm]);
+
+  const handleViewInvoices = (invoices, agreementId) => {
+    setSelectedInvoices(invoices || []);
     setModalCategory("Agreement");
+    setSelectedAgreementId(agreementId);
     setModalVisible(true);
+  };
+
+  const handleModalClose = () => {
+    setModalVisible(false);
+    setSelectedAgreementId(null);
+    // Uncomment the line below if you want to refresh data on modal close
+    // fetchAgreements();
   };
 
   return (
     <div className="p-6">
-      <h2 className="text-2xl font-semibold text-gray-800 mb-4">Agreements</h2>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-2xl font-semibold text-gray-800">Agreements</h2>
+        <input
+          type="text"
+          placeholder="Search by project, homeowner, or ID..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="border px-4 py-2 rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
 
       {loading ? (
-        <p className="text-gray-500">Loading agreements...</p>
-      ) : agreements.length === 0 ? (
+        <div className="flex items-center justify-center h-40">
+          <div className="flex items-center space-x-2 text-blue-500">
+            <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            </svg>
+            <p>Loading agreements...</p>
+          </div>
+        </div>
+      ) : error ? (
+        <div className="text-center text-red-500">
+          <p>{error}</p>
+        </div>
+      ) : filteredAgreements.length === 0 ? (
         <p className="text-gray-500">No agreements found.</p>
       ) : (
         <div className="overflow-x-auto rounded shadow bg-white">
@@ -64,33 +102,43 @@ export default function AgreementList() {
               </tr>
             </thead>
             <tbody>
-              {agreements.map((a) => (
-                <tr key={a.id} className="hover:bg-gray-50">
+              {filteredAgreements.map((a) => (
+                <tr
+                  key={a.id}
+                  className={`hover:bg-gray-50 ${selectedAgreementId === a.id ? "bg-blue-50" : ""}`}
+                >
                   <td
-                    className="py-2 px-4 font-mono text-blue-600 cursor-pointer"
+                    className="py-2 px-4 font-mono text-blue-600 cursor-pointer underline"
                     onClick={() => navigate(`/agreements/${a.id}`)}
                   >
                     #{a.id}
                   </td>
-                  <td className="py-2 px-4">{a.project_name}</td>
-                  <td className="py-2 px-4">{a.homeowner_name}</td>
-                  <td className="py-2 px-4">{a.start_date}</td>
-                  <td className="py-2 px-4">{a.end_date}</td>
-                  <td className="py-2 px-4">${parseFloat(a.total_cost).toLocaleString()}</td>
+                  <td className="py-2 px-4">{a.project_name || a.project_title || "-"}</td>
+                  <td className="py-2 px-4">{a.homeowner_name || a.homeowner?.name || "-"}</td>
+                  <td className="py-2 px-4">{a.start_date || "—"}</td>
+                  <td className="py-2 px-4">{a.end_date || "—"}</td>
                   <td className="py-2 px-4">
-                    {a.escrow_funded ? (
-                      <span className="text-green-600 font-semibold">Funded</span>
-                    ) : (
-                      <span className="text-yellow-600 font-semibold">Pending</span>
-                    )}
+                    ${parseFloat(a.total_cost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </td>
+                  <td className="py-2 px-4">
+                    <span
+                      className={`px-2 py-1 rounded text-white ${
+                        a.escrow_funded ? "bg-green-500" : "bg-yellow-500"
+                      }`}
+                    >
+                      {a.escrow_funded ? "Funded" : "Pending"}
+                    </span>
                   </td>
                   <td className="py-2 px-4">
                     <button
-                      onClick={() => handleViewInvoices(a.milestone_invoices)}
-                      className="text-blue-500 hover:underline"
+                      onClick={() => handleViewInvoices(a.milestone_invoices, a.id)}
+                      className={`text-blue-500 hover:underline ${!a.milestone_invoices?.length ? "opacity-50 cursor-default" : ""}`}
+                      aria-label={`View invoices for agreement #${a.id}`}
+                      disabled={!a.milestone_invoices?.length}
                     >
                       {a.milestone_invoices?.length || 0} Invoices
                     </button>
+                    {/* If your backend uses `a.invoices` instead, change all `milestone_invoices` to `invoices` above */}
                   </td>
                 </tr>
               ))}
@@ -101,10 +149,13 @@ export default function AgreementList() {
 
       <InvoiceModal
         visible={modalVisible}
-        onClose={() => setModalVisible(false)}
+        onClose={handleModalClose}
         invoices={selectedInvoices}
         category={modalCategory}
       />
     </div>
   );
 }
+
+
+

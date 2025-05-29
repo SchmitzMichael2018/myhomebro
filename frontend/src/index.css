@@ -1,95 +1,150 @@
+/* === Base Tailwind Setup === */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /* === Base Theme Setup === */
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  color-scheme: light dark;
-  background-color: #242424;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@layer base {
+  :root {
+    font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+    font-weight: 400;
+    color-scheme: light dark;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body, html {
+    @apply bg-gray-50 text-gray-800;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  a {
+    @apply text-blue-600 hover:text-blue-500 transition duration-200;
+    text-decoration: none;
+  }
+
+  button:focus {
+    @apply ring-2 ring-blue-500 outline-none;
+  }
 }
 
-/* ✅ Override the global white text color */
-body, html {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  min-height: 100vh;
-  overflow-x: hidden;
-  background-color: #f9fafb; /* light gray background */
-  color: #1f2937; /* Tailwind's text-gray-800 to ensure readability */
+/* === Global Utility Classes === */
+@layer components {
+  .input-field {
+    @apply w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition duration-200;
+  }
+
+  .primary-button {
+    @apply rounded-lg px-4 py-2 font-semibold text-white bg-blue-600 hover:bg-blue-700 transition duration-300;
+  }
+
+  .secondary-button {
+    @apply rounded-lg px-4 py-2 font-semibold text-blue-600 bg-white border border-blue-600 hover:bg-blue-600 hover:text-white transition duration-300;
+  }
+
+  .button-group {
+    @apply flex justify-center space-x-4 mt-4;
+  }
 }
 
-/* === Login Page Layout === */
-.login-page {
-  @apply flex justify-center items-center min-h-screen bg-gradient-to-br from-blue-100 to-blue-300;
-}
+/* === Authentication Page Layout === */
+@layer components {
+  .auth-page {
+    @apply flex justify-center items-center min-h-screen bg-gradient-to-br from-blue-100 to-blue-300;
+  }
 
-/* === Login Form === */
-.login-form {
-  @apply bg-white p-8 rounded-xl shadow-md w-full max-w-md text-center;
-}
+  .auth-form {
+    @apply bg-white p-8 rounded-xl shadow-md w-full max-w-md text-center;
+  }
 
-.logo {
-  width: 100px;
-  margin: 0 auto 1rem auto;
-}
-
-/* === Button Defaults === */
-button {
-  @apply rounded-lg px-4 py-2 font-semibold transition-colors;
+  .logo {
+    width: 120px;
+    margin: 0 auto 1rem auto;
+  }
 }
 
 /* === Dashboard Layout === */
-.dashboard-container {
-  @apply p-8;
+@layer components {
+  .dashboard-container {
+    @apply p-8;
+  }
+
+  .invoice-grid {
+    @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-8;
+  }
+
+  .invoice-card {
+    @apply bg-white p-6 rounded-xl shadow hover:shadow-lg transition-all duration-300;
+  }
+
+  .invoice-card h3 {
+    @apply text-blue-600 text-lg font-semibold mb-2;
+  }
+
+  .invoice-card p {
+    @apply text-gray-600 text-sm;
+  }
 }
 
-/* === Stat Cards Grid === */
-.invoice-grid {
-  @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mt-8;
-}
+/* === Landing Page Styling === */
+@layer components {
+  .landing-page {
+    @apply flex flex-col items-center justify-center min-h-screen bg-gradient-to-r from-blue-50 to-blue-100 text-center;
+  }
 
-/* === Individual Stat Card === */
-.invoice-card {
-  @apply bg-white p-6 rounded-xl shadow hover:shadow-lg transition-all duration-300;
-}
+  .landing-page h1 {
+    @apply text-4xl font-bold text-blue-700 mt-4;
+  }
 
-.invoice-card h3 {
-  @apply text-blue-600 text-lg font-semibold mb-2;
-}
+  .landing-page p {
+    @apply text-lg text-gray-700 mb-6;
+  }
 
-.invoice-card p {
-  @apply text-gray-600 text-sm;
+  .landing-page .button-group {
+    @apply flex justify-center space-x-4 mt-4;
+  }
+
+  .landing-page .primary-button {
+    @apply px-6 py-2 text-lg font-semibold bg-blue-600 text-white rounded-lg transition duration-300 hover:bg-blue-700;
+  }
+
+  .landing-page .secondary-button {
+    @apply px-6 py-2 text-lg font-semibold text-blue-600 border border-blue-600 rounded-lg transition duration-300 hover:bg-blue-600 hover:text-white;
+  }
 }
 
 /* === Responsive Typography Tweaks === */
-@media (max-width: 640px) {
-  .text-3xl {
-    font-size: 1.75rem;
-  }
+@layer utilities {
+  @media (max-width: 640px) {
+    .text-3xl {
+      font-size: 1.75rem;
+    }
 
-  .text-2xl {
-    font-size: 1.5rem;
-  }
+    .text-2xl {
+      font-size: 1.5rem;
+    }
 
-  .text-xl {
-    font-size: 1.25rem;
-  }
+    .text-xl {
+      font-size: 1.25rem;
+    }
 
-  .p-8 {
-    padding: 1.5rem;
-  }
+    .p-8 {
+      padding: 1.5rem;
+    }
 
-  .p-6 {
-    padding: 1rem;
+    .p-6 {
+      padding: 1rem;
+    }
   }
 }
+
+
 
 

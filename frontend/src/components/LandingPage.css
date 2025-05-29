@@ -1,0 +1,117 @@
+/* ✅ Global CSS Variables for Consistency */
+:root {
+    --primary-color: #007bff;
+    --primary-hover: #0056b3;
+    --secondary-color: #6c757d;
+    --secondary-hover: #5a6268;
+    --accent-color: #ffd700;
+    --background-dark: #1a1a2e;
+    --text-light: #f4f4f9;
+}
+
+/* ✅ Landing Page Layout */
+.landing-page {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    background: linear-gradient(135deg, var(--background-dark), #0f0f1a);
+    text-align: center;
+    color: var(--text-light);
+    padding: 20px;
+    transition: background 0.3s ease;
+}
+
+/* ✅ Logo Styling */
+.logo {
+    width: 180px;
+    height: auto;
+    margin-bottom: 20px;
+    filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.3));
+    transition: transform 0.3s;
+}
+
+.logo:hover {
+    transform: scale(1.05);
+}
+
+/* ✅ Text Styling */
+h1 {
+    font-size: clamp(2rem, 4vw, 3rem);
+    color: var(--accent-color);
+    margin-bottom: 12px;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+p {
+    font-size: clamp(1rem, 2vw, 1.2rem);
+    margin-top: 10px;
+    max-width: 600px;
+    line-height: 1.5;
+}
+
+/* ✅ Button Group */
+.button-group {
+    margin-top: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+}
+
+/* ✅ Button Styles */
+.primary-button,
+.secondary-button {
+    padding: 12px 24px;
+    font-size: 1rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background-color 0.3s, transform 0.2s;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.primary-button {
+    background-color: var(--primary-color);
+    color: #fff;
+    box-shadow: 0 4px 6px rgba(0, 123, 255, 0.3);
+}
+
+.primary-button:hover {
+    background-color: var(--primary-hover);
+    transform: scale(1.05);
+}
+
+.primary-button:focus {
+    outline: 3px solid rgba(0, 123, 255, 0.5);
+}
+
+.secondary-button {
+    background-color: var(--secondary-color);
+    color: #fff;
+    box-shadow: 0 4px 6px rgba(108, 117, 125, 0.3);
+}
+
+.secondary-button:hover {
+    background-color: var(--secondary-hover);
+    transform: scale(1.05);
+}
+
+.secondary-button:focus {
+    outline: 3px solid rgba(108, 117, 125, 0.5);
+}
+
+/* ✅ Responsive Adjustments */
+@media (max-width: 768px) {
+    .logo {
+        width: 150px;
+    }
+
+    .button-group {
+        flex-direction: column;
+        gap: 10px;
+    }
+}
+

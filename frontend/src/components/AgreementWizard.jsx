@@ -1,4 +1,5 @@
 import { useState } from "react";
+import api from "../api";
 import AgreementMilestoneStep from "./AgreementMilestoneStep";
 import AgreementReviewStep from "./AgreementReviewStep";
 
@@ -6,6 +7,8 @@ export default function AgreementWizard() {
   const [step, setStep] = useState(1);
   const [step1Data, setStep1Data] = useState(null);
   const [step2Data, setStep2Data] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   const handleStep1Next = (data) => {
     setStep1Data(data);
@@ -17,48 +20,61 @@ export default function AgreementWizard() {
     setStep(3);
   };
 
+  // Uses flat keys; no nested homeowner object!
   const handleFinalSubmit = async (finalData) => {
+    setLoading(true);
+    setErrorMessage("");
+
     const payload = {
-      homeowner_name: finalData.homeownerName,
       homeowner_email: finalData.homeownerEmail,
-      project_name: finalData.projectName,
-      project_uid: `proj-${Date.now()}`,
-      description: finalData.projectAddress || "",
-      start_date: finalData.startDate,
-      end_date: finalData.endDate,
-      milestone_count: finalData.milestoneCount,
-      total_price: finalData.totalPrice,
+      homeowner_name: finalData.homeownerName,
+      homeowner_address: finalData.projectAddress || "",
+      project_title: finalData.projectName,
+      project_description: finalData.projectAddress || "",
+      milestones_input: finalData.milestones.map((m, idx) => ({
+        order: idx + 1,
+        title: m.title,
+        description: m.description,
+        amount: parseFloat(m.amount),
+        start_date: m.start_date,
+        completion_date: m.completion_date,
+        days: Number(m.days),
+        hours: Number(m.hours),
+        minutes: Number(m.minutes),
+      })),
+      total_cost: finalData.milestoneTotalCost,
+      total_time_estimate: finalData.milestoneTotalDuration,
     };
 
-    console.log("📤 Submitting agreement payload:", payload);
-
     try {
-      const res = await fetch("http://127.0.0.1:8080/api/projects/agreements/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("access")}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (res.ok) {
-        const result = await res.json();
+      const res = await api.post("/projects/agreements/", payload);
+      if (res.status === 201 || res.status === 200) {
         alert("✅ Agreement created successfully!");
-        console.log("✅ Created agreement:", result);
+        setStep(1);
+        setStep1Data(null);
+        setStep2Data(null);
       } else {
-        const error = await res.json();
-        console.error("❌ Backend Error Response:", error);  // log full error
-        alert("❌ Submission error: " + JSON.stringify(error));
+        setErrorMessage("❌ Submission error: " + JSON.stringify(res.data));
       }
     } catch (err) {
       console.error("❌ Server error while submitting:", err);
-      alert("❌ Failed to submit agreement.");
+      setErrorMessage(
+        "❌ Network error. Please try again. " +
+          (err.response?.data?.detail || "")
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-2xl font-bold">Agreement Wizard</h2>
+        <p className="text-sm text-gray-500">Step {step} of 3</p>
+      </div>
+      {errorMessage && <p className="text-red-500 mb-4">{errorMessage}</p>}
+
       {step === 1 && <Step1 onNext={handleStep1Next} />}
       {step === 2 && (
         <AgreementMilestoneStep
@@ -73,6 +89,12 @@ export default function AgreementWizard() {
           onBack={() => setStep(2)}
           onSubmit={handleFinalSubmit}
         />
+      )}
+
+      {loading && (
+        <div className="absolute inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center">
+          <div className="text-white text-xl">Submitting...</div>
+        </div>
       )}
     </div>
   );
@@ -96,11 +118,10 @@ function Step1({ onNext }) {
 
     if (name === "homeownerEmail" && value.includes("@")) {
       try {
-        const res = await fetch(
-          `http://127.0.0.1:8080/api/projects/homeowners/lookup/?email=${value}`
+        const res = await api.get(
+          `/projects/homeowners/lookup/?email=${value}`
         );
-        const data = await res.json();
-
+        const data = res.data;
         if (data && data.name) {
           setFormData((prev) => ({
             ...prev,
@@ -142,51 +163,59 @@ function Step1({ onNext }) {
 
       <div className="space-y-4">
         <div>
-          <label className="block font-medium text-gray-700">Homeowner Email *</label>
+          <label>Homeowner Email *</label>
           <input
             type="email"
             name="homeownerEmail"
             value={formData.homeownerEmail}
             onChange={handleChange}
-            className="w-full mt-1 px-4 py-2 border rounded"
+            className="w-full px-4 py-2 border rounded"
           />
-          {lookupStatus && <p className="text-sm text-blue-600 mt-1">{lookupStatus}</p>}
-          {errors.homeownerEmail && <p className="text-red-500 text-sm">{errors.homeownerEmail}</p>}
+          {lookupStatus && (
+            <p className="text-sm text-blue-600">{lookupStatus}</p>
+          )}
+          {errors.homeownerEmail && (
+            <p className="text-red-500">{errors.homeownerEmail}</p>
+          )}
         </div>
 
         <div>
-          <label className="block font-medium text-gray-700">Homeowner Name *</label>
+          <label>Homeowner Name *</label>
           <input
             type="text"
             name="homeownerName"
             value={formData.homeownerName}
             onChange={handleChange}
-            className="w-full mt-1 px-4 py-2 border rounded"
+            className="w-full px-4 py-2 border rounded"
           />
-          {errors.homeownerName && <p className="text-red-500 text-sm">{errors.homeownerName}</p>}
+          {errors.homeownerName && (
+            <p className="text-red-500">{errors.homeownerName}</p>
+          )}
         </div>
 
         <div>
-          <label className="block font-medium text-gray-700">Project Address</label>
-          <input
-            type="text"
-            name="projectAddress"
-            value={formData.projectAddress}
-            onChange={handleChange}
-            className="w-full mt-1 px-4 py-2 border rounded"
-          />
-        </div>
-
-        <div>
-          <label className="block font-medium text-gray-700">Project Name *</label>
+          <label>Project Name *</label>
           <input
             type="text"
             name="projectName"
             value={formData.projectName}
             onChange={handleChange}
-            className="w-full mt-1 px-4 py-2 border rounded"
+            className="w-full px-4 py-2 border rounded"
           />
-          {errors.projectName && <p className="text-red-500 text-sm">{errors.projectName}</p>}
+          {errors.projectName && (
+            <p className="text-red-500">{errors.projectName}</p>
+          )}
+        </div>
+
+        <div>
+          <label>Project Address (optional)</label>
+          <input
+            type="text"
+            name="projectAddress"
+            value={formData.projectAddress}
+            onChange={handleChange}
+            className="w-full px-4 py-2 border rounded"
+          />
         </div>
       </div>
 
@@ -201,6 +230,10 @@ function Step1({ onNext }) {
     </div>
   );
 }
+
+
+
+
 
 
 

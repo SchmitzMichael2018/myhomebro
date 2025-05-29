@@ -1,0 +1,15 @@
+<!-- templates/admin/base_site.html -->
+ {% load static %}
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MyHomeBro Admin</title>
+    <link rel="stylesheet" type="text/css" href="{% static 'css/styles.css' %}">
+</head>
+<body>
+    <h1>Welcome to MyHomeBro Admin</h1>
+    {% block content %}{% endblock %}
+</body>
+</html>
+

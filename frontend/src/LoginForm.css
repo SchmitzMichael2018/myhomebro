@@ -1,68 +1,43 @@
-
+/* === Login Form Styling (Tailwind Optimized) === */
 .login-container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-    background-color: #f3f4f6;
-    border: 2px solid red;
-  }
-  
-  .login-form {
-    background: white;
-    padding: 2rem 3rem;
-    border-radius: 12px;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-    width: 350px;
-    text-align: center;
-  }
-  
-  .logo {
-    width: 100px;
-    margin-bottom: 1rem;
-  }
-  
-  input {
-    width: 100%;
-    padding: 0.6rem;
-    margin-top: 1rem;
-    border: 1px solid #ccc;
-    border-radius: 8px;
-  }
-  
-  .password-field {
-    position: relative;
-  }
-  
-  .toggle-password {
-    position: absolute;
-    right: 10px;
-    top: 20%;
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: #007bff;
-  }
-  
-  .extras {
-    text-align: left;
-    margin: 1rem 0;
-  }
-  
-  button[type="submit"] {
-    width: 100%;
-    padding: 0.6rem;
-    background-color: #007bff;
-    border: none;
-    border-radius: 8px;
-    color: white;
-    font-weight: bold;
-    margin-top: 1rem;
-  }
-  
-  .error {
-    color: red;
-    margin-top: 1rem;
-  }
-  
+  @apply flex justify-center items-center min-h-screen bg-gray-100;
+}
+
+.login-form {
+  @apply bg-white p-6 rounded-xl shadow-lg w-full max-w-sm text-center;
+}
+
+.logo {
+  @apply w-24 mx-auto mb-4;
+}
+
+input {
+  @apply w-full px-4 py-2 mt-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition duration-200;
+}
+
+.password-field {
+  @apply relative mt-2;
+}
+
+.toggle-password {
+  @apply absolute right-3 top-2/4 transform -translate-y-1/2 text-blue-600 cursor-pointer;
+  font-size: 0.875rem;
+}
+
+.extras {
+  @apply text-left mt-4 text-sm text-blue-600 hover:underline;
+}
+
+button[type="submit"] {
+  @apply w-full py-2 mt-4 bg-blue-600 text-white font-semibold rounded-lg transition duration-300 hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 disabled:opacity-50;
+}
+
+button[type="submit"]:disabled {
+  @apply cursor-not-allowed bg-blue-400;
+}
+
+.error {
+  @apply text-red-500 mt-2 text-sm;
+}
+
   
