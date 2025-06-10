@@ -4,7 +4,7 @@ from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
 from .models import Agreement, Invoice
-from .tasks import generate_agreement_pdf, send_invoice_notification
+from .tasks import send_invoice_notification, generate_full_agreement_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -23,13 +23,13 @@ def agreement_pre_save(sender, instance, **kwargs):
 
 
 @receiver(post_save, sender=Agreement)
-def generate_agreement_pdf_async(sender, instance, created, **kwargs):
+def generate_full_agreement_pdf_async(sender, instance, created, **kwargs):
     """
     Fire off a Celery task to generate the PDF the moment an Agreement is created.
     """
     if created:
         try:
-            generate_agreement_pdf.delay(instance.id)
+            generate_full_agreement_pdf.delay(instance.id)
             logger.info(f"✅ PDF generation task dispatched for Agreement {instance.id}.")
         except Exception as e:
             logger.error(f"❌ Error dispatching PDF generation task for Agreement {instance.id}: {e}")

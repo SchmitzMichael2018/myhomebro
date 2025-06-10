@@ -1,0 +1,76 @@
+{# templates/projects/sign_success.html #}
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container my-5 text-center">
+  <h1>All Set!</h1>
+  <p>You have successfully signed the agreement for “{{ agreement.project.title }}.”</p>
+
+  {# 1) Link to download the freshly-signed PDF #}
+  <p>
+    <a
+      href="{% url 'projects_api:agreement-pdf' agreement.id %}"
+      target="_blank"
+      class="btn btn-outline-primary mb-4"
+    >
+      Download Your Signed Agreement (PDF)
+    </a>
+  </p>
+
+  {# 2) Embedded PDF preview #}
+  <div style="height:600px; border:1px solid #ddd; margin-bottom:2rem;">
+    <iframe
+      src="{% url 'projects_api:agreement-pdf' agreement.id %}"
+      width="100%"
+      height="100%"
+      frameborder="0"
+    ></iframe>
+  </div>
+
+  <hr/>
+
+  {# 3) Fund escrow form (unchanged) #}
+  <div id="payment-form" class="mb-4">
+    <p><strong>Total Due:</strong> ${{ agreement.total_cost|floatformat:2 }}</p>
+    <div id="card-element" class="mb-3"></div>
+    <button id="fund-button" class="btn btn-success">Fund Escrow</button>
+    <div id="card-errors" role="alert" class="text-danger mt-2"></div>
+  </div>
+</div>
+
+<script src="https://js.stripe.com/v3/"></script>
+<script>
+  const stripe = Stripe("{{ stripe_public_key }}");
+  const elements = stripe.elements();
+  const card = elements.create("card");
+  card.mount("#card-element");
+
+  document.getElementById("fund-button").addEventListener("click", async (e) => {
+    e.preventDefault();
+
+    // 1) Kick off the PaymentIntent
+    const resp = await fetch(
+      `{% url 'projects_api:agreement-magic-fund-escrow' agreement.homeowner_access_token %}`,
+      { method: "POST" }
+    );
+    const payload = await resp.json();
+    if (!resp.ok) {
+      return document.getElementById("card-errors").textContent =
+        payload.detail || "Payment failed to start.";
+    }
+
+    // 2) Confirm the card payment
+    const { error, paymentIntent } = await stripe.confirmCardPayment(
+      payload.client_secret,
+      { payment_method: { card } }
+    );
+
+    if (error) {
+      document.getElementById("card-errors").textContent = error.message;
+    } else if (paymentIntent.status === "succeeded") {
+      // 3) Redirect straight to the signed PDF
+      window.location.href = "{% url 'projects_api:agreement-pdf' agreement.id %}";
+    }
+  });
+</script>
+{% endblock %}

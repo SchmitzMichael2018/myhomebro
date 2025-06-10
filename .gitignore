@@ -35,3 +35,6 @@ venv/
 *.njsproj
 *.sln
 *.sw?
+
+# Redis dump
+backend/dump.rdb

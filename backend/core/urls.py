@@ -1,48 +1,51 @@
+# core/urls.py
+
 from django.contrib import admin
 from django.urls import path, include
-from django.http import HttpResponse
+from django.views.static import serve
+from django.conf import settings
+
+from projects.views import stripe_webhook
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 urlpatterns = [
+    # 1) Django admin
     path('admin/', admin.site.urls),
 
-    # Accounts: registration, password, profile, email verification
+    # 2) Stripe webhook endpoint (no /api/ prefix)
+    path('stripe/webhook/', stripe_webhook, name='stripe-webhook'),
+
+    # 3) Accounts app (registration, password reset, email verification…)
     path(
         'api/accounts/',
-        include(('accounts.urls', 'accounts_api')),
-        name='accounts_api'
+        include(('accounts.urls', 'accounts_api'), namespace='accounts_api')
     ),
 
-    # JWT authentication endpoints (login, refresh, etc.)
+    # 4) JWT auth endpoints
     path(
-        'api/auth/',
-        include(('accounts.auth_urls', 'auth_api')),
-        name='auth_api'
+        'api/auth/login/',
+        TokenObtainPairView.as_view(),
+        name='auth_login'
     ),
-
-    # Project/business logic endpoints
     path(
-        'api/projects/',
-        include(('projects.urls', 'projects_api')),
-        name='projects_api'
+        'api/auth/refresh/',
+        TokenRefreshView.as_view(),
+        name='auth_refresh'
     ),
 
-    # Optional: DRF browsable-API login/logout
+    # 5) Main API
     path(
-        'api-auth/',
-        include('rest_framework.urls', namespace='rest_framework')
+        'api/',
+        include(('projects.urls', 'projects_api'), namespace='projects_api')
     ),
 
-    path('', lambda request: HttpResponse("Welcome to MyHomeBro!"), name='home'),
+    # 6) DRF’s browsable API login/logout
+    path('api-auth/', include('rest_framework.urls', namespace='rest_framework')),
+
+    # 7) Static (development only)
+    path(
+        'static/<path:path>',
+        serve,
+        {'document_root': settings.STATIC_ROOT}
+    ),
 ]
-
-
-
-
-
-
-
-
-
-
-
-
