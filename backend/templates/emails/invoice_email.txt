@@ -1,0 +1,12 @@
+Hi {{ homeowner_name }},
+
+You have a new invoice for:
+  Project: {{ milestone.agreement.project.title }}
+  Milestone: {{ milestone.title }} (Milestone #{{ milestone.id }})
+  Amount Due: ${{ invoice.amount_due }}
+  Due Date: {{ invoice.due_date|date:"F j, Y" }}
+
+View or pay your invoice here:
+{{ link }}
+
+Thank you for using {{ site_name }}!

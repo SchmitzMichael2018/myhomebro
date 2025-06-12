@@ -38,3 +38,6 @@ venv/
 
 # Redis dump
 backend/dump.rdb
+
+# Redis dump files
+*.rdb

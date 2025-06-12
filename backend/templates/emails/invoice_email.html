@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+  <body style="font-family: sans-serif; line-height: 1.5; color: #333;">
+    <p>Hi {{ homeowner_name }},</p>
+
+    <p>
+      You have a new invoice for:
+    </p>
+    <ul>
+      <li><strong>Project:</strong> {{ milestone.agreement.project.title }}</li>
+      <li><strong>Milestone:</strong> {{ milestone.title }} ({{ milestone.id }})</li>
+      <li><strong>Amount Due:</strong> ${{ invoice.amount_due }}</li>
+      <li><strong>Due Date:</strong> {{ invoice.due_date|date:"F j, Y" }}</li>
+    </ul>
+
+    <p style="text-align:center; margin: 24px 0;">
+      <a href="{{ link }}"
+         style="
+           background-color: #2563eb;
+           color: #fff;
+           padding: 12px 20px;
+           text-decoration: none;
+           border-radius: 4px;
+           display: inline-block;
+         ">
+        View or Pay Invoice
+      </a>
+    </p>
+
+    <p>Thank you for using {{ site_name }}!</p>
+  </body>
+</html>
