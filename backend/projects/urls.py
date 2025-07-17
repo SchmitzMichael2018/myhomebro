@@ -7,7 +7,6 @@ from .views import (
     InvoiceViewSet,
     MessageViewSet,
     lookup_homeowner,
-    AIChatView,
     ContractorOnboardingView,
 )
 
@@ -26,8 +25,6 @@ urlpatterns = [
     # Homeowner lookup endpoint (by email)
     path('homeowners/lookup/', lookup_homeowner, name='homeowner-lookup'),
 
-    # AI Chat Endpoint
-    path('ai-chat/', AIChatView.as_view(), name='ai-chat'),
 ]
 
 
