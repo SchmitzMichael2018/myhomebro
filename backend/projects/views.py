@@ -12,7 +12,6 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 import stripe
-import openai
 from dotenv import load_dotenv
 
 # Load .env if present
@@ -31,27 +30,8 @@ from .utils import generate_agreement_pdf
 
 # Load Stripe and OpenAI keys from environment or Django settings
 stripe.api_key = getattr(settings, 'STRIPE_SECRET_KEY', os.getenv("STRIPE_SECRET_KEY"))
-openai.api_key = getattr(settings, 'OPENAI_API_KEY', os.getenv("OPENAI_API_KEY"))
 
-# ---------- AI CHATBOT ENDPOINT ----------
 
-class AIChatView(APIView):
-    permission_classes = []  # Optional: make public for demo, or add auth
-
-    def post(self, request):
-        message = request.data.get("message")
-        section = request.data.get("section", "/")
-        client = openai.OpenAI(api_key=openai.api_key)
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": f"You are HomeBro, a helpful assistant for home renovation contractors and homeowners. You are currently on: {section}. Be concise and friendly."},
-                {"role": "user", "content": message},
-            ],
-            max_tokens=400,
-        )
-        ai_text = response.choices[0].message.content
-        return Response({"reply": ai_text})
 
 # ---------- CONTRACTOR VIEWSET ----------
 
