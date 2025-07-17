@@ -34,5 +34,9 @@ stripe==12.1.0
 typing_extensions==4.13.2
 tzdata==2025.2
 urllib3==2.4.0
+<<<<<<< HEAD
 vine==5.1.0
 wcwidth==0.2.13
+=======
+reportlab
+>>>>>>> d2d49f8 (Remove AIChatView import and route)

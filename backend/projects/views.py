@@ -12,10 +12,11 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 import stripe
+<<<<<<< HEAD
 from dotenv import load_dotenv
+=======
+>>>>>>> d2d49f8 (Remove AIChatView import and route)
 
-# Load .env if present
-load_dotenv()
 
 from .models import Project, Agreement, Invoice, Contractor, Homeowner, Message, Milestone
 from .serializers import (
