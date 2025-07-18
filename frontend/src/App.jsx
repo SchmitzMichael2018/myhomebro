@@ -14,7 +14,6 @@ import LandingPage from "./components/LandingPage";
 import LoginForm from "./components/LoginForm";
 import SignUpForm from "./components/SignUpForm";
 import ForgotPassword from "./components/ForgotPassword";
-import AIGuideWidget from "./components/AIGuideWidget";
 import StripeOnboarding from "./components/StripeOnboarding";
 
 import ContractorDashboard from "./components/ContractorDashboard";
@@ -51,8 +50,6 @@ export default function App() {
 
   return (
     <>
-      {/* Always-on AI guide */}
-      <AIGuideWidget section={location.pathname} />
 
       <Routes>
         {/* 1. Landing page always at root */}

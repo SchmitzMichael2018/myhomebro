@@ -1,50 +1,19 @@
 <!DOCTYPE html>
-<html lang="en-US">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta 
-      name="viewport" 
-      content="width=device-width, initial-scale=1.0" 
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MyHomeBro - Secure Escrow Payments</title>
-    
-    <!-- Favicon served from public/ -->
-    <link rel="icon" href="/favicon.ico" />
+    <link rel="icon" href="/static/favicon.ico" />
 
-    <!-- FullCalendar DayGrid CSS (via CDN) -->
-    <link 
-      rel="stylesheet" 
-      href="https://cdn.jsdelivr.net/npm/@fullcalendar/daygrid@6.1.8/main.min.css"
-      referrerpolicy="no-referrer"
-    />
 
-    <!-- Content Security Policy -->
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="
-        default-src 'self';
-        script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net;
-        style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com;
-        font-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com data:;
-        img-src 'self' data:;
-        connect-src 'self'
-          http://localhost:3000
-          ws://localhost:3000;
-        object-src 'none';
-      "
-    />
+
+    <!-- ✅ Dev entrypoint – replaced by Vite during build -->
+    <script type="module" src="/src/main.jsx"></script>
   </head>
-
   <body>
-    <div id="root" aria-live="polite"></div>
-
-    <!-- Vite entrypoint -->
-    <script type="module" src="/src/main.jsx" async></script>
+    <div id="root"></div>
   </body>
 </html>
-
-
-
-
 
 
