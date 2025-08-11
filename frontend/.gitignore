@@ -1,53 +1,94 @@
-# ========================
-# 🌐 Node.js & Frontend
-# ========================
+# =========================
+# OS / Editor junk
+# =========================
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+*.bak
+*.orig
+*.log
+*.cache
+.idea/
+.vscode/
+*.code-workspace
+
+# =========================
+# Python / Django
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.so
+.eggs/
+*.egg-info/
+.python-version
+.pytest_cache/
+.mypy_cache/
+.pytype/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Django project artifacts
+backend/db.sqlite3
+backend/staticfiles/
+backend/media/
+# (If you later add source static under backend/static, keep it tracked)
+
+# =========================
+# Virtual Environments
+# =========================
+venv/
+backend/venv/
+.venv/
+.env/  # some tools create a venv folder named ".env"
+
+# =========================
+# Frontend (Vite/React/Next/etc.)
+# =========================
 node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.eslintcache
 .parcel-cache/
 .next/
 out/
-dist/
 build/
 
-# ========================
-# ⚙️ Environment Variables
-# ========================
-.env*
-.env.local
-.env.production
-.env.development
-.env.*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# ========================
-# 🚀 Build & Cache Files
-# ========================
-*.cache
-*.log
-.cache/
-coverage/
-.vite/
-.vscode/
-.DS_Store
-Thumbs.db
+# =========================
+# Environment files (ignore ALL secrets)
+# =========================
+# Generic patterns
+.env
+.env.*
+*.env
+*.env.*
 
-# ========================
-# 🔧 Temporary & Backup Files
-# ========================
-*.tmp
-*.swp
-*.bak
-*.log
+# Explicit backend envs (layered)
+backend/.env
+backend/.env.*
+backend/.env.common
+backend/.env.local
+backend/.env.prod
 
-# ========================
-# ⚠️ Sensitive Files
-# ========================
+# Keep sample templates if you add them:
+!.env.example
+!backend/.env.example
+
+# =========================
+# Optional sensitive files
+# =========================
 credentials.json
 secret-key.txt
 firebase-adminsdk-*.json
-
-# ========================
-# 📦 Package Manager Files
-# ========================
-yarn-error.log
-pnpm-lock.yaml
-package-lock.json
-

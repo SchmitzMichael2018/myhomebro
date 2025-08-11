@@ -1,4 +1,8 @@
+// src/components/ContractorOnboardingForm.jsx
+
 import React, { useState } from "react";
+
+const BASE_API = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
 
 export default function ContractorOnboardingForm() {
   const [form, setForm] = useState({
@@ -11,12 +15,10 @@ export default function ContractorOnboardingForm() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState(null);
 
-  // Handle form field changes
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -24,7 +26,13 @@ export default function ContractorOnboardingForm() {
 
     try {
       const token = localStorage.getItem("access");
-      const res = await fetch("http://localhost:8080/api/projects/contractors/onboard/", {
+      if (!token) {
+        setMsg("Login required. Please sign in to continue.");
+        setLoading(false);
+        return;
+      }
+
+      const res = await fetch(`${BASE_API}/api/projects/contractors/onboard/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -36,16 +44,15 @@ export default function ContractorOnboardingForm() {
       const data = await res.json();
 
       if (res.ok && data.onboarding_url) {
-        window.location.href = data.onboarding_url; // Redirect to Stripe onboarding
-      } else if (data.detail) {
-        setMsg(data.detail);
+        window.location.href = data.onboarding_url;
       } else {
-        setMsg("Unable to start onboarding. Please check your information.");
+        setMsg(data.detail || data.message || "Unable to start onboarding.");
       }
     } catch (err) {
       setMsg("Server error. Please try again.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
@@ -53,8 +60,11 @@ export default function ContractorOnboardingForm() {
       onSubmit={handleSubmit}
       className="max-w-lg mx-auto mt-16 p-8 bg-white rounded-2xl shadow-lg"
     >
-      <h2 className="text-2xl font-bold mb-6 text-center">Contractor Stripe Onboarding</h2>
-      {msg && <div className="mb-4 text-red-600">{msg}</div>}
+      <h2 className="text-2xl font-bold mb-6 text-center text-blue-800">
+        Contractor Stripe Onboarding
+      </h2>
+
+      {msg && <div className="mb-4 text-red-600 text-sm">{msg}</div>}
 
       <div className="mb-4">
         <label className="block font-semibold mb-1">Business Name</label>
@@ -114,7 +124,11 @@ export default function ContractorOnboardingForm() {
       <button
         type="submit"
         disabled={loading}
-        className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition duration-150"
+        className={`w-full py-3 rounded-xl font-bold transition duration-150 ${
+          loading
+            ? "bg-gray-400 cursor-not-allowed"
+            : "bg-blue-600 hover:bg-blue-700 text-white"
+        }`}
       >
         {loading ? "Starting Onboarding..." : "Start Stripe Onboarding"}
       </button>

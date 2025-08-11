@@ -1,3 +1,5 @@
+// src/components/AgreementModal.jsx (Enhanced with Signature Type & Validation)
+
 import React, { useState } from "react";
 import api from "./api";
 import SignatureCanvas from "./SignatureCanvas";
@@ -11,7 +13,6 @@ const AgreementModal = ({ agreement, onClose, onSigned }) => {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  // Update to snake_case if backend expects it!
   const handleSaveSignature = async ({ typedName, drawnSignature }) => {
     setLoading(true);
     setErrorMessage("");
@@ -19,9 +20,9 @@ const AgreementModal = ({ agreement, onClose, onSigned }) => {
       const response = await api.post(
         `/projects/agreements/${agreement.id}/sign/`,
         {
-          signature_type: signatureType,      // <--- updated field
-          typed_name: typedName,              // <--- updated field
-          drawn_signature: drawnSignature,     // <--- updated field
+          signature_type: signatureType,
+          typed_name: typedName,
+          drawn_signature: drawnSignature,
         }
       );
       if (response.status === 200) {
@@ -40,11 +41,7 @@ const AgreementModal = ({ agreement, onClose, onSigned }) => {
   };
 
   return (
-    <div
-      className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50"
-      role="dialog"
-      aria-modal="true"
-    >
+    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50" role="dialog" aria-modal="true">
       <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full relative">
         <h3 className="text-xl font-bold mb-2">{agreement.project_title || agreement.project_name}</h3>
         <p>Homeowner: {agreement.homeowner_name || "—"}</p>
@@ -61,7 +58,7 @@ const AgreementModal = ({ agreement, onClose, onSigned }) => {
                 id="accept-signature"
               />
               <label htmlFor="accept-signature">
-                I agree to sign this agreement electronically in accordance with the{" "}
+                I agree to sign this agreement electronically in accordance with the {" "}
                 <a
                   href="https://www.fdic.gov/regulations/laws/rules/6500-3170.html"
                   target="_blank"
@@ -85,16 +82,12 @@ const AgreementModal = ({ agreement, onClose, onSigned }) => {
               </select>
             </div>
 
-            {errorMessage && (
-              <p className="text-red-500 mt-2">{errorMessage}</p>
-            )}
+            {errorMessage && <p className="text-red-500 mt-2">{errorMessage}</p>}
 
             <button
               onClick={() => setShowSignaturePad(true)}
               disabled={!accepted || loading}
-              className={`mt-4 px-6 py-2 text-white rounded ${
-                loading ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"
-              }`}
+              className={`mt-4 px-6 py-2 text-white rounded ${loading ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"}`}
             >
               {loading ? <Spinner /> : "Sign Agreement"}
             </button>
@@ -122,5 +115,3 @@ const AgreementModal = ({ agreement, onClose, onSigned }) => {
 };
 
 export default AgreementModal;
-
-

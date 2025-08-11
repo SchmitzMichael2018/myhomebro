@@ -1,45 +1,63 @@
 #!/usr/bin/env python
 """
-Django Management Utility (Enhanced)
-
-- Provides command-line management of the Django project.
-- Secure error handling and debug logging for better control.
-- Automatically detects and logs active settings module (in debug mode).
+Django management utility (with robust dotenv loading).
 """
 
 import os
 import sys
 import logging
+from pathlib import Path
 
+from dotenv import load_dotenv, find_dotenv
+
+# ------------------------------------------------------------------------------
+# Logging
+# ------------------------------------------------------------------------------
+# Keep logging simple; PythonAnywhere/console will capture it.
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
+# ------------------------------------------------------------------------------
+# Paths & .env loading
+# ------------------------------------------------------------------------------
+# IMPORTANT: manage.py lives in .../backend/manage.py
+# We want BASE_DIR to be the backend folder (same place as .env and manage.py)
+BASE_DIR = Path(__file__).resolve().parent  # -> .../backend
+
+# Try explicit path first (backend/.env), then fall back to auto-discovery
+explicit_env = BASE_DIR / ".env"
+loaded = False
+if explicit_env.exists():
+    load_dotenv(dotenv_path=explicit_env, override=True)
+    loaded = True
+else:
+    discovered = find_dotenv(filename=".env", usecwd=True)
+    if discovered:
+        load_dotenv(discovered, override=True)
+        loaded = True
+
+# Only be chatty about .env when DEBUG=True (after we read env below)
+def _maybe_log_env_status():
+    debug = os.environ.get("DEBUG", "False").lower() in ("1", "true", "t", "yes", "y")
+    if not loaded and debug:
+        logger.warning("⚠️  No .env file found at expected path: %s", explicit_env)
+
+# ------------------------------------------------------------------------------
+# Main
+# ------------------------------------------------------------------------------
 def main():
-    """Run administrative tasks with enhanced error handling."""
-    try:
-        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
-        if os.environ.get('DEBUG', 'False').lower() == 'true':
-            logger.info(f"✅ Using Settings Module: {os.environ.get('DJANGO_SETTINGS_MODULE')}")
-    except Exception as e:
-        logger.error("❌ Environment Initialization Error: %s", str(e))
-        if os.environ.get('DEBUG', 'False').lower() == 'true':
-            sys.exit(1)
-        else:
-            raise RuntimeError("Environment Initialization Error")
-    
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")
+    _maybe_log_env_status()
+
     try:
         from django.core.management import execute_from_command_line
     except ImportError as exc:
         logger.error("❌ Django Import Error: %s", str(exc))
-        if os.environ.get('DEBUG', 'False').lower() == 'true':
-            print("❌ Django Import Error: Make sure Django is installed and your virtual environment is activated.")
-            sys.exit(1)
-        else:
-            raise ImportError("Django Import Error: Make sure Django is installed and your virtual environment is activated.") from exc
-    
+        print("Make sure your virtual environment is activated and Django is installed.")
+        raise
+
     execute_from_command_line(sys.argv)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-
-

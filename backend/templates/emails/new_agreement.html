@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>You're Invited to Sign an Agreement</title>
+    <style>
+        /* Basic styles for email client compatibility */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+        .header {
+            text-align: center;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+        .header img {
+            max-width: 150px;
+        }
+        .content {
+            padding: 20px 0;
+        }
+        .content p {
+            margin: 0 0 1rem 0;
+        }
+        .button-container {
+            text-align: center;
+            margin: 2rem 0;
+        }
+        .button {
+            background-color: #1E3A8A; /* Your theme's primary color */
+            color: #ffffff;
+            padding: 14px 28px;
+            text-decoration: none;
+            border-radius: 5px;
+            display: inline-block;
+            font-weight: bold;
+        }
+        .footer {
+            text-align: center;
+            font-size: 0.8rem;
+            color: #888;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <img src="{{ site_logo_url }}" alt="MyHomeBro Logo">
+        </div>
+        <div class="content">
+            <p>Hi {{ homeowner_name }},</p>
+            
+            <p>
+                You have been invited by <strong>{{ contractor_name }}</strong> to review and electronically sign an agreement for the project: 
+                <strong>"{{ project_title }}"</strong>.
+            </p>
+
+            <p>
+                Please click the button below to review the full agreement details, including all milestones and payment terms, and to provide your secure electronic signature.
+            </p>
+
+            <div class="button-container">
+                <a href="{{ link }}" class="button" target="_blank">
+                    Review & Sign Agreement
+                </a>
+            </div>
+
+            <p>If you have any questions, please contact your contractor directly or through the MyHomeBro chat system.</p>
+
+            <p>Thank you,<br/>The MyHomeBro Team</p>
+        </div>
+        <div class="footer">
+            <p>&copy; {% now "Y" %} MyHomeBro. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,79 +1,150 @@
+// src/components/Calendar.jsx
+
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
+import interactionPlugin from '@fullcalendar/interaction';
+import { ClipLoader } from 'react-spinners';
 import api from '../api';
+import toast from 'react-hot-toast';
+
+// Legend for event types
+const CalendarLegend = () => (
+  <div className="grid grid-cols-2 gap-4 mb-4 text-sm text-gray-600">
+    <div className="flex items-center">
+      <span className="w-3 h-3 bg-blue-600 rounded-full mr-2" />
+      Agreement
+    </div>
+    <div className="flex items-center">
+      <span className="w-3 h-3 bg-green-600 rounded-full mr-2" />
+      Milestone
+    </div>
+  </div>
+);
 
 export default function Calendar() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [selectedEvent, setSelectedEvent] = useState(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    api.get('/projects/milestones/calendar/')
-      .then(res => {
-        // Normalize events for FullCalendar if necessary:
-        const normalized = res.data.map(ev => ({
-          id: ev.id,
-          title: ev.title || 'Milestone',
-          start: ev.start_date || ev.due_date,
-          end: ev.completion_date || ev.end_date,
-          allDay: true,
-          // ...spread other event details if needed
-          ...ev
-        }));
-        setEvents(normalized);
+    const fetchCalendarData = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const [agreementsRes, milestonesRes] = await Promise.all([
+          api.get('/agreements/calendar/'),
+          api.get('/milestones/calendar/'),
+        ]);
+
+        const agreementEvents = agreementsRes.data
+          .filter(ev => ev.start && ev.end)
+          .map(ev => ({
+            id: `a-${ev.id}`,
+            title: ev.title,
+            start: ev.start,
+            end: ev.end,
+            allDay: true,
+            backgroundColor: '#2563EB',
+            borderColor: '#1D4ED8',
+            textColor: '#FFFFFF',
+            extendedProps: {
+              type: 'agreement',
+              originalId: ev.id,
+            },
+          }));
+
+        const milestoneEvents = milestonesRes.data
+          .filter(ev => ev.start && ev.end)
+          .map(ev => ({
+            id: `m-${ev.id}`,
+            title: ev.title,
+            start: ev.start,
+            end: ev.end,
+            allDay: true,
+            backgroundColor: '#059669',
+            borderColor: '#047857',
+            textColor: '#FFFFFF',
+            extendedProps: {
+              type: 'milestone',
+              originalId: ev.id,
+            },
+          }));
+
+        setEvents([...agreementEvents, ...milestoneEvents]);
+      } catch (err) {
+        console.error('Calendar load error:', err);
+        setError('Failed to load calendar. Please try again later.');
+        toast.error('Could not load calendar data.');
+      } finally {
         setLoading(false);
-      })
-      .catch(err => {
-        setError('Failed to load calendar events');
-        setLoading(false);
-      });
+      }
+    };
+
+    fetchCalendarData();
   }, []);
 
-  return (
-    <div className="max-w-5xl mx-auto mt-8 bg-white rounded-lg shadow-lg p-6">
-      <h2 className="text-2xl font-bold mb-4">Milestone Calendar</h2>
-      {loading ? (
-        <p className="text-blue-700">Loading…</p>
-      ) : error ? (
-        <p className="text-red-600">{error}</p>
-      ) : (
-        <FullCalendar
-          plugins={[dayGridPlugin]}
-          initialView="dayGridMonth"
-          events={events}
-          eventClick={({ event }) => setSelectedEvent(event)}
-          height={600}
-        />
-      )}
+  if (loading) {
+    return (
+      <div className="p-6 text-center text-gray-500 flex flex-col items-center">
+        <ClipLoader size={28} color="#2563EB" />
+        <span className="mt-2">Loading calendar...</span>
+      </div>
+    );
+  }
 
-      {selectedEvent && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full relative">
-            <h3 className="text-xl font-bold mb-2">{selectedEvent.title}</h3>
-            <p>
-              <strong>Start:</strong> {selectedEvent.startStr}
-              <br />
-              {selectedEvent.end && (
-                <>
-                  <strong>End:</strong> {selectedEvent.endStr}
-                  <br />
-                </>
-              )}
-              {/* Add more milestone fields as needed */}
-            </p>
-            <button
-              onClick={() => setSelectedEvent(null)}
-              className="absolute top-2 right-2 text-gray-500 hover:text-gray-700"
-              aria-label="Close"
-            >
-              ✖
-            </button>
-          </div>
-        </div>
-      )}
+  if (error) {
+    return (
+      <div className="p-6 text-center text-red-500">
+        {error}
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-lg shadow p-6">
+      <h2 className="text-2xl font-bold mb-1 text-gray-800">Project Calendar</h2>
+      <p className="text-sm text-gray-500 mb-4">
+        Overview of agreements and milestone timelines.
+      </p>
+
+      <CalendarLegend />
+
+      <div className="overflow-x-auto">
+        <FullCalendar
+          plugins={[dayGridPlugin, interactionPlugin]}
+          initialView="dayGridMonth"
+          height="auto"
+          headerToolbar={{
+            left: 'prev,next today',
+            center: 'title',
+            right: 'dayGridMonth,dayGridWeek',
+          }}
+          events={events}
+          eventClick={({ event }) => {
+            const { type, originalId } = event.extendedProps;
+            if (type === 'agreement') {
+              navigate(`/agreements/${originalId}`);
+            } else if (type === 'milestone') {
+              navigate(`/milestones/${originalId}`);
+            }
+          }}
+          eventMouseEnter={({ el, event }) => {
+            el.setAttribute('title', event.title);
+            el.style.cursor = 'pointer';
+          }}
+          dayCellClassNames={({ date }) => {
+            const today = new Date();
+            const isToday =
+              date.getDate() === today.getDate() &&
+              date.getMonth() === today.getMonth() &&
+              date.getFullYear() === today.getFullYear();
+            return isToday ? ['bg-yellow-100', 'font-semibold'] : [];
+          }}
+        />
+      </div>
     </div>
   );
 }
-

@@ -1,18 +1,24 @@
+// src/components/ContractorDashboard.jsx
+
 import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import EarningsChart from "./EarningsChart";
 import MilestoneStatCard from "./MilestoneStatCard";
 import Modal from "react-modal";
+import toast from "react-hot-toast";
 import api from "../api";
 
-Modal.setAppElement("#root");
+if (typeof document !== "undefined") {
+  Modal.setAppElement("#root");
+}
 
 const STATUS_MAP = {
-  Total: () => true,
-  Incomplete: inv => inv.status === "pending",
-  Complete: inv => inv.status === "completed",
-  "Pending Approval": inv => inv.status === "pending_approval",
-  Approved: inv => inv.status === "approved",
-  Earned: inv => inv.status === "paid",
+  total: () => true,
+  incomplete: inv => inv.status === "pending",
+  complete: inv => inv.status === "completed",
+  pending_approval: inv => inv.status === "pending_approval",
+  approved: inv => inv.status === "approved",
+  earned: inv => inv.status === "paid",
 };
 
 export default function ContractorDashboard() {
@@ -24,45 +30,9 @@ export default function ContractorDashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError("");
-      try {
-        const [invoiceRes, agreementRes] = await Promise.all([
-          api.get("/projects/invoices/"),
-          api.get("/projects/agreements/"),
-        ]);
-        setInvoices(invoiceRes.data || []);
-        setAgreements(agreementRes.data || []);
-      } catch (err) {
-        setError("Failed to load data. Please try again later.");
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, []);
+  const navigate = useNavigate();
 
-  const filteredInvoices = useMemo(() => {
-    return invoices
-      .filter(inv => {
-        switch (drillFilter) {
-          case "total": return true;
-          case "incomplete": return inv.status === "pending";
-          case "complete": return inv.status === "completed";
-          case "pending_approval": return inv.status === "pending_approval";
-          case "approved": return inv.status === "approved";
-          case "earned": return inv.status === "paid";
-          default: return true;
-        }
-      })
-      .filter(inv =>
-        inv.project_title?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-  }, [drillFilter, invoices, searchTerm]);
-
-  const handleRefresh = async () => {
+  const fetchData = async () => {
     setLoading(true);
     setError("");
     try {
@@ -72,21 +42,37 @@ export default function ContractorDashboard() {
       ]);
       setInvoices(invoiceRes.data || []);
       setAgreements(agreementRes.data || []);
-    } catch {
-      setError("Failed to refresh data. Please try again later.");
+    } catch (err) {
+      setError("Failed to load data. Please try again later.");
+      toast.error("Could not load dashboard data.");
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const filteredInvoices = useMemo(() => {
+    return invoices
+      .filter(STATUS_MAP[drillFilter] || (() => true))
+      .filter(inv =>
+        inv.project_title?.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+  }, [drillFilter, invoices, searchTerm]);
+
+  const totalEarned = useMemo(() =>
+    invoices
+      .filter(inv => inv.status === "paid")
+      .reduce((sum, inv) => sum + parseFloat(inv.amount_due || 0), 0),
+    [invoices]
+  );
+
   const handleStatClick = (key) => {
     setDrillFilter(key);
     setShowDrillDown(true);
   };
-
-  const totalEarned = invoices
-    .filter(inv => inv.status === "paid")
-    .reduce((sum, inv) => sum + parseFloat(inv.amount_due || 0), 0);
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 py-8">
@@ -97,7 +83,7 @@ export default function ContractorDashboard() {
         </div>
         <div className="flex gap-3">
           <button
-            onClick={handleRefresh}
+            onClick={fetchData}
             className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg shadow transition"
           >
             Refresh
@@ -105,7 +91,7 @@ export default function ContractorDashboard() {
         </div>
       </div>
 
-      {/* Stat cards grid */}
+      {/* Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-5 mb-8">
         {[
           { label: "Total", key: "total" },
@@ -118,14 +104,14 @@ export default function ContractorDashboard() {
           <MilestoneStatCard
             key={key}
             label={label}
-            data={invoices.filter(STATUS_MAP[label] || (() => true)).length}
+            data={invoices.filter(STATUS_MAP[key] || (() => true)).length}
             onClick={() => handleStatClick(key)}
             active={drillFilter === key && showDrillDown}
           />
         ))}
       </div>
 
-      {/* Earnings chart */}
+      {/* Earnings Chart */}
       <div className="bg-white rounded-2xl shadow p-6 mb-8">
         <h3 className="text-lg font-bold mb-4 text-blue-700">Earnings Overview</h3>
         <EarningsChart invoices={invoices} />
@@ -134,7 +120,7 @@ export default function ContractorDashboard() {
         </div>
       </div>
 
-      {/* Search and table */}
+      {/* Search */}
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <input
           type="text"
@@ -143,16 +129,17 @@ export default function ContractorDashboard() {
           onChange={e => setSearchTerm(e.target.value)}
           className="p-2 border rounded flex-1 md:max-w-xs"
         />
-        <div className="flex gap-2 mt-2 md:mt-0">
-          {error && <p className="text-red-500">{error}</p>}
-          {loading && <p className="text-blue-500">Loading...</p>}
-        </div>
+        {loading && <p className="text-blue-500">Loading...</p>}
       </div>
 
-      {/* Invoice/agreements list (as cards or table) */}
+      {/* Invoice Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {filteredInvoices.slice(0, 6).map(inv => (
-          <div key={inv.id} className="bg-white rounded-xl shadow p-5 flex flex-col gap-2 hover:ring-2 hover:ring-blue-300 transition">
+          <div
+            key={inv.id}
+            className="bg-white rounded-xl shadow p-5 flex flex-col gap-2 hover:ring-2 hover:ring-blue-300 transition cursor-pointer"
+            onClick={() => navigate(`/invoices/${inv.id}`)}
+          >
             <div className="flex justify-between items-center">
               <span className="font-bold text-blue-700">{inv.project_title || "Untitled Project"}</span>
               <span className={`px-2 py-1 rounded text-xs ${
@@ -162,7 +149,7 @@ export default function ContractorDashboard() {
                   ? "bg-yellow-100 text-yellow-800"
                   : "bg-gray-100 text-gray-700"
               }`}>
-                {inv.status.charAt(0).toUpperCase() + inv.status.slice(1)}
+                {inv.status.replace("_", " ").replace(/^\w/, c => c.toUpperCase())}
               </span>
             </div>
             <div className="text-sm text-gray-700">
@@ -173,11 +160,12 @@ export default function ContractorDashboard() {
                 ${parseFloat(inv.amount_due || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
               </span>
               <button
-                className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-sm font-semibold"
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   setDrillFilter("total");
                   setShowDrillDown(true);
                 }}
+                className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-sm font-semibold"
               >
                 View
               </button>
@@ -191,7 +179,7 @@ export default function ContractorDashboard() {
         )}
       </div>
 
-      {/* Drill-down modal for filtered invoices */}
+      {/* Drill-Down Modal */}
       <Modal
         isOpen={showDrillDown}
         onRequestClose={() => {
@@ -223,17 +211,3 @@ export default function ContractorDashboard() {
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-

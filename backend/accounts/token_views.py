@@ -1,31 +1,30 @@
+# accounts/token_views.py
 from django.contrib.auth import authenticate
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-
 class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):
+    # tell JWT to look up by email, not username
+    username_field = "email"
+
     def validate(self, attrs):
-        email = attrs.get('email')
-        password = attrs.get('password')
-        user = authenticate(
-            request=self.context.get('request'),
-            email=email,
-            password=password
-        )
-        if user is None:
-            raise serializers.ValidationError('Invalid email or password.')
-        if not user.is_active:
-            raise serializers.ValidationError('This account is inactive. Please contact support.')
-        # Email verification check removed; no is_verified field
+        # attrs now has {"email": …, "password": …}
+        data = super().validate(attrs)
 
-        refresh = self.get_token(user)
-        return {
-            'refresh': str(refresh),
-            'access': str(refresh.access_token),
-        }
+        # your extra “is_verified” check…
+        if not self.user.is_verified:
+            raise serializers.ValidationError(
+                "Account not verified. Please check your email for a verification link."
+            )
 
+        # any additional fields you want in the response
+        data["user_id"] = self.user.id
+        data["email"]   = self.user.email
+        return data
 
 class EmailTokenObtainPairView(TokenObtainPairView):
+    """
+    Custom view for obtaining JWT, uses the custom serializer above.
+    """
     serializer_class = EmailTokenObtainPairSerializer
-

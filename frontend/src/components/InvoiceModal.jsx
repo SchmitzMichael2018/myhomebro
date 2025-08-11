@@ -2,6 +2,7 @@ import { useState } from "react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import api from "../api";
+import Modal from "./Modal";
 
 function getStatusText(status) {
   if (status === "paid") return "Paid";
@@ -26,7 +27,7 @@ export default function InvoiceModal({ visible, onClose, invoices, category }) {
       const res = await api.patch(`/projects/invoices/${id}/${action}/`);
       if (res.status === 200) {
         alert(`Invoice ${action.replace("_", " ")} successfully.`);
-        onClose(); // Parent should refetch to update view!
+        onClose();
       } else {
         setErrorMessage(`Failed to ${action} invoice. Please try again.`);
       }
@@ -80,25 +81,8 @@ export default function InvoiceModal({ visible, onClose, invoices, category }) {
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-start p-8 overflow-y-auto z-50"
-      role="dialog"
-      aria-modal="true"
-    >
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-4xl p-6 relative">
-        <h3 className="text-2xl font-bold mb-4 text-gray-800">
-          {category} Milestone Invoices
-        </h3>
-
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute top-4 right-4 text-gray-500 hover:text-gray-800"
-          aria-label="Close Invoice Modal"
-        >
-          ✖
-        </button>
-
+    <Modal visible={visible} title={`${category} Milestone Invoices`} onClose={onClose}>
+      <div className="space-y-4">
         {errorMessage && (
           <p className="text-red-500 mb-4 text-center">{errorMessage}</p>
         )}
@@ -141,14 +125,11 @@ export default function InvoiceModal({ visible, onClose, invoices, category }) {
               </thead>
               <tbody>
                 {invoices.map((inv) => {
-                  const amount =
-                    parseFloat(inv.amount_due ?? inv.amount ?? 0);
+                  const amount = parseFloat(inv.amount_due ?? inv.amount ?? 0);
                   return (
                     <tr key={inv.id} className="border-t hover:bg-gray-50">
                       <td className="px-4 py-2 font-mono">#{inv.id}</td>
-                      <td className="px-4 py-2">
-                        {inv.project_title || inv.project_name}
-                      </td>
+                      <td className="px-4 py-2">{inv.project_title || inv.project_name}</td>
                       <td className="px-4 py-2">
                         {amount.toLocaleString("en-US", {
                           style: "currency",
@@ -196,9 +177,6 @@ export default function InvoiceModal({ visible, onClose, invoices, category }) {
           </>
         )}
       </div>
-    </div>
+    </Modal>
   );
 }
-
-
-  

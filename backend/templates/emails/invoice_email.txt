@@ -1,12 +1,17 @@
 Hi {{ homeowner_name }},
 
-You have a new invoice for:
-  Project: {{ milestone.agreement.project.title }}
-  Milestone: {{ milestone.title }} (Milestone #{{ milestone.id }})
-  Amount Due: ${{ invoice.amount_due }}
-  Due Date: {{ invoice.due_date|date:"F j, Y" }}
+You have a new invoice from your contractor for the project: "{{ invoice.agreement.project.title }}".
 
-View or pay your invoice here:
+---
+Invoice Details
+---
+
+Invoice Number: {{ invoice.invoice_number }}
+Amount Due: ${{ invoice.amount }}
+Date Issued: {{ invoice.created_at|date:"F j, Y" }}
+
+You can view and pay your invoice using the secure link below:
+
 {{ link }}
 
 Thank you for using {{ site_name }}!

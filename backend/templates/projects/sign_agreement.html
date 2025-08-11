@@ -1,59 +1,64 @@
 {% extends 'base.html' %}
+{% load static %}
 
 {% block content %}
 <div class="container my-5">
-  <h2 class="mb-4">Review &amp; Sign Agreement</h2>
+  <h2 class="mb-4 text-center">Review & Sign Your Agreement</h2>
 
-  <!-- Project & Agreement Overview -->
   <div class="card mb-4">
+    <div class="card-header">
+        <h5 class="card-title mb-0">
+            Agreement #{{ agreement.id }}: {{ agreement.project.title }}
+        </h5>
+    </div>
     <div class="card-body">
-      <h5 class="card-title">
-        Agreement #{{ agreement.id }}: {{ agreement.project.title }}
-      </h5>
-      <p><strong>Description:</strong> {{ agreement.project.description }}</p>
+      <p><strong>Description:</strong> {{ agreement.project.description|linebreaksbr|default:"No description provided." }}</p>
       <p><strong>Total Cost:</strong> ${{ agreement.total_cost|floatformat:2 }}</p>
-      <p><strong>Milestones:</strong> {{ agreement.milestones.count }} total</p>
+      <p><strong>Total Milestones:</strong> {{ agreement.milestones.count }}</p>
     </div>
   </div>
 
   <div class="row mb-4">
-    <!-- Contractor Info -->
     <div class="col-md-6">
-      <h4>Contractor Information</h4>
-      <ul class="list-unstyled">
-        <li><strong>Business:</strong> {{ agreement.contractor.business_name }}</li>
-        <li><strong>Name:</strong> {{ agreement.contractor.name }}</li>
-        <li><strong>Email:</strong> {{ agreement.contractor.email }}</li>
-        <li><strong>Phone:</strong> {{ agreement.contractor.phone }}</li>
-        <li><strong>Address:</strong> {{ agreement.contractor.address }}</li>
-        {% if agreement.contractor.license_number %}
-          <li><strong>License #:</strong> {{ agreement.contractor.license_number }}</li>
-        {% endif %}
-      </ul>
+      <div class="card h-100">
+        <div class="card-body">
+            <h4 class="card-title">Contractor Information</h4>
+            <ul class="list-unstyled">
+              <li><strong>Business:</strong> {{ agreement.contractor.business_name|default:"N/A" }}</li>
+              <li><strong>Name:</strong> {{ agreement.contractor.name }}</li>
+              <li><strong>Email:</strong> {{ agreement.contractor.email }}</li>
+              <li><strong>Phone:</strong> {{ agreement.contractor.phone|default:"N/A" }}</li>
+              {% if agreement.contractor.license_number %}
+                <li><strong>License #:</strong> {{ agreement.contractor.license_number }}</li>
+              {% endif %}
+            </ul>
+        </div>
+      </div>
     </div>
 
-    <!-- Homeowner Info -->
     <div class="col-md-6">
-      <h4>Homeowner Information</h4>
-      <ul class="list-unstyled">
-        <li><strong>Name:</strong> {{ agreement.project.homeowner.name }}</li>
-        <li><strong>Email:</strong> {{ agreement.project.homeowner.email }}</li>
-        <li><strong>Phone:</strong> {{ agreement.project.homeowner.phone }}</li>
-        <li><strong>Address:</strong> {{ agreement.project.homeowner.address }}</li>
-        <li><strong>Project Location:</strong> {{ agreement.project.project_address }}</li>
-      </ul>
+       <div class="card h-100">
+        <div class="card-body">
+            <h4 class="card-title">Homeowner Information</h4>
+            <ul class="list-unstyled">
+              <li><strong>Name:</strong> {{ agreement.project.homeowner.name }}</li>
+              <li><strong>Email:</strong> {{ agreement.project.homeowner.email }}</li>
+              <li><strong>Phone:</strong> {{ agreement.project.homeowner.phone|default:"N/A" }}</li>
+              <li><strong>Address:</strong> {{ agreement.project.homeowner.address|default:"N/A" }}</li>
+            </ul>
+        </div>
+      </div>
     </div>
   </div>
 
-  <!-- Milestone Schedule -->
-  {% if agreement.milestones.exists %}
-    <div class="card mb-4">
-      <div class="card-body">
-        <h4>Milestone Schedule</h4>
-        <table class="table table-sm">
+  <div class="card mb-4">
+    <div class="card-body">
+      <h4>Milestone Schedule</h4>
+      <div class="table-responsive">
+        <table class="table table-sm table-striped">
           <thead>
             <tr>
-              <th>#</th><th>Title</th><th>Amount</th><th>Start → End</th><th>Status</th>
+              <th>#</th><th>Title</th><th>Amount</th><th>Start Date</th><th>Completion Date</th><th>Status</th>
             </tr>
           </thead>
           <tbody>
@@ -62,52 +67,56 @@
                 <td>{{ forloop.counter }}</td>
                 <td>{{ m.title }}</td>
                 <td>${{ m.amount|floatformat:2 }}</td>
-                <td>{{ m.start_date|date:"M d, Y" }} → {{ m.completion_date|date:"M d, Y" }}</td>
+                <td>{{ m.start_date|date:"M d, Y" }}</td>
+                <td>{{ m.completion_date|date:"M d, Y" }}</td>
                 <td>
                   {% if m.completed %}
-                    <span class="text-success">✔ Completed</span>
+                    <span class="badge bg-success">Completed</span>
                   {% else %}
-                    <span class="text-warning">✘ Incomplete</span>
+                    <span class="badge bg-warning text-dark">Incomplete</span>
                   {% endif %}
                 </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="6" class="text-center text-muted">No milestones have been defined for this agreement.</td>
               </tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
     </div>
-  {% endif %}
+  </div>
 
-  <!-- Terms of Service -->
   <div class="card mb-4">
     <div class="card-body">
       <h4>Terms of Service</h4>
-      <div style="max-height:200px; overflow:auto; white-space: pre-wrap;">
-        {{ terms_text|linebreaks }}
+      <div class="p-3 border rounded" style="max-height:200px; overflow-y:auto; white-space: pre-wrap; font-size: 0.8rem; background-color: #f8f9fa;">
+        {{ terms_text|linebreaks|default:"Terms of service not available." }}
       </div>
     </div>
   </div>
 
-  <!-- Privacy Policy -->
-  <div class="card mb-4">
+  <div class="card">
     <div class="card-body">
-      <h4>Privacy Policy</h4>
-      <div style="max-height:200px; overflow:auto; white-space: pre-wrap;">
-        {{ privacy_text|linebreaks }}
-      </div>
+        <h4 class="mb-3">Electronic Signature</h4>
+        <form method="post">
+            {% csrf_token %}
+            <div class="mb-3">
+                {{ form.typed_name.label_tag }}
+                {{ form.typed_name }}
+                {% if form.typed_name.errors %}
+                    <div class="invalid-feedback d-block">
+                        {{ form.typed_name.errors.as_text }}
+                    </div>
+                {% endif %}
+            </div>
+            <button type="submit" class="btn btn-primary btn-lg">
+                Sign Agreement
+            </button>
+        </form>
     </div>
   </div>
 
-  <!-- Signature Form -->
-  <form method="post">
-    {% csrf_token %}
-    <div class="mb-3">
-      {{ form.typed_name.label_tag }}
-      {{ form.typed_name }}
-    </div>
-    <button type="submit" class="btn btn-primary">
-      Sign Agreement
-    </button>
-  </form>
 </div>
 {% endblock %}

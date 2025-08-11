@@ -1,32 +1,43 @@
 <!DOCTYPE html>
 <html>
-  <body style="font-family: sans-serif; line-height: 1.5; color: #333;">
+  <head>
+    <meta charset="utf-8" />
+    <title>You Have a New Invoice from MyHomeBro</title>
+    <style>
+      /* Basic styles for email client compatibility */
+      body { font-family: sans-serif; line-height: 1.6; color: #333; }
+      p { margin: 1rem 0; }
+      ul { list-style-type: none; padding-left: 0; }
+      li { margin-bottom: 0.5rem; }
+      a.button {
+        background-color: #1E3A8A; /* Using a color from your theme */
+        color: #ffffff;
+        padding: 12px 24px;
+        text-decoration: none;
+        border-radius: 5px;
+        display: inline-block;
+      }
+    </style>
+  </head>
+  <body>
     <p>Hi {{ homeowner_name }},</p>
 
-    <p>
-      You have a new invoice for:
-    </p>
+    <p>You have a new invoice from your contractor for the project: <strong>{{ invoice.agreement.project.title }}</strong>.</p>
+    
     <ul>
-      <li><strong>Project:</strong> {{ milestone.agreement.project.title }}</li>
-      <li><strong>Milestone:</strong> {{ milestone.title }} ({{ milestone.id }})</li>
-      <li><strong>Amount Due:</strong> ${{ invoice.amount_due }}</li>
-      <li><strong>Due Date:</strong> {{ invoice.due_date|date:"F j, Y" }}</li>
+      <li><strong>Amount Due:</strong> ${{ invoice.amount }}</li>
+      
+      <li><strong>Date Issued:</strong> {{ invoice.created_at|date:"F j, Y" }}</li>
+      
+      <li><strong>Invoice Number:</strong> {{ invoice.invoice_number }}</li>
     </ul>
 
     <p style="text-align:center; margin: 24px 0;">
-      <a href="{{ link }}"
-         style="
-           background-color: #2563eb;
-           color: #fff;
-           padding: 12px 20px;
-           text-decoration: none;
-           border-radius: 4px;
-           display: inline-block;
-         ">
+      <a href="{{ link }}" class="button">
         View or Pay Invoice
       </a>
     </p>
 
-    <p>Thank you for using {{ site_name }}!</p>
+    <p>Thank you,<br/>The MyHomeBro Team</p>
   </body>
 </html>

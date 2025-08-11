@@ -1,0 +1,319 @@
+MyHomeBro Terms of Service
+Last Updated: June 6, 2025
+
+Welcome to MyHomeBro, a platform connecting homeowners and independent contractors. These Terms of Service (“Terms”) are a binding legal agreement between you and MyHomeBro. By accessing or using our services, you agree to be bound by these Terms.
+
+---
+
+1. Definitions
+
+---
+
+a. “Platform” refers to the MyHomeBro website, API, mobile apps, and any other software, services, or tools provided by MyHomeBro.
+b. “Contractor” means a user who provides renovation, construction, or related services through the Platform.
+c. “Homeowner” means a user who requests, pays for, or receives services through the Platform.
+d. “Agreement” means the individually generated contract between a Contractor and a Homeowner, facilitated by the Platform.
+e. “Addendum” means any supplemental contract or warranty PDF uploaded by the Contractor and appended to the base Agreement.
+f. “Fees” means any charges, subscription fees, transaction fees, or processing fees collected by MyHomeBro.
+g. “TOS” means these Terms of Service.
+h. “Privacy Policy” refers to MyHomeBro’s privacy policy, which is incorporated by reference in Section 11.
+
+---
+
+2. Overview
+
+---
+
+MyHomeBro is a neutral third-party platform that facilitates connections and payments between Homeowners and independent Contractors. We do not provide construction or contracting services ourselves.
+
+---
+
+3. Eligibility
+
+---
+
+You must be at least 18 years old and legally capable of entering into binding contracts to use our Platform. By registering for or using the Platform, you represent and warrant that you meet these requirements and that all information you provide is truthful and accurate.
+
+---
+
+4. Account Registration and Profile Requirements
+
+---
+
+a. Account Creation
+• You must provide a valid email address, phone number, and any other required information when creating an account.
+• You are responsible for maintaining the confidentiality of your login credentials. Immediately notify us if you suspect unauthorized use of your account.
+
+b. Profile Accuracy
+• Contractors must supply truthful, current, and complete information, including business name, license number (if required by local regulations), skills, and portfolio details.
+• Homeowners must supply accurate project descriptions, property details, and payment information.
+• You agree to update your profile promptly if your information changes.
+
+---
+
+5. User Roles & Independent Contractors
+
+---
+
+a. User Roles
+• Homeowners may review Agreements and approve payments.
+• Contractors may create Agreements, add Milestones, and receive payments.
+• All users must:
+– Be at least 18 years old
+– Provide accurate information
+– Comply with applicable laws
+
+b. Independent Contractor Status
+• Contractors are not employees of MyHomeBro. They operate independently and are solely responsible for:
+– The quality and timeliness of work
+– Licensing, insurance, and tax obligations
+• MyHomeBro does not warrant, vet, or supervise contractor services.
+
+---
+
+6. Agreement Generation and Signatures
+
+---
+
+a. Base Agreement
+• When a Contractor and Homeowner agree on scope, price, and Milestones, the Platform generates a base Agreement.
+• The base Agreement includes:
+1\. Parties’ names and contact information
+2\. Project scope of work and deliverables
+3\. Milestone schedule and payment (escrow) terms
+4\. Standard Warranty clause (if Warranty Duration is specified)
+5\. Escrow rules and fund release procedure
+6\. Dispute Resolution process
+7\. Limitation of Liability and Indemnification provisions
+8\. Electronic signature blocks for both parties
+
+b. Electronic Signatures
+• Both Contractor and Homeowner must electronically sign the base Agreement.
+• Each signature is captured as a typed name, timestamp, and IP address.
+• Electronic signatures have the same legal force and effect as handwritten signatures.
+
+c. Warranty Clause (Default)
+• If the Contractor specifies a Warranty Duration (in months) but does not upload a supplemental PDF, the Platform automatically inserts the following standard Warranty clause into the base Agreement:
+
+```
+ Section X: Workmanship Warranty  
+ 
+ The Contractor warrants to the Homeowner that all labor and workmanship performed under this Agreement shall be free from defects for a period of {Warranty Duration} months following the date of final acceptance of work. During this Warranty period, the Contractor shall, at no additional cost to the Homeowner, correct or replace any portion of the work found to be defective or not in compliance with the terms of this Agreement.
+
+ Warranty Exclusions:  
+   1. Normal wear and tear, settlement, or damage caused by misuse, abuse, accident, neglect, or natural disasters (e.g., floods, earthquakes).  
+   2. Damage resulting from lack of proper maintenance, modifications, or repairs performed by parties other than the Contractor.  
+   3. Materials, appliances, or fixtures supplied by third parties (e.g., HVAC units, tile, cabinets) are covered only by the original manufacturer’s warranty.  
+   4. Minor cosmetic imperfections (e.g., small cracks in grout, paint touch-ups) unless specifically noted in writing before final acceptance.
+
+ Claim Process:  
+   • The Homeowner must provide written notice to the Contractor at the address listed on page 1 of this Agreement, including a description and photographic evidence of the alleged defect, within {Warranty Duration} months of final acceptance.  
+   • The Contractor shall inspect any claimed defect within ten (10) business days of receiving notice. If the defect is covered under this Warranty, the Contractor will initiate repair or replacement work within thirty (30) calendar days.  
+   • If the Contractor fails to cure the defect within the specified timeframe, the Homeowner may engage a licensed third party to perform the repair. The Contractor agrees to reimburse the Homeowner for reasonable costs up to a maximum of 125% of the Contractor’s original cost for that portion of the work, upon receipt of proper invoices and documentation.
+
+ Limitation of Liability for Warranty Claims:  
+   • The above remedies are the sole and exclusive remedies for breach of this Warranty.  
+   • Under no circumstances shall the Contractor be liable for any incidental, consequential, or special damages arising out of or in connection with this Warranty.  
+```
+
+---
+
+7. Contractor Uploads and Addenda
+
+---
+
+a. Supplemental Contract / Warranty PDF
+• Contractors may upload a supplemental contract or warranty (“Addendum”) in PDF format that will be appended to the base Agreement.
+• MyHomeBro does not vet, endorse, or guarantee the legal validity of any Contractor-supplied Addendum. Any terms contained in an Addendum are the sole responsibility of the Contractor.
+• If a Contractor uploads an Addendum, the final Agreement PDF will consist of:
+1\. The MyHomeBro-generated base Agreement (including any default Warranty clause).
+2\. The Contractor’s uploaded Addendum, appended immediately after the base Agreement.
+
+b. Conflict of Terms
+• If an Addendum’s terms conflict with mandatory provisions in these Terms or in the MyHomeBro base Agreement (for example, limiting arbitration rights in a manner not permitted by law), the base Agreement’s language will prevail to the extent required by law.
+
+c. Acknowledgment of Addenda
+• By signing the Agreement, both Contractor and Homeowner acknowledge and accept the contents of the Addendum (if any) as part of the Agreement.
+• Contractors agree to honor all Addendum provisions. Failure to honor Addendum commitments may result in platform penalties, suspension, or removal from MyHomeBro.
+
+---
+
+8. Escrow and Payments
+
+---
+
+a. Escrow Setup
+• Homeowners fund project payments into a third-party escrow account (Stripe).
+• Funds are held in escrow until Milestone conditions are met.
+
+b. Milestone Releases
+• When a Contractor marks a Milestone as complete, the Homeowner has a defined acceptance window (e.g., 5 business days) to confirm.
+• If the Homeowner confirms completion or if the window closes without dispute, funds are released to the Contractor.
+
+c. Platform Fees
+• MyHomeBro charges a transaction fee equal to 5% of the total project cost, which is deducted from each Milestone release.
+• Contractors agree to these fees at the time of account creation.
+• Homeowners are also responsible for any payment processing or currency conversion fees charged by Stripe.
+
+d. Payment Disputes
+• If a Homeowner disputes a Milestone, they must use the Platform’s messaging and dispute resolution tools.
+• The disputed funds remain in escrow until the dispute is resolved or escalated to arbitration as set forth in Section 9.
+
+---
+
+9. Dispute Resolution
+
+---
+
+a. Milestone-Level Disputes
+• Homeowners and Contractors should attempt to resolve disputes informally via the Platform’s messaging system.
+• If informal resolution fails, either party may request MyHomeBro’s mediation service. MyHomeBro will assign a neutral third party to review documentation and provide a non-binding recommendation within 10 business days.
+
+b. Final Disputes and Arbitration
+• If either party rejects a mediation recommendation, or if the dispute pertains to final project payment or major defects after project completion, both parties agree to binding arbitration under the rules of the American Arbitration Association (AAA) in Bexar County, Texas.
+• The arbitration shall be conducted by a single neutral arbitrator.
+• You may seek injunctive relief in a court of competent jurisdiction prior to or during arbitration if necessary to prevent irreparable harm.
+
+---
+
+10. Termination
+
+---
+
+a. Account Termination by MyHomeBro
+• MyHomeBro may suspend or terminate your account if you:
+1\. Violate these Terms, any Platform policies, or applicable laws.
+2\. Provide false or misleading information.
+3\. Engage in fraudulent activity or non-payment.
+4\. Misuse the Platform or harass other users.
+• Termination may include removal of your account, deletion of data, or permanent ban.
+
+b. Account Termination by User
+• You may deactivate your account at any time by emailing [support@myhomebro.com](mailto:support@myhomebro.com).
+• Deactivation will prevent new projects, but any active Agreements or outstanding obligations must still be honored (e.g., completing an in-progress project, resolving any disputes, or fulfilling warranties).
+
+c. Project-Level Cancellation
+• Prior to final signatures, either party may cancel the project without penalty.
+• After signatures, cancellation must comply with the base Agreement’s cancellation and termination clauses.
+• Any prepaid escrow funds will be refunded to the Homeowner only if mutually agreed or per the dispute/mediation process.
+
+---
+
+11. Privacy Policy
+
+---
+
+Your privacy is important to us. Please review our [Privacy Policy](https://www.myhomebro.com/privacy) for details on how we collect, use, and share your personal information. By using the Platform, you consent to our collection and use of your data as described in the Privacy Policy.
+
+---
+
+12. Intellectual Property
+
+---
+
+a. Platform Content
+• All content on the Platform—text, graphics, logos, images, videos, software, and source code—is the property of MyHomeBro or its licensors and is protected by copyright, trademark, and other laws.
+• You may not copy, modify, publish, transmit, distribute, or create derivative works of any Platform content without our prior written permission.
+
+b. User-Generated Content
+• When you upload content (e.g., project photos, messages, Addenda), you grant MyHomeBro a non-exclusive, worldwide, royalty-free, transferable license to use, reproduce, modify, publish, and distribute such content in connection with the Platform’s operation.
+• Contractors warrant that any Addendum or uploaded content does not infringe on any third-party rights (copyright, trademark, or otherwise).
+
+---
+
+13. Indemnification
+
+---
+
+a. Contractor Indemnification
+Contractors agree to defend, indemnify, and hold harmless MyHomeBro, its officers, directors, employees, and agents from any claims, liabilities, damages, losses, or expenses (including reasonable attorneys’ fees) arising out of or in any way connected with:
+
+1. Contractor’s provision of services, including any breach of warranty or negligence.
+2. Any Addendum or supplemental contract uploaded by the Contractor.
+3. Contractor’s violation of these Terms or any applicable laws or regulations.
+
+b. Homeowner Indemnification
+Homeowners agree to defend, indemnify, and hold harmless MyHomeBro from any claims, liabilities, damages, losses, or expenses arising out of or in any way connected with:
+
+1. Homeowner’s failure to pay amounts due under an Agreement in accordance with its terms.
+2. Homeowner’s breach of these Terms or any applicable laws or regulations.
+
+---
+
+14. Disclaimers; Limitation of Liability
+
+---
+
+a. PLATFORM “AS-IS” DISCLAIMER
+• MyHomeBro provides the Platform and base Agreement templates “as-is” and “as available.”
+• We disclaim all warranties, express or implied, including but not limited to warranties of merchantability, fitness for a particular purpose, and non-infringement.
+
+b. SERVICE LIMITATIONS
+• MyHomeBro is not a party to any Agreement between Contractor and Homeowner and does not supervise, direct, or control Contractors’ work.
+• We do not guarantee the quality, safety, or legality of any work performed by Contractors.
+• We do not guarantee any specific outcome, timeline, or performance standard for projects.
+
+c. LIMITATION OF LIABILITY
+• To the fullest extent permitted by law, MyHomeBro’s total liability for any and all claims arising from or relating to these Terms or the Platform shall not exceed the total amount of platform fees paid by the affected user during the twelve (12) months preceding the event giving rise to the claim.
+• In no event shall MyHomeBro be liable for any indirect, incidental, special, punitive, or consequential damages, including but not limited to loss of profits or business interruption.
+
+---
+
+15. Governing Law and Venue
+
+---
+
+These Terms shall be governed by and construed in accordance with the laws of the State of Texas, without regard to its conflict of laws principles. All disputes arising from or related to these Terms shall be resolved exclusively in the state or federal courts located in Bexar County, Texas. You consent to personal jurisdiction and venue in those courts.
+
+---
+
+16. Changes to Terms
+
+---
+
+MyHomeBro may revise these Terms at any time by posting an updated version to our website or sending notice to the email address on file. The revised Terms will be effective at least thirty (30) days after posting or delivery of notice, except that changes related to Fees, Dispute Resolution, or Arbitration will be effective only after sixty (60) days. Continued use of the Platform after the effective date constitutes acceptance of the revised Terms.
+
+---
+
+17. Severability
+
+---
+
+If any provision of these Terms is found to be invalid, illegal, or unenforceable in any respect, the remaining provisions shall continue in full force and effect, and the invalid, illegal, or unenforceable provision shall be modified to the minimum extent necessary to make it valid and enforceable.
+
+---
+
+18. Waiver
+
+---
+
+No waiver of any breach or default hereunder shall be deemed a waiver of any subsequent breach or default. Any waiver must be in writing and signed by an authorized representative of MyHomeBro.
+
+---
+
+19. Entire Agreement
+
+---
+
+These Terms, together with all Platform policies (including the Privacy Policy) and any Addenda incorporated herein by reference, constitute the entire agreement between you and MyHomeBro regarding the subject matter hereof and supersede all prior or contemporaneous agreements, communications, and proposals.
+
+---
+
+Signatures and Acceptance
+__________________________
+By creating an account, signing an Agreement, uploading any Addendum, or otherwise using the Platform, you acknowledge that you have read, understood, and agreed to:
+a) These Terms of Service,
+b) MyHomeBro’s Privacy Policy,
+c) The MyHomeBro-generated base Agreement (including any standard Warranty clause, if specified), and
+d) Any Contractor-supplied Addendum (if uploaded).
+
+Electronic signatures shall have the same legal effect as handwritten signatures.
+
+---
+
+Contact Information
+____________________
+If you have any questions or concerns about these Terms, please contact us at:
+[support@myhomebro.com](mailto:support@myhomebro.com)
+MyHomeBro, 123 Renovation Blvd, Suite 100, San Antonio, Texas, USA
++1 (555) 123-4567

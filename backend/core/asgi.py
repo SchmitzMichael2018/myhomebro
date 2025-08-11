@@ -1,29 +1,24 @@
-"""
-ASGI config for core project with WebSocket support.
-
-This setup allows for HTTP and WebSocket connections, providing real-time functionality
-for notifications, chat, and other live features.
-"""
+# core/asgi.py
 
 import os
 from django.core.asgi import get_asgi_application
 from channels.routing import ProtocolTypeRouter, URLRouter
-from channels.auth import AuthMiddlewareStack
-from channels.security.websocket import AllowedHostsOriginValidator
+from dotenv import load_dotenv
+from .jwt_middleware import JwtAuthMiddleware
+import chat.routing
+
+# Load environment variables from .env file.
+load_dotenv()
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
 
-from core.websocket_routing import websocket_urlpatterns  # Custom WebSocket URLs
-from core.jwt_middleware import JwtAuthMiddleware  # ✅ Custom JWT WebSocket Authentication
+django_asgi_app = get_asgi_application()
 
 application = ProtocolTypeRouter({
-    "http": get_asgi_application(),  # Default HTTP support
-    "websocket": AllowedHostsOriginValidator(
-        JwtAuthMiddleware(  # ✅ Secure JWT WebSocket Authentication
-            URLRouter(websocket_urlpatterns)
+    "http": django_asgi_app,
+    "websocket": JwtAuthMiddleware(
+        URLRouter(
+            chat.routing.websocket_urlpatterns
         )
     ),
 })
-
-
-

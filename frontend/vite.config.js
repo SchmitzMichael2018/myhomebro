@@ -1,3 +1,6 @@
+// frontend/vite.config.js
+console.log('🛠️  Loaded Vite config:', __filename, 'NODE_ENV=', process.env.NODE_ENV);
+
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -24,46 +27,26 @@ export default defineConfig(({ mode }) => ({
         display: 'standalone',
         scope: '/',
         start_url: '/',
+        // Use relative paths so they work with base '/static/'
         icons: [
-          { src: '/favicon-192x192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/favicon-512x512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'favicon-192x192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'favicon-512x512.png', sizes: '512x512', type: 'image/png' },
         ],
       },
+      workbox: {
+        navigateFallbackDenylist: [/^\/api\//, /^\/admin\//],
+      },
     }),
-    mode === 'production' &&
-      compression({
-        algorithm: 'gzip',
-        ext: '.gz',
-        threshold: 10240,
-      }),
-    mode === 'production' &&
-      compression({
-        algorithm: 'brotliCompress',
-        ext: '.br',
-        threshold: 10240,
-      }),
-  ],
+    mode === 'production' && compression({ algorithm: 'gzip', ext: '.gz', threshold: 10240 }),
+    mode === 'production' && compression({ algorithm: 'brotliCompress', ext: '.br', threshold: 10240 }),
+  ].filter(Boolean),
 
   server: {
     host: true,
     port: 3000,
-    strictPort: true,
-    open: true,
-    https: false,
-    cors: true,
-
-    // ─── Proxy /api → Django on 8000 ───────────────────────────────────────────
     proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:8000',
-        changeOrigin: true,
-        secure: false,
-        ws: true,
-      },
-    },
-
-    hmr: {
-      overlay: true,
+      '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true, secure: false, ws: true },
+      '/static': { target: 'http://127.0.0.1:8000', changeOrigin: true },
     },
   },
 
@@ -72,27 +55,9 @@ export default defineConfig(({ mode }) => ({
     assetsDir: 'assets',
     sourcemap: mode === 'development',
     minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: true,
-        drop_debugger: true,
-      },
-    },
-    emptyOutDir: true,
+    terserOptions: { compress: { drop_console: true, drop_debugger: true } },
   },
 
-  base: mode === 'production' ? '/myhomebro/' : '/',
-  define: {
-    'process.env.VITE_BASE_URL': JSON.stringify(
-      mode === 'production' ? '/myhomebro/' : '/'
-    ),
-  },
+  // ⬇️ Key line: use /static/ so Django/WhiteNoise serves your assets
+  base: mode === 'production' ? '/static/' : '/',
 }));
-
-
-
-
-
-
-
-

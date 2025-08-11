@@ -1,3 +1,4 @@
+
 /* === Base Tailwind Setup === */
 @tailwind base;
 @tailwind components;
@@ -52,10 +53,7 @@
   .button-group {
     @apply flex justify-center space-x-4 mt-4;
   }
-}
 
-/* === Authentication Page Layout === */
-@layer components {
   .auth-page {
     @apply flex justify-center items-center min-h-screen bg-gradient-to-br from-blue-100 to-blue-300;
   }
@@ -68,10 +66,7 @@
     width: 120px;
     margin: 0 auto 1rem auto;
   }
-}
 
-/* === Dashboard Layout === */
-@layer components {
   .dashboard-container {
     @apply p-8;
   }
@@ -91,10 +86,7 @@
   .invoice-card p {
     @apply text-gray-600 text-sm;
   }
-}
 
-/* === Landing Page Styling === */
-@layer components {
   .landing-page {
     @apply flex flex-col items-center justify-center min-h-screen bg-gradient-to-r from-blue-50 to-blue-100 text-center;
   }
@@ -117,6 +109,29 @@
 
   .landing-page .secondary-button {
     @apply px-6 py-2 text-lg font-semibold text-blue-600 border border-blue-600 rounded-lg transition duration-300 hover:bg-blue-600 hover:text-white;
+  }
+
+  .card {
+    padding: 2rem;
+    background-color: #ffffff;
+    border-radius: 0.75rem;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    transition: box-shadow 300ms;
+  }
+
+  .card:hover {
+    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15);
+  }
+
+  .read-the-docs {
+    color: #333;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    margin-top: 1rem;
+  }
+
+  .logo-spin {
+    animation: logo-spin infinite 20s linear;
   }
 }
 
@@ -145,6 +160,12 @@
   }
 }
 
-
-
-
+/* === Animation Keyframes === */
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}

@@ -1,9 +1,5 @@
-"""
-accounts/password_reset_views.py
-
-Handles secure password reset using JSON endpoints.
-"""
-from rest_framework import status
+# accounts/password_reset_views.py
+from rest_framework import status, serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
@@ -14,19 +10,30 @@ from django.conf import settings
 
 User = get_user_model()
 
+# --- Serializers for Validation ---
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    new_password = serializers.CharField(required=True, write_only=True)
+
+# --- Updated Views ---
+
 class PasswordResetRequestView(APIView):
     def post(self, request):
-        email = request.data.get("email")
-        if not email:
-            return Response({"error": "Email is required."}, status=status.HTTP_400_BAD_REQUEST)
-
+        serializer = PasswordResetRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        email = serializer.validated_data['email']
         try:
             user = User.objects.get(email=email)
             uid = urlsafe_base64_encode(str(user.pk).encode()).decode()
             token = default_token_generator.make_token(user)
-            reset_url = f"{settings.SITE_URL}/password-reset/confirm/{uid}/{token}/"
+            # This URL should point to your frontend application's reset page
+            reset_url = f"{settings.FRONTEND_URL}/password-reset/confirm/?uid={uid}&token={token}"
             
-            # Send email (Console or SMTP)
             send_mail(
                 "Password Reset - MyHomeBro",
                 f"Click here to reset your password: {reset_url}",
@@ -36,25 +43,28 @@ class PasswordResetRequestView(APIView):
             )
             return Response({"message": "Password reset link sent to your email."})
         except User.DoesNotExist:
-            return Response({"error": "User with this email does not exist."}, status=status.HTTP_404_NOT_FOUND)
-
+            # Return a generic message to avoid confirming if an email exists or not
+            return Response({"message": "If an account with that email exists, a password reset link has been sent."})
 
 class PasswordResetConfirmView(APIView):
     def post(self, request, uidb64, token):
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
         try:
             uid = urlsafe_base64_decode(uidb64).decode()
             user = User.objects.get(pk=uid)
             if default_token_generator.check_token(user, token):
-                user.set_password(request.data.get("new_password"))
+                user.set_password(serializer.validated_data["new_password"])
                 user.save()
-                return Response({"message": "Password reset successful."})
-            return Response({"error": "Invalid token."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"message": "Password has been reset successfully."})
+            
+            return Response({"error": "Invalid or expired token."}, status=status.HTTP_400_BAD_REQUEST)
         except (TypeError, ValueError, OverflowError, User.DoesNotExist):
             return Response({"error": "Invalid reset link."}, status=status.HTTP_400_BAD_REQUEST)
 
-
+# This view is often not needed if the frontend handles the "complete" page
 class PasswordResetCompleteView(APIView):
     def get(self, request):
-        return Response({"message": "Password reset completed."})
-
-
+        return Response({"message": "Password reset process is complete. You can now log in with your new password."})

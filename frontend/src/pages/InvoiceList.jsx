@@ -1,3 +1,5 @@
+// src/pages/InvoiceList.jsx
+
 import React, { useState, useEffect, useMemo } from "react";
 import api from "../api";
 
@@ -6,6 +8,7 @@ export default function InvoiceList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [loadingId, setLoadingId] = useState(null);
 
   const fetchInvoices = async () => {
@@ -27,25 +30,36 @@ export default function InvoiceList() {
   }, []);
 
   const filteredInvoices = useMemo(() => {
-    if (!searchTerm) return invoices;
-    return invoices.filter((inv) => {
-      const proj = inv.project_title?.toLowerCase() || "";
-      const home = inv.homeowner_name?.toLowerCase() || "";
-      return (
-        proj.includes(searchTerm.toLowerCase()) ||
-        home.includes(searchTerm.toLowerCase())
-      );
-    });
-  }, [invoices, searchTerm]);
+    return invoices
+      .filter((inv) => {
+        if (statusFilter === "all") return true;
+        return inv.status === statusFilter;
+      })
+      .filter((inv) => {
+        if (!searchTerm) return true;
+        const proj = inv.project_title?.toLowerCase() || "";
+        const home = inv.homeowner_name?.toLowerCase() || "";
+        return (
+          proj.includes(searchTerm.toLowerCase()) ||
+          home.includes(searchTerm.toLowerCase())
+        );
+      });
+  }, [invoices, searchTerm, statusFilter]);
 
-  // PATCH is more RESTful than POST for these status changes
+  const summary = useMemo(() => {
+    const total = invoices.length;
+    const pending = invoices.filter((inv) => inv.status === "pending").length;
+    const approved = invoices.filter((inv) => inv.status === "approved").length;
+    const disputed = invoices.filter((inv) => inv.status === "disputed").length;
+    const paid = invoices.filter((inv) => inv.status === "paid").length;
+    return { total, pending, approved, disputed, paid };
+  }, [invoices]);
+
   const handleAction = async (id, action) => {
     setLoadingId(id);
     setError("");
     try {
-      const { data: updated } = await api.patch(
-        `/projects/invoices/${id}/${action}/`
-      );
+      const { data: updated } = await api.patch(`/projects/invoices/${id}/${action}/`);
       setInvoices((prev) =>
         prev.map((inv) => (inv.id === updated.id ? updated : inv))
       );
@@ -66,17 +80,33 @@ export default function InvoiceList() {
 
   return (
     <div className="p-6">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold">Invoices</h2>
-        <input
-          type="text"
-          placeholder="Search by project or homeowner..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="border px-4 py-2 rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        {/* Optional Refresh Button */}
-        {/* <button onClick={fetchInvoices} className="ml-4 text-blue-600 hover:underline">Refresh</button> */}
+      <div className="flex flex-wrap justify-between items-center mb-4 gap-4">
+        <div>
+          <h2 className="text-2xl font-bold">Invoices</h2>
+          <p className="text-sm text-gray-500">
+            Total: {summary.total}, Pending: {summary.pending}, Approved: {summary.approved}, Disputed: {summary.disputed}, Paid: {summary.paid}
+          </p>
+        </div>
+        <div className="flex gap-2 items-center">
+          <input
+            type="text"
+            placeholder="Search by project or homeowner..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="border px-4 py-2 rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="border px-3 py-2 rounded shadow-sm"
+          >
+            <option value="all">All Statuses</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Approved</option>
+            <option value="disputed">Disputed</option>
+            <option value="paid">Paid</option>
+          </select>
+        </div>
       </div>
 
       {loading ? (
@@ -90,29 +120,19 @@ export default function InvoiceList() {
       ) : (
         filteredInvoices.map((inv) => {
           const amount = inv.amount_due ?? inv.amount;
-          const statusLabel =
-            inv.status.charAt(0).toUpperCase() + inv.status.slice(1);
+          const statusLabel = inv.status.charAt(0).toUpperCase() + inv.status.slice(1);
           return (
-            <div
-              key={inv.id}
-              className="bg-white shadow rounded p-4 mb-4 space-y-2"
-            >
+            <div key={inv.id} className="bg-white shadow rounded p-4 mb-4 space-y-2">
               <div className="font-semibold">Project: {inv.project_title || "-"}</div>
               <div>Homeowner: {inv.homeowner_name || "-"}</div>
               <div>
-                Amount Due:{" "}
-                {parseFloat(amount || 0).toLocaleString("en-US", {
+                Amount Due: {parseFloat(amount || 0).toLocaleString("en-US", {
                   style: "currency",
                   currency: "USD",
                 })}
               </div>
               <div>
-                Status:{" "}
-                <span
-                  className={`px-2 py-1 rounded ${statusStyles[inv.status] || "bg-gray-200"}`}
-                >
-                  {statusLabel}
-                </span>
+                Status: <span className={`px-2 py-1 rounded ${statusStyles[inv.status] || "bg-gray-200"}`}>{statusLabel}</span>
               </div>
 
               <div className="mt-2 flex flex-wrap gap-2">
@@ -123,7 +143,6 @@ export default function InvoiceList() {
                       onClick={() => handleAction(inv.id, "approve")}
                       disabled={loadingId === inv.id}
                       className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600"
-                      aria-label={`Approve invoice #${inv.id}`}
                     >
                       {loadingId === inv.id ? "..." : "Approve"}
                     </button>
@@ -132,7 +151,6 @@ export default function InvoiceList() {
                       onClick={() => handleAction(inv.id, "dispute")}
                       disabled={loadingId === inv.id}
                       className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
-                      aria-label={`Dispute invoice #${inv.id}`}
                     >
                       {loadingId === inv.id ? "..." : "Dispute"}
                     </button>
@@ -145,7 +163,6 @@ export default function InvoiceList() {
                     onClick={() => handleAction(inv.id, "mark_paid")}
                     disabled={loadingId === inv.id}
                     className="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600"
-                    aria-label={`Mark invoice #${inv.id} as paid`}
                   >
                     {loadingId === inv.id ? "..." : "Mark Paid"}
                   </button>
@@ -158,8 +175,3 @@ export default function InvoiceList() {
     </div>
   );
 }
-
-
-
-
-

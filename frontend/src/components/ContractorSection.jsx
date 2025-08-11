@@ -1,6 +1,9 @@
-import EarningsChart from "./EarningsChart";
+// src/components/ContractorSection.jsx
+
 import React, { useState, useMemo } from "react";
+import EarningsChart from "./EarningsChart";
 import StatCard from "./StatCard";
+import ContractorProfile from "./ContractorProfile";
 
 export default function ContractorSection({ section, invoices }) {
   return (
@@ -34,24 +37,24 @@ function renderSectionContent(section, invoices) {
     case "Send Message":
       return <SendMessageSection />;
     default:
+      console.warn(`Unhandled section: ${section}`);
       return <p className="text-gray-500">Select a section to view details.</p>;
   }
 }
 
-// --- Dashboard Section
 function DashboardSection({ invoices }) {
   const totalInvoices = invoices.length;
   const paidInvoices = invoices.filter((inv) => inv.status === "paid").length;
   const unpaidInvoices = invoices.filter((inv) => inv.status !== "paid").length;
   const totalAmount = invoices
-    .filter(inv => inv.status === "paid")
+    .filter((inv) => inv.status === "paid")
     .reduce((acc, inv) => acc + (parseFloat(inv.amount_due) || 0), 0)
     .toFixed(2);
 
   return (
     <>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <StatCard label="Total Invoices" value={totalInvoices} icon="🧾" />
+        <StatCard label="Total Invoices" value={totalInvoices} icon="📟" />
         <StatCard label="Paid Invoices" value={paidInvoices} icon="✅" />
         <StatCard label="Unpaid Invoices" value={unpaidInvoices} icon="❌" />
         <StatCard label="Total Earnings" value={`$${totalAmount}`} icon="💵" />
@@ -61,7 +64,6 @@ function DashboardSection({ invoices }) {
   );
 }
 
-// --- Agreements Section (placeholder for now)
 function AgreementsSection() {
   return (
     <div>
@@ -77,7 +79,6 @@ function AgreementsSection() {
   );
 }
 
-// --- Invoices Section
 function InvoicesSection({ invoices }) {
   return (
     <div>
@@ -98,32 +99,26 @@ function InvoicesSection({ invoices }) {
   );
 }
 
-// --- Earnings Section
 function EarningsSection({ invoices }) {
   return <EarningsChart invoices={invoices} />;
 }
 
-// --- Calendar Section
 function CalendarSection() {
-  return <p>Calendar functionality coming soon!</p>;
+  return <p className="text-gray-500 italic">Calendar functionality coming soon!</p>;
 }
 
-// --- Customers Section
 function CustomersSection() {
-  return <p>Customer management page coming soon!</p>;
+  return <p className="text-gray-500 italic">Customer management page coming soon!</p>;
 }
 
-// --- Disputes Section
 function DisputesSection() {
-  return <p>Dispute resolution center coming soon!</p>;
+  return <p className="text-gray-500 italic">Dispute resolution center coming soon!</p>;
 }
 
-// --- Profile Section
 function ProfileSection() {
-  return <p>Profile management coming soon!</p>;
+  return <ContractorProfile />;
 }
 
-// --- Send Message Section
 function SendMessageSection() {
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
@@ -135,7 +130,6 @@ function SendMessageSection() {
     setLoading(true);
     setStatus("");
     try {
-      // Simulate message sending
       await new Promise((resolve) => setTimeout(resolve, 1000));
       setStatus("✅ Message sent successfully.");
     } catch (error) {
@@ -175,5 +169,3 @@ function SendMessageSection() {
     </form>
   );
 }
-
-

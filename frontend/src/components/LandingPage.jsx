@@ -1,6 +1,9 @@
+// src/components/LandingPage.jsx
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import logo from "/myhomebro_logo.png"; // adjust if needed
+import logo from '../assets/myhomebro_logo.png'; // ✅ relative to LandingPage.jsx
+
+console.log("Rendering the REAL LandingPage.jsx!");
 
 const quickPoints = [
   { icon: "🔒", text: "Escrow-secured payments for true peace of mind." },
@@ -17,21 +20,25 @@ const features = [
   { icon: "📈", title: "Earnings Report", text: "See all project earnings in one place with downloadable reports." },
 ];
 
-export default function LandingPage() {
+export default function LandingPage({ onLoginClick }) {
   const navigate = useNavigate();
 
   return (
     <div className="relative min-h-screen flex flex-col items-center justify-center overflow-x-hidden bg-gradient-to-br from-blue-900 via-blue-700 to-yellow-400">
-      {/* Top-right Sign In / Sign Up */}
       <div className="absolute top-0 right-0 w-full flex justify-end px-8 py-6 z-30">
         <button
+          type="button"
           className="mr-6 text-white/90 hover:text-yellow-300 font-semibold text-lg"
-          onClick={() => navigate("/signin")}
+          onClick={() => {
+            console.log("🔔 Top-right Sign In clicked");
+            onLoginClick();
+          }}
           aria-label="Sign In"
         >
           Sign In
         </button>
         <button
+          type="button"
           className="bg-yellow-400 hover:bg-yellow-500 text-blue-900 font-bold py-2 px-5 rounded-xl shadow transition text-lg"
           onClick={() => navigate("/signup")}
           aria-label="Sign Up"
@@ -52,7 +59,7 @@ export default function LandingPage() {
         transition={{ repeat: Infinity, duration: 10, ease: "easeInOut" }}
       />
 
-      {/* Content */}
+      {/* Main content */}
       <div className="z-10 flex flex-col items-center w-full max-w-2xl px-4 pt-14">
         <motion.img
           src={logo}
@@ -80,6 +87,7 @@ export default function LandingPage() {
         >
           Secure Escrow Payments for Contractors and Homeowners.
         </motion.p>
+
         <motion.p
           className="font-semibold text-white text-center mb-8"
           initial={{ y: 30, opacity: 0 }}
@@ -96,7 +104,7 @@ export default function LandingPage() {
             <motion.div
               key={i}
               className="bg-white/90 px-6 py-4 rounded-2xl shadow-lg text-blue-900 font-semibold flex items-center gap-3 min-w-[220px] text-base hover:scale-105 transition-transform cursor-pointer"
-              whileHover={{ scale: 1.07, boxShadow: "0 6px 32px #0002" }}
+              whileHover={{ scale: 1.07 }}
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.7 + i * 0.13, duration: 0.5 }}
@@ -119,7 +127,10 @@ export default function LandingPage() {
           <motion.button
             className="border-2 border-white/70 text-white hover:bg-blue-800 font-bold py-3 px-10 rounded-2xl text-xl shadow-xl transition duration-150 focus:ring-2 focus:ring-blue-200"
             whileHover={{ scale: 1.08 }}
-            onClick={() => navigate("/signin")}
+            onClick={() => {
+              console.log("🔔 CTA Sign In clicked");
+              onLoginClick();
+            }}
             aria-label="Sign In"
           >
             Sign In
@@ -127,7 +138,6 @@ export default function LandingPage() {
         </div>
       </div>
 
-      {/* Horizontal Feature Section */}
       <div className="w-full max-w-6xl mx-auto mt-2 mb-14 px-2">
         <div className="flex gap-7 overflow-x-auto py-4 px-1 scrollbar-thin scrollbar-thumb-blue-200 scrollbar-track-transparent">
           {features.map((feature, idx) => (
@@ -143,7 +153,6 @@ export default function LandingPage() {
         </div>
       </div>
 
-      {/* Trust section (optional) */}
       <motion.div
         className="w-full flex flex-col items-center gap-2 mt-2"
         initial={{ opacity: 0 }}
@@ -166,15 +175,3 @@ export default function LandingPage() {
     </div>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-

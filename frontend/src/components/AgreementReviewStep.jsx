@@ -1,4 +1,10 @@
+import React, { useRef } from 'react';
+import { useReactToPrint } from 'react-to-print';
+
 export default function AgreementReviewStep({ data, onBack, onSubmit }) {
+  const printRef = useRef();
+  const handlePrint = useReactToPrint({ content: () => printRef.current });
+
   const {
     homeownerName,
     homeownerEmail,
@@ -11,9 +17,18 @@ export default function AgreementReviewStep({ data, onBack, onSubmit }) {
 
   return (
     <div className="bg-white p-6 rounded-lg shadow-md max-w-2xl mx-auto mt-6">
-      <h2 className="text-2xl font-bold mb-4 text-gray-800">Step 3: Review & Submit</h2>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-2xl font-bold text-gray-800">Step 3: Review & Submit</h2>
+        <button
+          type="button"
+          onClick={handlePrint}
+          className="bg-blue-600 text-white px-4 py-1 rounded hover:bg-blue-700"
+        >
+          🖨️ Print Summary
+        </button>
+      </div>
 
-      <div className="space-y-4 text-gray-700">
+      <div ref={printRef} className="space-y-4 text-gray-700">
         <div className="border-b pb-4">
           <h3 className="text-lg font-semibold">Homeowner Information</h3>
           <p><strong>Name:</strong> {homeownerName}</p>
@@ -104,7 +119,3 @@ export default function AgreementReviewStep({ data, onBack, onSubmit }) {
     </div>
   );
 }
-
-
-
-  

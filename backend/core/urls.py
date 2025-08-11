@@ -1,56 +1,36 @@
-# core/urls.py
-
 from django.contrib import admin
-from django.urls import path, include
-from django.views.static import serve
-from django.conf import settings
-from django.conf.urls.static import static
+from django.urls import path, include, re_path
 
-from projects.views import stripe_webhook
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from projects.views.stripe_webhook import stripe_webhook
+from rest_framework_simplejwt.views import TokenRefreshView
+from accounts.email_verification_views import EmailVerificationView
+from projects.views.frontend import StaticIndexView  # <-- import your new static view
 
 urlpatterns = [
-    # 1) Django admin
+    # Admin and auth endpoints
     path('admin/', admin.site.urls),
-    path('api/', include('projects.urls')),
+    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
-    # 2) Stripe webhook endpoint (no /api/ prefix)
-    path('stripe/webhook/', stripe_webhook, name='stripe-webhook'),
+    # REST APIs — give each app its own prefix!
+    path('api/accounts/', include('accounts.urls')),
+    path('api/projects/', include('projects.urls')),
+    # path('api/chat/', include('chat.urls')),  # if you add chat APIs
 
-    # 3) Accounts app (registration, password reset, email verification…)
+    # Email verification & Stripe webhooks
     path(
-        'api/accounts/',
-        include(('accounts.urls', 'accounts_api'), namespace='accounts_api')
+        'verify-email/<uidb64>/<token>/',
+        EmailVerificationView.as_view(),
+        name='email_verify'
     ),
+    path('stripe/webhook/', stripe_webhook),
 
-    # 4) JWT auth endpoints
-    path(
-        'api/auth/login/',
-        TokenObtainPairView.as_view(),
-        name='auth_login'
-    ),
-    path(
-        'api/auth/refresh/',
-        TokenRefreshView.as_view(),
-        name='auth_refresh'
-    ),
+    # Root: serve your React “shell” (the static index.html)
+    path('', StaticIndexView.as_view(), name='home'),
 
-    # 5) Main API
-    path(
-        'api/',
-        include(('projects.urls', 'projects_api'), namespace='projects_api')
-    ),
-
-    # 6) DRF’s browsable API login/logout
-    path('api-auth/', include('rest_framework.urls', namespace='rest_framework')),
-
-    # 7) Static (development only)
-    path(
-        'static/<path:path>',
-        serve,
-        {'document_root': settings.STATIC_ROOT}
+    # Catch-all for SPA fallback
+    re_path(
+        r'^(?!admin|api|static|media|verify-email|stripe).*$',
+        StaticIndexView.as_view(),
+        name='spa-fallback'
     ),
 ]
-
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

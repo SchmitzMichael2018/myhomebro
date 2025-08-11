@@ -1,27 +1,16 @@
-// src/main.jsx
-import React from "react";
-import ReactDOM from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
-import App from "./App";
-import "./index.css";
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
+import { AuthProvider } from './context/AuthContext.jsx'; // 1. Import AuthProvider
+import App from './App.jsx';
+import './index.css'; // ✅ correct
 
-// ✅ Custom ErrorBoundary for graceful error handling
-function ErrorBoundary({ children }) {
-  return (
-    <React.Suspense fallback={<div>Loading...</div>}>
-      {children}
-    </React.Suspense>
-  );
-}
-
-// ✅ Enhanced ReactDOM Setup with ErrorBoundary and StrictMode
-ReactDOM.createRoot(document.getElementById("root")).render(
+ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <BrowserRouter basename={process.env.PUBLIC_URL || "/"}>
-      <ErrorBoundary>
+    <BrowserRouter>
+      <AuthProvider> {/* 2. Wrap App with AuthProvider */}
         <App />
-      </ErrorBoundary>
+      </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>
 );
-

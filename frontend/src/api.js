@@ -1,95 +1,116 @@
 // src/api.js
-import axios from "axios";
 
-// --- Create an Axios instance that always uses “/api” ---
-// In dev, Vite will proxy /api/* to your Django backend.
-// In production, this will work with your deployed API.
+import axios from 'axios';
+import {
+  getAccessToken,
+  getRefreshToken,
+  setAccessToken,
+  clearSession,
+} from './auth.js';
+
+// 1. Create a global axios instance with a base URL.
+// All requests made with this instance will automatically go to /api/...
 const api = axios.create({
-  baseURL: "/api",
+  baseURL: '/api',
 });
 
-// --- Refresh mutex & queue to prevent duplicate refreshes ---
-let isRefreshing = false;
-let refreshQueue = [];
-
-// Helper: Retry queued requests with new token
-function processQueue(newToken) {
-  refreshQueue.forEach(cb => cb(newToken));
-  refreshQueue = [];
-}
-
-// --- Attach the access token to every request ---
-api.interceptors.request.use(cfg => {
-  const token = localStorage.getItem("access");
-  if (token) cfg.headers.Authorization = `Bearer ${token}`;
-  return cfg;
-});
-
-// --- On 401, try to refresh ONCE, then auto-logout ---
-api.interceptors.response.use(
-  resp => resp,
-  async err => {
-    const original = err.config;
-    if (err.response?.status === 401 && !original._retry) {
-      original._retry = true;
-
-      if (isRefreshing) {
-        // Wait for the in-flight refresh to finish
-        return new Promise(resolve => {
-          refreshQueue.push(newToken => {
-            original.headers.Authorization = `Bearer ${newToken}`;
-            resolve(api(original));
-          });
-        });
-      }
-
-      isRefreshing = true;
-      const refreshToken = localStorage.getItem("refresh");
-      if (refreshToken) {
-        try {
-          // Use plain axios to avoid infinite loop
-          const { data } = await axios.post("/api/auth/refresh/", {
-            refresh: refreshToken,
-          });
-          const newAccess = data.access;
-          localStorage.setItem("access", newAccess);
-          api.defaults.headers.common.Authorization = `Bearer ${newAccess}`;
-
-          processQueue(newAccess);
-          original.headers.Authorization = `Bearer ${newAccess}`;
-          return api(original);
-        } catch (refreshErr) {
-          clearSession("Session expired. Please sign in again.");
-          return Promise.reject(refreshErr);
-        } finally {
-          isRefreshing = false;
-        }
-      } else {
-        clearSession("Session expired. Please sign in again.");
-      }
+// 2. Create a request interceptor to automatically add the access token.
+api.interceptors.request.use(
+  (config) => {
+    const token = getAccessToken();
+    if (token) {
+      // Add the Authorization header to every outgoing request
+      config.headers['Authorization'] = `Bearer ${token}`;
     }
-    return Promise.reject(err);
+    return config;
+  },
+  (error) => {
+    // Handle request errors
+    return Promise.reject(error);
   }
 );
 
-// --- Logout helper: Remove tokens and redirect to signin ---
-export function clearSession(message = "Please sign in again.") {
-  localStorage.removeItem("access");
-  localStorage.removeItem("refresh");
-  if (message) alert(message);
-  window.location.href = "/signin";
-}
+// A variable to prevent multiple simultaneous token refresh requests
+let isRefreshing = false;
+// A queue to hold requests that failed due to a 401 error while the token is refreshing
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach(prom => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+
+  failedQueue = [];
+};
+
+// 3. Create a response interceptor to handle token refreshing.
+api.interceptors.response.use(
+  (response) => {
+    // If the request was successful, just return the response
+    return response;
+  },
+  async (error) => {
+    const originalRequest = error.config;
+
+    // Check if the error is a 401 and we haven't already retried the request
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      if (isRefreshing) {
+        // If we are already refreshing the token, queue this request
+        return new Promise(function(resolve, reject) {
+          failedQueue.push({ resolve, reject });
+        }).then(token => {
+          originalRequest.headers['Authorization'] = 'Bearer ' + token;
+          return api(originalRequest);
+        });
+      }
+
+      originalRequest._retry = true; // Mark that we are retrying this request
+      isRefreshing = true;
+
+      const refreshToken = getRefreshToken();
+      if (!refreshToken) {
+        // If there's no refresh token, we can't do anything.
+        console.error('No refresh token available.');
+        clearSession(); // Clear out any stale tokens
+        return Promise.reject(error);
+      }
+
+      try {
+        // Make the request to refresh the token
+        const response = await axios.post('/api/token/refresh/', {
+          refresh: refreshToken,
+        });
+
+        const newAccessToken = response.data.access;
+        setAccessToken(newAccessToken); // Save the new access token
+
+        // Update the authorization header on our axios instance and the original request
+        api.defaults.headers.common['Authorization'] = `Bearer ${newAccessToken}`;
+        originalRequest.headers['Authorization'] = `Bearer ${newAccessToken}`;
+        
+        processQueue(null, newAccessToken);
+
+        // Retry the original request with the new token
+        return api(originalRequest);
+
+      } catch (refreshError) {
+        console.error('Token refresh failed:', refreshError);
+        // If refreshing fails, clear tokens and redirect to login
+        clearSession();
+        processQueue(refreshError, null);
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    // For all other errors, just reject the promise
+    return Promise.reject(error);
+  }
+);
 
 export default api;
-
-
-
-
-
-
-
-
-
-
-
-

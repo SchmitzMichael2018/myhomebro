@@ -1,15 +1,21 @@
-<!-- templates/admin/base_site.html -->
- {% load static %}
+{% extends "admin/base_site.html" %}
+{% load static %}
 
-<!DOCTYPE html>
-<html>
-<head>
-    <title>MyHomeBro Admin</title>
-    <link rel="stylesheet" type="text/css" href="{% static 'css/styles.css' %}">
-</head>
-<body>
-    <h1>Welcome to MyHomeBro Admin</h1>
-    {% block content %}{% endblock %}
-</body>
-</html>
+{# This block overrides the main <h1> tag in the header #}
+{% block branding %}
+<h1 id="site-name">
+    <a href="{% url 'admin:index' %}">
+        <img src="{% static 'myhomebro_logo.png' %}" alt="MyHomeBro Logo" style="height: 30px; margin-right: 10px; vertical-align: middle;">
+        MyHomeBro Administration
+    </a>
+</h1>
+{% endblock %}
 
+{# This block adds extra CSS to the <head> of the document #}
+{% block extrastyle %}
+  {{ block.super }} {# This includes the default admin styles #}
+  <link rel="stylesheet" type="text/css" href="{% static 'css/admin_styles.css' %}">
+{% endblock %}
+
+{# You can also override the main title tag #}
+{% block title %}MyHomeBro Admin{% endblock %}

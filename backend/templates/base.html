@@ -1,26 +1,42 @@
+{% load static %}
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>MyHomeBro</title>
-  <!-- Optional: load Bootstrap for quick styling -->
-  <link
-    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
-    rel="stylesheet"
-    integrity="sha384-ENjdO4Dr2bkBIFxQpeoPzYaW0r6v6s0kIKLlZpG4xZ9E+7qHG6f9vp3H5Q3f5L1N"
-    crossorigin="anonymous"
-  >
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>{% block title %}MyHomeBro{% endblock %}</title>
+
+    <link 
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" 
+        rel="stylesheet"
+        integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM"
+        crossorigin="anonymous"
+    >
+    
+    {% block extra_css %}{% endblock %}
 </head>
 <body>
-  <!-- Navbar placeholder -->
-  <nav class="navbar navbar-light bg-light mb-4">
-    <div class="container">
-      <a class="navbar-brand" href="/">MyHomeBro</a>
-    </div>
-  </nav>
+    <nav class="navbar navbar-light bg-light mb-4 border-bottom">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <img src="{% static 'myhomebro_logo.png' %}" alt="MyHomeBro Logo" style="height: 30px; margin-right: 10px;">
+                MyHomeBro
+            </a>
+        </div>
+    </nav>
 
-  <main class="container">
-    {% block content %}{% endblock %}
-  </main>
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <script 
+        src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz"
+        crossorigin="anonymous"
+    ></script>
+    
+    {% block extra_js %}{% endblock %}
 </body>
 </html>

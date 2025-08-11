@@ -5,7 +5,7 @@ This file manages registration, email verification, and password reset endpoints
 for the accounts app.
 """
 
-from django.urls import path
+from django.urls import path, include
 from .views import ContractorRegistrationView
 from .email_verification_views import EmailVerificationView
 from .password_reset_views import (
@@ -50,6 +50,8 @@ urlpatterns = [
         PasswordResetCompleteView.as_view(),
         name='password_reset_complete'
     ),
+
+    path('auth/', include('accounts.auth_urls')),
 ]
 
 

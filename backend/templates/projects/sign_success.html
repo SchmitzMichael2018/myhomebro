@@ -3,74 +3,101 @@
 
 {% block content %}
 <div class="container my-5 text-center">
-  <h1>All Set!</h1>
-  <p>You have successfully signed the agreement for “{{ agreement.project.title }}.”</p>
+    <div class="card p-4">
+        <h1 class="text-success">✔ All Set!</h1>
+        <p class="lead">You have successfully signed the agreement for “{{ agreement.project.title }}.”</p>
+        <p>A copy of the signed agreement has also been sent to your email.</p>
+        <hr class="my-4">
 
-  {# 1) Link to download the freshly-signed PDF #}
-  <p>
-    <a
-      href="{% url 'projects_api:agreement-pdf' agreement.id %}"
-      target="_blank"
-      class="btn btn-outline-primary mb-4"
-    >
-      Download Your Signed Agreement (PDF)
-    </a>
-  </p>
+        <p>
+            <a
+            href="{% url 'projects_api:agreement-magic-pdf' token=agreement.homeowner_access_token %}"
+            target="_blank"
+            class="btn btn-outline-primary mb-4"
+            >
+            Download Your Signed Agreement (PDF)
+            </a>
+        </p>
 
-  {# 2) Embedded PDF preview #}
-  <div style="height:600px; border:1px solid #ddd; margin-bottom:2rem;">
-    <iframe
-      src="{% url 'projects_api:agreement-pdf' agreement.id %}"
-      width="100%"
-      height="100%"
-      frameborder="0"
-    ></iframe>
-  </div>
+        <div id="payment-container">
+            <h4 class="mb-3">Next Step: Fund Escrow</h4>
+            <p class="text-muted">To activate and enforce this agreement, please fund the escrow account.</p>
+            
+            <div id="payment-form" class="mb-4 mt-3 text-left" style="max-width: 400px; margin: auto;">
+                <p><strong>Total Due:</strong> ${{ agreement.total_cost|floatformat:2 }}</p>
+                <div id="card-element" class="p-3 border rounded mb-3"></div>
+                <button id="fund-button" class="btn btn-success w-100">
+                    <span id="button-text">Fund Escrow and Activate Agreement</span>
+                    <span id="spinner" class="spinner-border spinner-border-sm" role="status" aria-hidden="true" style="display: none;"></span>
+                </button>
+                <div id="card-errors" role="alert" class="text-danger mt-2"></div>
+            </div>
+        </div>
 
-  <hr/>
-
-  {# 3) Fund escrow form (unchanged) #}
-  <div id="payment-form" class="mb-4">
-    <p><strong>Total Due:</strong> ${{ agreement.total_cost|floatformat:2 }}</p>
-    <div id="card-element" class="mb-3"></div>
-    <button id="fund-button" class="btn btn-success">Fund Escrow</button>
-    <div id="card-errors" role="alert" class="text-danger mt-2"></div>
-  </div>
+        <div id="success-message" class="alert alert-success" style="display: none;">
+            <h4>Payment Successful!</h4>
+            <p>The escrow account is now funded. Your project is fully activated.</p>
+        </div>
+    </div>
 </div>
 
 <script src="https://js.stripe.com/v3/"></script>
 <script>
-  const stripe = Stripe("{{ stripe_public_key }}");
-  const elements = stripe.elements();
-  const card = elements.create("card");
-  card.mount("#card-element");
+    const stripe = Stripe("{{ stripe_public_key }}");
+    const elements = stripe.elements();
+    const card = elements.create("card");
+    card.mount("#card-element");
 
-  document.getElementById("fund-button").addEventListener("click", async (e) => {
-    e.preventDefault();
+    const fundButton = document.getElementById("fund-button");
+    const buttonText = document.getElementById("button-text");
+    const spinner = document.getElementById("spinner");
+    const cardErrors = document.getElementById("card-errors");
+    const paymentContainer = document.getElementById("payment-container");
+    const successMessage = document.getElementById("success-message");
 
-    // 1) Kick off the PaymentIntent
-    const resp = await fetch(
-      `{% url 'projects_api:agreement-magic-fund-escrow' agreement.homeowner_access_token %}`,
-      { method: "POST" }
-    );
-    const payload = await resp.json();
-    if (!resp.ok) {
-      return document.getElementById("card-errors").textContent =
-        payload.detail || "Payment failed to start.";
-    }
+    fundButton.addEventListener("click", async (e) => {
+        e.preventDefault();
+        
+        // Show loading state
+        buttonText.style.display = 'none';
+        spinner.style.display = 'inline-block';
+        fundButton.disabled = true;
+        cardErrors.textContent = "";
 
-    // 2) Confirm the card payment
-    const { error, paymentIntent } = await stripe.confirmCardPayment(
-      payload.client_secret,
-      { payment_method: { card } }
-    );
+        // 1) Kick off the PaymentIntent by calling your backend
+        try {
+            const resp = await fetch(
+                `{% url 'projects_api:agreement-magic-fund-escrow' token=agreement.homeowner_access_token %}`,
+                { method: "POST" }
+            );
+            const payload = await resp.json();
+            if (!resp.ok) {
+                throw new Error(payload.detail || "Payment failed to start.");
+            }
 
-    if (error) {
-      document.getElementById("card-errors").textContent = error.message;
-    } else if (paymentIntent.status === "succeeded") {
-      // 3) Redirect straight to the signed PDF
-      window.location.href = "{% url 'projects_api:agreement-pdf' agreement.id %}";
-    }
-  });
+            // 2) Use the client_secret from your backend to confirm the card payment
+            const { error, paymentIntent } = await stripe.confirmCardPayment(
+                payload.client_secret,
+                { payment_method: { card } }
+            );
+
+            if (error) {
+                throw new Error(error.message);
+            }
+
+            if (paymentIntent.status === "succeeded") {
+                // 3) On success, hide the form and show the success message
+                paymentContainer.style.display = 'none';
+                successMessage.style.display = 'block';
+            }
+        } catch (error) {
+            cardErrors.textContent = error.message;
+        } finally {
+            // Reset button state
+            buttonText.style.display = 'inline-block';
+            spinner.style.display = 'none';
+            fundButton.disabled = false;
+        }
+    });
 </script>
 {% endblock %}
