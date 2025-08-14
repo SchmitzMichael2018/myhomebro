@@ -48,3 +48,6 @@ backend/celerybeat-schedule*
 # SQLite / coverage
 *.sqlite3
 coverage.xml
+
+# Frontend build artifacts
+frontend/dist/
