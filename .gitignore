@@ -41,3 +41,10 @@ backend/dump.rdb
 
 # Redis dump files
 *.rdb
+
+# Redis / Celery
+*.rdb
+backend/celerybeat-schedule*
+# SQLite / coverage
+*.sqlite3
+coverage.xml
