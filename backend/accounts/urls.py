@@ -1,9 +1,4 @@
-# accounts/urls.py
-
-"""
-This file manages registration, email verification, and password reset endpoints
-for the accounts app.
-"""
+# backend/accounts/urls.py
 
 from django.urls import path, include
 from .views import ContractorRegistrationView
@@ -17,42 +12,37 @@ from .password_reset_views import (
 app_name = "accounts_api"
 
 urlpatterns = [
-    # Single-step Contractor Registration (with instant login tokens)
+    # Registration
     path(
-        'auth/contractor-register/',
+        "auth/contractor-register/",
         ContractorRegistrationView.as_view(),
-        name='contractor-register'
+        name="contractor-register",
     ),
-
-    # (Optional: generic user registration endpoint, if you add a HomeownerRegistrationView, etc.)
-    # path('auth/homeowner-register/', HomeownerRegistrationView.as_view(), name='homeowner-register'),
 
     # Email Verification
     path(
-        'auth/verify-email/<uidb64>/<token>/',
+        "auth/verify-email/<uidb64>/<token>/",
         EmailVerificationView.as_view(),
-        name='verify_email'
+        name="verify_email",
     ),
 
     # Password Reset
     path(
-        'auth/password-reset/request/',
+        "auth/password-reset/request/",
         PasswordResetRequestView.as_view(),
-        name='password_reset_request'
+        name="password_reset_request",
     ),
     path(
-        'auth/password-reset/confirm/<uidb64>/<token>/',
+        "auth/password-reset/confirm/<uidb64>/<token>/",
         PasswordResetConfirmView.as_view(),
-        name='password_reset_confirm'
+        name="password_reset_confirm",
     ),
     path(
-        'auth/password-reset/complete/',
+        "auth/password-reset/complete/",
         PasswordResetCompleteView.as_view(),
-        name='password_reset_complete'
+        name="password_reset_complete",
     ),
 
-    path('auth/', include('accounts.auth_urls')),
+    # Mount the auth login/refresh and email-available utilities here as well.
+    path("auth/", include("accounts.auth_urls")),
 ]
-
-
-
