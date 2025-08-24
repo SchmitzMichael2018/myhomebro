@@ -27,25 +27,45 @@ export default defineConfig(({ mode }) => ({
         display: 'standalone',
         scope: '/',
         start_url: '/',
-        // Use relative paths so they work with base '/static/'
         icons: [
           { src: 'favicon-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: 'favicon-512x512.png', sizes: '512x512', type: 'image/png' },
         ],
       },
+      // 🧠 Key bit: don’t precache optional, lazy chunks
       workbox: {
         navigateFallbackDenylist: [/^\/api\//, /^\/admin\//],
+        clientsClaim: true,
+        skipWaiting: true,
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp}'],
+        globIgnores: [
+          '**/pdf-*.js',
+          '**/html2canvas-*.js',
+          // add more lazy-only chunks here if needed:
+          // '**/Calendar-*.js',
+        ],
       },
     }),
+    // Optional pre-compress (WhiteNoise also compresses; safe to keep/remove)
     mode === 'production' && compression({ algorithm: 'gzip', ext: '.gz', threshold: 10240 }),
     mode === 'production' && compression({ algorithm: 'brotliCompress', ext: '.br', threshold: 10240 }),
   ].filter(Boolean),
+
+  // Ensure single React instance
+  resolve: {
+    dedupe: ['react', 'react-dom'],
+  },
+
+  // Dev pre-bundling
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'react-router-dom'],
+  },
 
   server: {
     host: true,
     port: 3000,
     proxy: {
-      '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true, secure: false, ws: true },
+      '/api':    { target: 'http://127.0.0.1:8000', changeOrigin: true, secure: false, ws: true },
       '/static': { target: 'http://127.0.0.1:8000', changeOrigin: true },
     },
   },
@@ -55,9 +75,26 @@ export default defineConfig(({ mode }) => ({
     assetsDir: 'assets',
     sourcemap: mode === 'development',
     minify: 'terser',
-    terserOptions: { compress: { drop_console: true, drop_debugger: true } },
+    manifest: true,
+    terserOptions: {
+      compress: { drop_console: true, drop_debugger: true },
+      format: { comments: false },
+    },
+    rollupOptions: {
+      input: '/index.html',
+      output: {
+        // Split big libs for faster first paint
+        manualChunks: {
+          react: ['react', 'react-dom'],
+          router: ['react-router-dom'],
+          pdf: ['jspdf', 'jspdf-autotable'],
+          html2canvas: ['html2canvas'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 2000,
   },
 
-  // ⬇️ Key line: use /static/ so Django/WhiteNoise serves your assets
+  // Served by Django/WhiteNoise
   base: mode === 'production' ? '/static/' : '/',
 }));

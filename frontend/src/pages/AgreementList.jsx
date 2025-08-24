@@ -1,82 +1,91 @@
-// src/pages/AgreementList.jsx (Updated with Continue Editing Button for Drafts)
-
-import { useEffect, useState, useMemo } from "react";
+// src/pages/AgreementList.jsx
+import { useEffect, useState, useMemo, useCallback, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
-import InvoiceModal from "../components/InvoiceModal";
 import api from "../api";
+
+// ⬇️ Lazy-load the modal so its heavy dependencies (jspdf, autotable) load only when needed
+const InvoiceModal = lazy(() => import("../components/InvoiceModal"));
+
+const ITEMS_PER_PAGE = 10;
 
 export default function AgreementList() {
   const [agreements, setAgreements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
   const [selectedInvoices, setSelectedInvoices] = useState([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [modalCategory, setModalCategory] = useState("");
+
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [escrowFilter, setEscrowFilter] = useState("all");
   const [showOnlyDrafts, setShowOnlyDrafts] = useState(false);
+
   const [currentPage, setCurrentPage] = useState(1);
-  const ITEMS_PER_PAGE = 10;
   const navigate = useNavigate();
 
   useEffect(() => {
+    let mounted = true;
+
     const fetchAgreements = async () => {
       setLoading(true);
       try {
         const { data } = await api.get("/projects/agreements/");
-        setAgreements(data);
+        if (!mounted) return;
+        const list = Array.isArray(data) ? data : (data?.results ?? []);
+        setAgreements(list);
         setError("");
       } catch (err) {
+        if (!mounted) return;
         console.error("Error fetching agreements:", err);
         setError("Failed to load agreements. Please try again later.");
         setAgreements([]);
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     };
+
     fetchAgreements();
+    return () => { mounted = false; };
   }, []);
 
   const filteredAgreements = useMemo(() => {
     return agreements
       .filter((a) => {
         if (statusFilter === "active") return !a.is_archived;
-        if (statusFilter === "archived") return a.is_archived;
+        if (statusFilter === "archived") return !!a.is_archived;
         return true;
       })
       .filter((a) => {
-        if (escrowFilter === "funded") return a.escrow_funded;
+        if (escrowFilter === "funded") return !!a.escrow_funded;
         if (escrowFilter === "pending") return !a.escrow_funded;
         return true;
       })
-      .filter((a) => {
-        if (showOnlyDrafts) return !a.signed_by_contractor;
-        return true;
-      })
+      .filter((a) => (showOnlyDrafts ? !a.signed_by_contractor : true))
       .filter((a) => {
         if (!searchTerm) return true;
-        const target = `${a.project_name || a.project_title || ''} ${a.homeowner_name || a.homeowner?.name || ''} ${a.id}`.toLowerCase();
+        const target = `${a.project_name || a.project_title || ""} ${a.homeowner_name || a.homeowner?.name || ""} ${a.id}`.toLowerCase();
         return target.includes(searchTerm.toLowerCase());
       });
   }, [agreements, searchTerm, statusFilter, escrowFilter, showOnlyDrafts]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredAgreements.length / ITEMS_PER_PAGE));
 
   const paginatedAgreements = useMemo(() => {
     const start = (currentPage - 1) * ITEMS_PER_PAGE;
     return filteredAgreements.slice(start, start + ITEMS_PER_PAGE);
   }, [filteredAgreements, currentPage]);
 
-  const totalPages = Math.ceil(filteredAgreements.length / ITEMS_PER_PAGE);
-
-  const handleViewInvoices = (invoices, agreementId) => {
-    setSelectedInvoices(invoices || []);
-    setModalCategory("Agreement");
+  const handleViewInvoices = useCallback((invoices, agreementId) => {
+    setSelectedInvoices(Array.isArray(invoices) ? invoices : []);
+    setModalCategory(`Agreement #${agreementId} Invoices`);
     setModalVisible(true);
-  };
+  }, []);
 
-  const handleModalClose = () => {
+  const handleModalClose = useCallback(() => {
     setModalVisible(false);
-  };
+  }, []);
 
   return (
     <div className="p-6">
@@ -112,7 +121,7 @@ export default function AgreementList() {
             <input
               type="checkbox"
               checked={showOnlyDrafts}
-              onChange={() => setShowOnlyDrafts(prev => !prev)}
+              onChange={() => setShowOnlyDrafts((prev) => !prev)}
               className="form-checkbox h-4 w-4"
             />
             Only Drafts
@@ -150,16 +159,29 @@ export default function AgreementList() {
             </thead>
             <tbody>
               {paginatedAgreements.map((a) => (
-                <tr key={a.id} className="hover:bg-gray-50">
-                  <td className="py-2 px-4 font-mono text-blue-600 cursor-pointer underline" onClick={() => navigate(`/agreements/${a.id}`)}>
+                <tr key={a.id ?? `${a.project_number ?? "pn"}-${a.project_name ?? a.project_title ?? "t"}`} className="hover:bg-gray-50">
+                  <td
+                    className="py-2 px-4 font-mono text-blue-600 cursor-pointer underline"
+                    onClick={() => navigate(`/agreements/${a.id}`)}
+                  >
                     #{a.id}
-                    {!a.signed_by_contractor && <span className="ml-2 text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full">Draft</span>}
+                    {!a.signed_by_contractor && (
+                      <span className="ml-2 text-xs text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full">
+                        Draft
+                      </span>
+                    )}
                   </td>
                   <td className="py-2 px-4">{a.project_name || a.project_title || "-"}</td>
                   <td className="py-2 px-4">{a.homeowner_name || a.homeowner?.name || "-"}</td>
                   <td className="py-2 px-4">{a.start_date || "—"}</td>
                   <td className="py-2 px-4">{a.end_date || "—"}</td>
-                  <td className="py-2 px-4">${parseFloat(a.total_cost || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td className="py-2 px-4">
+                    $
+                    {Number(a.total_cost ?? 0).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </td>
                   <td className="py-2 px-4">
                     <span className={`px-2 py-1 rounded text-white ${a.escrow_funded ? "bg-green-500" : "bg-yellow-500"}`}>
                       {a.escrow_funded ? "Funded" : "Pending"}
@@ -191,19 +213,40 @@ export default function AgreementList() {
         </div>
       )}
 
+      {modalVisible && (
+        <Suspense fallback={<div className="mt-6 text-center text-gray-600">Loading invoices…</div>}>
+          <InvoiceModal
+            visible={modalVisible}
+            onClose={handleModalClose}
+            invoices={selectedInvoices}
+            category={modalCategory}
+          />
+        </Suspense>
+      )}
+
       {totalPages > 1 && (
         <div className="flex justify-between items-center mt-6">
           <p className="text-sm text-gray-500">
             Page {currentPage} of {totalPages}
           </p>
           <div className="flex gap-2">
-            <button disabled={currentPage === 1} onClick={() => setCurrentPage((p) => p - 1)} className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50">Prev</button>
-            <button disabled={currentPage === totalPages} onClick={() => setCurrentPage((p) => p + 1)} className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50">Next</button>
+            <button
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage((p) => p - 1)}
+              className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <button
+              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage((p) => p + 1)}
+              className="px-3 py-1 bg-gray-200 rounded disabled:opacity-50"
+            >
+              Next
+            </button>
           </div>
         </div>
       )}
-
-      <InvoiceModal visible={modalVisible} onClose={handleModalClose} invoices={selectedInvoices} category={modalCategory} />
     </div>
   );
 }

@@ -1,25 +1,34 @@
-# accounts/views.py
-from rest_framework import status
+# backend/accounts/views.py
+
+from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny
-from django.db import transaction
-from .serializers import ContractorRegistrationSerializer # We will create this serializer
+from rest_framework_simplejwt.views import TokenObtainPairView
+
+from .serializers import (
+    ContractorRegistrationSerializer,
+    EmailTokenObtainPairSerializer,
+)
+
+
+class EmailLoginView(TokenObtainPairView):
+    """
+    POST { "email": "...", "password": "..." } -> { "access", "refresh" }
+    Returns clear messages for inactive or invalid credentials.
+    """
+    permission_classes = [permissions.AllowAny]
+    serializer_class = EmailTokenObtainPairSerializer
+
 
 class ContractorRegistrationView(APIView):
     """
-    Handles the registration of a new contractor.
-    Uses a serializer to validate data and create the user and contractor profile
-    within a single database transaction.
+    POST to create User + Contractor. Only includes tokens if user is active.
     """
-    permission_classes = [AllowAny] # Explicitly allow any user to register
+    permission_classes = [permissions.AllowAny]
 
-    def post(self, request):
+    def post(self, request, *args, **kwargs):
         serializer = ContractorRegistrationSerializer(data=request.data)
-        if serializer.is_valid():
-            # The .save() method on our new serializer will handle everything.
-            data = serializer.save()
-            return Response(data, status=status.HTTP_201_CREATED)
-        
-        # If the data is not valid, the serializer will contain the errors.
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        user = serializer.save()
+        return Response(serializer.to_representation(user), status=status.HTTP_201_CREATED)

@@ -1,3 +1,4 @@
+# backend/core/settings.py
 import os
 from pathlib import Path
 from datetime import timedelta
@@ -23,12 +24,17 @@ def get_bool(name: str, default: bool = False) -> bool:
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Paths & .env
+#   This file lives at backend/core/settings.py
+#   BASE_DIR == inner Django project dir: ~/backend/backend
+#   REPO_DIR == repository root:          ~/backend
 # ──────────────────────────────────────────────────────────────────────────────
-# This file lives at backend/core/settings.py → BASE_DIR == backend/
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent       # ~/backend/backend
+REPO_DIR = BASE_DIR.parent                               # ~/backend
+FRONTEND_DIR = REPO_DIR / "frontend"
+FRONTEND_DIST_DIR = FRONTEND_DIR / "dist"
 
 # Robust .env loading (works even if CWD changes)
-explicit_env = BASE_DIR / ".env"
+explicit_env = REPO_DIR / ".env"
 if explicit_env.exists():
     load_dotenv(dotenv_path=explicit_env, override=True)
 else:
@@ -67,11 +73,14 @@ INSTALLED_APPS = [
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
+
+    # WhiteNoise "no static" app must be listed BEFORE staticfiles
+    "whitenoise.runserver_nostatic",
+
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
     # Third-party
-    "whitenoise.runserver_nostatic",
     "corsheaders",
     "rest_framework",
     "rest_framework_simplejwt",
@@ -91,7 +100,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",  # must be right after SecurityMiddleware
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -109,29 +118,35 @@ AUTH_USER_MODEL = "accounts.User"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Database (single source: DATABASE_URL; defaults to SQLite)
+# Database (absolute-path SQLite by default; Postgres via DATABASE_URL)
+#   Prefer existing SQLite path if present (repo root, then inner)
 # ──────────────────────────────────────────────────────────────────────────────
-# Examples:
-#   sqlite (default): sqlite:///db.sqlite3
-#   postgres:         postgres://USER:PASS@HOST:PORT/DBNAME
-DEFAULT_DB_URL = "sqlite:///" + str(BASE_DIR / "db.sqlite3")
-DATABASE_URL = get_env_var("DATABASE_URL", DEFAULT_DB_URL)
+# Pick an existing db.sqlite3 if it already exists to avoid accidental new DBs
+_sqlite_candidates = [
+    REPO_DIR / "db.sqlite3",   # ~/backend/db.sqlite3  (repo root)
+    BASE_DIR / "db.sqlite3",   # ~/backend/backend/db.sqlite3 (inner)
+]
+_sqlite_file = next((p for p in _sqlite_candidates if p.exists()), _sqlite_candidates[0])
+SQLITE_ABS_PATH = str(_sqlite_file.resolve())
+
+DEFAULT_DB_URL = f"sqlite:///{SQLITE_ABS_PATH}"
+DATABASE_URL = os.environ.get("DATABASE_URL", DEFAULT_DB_URL)
 
 DATABASES = {
     "default": dj_database_url.parse(
         DATABASE_URL,
         conn_max_age=600,
-        ssl_require=DATABASE_URL.startswith("postgres")
+        ssl_require=DATABASE_URL.startswith(("postgres://", "postgresql://")),
     )
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Templates (we serve frontend build via templates/index.html if desired)
+# Templates
 # ──────────────────────────────────────────────────────────────────────────────
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS":    [BASE_DIR / "templates"],
+        "DIRS":    [REPO_DIR / "templates"],  # optional; safe if folder missing
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -151,18 +166,33 @@ AUTHENTICATION_BACKENDS = [
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Static & Media
+#   Vite builds to frontend/dist with base '/static/' (vite.config.js)
+#   collectstatic copies from FRONTEND_DIST_DIR → STATIC_ROOT
 # ──────────────────────────────────────────────────────────────────────────────
 STATIC_URL = "/static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
+STATIC_ROOT = REPO_DIR / "staticfiles"              # ~/backend/staticfiles  (matches your PA path)
 
-# Keep only app-level static here; build artifacts get collected to STATIC_ROOT
 STATICFILES_DIRS = [
-    BASE_DIR / "static",
+    FRONTEND_DIST_DIR,                               # ~/backend/frontend/dist
+    BASE_DIR / "static",                             # app-level static (optional)
 ]
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
+# Django 5+ storages config (preferred over STATICFILES_STORAGE)
+STORAGES = {
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+}
+
+# WhiteNoise options
+WHITENOISE_MANIFEST_STRICT = False
+WHITENOISE_AUTOREFRESH = DEBUG   # auto-reload static in DEBUG
 
 MEDIA_URL = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_ROOT = REPO_DIR / "media"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Stripe (optional; guarded by flag)
@@ -277,3 +307,8 @@ if not DEBUG:
     # SECURE_HSTS_SECONDS = 31536000
     # SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     # SECURE_HSTS_PRELOAD = True
+
+# Require email verification before login?
+#   True  (prod): registration creates inactive user, no tokens until verified.
+#   False (dev):  registration creates active user, tokens included immediately.
+ACCOUNTS_REQUIRE_EMAIL_VERIFICATION = False
