@@ -51,3 +51,4 @@ coverage.xml
 
 # Frontend build artifacts
 frontend/dist/
+backend/.env
