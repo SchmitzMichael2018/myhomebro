@@ -1,172 +1,153 @@
-// src/components/AgreementWizard.jsx (with Draft Delete & Auto-Save)
-
-import React, { useState, useEffect, useCallback } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+// src/components/AgreementWizard.jsx
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import api from "../api";
+import { getHomeownersOnce } from "@/lib/homeowners";
+import { createAgreementFromWizardState } from "@/lib/agreements";
 
 import AgreementStep1 from "./AgreementStep1.jsx";
-import AgreementMilestoneStep from "./AgreementMilestoneStep";
-import AgreementReviewStep from "./AgreementReviewStep";
+import AgreementMilestoneStep from "./AgreementMilestoneStep.jsx";
+import AgreementReviewStep from "./AgreementReviewStep.jsx";
+
+const LS_KEY = "agreement:wizard";
+const STEP2_DRAFT_KEY = "agreement:wizard:step2";
 
 export default function AgreementWizard() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const draftId = searchParams.get("id");
 
   const [step, setStep] = useState(1);
-  const [agreementId, setAgreementId] = useState(null);
-  const [agreementData, setAgreementData] = useState({ milestones: [] });
+  const [state, setState] = useState({ milestones: [], useCustomerAddress: true });
   const [allHomeowners, setAllHomeowners] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  const fetchAllHomeowners = useCallback(async () => {
+  const currentRef = useRef(state);
+  useEffect(() => { currentRef.current = state; }, [state]);
+
+  // ---- LS helpers ----
+  const persistLS = useCallback((data) => {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch {}
+  }, []);
+  const hydrateLS = useCallback(() => {
     try {
-      const { data } = await api.get('/homeowners/');
-      setAllHomeowners(Array.isArray(data) ? data : data.results || []);
-    } catch {
-      toast.error("Failed to load initial customer data.");
-    }
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) {
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === "object") setState((p) => ({ ...p, ...obj }));
+      }
+    } catch {}
   }, []);
 
-  const loadDraft = useCallback(async () => {
-    if (!draftId) return;
-    try {
-      const { data } = await api.get(`/agreements/${draftId}/`);
-      setAgreementId(draftId);
-      setAgreementData({
-        projectName: data.project?.title,
-        projectAddress: `${data.project?.project_street_address || ''}`,
-        homeownerName: data.project?.homeowner?.full_name,
-        homeownerEmail: data.project?.homeowner?.email,
-        milestones: data.milestones || [],
-        milestoneTotalCost: data.total_cost,
-        milestoneTotalDuration: data.total_time_estimate,
-      });
-    } catch (err) {
-      toast.error("Failed to load saved draft.");
-    }
-  }, [draftId]);
-
-  const autoSaveDraft = useCallback(async (stepData) => {
-    const payload = {
-      ...stepData,
-      milestones: agreementData.milestones,
-    };
-    try {
-      if (agreementId) {
-        await api.patch(`/agreements/${agreementId}/`, payload);
-      } else {
-        const res = await api.post("/agreements/", payload);
-        setAgreementId(res.data.id);
-        toast.success("Draft saved");
-      }
-    } catch {
-      console.warn("Auto-save failed.");
-    }
-  }, [agreementId, agreementData.milestones]);
-
+  // ---- homeowners ----
   useEffect(() => {
-    fetchAllHomeowners();
-    loadDraft();
-    setLoading(false);
-  }, [fetchAllHomeowners, loadDraft]);
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      hydrateLS();
+      try {
+        const list = await getHomeownersOnce();
+        if (!cancelled) setAllHomeowners(Array.isArray(list) ? list : []);
+      } catch (e) {
+        console.warn("Homeowners load failed:", e?.message || e);
+        if (!cancelled) setAllHomeowners([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [hydrateLS]);
 
+  const homeownerMap = useMemo(() => {
+    const m = new Map();
+    (allHomeowners || []).forEach((h) => m.set(String(h.id), h));
+    return m;
+  }, [allHomeowners]);
+
+  // ---- Step handlers ----
   const handleStep1Next = async (data) => {
-    setAgreementData(prev => ({ ...prev, ...data }));
-    await autoSaveDraft(data);
+    const h = homeownerMap.get(String(data.homeownerId));
+    const extras = {
+      homeownerName: h?.full_name || h?.name || "",
+      homeownerEmail: h?.email || "",
+    };
+
+    let projectAddress = "— (Using customer’s address)";
+    if (!data.useCustomerAddress) {
+      const cityState = [data.project_city, data.project_state].filter(Boolean).join(", ");
+      projectAddress = [
+        data.project_street_address,
+        data.project_address_line_2,
+        cityState,
+        data.project_zip_code,
+      ].filter(Boolean).join(", ") || "—";
+    }
+
+    const merged = { ...currentRef.current, ...data, ...extras, projectAddress };
+    setState(merged);
+    persistLS(merged);
     setStep(2);
   };
 
   const handleStep2Next = async (data) => {
-    setAgreementData(prev => ({ ...prev, ...data }));
-    await autoSaveDraft(data);
+    const merged = { ...currentRef.current, ...data };
+    setState(merged);
+    try { localStorage.setItem(STEP2_DRAFT_KEY, JSON.stringify(data)); } catch {}
+    persistLS(merged);
     setStep(3);
   };
 
   const handleFinalSubmit = async () => {
     setSubmitting(true);
-    const payload = {
-      project_title: agreementData.projectName,
-      homeowner_id: agreementData.homeownerId,
-      description: agreementData.description,
-      project_type: agreementData.projectType,
-      project_subtype: agreementData.projectSubtype,
-      total_cost: agreementData.total_cost || agreementData.milestoneTotalCost,
-      project_street_address: agreementData.project_street_address,
-      project_address_line_2: agreementData.project_address_line_2,
-      project_city: agreementData.project_city,
-      project_state: agreementData.project_state,
-      project_zip_code: agreementData.project_zip_code,
-      milestones: agreementData.milestones.map(m => ({
-        order: m.order,
-        title: m.title,
-        description: m.description,
-        amount: m.amount,
-        start_date: m.start_date,
-        completion_date: m.completion_date,
-        days: m.days,
-        hours: m.hours,
-        minutes: m.minutes,
-      })),
-    };
-
     try {
-      const res = agreementId
-        ? await api.patch(`/agreements/${agreementId}/`, payload)
-        : await api.post("/agreements/", payload);
-
-      toast.success("Agreement submitted successfully!");
-      navigate(`/agreements/${res.data.id}`);
-    } catch (err) {
-      toast.error(err.response?.data?.detail || "Failed to submit agreement.");
+      const created = await createAgreementFromWizardState(currentRef.current);
+      toast.success("Agreement created!");
+      try { localStorage.removeItem(LS_KEY); } catch {}
+      try { localStorage.removeItem(STEP2_DRAFT_KEY); } catch {}
+      navigate(created?.id ? `/agreements/${created.id}` : "/agreements");
+    } catch (e) {
+      console.error("Create failed:", e, e.details);
+      toast.error(e.message || "Failed to create agreement.");
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDiscardDraft = async () => {
-    if (!agreementId) return navigate("/agreements");
-    if (!window.confirm("Are you sure you want to discard this draft?")) return;
-    try {
-      await api.delete(`/agreements/${agreementId}/`);
-      toast.success("Draft deleted.");
-      navigate("/agreements");
-    } catch {
-      toast.error("Failed to discard draft.");
-    }
-  };
-
-  const renderStep = () => {
-    if (loading) return <div className="text-center p-8">Loading...</div>;
-    switch (step) {
-      case 1:
-        return <AgreementStep1 onNext={handleStep1Next} initialData={agreementData} allHomeowners={allHomeowners} />;
-      case 2:
-        return <AgreementMilestoneStep onBack={() => setStep(1)} onSubmit={handleStep2Next} initialData={agreementData} />;
-      case 3:
-        return <AgreementReviewStep data={agreementData} onBack={() => setStep(2)} onSubmit={handleFinalSubmit} />;
-      default:
-        return null;
-    }
-  };
+  // ---- Render ----
+  if (loading) return <div className="text-center p-8">Loading customers…</div>;
 
   return (
     <div className="max-w-4xl mx-auto p-4">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-3xl font-bold text-gray-800">New Agreement</h2>
-        <div className="flex items-center gap-3">
-          <p className="text-sm font-medium text-gray-500">Step {step} of 3</p>
-          <button
-            onClick={handleDiscardDraft}
-            className="text-red-500 text-sm hover:underline"
-          >
-            Discard Draft
-          </button>
-        </div>
+        <p className="text-sm font-medium text-gray-500">Step {step} of 3</p>
       </div>
-      {renderStep()}
+
+      {step === 1 && (
+        <AgreementStep1
+          onNext={handleStep1Next}
+          initialData={state}
+          allHomeowners={allHomeowners}
+        />
+      )}
+
+      {step === 2 && (
+        <AgreementMilestoneStep
+          step1Data={state}
+          onBack={() => setStep(1)}
+          onSubmit={handleStep2Next}
+          draftKey={STEP2_DRAFT_KEY}
+        />
+      )}
+
+      {step === 3 && (
+        <AgreementReviewStep
+          data={state}
+          onBack={() => setStep(2)}
+          onSubmit={handleFinalSubmit}  // Step 3 calls this; it does the POST via lib
+        />
+      )}
+
+      {submitting && <div className="text-center text-sm text-gray-500 mt-3">Submitting…</div>}
     </div>
   );
 }

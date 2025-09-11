@@ -312,3 +312,21 @@ if not DEBUG:
 #   True  (prod): registration creates inactive user, no tokens until verified.
 #   False (dev):  registration creates active user, tokens included immediately.
 ACCOUNTS_REQUIRE_EMAIL_VERIFICATION = False
+
+# ── LOGGING (send app errors to console -> PA error log) ─────────────────────
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {"class": "logging.StreamHandler"},
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO",
+    },
+    "loggers": {
+        "django": {"handlers": ["console"], "level": "INFO", "propagate": True},
+        # our app modules
+        "accounts": {"handlers": ["console"], "level": "INFO", "propagate": True},
+    },
+}

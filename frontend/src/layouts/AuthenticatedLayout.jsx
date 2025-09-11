@@ -1,59 +1,59 @@
-import React, { useState } from 'react';
-import Sidebar from '../components/Sidebar';
-import { Outlet } from 'react-router-dom';
-import NotificationBell from '../components/NotificationBell';
-import NotificationList from '../components/NotificationList';
-import useNotifications from '../hooks/useNotifications';
+// src/layouts/AuthenticatedLayout.jsx
+import React, { useState } from "react";
+import { Outlet } from "react-router-dom";
+import Sidebar from "../components/Sidebar.jsx";
 
 export default function AuthenticatedLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const { notifications, unreadCount, markAllAsRead } = useNotifications();
 
-  const toggleNotifications = () => {
-    setShowNotifications((prev) => !prev);
-    if (!showNotifications) {
-      markAllAsRead();
-    }
-  };
+  // simple helper to compose class names
+  const cn = (...s) => s.filter(Boolean).join(" ");
 
   return (
-    <div className="flex min-h-screen relative">
-      {/* Mobile sidebar overlay */}
+    <div className="min-h-screen flex bg-gray-50">
+      {/* Mobile overlay */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-30 md:hidden"
+          className="fixed inset-0 z-30 bg-black/50 md:hidden"
           onClick={() => setSidebarOpen(false)}
           aria-hidden="true"
-        ></div>
+        />
       )}
 
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      {/* Sidebar (off-canvas on mobile, static on desktop) */}
+      <aside
+        className={cn(
+          // position & sizing
+          "fixed inset-y-0 left-0 z-40 w-64 transform transition-transform duration-200",
+          "bg-blue-900 text-white",
+          // mobile: slide in/out
+          sidebarOpen ? "translate-x-0" : "-translate-x-full",
+          // desktop: always visible and full height
+          "md:static md:translate-x-0 md:min-h-screen"
+        )}
+        aria-label="Primary"
+      >
+        {/* Keep your Sidebar API intact */}
+        <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      </aside>
 
-      <main className="flex-1 bg-gray-50 overflow-auto relative">
-        {/* Top bar with Menu + Notifications */}
-        <div className="fixed top-0 left-0 right-0 bg-white shadow z-20 flex items-center justify-between px-4 py-3 md:py-2 md:px-6">
+      {/* Main content column */}
+      <main className="flex-1 min-h-screen overflow-y-auto">
+        {/* Mobile menu button */}
+        <div className="md:hidden p-3">
           <button
-            onClick={() => setSidebarOpen((prev) => !prev)}
-            className="md:hidden text-blue-600 px-3 py-2 rounded hover:bg-blue-100"
+            onClick={() => setSidebarOpen((v) => !v)}
+            className="px-3 py-2 rounded border text-blue-700 hover:bg-blue-50"
+            type="button"
+            aria-expanded={sidebarOpen ? "true" : "false"}
+            aria-controls="primary-sidebar"
           >
             ☰ Menu
           </button>
-
-          <div className="flex items-center space-x-4 ml-auto">
-            <NotificationBell count={unreadCount} onClick={toggleNotifications} />
-          </div>
         </div>
 
-        {/* Notification dropdown */}
-        {showNotifications && (
-          <div className="absolute top-16 right-6 z-40">
-            <NotificationList notifications={notifications} />
-          </div>
-        )}
-
-        {/* Main content below top nav */}
-        <div className="p-4 pt-20 md:pt-4">
+        {/* Page content wrapper */}
+        <div className="max-w-7xl mx-auto p-4 md:p-6">
           <Outlet />
         </div>
       </main>

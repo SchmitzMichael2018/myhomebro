@@ -1,47 +1,76 @@
 // src/context/AuthContext.jsx
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import axios from "axios";
+import api, { getAccessToken, setTokens, clearAuth } from "../api";
 
-import React, { createContext, useContext, useState } from 'react';
-import {
-  getAccessToken,
-  setAccessToken,
-  setRefreshToken,
-  clearSession,
-} from '../auth.js';
-import useTokenWatcher from '../hooks/useTokenWatcher'; // 👈 NEW
-import { useNavigate } from 'react-router-dom';
-
-const AuthContext = createContext({
-  token: null,
-  onLogin: () => {},
-  onLogout: () => {},
-});
+const AuthContext = createContext(null);
+export const useAuth = () => useContext(AuthContext);
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => getAccessToken());
-  const navigate = useNavigate();
+  // ---- Auth state ----
+  const [user, setUser] = useState(null);
+  const [ready, setReady] = useState(false);
 
-  const onLogin = ({ access, refresh }) => {
-    setAccessToken(access);
-    setRefreshToken(refresh);
-    setToken(access);
+  // ---- Global Login Modal state ----
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const openLogin = () => setIsLoginOpen(true);
+  const closeLogin = () => setIsLoginOpen(false);
+
+  useEffect(() => {
+    const tok = getAccessToken();
+    if (tok) {
+      setUser((u) => u || { email: null });
+      // ensure axios global default also has the header (covers stray axios usage)
+      axios.defaults.headers.common.Authorization = `Bearer ${tok}`;
+    }
+    setReady(true);
+  }, []);
+
+  const login = async ({ email, password, remember }) => {
+    const endpoints = ["/auth/login/", "/token/"]; // supports either style
+    let data;
+
+    for (let i = 0; i < endpoints.length; i++) {
+      try {
+        const resp = await api.post(endpoints[i], { email, username: email, password });
+        data = resp.data;
+        break;
+      } catch (e) {
+        if (i === endpoints.length - 1) throw e;
+      }
+    }
+
+    const access = data.access || data.access_token;
+    const refresh = data.refresh || data.refresh_token;
+    if (!access || !refresh) throw new Error("Login did not return tokens.");
+
+    setTokens(access, refresh, !!remember);
+    // set both our instance and global axios header (defensive)
+    axios.defaults.headers.common.Authorization = `Bearer ${access}`;
+    setUser({ email });
+    return true;
   };
 
-  const onLogout = () => {
-    clearSession();
-    setToken(null);
-    navigate('/login');
-    // Optional: toast('Session expired. Please log in again.');
+  const logout = async () => {
+    clearAuth();
+    delete axios.defaults.headers.common.Authorization;
+    setUser(null);
   };
 
-  useTokenWatcher(onLogout); // 👈 Auto-logout if expired
-
-  return (
-    <AuthContext.Provider value={{ token, onLogin, onLogout }}>
-      {children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({
+      user,
+      setUser,
+      isAuthed: !!getAccessToken(),
+      ready,
+      login,
+      logout,
+      isLoginOpen,
+      openLogin,
+      closeLogin,
+    }),
+    [user, ready, isLoginOpen]
   );
-}
 
-export function useAuth() {
-  return useContext(AuthContext);
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

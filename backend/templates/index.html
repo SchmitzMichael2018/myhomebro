@@ -1,20 +1,32 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="en-US">
   <head>
     <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, maximum-scale=1"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MyHomeBro - Secure Escrow Payments</title>
 
-    <link rel="icon" href="/static/favicon.ico" />
+    <!-- ✅ In production, WhiteNoise serves these at /static/... -->
+    <link rel="icon" type="image/png" href="/static/favicon-192x192.png" />
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" sizes="180x180" />
+    <link rel="mask-icon" href="/static/masked-icon.svg" color="#1E3A8A" />
 
-    <!-- Always stable thanks to aliases created after each build -->
-    <link rel="stylesheet" href="/static/assets/index.css" />
-    <script type="module" src="/static/assets/index.js"></script>
+    <!-- CSP: keep same-origin assets & API calls; fonts allowed -->
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self';
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+      font-src 'self' https://fonts.gstatic.com data:;
+      img-src 'self' data:;
+      connect-src 'self' ws: wss:;
+      object-src 'none';
+      base-uri 'self';
+      form-action 'self';
+    " />
+    <script type="module" crossorigin src="/static/assets/index-C3DsT9fu.js"></script>
+    <link rel="stylesheet" crossorigin href="/static/assets/index-BxmbuRV2.css">
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root" aria-live="polite"></div>
+    <!-- Dev uses this; Prod will be replaced by Vite with /static/assets/index-*.js -->
   </body>
 </html>

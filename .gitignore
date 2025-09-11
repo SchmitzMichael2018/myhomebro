@@ -1,54 +1,20 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
-# Environment Variables (Sensitive Information)
-.env
-.env.*
-
-# Python (Django)
+# Python
 __pycache__/
 *.py[cod]
 *.sqlite3
-db.sqlite3
-*.pyo
+*.db
+*.log
 
-# Django Static and Media Files
-staticfiles/
-media/
+# Env / secrets
+.env
+*.env
 
-# Virtual Environment (venv)
-venv/
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# Redis dump
-backend/dump.rdb
-
-# Redis dump files
-*.rdb
-
-# Redis / Celery
-*.rdb
-backend/celerybeat-schedule*
-# SQLite / coverage
-*.sqlite3
-coverage.xml
-
-# Frontend build artifacts
+# Node / Frontend
+frontend/node_modules/
+node_modules/
 frontend/dist/
-backend/.env
+
+# Django static output
+staticfiles/
+staticfiles/assets/
+static/

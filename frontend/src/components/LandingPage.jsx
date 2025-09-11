@@ -1,7 +1,9 @@
 // src/components/LandingPage.jsx
+import React, { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import logo from '../assets/myhomebro_logo.png'; // ✅ relative to LandingPage.jsx
+import { useAuth } from "../context/AuthContext";
+import logo from "../assets/myhomebro_logo.png";
 
 console.log("Rendering the REAL LandingPage.jsx!");
 
@@ -20,31 +22,49 @@ const features = [
   { icon: "📈", title: "Earnings Report", text: "See all project earnings in one place with downloadable reports." },
 ];
 
-export default function LandingPage({ onLoginClick }) {
+export default function LandingPage() {
   const navigate = useNavigate();
+  const { user, openLogin } = useAuth();
+
+  const handleTopRightSignIn = useCallback((evt) => {
+    evt?.preventDefault?.();
+    console.log("🔔 Top-right Sign In clicked");
+    openLogin();
+  }, [openLogin]);
+
+  const handleCtaSignIn = useCallback((evt) => {
+    evt?.preventDefault?.();
+    console.log("🔔 CTA Sign In clicked");
+    openLogin();
+  }, [openLogin]);
 
   return (
     <div className="relative min-h-screen flex flex-col items-center justify-center overflow-x-hidden bg-gradient-to-br from-blue-900 via-blue-700 to-yellow-400">
       <div className="absolute top-0 right-0 w-full flex justify-end px-8 py-6 z-30">
-        <button
-          type="button"
-          className="mr-6 text-white/90 hover:text-yellow-300 font-semibold text-lg"
-          onClick={() => {
-            console.log("🔔 Top-right Sign In clicked");
-            onLoginClick();
-          }}
-          aria-label="Sign In"
-        >
-          Sign In
-        </button>
-        <button
-          type="button"
-          className="bg-yellow-400 hover:bg-yellow-500 text-blue-900 font-bold py-2 px-5 rounded-xl shadow transition text-lg"
-          onClick={() => navigate("/signup")}
-          aria-label="Sign Up"
-        >
-          Sign Up
-        </button>
+        {!user ? (
+          <>
+            <button
+              type="button"
+              className="mr-6 text-white/90 hover:text-yellow-300 font-semibold text-lg"
+              onClick={handleTopRightSignIn}
+              aria-label="Sign In"
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              className="bg-yellow-400 hover:bg-yellow-500 text-blue-900 font-bold py-2 px-5 rounded-xl shadow transition text-lg"
+              onClick={() => navigate("/signup")}
+              aria-label="Sign Up"
+            >
+              Sign Up
+            </button>
+          </>
+        ) : (
+          <span className="text-white/90 font-medium text-lg">
+            Welcome, {user?.email || "contractor"}
+          </span>
+        )}
       </div>
 
       {/* Animated blurred blobs */}
@@ -127,10 +147,7 @@ export default function LandingPage({ onLoginClick }) {
           <motion.button
             className="border-2 border-white/70 text-white hover:bg-blue-800 font-bold py-3 px-10 rounded-2xl text-xl shadow-xl transition duration-150 focus:ring-2 focus:ring-blue-200"
             whileHover={{ scale: 1.08 }}
-            onClick={() => {
-              console.log("🔔 CTA Sign In clicked");
-              onLoginClick();
-            }}
+            onClick={handleCtaSignIn}
             aria-label="Sign In"
           >
             Sign In

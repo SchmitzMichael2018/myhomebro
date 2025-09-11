@@ -1,5 +1,4 @@
 // src/components/ContractorProfile.jsx
-
 import React, { useState, useEffect, useCallback } from "react";
 import InputMask from "react-input-mask";
 import { Link } from "react-router-dom";
@@ -8,46 +7,70 @@ import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
 
 const SKILL_OPTIONS = [
-  "Masonry", "Roofing", "Windows", "Drywall", "Tile", "Plumbing",
-  "Electrical", "Painting", "Landscaping", "Flooring", "HVAC",
-  "Carpentry", "Concrete", "Siding", "Insulation",
+  "masonry", "roofing", "windows", "drywall", "tile", "plumbing",
+  "electrical", "painting", "landscaping", "flooring", "hvac",
+  "carpentry", "concrete", "siding", "insulation",
 ];
+
+const toISO = (v) => {
+  if (!v) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(v);
+  if (m) {
+    const [_, mm, dd, yyyy] = m;
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${yyyy}-${pad(mm)}-${pad(dd)}`;
+  }
+  return v;
+};
 
 export default function ContractorProfile() {
   const { user } = useAuth();
   const contractorId = user?.contractor_id;
 
   const [form, setForm] = useState({
+    full_name: "",
+    email: "",
     business_name: "",
     phone: "",
     address: "",
     skills: [],
     license_number: "",
     license_expiration: "",
-    logo: "",
   });
 
+  const [logoFile, setLogoFile] = useState(null);
+  const [logoPreview, setLogoPreview] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [logoPreview, setLogoPreview] = useState("");
+  const [errors, setErrors] = useState(null);
 
   const fetchProfile = useCallback(async () => {
     setLoading(true);
+    setErrors(null);
     try {
-      const { data } = await api.get("/contractors/me/");
+      // Try top-level, then projects-namespaced endpoint
+      let data = null;
+      for (const url of ["/contractors/me/", "/projects/contractors/me/"]) {
+        try { data = (await api.get(url)).data; break; } catch (_e) {}
+      }
+      if (!data) throw new Error("Profile endpoint not found.");
+
       setForm({
+        full_name: data.name || data.user_name || "",
+        email: data.email || data.user_email || "",
         business_name: data.business_name || "",
         phone: data.phone || "",
         address: data.address || "",
-        skills: data.skills || [],
+        skills:
+          Array.isArray(data.skills) ? data.skills.map((s) => (s?.slug || s?.name || s)).map((x) => String(x).toLowerCase()) : [],
         license_number: data.license_number || "",
-        license_expiration: data.license_expiration || "",
-        logo: data.logo || "",
+        license_expiration: (data.license_expiration || data.license_expiration_date || "").slice(0, 10),
       });
-      setLogoPreview(data.logo || "");
+      setLogoPreview(data.logo_url || data.logo || "");
     } catch (err) {
       console.error("Failed to load profile:", err);
-      toast.error("Could not load your profile data.");
+      setErrors({ detail: "Could not load your profile data." });
     } finally {
       setLoading(false);
     }
@@ -57,52 +80,81 @@ export default function ContractorProfile() {
     fetchProfile();
   }, [fetchProfile]);
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: value }));
-  };
+  const onChange = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
 
-  const handleSkillsChange = (skill) => {
-    setForm(prev => {
-      const newSkills = prev.skills.includes(skill)
-        ? prev.skills.filter(s => s !== skill)
-        : [...prev.skills, skill];
-      return { ...prev, skills: newSkills };
-    });
-  };
+  const toggleSkill = (slug) =>
+    setForm((p) => ({
+      ...p,
+      skills: p.skills.includes(slug)
+        ? p.skills.filter((s) => s !== slug)
+        : [...p.skills, slug],
+    }));
 
-  const handleSave = async () => {
+  const save = async () => {
     setSaving(true);
+    setErrors(null);
     try {
-      await api.put("/contractors/me/", form);
+      const payloadIsFormData = !!logoFile;
+      let payload;
+      let headers = {};
+
+      if (payloadIsFormData) {
+        payload = new FormData();
+        Object.entries({
+          full_name: form.full_name || undefined,
+          email: form.email || undefined,
+          business_name: form.business_name || undefined,
+          phone: form.phone || undefined,
+          address: form.address || undefined,
+          license_number: form.license_number || undefined,
+          license_expiration: toISO(form.license_expiration) || undefined,
+        })
+          .filter(([, v]) => v !== undefined)
+          .forEach(([k, v]) => payload.append(k, v));
+
+        (form.skills || []).forEach((s) => payload.append("skills", String(s).toLowerCase()));
+        payload.append("logo", logoFile);
+      } else {
+        payload = {
+          full_name: form.full_name || undefined,
+          email: form.email || undefined,
+          business_name: form.business_name || undefined,
+          phone: form.phone || undefined,
+          address: form.address || undefined,
+          license_number: form.license_number || undefined,
+          license_expiration: toISO(form.license_expiration) || undefined,
+          skills: (form.skills || []).map((s) => String(s).toLowerCase()),
+        };
+        headers["Content-Type"] = "application/json";
+      }
+
+      // PATCH (partial) – try both routes
+      let ok = false;
+      for (const url of ["/contractors/me/", "/projects/contractors/me/"]) {
+        try { await api.patch(url, payload, { headers }); ok = true; break; }
+        catch (err) {
+          const code = err?.response?.status;
+          if (code && ![404, 405].includes(code)) throw err;
+        }
+      }
+      if (!ok) throw new Error("No profile endpoint accepted the request.");
+
+      // update preview if a new logo was chosen
+      if (logoFile) {
+        const url = URL.createObjectURL(logoFile);
+        setLogoPreview(url);
+        setLogoFile(null);
+      }
+
       toast.success("Profile updated successfully.");
+      setErrors(null);
     } catch (err) {
       console.error("Save failed:", err);
-      const errorMsg = err.response?.data?.detail || "Failed to update profile.";
-      toast.error(errorMsg);
+      const d = err?.response?.data;
+      setErrors(d || { detail: "Failed to update profile. Check your entries and try again." });
+      toast.error(d?.detail || "Failed to update profile.");
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleLogoUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const formData = new FormData();
-    formData.append("logo", file);
-
-    try {
-      const response = await api.post("/contractors/upload-logo/", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      const newUrl = response.data.logo;
-      toast.success("Logo uploaded successfully.");
-      setLogoPreview(newUrl);
-      fetchProfile(); // refresh profile
-    } catch (err) {
-      console.error("Logo upload failed:", err);
-      toast.error("Logo upload failed.");
     }
   };
 
@@ -123,24 +175,41 @@ export default function ContractorProfile() {
         </div>
       )}
 
+      {/* show top-level errors */}
+      {errors && (
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {errors.detail && <div>{errors.detail}</div>}
+          <ul className="mt-1 list-disc pl-5">
+            {Object.entries(errors)
+              .filter(([k]) => k !== "detail")
+              .map(([k, v]) => (
+                <li key={k}>
+                  <strong>{k}:</strong> {Array.isArray(v) ? v.join(", ") : String(v)}
+                </li>
+              ))}
+          </ul>
+        </div>
+      )}
+
       <div className="space-y-6">
-        <Input label="Full Name" name="name" value={user?.name || ""} disabled />
-        <Input label="Email Address" name="email" type="email" value={user?.email || ""} disabled />
+        {/* Contact (editable) */}
+        <Input label="Full Name" name="full_name" value={form.full_name} onChange={onChange} />
+        <Input label="Email Address" name="email" type="email" value={form.email} onChange={onChange} />
 
         <hr />
 
-        <Input label="Business Name" name="business_name" value={form.business_name} onChange={handleChange} />
+        <Input label="Business Name" name="business_name" value={form.business_name} onChange={onChange} />
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-          <InputMask mask="(999) 999-9999" value={form.phone} onChange={handleChange}>
+          <InputMask mask="(999) 999-9999" value={form.phone} onChange={onChange}>
             {(inputProps) => <input {...inputProps} name="phone" className="form-input" />}
           </InputMask>
         </div>
 
-        <Input label="Address" name="address" value={form.address} onChange={handleChange} />
+        <Input label="Address" name="address" value={form.address} onChange={onChange} />
 
-        {/* Logo Upload */}
+        {/* Logo */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Company Logo</label>
           {logoPreview && (
@@ -153,7 +222,7 @@ export default function ContractorProfile() {
           <input
             type="file"
             accept="image/*"
-            onChange={handleLogoUpload}
+            onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
             className="block w-full text-sm text-gray-600"
           />
         </div>
@@ -162,32 +231,36 @@ export default function ContractorProfile() {
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Skills</label>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {SKILL_OPTIONS.map(skill => (
-              <label key={skill} className="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer">
+            {SKILL_OPTIONS.map((slug) => (
+              <label key={slug} className="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer capitalize">
                 <input
                   type="checkbox"
-                  checked={form.skills.includes(skill)}
-                  onChange={() => handleSkillsChange(skill)}
+                  checked={form.skills.includes(slug)}
+                  onChange={() => toggleSkill(slug)}
                   className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                 />
-                <span>{skill}</span>
+                <span>{slug}</span>
               </label>
             ))}
           </div>
         </div>
 
-        <Input label="License Number" name="license_number" value={form.license_number} onChange={handleChange} />
-        <Input
-          label="License Expiration Date"
-          name="license_expiration"
-          type="date"
-          value={form.license_expiration}
-          onChange={handleChange}
-        />
+        <Input label="License Number" name="license_number" value={form.license_number} onChange={onChange} />
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">License Expiration Date</label>
+          <input
+            type="date"
+            name="license_expiration"
+            value={form.license_expiration?.slice(0, 10) || ""}
+            onChange={onChange}
+            className="form-input"
+          />
+        </div>
 
         <div className="pt-4">
           <button
-            onClick={handleSave}
+            onClick={save}
             disabled={saving}
             className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
           >
@@ -204,7 +277,7 @@ function Input({ label, disabled = false, ...props }) {
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
       <input
-        className={`form-input ${disabled ? 'bg-gray-100' : ''}`}
+        className={`form-input ${disabled ? "bg-gray-100" : ""}`}
         disabled={disabled}
         {...props}
       />

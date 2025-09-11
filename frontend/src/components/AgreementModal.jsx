@@ -1,7 +1,6 @@
-// src/components/AgreementModal.jsx (Enhanced with Signature Type & Validation)
-
+// src/components/AgreementModal.jsx (Aligned to PATCH /sign/)
 import React, { useState } from "react";
-import api from "./api";
+import api from "../api";
 import SignatureCanvas from "./SignatureCanvas";
 import { Spinner } from "./Spinner"; // Optional Spinner Component
 
@@ -17,17 +16,19 @@ const AgreementModal = ({ agreement, onClose, onSigned }) => {
     setLoading(true);
     setErrorMessage("");
     try {
-      const response = await api.post(
+      const { status } = await api.patch(
         `/projects/agreements/${agreement.id}/sign/`,
         {
-          signature_type: signatureType,
-          typed_name: typedName,
-          drawn_signature: drawnSignature,
+          signature_type: signatureType,     // backend may ignore if not needed
+          typed_name: typedName || null,
+          drawn_signature: drawnSignature || null,
+          accepted: true,
+          signed_at: new Date().toISOString(),
         }
       );
-      if (response.status === 200) {
+      if (status === 200) {
         setSigned(true);
-        onSigned();
+        onSigned?.();
         setShowSignaturePad(false);
       } else {
         throw new Error("Failed to sign the agreement. Please try again.");
@@ -41,7 +42,7 @@ const AgreementModal = ({ agreement, onClose, onSigned }) => {
   };
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50" role="dialog" aria-modal="true">
+    <div className="fixed inset-0 flex items-center justify-center bg-black/50" role="dialog" aria-modal="true">
       <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full relative">
         <h3 className="text-xl font-bold mb-2">{agreement.project_title || agreement.project_name}</h3>
         <p>Homeowner: {agreement.homeowner_name || "—"}</p>
@@ -58,7 +59,7 @@ const AgreementModal = ({ agreement, onClose, onSigned }) => {
                 id="accept-signature"
               />
               <label htmlFor="accept-signature">
-                I agree to sign this agreement electronically in accordance with the {" "}
+                I agree to sign this agreement electronically in accordance with the{" "}
                 <a
                   href="https://www.fdic.gov/regulations/laws/rules/6500-3170.html"
                   target="_blank"
@@ -94,9 +95,7 @@ const AgreementModal = ({ agreement, onClose, onSigned }) => {
           </>
         )}
 
-        {showSignaturePad && (
-          <SignatureCanvas onSave={handleSaveSignature} />
-        )}
+        {showSignaturePad && <SignatureCanvas onSave={handleSaveSignature} />}
 
         {signed && (
           <p className="text-green-600 font-bold mt-4">✅ Agreement Signed Successfully</p>

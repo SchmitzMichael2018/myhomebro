@@ -1,170 +1,144 @@
 // src/components/Customers.jsx
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Edit, Trash2, Home, Phone } from 'lucide-react';
 import api from '../api';
 import toast from 'react-hot-toast';
+import { getHomeownersOnce } from "@/lib/homeowners";
+
+
+/** Debounce helper (local, no deps) */
+function useDebouncedValue(value, delay = 400) {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return v;
+}
 
 const StatusBadge = ({ status }) => {
-    const statusStyles = {
-        active: 'bg-green-100 text-green-800',
-        prospect: 'bg-blue-100 text-blue-800',
-        archived: 'bg-gray-100 text-gray-800',
-    };
-    return (
-        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full capitalize ${statusStyles[status] || 'bg-gray-100'}`}>
-            {status}
-        </span>
-    );
+  const statusStyles = {
+    active: 'bg-green-100 text-green-800',
+    prospect: 'bg-blue-100 text-blue-800',
+    archived: 'bg-gray-100 text-gray-800',
+    inactive: 'bg-gray-100 text-gray-800',
+  };
+  const key = String(status || '').toLowerCase();
+  return (
+    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full capitalize ${statusStyles[key] || 'bg-gray-100 text-gray-800'}`}>
+      {status || '—'}
+    </span>
+  );
 };
 
 const formatPhoneNumber = (phoneStr) => {
-    if (!phoneStr) return null;
-    const cleaned = ('' + phoneStr).replace(/\D/g, '');
-    const match = cleaned.match(/^(\d{3})(\d{3})(\d{4})$/);
-    if (match) {
-        return `(${match[1]}) ${match[2]}-${match[3]}`;
-    }
-    return phoneStr;
+  if (!phoneStr) return 'N/A';
+  const cleaned = ('' + phoneStr).replace(/\D/g, '');
+  const match = cleaned.match(/^(\d{3})(\d{3})(\d{4})$/);
+  if (match) return `(${match[1]}) ${match[2]}-${match[3]}`;
+  return phoneStr;
 };
 
-// --- NEW: Helper function to format the structured address for display ---
+/** Format structured address for display */
 const formatAddress = (customer) => {
-    if (!customer.street_address) {
-        return "No address on file";
-    }
-    // Combines City, State ZIP
-    const cityStateZip = [customer.city, customer.state].filter(Boolean).join(', ') + ' ' + (customer.zip_code || '');
-    // Joins Street, optional Line 2, and the rest, filtering out any empty parts.
-    const fullAddress = [customer.street_address, customer.address_line_2, cityStateZip.trim()].filter(Boolean).join(', ');
-    return fullAddress;
+  const street = customer.street_address || '';
+  const line2 = customer.address_line_2 || '';
+  const city = customer.city || '';
+  const state = customer.state || '';
+  const zip = customer.zip_code || '';
+  if (!street && !city && !state && !zip) return 'No address on file';
+  const cityState = [city, state].filter(Boolean).join(', ');
+  return [street, line2, `${cityState} ${zip}`.trim()].filter(Boolean).join(', ');
 };
-
 
 export default function Customers() {
+  const navigate = useNavigate();
+
+  // Data
   const [customers, setCustomers] = useState([]);
+  const [count, setCount] = useState(0);
+
+  // UI / query params
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const navigate = useNavigate();
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+
+  const [q, setQ] = useState('');
+  const qDebounced = useDebouncedValue(q, 400);
+
+  const [status, setStatus] = useState(''); // '', 'active', 'prospect', 'archived'
+  const [ordering, setOrdering] = useState('-created_at'); // '-created_at', 'created_at', 'full_name', '-full_name'
+
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil((count || 0) / pageSize)),
+    [count, pageSize]
+  );
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const { data } = await api.get('/homeowners/');
-      const customerData = Array.isArray(data) ? data : data.results || [];
-      setCustomers(customerData);
+      const params = {
+        page,
+        page_size: pageSize,
+        ordering,
+      };
+      if (qDebounced) params.q = qDebounced;
+      if (status) params.status = status;
+
+      const { data } = await api.get('/homeowners/', { params });
+
+      // Support both paginated and array responses
+      if (Array.isArray(data)) {
+        setCustomers(data);
+        setCount(data.length);
+      } else {
+        setCustomers(data.results || []);
+        setCount(data.count ?? (Array.isArray(data.results) ? data.results.length : 0));
+      }
     } catch (err) {
-      const errorMsg = "Failed to load customers. Please try again.";
+      const errorMsg = 'Failed to load customers. Please try again.';
       setError(errorMsg);
       toast.error(errorMsg);
-      console.error("Fetch customers error:", err);
+      console.error('Fetch customers error:', err);
+      setCustomers([]);
+      setCount(0);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, pageSize, ordering, qDebounced, status]);
 
   useEffect(() => {
     fetchCustomers();
   }, [fetchCustomers]);
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this customer? This may also affect related projects and agreements.')) return;
-    
+    if (!window.confirm('Delete this customer? This cannot be undone.')) return;
     try {
       await api.delete(`/homeowners/${id}/`);
-      setCustomers(prevCustomers => prevCustomers.filter(c => c.id !== id));
-      toast.success('Customer deleted successfully.');
+      // adjust page if needed after delete
+      const nextCount = Math.max(0, count - 1);
+      const lastPage = Math.max(1, Math.ceil(nextCount / pageSize));
+      if (page > lastPage) {
+        setPage(lastPage);
+      } else {
+        fetchCustomers();
+      }
+      toast.success('Customer deleted.');
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to delete customer.');
-      console.error("Delete customer error:", err);
+      console.error('Delete customer error:', err);
     }
-  };
-
-  const renderContent = () => {
-    if (loading) {
-      return <p className="text-center text-gray-500 py-10">Loading customers...</p>;
-    }
-  
-    if (error) {
-      return <p className="text-center text-red-500 py-10">{error}</p>;
-    }
-
-    if (customers.length === 0) {
-      return (
-        <div className="text-center py-10 bg-white rounded-lg shadow-md">
-            <h3 className="text-lg font-semibold text-gray-700">No Customers Yet</h3>
-            <p className="text-gray-500 mt-2 mb-4">Add your first customer to get started.</p>
-            <Link to="/customers/new" className="mt-4 inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg">
-                + Add Your First Customer
-            </Link>
-        </div>
-      );
-    }
-
-    return (
-      <div className="overflow-x-auto bg-white shadow-md rounded-lg">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-              <th className="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-              <th className="py-3 px-6 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Active Projects</th>
-              <th className="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Added</th>
-              <th className="py-3 px-6 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {customers.map(customer => (
-              <tr key={customer.id} className="hover:bg-gray-50 transition-colors">
-                <td className="py-4 px-6 whitespace-nowrap">
-                    <div className="font-medium text-gray-900">{customer.full_name || 'N/A'}</div>
-                    <div className="text-sm text-gray-500">{customer.email}</div>
-                    <div className="text-sm text-gray-500 flex items-center mt-1">
-                        <Phone size={12} className="mr-1.5"/> {formatPhoneNumber(customer.phone_number) || 'N/A'}
-                    </div>
-                     <div className="text-sm text-gray-500 flex items-center mt-1">
-                        {/* --- THIS IS THE FIX --- */}
-                        <Home size={12} className="mr-1.5"/> {formatAddress(customer)}
-                    </div>
-                </td>
-                <td className="py-4 px-6 whitespace-nowrap">
-                    <StatusBadge status={customer.status} />
-                </td>
-                <td className="py-4 px-6 whitespace-nowrap text-center text-sm font-medium">
-                    {customer.active_projects_count}
-                </td>
-                <td className="py-4 px-6 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(customer.created_at).toLocaleDateString()}
-                </td>
-                <td className="py-4 px-6 whitespace-nowrap text-right text-sm font-medium space-x-4">
-                  <button
-                    onClick={() => navigate(`/customers/${customer.id}/edit`)}
-                    className="text-blue-600 hover:text-blue-800 transition-colors"
-                    title="Edit Customer"
-                  >
-                    <Edit size={18} />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(customer.id)}
-                    className="text-red-600 hover:text-red-800 transition-colors"
-                    title="Delete Customer"
-                  >
-                    <Trash2 size={18} />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
   };
 
   return (
     <div className="p-4 sm:p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <h1 className="text-3xl font-bold text-gray-800">My Customers</h1>
         <Link
           to="/customers/new"
@@ -173,7 +147,171 @@ export default function Customers() {
           + Add New Customer
         </Link>
       </div>
-      {renderContent()}
+
+      {/* Controls */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <input
+          className="border rounded px-3 py-2"
+          placeholder="Search name, email, phone…"
+          value={q}
+          onChange={(e) => { setQ(e.target.value); setPage(1); }}
+          style={{ minWidth: 260 }}
+        />
+
+        <select
+          className="border rounded px-2 py-2"
+          value={status}
+          onChange={(e) => { setStatus(e.target.value); setPage(1); }}
+        >
+          <option value="">All statuses</option>
+          <option value="active">Active</option>
+          <option value="prospect">Prospect</option>
+          <option value="archived">Archived</option>
+        </select>
+
+        <select
+          className="border rounded px-2 py-2"
+          value={ordering}
+          onChange={(e) => { setOrdering(e.target.value); setPage(1); }}
+        >
+          <option value="-created_at">Newest</option>
+          <option value="created_at">Oldest</option>
+          {/* fallbacks if your serializer exposes full_name/name */}
+          <option value="full_name">Name A→Z</option>
+          <option value="-full_name">Name Z→A</option>
+          <option value="name">Name A→Z (name)</option>
+          <option value="-name">Name Z→A (name)</option>
+        </select>
+
+        <select
+          className="border rounded px-2 py-2"
+          value={pageSize}
+          onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+        >
+          <option value={10}>10 / page</option>
+          <option value={20}>20 / page</option>
+          <option value={50}>50 / page</option>
+          <option value={100}>100 / page</option>
+        </select>
+      </div>
+
+      {/* Content */}
+      {loading && <p className="text-center text-gray-500 py-10">Loading customers...</p>}
+      {!loading && error && <p className="text-center text-red-500 py-10">{error}</p>}
+
+      {!loading && !error && customers.length === 0 && (
+        <div className="text-center py-10 bg-white rounded-lg shadow-md">
+          <h3 className="text-lg font-semibold text-gray-700">No Customers Yet</h3>
+          <p className="text-gray-500 mt-2 mb-4">Add your first customer to get started.</p>
+          <Link
+            to="/customers/new"
+            className="mt-4 inline-block bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg"
+          >
+            + Add Your First Customer
+          </Link>
+        </div>
+      )}
+
+      {!loading && !error && customers.length > 0 && (
+        <div className="overflow-x-auto bg-white shadow-md rounded-lg">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Customer
+                </th>
+                <th className="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="py-3 px-6 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Active Projects
+                </th>
+                <th className="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Date Added
+                </th>
+                <th className="py-3 px-6 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {customers.map((customer) => (
+                <tr key={customer.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="py-4 px-6 whitespace-nowrap">
+                    <div className="font-medium text-gray-900">
+                      {customer.full_name || customer.name || 'N/A'}
+                    </div>
+                    <div className="text-sm text-gray-500">{customer.email || '—'}</div>
+                    <div className="text-sm text-gray-500 flex items-center mt-1">
+                      <Phone size={12} className="mr-1.5" /> {formatPhoneNumber(customer.phone_number || customer.phone)}
+                    </div>
+                    <div className="text-sm text-gray-500 flex items-center mt-1">
+                      <Home size={12} className="mr-1.5" /> {formatAddress(customer)}
+                    </div>
+                  </td>
+                  <td className="py-4 px-6 whitespace-nowrap">
+                    <StatusBadge status={customer.status} />
+                  </td>
+                  <td className="py-4 px-6 whitespace-nowrap text-center text-sm font-medium">
+                    {customer.active_projects_count ?? 0}
+                  </td>
+                  <td className="py-4 px-6 whitespace-nowrap text-sm text-gray-500">
+                    {customer.created_at ? new Date(customer.created_at).toLocaleDateString() : '—'}
+                  </td>
+                  <td className="py-4 px-6 whitespace-nowrap text-right text-sm font-medium space-x-4">
+                    <button
+                      onClick={() => navigate(`/customers/${customer.id}/edit`)}
+                      className="text-blue-600 hover:text-blue-800 transition-colors"
+                      title="Edit Customer"
+                      type="button"
+                    >
+                      <Edit size={18} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(customer.id)}
+                      className="text-red-600 hover:text-red-800 transition-colors"
+                      title="Delete Customer"
+                      type="button"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Pagination */}
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="text-sm text-gray-600">
+              Showing {(count === 0) ? 0 : (page - 1) * pageSize + 1}
+              {'–'}
+              {Math.min(page * pageSize, count)} of {count}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                className="border rounded px-3 py-1 disabled:opacity-50"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page <= 1 || loading}
+                type="button"
+              >
+                ‹ Prev
+              </button>
+              <span className="text-sm">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                className="border rounded px-3 py-1 disabled:opacity-50"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page >= totalPages || loading}
+                type="button"
+              >
+                Next ›
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

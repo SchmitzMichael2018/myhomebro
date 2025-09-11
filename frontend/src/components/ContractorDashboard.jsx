@@ -1,213 +1,223 @@
 // src/components/ContractorDashboard.jsx
-
-import React, { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
-import EarningsChart from "./EarningsChart";
-import MilestoneStatCard from "./MilestoneStatCard";
-import Modal from "react-modal";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Bell, RefreshCw, CheckCircle2, CircleDot, FileCheck2, HandCoins, CircleCheckBig, Layers3 } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../api";
+import EarningsChart from "./EarningsChart";
+import InvoiceModal from "./InvoiceModal";
+import MilestoneModal from "./MilestoneModal";
 
-if (typeof document !== "undefined") {
-  Modal.setAppElement("#root");
-}
+const toList = (res) => (res?.data?.results ? res.data.results : Array.isArray(res?.data) ? res.data : []);
+const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const amtOfMilestone = (m) => num(m.__amount ?? m.amount ?? m.total ?? m.price ?? m.total_amount ?? m.milestone_amount);
+const amtOfInvoice  = (i) => num(i.__amount ?? i.amount ?? i.total ?? i.total_amount ?? i.balance ?? i.invoice_amount);
+const fmtUSD = (v) => (Number(v || 0) || 0).toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 
-const STATUS_MAP = {
-  total: () => true,
-  incomplete: inv => inv.status === "pending",
-  complete: inv => inv.status === "completed",
-  pending_approval: inv => inv.status === "pending_approval",
-  approved: inv => inv.status === "approved",
-  earned: inv => inv.status === "paid",
+const normalizeMilestone = (m) => {
+  const raw = (m.status || "").toLowerCase();
+  const completed = m.completed || m.is_completed || raw === "completed" || raw === "complete";
+  const invoiced  = m.invoiced || m.is_invoiced || raw === "invoiced";
+
+  return {
+    ...m,
+    __completed: !!completed,
+    __invoiced:  !!invoiced,
+    __amount:    amtOfMilestone(m),
+  };
 };
 
+const normalizeInvoice = (inv) => {
+  const raw = (inv.status || "").toLowerCase();
+  const paid     = inv.paid || inv.is_paid || raw === "paid" || raw === "approved/paid" || raw === "complete/paid";
+  const approved = inv.approved || inv.is_approved || raw === "approved";
+  const pending  = raw === "pending_approval" || raw === "pending approval" || inv.pending_approval;
+  const disputed = inv.disputed || inv.is_disputed || raw === "disputed";
+  return { ...inv, __amount: amtOfInvoice(inv), __paid: !!paid, __approved: !!approved, __pending: !!pending, __disputed: !!disputed };
+};
+
+function TopBar({ onRefresh }) {
+  return (
+    <div className="flex items-center justify-between mb-4">
+      <div className="text-2xl md:text-3xl font-extrabold text-blue-900 tracking-tight">Contractor Dashboard</div>
+      <div className="flex items-center gap-3">
+        <button type="button" className="rounded-full p-2 text-blue-700 hover:bg-blue-50" title="Notifications" aria-label="Notifications">
+          <Bell size={20} />
+        </button>
+        <button type="button" className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 font-semibold flex items-center gap-2" onClick={onRefresh} title="Refresh">
+          <RefreshCw size={16} />
+          Refresh
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ title, icon: Icon, value, count, onClick }) {
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="text-sm font-semibold text-gray-700">{title}</div>
+          <div className="mt-1 text-xs">
+            <button type="button" className={`font-semibold text-blue-700 hover:underline ${onClick ? "" : "cursor-default opacity-60"}`} onClick={onClick || undefined}>
+              ({count})
+            </button>
+          </div>
+          <div className="mt-1 text-gray-900 font-bold">{fmtUSD(value)}</div>
+        </div>
+        <div className="rounded-full bg-blue-50 text-blue-700 p-3">
+          <Icon size={18} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ContractorDashboard() {
+  const [milestones, setMilestones] = useState([]);
   const [invoices, setInvoices] = useState([]);
-  const [agreements, setAgreements] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showDrillDown, setShowDrillDown] = useState(false);
-  const [drillFilter, setDrillFilter] = useState("total");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [error, setError] = useState("");
+  const [modal, setModal] = useState({ open: false, type: "", title: "", items: [] });
+  const [q, setQ] = useState("");
 
-  const navigate = useNavigate();
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
-    setError("");
     try {
-      const [invoiceRes, agreementRes] = await Promise.all([
-        api.get("/projects/invoices/"),
-        api.get("/projects/agreements/"),
-      ]);
-      setInvoices(invoiceRes.data || []);
-      setAgreements(agreementRes.data || []);
-    } catch (err) {
-      setError("Failed to load data. Please try again later.");
-      toast.error("Could not load dashboard data.");
+      const [msRes, invRes] = await Promise.all([api.get("/milestones/"), api.get("/invoices/")]);
+      setMilestones(toList(msRes).map(normalizeMilestone));
+      setInvoices(toList(invRes).map(normalizeInvoice));
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load dashboard data.");
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchData();
   }, []);
 
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const derived = useMemo(() => {
+    const msAll        = milestones;
+    const msIncomplete = milestones.filter((m) => !m.__completed);
+    const msComplete   = milestones.filter((m) =>  m.__completed);
+
+    const invPending = invoices.filter((i) => i.__pending && !i.__paid);
+    const invApproved= invoices.filter((i) => i.__approved && !i.__paid);
+    const invPaid    = invoices.filter((i) => i.__paid);
+
+    const sum = (arr, f) => arr.reduce((a, x) => a + f(x), 0);
+
+    return {
+      totals: {
+        total:      sum(msAll, amtOfMilestone),
+        incomplete: sum(msIncomplete, amtOfMilestone),
+        complete:   sum(msComplete,   amtOfMilestone),
+        pending:    sum(invPending,   amtOfInvoice),
+        approved:   sum(invApproved,  amtOfInvoice),
+        earned:     sum(invPaid,      amtOfInvoice),
+      },
+      counts: {
+        total:      msAll.length,
+        incomplete: msIncomplete.length,
+        complete:   msComplete.length,
+        pending:    invPending.length,
+        approved:   invApproved.length,
+        earned:     invPaid.length,
+      },
+      groups: {
+        total:      msAll,
+        incomplete: msIncomplete,
+        complete:   msComplete,
+        pending:    invPending,
+        approved:   invApproved,
+        earned:     invPaid,
+      }
+    };
+  }, [milestones, invoices]);
+
+  const openDrill = (key, label, type) => setModal({ open: true, type, title: label, items: derived.groups[key] || [] });
+  const closeDrill = () => setModal({ open: false, type: "", title: "", items: [] });
+
   const filteredInvoices = useMemo(() => {
-    return invoices
-      .filter(STATUS_MAP[drillFilter] || (() => true))
-      .filter(inv =>
-        inv.project_title?.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-  }, [drillFilter, invoices, searchTerm]);
+    const s = (q || "").trim().toLowerCase();
+    if (!s) return invoices;
+    const t = (v) => (v ? String(v).toLowerCase() : "");
+    return invoices.filter((inv) => {
+      const candidates = [
+        inv.title, inv.invoice_title, inv.customer_name, inv.homeowner_name, inv.client_name,
+        inv?.agreement?.title, inv?.agreement?.name, inv?.customer?.name, String(inv.invoice_number || inv.id || "")
+      ];
+      return candidates.some((c) => t(c).includes(s));
+    });
+  }, [q, invoices]);
 
-  const totalEarned = useMemo(() =>
-    invoices
-      .filter(inv => inv.status === "paid")
-      .reduce((sum, inv) => sum + parseFloat(inv.amount_due || 0), 0),
-    [invoices]
-  );
-
-  const handleStatClick = (key) => {
-    setDrillFilter(key);
-    setShowDrillDown(true);
-  };
+  if (loading) return <div className="p-6 text-gray-500">Loading dashboard…</div>;
 
   return (
-    <div className="w-full max-w-7xl mx-auto px-4 py-8">
-      <div className="flex flex-col md:flex-row md:justify-between md:items-center mb-6 gap-6">
-        <div>
-          <h2 className="text-3xl font-bold text-blue-800 mb-2">Contractor Dashboard</h2>
-          <p className="text-gray-600">Track your milestones, invoices, and earnings at a glance.</p>
-        </div>
-        <div className="flex gap-3">
-          <button
-            onClick={fetchData}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg shadow transition"
-          >
-            Refresh
-          </button>
-        </div>
+    <div className="p-4 md:p-6">
+      <TopBar onRefresh={fetchData} />
+
+      {/* top row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-6">
+        <StatCard title="Total"            icon={Layers3}       value={derived.totals.total}      count={derived.counts.total}      onClick={() => openDrill("total", "All Milestones", "milestone")} />
+        <StatCard title="Incomplete"       icon={CircleDot}     value={derived.totals.incomplete} count={derived.counts.incomplete} onClick={() => openDrill("incomplete", "Incomplete Milestones", "milestone")} />
+        <StatCard title="Complete"         icon={CheckCircle2}  value={derived.totals.complete}   count={derived.counts.complete}   onClick={() => openDrill("complete", "Completed Milestones", "milestone")} />
+        <StatCard title="Pending Approval" icon={FileCheck2}    value={derived.totals.pending}    count={derived.counts.pending}    onClick={() => openDrill("pending", "Invoices Pending Approval", "invoice")} />
+        <StatCard title="Approved"         icon={CircleCheckBig}value={derived.totals.approved}   count={derived.counts.approved}   onClick={() => openDrill("approved", "Approved Invoices", "invoice")} />
+        <StatCard title="Earned"           icon={HandCoins}     value={derived.totals.earned}     count={derived.counts.earned}     onClick={() => openDrill("earned", "Paid / Earned Invoices", "invoice")} />
       </div>
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-5 mb-8">
-        {[
-          { label: "Total", key: "total" },
-          { label: "Incomplete", key: "incomplete" },
-          { label: "Complete", key: "complete" },
-          { label: "Pending Approval", key: "pending_approval" },
-          { label: "Approved", key: "approved" },
-          { label: "Earned", key: "earned" },
-        ].map(({ label, key }) => (
-          <MilestoneStatCard
-            key={key}
-            label={label}
-            data={invoices.filter(STATUS_MAP[key] || (() => true)).length}
-            onClick={() => handleStatClick(key)}
-            active={drillFilter === key && showDrillDown}
-          />
-        ))}
-      </div>
-
-      {/* Earnings Chart */}
-      <div className="bg-white rounded-2xl shadow p-6 mb-8">
-        <h3 className="text-lg font-bold mb-4 text-blue-700">Earnings Overview</h3>
+      {/* earnings overview */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-6">
+        <div className="text-blue-900 font-bold mb-3">Earnings Overview</div>
         <EarningsChart invoices={invoices} />
-        <div className="mt-4 text-green-700 font-bold">
-          Total Earned: ${totalEarned.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-        </div>
+        <div className="mt-3 text-green-700 font-semibold">Total Earned: {fmtUSD(derived.totals.earned)}</div>
       </div>
 
-      {/* Search */}
-      <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-        <input
-          type="text"
-          placeholder="Search invoices or projects..."
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-          className="p-2 border rounded flex-1 md:max-w-xs"
-        />
-        {loading && <p className="text-blue-500">Loading...</p>}
+      {/* invoice search + table */}
+      <div className="mb-2">
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search invoices or projects..." className="w-full max-w-md rounded-lg border px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      </div>
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="text-left text-gray-600 border-b">
+              <th className="py-2 px-4">Invoice</th>
+              <th className="py-2 px-4">Customer</th>
+              <th className="py-2 px-4">Due</th>
+              <th className="py-2 px-4">Status</th>
+              <th className="py-2 px-4">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredInvoices.length === 0 ? (
+              <tr><td className="py-6 px-4 text-gray-500" colSpan={5}>No invoices found.</td></tr>
+            ) : filteredInvoices.map((inv) => {
+              const title = inv.title || inv.invoice_title || `Invoice #${inv.id}`;
+              const customer = inv.customer_name || inv.homeowner_name || inv.client_name || inv?.agreement?.customer_name || inv?.customer?.name || "—";
+              const due = inv.due || inv.due_date || inv.invoice_due || null;
+              const status = inv.__paid ? "Paid" : inv.__approved ? "Approved" : inv.__pending ? "Pending Approval" : inv.__disputed ? "Disputed" : (inv.status || "Submitted");
+              return (
+                <tr key={`inv-${inv.id}`} className="border-b last:border-b-0">
+                  <td className="py-2 px-4">{title}</td>
+                  <td className="py-2 px-4">{customer}</td>
+                  <td className="py-2 px-4">{due ? new Date(due).toLocaleDateString() : "—"}</td>
+                  <td className="py-2 px-4">{status}</td>
+                  <td className="py-2 px-4">{fmtUSD(amtOfInvoice(inv))}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
-      {/* Invoice Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {filteredInvoices.slice(0, 6).map(inv => (
-          <div
-            key={inv.id}
-            className="bg-white rounded-xl shadow p-5 flex flex-col gap-2 hover:ring-2 hover:ring-blue-300 transition cursor-pointer"
-            onClick={() => navigate(`/invoices/${inv.id}`)}
-          >
-            <div className="flex justify-between items-center">
-              <span className="font-bold text-blue-700">{inv.project_title || "Untitled Project"}</span>
-              <span className={`px-2 py-1 rounded text-xs ${
-                inv.status === "paid"
-                  ? "bg-green-100 text-green-700"
-                  : inv.status === "pending"
-                  ? "bg-yellow-100 text-yellow-800"
-                  : "bg-gray-100 text-gray-700"
-              }`}>
-                {inv.status.replace("_", " ").replace(/^\w/, c => c.toUpperCase())}
-              </span>
-            </div>
-            <div className="text-sm text-gray-700">
-              Homeowner: {inv.homeowner_name || "-"}
-            </div>
-            <div className="flex justify-between items-center mt-2">
-              <span className="font-bold text-xl text-blue-700">
-                ${parseFloat(inv.amount_due || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-              </span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setDrillFilter("total");
-                  setShowDrillDown(true);
-                }}
-                className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 text-sm font-semibold"
-              >
-                View
-              </button>
-            </div>
-          </div>
-        ))}
-        {filteredInvoices.length === 0 && (
-          <div className="col-span-full text-center text-gray-500 py-8">
-            No invoices found.
-          </div>
-        )}
-      </div>
-
-      {/* Drill-Down Modal */}
-      <Modal
-        isOpen={showDrillDown}
-        onRequestClose={() => {
-          setShowDrillDown(false);
-          setDrillFilter("total");
-        }}
-        className="p-6 max-w-lg mx-auto bg-white rounded shadow-lg outline-none"
-        overlayClassName="fixed inset-0 bg-black/50 flex justify-center items-center z-50"
-        aria-modal="true"
-        role="dialog"
-      >
-        <h2 className="text-xl font-bold mb-4 capitalize">
-          {drillFilter.replace("_", " ")} Invoices
-        </h2>
-        {filteredInvoices.length > 0 ? (
-          <ul className="space-y-2">
-            {filteredInvoices.map(inv => (
-              <li key={inv.id} className="p-2 border-b">
-                <p><strong>{inv.project_title}</strong></p>
-                <p>Amount: ${parseFloat(inv.amount_due).toFixed(2)}</p>
-                <p>Status: {inv.status}</p>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>No invoices found.</p>
-        )}
-      </Modal>
+      {/* drill-downs */}
+      {modal.open && modal.type === "milestone" && (
+        <MilestoneModal title={modal.title} items={modal.items} onClose={closeDrill} />
+      )}
+      {modal.open && modal.type === "invoice" && (
+        <InvoiceModal title={modal.title} items={modal.items} onClose={closeDrill} />
+      )}
     </div>
   );
 }

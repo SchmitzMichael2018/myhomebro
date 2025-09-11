@@ -1,241 +1,415 @@
 // src/pages/AgreementDetail.jsx
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "../api";
-import InvoiceModal from "../components/InvoiceModal";
-import AgreementStatus from '../components/AgreementStatus';
-import SignatureModal from '../components/SignatureModal'; // ✅ use shared modal
-import EscrowPromptModal from '../components/EscrowPromptModal'; // future integration
 
-function getStatusLabel(status) {
-  if (!status) return "Unknown";
-  return status.charAt(0).toUpperCase() + status.slice(1).replace('_', ' ');
+// Optional (kept if you’re using these already)
+import InvoiceModal from "../components/InvoiceModal";
+import AgreementStatus from "../components/AgreementStatus";
+import SignatureModal from "../components/SignatureModal";
+
+// ✅ Self-wrapping modal — no <Elements> needed in this file
+import EscrowPromptModal from "../components/EscrowPromptModal";
+
+/* --------------------- helpers --------------------- */
+const toMoney = (v) => {
+  const n = typeof v === "number" ? v : parseFloat(String(v ?? 0));
+  return Number.isFinite(n) ? n : 0;
+};
+
+function parseHMS(hms) {
+  // "HH:MM:SS" -> "HH:MM:SS"; safely handle missing/invalid
+  if (!hms || typeof hms !== "string" || !/^\d{2}:\d{2}:\d{2}$/.test(hms)) {
+    return "00:00:00";
+  }
+  return hms;
 }
 
-const AgreementDetail = () => {
-  const { id } = useParams();
-  const navigate = useNavigate();
+/** Normalize API agreement (supports both nested and flat serializers) */
+function normalizeAgreement(raw) {
+  if (!raw || typeof raw !== "object") {
+    return {
+      id: null,
+      title: "Untitled Project",
+      homeownerName: "—",
+      homeownerEmail: "—",
+      totalCost: 0,
+      isSigned: false,
+      escrowFunded: false,
+      invoices: [],
+      milestones: [],
+      raw,
+    };
+  }
 
-  const [agreement, setAgreement] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
+  const title =
+    raw.project_title ||
+    raw.title ||
+    raw.project?.title ||
+    "Untitled Project";
+
+  const homeownerName =
+    raw.homeowner_name ||
+    raw.project?.homeowner?.full_name ||
+    raw.homeowner?.full_name ||
+    "—";
+
+  const homeownerEmail =
+    raw.homeowner_email ||
+    raw.project?.homeowner?.email ||
+    raw.homeowner?.email ||
+    "—";
+
+  const totalCost =
+    toMoney(raw.total_cost) ||
+    toMoney(raw.project?.total_cost) ||
+    0;
+
+  const isSigned =
+    !!raw.is_fully_signed ||
+    !!raw.project_signed ||
+    (!!raw.signed_by_contractor && !!raw.signed_by_homeowner);
+
+  const escrowFunded = !!raw.escrow_funded;
+
+  const invoices = Array.isArray(raw.invoices)
+    ? raw.invoices
+    : Array.isArray(raw.milestone_invoices)
+    ? raw.milestone_invoices
+    : [];
+
+  const milestonesRaw = Array.isArray(raw.milestones)
+    ? raw.milestones
+    : Array.isArray(raw.milestone_set)
+    ? raw.milestone_set
+    : [];
+
+  const milestones = milestonesRaw.map((m, i) => {
+    const amount = toMoney(m.amount);
+    const start = m.start || m.start_date || null;
+    const end = m.end || m.completion_date || null;
+    const duration =
+      m.duration_minutes != null
+        ? `${String(Math.floor(m.duration_minutes / 60)).padStart(2, "0")}:${String(m.duration_minutes % 60).padStart(2, "0")}:00`
+        : parseHMS(m.duration);
+    return {
+      id: m.id || i,
+      title: m.title || "—",
+      amount,
+      start,
+      end,
+      duration,
+      status: m.status || (m.completed ? "completed" : "pending"),
+      description: m.description || "",
+      order: m.order ?? i + 1,
+    };
+  });
+
+  const id = raw.id ?? raw.project?.agreement ?? null;
+
+  return {
+    id,
+    title,
+    homeownerName,
+    homeownerEmail,
+    totalCost,
+    isSigned,
+    escrowFunded,
+    invoices,
+    milestones,
+    raw,
+  };
+}
+
+/* --------------------- component --------------------- */
+export default function AgreementDetail({ initialAgreement = null, isMagicLink = false }) {
+  const params = useParams();
+  const navigate = useNavigate();
+  const paramId = params?.id ? String(params.id) : null;
+
+  const [rawAgreement, setRawAgreement] = useState(initialAgreement || null);
+  const [loading, setLoading] = useState(!initialAgreement);
   const [error, setError] = useState("");
 
-  const [modalVisible, setModalVisible] = useState(false);
-  const [selectedInvoices, setSelectedInvoices] = useState([]);
-  const [modalCategory, setModalCategory] = useState("");
+  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
+  const [invoiceModalItems, setInvoiceModalItems] = useState([]);
+  const [invoiceModalCategory, setInvoiceModalCategory] = useState("");
 
-  const [signatureModalVisible, setSignatureModalVisible] = useState(false);
-  const [signatureLoading, setSignatureLoading] = useState(false);
+  const [signatureOpen, setSignatureOpen] = useState(false);
+  const [signatureBusy, setSignatureBusy] = useState(false);
 
-  const [showEscrowPrompt, setShowEscrowPrompt] = useState(false);
-  const [stripeClientSecret, setStripeClientSecret] = useState("");
+  const [escrowOpen, setEscrowOpen] = useState(false);
+  const [clientSecret, setClientSecret] = useState("");
 
-  const fetchAgreement = async () => {
+  const norm = useMemo(() => normalizeAgreement(rawAgreement), [rawAgreement]);
+
+  const resolvedId = useMemo(() => {
+    if (paramId) return paramId;
+    if (initialAgreement?.id) return String(initialAgreement.id);
+    return norm.id ? String(norm.id) : null;
+  }, [paramId, initialAgreement, norm.id]);
+
+  async function fetchAgreement() {
+    if (!resolvedId) return;
     setLoading(true);
     setError("");
     try {
-      const { data } = await api.get(`/projects/agreements/${id}/`);
-      setAgreement(data);
-    } catch (err) {
-      setError("Failed to load agreement. Please try again.");
+      const { data } = await api.get(`/projects/agreements/${resolvedId}/`);
+      setRawAgreement(data);
+    } catch (e) {
+      console.error(e);
+      setError("Failed to load agreement.");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   useEffect(() => {
+    if (initialAgreement && isMagicLink && !paramId) {
+      setRawAgreement(initialAgreement);
+      setLoading(false);
+      return;
+    }
     fetchAgreement();
-  }, [id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedId]);
 
-  const handleViewInvoices = (invoices, category) => {
-    setSelectedInvoices(invoices);
-    setModalCategory(category);
-    setModalVisible(true);
-  };
+  function openInvoices(list, category) {
+    setInvoiceModalItems(Array.isArray(list) ? list : []);
+    setInvoiceModalCategory(category || "Invoices");
+    setInvoiceModalOpen(true);
+  }
 
-  const handleModalClose = () => {
-    setModalVisible(false);
+  function closeInvoices() {
+    setInvoiceModalOpen(false);
     fetchAgreement();
-  };
+  }
 
-  const handleSign = () => {
-    setSignatureModalVisible(true);
-  };
-
-  const handleSignatureSubmit = async (typedName) => {
-    setSignatureLoading(true);
+  async function startEscrow() {
+    if (!resolvedId) return;
     try {
-      await api.patch(`/projects/agreements/${id}/sign/`, {
+      const { data } = await api.post(`/projects/agreements/${resolvedId}/fund_escrow/`);
+      if (data?.client_secret) {
+        setClientSecret(data.client_secret);
+        setEscrowOpen(true); // Self-wrapping modal will handle Elements
+      } else {
+        alert("Escrow start did not return a client secret.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Could not start escrow funding.");
+    }
+  }
+
+  async function handleSign(typedName) {
+    if (!resolvedId) return;
+    setSignatureBusy(true);
+    try {
+      await api.patch(`/projects/agreements/${resolvedId}/sign/`, {
         typed_name: typedName,
         accepted: true,
         signed_at: new Date().toISOString(),
       });
-      setSignatureModalVisible(false);
-      const res = await api.post(`/projects/agreements/${id}/fund_escrow/`);
-      setStripeClientSecret(res.data.client_secret);
-      setShowEscrowPrompt(true);
+      // Immediately start escrow intent after signing
+      const { data } = await api.post(`/projects/agreements/${resolvedId}/fund_escrow/`);
+      if (data?.client_secret) {
+        setClientSecret(data.client_secret);
+        setEscrowOpen(true);
+      }
       fetchAgreement();
-    } catch (err) {
+    } catch (e) {
+      console.error(e);
       alert("Failed to sign agreement.");
     } finally {
-      setSignatureLoading(false);
+      setSignatureBusy(false);
     }
-  };
+  }
 
-  const handleDownloadPDF = async () => {
+  async function downloadPDF() {
+    if (!resolvedId) return;
     try {
       const token = localStorage.getItem("access");
-      const response = await fetch(`/api/projects/agreements/${id}/pdf/`, {
+      const res = await fetch(`/api/projects/agreements/${resolvedId}/pdf/`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!response.ok) throw new Error("PDF download failed");
-      const blob = await response.blob();
+      if (!res.ok) throw new Error("PDF download failed");
+      const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `agreement_${id}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `agreement_${resolvedId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     } catch {
       alert("Failed to download PDF.");
     }
-  };
+  }
 
-  const handleInvoiceAction = async (invoiceId, action) => {
-    setActionLoading(true);
-    try {
-      await api.patch(`/projects/invoices/${invoiceId}/${action}/`);
-      fetchAgreement();
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const totalInvoicesAmount = useMemo(() => {
-    if (!agreement?.milestone_invoices) return "0.00";
-    return agreement.milestone_invoices
-      .reduce((acc, inv) => acc + parseFloat(inv.amount || 0), 0)
-      .toFixed(2);
-  }, [agreement]);
-
-  if (loading) return <div className="p-6 text-center">Loading...</div>;
-  if (error) return <div className="p-6 text-center text-red-500">{error}</div>;
-  if (!agreement) return <div className="p-6 text-center text-gray-500">Agreement not found.</div>;
+  if (loading) return <div className="p-6 text-center">Loading…</div>;
+  if (error) return <div className="p-6 text-center text-red-600">{error}</div>;
+  if (!norm.id) return <div className="p-6 text-center text-gray-600">Agreement not found.</div>;
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
-      <button onClick={() => navigate("/agreements")} className="text-blue-500 hover:underline">← Back</button>
+      <button onClick={() => navigate("/agreements")} className="text-blue-600 hover:underline">← Back</button>
 
+      {/* Header */}
       <div className="bg-blue-50 border-l-4 border-blue-600 p-4 rounded shadow-sm">
-        <h2 className="text-2xl font-bold mb-1">{agreement.project_title || "Untitled Project"}</h2>
-        <p><strong>Homeowner:</strong> {agreement.homeowner_name}</p>
-        <p><strong>Total Cost:</strong> ${parseFloat(agreement.total_cost).toFixed(2)}</p>
+        <h2 className="text-2xl font-bold mb-1">{norm.title}</h2>
+        <p>
+          <strong>Homeowner:</strong> {norm.homeownerName}{" "}
+          <span className="text-gray-500">({norm.homeownerEmail})</span>
+        </p>
+        <p><strong>Total Cost:</strong> ${norm.totalCost.toFixed(2)}</p>
         <p>
           <strong>Status:</strong>{" "}
-          {agreement.escrow_funded
-            ? "✅ Escrow Funded"
-            : agreement.project_signed
-              ? "❌ Awaiting Funding"
-              : "❌ Not Signed"}
+          {norm.escrowFunded ? "✅ Escrow Funded" : norm.isSigned ? "❌ Awaiting Funding" : "❌ Not Signed"}
         </p>
       </div>
 
-      <AgreementStatus agreement={agreement} />
+      {/* Status (raw object passed so existing component logic still works) */}
+      {typeof AgreementStatus === "function" && <AgreementStatus agreement={rawAgreement} />}
 
-      <div className="flex space-x-4">
-        {!agreement.project_signed && (
+      {/* Actions */}
+      <div className="flex flex-wrap gap-3">
+        {!norm.isSigned && (
           <button
-            onClick={handleSign}
-            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+            onClick={() => setSignatureOpen(true)}
+            className="px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700"
           >
             Sign Agreement
           </button>
         )}
-        {agreement.project_signed && !agreement.escrow_funded && (
+        {norm.isSigned && !norm.escrowFunded && (
           <button
-            onClick={async () => {
-              const res = await api.post(`/projects/agreements/${id}/fund_escrow/`);
-              setStripeClientSecret(res.data.client_secret);
-              setShowEscrowPrompt(true);
-            }}
-            className="px-4 py-2 bg-yellow-500 text-white rounded hover:bg-yellow-600"
+            onClick={startEscrow}
+            className="px-4 py-2 rounded bg-yellow-500 text-white hover:bg-yellow-600"
           >
             Fund Escrow
           </button>
         )}
         <button
-          onClick={handleDownloadPDF}
-          className="px-4 py-2 bg-blue-700 text-white rounded hover:bg-blue-800"
+          onClick={downloadPDF}
+          className="px-4 py-2 rounded bg-blue-700 text-white hover:bg-blue-800"
         >
           Download PDF
         </button>
       </div>
 
-      {/* Invoice Table */}
-      <div className="bg-white p-6 rounded shadow">
-        <h3 className="text-xl font-semibold mb-4">Milestone Invoices</h3>
-        {agreement.milestone_invoices?.length > 0 ? (
-          <>
-            <p><strong>Total:</strong> ${totalInvoicesAmount}</p>
-            <table className="w-full mt-3 border text-sm">
-              <thead className="bg-gray-100">
+      {/* Milestones */}
+      <div className="bg-white rounded shadow p-6">
+        <h3 className="text-lg font-semibold mb-3">Milestones</h3>
+        {norm.milestones.length === 0 ? (
+          <p className="text-gray-500">No milestones found.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm border rounded">
+              <thead className="bg-gray-50">
                 <tr>
-                  <th className="p-2 text-left">Project</th>
-                  <th className="p-2">Amount</th>
-                  <th className="p-2">Status</th>
-                  <th className="p-2">Actions</th>
+                  <th className="p-2 text-left border">#</th>
+                  <th className="p-2 text-left border">Title</th>
+                  <th className="p-2 text-right border">Amount</th>
+                  <th className="p-2 text-left border">Start</th>
+                  <th className="p-2 text-left border">End</th>
+                  <th className="p-2 text-left border">Duration</th>
+                  <th className="p-2 text-left border">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {agreement.milestone_invoices.map(inv => (
-                  <tr key={inv.id} className="border-t hover:bg-gray-50">
-                    <td className="p-2">{inv.project_title}</td>
-                    <td className="p-2">${parseFloat(inv.amount || 0).toFixed(2)}</td>
-                    <td className="p-2">{getStatusLabel(inv.status)}</td>
-                    <td className="p-2 space-x-2">
-                      {inv.status === "pending" && (
-                        <>
-                          <button onClick={() => handleInvoiceAction(inv.id, "approve")} className="bg-blue-500 text-white px-2 py-1 rounded">Approve</button>
-                          <button onClick={() => handleInvoiceAction(inv.id, "dispute")} className="bg-red-500 text-white px-2 py-1 rounded">Dispute</button>
-                        </>
-                      )}
-                      {inv.status === "approved" && (
-                        <button onClick={() => handleInvoiceAction(inv.id, "mark_paid")} className="bg-green-600 text-white px-2 py-1 rounded">Mark Paid</button>
-                      )}
-                      <button onClick={() => handleViewInvoices([inv], "Invoice")} className="bg-gray-500 text-white px-2 py-1 rounded">View</button>
-                    </td>
+                {norm.milestones.map((m, idx) => (
+                  <tr key={m.id || idx} className="odd:bg-white even:bg-gray-50">
+                    <td className="p-2 border">{m.order ?? idx + 1}</td>
+                    <td className="p-2 border">{m.title}</td>
+                    <td className="p-2 border text-right">${toMoney(m.amount).toFixed(2)}</td>
+                    <td className="p-2 border">{m.start || "—"}</td>
+                    <td className="p-2 border">{m.end || "—"}</td>
+                    <td className="p-2 border">{m.duration}</td>
+                    <td className="p-2 border capitalize">{String(m.status).replaceAll("_", " ")}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </>
-        ) : (
+          </div>
+        )}
+      </div>
+
+      {/* Invoices */}
+      <div className="bg-white rounded shadow p-6">
+        <h3 className="text-lg font-semibold mb-3">Invoices</h3>
+        {norm.invoices.length === 0 ? (
           <p className="text-gray-500">No invoices yet.</p>
+        ) : (
+          <>
+            <div className="mb-2 text-sm text-gray-600">
+              Total: $
+              {norm.invoices.reduce((s, inv) => s + toMoney(inv.amount), 0).toFixed(2)}
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm border rounded">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="p-2 text-left border">#</th>
+                    <th className="p-2 text-left border">Project</th>
+                    <th className="p-2 text-right border">Amount</th>
+                    <th className="p-2 text-left border">Status</th>
+                    <th className="p-2 text-left border">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {norm.invoices.map((inv, i) => (
+                    <tr key={inv.id || i} className="odd:bg-white even:bg-gray-50">
+                      <td className="p-2 border">{inv.id || i + 1}</td>
+                      <td className="p-2 border">{inv.project_title || norm.title}</td>
+                      <td className="p-2 border text-right">${toMoney(inv.amount).toFixed(2)}</td>
+                      <td className="p-2 border capitalize">
+                        {String(inv.status || "pending").replaceAll("_", " ")}
+                      </td>
+                      <td className="p-2 border">
+                        <button
+                          onClick={() => openInvoices([inv], "Invoice")}
+                          className="px-2 py-1 rounded bg-gray-600 text-white hover:bg-gray-700"
+                        >
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
 
       {/* Modals */}
-      <InvoiceModal
-        visible={modalVisible}
-        onClose={handleModalClose}
-        invoices={selectedInvoices}
-        category={modalCategory}
-      />
-      <SignatureModal
-        visible={signatureModalVisible}
-        onClose={() => setSignatureModalVisible(false)}
-        onSubmit={handleSignatureSubmit}
-        loading={signatureLoading}
-      />
+      {typeof InvoiceModal === "function" && (
+        <InvoiceModal
+          visible={invoiceModalOpen}
+          onClose={closeInvoices}
+          invoices={invoiceModalItems}
+          category={invoiceModalCategory}
+        />
+      )}
+      {typeof SignatureModal === "function" && (
+        <SignatureModal
+          visible={signatureOpen}
+          onClose={() => setSignatureOpen(false)}
+          onSubmit={handleSign}
+          loading={signatureBusy}
+        />
+      )}
+
+      {/* ✅ Self-wrapping Escrow modal (no <Elements> required here) */}
       <EscrowPromptModal
-        visible={showEscrowPrompt}
-        onClose={() => setShowEscrowPrompt(false)}
-        stripeClientSecret={stripeClientSecret}
+        visible={escrowOpen}
+        onClose={() => setEscrowOpen(false)}
+        stripeClientSecret={clientSecret}
+        onSuccess={() => {
+          setEscrowOpen(false);
+          fetchAgreement();
+        }}
       />
     </div>
   );
-};
-
-export default AgreementDetail;
+}

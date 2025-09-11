@@ -1,4 +1,4 @@
-# projects/views/__init__.py
+# backend/backend/projects/views/__init__.py
 
 # ViewSets
 from .project import ProjectViewSet
@@ -27,34 +27,30 @@ from .public_sign import (
     MagicFundEscrowView,
 )
 
-# Calendar Views
-from .calendar import (
-    MilestoneCalendarView,
-    AgreementCalendarView,
-)
+# Calendar Views (milestones only — agreements removed)
+from .calendar import MilestoneCalendarView
 
 # Webhooks
 from .stripe_webhook import stripe_webhook
 
 __all__ = [
-    'ProjectViewSet',
-    'ContractorViewSet',
-    'HomeownerViewSet',
-    'AgreementViewSet',
-    'InvoiceViewSet',
-    'ExpenseViewSet',
-    'MilestoneViewSet',
-    'MilestoneFileViewSet',
-    'MilestoneCommentViewSet',
-    'MagicInvoiceView',
-    'MagicInvoiceApproveView',
-    'MagicInvoiceDisputeView',
-    'AgreementSignView',
-    'AgreementSignSuccessView',
-    'AgreementMagicPdfView',
-    'MagicAccessView',
-    'MagicFundEscrowView',
-    'MilestoneCalendarView',
-    'AgreementCalendarView',
-    'stripe_webhook',
+    "ProjectViewSet",
+    "ContractorViewSet",
+    "HomeownerViewSet",
+    "AgreementViewSet",
+    "InvoiceViewSet",
+    "ExpenseViewSet",
+    "MilestoneViewSet",
+    "MilestoneFileViewSet",
+    "MilestoneCommentViewSet",
+    "MagicInvoiceView",
+    "MagicInvoiceApproveView",
+    "MagicInvoiceDisputeView",
+    "AgreementSignView",
+    "AgreementSignSuccessView",
+    "AgreementMagicPdfView",
+    "MagicAccessView",
+    "MagicFundEscrowView",
+    "MilestoneCalendarView",
+    "stripe_webhook",
 ]

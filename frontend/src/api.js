@@ -1,116 +1,193 @@
 // src/api.js
+import axios from "axios";
 
-import axios from 'axios';
-import {
-  getAccessToken,
-  getRefreshToken,
-  setAccessToken,
-  clearSession,
-} from './auth.js';
+/**
+ * Central axios setup:
+ * - Base URL: /api
+ * - Attaches Authorization on every request (both instance AND global axios)
+ * - Refreshes access token once on 401 and retries
+ * - Rewrites a couple legacy endpoints to the new /projects/* paths
+ */
 
-// 1. Create a global axios instance with a base URL.
-// All requests made with this instance will automatically go to /api/...
-const api = axios.create({
-  baseURL: '/api',
-});
+const TOK = { access: "access", refresh: "refresh" };
+const BASE_URL = "/api";
 
-// 2. Create a request interceptor to automatically add the access token.
-api.interceptors.request.use(
-  (config) => {
-    const token = getAccessToken();
-    if (token) {
-      // Add the Authorization header to every outgoing request
-      config.headers['Authorization'] = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    // Handle request errors
-    return Promise.reject(error);
+// --- Token helpers ---
+export const getAccessToken = () => {
+  try {
+    return localStorage.getItem(TOK.access) || sessionStorage.getItem(TOK.access);
+  } catch {
+    return null;
   }
-);
-
-// A variable to prevent multiple simultaneous token refresh requests
-let isRefreshing = false;
-// A queue to hold requests that failed due to a 401 error while the token is refreshing
-let failedQueue = [];
-
-const processQueue = (error, token = null) => {
-  failedQueue.forEach(prom => {
-    if (error) {
-      prom.reject(error);
-    } else {
-      prom.resolve(token);
-    }
-  });
-
-  failedQueue = [];
+};
+export const getRefreshToken = () => {
+  try {
+    return localStorage.getItem(TOK.refresh) || sessionStorage.getItem(TOK.refresh);
+  } catch {
+    return null;
+  }
 };
 
-// 3. Create a response interceptor to handle token refreshing.
-api.interceptors.response.use(
-  (response) => {
-    // If the request was successful, just return the response
-    return response;
-  },
-  async (error) => {
-    const originalRequest = error.config;
+export const setTokens = (access, refresh, remember = true) => {
+  try {
+    const store = remember ? localStorage : sessionStorage;
+    const other = remember ? sessionStorage : localStorage;
 
-    // Check if the error is a 401 and we haven't already retried the request
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      if (isRefreshing) {
-        // If we are already refreshing the token, queue this request
-        return new Promise(function(resolve, reject) {
-          failedQueue.push({ resolve, reject });
-        }).then(token => {
-          originalRequest.headers['Authorization'] = 'Bearer ' + token;
-          return api(originalRequest);
-        });
-      }
+    if (access) store.setItem(TOK.access, access);
+    if (refresh) store.setItem(TOK.refresh, refresh);
+    // prevent drift between storages
+    other.removeItem(TOK.access);
+    other.removeItem(TOK.refresh);
+  } catch { /* ignore */ }
 
-      originalRequest._retry = true; // Mark that we are retrying this request
-      isRefreshing = true;
+  applyAuthHeader(access);
+};
 
-      const refreshToken = getRefreshToken();
-      if (!refreshToken) {
-        // If there's no refresh token, we can't do anything.
-        console.error('No refresh token available.');
-        clearSession(); // Clear out any stale tokens
+export const clearAuth = () => {
+  try {
+    localStorage.removeItem(TOK.access);
+    localStorage.removeItem(TOK.refresh);
+    sessionStorage.removeItem(TOK.access);
+    sessionStorage.removeItem(TOK.refresh);
+  } catch { /* ignore */ }
+  applyAuthHeader(null);
+};
+
+// Apply header to both our instance AND global axios default
+function applyAuthHeader(token) {
+  if (token) {
+    api.defaults.headers.common.Authorization = `Bearer ${token}`;
+    axios.defaults.headers.common.Authorization = `Bearer ${token}`;
+  } else {
+    delete api.defaults.headers.common.Authorization;
+    delete axios.defaults.headers.common.Authorization;
+  }
+}
+
+// Map legacy endpoints → new ones (front-end shim)
+const LEGACY_PREFIX_MAP = [
+  // [oldPrefix, newPrefix]
+  ["/homeowners", "/projects/homeowners"],
+  ["/milestones", "/projects/milestones"],
+];
+
+// Rewriter for config.url like "/homeowners?page=1" → "/projects/homeowners?page=1"
+function rewriteLegacyUrl(url) {
+  if (!url || typeof url !== "string") return url;
+  for (const [oldPfx, newPfx] of LEGACY_PREFIX_MAP) {
+    if (url === oldPfx || url.startsWith(oldPfx + "/") || url.startsWith(oldPfx + "?")) {
+      return newPfx + url.slice(oldPfx.length);
+    }
+  }
+  return url;
+}
+
+// Build an axios instance
+const api = axios.create({
+  baseURL: BASE_URL,
+  timeout: 30000,
+});
+
+// One set of interceptors, installed onto ANY axios instance we pass in
+function installInterceptors(instance) {
+  // Attach token + rewrite legacy paths
+  instance.interceptors.request.use((config) => {
+    // Always ensure Authorization is present from storage
+    const token = getAccessToken();
+    if (token) config.headers = { ...(config.headers || {}), Authorization: `Bearer ${token}` };
+
+    // Rewrite legacy paths
+    if (config.url) {
+      // only rewrite path part, not full URLs to 3rd-party
+      const isRelative = !/^https?:\/\//i.test(config.url);
+      if (isRelative) config.url = rewriteLegacyUrl(config.url);
+    }
+    return config;
+  });
+
+  // Refresh-once on 401
+  let isRefreshing = false;
+  let queue = [];
+
+  const flush = (err, newToken) => {
+    queue.forEach(({ resolve, reject }) => {
+      if (err) reject(err);
+      else resolve(newToken);
+    });
+    queue = [];
+  };
+
+  instance.interceptors.response.use(
+    (res) => res,
+    async (error) => {
+      const original = error.config;
+      if (!error.response || error.response.status !== 401 || original?._retry) {
         return Promise.reject(error);
       }
 
-      try {
-        // Make the request to refresh the token
-        const response = await axios.post('/api/token/refresh/', {
-          refresh: refreshToken,
+      original._retry = true;
+
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          queue.push({
+            resolve: (token) => {
+              if (token) original.headers.Authorization = `Bearer ${token}`;
+              resolve(instance(original));
+            },
+            reject,
+          });
         });
+      }
 
-        const newAccessToken = response.data.access;
-        setAccessToken(newAccessToken); // Save the new access token
+      isRefreshing = true;
+      const refresh = getRefreshToken();
+      if (!refresh) {
+        isRefreshing = false;
+        clearAuth();
+        return Promise.reject(error);
+      }
 
-        // Update the authorization header on our axios instance and the original request
-        api.defaults.headers.common['Authorization'] = `Bearer ${newAccessToken}`;
-        originalRequest.headers['Authorization'] = `Bearer ${newAccessToken}`;
-        
-        processQueue(null, newAccessToken);
+      // Most backends expose one of these (yours has /auth/refresh/)
+      const refreshEndpoints = ["/auth/refresh/", "/token/refresh/"];
 
-        // Retry the original request with the new token
-        return api(originalRequest);
+      try {
+        let data;
+        for (let i = 0; i < refreshEndpoints.length; i++) {
+          try {
+            const resp = await instance.post(refreshEndpoints[i], { refresh });
+            data = resp.data;
+            break;
+          } catch (e) {
+            if (i === refreshEndpoints.length - 1) throw e;
+          }
+        }
 
-      } catch (refreshError) {
-        console.error('Token refresh failed:', refreshError);
-        // If refreshing fails, clear tokens and redirect to login
-        clearSession();
-        processQueue(refreshError, null);
-        return Promise.reject(refreshError);
+        const newAccess = data?.access || data?.access_token;
+        if (!newAccess) throw new Error("No access token returned on refresh.");
+
+        // persist in same storage type (remember vs session) by checking where refresh lives
+        const remember = !!localStorage.getItem(TOK.refresh);
+        setTokens(newAccess, refresh, remember);
+
+        flush(null, newAccess);
+        original.headers.Authorization = `Bearer ${newAccess}`;
+        return instance(original);
+      } catch (err) {
+        flush(err, null);
+        clearAuth();
+        throw err;
       } finally {
         isRefreshing = false;
       }
     }
+  );
+}
 
-    // For all other errors, just reject the promise
-    return Promise.reject(error);
-  }
-);
+// Install on our instance AND the global axios default (covers stray axios usages)
+installInterceptors(api);
+installInterceptors(axios);
+
+// Ensure headers are set on load if tokens already exist (e.g., after refresh)
+applyAuthHeader(getAccessToken() || null);
 
 export default api;
