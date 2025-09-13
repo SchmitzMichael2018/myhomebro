@@ -4,15 +4,16 @@ import axios from "axios";
 /**
  * Central axios setup:
  * - Base URL: /api
- * - Attaches Authorization on every request (both instance AND global axios)
+ * - Attaches Authorization on every request (instance AND global axios)
  * - Refreshes access token once on 401 and retries
- * - Rewrites a couple legacy endpoints to the new /projects/* paths
+ * - Rewrites legacy endpoints to /projects/* paths
+ * - Fallback: if PATCH/PUT /contractors/me/ returns 405, retry as /contractors/{id}/
  */
 
 const TOK = { access: "access", refresh: "refresh" };
 const BASE_URL = "/api";
 
-// --- Token helpers ---
+/* ---------------- Token helpers ---------------- */
 export const getAccessToken = () => {
   try {
     return localStorage.getItem(TOK.access) || sessionStorage.getItem(TOK.access);
@@ -35,7 +36,8 @@ export const setTokens = (access, refresh, remember = true) => {
 
     if (access) store.setItem(TOK.access, access);
     if (refresh) store.setItem(TOK.refresh, refresh);
-    // prevent drift between storages
+
+    // ensure only one storage holds tokens
     other.removeItem(TOK.access);
     other.removeItem(TOK.refresh);
   } catch { /* ignore */ }
@@ -53,25 +55,24 @@ export const clearAuth = () => {
   applyAuthHeader(null);
 };
 
-// Apply header to both our instance AND global axios default
+/* --------------- Shared header applier --------------- */
 function applyAuthHeader(token) {
   if (token) {
     api.defaults.headers.common.Authorization = `Bearer ${token}`;
-    axios.defaults.headers.common.Authorization = `Bearer ${token}`;
+    axios.defaults.headers.common.Authorization = `Bearer ${token}`; // cover stray axios usage
   } else {
     delete api.defaults.headers.common.Authorization;
     delete axios.defaults.headers.common.Authorization;
   }
 }
 
-// Map legacy endpoints → new ones (front-end shim)
+/* --------------- Legacy endpoint rewrite --------------- */
 const LEGACY_PREFIX_MAP = [
-  // [oldPrefix, newPrefix]
   ["/homeowners", "/projects/homeowners"],
   ["/milestones", "/projects/milestones"],
+  ["/contractors", "/projects/contractors"],
 ];
 
-// Rewriter for config.url like "/homeowners?page=1" → "/projects/homeowners?page=1"
 function rewriteLegacyUrl(url) {
   if (!url || typeof url !== "string") return url;
   for (const [oldPfx, newPfx] of LEGACY_PREFIX_MAP) {
@@ -82,30 +83,28 @@ function rewriteLegacyUrl(url) {
   return url;
 }
 
-// Build an axios instance
+/* --------------- Axios instance --------------- */
 const api = axios.create({
   baseURL: BASE_URL,
   timeout: 30000,
 });
 
-// One set of interceptors, installed onto ANY axios instance we pass in
 function installInterceptors(instance) {
-  // Attach token + rewrite legacy paths
+  // Request interceptor: attach token and rewrite legacy URLs
   instance.interceptors.request.use((config) => {
-    // Always ensure Authorization is present from storage
     const token = getAccessToken();
-    if (token) config.headers = { ...(config.headers || {}), Authorization: `Bearer ${token}` };
+    if (token) {
+      config.headers = { ...(config.headers || {}), Authorization: `Bearer ${token}` };
+    }
 
-    // Rewrite legacy paths
     if (config.url) {
-      // only rewrite path part, not full URLs to 3rd-party
       const isRelative = !/^https?:\/\//i.test(config.url);
       if (isRelative) config.url = rewriteLegacyUrl(config.url);
     }
     return config;
   });
 
-  // Refresh-once on 401
+  // Response interceptor: refresh-once for 401 + 405 fallback for PATCH/PUT /contractors/me/
   let isRefreshing = false;
   let queue = [];
 
@@ -120,74 +119,100 @@ function installInterceptors(instance) {
   instance.interceptors.response.use(
     (res) => res,
     async (error) => {
-      const original = error.config;
-      if (!error.response || error.response.status !== 401 || original?._retry) {
-        return Promise.reject(error);
-      }
+      const original = error.config || {};
 
-      original._retry = true;
+      /* ---------- 401 refresh-once ---------- */
+      if (error.response && error.response.status === 401 && !original._retry) {
+        original._retry = true;
 
-      if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          queue.push({
-            resolve: (token) => {
-              if (token) original.headers.Authorization = `Bearer ${token}`;
-              resolve(instance(original));
-            },
-            reject,
+        if (isRefreshing) {
+          return new Promise((resolve, reject) => {
+            queue.push({
+              resolve: (token) => {
+                if (token) original.headers = { ...(original.headers || {}), Authorization: `Bearer ${token}` };
+                resolve(instance(original));
+              },
+              reject,
+            });
           });
-        });
-      }
-
-      isRefreshing = true;
-      const refresh = getRefreshToken();
-      if (!refresh) {
-        isRefreshing = false;
-        clearAuth();
-        return Promise.reject(error);
-      }
-
-      // Most backends expose one of these (yours has /auth/refresh/)
-      const refreshEndpoints = ["/auth/refresh/", "/token/refresh/"];
-
-      try {
-        let data;
-        for (let i = 0; i < refreshEndpoints.length; i++) {
-          try {
-            const resp = await instance.post(refreshEndpoints[i], { refresh });
-            data = resp.data;
-            break;
-          } catch (e) {
-            if (i === refreshEndpoints.length - 1) throw e;
-          }
         }
 
-        const newAccess = data?.access || data?.access_token;
-        if (!newAccess) throw new Error("No access token returned on refresh.");
+        isRefreshing = true;
+        const refresh = getRefreshToken();
+        if (!refresh) {
+          isRefreshing = false;
+          clearAuth();
+          return Promise.reject(error);
+        }
 
-        // persist in same storage type (remember vs session) by checking where refresh lives
-        const remember = !!localStorage.getItem(TOK.refresh);
-        setTokens(newAccess, refresh, remember);
+        const refreshEndpoints = ["/auth/refresh/", "/token/refresh/"];
 
-        flush(null, newAccess);
-        original.headers.Authorization = `Bearer ${newAccess}`;
-        return instance(original);
-      } catch (err) {
-        flush(err, null);
-        clearAuth();
-        throw err;
-      } finally {
-        isRefreshing = false;
+        try {
+          let data;
+          for (let i = 0; i < refreshEndpoints.length; i++) {
+            try {
+              const resp = await instance.post(refreshEndpoints[i], { refresh });
+              data = resp.data;
+              break;
+            } catch (e) {
+              if (i === refreshEndpoints.length - 1) throw e;
+            }
+          }
+
+          const newAccess = data?.access || data?.access_token;
+          if (!newAccess) throw new Error("No access token returned on refresh.");
+
+          const remember = !!localStorage.getItem(TOK.refresh);
+          setTokens(newAccess, refresh, remember);
+
+          flush(null, newAccess);
+          original.headers = { ...(original.headers || {}), Authorization: `Bearer ${newAccess}` };
+          return instance(original);
+        } catch (err) {
+          flush(err, null);
+          clearAuth();
+          throw err;
+        } finally {
+          isRefreshing = false;
+        }
       }
+
+      /* ---------- 405 fallback for /contractors/me/ update ---------- */
+      if (
+        error.response &&
+        error.response.status === 405 &&
+        original &&
+        /\/contractors\/me\/?/.test(original.url || "") &&
+        /patch|put/i.test(original.method || "")
+      ) {
+        try {
+          // 1) load me to get id
+          const meResp = await instance.get("/projects/contractors/me/");
+          const id = meResp?.data?.id ?? meResp?.data?.pk;
+          if (!id) throw new Error("Could not resolve contractor id from /contractors/me/");
+
+          // 2) retry as /contractors/{id}/ with same payload
+          const retryConfig = {
+            ...original,
+            url: (original.url || "").replace(/contractors\/me\/?/, `contractors/${id}/`),
+            _retry: true, // avoid loops
+          };
+          return instance(retryConfig);
+        } catch {
+          // fall through to the original error if we still fail
+        }
+      }
+
+      return Promise.reject(error);
     }
   );
 }
 
-// Install on our instance AND the global axios default (covers stray axios usages)
+// Install on both the instance and the global axios (defensive)
 installInterceptors(api);
 installInterceptors(axios);
 
-// Ensure headers are set on load if tokens already exist (e.g., after refresh)
+// Set initial Authorization header if tokens exist
 applyAuthHeader(getAccessToken() || null);
 
 export default api;

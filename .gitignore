@@ -18,3 +18,12 @@ frontend/dist/
 staticfiles/
 staticfiles/assets/
 static/
+# ---- MyHomeBro ignores ----
+frontend/dist/
+staticfiles/
+venv/
+__pycache__/
+*.pyc
+.env
+node_modules/
+*.log

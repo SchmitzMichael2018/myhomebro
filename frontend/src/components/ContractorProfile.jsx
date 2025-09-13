@@ -1,32 +1,26 @@
 // src/components/ContractorProfile.jsx
-import React, { useState, useEffect, useCallback } from "react";
-import InputMask from "react-input-mask";
-import { Link } from "react-router-dom";
+import React, { useEffect, useMemo, useState } from "react";
 import api from "../api";
-import toast from "react-hot-toast";
-import { useAuth } from "../context/AuthContext";
 
-const SKILL_OPTIONS = [
-  "masonry", "roofing", "windows", "drywall", "tile", "plumbing",
-  "electrical", "painting", "landscaping", "flooring", "hvac",
-  "carpentry", "concrete", "siding", "insulation",
+const US_STATES = [
+  "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
+  "KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
+  "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT",
+  "VA","WA","WV","WI","WY","DC","PR"
 ];
 
-const toISO = (v) => {
-  if (!v) return "";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(v);
-  if (m) {
-    const [_, mm, dd, yyyy] = m;
-    const pad = (n) => String(n).padStart(2, "0");
-    return `${yyyy}-${pad(mm)}-${pad(dd)}`;
-  }
-  return v;
-};
+const SKILL_OPTIONS = [
+  "Masonry","Roofing","Windows","Drywall","Tile","Plumbing","Electrical",
+  "Painting","Landscaping","Flooring","HVAC","Carpentry","Concrete","Siding","Insulation",
+];
 
 export default function ContractorProfile() {
-  const { user } = useAuth();
-  const contractorId = user?.contractor_id;
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  const [contractorId, setContractorId] = useState(null);
 
   const [form, setForm] = useState({
     full_name: "",
@@ -34,253 +28,305 @@ export default function ContractorProfile() {
     business_name: "",
     phone: "",
     address: "",
-    skills: [],
+    city: "",
+    state: "",
     license_number: "",
-    license_expiration: "",
+    license_expiration_date: "",
+    skills: [],
   });
 
   const [logoFile, setLogoFile] = useState(null);
-  const [logoPreview, setLogoPreview] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [errors, setErrors] = useState(null);
+  const [logoPreview, setLogoPreview] = useState(null);
 
-  const fetchProfile = useCallback(async () => {
-    setLoading(true);
-    setErrors(null);
-    try {
-      // Try top-level, then projects-namespaced endpoint
-      let data = null;
-      for (const url of ["/contractors/me/", "/projects/contractors/me/"]) {
-        try { data = (await api.get(url)).data; break; } catch (_e) {}
-      }
-      if (!data) throw new Error("Profile endpoint not found.");
-
-      setForm({
-        full_name: data.name || data.user_name || "",
-        email: data.email || data.user_email || "",
-        business_name: data.business_name || "",
-        phone: data.phone || "",
-        address: data.address || "",
-        skills:
-          Array.isArray(data.skills) ? data.skills.map((s) => (s?.slug || s?.name || s)).map((x) => String(x).toLowerCase()) : [],
-        license_number: data.license_number || "",
-        license_expiration: (data.license_expiration || data.license_expiration_date || "").slice(0, 10),
-      });
-      setLogoPreview(data.logo_url || data.logo || "");
-    } catch (err) {
-      console.error("Failed to load profile:", err);
-      setErrors({ detail: "Could not load your profile data." });
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const stateOptions = useMemo(
+    () => US_STATES.map((s) => ({ value: s, label: s })),
+    []
+  );
 
   useEffect(() => {
-    fetchProfile();
-  }, [fetchProfile]);
+    (async () => {
+      setLoading(true);
+      setError("");
+      setSuccess("");
+      try {
+        const me = await api.get("/projects/contractors/me/");
+        const data = me?.data || {};
+        const id = data.id ?? data.pk ?? null;
+        setContractorId(id);
 
-  const onChange = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+        setForm({
+          full_name: data.full_name || data.name || "",
+          email: data.email || "",
+          business_name: data.business_name || "",
+          phone: data.phone || "",
+          address: data.address || data.address_line1 || "",
+          city: data.city || "",
+          state: data.state || "",
+          license_number: data.license_number || "",
+          license_expiration_date: (data.license_expiration_date || "").slice(0, 10),
+          skills: Array.isArray(data.skills)
+            ? data.skills.map((s) =>
+                typeof s === "string" ? s : (s.name || s.title || "")
+              ).filter(Boolean)
+            : [],
+        });
 
-  const toggleSkill = (slug) =>
-    setForm((p) => ({
-      ...p,
-      skills: p.skills.includes(slug)
-        ? p.skills.filter((s) => s !== slug)
-        : [...p.skills, slug],
-    }));
+        setLogoPreview(data.logo || data.logo_url || null);
+      } catch (e) {
+        setError("Failed to load profile.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
 
-  const save = async () => {
+  const onChange = (key) => (e) => {
+    const val = e?.target?.value ?? e;
+    setForm((f) => ({ ...f, [key]: val }));
+  };
+
+  const toggleSkill = (name) => {
+    setForm((f) => {
+      const has = f.skills.includes(name);
+      const next = has ? f.skills.filter((s) => s !== name) : [...f.skills, name];
+      return { ...f, skills: next };
+    });
+  };
+
+  const onLogo = (e) => {
+    const file = e.target.files?.[0] || null;
+    setLogoFile(file);
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setLogoPreview(url);
+    }
+  };
+
+  const handleSave = async (e) => {
+    e.preventDefault();
     setSaving(true);
-    setErrors(null);
+    setError("");
+    setSuccess("");
+
     try {
-      const payloadIsFormData = !!logoFile;
-      let payload;
-      let headers = {};
-
-      if (payloadIsFormData) {
-        payload = new FormData();
-        Object.entries({
-          full_name: form.full_name || undefined,
-          email: form.email || undefined,
-          business_name: form.business_name || undefined,
-          phone: form.phone || undefined,
-          address: form.address || undefined,
-          license_number: form.license_number || undefined,
-          license_expiration: toISO(form.license_expiration) || undefined,
-        })
-          .filter(([, v]) => v !== undefined)
-          .forEach(([k, v]) => payload.append(k, v));
-
-        (form.skills || []).forEach((s) => payload.append("skills", String(s).toLowerCase()));
-        payload.append("logo", logoFile);
-      } else {
-        payload = {
-          full_name: form.full_name || undefined,
-          email: form.email || undefined,
-          business_name: form.business_name || undefined,
-          phone: form.phone || undefined,
-          address: form.address || undefined,
-          license_number: form.license_number || undefined,
-          license_expiration: toISO(form.license_expiration) || undefined,
-          skills: (form.skills || []).map((s) => String(s).toLowerCase()),
-        };
-        headers["Content-Type"] = "application/json";
+      const fd = new FormData();
+      fd.append("full_name", form.full_name || "");
+      fd.append("business_name", form.business_name || "");
+      fd.append("phone", form.phone || "");
+      fd.append("address", form.address || "");
+      fd.append("city", form.city || "");
+      fd.append("state", form.state || "");
+      fd.append("license_number", form.license_number || "");
+      if (form.license_expiration_date) {
+        fd.append("license_expiration_date", form.license_expiration_date);
       }
 
-      // PATCH (partial) – try both routes
-      let ok = false;
-      for (const url of ["/contractors/me/", "/projects/contractors/me/"]) {
-        try { await api.patch(url, payload, { headers }); ok = true; break; }
-        catch (err) {
-          const code = err?.response?.status;
-          if (code && ![404, 405].includes(code)) throw err;
-        }
-      }
-      if (!ok) throw new Error("No profile endpoint accepted the request.");
+      // send skills both as repeated field and as JSON string (backend compatibility)
+      form.skills.forEach((s) => fd.append("skills", s));
+      fd.append("skills_json", JSON.stringify(form.skills));
 
-      // update preview if a new logo was chosen
-      if (logoFile) {
-        const url = URL.createObjectURL(logoFile);
-        setLogoPreview(url);
-        setLogoFile(null);
+      if (logoFile) fd.append("logo", logoFile);
+
+      let id = contractorId;
+      if (!id) {
+        try {
+          const me = await api.get("/projects/contractors/me/");
+          id = me?.data?.id ?? me?.data?.pk;
+          setContractorId(id || null);
+        } catch { /* ignore */ }
       }
 
-      toast.success("Profile updated successfully.");
-      setErrors(null);
+      const url = id
+        ? `/projects/contractors/${id}/`
+        : `/projects/contractors/me/`;
+
+      await api.patch(url, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      setSuccess("Profile saved.");
     } catch (err) {
-      console.error("Save failed:", err);
-      const d = err?.response?.data;
-      setErrors(d || { detail: "Failed to update profile. Check your entries and try again." });
-      toast.error(d?.detail || "Failed to update profile.");
+      const msg =
+        err?.response?.data?.detail ||
+        err?.response?.statusText ||
+        err?.message ||
+        "Save failed.";
+      setError(`Failed to save profile: ${msg}`);
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) return <div className="p-6 text-center text-gray-500">Loading profile...</div>;
-
   return (
-    <div className="max-w-2xl mx-auto p-8 bg-white rounded-lg shadow-md">
-      <h2 className="text-3xl font-bold mb-6 text-gray-800">My Contractor Profile</h2>
+    <div className="flex justify-center">
+      <div className="w-full max-w-3xl bg-white rounded-lg shadow p-6 mt-6">
+        <h2 className="text-2xl font-bold mb-4">My Contractor Profile</h2>
 
-      {contractorId && (
-        <div className="text-right mb-4">
-          <Link
-            to={`/contractors/${contractorId}/profile`}
-            className="text-blue-600 underline text-sm hover:text-blue-800"
-          >
-            View Public Profile
-          </Link>
-        </div>
-      )}
-
-      {/* show top-level errors */}
-      {errors && (
-        <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {errors.detail && <div>{errors.detail}</div>}
-          <ul className="mt-1 list-disc pl-5">
-            {Object.entries(errors)
-              .filter(([k]) => k !== "detail")
-              .map(([k, v]) => (
-                <li key={k}>
-                  <strong>{k}:</strong> {Array.isArray(v) ? v.join(", ") : String(v)}
-                </li>
-              ))}
-          </ul>
-        </div>
-      )}
-
-      <div className="space-y-6">
-        {/* Contact (editable) */}
-        <Input label="Full Name" name="full_name" value={form.full_name} onChange={onChange} />
-        <Input label="Email Address" name="email" type="email" value={form.email} onChange={onChange} />
-
-        <hr />
-
-        <Input label="Business Name" name="business_name" value={form.business_name} onChange={onChange} />
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-          <InputMask mask="(999) 999-9999" value={form.phone} onChange={onChange}>
-            {(inputProps) => <input {...inputProps} name="phone" className="form-input" />}
-          </InputMask>
-        </div>
-
-        <Input label="Address" name="address" value={form.address} onChange={onChange} />
-
-        {/* Logo */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Company Logo</label>
-          {logoPreview && (
-            <img
-              src={logoPreview}
-              alt="Company Logo"
-              className="w-32 h-32 object-contain border rounded mb-2"
-            />
-          )}
-          <input
-            type="file"
-            accept="image/*"
-            onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
-            className="block w-full text-sm text-gray-600"
-          />
-        </div>
-
-        {/* Skills */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Skills</label>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {SKILL_OPTIONS.map((slug) => (
-              <label key={slug} className="flex items-center space-x-2 p-2 rounded-md hover:bg-gray-100 cursor-pointer capitalize">
-                <input
-                  type="checkbox"
-                  checked={form.skills.includes(slug)}
-                  onChange={() => toggleSkill(slug)}
-                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span>{slug}</span>
-              </label>
-            ))}
+        {error ? (
+          <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-red-700">
+            {error}
           </div>
-        </div>
+        ) : null}
+        {success ? (
+          <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2 text-emerald-700">
+            {success}
+          </div>
+        ) : null}
 
-        <Input label="License Number" name="license_number" value={form.license_number} onChange={onChange} />
+        {loading ? (
+          <div className="text-slate-600">Loading…</div>
+        ) : (
+          <form onSubmit={handleSave}>
+            {/* Name & Email */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold mb-1">Full Name</label>
+                <input
+                  className="w-full h-10 rounded border border-slate-300 px-3"
+                  value={form.full_name}
+                  onChange={onChange("full_name")}
+                  placeholder="Your full name"
+                />
+              </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">License Expiration Date</label>
-          <input
-            type="date"
-            name="license_expiration"
-            value={form.license_expiration?.slice(0, 10) || ""}
-            onChange={onChange}
-            className="form-input"
-          />
-        </div>
+              <div>
+                <label className="block text-sm font-semibold mb-1">Email Address</label>
+                <input
+                  className="w-full h-10 rounded border border-slate-300 px-3 bg-slate-100"
+                  value={form.email}
+                  onChange={onChange("email")}
+                  placeholder="you@example.com"
+                  disabled
+                />
+              </div>
+            </div>
 
-        <div className="pt-4">
-          <button
-            onClick={save}
-            disabled={saving}
-            className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
-          >
-            {saving ? "Saving..." : "Save Profile"}
-          </button>
-        </div>
+            {/* Business, Phone */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <div>
+                <label className="block text-sm font-semibold mb-1">Business Name</label>
+                <input
+                  className="w-full h-10 rounded border border-slate-300 px-3"
+                  value={form.business_name}
+                  onChange={onChange("business_name")}
+                  placeholder="Your company LLC"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-1">Phone</label>
+                <input
+                  className="w-full h-10 rounded border border-slate-300 px-3"
+                  value={form.phone}
+                  onChange={onChange("phone")}
+                  placeholder="(555) 555-5555"
+                />
+              </div>
+            </div>
+
+            {/* Address */}
+            <div className="mt-4">
+              <label className="block text-sm font-semibold mb-1">Address</label>
+              <input
+                className="w-full h-10 rounded border border-slate-300 px-3"
+                value={form.address}
+                onChange={onChange("address")}
+                placeholder="Street address"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+              <div>
+                <label className="block text-sm font-semibold mb-1">City</label>
+                <input
+                  className="w-full h-10 rounded border border-slate-300 px-3"
+                  value={form.city}
+                  onChange={onChange("city")}
+                  placeholder="City"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-1">State</label>
+                <select
+                  className="w-full h-10 rounded border border-slate-300 px-3 bg-white"
+                  value={form.state || ""}
+                  onChange={onChange("state")}
+                >
+                  <option value="">Select…</option>
+                  {stateOptions.map((s) => (
+                    <option key={s.value} value={s.value}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-1">Company Logo</label>
+                <input type="file" accept="image/*" onChange={onLogo} />
+                {logoPreview ? (
+                  <img
+                    src={logoPreview}
+                    alt="Company logo preview"
+                    className="mt-2 h-16 w-auto rounded border"
+                  />
+                ) : null}
+              </div>
+            </div>
+
+            {/* Skills */}
+            <div className="mt-5">
+              <div className="text-sm font-semibold mb-2">Skills</div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {SKILL_OPTIONS.map((name) => {
+                  const checked = form.skills.includes(name);
+                  return (
+                    <label key={name} className="inline-flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleSkill(name)}
+                      />
+                      {name}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* License */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
+              <div>
+                <label className="block text-sm font-semibold mb-1">License Number</label>
+                <input
+                  className="w-full h-10 rounded border border-slate-300 px-3"
+                  value={form.license_number}
+                  onChange={onChange("license_number")}
+                  placeholder="License #"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-1">License Expiration Date</label>
+                <input
+                  type="date"
+                  className="w-full h-10 rounded border border-slate-300 px-3"
+                  value={form.license_expiration_date || ""}
+                  onChange={onChange("license_expiration_date")}
+                />
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <button
+                type="submit"
+                disabled={saving}
+                className="w-40 h-10 rounded bg-blue-700 text-white font-semibold hover:bg-blue-800 disabled:opacity-60"
+              >
+                {saving ? "Saving…" : "Save Profile"}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
-    </div>
-  );
-}
-
-function Input({ label, disabled = false, ...props }) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-      <input
-        className={`form-input ${disabled ? "bg-gray-100" : ""}`}
-        disabled={disabled}
-        {...props}
-      />
     </div>
   );
 }

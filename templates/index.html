@@ -1,3 +1,4 @@
+{% load static %}
 <!doctype html>
 <html lang="en-US">
   <head>
@@ -5,12 +6,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MyHomeBro - Secure Escrow Payments</title>
 
-    <!-- ✅ In production, WhiteNoise serves these at /static/... -->
-    <link rel="icon" type="image/png" href="/static/favicon-192x192.png" />
-    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" sizes="180x180" />
-    <link rel="mask-icon" href="/static/masked-icon.svg" color="#1E3A8A" />
+    <!-- Icons (served by WhiteNoise at /static/...) -->
+    <link rel="icon" type="image/png" href="{% static 'favicon-192x192.png' %}" />
+    <link rel="apple-touch-icon" href="{% static 'apple-touch-icon.png' %}" sizes="180x180" />
+    <link rel="mask-icon" href="{% static 'masked-icon.svg' %}" color="#1E3A8A" />
 
-    <!-- CSP: keep same-origin assets & API calls; fonts allowed -->
+    <!-- CSP -->
     <meta http-equiv="Content-Security-Policy" content="
       default-src 'self';
       script-src 'self';
@@ -22,11 +23,13 @@
       base-uri 'self';
       form-action 'self';
     " />
-    <script type="module" crossorigin src="/static/assets/index-niC3zklK.js"></script>
-    <link rel="stylesheet" crossorigin href="/static/assets/index-iJxv1_l9.css">
+
+    <!-- Stable filenames (we keep these fresh after each build) -->
+    <link rel="stylesheet" href="{% static 'assets/index.css' %}">
   </head>
-  <body>
+  <body style="margin:0;background:#0b53ff0d;">
     <div id="root" aria-live="polite"></div>
-    <!-- Dev uses this; Prod will be replaced by Vite with /static/assets/index-*.js -->
+
+    <script type="module" src="{% static 'assets/index.js' %}"></script>
   </body>
 </html>

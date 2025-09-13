@@ -1,93 +1,273 @@
-import React, { useState } from 'react';
-import toast from 'react-hot-toast';
-import api from '../api';
-import ReviewInvoiceModal from './ReviewInvoiceModal';
+// src/components/MilestoneList.jsx
+import React, { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import api from "../api";
+import { toast } from "react-hot-toast";
+import MilestoneModal from "./MilestoneModal";
 
-export default function MilestoneList({ milestones, agreement, onUpdate }) {
-  const [selectedMilestoneId, setSelectedMilestoneId] = useState(null);
+console.log("MilestoneList.jsx v2025-09-13-05:20");
 
-  const canStartWork = agreement?.is_fully_signed && agreement?.escrow_funded;
+const VALID_FILTERS = new Set([
+  "all",
+  "incomplete",
+  "completed",
+  "invoiced",
+  "pending_approval",
+  "approved",
+  "disputed",
+]);
 
-  const handleMarkComplete = async (milestoneId) => {
-    if (!window.confirm("Are you sure you want to mark this milestone as complete?")) return;
+function Pill({ children, tone = "default" }) {
+  const colors = {
+    default: { bg: "#e5e7eb", fg: "#111827" },
+    warn: { bg: "#fef3c7", fg: "#92400e" },
+    good: { bg: "#dcfce7", fg: "#14532d" },
+    info: { bg: "#dbeafe", fg: "#1e3a8a" },
+    danger: { bg: "#fee2e2", fg: "#7f1d1d" },
+  }[tone];
+  return (
+    <span
+      style={{
+        padding: "2px 8px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 600,
+        background: colors.bg,
+        color: colors.fg,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
 
-    try {
-      await api.post(`/milestones/${milestoneId}/mark_complete/`);
-      toast.success("Milestone marked as complete!");
-      onUpdate?.();
-    } catch (err) {
-      const errorMsg = err.response?.data?.detail || "Failed to update milestone.";
-      toast.error(errorMsg);
-    }
-  };
-
-  if (!milestones || milestones.length === 0) {
-    return (
-      <div className="bg-white p-4 rounded-lg shadow-sm text-center text-gray-500">
-        <p className="font-semibold">No Milestones</p>
-        <p className="text-sm">Milestones for this agreement will appear here.</p>
-      </div>
-    );
+function toneFor(status) {
+  switch ((status || "").toLowerCase()) {
+    case "incomplete":
+      return "info";
+    case "completed":
+    case "complete":
+      return "good";
+    case "pending_approval":
+    case "awaiting_approval":
+      return "warn";
+    case "disputed":
+      return "danger";
+    case "approved":
+      return "good";
+    default:
+      return "default";
   }
+}
+
+// $ even if backend sends "500.00" as a string
+function formatUSD(val) {
+  const n = Number(val);
+  if (Number.isFinite(n)) {
+    return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+  }
+  return val || "—";
+}
+
+function fmtDate(raw) {
+  if (!raw) return "";
+  // "YYYY-MM-DD" or ISO → short date
+  const d = new Date(raw);
+  if (!isNaN(d.getTime())) {
+    return d.toLocaleDateString();
+  }
+  return String(raw); // already a nice string
+}
+
+// Pick a date from common keys
+function pickDate(m) {
+  return (
+    m?.due_date ||
+    m?.date ||
+    m?.scheduled_for ||
+    m?.start_date ||
+    m?.target_date ||
+    m?.completion_date ||
+    ""
+  );
+}
+
+// Best-effort agreement number
+function pickAgreementNumber(m) {
+  const a = m?.agreement;
+  return (
+    m?.agreement_number ||
+    (a && a.number) ||
+    (a && a.agreement_number) ||
+    (a && a.project_number) ||
+    m?.agreement_id ||
+    (typeof a === "number" ? a : "") ||
+    (a && a.id) ||
+    ""
+  );
+}
+
+export default function MilestoneList() {
+  const [loading, setLoading] = useState(true);
+  const [milestones, setMilestones] = useState([]);
+  const [active, setActive] = useState(null);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialFilter = (() => {
+    const f = (searchParams.get("filter") || "").toLowerCase();
+    return VALID_FILTERS.has(f) ? f : "all";
+  })();
+  const [filter, setFilter] = useState(initialFilter);
+
+  useEffect(() => {
+    if (filter === "all") {
+      const sp = new URLSearchParams(searchParams);
+      sp.delete("filter");
+      setSearchParams(sp, { replace: true });
+    } else {
+      const sp = new URLSearchParams(searchParams);
+      sp.set("filter", filter);
+      setSearchParams(sp, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setLoading(true);
+        const { data } = await api.get("/projects/milestones/");
+        if (!mounted) return;
+        const rows = Array.isArray(data) ? data : data?.results || [];
+        setMilestones(rows);
+      } catch (err) {
+        console.error("Failed to load milestones", err);
+        toast.error("Failed to load milestones.");
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => (mounted = false);
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (filter === "all") return milestones;
+    return milestones.filter(
+      (m) => (m.status || "incomplete").toLowerCase() === filter
+    );
+  }, [milestones, filter]);
+
+  const tabs = [
+    ["all", "All"],
+    ["incomplete", "Incomplete"],
+    ["completed", "Completed (Not Invoiced)"],
+    ["invoiced", "Invoiced"],
+    ["pending_approval", "Pending Approval"],
+    ["approved", "Approved"],
+    ["disputed", "Disputed"],
+  ];
 
   return (
-    <>
-      <div className="bg-gray-50 p-4 rounded-lg">
-        <h3 className="text-xl font-bold text-gray-800 mb-4">Milestones</h3>
-        <ul className="space-y-3">
-          {milestones.map((m) => {
-            const canFinalize = m.completed && !m.is_invoiced && canStartWork;
-            return (
-              <li key={m.id} className="bg-white p-4 rounded-lg shadow-sm border">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h4 className="font-semibold text-gray-900">{m.title}</h4>
-                    <p className="text-sm text-gray-600 mt-1">{m.description || "No description."}</p>
-                  </div>
-                  <span
-                    className={`px-2 py-1 text-xs font-medium rounded-full self-start
-                    ${m.completed ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}
-                  >
-                    {m.completed ? 'Completed' : 'Incomplete'}
-                  </span>
-                </div>
-                <div className="mt-3 pt-3 border-t flex justify-between items-center text-sm">
-                  <div className="text-gray-700">
-                    <span className="font-semibold">${parseFloat(m.amount).toLocaleString()}</span>
-                  </div>
-                  <div className="flex gap-2">
-                    {canStartWork && !m.completed && (
-                      <button
-                        onClick={() => handleMarkComplete(m.id)}
-                        className="px-3 py-1 bg-blue-600 text-white text-xs font-semibold rounded-md hover:bg-blue-700"
-                      >
-                        Mark Complete
-                      </button>
-                    )}
-                    {canFinalize && (
-                      <button
-                        onClick={() => setSelectedMilestoneId(m.id)}
-                        className="px-3 py-1 bg-green-600 text-white text-xs font-semibold rounded-md hover:bg-green-700"
-                      >
-                        Finalize & Invoice
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+    <div style={{ padding: 24 }}>
+      <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>Milestones</h1>
+
+      <div
+        style={{
+          marginTop: 14,
+          display: "flex",
+          gap: 8,
+          flexWrap: "wrap",
+          alignItems: "center",
+        }}
+      >
+        {tabs.map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setFilter(key)}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 10,
+              border: "1px solid #e5e7eb",
+              background: filter === key ? "#111827" : "white",
+              color: filter === key ? "white" : "#111827",
+              cursor: "pointer",
+              fontWeight: 600,
+            }}
+            aria-pressed={filter === key}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      <ReviewInvoiceModal
-        visible={!!selectedMilestoneId}
-        milestoneId={selectedMilestoneId}
-        onClose={() => {
-          setSelectedMilestoneId(null);
-          onUpdate?.();
+      <div
+        style={{
+          marginTop: 16,
+          background: "white",
+          borderRadius: 12,
+          border: "1px solid #e5e7eb",
         }}
+      >
+        {loading ? (
+          <div style={{ padding: 24 }}>Loading…</div>
+        ) : filtered.length === 0 ? (
+          <div style={{ padding: 24 }}>No milestones to show.</div>
+        ) : (
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "separate",
+              borderSpacing: 0,
+              fontSize: 14,
+            }}
+          >
+            <thead>
+              <tr style={{ background: "#f9fafb" }}>
+                <th style={{ textAlign: "left", padding: 12 }}>Title</th>
+                <th style={{ textAlign: "left", padding: 12 }}>Agreement #</th>
+                <th style={{ textAlign: "left", padding: 12 }}>Due / Date</th>
+                <th style={{ textAlign: "left", padding: 12 }}>Amount</th>
+                <th style={{ textAlign: "left", padding: 12 }}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((m) => {
+                const due = pickDate(m);
+                const agNum = pickAgreementNumber(m);
+                const stat = (m.status || "incomplete").replaceAll("_", " ");
+                return (
+                  <tr
+                    key={m.id}
+                    onClick={() => setActive(m)}
+                    onKeyDown={(e) => e.key === "Enter" && setActive(m)}
+                    tabIndex={0}
+                    style={{
+                      borderTop: "1px solid #f3f4f6",
+                      cursor: "pointer",
+                    }}
+                    title="View milestone details"
+                  >
+                    <td style={{ padding: 12, fontWeight: 600 }}>{m.title}</td>
+                    <td style={{ padding: 12 }}>{agNum || "—"}</td>
+                    <td style={{ padding: 12 }}>{due ? fmtDate(due) : "—"}</td>
+                    <td style={{ padding: 12 }}>{formatUSD(m.amount)}</td>
+                    <td style={{ padding: 12 }}>
+                      <Pill tone={toneFor(m.status)}>{stat}</Pill>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <MilestoneModal
+        visible={!!active}
+        onClose={() => setActive(null)}
+        milestone={active}
       />
-    </>
+    </div>
   );
 }
