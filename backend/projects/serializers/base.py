@@ -1,15 +1,13 @@
-# backend/backend/projects/serializers.py
 from datetime import timedelta
 from django.db import transaction
 from django.contrib.auth import get_user_model
 from django.utils.text import slugify
 from rest_framework import serializers
 
-from .utils import categorize_project, load_legal_text
-from .models import (
+from ..utils import categorize_project, load_legal_text
+from ..models import (
     Project,
     Agreement,
-    AgreementAmendment,
     Invoice,
     Contractor,
     Homeowner,
@@ -18,8 +16,8 @@ from .models import (
     MilestoneComment,
     Expense,
     Skill,
-    ProjectStatus,
 )
+
 
 # ---------------- Homeowners ----------------
 
@@ -84,7 +82,7 @@ class ContractorWriteSerializer(serializers.ModelSerializer):
     - Allows updating the linked User's full_name and email.
     """
     skills = serializers.ListField(
-        child=serializers.CharField(),  # can be int or str; we coerce below
+        child=serializers.CharField(),
         required=False,
         help_text="List of Skill IDs, slugs, or names",
     )
@@ -109,14 +107,10 @@ class ContractorWriteSerializer(serializers.ModelSerializer):
             "email",
         ]
 
-    # Normalize phone to digits
     def validate_phone(self, value):
         return "".join(filter(str.isdigit, value or ""))
 
     def _resolve_skills(self, items):
-        """
-        Return a queryset of Skill from a mixed list of ints or strings (slug/name).
-        """
         if items is None:
             return None
         ids, names = [], []
@@ -134,24 +128,19 @@ class ContractorWriteSerializer(serializers.ModelSerializer):
         return qs.distinct()
 
     def update(self, instance, validated_data):
-        # Pull write-through fields for User
         full_name = validated_data.pop("full_name", None)
         new_email = validated_data.pop("email", None)
 
-        # Skills (flexible)
         skill_items = validated_data.pop("skills", None)
         skills_qs = self._resolve_skills(skill_items) if skill_items is not None else None
 
-        # Update contractor fields
         for k, v in validated_data.items():
             setattr(instance, k, v)
         instance.save()
 
-        # Apply skills (if provided)
         if skills_qs is not None:
             instance.skills.set(skills_qs)
 
-        # Update linked user (name/email)
         user = instance.user
         changed = []
         if full_name:
@@ -181,8 +170,7 @@ class PublicContractorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Contractor
         fields = ["id", "business_name", "name", "skills", "license_number", "license_expiration", "logo_url"]
-        # IMPORTANT: make this explicit (don’t reference 'fields' from outside this Meta scope)
-        read_only_fields = ["id", "business_name", "name", "skills", "license_number", "license_expiration", "logo_url"]
+    read_only_fields = ["id", "business_name", "name", "skills", "license_number", "license_expiration", "logo_url"]
 
     def get_logo_url(self, obj):
         request = self.context.get("request")
@@ -241,12 +229,21 @@ class MilestoneCommentSerializer(serializers.ModelSerializer):
 
 
 class MilestoneSerializer(serializers.ModelSerializer):
+    """
+    Enhanced to include denormalized display fields for list views.
+    """
     id = serializers.IntegerField(read_only=True)
     file_count = serializers.IntegerField(read_only=True)
     comment_count = serializers.IntegerField(read_only=True)
     invoice_id = serializers.IntegerField(read_only=True)
     files = MilestoneFileSerializer(many=True, read_only=True)
     comments = MilestoneCommentSerializer(many=True, read_only=True)
+
+    agreement_id = serializers.SerializerMethodField()
+    agreement_number = serializers.SerializerMethodField()
+    customer_name = serializers.SerializerMethodField()
+    due_date = serializers.SerializerMethodField()
+    status = serializers.SerializerMethodField()
 
     class Meta:
         model = Milestone
@@ -256,8 +253,91 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "completed", "duration",
             "file_count", "comment_count", "invoice_id",
             "files", "comments",
+            "agreement_id", "agreement_number", "customer_name", "due_date", "status",
         ]
-        read_only_fields = ["id", "completed", "file_count", "comment_count", "invoice_id", "files", "comments"]
+        read_only_fields = [
+            "id", "completed", "file_count", "comment_count", "invoice_id",
+            "files", "comments",
+            "agreement_id", "agreement_number", "customer_name", "due_date", "status",
+        ]
+
+    def get_agreement_id(self, obj):
+        a = getattr(obj, "agreement", None)
+        return getattr(a, "id", None)
+
+    def get_agreement_number(self, obj):
+        a = getattr(obj, "agreement", None)
+        if not a:
+            v = getattr(obj, "agreement_number", None)
+            return str(v) if v not in (None, "") else None
+        for attr in ("project_number", "number", "agreement_number"):
+            v = getattr(a, attr, None)
+            if v not in (None, ""):
+                return str(v)
+        aid = getattr(a, "id", None)
+        return str(aid) if aid not in (None, "") else None
+
+    def get_customer_name(self, obj):
+        for key in ("customer_name", "homeowner_name", "client_name"):
+            v = getattr(obj, key, None)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+
+        a = getattr(obj, "agreement", None)
+        if not a:
+            return ""
+
+        for key in ("customer_name", "homeowner_name", "client_name", "name"):
+            v = getattr(a, key, None)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+
+        rel = None
+        for key in ("customer", "homeowner", "client"):
+            rel = getattr(a, key, None)
+            if rel:
+                break
+
+        if isinstance(rel, str):
+            return rel
+
+        if rel:
+            parts = []
+            for key in ("full_name",):
+                v = getattr(rel, key, None)
+                if v:
+                    return v
+            for key in ("first_name", "given_name"):
+                v = getattr(rel, key, None)
+                if v:
+                    parts.append(str(v).strip())
+            for key in ("last_name", "family_name"):
+                v = getattr(rel, key, None)
+                if v:
+                    parts.append(str(v).strip())
+            if parts:
+                return " ".join(p for p in parts if p).strip()
+            for key in ("business_name", "company_name", "name"):
+                v = getattr(rel, key, None)
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+            email = getattr(rel, "email", "") or ""
+            if email:
+                return email
+        return ""
+
+    def get_due_date(self, obj):
+        for key in ("due_date", "completion_date", "start_date", "date"):
+            v = getattr(obj, key, None)
+            if v:
+                return v
+        return None
+
+    def get_status(self, obj):
+        status = getattr(obj, "status", None)
+        if isinstance(status, str) and status.strip():
+            return status
+        return "completed" if getattr(obj, "completed", False) else "incomplete"
 
 
 # ---------------- Invoices ----------------
@@ -296,7 +376,7 @@ class ProjectSerializer(serializers.ModelSerializer):
             "project_city", "project_state", "project_zip_code",
             "created_at", "updated_at",
         ]
-        read_only_fields = ["id", "number", "created_at", "updated_at"]
+    read_only_fields = ["id", "number", "created_at", "updated_at"]
 
 
 class ProjectDetailSerializer(serializers.ModelSerializer):
@@ -324,7 +404,6 @@ def _amendment_meta(obj: Agreement):
             return link.parent_id, int(link.amendment_number or 0)
     except Exception:
         pass
-    # Fallback: no link, but agreement.amendment_number is set
     return None, int(getattr(obj, "amendment_number", 0) or 0)
 
 
@@ -343,7 +422,6 @@ class AgreementDetailSerializer(serializers.ModelSerializer):
             "id", "project", "total_cost", "is_fully_signed", "is_archived",
             "escrow_funded", "signed_by_homeowner", "signed_by_contractor",
             "milestones", "invoices", "addendum_file", "terms_text", "privacy_text",
-            # amendment meta
             "parent_agreement_id", "amendment_number",
         ]
         read_only_fields = fields
@@ -376,8 +454,8 @@ class MilestoneInputSerializer(serializers.Serializer):
             raise serializers.ValidationError("Completion date cannot be before start date.")
         total_duration = timedelta(
             days=data.pop("days", 0) or 0,
-            hours=data.pop("hours", 0) or 0,
-            minutes=data.pop("minutes", 0) or 0,
+            hours=data.pop("hours", 0) or 0,     # ✅ correct keyword
+            minutes=data.pop("minutes", 0) or 0, # ✅ correct keyword
         )
         if total_duration.total_seconds() > 0:
             data["duration"] = total_duration
@@ -507,7 +585,6 @@ class AgreementListPublicSerializer(serializers.ModelSerializer):
     invoices_count = serializers.SerializerMethodField()
     signed_by_contractor = serializers.BooleanField(read_only=True)
     signed_by_homeowner = serializers.BooleanField(read_only=True)
-    # amendment info
     parent_agreement_id = serializers.SerializerMethodField()
     amendment_number = serializers.SerializerMethodField()
 

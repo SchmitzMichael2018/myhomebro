@@ -1,11 +1,14 @@
 // src/components/AgreementReviewStep.jsx
 import React, { useMemo, useRef, useState } from "react";
+import toast from "react-hot-toast";
 
 /**
  * Step 3 ONLY renders & prints the summary, then calls onSubmit().
  * The Wizard performs the POST via createAgreementFromWizardState().
+ * After successful create, we redirect to /agreements/:id to complete signing.
  */
 
+// ----- Helpers -----
 const asMoney = (v) => {
   const n = parseFloat(v || 0);
   return Number.isFinite(n) ? n : 0;
@@ -18,9 +21,15 @@ const hhmm = (mins) => {
   return `${pad(h)}:${pad(r)}`;
 };
 
+// You can change these to your real public links or pass in via props if preferred.
+const TERMS_URL = "/terms";     // link appears here and again on signature screen
+const PRIVACY_URL = "/privacy"; // link appears here and again on signature screen
+
 export default function AgreementReviewStep({ data, onBack, onSubmit }) {
   const printRef = useRef(null);
   const [submitting, setSubmitting] = useState(false);
+  const [agreeTos, setAgreeTos] = useState(false);
+  const [agreePrivacy, setAgreePrivacy] = useState(false);
 
   const ms = Array.isArray(data?.milestones) ? data.milestones : [];
   const totals = useMemo(() => {
@@ -83,9 +92,33 @@ export default function AgreementReviewStep({ data, onBack, onSubmit }) {
 
   const handleSubmit = async () => {
     if (!onSubmit) return;
+    if (!agreeTos || !agreePrivacy) {
+      toast.error("Please accept Terms of Service and Privacy Policy to continue.");
+      return;
+    }
     setSubmitting(true);
     try {
-      await onSubmit(); // Wizard does the POST using createAgreementFromWizardState()
+      // Expect onSubmit to return the created agreement or its ID.
+      // We’ll try a few common shapes safely:
+      const created = await onSubmit(); // Wizard does POST createAgreementFromWizardState()
+      const id =
+        created?.id ??
+        created?.data?.id ??
+        created?.agreement?.id ??
+        created?.result?.id;
+
+      if (!id) {
+        toast.error("Agreement was created but no ID was returned. Please check the response.");
+        setSubmitting(false);
+        return;
+      }
+
+      toast.success("Agreement created. Redirecting to review & sign…");
+      // Redirect to the dedicated Review/Sign page we wired in App.jsx
+      window.location.href = `/agreements/${id}`;
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to create agreement. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -165,6 +198,43 @@ export default function AgreementReviewStep({ data, onBack, onSubmit }) {
           <p><strong>Total Duration:</strong> {hhmm(totals.minutes)}</p>
           <p><strong>Milestone Count:</strong> {totals.count}</p>
         </div>
+
+        {/* Legal Acknowledgment */}
+        <div className="mt-6 border-t pt-4 space-y-2 text-sm">
+          <div className="flex items-center gap-2">
+            <input
+              id="agree_tos"
+              type="checkbox"
+              className="h-4 w-4"
+              checked={agreeTos}
+              onChange={(e) => setAgreeTos(e.target.checked)}
+            />
+            <label htmlFor="agree_tos">
+              I have reviewed and agree to the{" "}
+              <a href={TERMS_URL} target="_blank" rel="noreferrer" className="text-blue-600 underline">
+                Terms of Service
+              </a>.
+            </label>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              id="agree_privacy"
+              type="checkbox"
+              className="h-4 w-4"
+              checked={agreePrivacy}
+              onChange={(e) => setAgreePrivacy(e.target.checked)}
+            />
+            <label htmlFor="agree_privacy">
+              I have reviewed and agree to the{" "}
+              <a href={PRIVACY_URL} target="_blank" rel="noreferrer" className="text-blue-600 underline">
+                Privacy Policy
+              </a>.
+            </label>
+          </div>
+          <p className="text-gray-500">
+            You’ll have a final chance to review and sign on the next screen.
+          </p>
+        </div>
       </div>
 
       <div className="mt-6 flex justify-between">
@@ -178,10 +248,14 @@ export default function AgreementReviewStep({ data, onBack, onSubmit }) {
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={submitting}
-          className={`px-6 py-2 rounded text-white ${submitting ? "bg-gray-400 cursor-wait" : "bg-green-600 hover:bg-green-700"} transition`}
+          disabled={submitting || !agreeTos || !agreePrivacy}
+          className={`px-6 py-2 rounded text-white ${
+            submitting || !agreeTos || !agreePrivacy
+              ? "bg-gray-400 cursor-not-allowed"
+              : "bg-green-600 hover:bg-green-700"
+          } transition`}
         >
-          {submitting ? "Submitting…" : "Submit Agreement"}
+          {submitting ? "Submitting…" : "Submit & Continue to Sign"}
         </button>
       </div>
     </div>

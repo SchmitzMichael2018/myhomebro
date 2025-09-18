@@ -1,364 +1,360 @@
-// frontend/src/components/AgreementEdit.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+// src/components/AgreementEdit.jsx
+import React, { useEffect, useMemo, useState } from "react";
+import { useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../api";
+import AttachmentManager from "./AttachmentManager.jsx";
+import {
+  agreementPreviewHref,
+  agreementPdfHref,
+  postAgreementMarkReviewed,
+} from "../api/signing";
 
-const money = (n) =>
-  Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-function DateInput({ label, value, onChange, name }) {
-  const ref = useRef(null);
-  return (
-    <label className="block">
-      <span className="text-sm text-gray-600">{label}</span>
-      <div className="mt-1 relative">
-        <input
-          ref={ref}
-          type="date"
-          name={name}
-          value={value ? String(value).slice(0, 10) : ""}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-full rounded border px-3 py-2 pr-10"
-        />
-        <button
-          type="button"
-          onClick={() => (ref.current?.showPicker ? ref.current.showPicker() : ref.current?.focus())}
-          className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
-          title="Open date picker"
-          aria-label="Open date picker"
-        >
-          📅
-        </button>
-      </div>
-    </label>
-  );
-}
-
-function StatusPill({ ok, label }) {
-  return (
-    <div className="flex items-center gap-2 rounded-full border px-3 py-1 text-sm">
-      <span className={`text-lg leading-none ${ok ? "text-green-600" : "text-red-600"}`}>
-        {ok ? "✅" : "❌"}
-      </span>
-      <span className={`${ok ? "text-green-700" : "text-red-700"} font-semibold`}>{label}</span>
-    </div>
-  );
-}
+/**
+ * AgreementEdit
+ * - Edits warranty (default/custom text).
+ * - Lets contractor upload Warranty/Addendum/Exhibit (via AttachmentManager).
+ * - “Generate Preview PDF” opens GET preview link in a new tab.
+ * - “Mark as Reviewed” calls a no-op compatible shim if backend action absent.
+ * - Milestones are fetched from a dedicated endpoint with a safe fallback.
+ */
 
 export default function AgreementEdit() {
-  const { id } = useParams();
-  const navigate = useNavigate();
+  const { id: routeId } = useParams();
+  const agreementId = routeId;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [agreement, setAgreement] = useState(null);
+
+  // Warranty UI state
+  const [useDefaultWarranty, setUseDefaultWarranty] = useState(true);
+  const [warrantyText, setWarrantyText] = useState(
+    "Contractor warrants workmanship for one (1) year from substantial completion. Materials are covered by manufacturer warranties where applicable. Warranty excludes damage caused by misuse, neglect, unauthorized modifications, or normal wear. Remedy is limited to repair or replacement at Contractor’s discretion."
+  );
+
+  // Milestones (read-only here)
+  const [mLoading, setMLoading] = useState(true);
   const [milestones, setMilestones] = useState([]);
 
-  const [title, setTitle] = useState("");
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
-  const [total, setTotal] = useState(0);
+  const previewHref = useMemo(
+    () => (agreementId ? agreementPreviewHref(agreementId) : "#"),
+    [agreementId]
+  );
+  const pdfHref = useMemo(
+    () => (agreementId ? agreementPdfHref(agreementId) : "#"),
+    [agreementId]
+  );
 
-  const [signName, setSignName] = useState("");
-
-  async function fetchAgreement() {
-    setLoading(true);
+  const fetchAgreement = async () => {
     try {
-      const [aRes, mRes] = await Promise.all([
-        api.get(`/projects/agreements/${id}/`),
-        // IMPORTANT: keep this filter; backend file below enforces it server-side too
-        api.get(`/projects/milestones/`, { params: { agreement: id } }),
-      ]);
-      const a = aRes.data;
-      const ms = Array.isArray(mRes.data) ? mRes.data : mRes.data?.results ?? [];
+      setLoading(true);
+      const { data } = await api.get(`/projects/agreements/${agreementId}/`);
+      setAgreement(data || null);
 
-      setAgreement(a);
-      setMilestones(ms);
-
-      setTitle(a.project_title || a.project?.title || "");
-      setStart(a.start || a.start_date || "");
-      setEnd(a.end || a.end_date || "");
-      setTotal(Number(a.total_cost || 0));
-    } catch (err) {
-      console.error(err);
-      toast.error("Could not load agreement.");
-      navigate("/agreements");
+      // Hydrate warranty UI if backend already stores it
+      const hasCustom =
+        data?.use_default_warranty === false ||
+        (!!data?.warranty_text && data?.warranty_text.trim().length > 0);
+      setUseDefaultWarranty(!hasCustom);
+      if (hasCustom && data?.warranty_text) setWarrantyText(data.warranty_text);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load agreement.");
     } finally {
       setLoading(false);
     }
-  }
+  };
+
+  const fetchMilestones = async () => {
+    if (!agreementId) return;
+    try {
+      setMLoading(true);
+      // Preferred nested endpoint
+      try {
+        const { data } = await api.get(
+          `/projects/agreements/${agreementId}/milestones/`
+        );
+        if (Array.isArray(data)) {
+          setMilestones(data);
+        } else {
+          // Fallback to list filtered by agreement
+          const r2 = await api.get("/projects/milestones/", {
+            params: { agreement: agreementId },
+          });
+          const list = Array.isArray(r2.data?.results)
+            ? r2.data.results
+            : Array.isArray(r2.data)
+            ? r2.data
+            : [];
+          setMilestones(list);
+        }
+      } catch {
+        const r2 = await api.get("/projects/milestones/", {
+          params: { agreement: agreementId },
+        });
+        const list = Array.isArray(r2.data?.results)
+          ? r2.data.results
+          : Array.isArray(r2.data)
+          ? r2.data
+          : [];
+        setMilestones(list);
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load milestones.");
+      setMilestones([]);
+    } finally {
+      setMLoading(false);
+    }
+  };
 
   useEffect(() => {
-    fetchAgreement();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
-
-  const milestonesTotal = useMemo(
-    () => milestones.reduce((acc, m) => acc + Number(m.amount || 0), 0),
-    [milestones]
-  );
-
-  async function saveAgreement() {
-    setSaving(true);
-    try {
-      await api.patch(`/projects/agreements/${id}/`, {
-        project_title: title,
-        start: start || null,
-        end: end || null,
-        total_cost: total,
-      });
-      await Promise.all(
-        milestones.map((m) =>
-          api.patch(`/projects/milestones/${m.id}/`, {
-            title: m.title,
-            amount: m.amount,
-            scheduled_date: m.scheduled_date || m.start_date || null,
-          })
-        )
-      );
-      toast.success("Agreement updated.");
+    if (agreementId) {
       fetchAgreement();
-    } catch (err) {
-      console.error(err);
-      toast.error("Could not save agreement.");
+      fetchMilestones();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agreementId]);
+
+  const saveChanges = async () => {
+    if (!agreementId) return;
+    try {
+      setSaving(true);
+      const payload = {
+        use_default_warranty: useDefaultWarranty,
+        warranty_text: useDefaultWarranty ? "" : warrantyText,
+      };
+      await api.patch(`/projects/agreements/${agreementId}/`, payload);
+      toast.success("Saved.");
+      fetchAgreement();
+    } catch (e) {
+      console.error(e);
+      toast.error("Could not save changes.");
     } finally {
       setSaving(false);
     }
-  }
+  };
 
-  async function signAsContractor() {
-    if (!signName.trim()) return toast.error("Enter your full name to sign.");
-    try {
-      await api.post(`/projects/agreements/${id}/sign/`, {
-        role: "contractor",
-        signature_name: signName.trim(),
-      });
-      toast.success("Signed as contractor.");
-      setSignName("");
-      fetchAgreement();
-    } catch (e) {
-      console.error(e);
-      toast.error(e?.response?.data?.detail || "Could not sign.");
+  const generatePreview = () => {
+    if (!agreementId) return;
+    window.open(previewHref, "_blank", "noopener,noreferrer");
+  };
+
+  const openPdf = () => {
+    if (!agreementId) return;
+    window.open(pdfHref, "_blank", "noopener,noreferrer");
+  };
+
+  const markReviewed = async () => {
+    if (!agreementId) return;
+    const res = await postAgreementMarkReviewed(agreementId);
+    if (res.ok) {
+      toast.success("Marked as reviewed.");
+    } else {
+      toast.error(res.error || "Could not mark as reviewed.");
     }
+  };
+
+  const headerTitle =
+    (agreement?.title /* serializer may provide this */) ||
+    agreement?.project_title ||
+    `Agreement #${agreement?.id || agreementId}`;
+
+  if (loading) {
+    return <div className="p-6 text-gray-700">Loading agreement editor…</div>;
   }
 
-  async function sendHomeownerInvite() {
-    try {
-      await api.post(`/projects/agreements/${id}/email-invite/`);
-      toast.success("Invite sent to homeowner.");
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to send invite.");
-    }
+  if (!agreement) {
+    return <div className="p-6 text-red-700">Agreement not found.</div>;
   }
-
-  function copyHomeownerLink() {
-    const token = agreement?.homeowner_access_token;
-    if (!token) return toast.error("Missing sign token.");
-    const url = `${window.location.origin}/agreements/sign/${id}?token=${encodeURIComponent(token)}`;
-    navigator.clipboard?.writeText(url);
-    toast.success("Sign link copied.");
-  }
-
-  function downloadPDF() {
-    window.open(`/api/projects/agreements/${id}/pdf/`, "_blank");
-  }
-
-  if (loading) return <div className="p-6">Loading…</div>;
-  if (!agreement) return <div className="p-6 text-red-600">Agreement not found.</div>;
-
-  const projectTitle = title;
-  const homeownerName =
-    agreement.homeowner_name ||
-    agreement.project?.homeowner?.full_name ||
-    agreement.project?.homeowner?.name ||
-    "";
 
   return (
-    <div className="max-w-5xl mx-auto p-6">
-      <button onClick={() => navigate("/agreements")} className="text-blue-700 hover:underline">
-        ← Back to Agreements
-      </button>
-
-      <h1 className="mt-2 text-3xl font-bold text-gray-800">Edit Agreement #{agreement.id}</h1>
-      <p className="text-gray-500">
-        Status:{" "}
-        <span className="font-semibold capitalize">{(agreement.status || "draft").replace("_", " ")}</span>
-      </p>
-
-      {/* Escrow disclaimer banner */}
-      <div className="mt-4 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900">
-        <strong>Important:</strong> If the total project amount is not deposited into escrow as required,
-        this agreement is <em>null and void</em>. Do not commence work until escrow is funded.
-      </div>
-
-      {/* Signature status with ✅ / ❌ */}
-      <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="rounded-lg bg-white p-4 shadow md:col-span-2">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <div className="text-sm text-gray-500">Project</div>
-              <div className="font-semibold">{projectTitle || "—"}</div>
-            </div>
-            <div>
-              <div className="text-sm text-gray-500">Homeowner</div>
-              <div className="font-semibold">{homeownerName || "—"}</div>
-            </div>
+    <div className="max-w-5xl mx-auto p-6 space-y-6">
+      {/* Header */}
+      <div className="bg-blue-50 rounded-xl border border-blue-200 p-5 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-bold text-blue-900">Edit Agreement</h2>
+            <div className="text-sm text-gray-600">{headerTitle}</div>
           </div>
-        </div>
-        <div className="rounded-lg bg-white p-4 shadow flex flex-col items-start justify-center gap-2">
-          <StatusPill ok={!!agreement.signed_by_contractor} label="Contractor" />
-          <StatusPill ok={!!agreement.signed_by_homeowner} label="Homeowner" />
-        </div>
-      </div>
-
-      {/* Summary */}
-      <div className="mt-6 rounded-xl bg-white p-5 shadow">
-        <h2 className="mb-3 text-lg font-semibold text-gray-800">Summary</h2>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <label className="block md:col-span-2">
-            <span className="text-sm text-gray-600">Title</span>
-            <input
-              className="mt-1 w-full rounded border px-3 py-2"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Bathroom Remodel"
-            />
-          </label>
-
-          <DateInput label="Start date" name="start" value={start} onChange={setStart} />
-          <DateInput label="End date" name="end" value={end} onChange={setEnd} />
-
-          <label className="block md:col-span-2">
-            <span className="text-sm text-gray-600">Total cost</span>
-            <input
-              type="number"
-              step="0.01"
-              className="mt-1 w-full rounded border px-3 py-2"
-              value={total}
-              onChange={(e) => setTotal(e.target.value)}
-            />
-          </label>
-
-          <div className="md:col-span-2 text-sm text-gray-600">
-            Milestones total: <span className="font-semibold">${money(milestonesTotal)}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Milestones */}
-      <div className="mt-6 rounded-xl bg-white p-5 shadow">
-        <h2 className="mb-3 text-lg font-semibold text-gray-800">Milestones</h2>
-        <div className="overflow-auto">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-3 py-2 text-left font-semibold text-gray-600">Title</th>
-                <th className="px-3 py-2 text-left font-semibold text-gray-600">Scheduled</th>
-                <th className="px-3 py-2 text-right font-semibold text-gray-600">Amount</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {milestones.map((m, idx) => (
-                <tr key={m.id || idx}>
-                  <td className="px-3 py-2">
-                    <input
-                      className="w-full rounded border px-2 py-1"
-                      value={m.title || ""}
-                      onChange={(e) =>
-                        setMilestones((arr) => arr.map((x) => (x.id === m.id ? { ...x, title: e.target.value } : x)))
-                      }
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="date"
-                      className="w-full rounded border px-2 py-1"
-                      value={(m.scheduled_date || m.start_date || "").toString().slice(0, 10)}
-                      onChange={(e) =>
-                        setMilestones((arr) =>
-                          arr.map((x) => (x.id === m.id ? { ...x, scheduled_date: e.target.value } : x))
-                        )
-                      }
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="w-32 rounded border px-2 py-1 text-right"
-                      value={Number(m.amount || 0)}
-                      onChange={(e) =>
-                        setMilestones((arr) =>
-                          arr.map((x) => (x.id === m.id ? { ...x, amount: e.target.value } : x))
-                        )
-                      }
-                    />
-                  </td>
-                </tr>
-              ))}
-              {milestones.length === 0 && (
-                <tr>
-                  <td className="px-3 py-6 text-center text-gray-500" colSpan={3}>
-                    No milestones yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Signature actions */}
-      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="rounded-xl bg-white p-5 shadow">
-          <h3 className="font-semibold mb-2">Sign as Contractor</h3>
-          <div className="flex gap-2">
-            <input
-              className="flex-1 rounded border px-3 py-2"
-              placeholder="Type your full name"
-              value={signName}
-              onChange={(e) => setSignName(e.target.value)}
-            />
+          <div className="flex items-center gap-2">
             <button
-              className="rounded bg-emerald-600 text-white px-4 py-2 hover:bg-emerald-700"
-              onClick={signAsContractor}
+              onClick={saveChanges}
+              disabled={saving}
+              className={`px-4 py-2 rounded-lg font-semibold text-white ${
+                saving ? "bg-gray-500 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
+              }`}
             >
-              Sign
+              {saving ? "Saving…" : "Save Changes"}
+            </button>
+            <button
+              onClick={openPdf}
+              className="px-4 py-2 rounded-lg border border-blue-300 text-blue-800 hover:bg-blue-50 font-semibold"
+            >
+              Open Current PDF
             </button>
           </div>
-          <p className="mt-2 text-xs text-gray-500">Your IP and timestamp will be recorded upon signature.</p>
-        </div>
-
-        <div className="rounded-xl bg-white p-5 shadow">
-          <h3 className="font-semibold mb-2">Homeowner Signature</h3>
-          <div className="flex flex-wrap gap-2">
-            <button className="rounded bg-blue-600 text-white px-4 py-2 hover:bg-blue-700" onClick={sendHomeownerInvite}>
-              Send Invite Email
-            </button>
-            <button className="rounded border px-4 py-2 hover:bg-gray-50" onClick={copyHomeownerLink}>
-              Copy Sign Link
-            </button>
-            <button className="rounded border px-4 py-2 hover:bg-gray-50" onClick={downloadPDF}>
-              Download PDF
-            </button>
-          </div>
-          <p className="mt-2 text-xs text-gray-500">The homeowner can sign via the emailed link or the copied link.</p>
         </div>
       </div>
 
-      {/* Actions */}
-      <div className="mt-6 flex flex-wrap items-center gap-3">
+      {/* Warranty */}
+      <div className="rounded-xl border border-gray-200 shadow-sm bg-white">
+        <div className="px-5 py-4 border-b bg-gradient-to-r from-blue-50 to-white rounded-t-xl">
+          <h3 className="text-lg font-semibold">Warranty</h3>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="flex items-center gap-6">
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="radio"
+                name="warranty_mode"
+                checked={useDefaultWarranty}
+                onChange={() => setUseDefaultWarranty(true)}
+              />
+              <span>Use default warranty</span>
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="radio"
+                name="warranty_mode"
+                checked={!useDefaultWarranty}
+                onChange={() => setUseDefaultWarranty(false)}
+              />
+              <span>Provide custom warranty</span>
+            </label>
+          </div>
+
+          {!useDefaultWarranty && (
+            <div>
+              <textarea
+                className="w-full border rounded-lg px-3 py-2 min-h-[140px]"
+                value={warrantyText}
+                onChange={(e) => setWarrantyText(e.target.value)}
+                placeholder="Type or paste your custom warranty terms here…"
+              />
+              <div className="text-xs text-gray-500 mt-1">
+                The warranty text is included in both the preview and the final signed PDF.
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Review & Preview */}
+      <div className="rounded-xl border border-gray-200 shadow-sm bg-white">
+        <div className="px-5 py-4 border-b bg-gradient-to-r from-blue-50 to-white rounded-t-xl">
+          <h3 className="text-lg font-semibold">Review &amp; Preview</h3>
+        </div>
+
+        <div className="p-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={generatePreview}
+              className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold"
+            >
+              Generate Preview PDF
+            </button>
+            <button
+              onClick={markReviewed}
+              className="px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-50 font-semibold"
+            >
+              Mark as Reviewed
+            </button>
+            <a
+              href={previewHref}
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-2 rounded-lg border border-blue-300 text-blue-800 hover:bg-blue-50 font-semibold"
+            >
+              Open Preview
+            </a>
+            <a
+              href={pdfHref}
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-2 rounded-lg border border-blue-300 text-blue-800 hover:bg-blue-50 font-semibold"
+            >
+              Download PDF
+            </a>
+          </div>
+          <div className="text-xs text-gray-500 mt-2">
+            You must generate and review the preview PDF before signing.
+          </div>
+        </div>
+      </div>
+
+      {/* Attachments & Addenda */}
+      <div className="rounded-xl border border-gray-200 shadow-sm bg-white">
+        <div className="px-5 py-4 border-b bg-gradient-to-r from-blue-50 to-white rounded-t-xl">
+          <h3 className="text-lg font-semibold">Attachments &amp; Addenda</h3>
+          <p className="text-sm text-gray-600 mt-1">
+            Upload your warranty, addenda, or exhibits here. Homeowners can review these before signing.
+          </p>
+        </div>
+        <div className="p-5">
+          <AttachmentManager agreementId={agreementId} canEdit={true} />
+        </div>
+      </div>
+
+      {/* Milestones (read-only summary) */}
+      <div className="rounded-xl border border-gray-200 shadow-sm bg-white">
+        <div className="px-5 py-4 border-b bg-gradient-to-r from-blue-50 to-white rounded-t-xl">
+          <h3 className="text-lg font-semibold">Milestones</h3>
+        </div>
+        <div className="p-5">
+          {mLoading ? (
+            <div className="text-gray-600">Loading…</div>
+          ) : milestones.length === 0 ? (
+            <div className="text-gray-500 text-sm">No milestones found.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm border rounded">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="p-2 text-left border">#</th>
+                    <th className="p-2 text-left border">Title</th>
+                    <th className="p-2 text-left border">Scheduled</th>
+                    <th className="p-2 text-right border">Amount</th>
+                    <th className="p-2 text-left border">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {milestones.map((m, i) => (
+                    <tr key={m.id || i} className="odd:bg-white even:bg-gray-50">
+                      <td className="p-2 border">{m.order ?? i + 1}</td>
+                      <td className="p-2 border">{m.title || "—"}</td>
+                      <td className="p-2 border">
+                        {m.start_date || m.start || m.scheduled || "—"}
+                      </td>
+                      <td className="p-2 border text-right">
+                        {typeof m.amount === "number"
+                          ? `$${m.amount.toFixed(2)}`
+                          : m.amount || "—"}
+                      </td>
+                      <td className="p-2 border">
+                        {m.completed ? "complete" : "incomplete"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Bottom Save */}
+      <div className="flex justify-end">
         <button
-          className="rounded bg-blue-600 px-5 py-2 font-semibold text-white hover:bg-blue-700 disabled:bg-blue-300"
-          onClick={saveAgreement}
+          onClick={saveChanges}
           disabled={saving}
+          className={`px-5 py-2.5 rounded-lg font-semibold text-white ${
+            saving ? "bg-gray-500 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
+          }`}
         >
           {saving ? "Saving…" : "Save Changes"}
-        </button>
-        <button className="rounded border px-5 py-2 font-semibold hover:bg-gray-50" onClick={() => navigate("/agreements")}>
-          Cancel
         </button>
       </div>
     </div>

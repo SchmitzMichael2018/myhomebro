@@ -3,11 +3,16 @@
   --mhb-bg-start:#1E3A8A;
   --mhb-bg-mid:#2563EB;
   --mhb-bg-end:#F2C94C;
+
   --mhb-surface:#ffffff;
   --mhb-surface-weak: rgba(255,255,255,0.88);
   --mhb-border: rgba(255,255,255,0.6);
-  --mhb-text:#0f172a;
-  --mhb-text-muted:#64748b;
+
+  /* Softer, eye-friendly dark text */
+  --mhb-text:#111827;        /* slate-900 */
+  --mhb-text-strong:#1f2937; /* slate-800 */
+  --mhb-text-soft:#475569;   /* slate-600 */
+
   --mhb-shadow: 0 8px 24px rgba(0,0,0,.12);
   --mhb-radius:16px;
   --mhb-accent:#F2C94C; /* yellow */
@@ -20,65 +25,39 @@
 /* Container */
 .mhb-container{ max-width:1360px; margin:0 auto; padding:28px 36px; }
 
-/* ---------- Framed logo (matches landing page look) ---------- */
+/* Framed logo */
 .mhb-logo-frame{
   display:grid; place-items:center;
   background: radial-gradient(120px 120px at 30% 20%, rgba(255,255,255,.25), rgba(255,255,255,0) 60%);
   border-radius:18px;
-  border:4px solid rgba(255,255,255,.85);      /* outer ring */
-  outline:2px solid rgba(255,255,255,.25);     /* inner subtle ring */
-  box-shadow:
-    0 10px 30px rgba(0,0,0,.25),
-    inset 0 1px 0 rgba(255,255,255,.6);
+  border:4px solid rgba(255,255,255,.85);
+  outline:2px solid rgba(255,255,255,.25);
+  box-shadow:0 10px 30px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.6);
 }
 
-/* Page header topbar */
+/* Page header */
 .mhb-topbar{ display:flex; align-items:center; gap:16px; margin-bottom:12px; }
-.mhb-logo-lg{ width:88px; height:88px; }            /* bigger header logo */
+.mhb-logo-lg{ width:88px; height:88px; }
 .mhb-logo-lg img{ max-width:72px; max-height:72px; display:block; }
 
-.mhb-page-title{
-  margin:0;
-  font-size:36px;           /* bigger title */
-  line-height:1.05;
-  font-weight:900;
-  color:var(--mhb-accent);
-  text-shadow:0 1px 2px rgba(0,0,0,.25);
-}
-.mhb-page-subtitle{
-  margin-top:4px;
-  color:#eef2ff;
-  font-size:14px;
-  opacity:.95;
-}
+.mhb-page-title{ margin:0; font-size:36px; line-height:1.05; font-weight:900; color:var(--mhb-accent); text-shadow:0 1px 2px rgba(0,0,0,.25); }
+.mhb-page-subtitle{ margin-top:4px; color:#eef2ff; font-size:14px; opacity:.95; }
 
 /* Section label */
 .mhb-kicker{ color:var(--mhb-accent); font-weight:800; margin:10px 0 12px; }
 
 /* Glass surface */
-.mhb-glass{
-  background:var(--mhb-surface-weak);
-  border:1px solid var(--mhb-border);
-  border-radius:var(--mhb-radius);
-  box-shadow:var(--mhb-shadow);
-  backdrop-filter:saturate(140%) blur(2px);
-}
+.mhb-glass{ background:var(--mhb-surface-weak); border:1px solid var(--mhb-border); border-radius:var(--mhb-radius); box-shadow:var(--mhb-shadow); backdrop-filter:saturate(140%) blur(2px); }
 
 /* Stat cards */
-.mhb-stat{
-  display:flex; flex-direction:column; gap:10px;
-  padding:20px 20px 18px;
-  cursor:pointer;
-  transition:transform .15s, box-shadow .15s, background .15s;
-  min-height:120px;
-}
+.mhb-stat{ display:flex; flex-direction:column; gap:10px; padding:20px 20px 18px; cursor:pointer; transition:transform .15s, box-shadow .15s, background .15s; min-height:120px; }
 .mhb-stat:hover{ transform:translateY(-2px); box-shadow:0 12px 28px rgba(0,0,0,.18); background:#fff; }
-.mhb-stat-head{ display:flex; align-items:center; gap:12px; color:var(--mhb-text); font-weight:900; font-size:16px; }
+.mhb-stat-head{ display:flex; align-items:center; gap:12px; color:var(--mhb-text-strong); font-weight:900; font-size:16px; }
 .mhb-stat-icon{ width:32px; height:32px; display:grid; place-items:center; border-radius:12px; background:linear-gradient(135deg,rgba(255,255,255,.7),rgba(255,255,255,.2)); border:1px solid var(--mhb-border); }
-.mhb-stat-sub{ color:var(--mhb-text-muted); font-size:13px; line-height:1.35; }
+.mhb-stat-sub{ color:var(--mhb-text-soft); font-size:13px; line-height:1.35; }
 .mhb-stat-foot{ display:flex; align-items:baseline; justify-content:space-between; }
-.mhb-stat-count{ color:var(--mhb-text-muted); font-size:12px; }
-.mhb-stat-value{ font-weight:900; color:var(--mhb-text); font-size:18px; }
+.mhb-stat-count{ color:var(--mhb-text-soft); font-size:12px; }
+.mhb-stat-value{ font-weight:900; color:var(--mhb-text-strong); font-size:18px; }
 
 /* Helper note */
 .mhb-note{ padding:12px 14px; color:#334155; }
@@ -90,7 +69,7 @@
 .mhb-actions{ display:flex; flex-wrap:wrap; gap:12px; }
 .mhb-btn{
   appearance:none; border:1px solid rgba(255,255,255,.55);
-  background:var(--mhb-surface-weak); color:#0f172a;
+  background:var(--mhb-surface-weak); color:var(--mhb-text-strong);
   padding:12px 16px; border-radius:12px; font-weight:800;
   box-shadow:var(--mhb-shadow); backdrop-filter:saturate(140%) blur(2px);
   display:flex; align-items:center; gap:10px;
@@ -100,14 +79,9 @@
 .mhb-btn.primary{ border-color:#0ea5e9; box-shadow:0 8px 24px rgba(14,165,233,.25); }
 
 /* ---------------- Sidebar ---------------- */
-.mhb-sidebar{
-  width:260px;                           /* a little wider for larger logo/text */
-  background:#0b1220;
-  color:#e5e7eb;
-  display:flex; flex-direction:column;
-}
+.mhb-sidebar{ width:260px; background:#0b1220; color:#e5e7eb; display:flex; flex-direction:column; }
 .mhb-sb-header{ display:flex; align-items:center; gap:12px; padding:18px 14px 14px; }
-.mhb-sb-logo{ width:64px; height:64px; } /* bigger sidebar logo */
+.mhb-sb-logo{ width:64px; height:64px; }
 .mhb-sb-logo img{ max-width:54px; max-height:54px; display:block; }
 .mhb-sb-title{ font-weight:900; font-size:20px; letter-spacing:.2px; }
 .mhb-sb-badge{ font-size:11.5px; opacity:.75; margin-top:4px; }
@@ -125,8 +99,85 @@
 .mhb-sb-link.active{ color:var(--mhb-accent); background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.15); }
 
 .mhb-sb-footer{ padding:14px; }
-.mhb-sb-logout{
-  width:100%; border:1px solid rgba(239,68,68,.35);
-  background:#ef4444; color:#fff;
-  padding:11px 12px; border-radius:12px; font-weight:900; cursor:pointer;
+.mhb-sb-logout{ width:100%; border:1px solid rgba(239,68,68,.35); background:#ef4444; color:#fff; padding:11px 12px; border-radius:12px; font-weight:900; cursor:pointer; }
+
+/* ========== Landing bottom horizontal scroller ========== */
+.mhb-hscroll{
+  padding: 8px 0 18px;
+  margin: 0 auto 24px;
+  max-width: 1100px;
+  overflow-x: auto;  /* visible horizontal scrollbar */
+  overflow-y: hidden;
 }
+.mhb-hscroll-track{
+  display: flex;
+  gap: 18px;
+  padding: 2px 16px;
+  min-width: 1440px; /* ensures scrollbar on wide screens */
+}
+
+/* Tiles — improved look */
+.mhb-tile{
+  min-width: 330px;
+  height: 190px;
+  padding: 18px;
+  border-radius: 18px;
+
+  /* subtle glass gradient + stronger border */
+  background: linear-gradient(180deg, rgba(255,255,255,.95), rgba(255,255,255,.88));
+  border: 1.5px solid rgba(255,255,255,.75);
+  box-shadow: 0 14px 30px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.6);
+  backdrop-filter: saturate(150%) blur(2px);
+
+  color: var(--mhb-text-strong);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.mhb-tile:hover{
+  transform: translateY(-3px);
+  box-shadow: 0 18px 36px rgba(0,0,0,.18);
+  border-color: rgba(255,255,255,.95);
+}
+
+.mhb-tile-icon{
+  width: 38px; height: 38px;
+  display: grid; place-items: center;
+  border-radius: 12px;
+
+  /* accent ring around icon */
+  background: linear-gradient(135deg, rgba(255,255,255,.9), rgba(255,255,255,.4));
+  border: 2px solid rgba(242,201,76,.85);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.7);
+  color: var(--mhb-text);
+}
+
+/* Gradient heading for tiles */
+.mhb-tile-title{
+  font-weight: 900;
+  font-size: 19px;
+  letter-spacing: .2px;
+
+  /* fallback solid color */
+  color: var(--mhb-text-strong);
+
+  /* gradient text */
+  background: linear-gradient(90deg, #1E3A8A 0%, #2563EB 45%, #06b6d4 100%);
+  -webkit-background-clip: text;
+          background-clip: text;
+  color: transparent;
+}
+
+.mhb-tile-text{
+  font-size: 14px;
+  color: var(--mhb-text-soft);
+  line-height: 1.45;
+}
+
+/* Scrollbar styling */
+.mhb-hscroll::-webkit-scrollbar{ height: 10px; }
+.mhb-hscroll::-webkit-scrollbar-track{ background: rgba(255,255,255,.25); border-radius: 8px; }
+.mhb-hscroll::-webkit-scrollbar-thumb{ background: rgba(255,255,255,.7); border-radius: 8px; }
+.mhb-hscroll{ scrollbar-color: rgba(255,255,255,.7) rgba(255,255,255,.25); scrollbar-width: thin; }

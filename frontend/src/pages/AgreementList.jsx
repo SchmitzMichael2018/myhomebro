@@ -1,446 +1,442 @@
 // frontend/src/pages/AgreementList.jsx
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import toast from "react-hot-toast";
 import api from "../api";
+import toast from "react-hot-toast";
+import {
+  CheckCircle2,
+  XCircle,
+  RefreshCw,
+  Plus,
+  Layers,
+  Pencil,
+  Trash2,
+  Star,
+} from "lucide-react";
 
-// --- helpers ---
-const money = (n) =>
-  Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+console.log("AgreementList.jsx v2025-09-17-actions+merge+primary+delete-detail");
 
-function StatusBadge({ text }) {
-  const t = String(text || "").toLowerCase();
-  const color =
-    t === "signed" || t === "active"
-      ? "bg-green-100 text-green-700"
-      : t === "draft"
-      ? "bg-gray-100 text-gray-700"
-      : t === "pending"
-      ? "bg-yellow-100 text-yellow-700"
-      : "bg-blue-100 text-blue-700";
-  return (
-    <span className={`inline-block rounded px-2 py-0.5 text-xs font-semibold ${color}`}>
-      {text || "—"}
-    </span>
-  );
-}
+const fmtMoney = (n) => {
+  const v = Number(n);
+  return Number.isFinite(v) ? `$${v.toFixed(2)}` : n ?? "—";
+};
+const fmtDate = (s) => (s ? new Date(s).toISOString().slice(0, 10) : "—");
 
-function EscrowBadge({ funded }) {
-  return (
-    <span
-      className={`inline-block rounded px-2 py-0.5 text-xs font-semibold ${
-        funded ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-800"
-      }`}
-      title={funded ? "Escrow funded" : "Escrow pending"}
-    >
-      {funded ? "funded" : "pending"}
-    </span>
-  );
-}
-
-function SignatureCell({ contractorOk, homeownerOk }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span
-        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${
-          contractorOk ? "border-green-200 text-green-700" : "border-red-200 text-red-700"
-        }`}
-        title="Contractor signature"
-      >
-        <span className={contractorOk ? "text-green-600" : "text-red-600"}>
-          {contractorOk ? "✅" : "❌"}
-        </span>
-        Contractor
-      </span>
-      <span
-        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${
-          homeownerOk ? "border-green-200 text-green-700" : "border-red-200 text-red-700"
-        }`}
-        title="Homeowner signature"
-      >
-        <span className={homeownerOk ? "text-green-600" : "text-red-600"}>
-          {homeownerOk ? "✅" : "❌"}
-        </span>
-        Homeowner
-      </span>
-    </div>
-  );
-}
-
-function Select({ value, onChange, options, className = "" }) {
-  return (
-    <div className={`relative ${className}`}>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-10 w-48 appearance-none rounded border border-gray-300 bg-white px-3 pr-10 text-sm leading-tight focus:border-blue-500 focus:outline-none"
-      >
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-      {/* chevron to prevent text/arrow overlap */}
-      <svg
-        className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2"
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-      >
-        <path d="M7 10l5 5 5-5" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </div>
-  );
-}
-
-// --- page ---
 export default function AgreementList() {
-  const navigate = useNavigate();
-
+  const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [agreements, setAgreements] = useState([]);
 
-  // filters/search
+  const [selected, setSelected] = useState(() => new Set());
+  const [primaryId, setPrimaryId] = useState(null);
+
   const [q, setQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all"); // all | draft | pending | active | signed | archived
-  const [escrowFilter, setEscrowFilter] = useState("all"); // all | funded | pending
-
-  // selection for merge
-  const [selectedIds, setSelectedIds] = useState([]);
-
-  // pagination (client-side)
-  const [page, setPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState("all");
   const [pageSize, setPageSize] = useState(10);
+  const [busyRow, setBusyRow] = useState(null);
 
-  async function fetchAgreements() {
-    setLoading(true);
+  const load = async () => {
     try {
-      const res = await api.get("/projects/agreements/");
-      const data = Array.isArray(res.data) ? res.data : res.data?.results || [];
-      setAgreements(data);
+      setLoading(true);
+      const { data } = await api.get("/projects/agreements/", {
+        params: { page_size: 250 },
+      });
+      const list = Array.isArray(data?.results)
+        ? data.results
+        : Array.isArray(data)
+        ? data
+        : [];
+      setRows(list);
     } catch (e) {
       console.error(e);
       toast.error("Failed to load agreements.");
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   useEffect(() => {
-    fetchAgreements();
+    load();
   }, []);
 
-  // filter
   const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return agreements.filter((a) => {
-      const matchesSearch =
-        !needle ||
-        [a.id, a.status, a.project_title, a.homeowner_name, a.start, a.end]
+    const search = q.trim().toLowerCase();
+    return rows
+      .filter((r) =>
+        statusFilter === "all"
+          ? true
+          : String(r.status || "").toLowerCase() === statusFilter
+      )
+      .filter((r) => {
+        if (!search) return true;
+        const hay = [r.title, r.project_title, r.homeowner_name, r.id, r.status]
+          .filter(Boolean)
           .join(" ")
-          .toLowerCase()
-          .includes(needle);
+          .toLowerCase();
+        return hay.includes(search);
+      });
+  }, [rows, q, statusFilter]);
 
-      const matchesStatus = statusFilter === "all" || String(a.status || "").toLowerCase() === statusFilter;
+  const page = filtered.slice(0, pageSize);
 
-      const matchesEscrow =
-        escrowFilter === "all" ||
-        (escrowFilter === "funded" ? !!a.escrow_funded : !a.escrow_funded);
-
-      return matchesSearch && matchesStatus && matchesEscrow;
+  const toggle = (id) =>
+    setSelected((old) => {
+      const next = new Set(old);
+      if (next.has(id)) {
+        next.delete(id);
+        if (primaryId === id) setPrimaryId(null);
+      } else {
+        next.add(id);
+        if (!primaryId) setPrimaryId(id);
+      }
+      return next;
     });
-  }, [agreements, q, statusFilter, escrowFilter]);
 
-  // pagination
-  const total = filtered.length;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const safePage = Math.min(page, totalPages);
-  const startIdx = (safePage - 1) * pageSize;
-  const rows = filtered.slice(startIdx, startIdx + pageSize);
+  const toggleAll = () =>
+    setSelected((old) => {
+      const pageIds = page.map((r) => r.id);
+      const allOn = pageIds.every((id) => old.has(id));
+      const next = new Set(old);
+      if (allOn) {
+        pageIds.forEach((id) => next.delete(id));
+        if (pageIds.includes(primaryId)) setPrimaryId(null);
+      } else {
+        pageIds.forEach((id) => next.add(id));
+        if (!primaryId && pageIds.length > 0) setPrimaryId(pageIds[0]);
+      }
+      return next;
+    });
 
-  // selection
-  const allChecked = rows.length > 0 && rows.every((a) => selectedIds.includes(a.id));
-  const someChecked = !allChecked && rows.some((a) => selectedIds.includes(a.id));
+  const choosePrimary = (id) => {
+    if (!selected.has(id)) {
+      setSelected((s) => new Set([...s, id]));
+    }
+    setPrimaryId(id);
+  };
 
-  function toggleAll() {
-    if (allChecked) setSelectedIds((cur) => cur.filter((id) => !rows.find((r) => r.id === id)));
-    else setSelectedIds((cur) => [...new Set([...cur, ...rows.map((r) => r.id)])]);
-  }
-  function toggleOne(id) {
-    setSelectedIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
-  }
+  const mergeSelected = async () => {
+    const ids = Array.from(selected);
+    if (ids.length < 2) return toast.error("Select at least two agreements.");
+    const effectivePrimary =
+      primaryId && ids.includes(primaryId) ? primaryId : ids[0];
+    const merge_ids = ids.filter((i) => i !== effectivePrimary);
 
-  // merge
-  function choosePrimary(ids) {
-    const signed = rows.find((a) => ids.includes(a.id) && a.signed_by_contractor && a.signed_by_homeowner);
-    return signed ? signed.id : [...ids].sort((a, b) => a - b)[0];
-  }
-  async function mergeSelected() {
-    const ids = selectedIds.filter((id) => filtered.find((a) => a.id === id));
-    if (ids.length < 2) return toast.error("Select at least two agreements to merge.");
-    const primary_id = choosePrimary(ids);
-    const merge_ids = ids.filter((x) => x !== primary_id);
     try {
-      await api.post("/projects/agreements/merge/", { primary_id, merge_ids });
-      toast.success("Merged.");
-      setSelectedIds([]);
-      fetchAgreements();
+      await api.post("/projects/agreements/merge/", {
+        primary_id: effectivePrimary,
+        merge_ids,
+      });
+      toast.success("Agreements merged.");
+      setSelected(new Set());
+      setPrimaryId(null);
+      await load();
+      return;
+    } catch (e1) {
+      const d1 = e1?.response?.data;
+      if (d1?.detail) toast.error(String(d1.detail));
+      try {
+        await api.post("/projects/agreements/merge/", { agreement_ids: ids });
+        toast.success("Agreements merged.");
+        setSelected(new Set());
+        setPrimaryId(null);
+        await load();
+        return;
+      } catch (e2) {
+        const d2 = e2?.response?.data;
+        if (d2?.detail) toast.error(String(d2.detail));
+        try {
+          const fd = new FormData();
+          ids.forEach((id) => fd.append("ids[]", id));
+          await api.post("/projects/agreements/merge/", fd);
+          toast.success("Agreements merged.");
+          setSelected(new Set());
+          setPrimaryId(null);
+          await load();
+          return;
+        } catch (e3) {
+          const d3 = e3?.response?.data;
+          if (d3?.detail) toast.error(String(d3.detail));
+          try {
+            await api.get("/projects/agreements/merge/", {
+              params: { ids: ids.join(",") },
+            });
+            toast.success("Agreements merged.");
+            setSelected(new Set());
+            setPrimaryId(null);
+            await load();
+            return;
+          } catch (e4) {
+            const d4 = e4?.response?.data;
+            const msg =
+              d4?.detail || d3?.detail || d2?.detail || d1?.detail || "Merge failed.";
+            console.error("Merge errors:", e1, e2, e3, e4);
+            toast.error(String(msg));
+          }
+        }
+      }
+    }
+  };
+
+  const goEdit = (id) => (window.location.href = `/agreements/${id}/edit`);
+
+  const deleteDraft = async (row) => {
+    if (String(row.status).toLowerCase() !== "draft") {
+      return toast.error("Only draft agreements can be deleted.");
+    }
+    if (!confirm(`Delete draft Agreement #${row.id}? This cannot be undone.`))
+      return;
+    try {
+      setBusyRow(row.id);
+      await api.delete(`/projects/agreements/${row.id}/`);
+      toast.success(`Agreement #${row.id} deleted.`);
+      await load();
     } catch (e) {
       console.error(e);
-      toast.error(e?.response?.data?.detail || "Merge failed.");
+      const detail =
+        e?.response?.data?.detail ||
+        "Delete failed. This agreement may have children, escrow funds, or paid invoices.";
+      toast.error(String(detail));
+    } finally {
+      setBusyRow(null);
     }
-  }
+  };
 
-  // --- UI ---
+  const SignatureBadge = ({ ok, who }) =>
+    ok ? (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+        <CheckCircle2 size={14} /> {who}
+      </span>
+    ) : (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-800">
+        <XCircle size={14} /> {who}
+      </span>
+    );
+
   return (
-    <div className="mx-auto w-full max-w-[1400px] px-4 py-6">
-      <h1 className="text-3xl font-bold text-gray-800">Agreements</h1>
-
-      {/* Toolbar */}
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+    <div className="p-6 space-y-4">
+      {/* Header */}
+      <div className="flex flex-wrap items-center gap-2">
         <input
-          type="text"
-          className="h-10 w-80 rounded border border-gray-300 px-3 text-sm focus:border-blue-500 focus:outline-none"
-          placeholder="Search by project, homeowner…"
           value={q}
-          onChange={(e) => {
-            setQ(e.target.value);
-            setPage(1);
-          }}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search by project, homeowner…"
+          className="border rounded-lg px-3 py-2 w-72"
         />
-
-        <Select
-          className="ml-1"
+        <select
           value={statusFilter}
-          onChange={(v) => {
-            setStatusFilter(v);
-            setPage(1);
-          }}
-          options={[
-            { value: "all", label: "All Status" },
-            { value: "draft", label: "Draft" },
-            { value: "pending", label: "Pending" },
-            { value: "active", label: "Active" },
-            { value: "signed", label: "Signed" },
-            { value: "archived", label: "Archived" },
-          ]}
-        />
-
-        <Select
-          value={escrowFilter}
-          onChange={(v) => {
-            setEscrowFilter(v);
-            setPage(1);
-          }}
-          options={[
-            { value: "all", label: "All Escrow" },
-            { value: "funded", label: "Escrow Funded" },
-            { value: "pending", label: "Escrow Pending" },
-          ]}
-        />
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="border rounded-lg px-3 py-2"
+        >
+          <option value="all">All Status</option>
+          <option value="draft">draft</option>
+          <option value="signed">signed</option>
+          <option value="funded">funded</option>
+          <option value="in_progress">in_progress</option>
+          <option value="completed">completed</option>
+          <option value="cancelled">cancelled</option>
+        </select>
+        <select
+          value={pageSize}
+          onChange={(e) => setPageSize(Number(e.target.value))}
+          className="border rounded-lg px-3 py-2"
+        >
+          {[10, 20, 50, 100, 250].map((n) => (
+            <option key={n} value={n}>
+              {n} / page
+            </option>
+          ))}
+        </select>
 
         <button
-          onClick={fetchAgreements}
-          className="h-10 rounded border border-gray-300 px-3 text-sm hover:bg-gray-50"
+          onClick={load}
+          className="inline-flex items-center gap-2 px-3 py-2 border rounded-lg hover:bg-gray-50"
           title="Refresh"
         >
-          Refresh
+          <RefreshCw size={16} /> Refresh
         </button>
 
-        <div className="ml-auto flex items-center gap-2">
-          <Select
-            value={String(pageSize)}
-            onChange={(v) => {
-              const n = Number(v) || 10;
-              setPageSize(n);
-              setPage(1);
-            }}
-            options={[
-              { value: "10", label: "10 / page" },
-              { value: "25", label: "25 / page" },
-              { value: "50", label: "50 / page" },
-              { value: "100", label: "100 / page" },
-            ]}
-          />
-          <button
-            onClick={() => navigate("/agreements/new")}
-            className="h-10 rounded bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700"
-          >
-            + New Agreement
-          </button>
-          <button
-            onClick={mergeSelected}
-            disabled={selectedIds.length < 2}
-            className={`h-10 rounded px-3 text-sm font-semibold ${
-              selectedIds.length < 2
-                ? "bg-gray-300 text-gray-600 cursor-not-allowed"
-                : "bg-indigo-600 text-white hover:bg-indigo-700"
-            }`}
-          >
-            Merge Selected
-          </button>
-        </div>
+        <div className="flex-1" />
+
+        <button
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+          title="New Agreement"
+          onClick={() => (window.location.href = "/agreements/new")}
+        >
+          <Plus size={16} /> New Agreement
+        </button>
+
+        <button
+          className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${
+            selected.size >= 2
+              ? "bg-indigo-600 text-white hover:bg-indigo-700"
+              : "bg-gray-300 text-gray-600 cursor-not-allowed"
+          }`}
+          disabled={selected.size < 2}
+          onClick={mergeSelected}
+          title="Merge Selected"
+        >
+          <Layers size={16} /> Merge Selected
+        </button>
       </div>
 
       {/* Table */}
-      <div className="mt-4 overflow-auto rounded-xl bg-white shadow ring-1 ring-black/5">
-        <table className="min-w-[1100px] w-full text-sm">
-          <thead className="sticky top-0 bg-gray-50">
-            <tr className="text-left text-gray-600">
-              <th className="px-3 py-2 w-10">
+      <div className="rounded-xl border bg-white shadow-sm overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="p-2 border">
                 <input
                   type="checkbox"
-                  checked={rows.length > 0 && rows.every((a) => selectedIds.includes(a.id))}
-                  ref={(el) => {
-                    if (!el) return;
-                    const all = rows.length > 0 && rows.every((a) => selectedIds.includes(a.id));
-                    const some = !all && rows.some((a) => selectedIds.includes(a.id));
-                    el.indeterminate = some;
-                  }}
                   onChange={toggleAll}
+                  checked={page.length > 0 && page.every((r) => selected.has(r.id))}
                 />
               </th>
-              <th className="px-3 py-2">Agreement ID</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">Project</th>
-              <th className="px-3 py-2">Homeowner</th>
-              <th className="px-3 py-2">Start</th>
-              <th className="px-3 py-2">End</th>
-              <th className="px-3 py-2">Signatures</th>
-              <th className="px-3 py-2 text-right">Total</th>
-              <th className="px-3 py-2">Escrow</th>
-              <th className="px-3 py-2 text-right">Invoices</th>
-              <th className="px-3 py-2">Action</th>
+              <th className="p-2 text-left border">Primary</th>
+              <th className="p-2 text-left border">Agreement ID</th>
+              <th className="p-2 text-left border">Status</th>
+              <th className="p-2 text-left border">Project</th>
+              <th className="p-2 text-left border">Homeowner</th>
+              <th className="p-2 text-left border">Start</th>
+              <th className="p-2 text-left border">End</th>
+              <th className="p-2 text-left border">Signatures</th>
+              <th className="p-2 text-right border">Total</th>
+              <th className="p-2 text-right border">Invoices</th>
+              <th className="p-2 text-left border">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
-            {!loading && rows.length === 0 && (
+          <tbody>
+            {loading ? (
               <tr>
-                <td colSpan={12} className="px-3 py-8 text-center text-gray-500">
-                  No agreements found.
-                </td>
-              </tr>
-            )}
-
-            {rows.map((a) => (
-              <tr key={a.id} className="hover:bg-gray-50">
-                <td className="px-3 py-2">
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.includes(a.id)}
-                    onChange={() => toggleOne(a.id)}
-                  />
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap">
-                  <span className="text-gray-700 font-semibold">#{a.id}</span>
-                  {a.amendment_number > 0 && (
-                    <span className="ml-2 rounded bg-purple-100 text-purple-700 px-2 py-0.5 text-[11px] font-semibold">
-                      Amendment #{a.amendment_number}
-                      {a.parent_agreement_id ? ` (to #${a.parent_agreement_id})` : ""}
-                    </span>
-                  )}
-                </td>
-                <td className="px-3 py-2">
-                  <StatusBadge text={a.status || "draft"} />
-                </td>
-                <td className="px-3 py-2">{a.project_title || "—"}</td>
-                <td className="px-3 py-2">{a.homeowner_name || "—"}</td>
-                <td className="px-3 py-2 whitespace-nowrap">{a.start || "—"}</td>
-                <td className="px-3 py-2 whitespace-nowrap">{a.end || "—"}</td>
-                <td className="px-3 py-2">
-                  <SignatureCell
-                    contractorOk={!!a.signed_by_contractor}
-                    homeownerOk={!!a.signed_by_homeowner}
-                  />
-                </td>
-                <td className="px-3 py-2 text-right whitespace-nowrap">${money(a.total_cost)}</td>
-                <td className="px-3 py-2">
-                  <EscrowBadge funded={!!a.escrow_funded} />
-                </td>
-                <td className="px-3 py-2 text-right">
-                  {typeof a.invoices_count === "number" ? a.invoices_count : 0}{" "}
-                  <span className="text-gray-500">Invoices</span>
-                </td>
-                <td className="px-3 py-2">
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      className="rounded bg-indigo-600 text-white px-3 py-1.5 text-xs hover:bg-indigo-700"
-                      onClick={() => navigate(`/agreements/${a.id}/edit`)}
-                    >
-                      Continue Editing
-                    </button>
-                    {a.status === "draft" && (
-                      <button
-                        className="rounded bg-red-600 text-white px-3 py-1.5 text-xs hover:bg-red-700"
-                        onClick={async () => {
-                          if (!confirm("Delete this draft agreement?")) return;
-                          try {
-                            await api.delete(`/projects/agreements/${a.id}/`);
-                            toast.success("Draft deleted.");
-                            fetchAgreements();
-                          } catch (e) {
-                            console.error(e);
-                            toast.error("Could not delete draft.");
-                          }
-                        }}
-                      >
-                        Delete Draft
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-
-            {loading && (
-              <tr>
-                <td colSpan={12} className="px-3 py-8 text-center text-gray-500">
+                <td className="p-3 border text-gray-600" colSpan={12}>
                   Loading…
                 </td>
               </tr>
+            ) : page.length === 0 ? (
+              <tr>
+                <td className="p-3 border text-gray-500" colSpan={12}>
+                  No agreements found.
+                </td>
+              </tr>
+            ) : (
+              page.map((r) => {
+                const isChecked = selected.has(r.id);
+                const isPrimary = primaryId === r.id;
+                return (
+                  <tr key={r.id} className="odd:bg-white even:bg-gray-50">
+                    <td className="p-2 border">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => toggle(r.id)}
+                      />
+                    </td>
+                    <td className="p-2 border">
+                      <button
+                        onClick={() => choosePrimary(r.id)}
+                        disabled={!isChecked}
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${
+                          isChecked
+                            ? isPrimary
+                              ? "bg-yellow-100 border-yellow-300"
+                              : "hover:bg-gray-50"
+                            : "text-gray-400 cursor-not-allowed"
+                        }`}
+                        title={
+                          isChecked
+                            ? isPrimary
+                              ? "Primary"
+                              : "Set as Primary"
+                            : "Select row first"
+                        }
+                      >
+                        <Star size={14} />
+                        <span className="text-xs font-semibold">
+                          {isPrimary ? "Primary" : "Set"}
+                        </span>
+                      </button>
+                    </td>
+                    <td className="p-2 border">#{r.id}</td>
+                    <td className="p-2 border">
+                      <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-800">
+                        {String(r.status || "—")}
+                      </span>
+                    </td>
+                    <td className="p-2 border">{r.title || r.project_title || "—"}</td>
+                    <td className="p-2 border">{r.homeowner_name || "—"}</td>
+                    <td className="p-2 border">{fmtDate(r.start)}</td>
+                    <td className="p-2 border">{fmtDate(r.end)}</td>
+                    <td className="p-2 border">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
+                            r.signed_by_contractor
+                              ? "bg-green-100 text-green-800"
+                              : "bg-red-100 text-red-800"
+                          }`}
+                        >
+                          {r.signed_by_contractor ? (
+                            <CheckCircle2 size={14} />
+                          ) : (
+                            <XCircle size={14} />
+                          )}{" "}
+                          Contractor
+                        </span>
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
+                            r.signed_by_homeowner
+                              ? "bg-green-100 text-green-800"
+                              : "bg-red-100 text-red-800"
+                          }`}
+                        >
+                          {r.signed_by_homeowner ? (
+                            <CheckCircle2 size={14} />
+                          ) : (
+                            <XCircle size={14} />
+                          )}{" "}
+                          Homeowner
+                        </span>
+                      </div>
+                    </td>
+                    <td className="p-2 border text-right">
+                      {fmtMoney(r.display_total ?? r.total_cost)}
+                    </td>
+                    <td className="p-2 border text-right">
+                      {Number(r.invoices_count || 0)}
+                    </td>
+                    <td className="p-2 border">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => goEdit(r.id)}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border hover:bg-gray-50"
+                          title="Continue Editing"
+                        >
+                          <Pencil size={14} /> Edit
+                        </button>
+                        <button
+                          onClick={() => deleteDraft(r)}
+                          disabled={busyRow === r.id}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg ${
+                            String(r.status).toLowerCase() === "draft"
+                              ? "border border-red-300 text-red-700 hover:bg-red-50"
+                              : "border border-gray-300 text-gray-400 cursor-not-allowed"
+                          }`}
+                          title="Delete Draft"
+                        >
+                          <Trash2 size={14} />{" "}
+                          {busyRow === r.id ? "Deleting…" : "Delete"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
 
-      {/* Pagination */}
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="text-sm text-gray-600">
-          Showing{" "}
-          <span className="font-semibold">
-            {total === 0 ? 0 : startIdx + 1}–{Math.min(startIdx + pageSize, total)}
-          </span>{" "}
-          of <span className="font-semibold">{total}</span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={safePage <= 1}
-          >
-            ← Prev
-          </button>
-          <span className="text-sm text-gray-700">
-            Page <strong>{safePage}</strong> of <strong>{totalPages}</strong>
-          </span>
-          <button
-            className="rounded border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={safePage >= totalPages}
-          >
-            Next →
-          </button>
-        </div>
+      <div className="text-xs text-gray-500">
+        Showing {Math.min(page.length, filtered.length)} of {filtered.length}. Select 2+ rows, choose a{" "}
+        <b>Primary</b> (star), then click <b>Merge Selected</b>.
       </div>
-
-      <p className="mt-3 text-xs text-gray-500">
-        Tip: Select two or more rows and click <strong>Merge Selected</strong>. If any selected
-        agreement is fully signed, that one becomes primary and others become amendments. If none are
-        signed, the first selected becomes primary and the others roll up (milestones move and totals sum).
-      </p>
     </div>
   );
 }

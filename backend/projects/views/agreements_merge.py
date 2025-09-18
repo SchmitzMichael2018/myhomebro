@@ -1,242 +1,239 @@
-# backend/backend/projects/views/agreements_merge.py
-from typing import List, Optional
-import logging
+# ~/backend/backend/projects/views/agreements_merge.py
+from __future__ import annotations
 
-from django.db import transaction, IntegrityError
+import re
+from decimal import Decimal
+from typing import Iterable, List, Optional
+
+from django.db import transaction
 from django.db.models import Max
-from django.db.utils import ProgrammingError, OperationalError
-from django.core.exceptions import FieldError
-from django.utils.decorators import method_decorator
-from django.views.decorators.csrf import csrf_exempt
-
 from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework import status, permissions
+from rest_framework import status
+from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
 
-from ..models import Agreement, Milestone
+from projects.models import Agreement, Milestone, AgreementAmendment
 
-logger = logging.getLogger(__name__)
 
-def _get_amendment_model():
-    """Import AgreementAmendment lazily so the view doesn't crash if migration isn't applied."""
-    try:
-        from ..models import AgreementAmendment  # type: ignore
-        return AgreementAmendment
-    except Exception:
-        return None
+def _coerce_ids(raw: object) -> List[int]:
+    vals: Iterable
+    if raw is None:
+        vals = []
+    elif isinstance(raw, (list, tuple, set)):
+        vals = raw
+    else:
+        vals = [raw]
 
-def _as_int_list(vals) -> List[int]:
-    out = []
-    for v in vals or []:
+    out: List[int] = []
+    for v in vals:
+        if v is None:
+            continue
+        if isinstance(v, int):
+            out.append(v); continue
+        s = str(v).strip()
+        if not s:
+            continue
+        for tok in re.split(r"[,\s]+", s):
+            if not tok:
+                continue
+            try:
+                out.append(int(tok))
+            except Exception:
+                pass
+
+    seen = set(); uniq: List[int] = []
+    for i in out:
+        if i not in seen:
+            uniq.append(i); seen.add(i)
+    return uniq
+
+
+def _parse_ids_and_primary(request) -> tuple[List[int], Optional[int]]:
+    keys_multi = [
+        "agreement_ids", "ids",
+        "selected", "selected_ids",
+        "merge", "merge_ids",
+        "agreement_ids[]", "ids[]", "selected[]", "selected_ids[]",
+        "merge[]", "merge_ids[]",
+    ]
+    primary_keys = ["primary_id"]
+
+    def _read_many(src, key):
         try:
-            out.append(int(v))
+            return src.getlist(key)
         except Exception:
-            pass
-    return out
+            return src.get(key)
 
-def _safe_contractor_profile(user) -> Optional[object]:
-    """Return contractor_profile or None without raising DoesNotExist."""
-    try:
-        return user.contractor_profile
-    except Exception:
-        return None
+    ids: List[int] = []
+    # body
+    data = getattr(request, "data", {})
+    for k in keys_multi:
+        v = _read_many(data, k)
+        if v is not None:
+            ids.extend(_coerce_ids(v))
+    # query
+    for k in keys_multi:
+        v = _read_many(request.query_params, k)
+        if v is not None:
+            ids.extend(_coerce_ids(v))
 
-def _move_milestones_safely(primary: Agreement, others: List[Agreement]) -> float:
-    """
-    Move milestones from 'others' into 'primary' without violating unique(order, agreement).
-    Returns total rolled-up cost.
-    """
-    max_order = Milestone.objects.filter(agreement=primary).aggregate(Max("order")).get("order__max") or 0
-    try:
-        max_order = int(max_order)
-    except Exception:
-        max_order = 0
+    # primary
+    primary_id: Optional[int] = None
+    for k in primary_keys:
+        v = data.get(k) if isinstance(data, dict) else None
+        if v is None:
+            v = request.query_params.get(k)
+        if v is not None:
+            try:
+                primary_id = int(v)
+            except Exception:
+                primary_id = None
+            break
 
-    total_roll = 0.0
-    for ag in others:
-        try:
-            total_roll += float(ag.total_cost or 0)
-        except Exception:
-            pass
+    if not ids:
+        merge_ids = data.get("merge_ids") if isinstance(data, dict) else None
+        if merge_ids is None:
+            merge_ids = request.query_params.get("merge_ids")
+        ids = _coerce_ids(merge_ids)
 
-        to_move = list(
-            Milestone.objects.select_for_update().filter(agreement=ag).order_by("order", "id")
-        )
-        for m in to_move:
-            max_order += 1
-            m.order = max_order
-            m.agreement = primary
-            m.save(update_fields=["agreement", "order"])
-    return total_roll
+    # Dedup (stable), drop non-positive
+    ids = [i for i in ids if isinstance(i, int) and i > 0]
+    if primary_id is not None and primary_id not in ids:
+        ids = [primary_id] + ids
+
+    seen = set(); final: List[int] = []
+    for i in ids:
+        if i not in seen:
+            final.append(i); seen.add(i)
+    return final, primary_id
 
 
-@method_decorator(csrf_exempt, name="dispatch")
 class MergeAgreementsView(APIView):
-    """
-    POST /api/projects/agreements/merge/
-    {
-      "primary_id": 12,
-      "merge_ids": [13, 14]
-    }
+    permission_classes = [IsAuthenticated]
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
 
-    - If none are fully signed: move milestones into primary (safe re-numbering), roll up total cost, archive others.
-    - If any is fully signed: ensure a signed primary; others become amendments (keep their milestones).
-    """
-    permission_classes = [permissions.IsAuthenticated]
+    def post(self, request, *args, **kwargs):
+        ids, primary_hint = _parse_ids_and_primary(request)
+        return self._merge(ids, primary_hint)
 
-    def post(self, request):
-        data = request.data or {}
-        primary_id_raw = data.get("primary_id")
-        merge_ids_raw = data.get("merge_ids")
+    def get(self, request, *args, **kwargs):
+        ids, primary_hint = _parse_ids_and_primary(request)
+        return self._merge(ids, primary_hint)
 
-        # input validation
-        try:
-            primary_id = int(primary_id_raw)
-        except Exception:
-            return Response({"detail": "primary_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
+    def _merge(self, ids: List[int], primary_hint: Optional[int]) -> Response:
+        # Basic validations up front
+        if not isinstance(ids, list) or len(ids) < 2:
+            return Response({"detail": "Select at least two agreements.", "received_ids": ids},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if len(set(ids)) < 2:
+            return Response({"detail": "IDs must contain at least two distinct values.", "received_ids": ids},
+                            status=status.HTTP_400_BAD_REQUEST)
 
-        if not isinstance(merge_ids_raw, list) or not merge_ids_raw:
-            return Response({"detail": "merge_ids must be a non-empty list."}, status=status.HTTP_400_BAD_REQUEST)
-
-        merge_ids = [i for i in _as_int_list(merge_ids_raw) if i != primary_id]
-        if not merge_ids:
-            return Response({"detail": "merge_ids cannot be empty or include primary_id."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # ownership
-        contractor = _safe_contractor_profile(request.user)
-        if contractor is None:
-            return Response({"detail": "No contractor profile for current user."}, status=status.HTTP_403_FORBIDDEN)
+        order_map = {int(v): i for i, v in enumerate(ids)}
 
         try:
             with transaction.atomic():
-                try:
-                    primary = Agreement.objects.select_for_update().get(
-                        pk=primary_id, project__contractor=contractor
-                    )
-                except Agreement.DoesNotExist:
-                    return Response({"detail": "Primary agreement not found or not permitted."},
-                                    status=status.HTTP_404_NOT_FOUND)
-
-                others = list(
-                    Agreement.objects.select_for_update().filter(pk__in=merge_ids, project__contractor=contractor)
-                )
-                if not others:
-                    return Response({"detail": "No mergeable agreements found for this user."},
+                # Load and verify
+                ags = list(Agreement.objects.select_for_update().filter(id__in=ids))
+                found = {a.id for a in ags}
+                missing = [i for i in ids if i not in found]
+                if missing:
+                    return Response({"detail": "Some agreement IDs were not found.", "missing": missing},
+                                    status=status.HTTP_400_BAD_REQUEST)
+                if len(ags) < 2:
+                    return Response({"detail": "At least two valid agreements are required."},
                                     status=status.HTTP_400_BAD_REQUEST)
 
-                any_signed = bool(getattr(primary, "is_fully_signed", False)) or any(
-                    getattr(a, "is_fully_signed", False) for a in others
-                )
+                # Pick primary
+                if primary_hint is not None and any(a.id == primary_hint for a in ags):
+                    primary = next(a for a in ags if a.id == primary_hint)
+                else:
+                    fully_signed = [a for a in ags if a.signed_by_contractor and a.signed_by_homeowner]
+                    primary = (sorted(fully_signed, key=lambda a: order_map.get(a.id, 10**9))[0]
+                               if fully_signed else
+                               sorted(ags, key=lambda a: order_map.get(a.id, 10**9))[0])
 
-                # if any signed and primary isn't, promote a signed agreement as primary
-                if any_signed and not getattr(primary, "is_fully_signed", False):
-                    signed_parent = next((a for a in others if getattr(a, "is_fully_signed", False)), None)
-                    if signed_parent:
-                        others = [a for a in others if a.pk != signed_parent.pk] + [primary]
-                        primary = signed_parent
+                children = [a for a in ags if a.id != primary.id]
+                if not children:
+                    return Response({"detail": "No child agreements to merge after selecting primary."},
+                                    status=status.HTTP_400_BAD_REQUEST)
 
-                # CASE A: none signed → merge into primary (safe resequencing)
-                if not any_signed:
-                    total_roll = _move_milestones_safely(primary, others)
+                # Determine current last order
+                try:
+                    start_order = Milestone.objects.filter(agreement=primary).aggregate(m=Max("order"))["m"] or 0
+                except Exception:
+                    start_order = 0
 
-                    for ag in others:
-                        if hasattr(ag, "is_archived"):
-                            try:
-                                ag.is_archived = True
-                                ag.save(update_fields=["is_archived"])
-                            except Exception:
-                                pass
+                moved_milestones = 0
+                total_added = Decimal("0.00")
 
+                for child in children:
+                    # Idempotency / re-linking
+                    link = AgreementAmendment.objects.filter(child=child).first()
+                    if link:
+                        if link.parent_id == primary.id:
+                            # already linked to this parent — no-op
+                            pass
+                        else:
+                            next_num = (AgreementAmendment.objects
+                                        .filter(parent=primary)
+                                        .aggregate(m=Max("amendment_number"))["m"] or 0) + 1
+                            link.parent = primary
+                            link.amendment_number = next_num
+                            link.save(update_fields=["parent", "amendment_number"])
+                    else:
+                        next_num = (AgreementAmendment.objects
+                                    .filter(parent=primary)
+                                    .aggregate(m=Max("amendment_number"))["m"] or 0) + 1
+                        AgreementAmendment.objects.create(parent=primary, child=child, amendment_number=next_num)
+
+                    # Move remaining milestones
+                    child_ms = list(
+                        Milestone.objects.filter(agreement=child)
+                        .order_by("order" if hasattr(Milestone, "order") else "id", "id")
+                    )
+                    for m in child_ms:
+                        start_order += 1
+                        m.agreement = primary
+                        if hasattr(m, "order"):
+                            m.order = start_order
+                            m.save(update_fields=["agreement", "order"])
+                        else:
+                            m.save(update_fields=["agreement"])
+                        moved_milestones += 1
+
+                    # Roll up totals
                     try:
-                        primary.total_cost = float(primary.total_cost or 0) + total_roll
-                        primary.save(update_fields=["total_cost"])
+                        total_added += Decimal(str(child.total_cost or "0"))
                     except Exception:
                         pass
 
-                    return Response(
-                        {"status": "merged", "mode": "unsigned_rollup",
-                         "primary_id": primary.pk, "moved_from": [a.pk for a in others]},
-                        status=status.HTTP_200_OK,
-                    )
+                    # Archive child
+                    child.is_archived = True
+                    if primary.status:
+                        child.status = primary.status
+                    child.save(update_fields=["is_archived", "status"])
 
-                # CASE B: at least one signed → others become amendments
-                Amendment = _get_amendment_model()
-                if Amendment is None:
-                    return Response(
-                        {"detail": "Amendment support is not active (apply latest migrations for AgreementAmendment)."},
-                        status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    )
-
-                # Pre-collect used numbers to avoid unique collisions
-                used = set(Amendment.objects.filter(parent=primary).values_list("amendment_number", flat=True))
-                def next_free():
-                    n = 1
-                    if used:
-                        n = max(used) + 1
-                    while n in used:
-                        n += 1
-                    used.add(n)
-                    return n
-
-                amended = []
-                for ag in others:
-                    # if already linked as amendment to this parent, keep its number
-                    link = getattr(ag, "as_amendment", None)
-                    if link and getattr(link, "parent_id", None) == primary.id:
-                        num = int(getattr(link, "amendment_number", 0) or 0)
-                        if num in used:
-                            # already accounted
-                            pass
-                        else:
-                            used.add(num if num > 0 else next_free())
-                    else:
-                        num = next_free()
-                        Amendment.objects.update_or_create(
-                            child=ag,
-                            defaults={"parent": primary, "amendment_number": num},
-                        )
-
-                    # Mirror onto Agreement.amendment_number if present
-                    if hasattr(ag, "amendment_number"):
-                        try:
-                            if getattr(ag, "amendment_number") != num:
-                                ag.amendment_number = num
-                                if hasattr(ag, "is_archived") and ag.is_archived:
-                                    ag.is_archived = False
-                                    ag.save(update_fields=["amendment_number", "is_archived"])
-                                else:
-                                    ag.save(update_fields=["amendment_number"])
-                        except Exception as e:
-                            logger.warning("Failed to mirror amendment_number on Agreement #%s: %s", ag.pk, e)
-
-                    amended.append({"child_id": ag.pk, "amendment_number": num})
+                if moved_milestones:
+                    primary.milestone_count = (primary.milestone_count or 0) + moved_milestones
+                try:
+                    primary.total_cost = (Decimal(str(primary.total_cost or "0")) + total_added)
+                except Exception:
+                    pass
+                primary.save(update_fields=["total_cost", "milestone_count"])
 
                 return Response(
-                    {"status": "amended", "primary_id": primary.pk, "amendments": amended},
+                    {
+                        "ok": True,
+                        "parent_id": primary.id,
+                        "merged_ids": [c.id for c in children],
+                        "moved_milestones": moved_milestones,
+                        "new_total_cost": str(primary.total_cost),
+                        "new_milestone_count": primary.milestone_count,
+                    },
                     status=status.HTTP_200_OK,
                 )
-
-        except (ProgrammingError, OperationalError) as db_err:
-            logger.exception("DB error during merge: %s", db_err)
-            return Response(
-                {"detail": "Database error (likely missing migration/table).", "error": str(db_err)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-        except IntegrityError as ie:
-            logger.exception("Integrity error during merge: %s", ie)
-            return Response(
-                {"detail": "Integrity error (unique constraint or relation issue).", "error": str(ie)},
-                status=status.HTTP_409_CONFLICT,
-            )
-        except FieldError as fe:
-            logger.exception("Field error during merge: %s", fe)
-            return Response(
-                {"detail": "Field error (model fields mismatch).", "error": str(fe)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
         except Exception as e:
-            logger.exception("Unexpected error during merge: %s", e)
-            return Response(
-                {"detail": "Unexpected error during merge.", "error": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+            # Always return JSON with details so the frontend can show it
+            return Response({"detail": f"Merge failed: {type(e).__name__}: {e}"}, status=status.HTTP_400_BAD_REQUEST)

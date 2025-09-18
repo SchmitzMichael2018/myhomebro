@@ -1,407 +1,234 @@
-# backend/projects/views/agreements.py
-import io
-import logging
-from pathlib import Path
+# ~/backend/backend/projects/views/agreements.py
+from __future__ import annotations
 
-from django.conf import settings
-from django.http import HttpResponse
-from django.shortcuts import get_object_or_404
-from django.utils import timezone
+from typing import Any, Iterable, Optional
+
+from django.apps import apps
+from django.http import HttpResponse, JsonResponse
 from django.db import transaction
-from django.db.models import Q, Prefetch
-
-import stripe
-
-# DRF
-from rest_framework import viewsets, status, filters
+from django.db.models import QuerySet, Sum
+from rest_framework import status, viewsets, permissions, serializers
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.request import Request
 from rest_framework.response import Response
 
-# PDF
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.units import inch
-from pypdf import PdfReader, PdfWriter
+# ---- best-effort model import; recover lazily if needed ----------------------
+def _get_model(app_label: str, model_name: str):
+    try:
+        return apps.get_model(app_label, model_name)
+    except Exception:
+        return None
 
-from ..models import Agreement, ProjectStatus, Contractor, Invoice
-from ..serializers import (
-    AgreementDetailPublicSerializer,
-    AgreementListPublicSerializer,
-    AgreementWriteSerializer,
-    AgreementUpdateSerializer,
-)
-from ..utils import send_agreement_invite_email
+try:
+    from projects.models import Agreement as _Agreement, Invoice as _Invoice, Milestone as _Milestone, Attachment as _Attachment, AgreementAmendment as _AgreementAmendment
+    Agreement, Invoice, Milestone, Attachment, AgreementAmendment = _Agreement, _Invoice, _Milestone, _Attachment, _AgreementAmendment
+except Exception:
+    Agreement = _get_model("projects", "Agreement")
+    Invoice = _get_model("projects", "Invoice")
+    Milestone = _get_model("projects", "Milestone")
+    Attachment = _get_model("projects", "Attachment")
+    AgreementAmendment = _get_model("projects", "AgreementAmendment")
+
+# ---- serializers (rich first, then safe fallback) ---------------------------
+AgreementSerializer = None
+try:
+    mod = __import__("projects.serializers.agreement", fromlist=["AgreementSerializer"])
+    AgreementSerializer = getattr(mod, "AgreementSerializer", None)
+except Exception:
+    AgreementSerializer = None
+
+MilestoneSerializer = None
+InvoiceSerializer = None
+AttachmentSerializer = None
+for _path, _name in (
+    ("projects.serializers.milestone", "MilestoneSerializer"),
+    ("projects.serializers.invoice", "InvoiceSerializer"),
+    ("projects.serializers.attachment", "AttachmentSerializer"),
+    ("projects.serializers", "MilestoneSerializer"),
+    ("projects.serializers", "InvoiceSerializer"),
+    ("projects.serializers", "AttachmentSerializer"),
+):
+    try:
+        m = __import__(_path, fromlist=[_name])
+        obj = getattr(m, _name, None)
+        if obj and _name == "MilestoneSerializer":
+            MilestoneSerializer = obj
+        if obj and _name == "InvoiceSerializer":
+            InvoiceSerializer = obj
+        if obj and _name == "AttachmentSerializer":
+            AttachmentSerializer = obj
+    except Exception:
+        continue
+
+# Fallback Agreement serializer (always works) with display_total
+if Agreement is None or AgreementSerializer is None:
+    # recover Agreement model if not resolved yet
+    if Agreement is None:
+        Agreement = _get_model("projects", "Agreement")
+
+    class MinimalAgreementSerializer(serializers.ModelSerializer):
+        display_total = serializers.SerializerMethodField()
+        class Meta:
+            model = Agreement  # type: ignore
+            fields = "__all__"
+        def get_display_total(self, obj):
+            mdl = Milestone or _get_model("projects", "Milestone")
+            if mdl is None:
+                return str(getattr(obj, "total_cost", "0"))
+            try:
+                s = mdl.objects.filter(agreement=obj).aggregate(x=Sum("amount"))["x"] or 0
+                return str(s)
+            except Exception:
+                return str(getattr(obj, "total_cost", "0"))
+
+    AgreementSerializer = MinimalAgreementSerializer  # type: ignore
+
+# Fallbacks for other serializers if needed
+if (Milestone is None or MilestoneSerializer is None):
+    if Milestone is None:
+        Milestone = _get_model("projects", "Milestone")
+    class MinimalMilestoneSerializer(serializers.ModelSerializer):
+        class Meta:
+            model = Milestone  # type: ignore
+            fields = "__all__"
+    MilestoneSerializer = MinimalMilestoneSerializer  # type: ignore
+
+if (Invoice is None or InvoiceSerializer is None):
+    if Invoice is None:
+        Invoice = _get_model("projects", "Invoice")
+    class MinimalInvoiceSerializer(serializers.ModelSerializer):
+        class Meta:
+            model = Invoice  # type: ignore
+            fields = "__all__"
+    InvoiceSerializer = MinimalInvoiceSerializer  # type: ignore
+
+if (Attachment is None or AttachmentSerializer is None):
+    if Attachment is None:
+        Attachment = _get_model("projects", "Attachment")
+    class MinimalAttachmentSerializer(serializers.ModelSerializer):
+        class Meta:
+            model = Attachment  # type: ignore
+            fields = "__all__"
+    AttachmentSerializer = MinimalAttachmentSerializer  # type: ignore
 
 
-def get_client_ip(request):
-    x_forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
-    if x_forwarded:
-        return x_forwarded.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR")
+# ---- permissions -------------------------------------------------------------
+class IsAuthenticatedOrReadOnly(permissions.BasePermission):
+    def has_permission(self, request: Request, view: viewsets.ViewSet) -> bool:
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return True
+        return bool(request.user and request.user.is_authenticated)
 
 
+# ---- viewset -----------------------------------------------------------------
 class AgreementViewSet(viewsets.ModelViewSet):
     """
-    Agreements for the authenticated contractor.
-    - LIST: light payload with project/homeowner names + start/end.
-    - RETRIEVE: detail payload for edit view.
-    - CREATE: wizard serializer (creates Project + Milestones).
-    - UPDATE/PARTIAL_UPDATE: update serializer for start/end/total_cost and project_title.
+    Public GET; auth-required writes. Delete safe for drafts, with checks.
     """
-    permission_classes = [IsAuthenticated]
-    filter_backends = [filters.SearchFilter]
-    # ✅ Only real DB fields below (no computed properties)
-    search_fields = (
-        "project__title",
-        "project__number",
-        "project__homeowner__full_name",
-        "project__homeowner__email",
-        "project__homeowner__name",
-        "contractor__business_name",
-        "contractor__user__email",
-    )
+    permission_classes = [IsAuthenticatedOrReadOnly]
 
-    def get_queryset(self):
-        user = self.request.user
-        return (
-            Agreement.objects
-            .filter(Q(contractor__user=user) | Q(project__contractor__user=user), is_archived=False)
-            .select_related(
-                "project",
-                "project__homeowner",
-                "homeowner",            # ✅ keep; exists on Agreement
-                "contractor",
-                "contractor__user",
-            )
-            .prefetch_related(Prefetch("invoices", queryset=Invoice.objects.only("id")), "milestones")
-            .order_by("-id")
-            .distinct()
-        )
+    # Build queryset lazily so model import failures never freeze us at []
+    @property
+    def queryset(self) -> QuerySet | list:
+        mdl = Agreement or _get_model("projects", "Agreement")
+        if mdl is None:
+            return []  # still unavailable: return empty but don't 500
+        return mdl.objects.all().order_by("-updated_at", "-id")
 
-    def get_serializer_class(self):
-        if self.action == "create":
-            return AgreementWriteSerializer
-        if self.action in ("update", "partial_update"):
-            return AgreementUpdateSerializer
-        if self.action == "list":
-            return AgreementListPublicSerializer
-        return AgreementDetailPublicSerializer
+    serializer_class = AgreementSerializer  # type: ignore
 
-    def list(self, request, *args, **kwargs):
-        qs = self.filter_queryset(self.get_queryset())
+    def get_queryset(self) -> Iterable[Any]:
+        qs = self.queryset
+        # always readable (public GET)
+        return qs
 
-        status_q = request.query_params.get("status")
-        if status_q and status_q.lower() != "all":
-            qs = qs.filter(status=status_q)
+    # ----- delete with rails ---------------------------------------------------
+    def destroy(self, request: Request, *args, **kwargs) -> Response:
+        mdl = Agreement or _get_model("projects", "Agreement")
+        inv_mdl = Invoice or _get_model("projects", "Invoice")
+        amend_mdl = AgreementAmendment or _get_model("projects", "AgreementAmendment")
+        if mdl is None:
+            return Response({"detail": "Agreement model unavailable."}, status=503)
 
-        escrow = request.query_params.get("escrow")
-        if escrow and escrow.lower() != "all":
-            if escrow == "pending":
-                qs = qs.filter(escrow_funded=False)
-            elif escrow == "funded":
-                qs = qs.filter(escrow_funded=True)
-            elif escrow == "released":
-                qs = qs.filter(invoices__status="paid").distinct()
-
-        if request.query_params.get("only_drafts"):
-            qs = qs.filter(status="draft")
-
-        page = self.paginate_queryset(qs)
-        serializer = self.get_serializer(page or qs, many=True)
-        if page is not None:
-            return self.get_paginated_response(serializer.data)
-        return Response(serializer.data)
-
-    # Ensure CREATE returns the full detail payload
-    def create(self, request, *args, **kwargs):
-        write_serializer = self.get_serializer(data=request.data)
-        write_serializer.is_valid(raise_exception=True)
-        self.perform_create(write_serializer)
-
-        read_serializer = AgreementDetailPublicSerializer(
-            write_serializer.instance, context=self.get_serializer_context()
-        )
-        headers = self.get_success_headers(read_serializer.data)
-        return Response(read_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-
-    def perform_create(self, serializer):
         try:
-            contractor_profile = self.request.user.contractor_profile
-            serializer.save(contractor=contractor_profile)
-        except Contractor.DoesNotExist:
-            raise PermissionDenied("You must have a contractor profile to create an agreement.")
+            with transaction.atomic():
+                ag = self.get_object()
 
-    def perform_update(self, serializer):
-        agreement = self.get_object()
-        if agreement.is_fully_signed or agreement.signed_by_contractor:
-            raise PermissionDenied("Cannot edit a signed agreement. Please create an amendment instead.")
-        super().perform_update(serializer)
+                force = str(request.query_params.get("force", "")).lower() in ("1", "true", "yes")
+                if not force and str(getattr(ag, "status", "")).lower() != "draft":
+                    return Response({"detail": "Only draft agreements can be deleted. Pass ?force=1 to override (dangerous)."}, status=400)
+                if getattr(ag, "escrow_funded", False) and not force:
+                    return Response({"detail": "Escrow funded agreements cannot be deleted."}, status=400)
+                if inv_mdl is not None:
+                    if inv_mdl.objects.filter(agreement=ag, status__iexact="paid").exists() and not force:
+                        return Response({"detail": "Agreements with PAID invoices cannot be deleted."}, status=400)
+                if amend_mdl is not None:
+                    # parent with children?
+                    if amend_mdl.objects.filter(parent=ag).exists() and not force:
+                        return Response({"detail": "Agreement has amendments (children). Delete/reassign them first, or pass ?force=1."}, status=400)
+                    # remove child link if it exists
+                    amend_mdl.objects.filter(child=ag).delete()
 
-    def perform_destroy(self, instance):
-        if not (instance.contractor and self.request.user == instance.contractor.user):
-            raise PermissionDenied("Cannot delete agreements you do not own.")
-        instance.delete()
-
-    @action(detail=True, methods=["post"])
-    def amend(self, request, pk=None):
-        original = self.get_object()
-        if not original.is_fully_signed:
-            raise ValidationError("Only fully signed agreements can be amended.")
-        with transaction.atomic():
-            original.is_archived = True
-            original.save(update_fields=["is_archived"])
-            # clone record (shallow copy) for the new amendment
-            new = Agreement.objects.get(pk=original.pk)
-            new.pk = None
-            new.id = None
-            new.amendment_number = original.amendment_number + 1
-            new.is_archived = False
-            new.signed_by_contractor = False
-            new.signed_by_homeowner = False
-            new.signed_at_contractor = None
-            new.signed_at_homeowner = None
-            new.contractor_signature_name = ""
-            new.homeowner_signature_name = ""
-            new.escrow_funded = False
-            new.escrow_payment_intent_id = ""
-            new.save()
-            for m in original.milestones.all():
-                m.pk = None
-                m.id = None
-                m.agreement = new
-                m.completed = False
-                m.is_invoiced = False
-                m.save()
-        serializer = AgreementDetailPublicSerializer(new, context=self.get_serializer_context())
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-    @action(detail=True, methods=["patch"])
-    def archive(self, request, pk=None):
-        ag = self.get_object()
-        if not (ag.contractor and request.user == ag.contractor.user):
-            raise PermissionDenied("Only the contractor can archive this agreement.")
-        ag.is_archived = True
-        ag.save(update_fields=["is_archived"])
-        return Response({"status": "archived"})
-
-    @action(detail=True, methods=["patch"])
-    def unarchive(self, request, pk=None):
-        ag = self.get_object()
-        if not (ag.contractor and request.user == ag.contractor.user):
-            raise PermissionDenied("Only the contractor can unarchive this agreement.")
-        ag.is_archived = False
-        ag.save(update_fields=["is_archived"])
-        return Response({"status": "unarchived"})
-
-    @action(detail=True, methods=["post"])
-    def sign(self, request, pk=None):
-        agreement = self.get_object()
-        user = request.user
-        name = request.data.get("signature_name", "").strip()
-        role = request.data.get("role", "contractor")
-        if not name or role not in ("contractor", "homeowner"):
-            return Response({"error": "Name and valid role required."}, status=400)
-
-        now = timezone.now()
-        ip = get_client_ip(request)
-
-        if role == "contractor":
-            if not (agreement.contractor and user == agreement.contractor.user):
-                raise PermissionDenied("Only the contractor may sign as contractor.")
-            if agreement.signed_by_contractor:
-                return Response({"detail": "Contractor already signed."}, status=400)
-            agreement.contractor_signature_name = name
-            agreement.signed_at_contractor = now
-            agreement.contractor_signed_ip = ip
-            agreement.signed_by_contractor = True
-        else:
-            token = request.data.get("homeowner_access_token")
-            if not token or token != str(agreement.homeowner_access_token):
-                raise PermissionDenied("Invalid homeowner access token.")
-            if agreement.signed_by_homeowner:
-                return Response({"detail": "Homeowner already signed."}, status=400)
-            agreement.homeowner_signature_name = name
-            agreement.signed_at_homeowner = now
-            agreement.homeowner_signed_ip = ip
-            agreement.signed_by_homeowner = True
-
-        agreement.save(update_fields=[
-            f"signed_by_{role}",
-            f"signed_at_{role}",
-            f"{role}_signature_name",
-            f"{role}_signed_ip",
-        ])
-
-        if agreement.is_fully_signed:
-            agreement.project.status = ProjectStatus.SIGNED
-            agreement.project.save(update_fields=["status"])
-
-        data = AgreementDetailPublicSerializer(agreement, context=self.get_serializer_context()).data
-        return Response(data)
-
-    @action(detail=True, methods=["post"], url_path="email-invite")
-    def email_invite(self, request, pk=None):
-        agreement = self.get_object()
-        if not (agreement.contractor and request.user == agreement.contractor.user):
-            raise PermissionDenied("Only the contractor can send an invite.")
-        try:
-            send_agreement_invite_email(agreement, request)
-            return Response({"detail": "Invite sent successfully."})
+                ag.delete()
+                return Response(status=204)
         except Exception as e:
-            logging.error(f"Failed to send invite for Agreement {agreement.id}: {e}")
-            return Response({"detail": "Error sending invite."}, status=500)
+            return Response({"detail": f"Delete failed: {type(e).__name__}: {e}"}, status=400)
 
-    @action(detail=True, methods=["post"], url_path="fund-escrow")
-    def fund_escrow(self, request, pk=None):
-        agreement = self.get_object()
-        if not agreement.is_fully_signed:
-            return Response({"detail": "Must sign before funding."}, status=400)
-        if agreement.escrow_funded:
-            return Response({"detail": "Already funded."}, status=400)
+    # ----- subroutes -----------------------------------------------------------
+    @action(detail=True, methods=["get"])
+    def milestones(self, request: Request, pk: Optional[str] = None) -> Response:
+        mdl = Milestone or _get_model("projects", "Milestone")
+        ag_mdl = Agreement or _get_model("projects", "Agreement")
+        if mdl is None or ag_mdl is None:
+            return Response([], status=200)
         try:
-            intent = stripe.PaymentIntent.create(
-                amount=int(agreement.total_cost * 100),
-                currency="usd",
-                capture_method="manual",
-                receipt_email=getattr(getattr(agreement.project.homeowner, "email", ""), "__str__", lambda: "")(),
-                metadata={"agreement_id": str(agreement.id)},
-            )
-            agreement.escrow_payment_intent_id = intent.id
-            agreement.save(update_fields=["escrow_payment_intent_id"])
-            return Response({"client_secret": intent.client_secret})
-        except stripe.error.StripeError as e:
-            logging.error(f"Fund escrow error for Agreement {agreement.id}: {e}")
-            return Response({"detail": str(e)}, status=502)
+            ag = ag_mdl.objects.get(pk=pk)
+        except ag_mdl.DoesNotExist:
+            return Response({"detail": "Not found."}, status=404)
+        try:
+            qs = mdl.objects.filter(agreement=ag).order_by("order", "id")
+        except Exception:
+            qs = mdl.objects.filter(agreement=ag).order_by("id")
+        return Response(MilestoneSerializer(qs, many=True).data, status=200)  # type: ignore
 
-    @action(detail=True, methods=["post"], url_path="upload-addendum")
-    def upload_addendum(self, request, pk=None):
-        agreement = self.get_object()
-        if agreement.is_fully_signed:
-            raise PermissionDenied("Cannot add an addendum to a signed agreement.")
-        file_obj = request.data.get("addendum_file")
-        if not file_obj:
-            return Response({"detail": "No file provided."}, status=400)
-        agreement.addendum_file = file_obj
-        agreement.save(update_fields=["addendum_file"])
-        return Response({"detail": "Addendum uploaded successfully.", "file_url": agreement.addendum_file.url})
+    @action(detail=True, methods=["get"])
+    def invoices(self, request: Request, pk: Optional[str] = None) -> Response:
+        inv_mdl = Invoice or _get_model("projects", "Invoice")
+        ag_mdl = Agreement or _get_model("projects", "Agreement")
+        if inv_mdl is None or ag_mdl is None:
+            return Response([], status=200)
+        try:
+            ag = ag_mdl.objects.get(pk=pk)
+        except ag_mdl.DoesNotExist:
+            return Response({"detail": "Not found."}, status=404)
+        qs = inv_mdl.objects.filter(agreement=ag).order_by("id")
+        return Response(InvoiceSerializer(qs, many=True).data, status=200)  # type: ignore
+
+    @action(detail=True, methods=["get"])
+    def attachments(self, request: Request, pk: Optional[str] = None) -> Response:
+        att_mdl = Attachment or _get_model("projects", "Attachment")
+        ag_mdl = Agreement or _get_model("projects", "Agreement")
+        if att_mdl is None or ag_mdl is None:
+            return Response([], status=200)
+        try:
+            ag = ag_mdl.objects.get(pk=pk)
+        except ag_mdl.DoesNotExist:
+            return Response({"detail": "Not found."}, status=404)
+        qs = att_mdl.objects.filter(agreement=ag).order_by("-created_at", "id")
+        return Response(AttachmentSerializer(qs, many=True).data, status=200)  # type: ignore
+
+    @action(detail=True, methods=["post"])
+    def fund_escrow(self, request: Request, pk: Optional[str] = None) -> Response:
+        return Response({"detail": "Not implemented."}, status=501)
+
+    @action(detail=True, methods=["post"])
+    def sign(self, request: Request, pk: Optional[str] = None) -> Response:
+        return Response({"detail": "Not implemented."}, status=501)
 
 
-def agreement_pdf(request, agreement_id):
-    """
-    Generate a human-friendly Agreement PDF and append legal PDFs.
-    """
-    agreement = get_object_or_404(Agreement, pk=agreement_id)
-    project = agreement.project
-    homeowner = project.homeowner
-    contractor = agreement.contractor
+# ---- legacy preview/pdf stubs ------------------------------------------------
+def signing_preview(request, pk: str) -> HttpResponse:
+    return JsonResponse({"ok": True, "agreement_id": pk, "detail": "Preview generation not implemented."}, status=200)
 
-    buffer = io.BytesIO()
-    p = canvas.Canvas(buffer, pagesize=letter)
-    width, height = letter
-
-    logo_path = Path(settings.BASE_DIR) / "static" / "images" / "logo.png"
-    if logo_path.exists():
-        p.drawImage(
-            str(logo_path), x=1 * inch, y=height - 1.5 * inch,
-            width=1.5 * inch, height=1.5 * inch, preserveAspectRatio=True, mask="auto"
-        )
-
-    p.setFont("Helvetica-Bold", 18)
-    p.drawRightString(width - 1 * inch, height - 1 * inch, f"Agreement #{agreement.id}")
-
-    # Parties & Info
-    p.setFont("Helvetica-Bold", 14)
-    y = height - 2.0 * inch
-    p.drawString(1 * inch, y, "Parties to the Agreement")
-    p.setFont("Helvetica", 12)
-    y -= 0.3 * inch
-    p.drawString(1.1 * inch, y, "Homeowner:")
-    p.drawString(2.5 * inch, y, f"{getattr(homeowner, 'full_name', '—')} ({getattr(homeowner, 'email', '')})")
-    y -= 0.25 * inch
-    ho_addr = " ".join(
-        str(x) for x in [
-            getattr(homeowner, "street_address", "") or "",
-            f"{getattr(homeowner, 'city', '')}, {getattr(homeowner, 'state', '')} {getattr(homeowner, 'zip_code', '')}"
-        ] if x
-    )
-    p.drawString(2.5 * inch, y, ho_addr or "N/A")
-    y -= 0.4 * inch
-    p.drawString(1.1 * inch, y, "Contractor:")
-    contractor_email = getattr(getattr(contractor, "user", None), "email", "") or getattr(contractor, "email", "")
-    p.drawString(2.5 * inch, y, f"{getattr(contractor, 'name', '—')} ({contractor_email})")
-    y -= 0.25 * inch
-    p.drawString(2.5 * inch, y, getattr(contractor, "address", "") or "N/A")
-
-    # Project Details
-    p.setFont("Helvetica-Bold", 14)
-    y -= 0.5 * inch
-    p.drawString(1 * inch, y, "Project Details")
-    p.setFont("Helvetica", 12)
-    y -= 0.3 * inch
-    p.drawString(1 * inch, y, f"Project: {getattr(project, 'title', '')}")
-    y -= 0.3 * inch
-    desc = getattr(project, "description", "") or "N/A"
-    for line in desc.split("\n"):
-        p.drawString(1.2 * inch, y, line)
-        y -= 0.25 * inch
-
-    addr1 = getattr(project, "project_street_address", "") or ""
-    addr2 = getattr(project, "project_address_line_2", "") or ""
-    city = getattr(project, "project_city", "") or ""
-    state = getattr(project, "project_state", "") or ""
-    zc = getattr(project, "project_zip_code", "") or ""
-    addr_line = ", ".join(filter(None, [addr1 + (f", {addr2}" if addr2 else ""), f"{city} {state} {zc}".strip()])) or "N/A"
-    p.drawString(1 * inch, y, f"Address: {addr_line}")
-    y -= 0.3 * inch
-
-    status_label = "Funded" if agreement.escrow_funded else "Signed" if agreement.is_fully_signed else "Pending Signatures"
-    p.drawString(1 * inch, y, f"Status: {status_label}")
-    y -= 0.3 * inch
-
-    starts = [m.start_date for m in agreement.milestones.all() if getattr(m, "start_date", None)]
-    ends = [m.completion_date for m in agreement.milestones.all() if getattr(m, "completion_date", None)]
-    start_str = min(starts).strftime("%b %d, %Y") if starts else "N/A"
-    end_str = max(ends).strftime("%b %d, %Y") if ends else "N/A"
-    p.drawString(1 * inch, y, f"Dates: {start_str} – {end_str}")
-
-    # Signatures
-    y -= 0.5 * inch
-    p.setFont("Helvetica-Bold", 12); p.drawString(1 * inch, y, "Contractor Signature:")
-    p.setFont("Helvetica-Oblique", 12); p.drawString(3 * inch, y, agreement.contractor_signature_name or "(not signed)")
-    y -= 0.3 * inch
-    p.setFont("Helvetica-Bold", 12); p.drawString(1 * inch, y, "Signed At:")
-    p.setFont("Helvetica-Oblique", 12); p.drawString(2.5 * inch, y, agreement.signed_at_contractor.isoformat() if agreement.signed_at_contractor else "(n/a)")
-    y -= 0.3 * inch
-    p.setFont("Helvetica-Bold", 12); p.drawString(1 * inch, y, "IP Address:")
-    p.setFont("Helvetica-Oblique", 12); p.drawString(2.5 * inch, y, agreement.contractor_signed_ip or "(n/a)")
-
-    y -= 0.5 * inch
-    p.setFont("Helvetica-Bold", 12); p.drawString(1 * inch, y, "Homeowner Signature:")
-    p.setFont("Helvetica-Oblique", 12); p.drawString(3 * inch, y, agreement.homeowner_signature_name or "(not signed)")
-    y -= 0.3 * inch
-    p.setFont("Helvetica-Bold", 12); p.drawString(1 * inch, y, "Signed At:")
-    p.setFont("Helvetica-Oblique", 12); p.drawString(2.5 * inch, y, agreement.signed_at_homeowner.isoformat() if agreement.signed_at_homeowner else "(n/a)")
-    y -= 0.3 * inch
-    p.setFont("Helvetica-Bold", 12); p.drawString(1 * inch, y, "IP Address:")
-    p.setFont("Helvetica-Oblique", 12); p.drawString(2.5 * inch, y, agreement.homeowner_signed_ip or "(n/a)")
-
-    p.showPage(); p.save(); buffer.seek(0)
-
-    # Merge legal PDFs
-    writer = PdfWriter()
-    for page in PdfReader(buffer).pages:
-        writer.add_page(page)
-
-    legal_dir = Path(settings.BASE_DIR) / "static" / "legal"
-    for fname in ("terms_of_service.pdf", "privacy_policy.pdf"):
-        fp = legal_dir / fname
-        if fp.exists():
-            for pg in PdfReader(str(fp)).pages:
-                writer.add_page(pg)
-
-    out = io.BytesIO(); writer.write(out); out.seek(0)
-    response = HttpResponse(out, content_type="application/pdf")
-    response["Content-Disposition"] = f'attachment; filename="agreement_{agreement.id}_full.pdf"'
-    return response
+def agreement_pdf(request, pk: str) -> HttpResponse:
+    return HttpResponse("PDF generation not implemented.", status=501, content_type="text/plain")

@@ -1,272 +1,299 @@
 // src/components/MilestoneList.jsx
-import React, { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import api from "../api";
-import { toast } from "react-hot-toast";
-import MilestoneModal from "./MilestoneModal";
+import toast from "react-hot-toast";
+import MilestoneEditModal from "./MilestoneEditModal.jsx";
+import { Check, Pencil, Trash2 } from "lucide-react";
 
-console.log("MilestoneList.jsx v2025-09-13-05:20");
+console.log("MilestoneList.jsx v2025-09-17-edit-delete-fix");
 
-const VALID_FILTERS = new Set([
-  "all",
-  "incomplete",
-  "completed",
-  "invoiced",
-  "pending_approval",
-  "approved",
-  "disputed",
-]);
-
-function Pill({ children, tone = "default" }) {
-  const colors = {
-    default: { bg: "#e5e7eb", fg: "#111827" },
-    warn: { bg: "#fef3c7", fg: "#92400e" },
-    good: { bg: "#dcfce7", fg: "#14532d" },
-    info: { bg: "#dbeafe", fg: "#1e3a8a" },
-    danger: { bg: "#fee2e2", fg: "#7f1d1d" },
-  }[tone];
-  return (
-    <span
-      style={{
-        padding: "2px 8px",
-        borderRadius: 999,
-        fontSize: 12,
-        fontWeight: 600,
-        background: colors.bg,
-        color: colors.fg,
-      }}
-    >
-      {children}
-    </span>
-  );
-}
-
-function toneFor(status) {
-  switch ((status || "").toLowerCase()) {
-    case "incomplete":
-      return "info";
-    case "completed":
-    case "complete":
-      return "good";
-    case "pending_approval":
-    case "awaiting_approval":
-      return "warn";
-    case "disputed":
-      return "danger";
-    case "approved":
-      return "good";
-    default:
-      return "default";
-  }
-}
-
-// $ even if backend sends "500.00" as a string
-function formatUSD(val) {
-  const n = Number(val);
-  if (Number.isFinite(n)) {
-    return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
-  }
-  return val || "—";
-}
-
-function fmtDate(raw) {
-  if (!raw) return "";
-  // "YYYY-MM-DD" or ISO → short date
-  const d = new Date(raw);
-  if (!isNaN(d.getTime())) {
-    return d.toLocaleDateString();
-  }
-  return String(raw); // already a nice string
-}
-
-// Pick a date from common keys
-function pickDate(m) {
-  return (
-    m?.due_date ||
-    m?.date ||
-    m?.scheduled_for ||
-    m?.start_date ||
-    m?.target_date ||
-    m?.completion_date ||
-    ""
-  );
-}
-
-// Best-effort agreement number
-function pickAgreementNumber(m) {
-  const a = m?.agreement;
-  return (
-    m?.agreement_number ||
-    (a && a.number) ||
-    (a && a.agreement_number) ||
-    (a && a.project_number) ||
-    m?.agreement_id ||
-    (typeof a === "number" ? a : "") ||
-    (a && a.id) ||
-    ""
-  );
-}
+const TABS = [
+  { key: "all", label: "All" },
+  { key: "incomplete", label: "Incomplete" },
+  { key: "completed_not_invoiced", label: "Completed (Not Invoiced)" },
+  { key: "invoiced", label: "Invoiced" },
+  { key: "pending", label: "Pending Approval" },
+  { key: "approved", label: "Approved" },
+  { key: "disputed", label: "Disputed" },
+];
 
 export default function MilestoneList() {
-  const [loading, setLoading] = useState(true);
   const [milestones, setMilestones] = useState([]);
-  const [active, setActive] = useState(null);
+  const [agreements, setAgreements] = useState([]);
+  const [filter, setFilter] = useState("all");
+  const [loading, setLoading] = useState(true);
 
-  const [searchParams, setSearchParams] = useSearchParams();
-  const initialFilter = (() => {
-    const f = (searchParams.get("filter") || "").toLowerCase();
-    return VALID_FILTERS.has(f) ? f : "all";
-  })();
-  const [filter, setFilter] = useState(initialFilter);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [busy, setBusy] = useState(null);
 
-  useEffect(() => {
-    if (filter === "all") {
-      const sp = new URLSearchParams(searchParams);
-      sp.delete("filter");
-      setSearchParams(sp, { replace: true });
-    } else {
-      const sp = new URLSearchParams(searchParams);
-      sp.set("filter", filter);
-      setSearchParams(sp, { replace: true });
+  // cache for on-demand agreement status lookups
+  const statusCache = useRef(new Map());
+
+  const load = async () => {
+    try {
+      setLoading(true);
+      const [mRes, aRes] = await Promise.all([
+        api.get("/projects/milestones/", { params: { page_size: 500 } }),
+        api.get("/projects/agreements/", { params: { page_size: 500 } }),
+      ]);
+
+      const m = Array.isArray(mRes.data?.results)
+        ? mRes.data.results
+        : Array.isArray(mRes.data)
+        ? mRes.data
+        : [];
+
+      const a = Array.isArray(aRes.data?.results)
+        ? aRes.data.results
+        : Array.isArray(aRes.data)
+        ? aRes.data
+        : [];
+
+      setMilestones(m);
+      setAgreements(a);
+
+      // prime cache
+      const map = statusCache.current;
+      a.forEach((ag) => map.set(ag.id, String(ag.status || "").toLowerCase()));
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load milestones.");
+    } finally {
+      setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter]);
+  };
 
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        setLoading(true);
-        const { data } = await api.get("/projects/milestones/");
-        if (!mounted) return;
-        const rows = Array.isArray(data) ? data : data?.results || [];
-        setMilestones(rows);
-      } catch (err) {
-        console.error("Failed to load milestones", err);
-        toast.error("Failed to load milestones.");
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    })();
-    return () => (mounted = false);
+    load();
   }, []);
 
+  const agStatusById = useMemo(() => {
+    const map = new Map(statusCache.current);
+    agreements.forEach((a) => map.set(a.id, String(a.status || "").toLowerCase()));
+    return map;
+  }, [agreements]);
+
+  // returns agreement status; if missing, fetch once and cache
+  const getAgStatus = async (agreementId) => {
+    const cached = statusCache.current.get(agreementId);
+    if (cached) return cached;
+    try {
+      const { data } = await api.get(`/projects/agreements/${agreementId}/`);
+      const status = String(data?.status || "").toLowerCase() || "draft";
+      statusCache.current.set(agreementId, status);
+      return status;
+    } catch {
+      // default to draft so UI remains usable if lookup fails
+      statusCache.current.set(agreementId, "draft");
+      return "draft";
+    }
+  };
+
+  const canEditDeleteSync = (ms) => {
+    // Prefer cached/preloaded status; if unknown, allow edit (assume draft).
+    const agId = ms.agreement ?? ms.agreement_id;
+    const s = agStatusById.get(agId);
+    return s ? s === "draft" : true;
+  };
+
   const filtered = useMemo(() => {
-    if (filter === "all") return milestones;
-    return milestones.filter(
-      (m) => (m.status || "incomplete").toLowerCase() === filter
-    );
+    const list = milestones
+      .slice()
+      .sort((a, b) => (a.order ?? a.id) - (b.order ?? b.id));
+    if (filter === "all") return list;
+    if (filter === "incomplete") return list.filter((m) => !m.completed);
+    if (filter === "completed_not_invoiced")
+      return list.filter((m) => m.completed && !m.is_invoiced);
+    if (filter === "invoiced") return list.filter((m) => m.is_invoiced);
+    if (filter === "pending")
+      return list.filter((m) =>
+        String(m.status || "").toLowerCase().includes("pending")
+      );
+    if (filter === "approved")
+      return list.filter((m) =>
+        String(m.status || "").toLowerCase().includes("approved")
+      );
+    if (filter === "disputed")
+      return list.filter((m) =>
+        String(m.status || "").toLowerCase().includes("disputed")
+      );
+    return list;
   }, [milestones, filter]);
 
-  const tabs = [
-    ["all", "All"],
-    ["incomplete", "Incomplete"],
-    ["completed", "Completed (Not Invoiced)"],
-    ["invoiced", "Invoiced"],
-    ["pending_approval", "Pending Approval"],
-    ["approved", "Approved"],
-    ["disputed", "Disputed"],
-  ];
+  const markComplete = async (ms) => {
+    try {
+      setBusy(ms.id);
+      await api.patch(`/projects/milestones/${ms.id}/`, { completed: true });
+      toast.success("Milestone marked complete.");
+      await load();
+    } catch (e) {
+      console.error(e);
+      toast.error("Could not mark complete.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const doDelete = async (ms) => {
+    const agId = ms.agreement ?? ms.agreement_id;
+    const status = await getAgStatus(agId);
+    if (status !== "draft")
+      return toast.error("You can only delete milestones while the agreement is in draft.");
+    if (!confirm(`Delete milestone "${ms.title}"? This cannot be undone.`)) return;
+    try {
+      setBusy(ms.id);
+      await api.delete(`/projects/milestones/${ms.id}/`);
+      toast.success("Milestone deleted.");
+      await load();
+    } catch (e) {
+      console.error(e);
+      toast.error("Delete failed.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const openEdit = async (ms) => {
+    const agId = ms.agreement ?? ms.agreement_id;
+    const status = await getAgStatus(agId);
+    if (status !== "draft")
+      return toast.error("You can only edit milestones while the agreement is in draft.");
+    setEditing(ms);
+    setEditOpen(true);
+  };
 
   return (
-    <div style={{ padding: 24 }}>
-      <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>Milestones</h1>
-
-      <div
-        style={{
-          marginTop: 14,
-          display: "flex",
-          gap: 8,
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}
-      >
-        {tabs.map(([key, label]) => (
+    <div className="p-6 space-y-4">
+      {/* Tabs */}
+      <div className="flex flex-wrap gap-2">
+        {TABS.map((t) => (
           <button
-            key={key}
-            onClick={() => setFilter(key)}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 10,
-              border: "1px solid #e5e7eb",
-              background: filter === key ? "#111827" : "white",
-              color: filter === key ? "white" : "#111827",
-              cursor: "pointer",
-              fontWeight: 600,
-            }}
-            aria-pressed={filter === key}
+            key={t.key}
+            onClick={() => setFilter(t.key)}
+            className={`px-3 py-1.5 rounded-lg border ${
+              filter === t.key ? "bg-blue-600 text-white" : "hover:bg-blue-50"
+            }`}
           >
-            {label}
+            {t.label}
           </button>
         ))}
       </div>
 
-      <div
-        style={{
-          marginTop: 16,
-          background: "white",
-          borderRadius: 12,
-          border: "1px solid #e5e7eb",
-        }}
-      >
-        {loading ? (
-          <div style={{ padding: 24 }}>Loading…</div>
-        ) : filtered.length === 0 ? (
-          <div style={{ padding: 24 }}>No milestones to show.</div>
-        ) : (
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "separate",
-              borderSpacing: 0,
-              fontSize: 14,
-            }}
-          >
-            <thead>
-              <tr style={{ background: "#f9fafb" }}>
-                <th style={{ textAlign: "left", padding: 12 }}>Title</th>
-                <th style={{ textAlign: "left", padding: 12 }}>Agreement #</th>
-                <th style={{ textAlign: "left", padding: 12 }}>Due / Date</th>
-                <th style={{ textAlign: "left", padding: 12 }}>Amount</th>
-                <th style={{ textAlign: "left", padding: 12 }}>Status</th>
+      {/* Table */}
+      <div className="rounded-xl border bg-white shadow-sm overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="p-2 text-left border">Title</th>
+              <th className="p-2 text-left border">Agreement #</th>
+              <th className="p-2 text-left border">Customer</th>
+              <th className="p-2 text-left border">Due / Date</th>
+              <th className="p-2 text-right border">Amount</th>
+              <th className="p-2 text-left border">Status</th>
+              <th className="p-2 text-left border">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td className="p-3 border" colSpan={7}>
+                  Loading…
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {filtered.map((m) => {
-                const due = pickDate(m);
-                const agNum = pickAgreementNumber(m);
-                const stat = (m.status || "incomplete").replaceAll("_", " ");
+            ) : filtered.length === 0 ? (
+              <tr>
+                <td className="p-3 border text-gray-500" colSpan={7}>
+                  No milestones found.
+                </td>
+              </tr>
+            ) : (
+              filtered.map((m) => {
+                const agId = m.agreement ?? m.agreement_id;
+                const draftNow = canEditDeleteSync(m);
                 return (
-                  <tr
-                    key={m.id}
-                    onClick={() => setActive(m)}
-                    onKeyDown={(e) => e.key === "Enter" && setActive(m)}
-                    tabIndex={0}
-                    style={{
-                      borderTop: "1px solid #f3f4f6",
-                      cursor: "pointer",
-                    }}
-                    title="View milestone details"
-                  >
-                    <td style={{ padding: 12, fontWeight: 600 }}>{m.title}</td>
-                    <td style={{ padding: 12 }}>{agNum || "—"}</td>
-                    <td style={{ padding: 12 }}>{due ? fmtDate(due) : "—"}</td>
-                    <td style={{ padding: 12 }}>{formatUSD(m.amount)}</td>
-                    <td style={{ padding: 12 }}>
-                      <Pill tone={toneFor(m.status)}>{stat}</Pill>
+                  <tr key={m.id} className="odd:bg-white even:bg-gray-50">
+                    <td className="p-2 border">{m.title || "—"}</td>
+                    <td className="p-2 border">{agId ?? "—"}</td>
+                    <td className="p-2 border">
+                      {m.customer_name || m.homeowner_name || "—"}
+                    </td>
+                    <td className="p-2 border">
+                      {m.start_date || m.start || m.scheduled || "—"}
+                    </td>
+                    <td className="p-2 border text-right">
+                      {typeof m.amount === "number"
+                        ? `$${m.amount.toFixed(2)}`
+                        : m.amount || "—"}
+                    </td>
+                    <td className="p-2 border">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                          m.completed
+                            ? "bg-green-100 text-green-800"
+                            : "bg-amber-100 text-amber-800"
+                        }`}
+                      >
+                        {m.completed ? "complete" : "incomplete"}
+                      </span>
+                    </td>
+                    <td className="p-2 border">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {!m.completed && (
+                          <button
+                            onClick={() => markComplete(m)}
+                            disabled={busy === m.id}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border hover:bg-gray-50"
+                            title="Mark Complete"
+                          >
+                            <Check size={14} />{" "}
+                            {busy === m.id ? "Working…" : "Complete"}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => openEdit(m)}
+                          disabled={!draftNow}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${
+                            draftNow
+                              ? "hover:bg-gray-50"
+                              : "text-gray-400 cursor-not-allowed"
+                          }`}
+                          title="Edit (draft only)"
+                        >
+                          <Pencil size={14} /> Edit
+                        </button>
+                        <button
+                          onClick={() => doDelete(m)}
+                          disabled={!draftNow || busy === m.id}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg ${
+                            draftNow
+                              ? "border border-red-300 text-red-700 hover:bg-red-50"
+                              : "border border-gray-300 text-gray-400 cursor-not-allowed"
+                          }`}
+                          title="Delete (draft only)"
+                        >
+                          <Trash2 size={14} />{" "}
+                          {busy === m.id ? "Deleting…" : "Delete"}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
-              })}
-            </tbody>
-          </table>
-        )}
+              })
+            )}
+          </tbody>
+        </table>
       </div>
 
-      <MilestoneModal
-        visible={!!active}
-        onClose={() => setActive(null)}
-        milestone={active}
+      {/* Edit modal */}
+      <MilestoneEditModal
+        milestone={editing}
+        isOpen={editOpen}
+        onClose={(changed) => {
+          setEditOpen(false);
+          setEditing(null);
+          if (changed) load();
+        }}
       />
     </div>
   );

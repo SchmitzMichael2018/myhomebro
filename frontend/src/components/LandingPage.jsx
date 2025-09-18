@@ -1,194 +1,203 @@
-// src/components/LandingPage.jsx
-import React, { useCallback } from "react";
-import { useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
-import { useAuth } from "../context/AuthContext";
-import logo from "../assets/myhomebro_logo.png";
+import React from "react";
+import {
+  Lock,
+  Zap,
+  MessagesSquare,
+  UsersRound,
+  ShieldCheck,
+  Handshake,
+  Scale,
+  Camera,
+} from "lucide-react";
 
-console.log("Rendering the REAL LandingPage.jsx!");
-
-const quickPoints = [
-  { icon: "🔒", text: "Escrow-secured payments for true peace of mind." },
-  { icon: "⚡", text: "Quick contractor sign-up—get paid faster." },
-  { icon: "💬", text: "Direct chat between homeowners and contractors." },
-  { icon: "👷‍♂️", text: "Bring your own clients, or get matched (coming soon)." },
-];
-
-const features = [
-  { icon: "⚖️", title: "Dispute Protection", text: "Built-in mediation and escrow so your funds are safe, even if issues arise." },
-  { icon: "🗓️", title: "Project Calendar", text: "Track every project and milestone in one place—auto-updated, no paperwork." },
-  { icon: "💵", title: "Invoicing & Earnings", text: "Send invoices, get paid, and view earnings—zero paperwork." },
-  { icon: "📄", title: "Agreements", text: "Digital agreements with e-signature and milestone scheduling." },
-  { icon: "📈", title: "Earnings Report", text: "See all project earnings in one place with downloadable reports." },
-];
-
+/**
+ * LandingPage
+ * - Two CTAs (Contractor Sign Up + Sign In)
+ * - Framed hero logo + badges
+ * - Bottom tile scroller
+ * - Buttons trigger a global modal opener that we wire in LoginModal.jsx
+ */
 export default function LandingPage() {
-  const navigate = useNavigate();
-  const { user, openLogin } = useAuth();
-
-  const handleTopRightSignIn = useCallback((evt) => {
-    evt?.preventDefault?.();
-    console.log("🔔 Top-right Sign In clicked");
-    openLogin();
-  }, [openLogin]);
-
-  const handleCtaSignIn = useCallback((evt) => {
-    evt?.preventDefault?.();
-    console.log("🔔 CTA Sign In clicked");
-    openLogin();
-  }, [openLogin]);
+  const openLogin = (mode = "login") => {
+    let handled = false;
+    try {
+      if (typeof window.mhbOpenLogin === "function") {
+        window.mhbOpenLogin(mode);
+        handled = true;
+      }
+    } catch {}
+    try {
+      if (!handled) {
+        window.dispatchEvent(new CustomEvent("mhb:open-login", { detail: { mode } }));
+      }
+    } catch {}
+  };
+  const openSignup = () => openLogin("signup");
 
   return (
-    <div className="relative min-h-screen flex flex-col items-center justify-center overflow-x-hidden bg-gradient-to-br from-blue-900 via-blue-700 to-yellow-400">
-      <div className="absolute top-0 right-0 w-full flex justify-end px-8 py-6 z-30">
-        {!user ? (
-          <>
-            <button
-              type="button"
-              className="mr-6 text-white/90 hover:text-yellow-300 font-semibold text-lg"
-              onClick={handleTopRightSignIn}
-              aria-label="Sign In"
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              className="bg-yellow-400 hover:bg-yellow-500 text-blue-900 font-bold py-2 px-5 rounded-xl shadow transition text-lg"
-              onClick={() => navigate("/signup")}
-              aria-label="Sign Up"
-            >
-              Sign Up
-            </button>
-          </>
-        ) : (
-          <span className="text-white/90 font-medium text-lg">
-            Welcome, {user?.email || "contractor"}
-          </span>
-        )}
-      </div>
-
-      {/* Animated blurred blobs */}
-      <motion.div
-        className="absolute -top-32 -left-32 w-96 h-96 rounded-full bg-yellow-300/40 blur-3xl z-0"
-        animate={{ y: [0, 40, 0] }}
-        transition={{ repeat: Infinity, duration: 8, ease: "easeInOut" }}
-      />
-      <motion.div
-        className="absolute -bottom-36 right-0 w-96 h-96 rounded-full bg-blue-600/30 blur-3xl z-0"
-        animate={{ y: [0, -30, 0] }}
-        transition={{ repeat: Infinity, duration: 10, ease: "easeInOut" }}
-      />
-
-      {/* Main content */}
-      <div className="z-10 flex flex-col items-center w-full max-w-2xl px-4 pt-14">
-        <motion.img
-          src={logo}
-          alt="MyHomeBro Logo"
-          className="mx-auto mb-8 w-52 md:w-72 rounded-2xl shadow-2xl bg-white/10 p-3 ring-4 ring-yellow-300/40"
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ duration: 0.8 }}
-        />
-
-        <motion.h1
-          className="text-5xl md:text-6xl font-extrabold text-white text-center mb-3 drop-shadow-lg"
-          initial={{ y: -30, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.2, duration: 0.6 }}
+    <div className="mhb-gradient-bg" style={{ minHeight: "100vh" }}>
+      {/* Hero */}
+      <div
+        style={{
+          maxWidth: 960,
+          margin: "0 auto",
+          padding: "32px 16px 36px",
+          textAlign: "center",
+          color: "#fff",
+        }}
+      >
+        {/* Framed logo */}
+        <div
+          className="mhb-logo-frame"
+          style={{ width: 220, height: 220, margin: "0 auto 18px" }}
         >
-          Welcome to <span className="bg-gradient-to-r from-yellow-300 via-yellow-500 to-blue-300 bg-clip-text text-transparent drop-shadow-md">MyHomeBro</span>
-        </motion.h1>
-
-        <motion.p
-          className="text-lg md:text-xl text-white/90 text-center mb-2"
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.4, duration: 0.6 }}
-        >
-          Secure Escrow Payments for Contractors and Homeowners.
-        </motion.p>
-
-        <motion.p
-          className="font-semibold text-white text-center mb-8"
-          initial={{ y: 30, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.6, duration: 0.6 }}
-        >
-          <span className="bg-gradient-to-r from-yellow-200 via-yellow-500 to-blue-100 bg-clip-text text-transparent">
-            The easiest way to pay and get paid for home projects.
-          </span>
-        </motion.p>
-
-        <div className="flex flex-wrap gap-5 justify-center mb-10 w-full">
-          {quickPoints.map((pt, i) => (
-            <motion.div
-              key={i}
-              className="bg-white/90 px-6 py-4 rounded-2xl shadow-lg text-blue-900 font-semibold flex items-center gap-3 min-w-[220px] text-base hover:scale-105 transition-transform cursor-pointer"
-              whileHover={{ scale: 1.07 }}
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.7 + i * 0.13, duration: 0.5 }}
-            >
-              <span className="text-2xl">{pt.icon}</span>
-              {pt.text}
-            </motion.div>
-          ))}
+          <img
+            src="/static/assets/myhomebro_logo.png"
+            alt="MyHomeBro"
+            style={{ maxWidth: 180, maxHeight: 180, display: "block" }}
+          />
         </div>
 
-        <div className="flex gap-6 mb-10">
-          <motion.button
-            className="bg-yellow-400 hover:bg-yellow-500 text-blue-900 font-bold py-3 px-10 rounded-2xl shadow-xl text-xl transition duration-150 focus:ring-2 focus:ring-yellow-300"
-            whileHover={{ scale: 1.08 }}
-            onClick={() => navigate("/signup")}
-            aria-label="Contractor Sign Up"
+        {/* Title */}
+        <h1
+          style={{
+            margin: "8px 0 0",
+            fontSize: 56,
+            lineHeight: 1.05,
+            fontWeight: 900,
+            textShadow: "0 1px 2px rgba(0,0,0,.25)",
+          }}
+        >
+          Welcome to
+        </h1>
+        <div
+          style={{
+            fontSize: 56,
+            lineHeight: 1.05,
+            fontWeight: 900,
+            marginTop: 4,
+            textShadow: "0 1px 2px rgba(0,0,0,.25)",
+          }}
+        >
+          <span style={{ color: "#F2C94C" }}>MyHome</span>
+          <span style={{ color: "#dbeafe" }}>Bro</span>
+        </div>
+
+        {/* Subheading */}
+        <p style={{ marginTop: 12, fontSize: 18 }}>
+          Secure Escrow Payments for Contractors and Homeowners.
+        </p>
+        <p style={{ marginTop: 4, fontSize: 14, opacity: 0.9 }}>
+          The easiest way to pay and get paid for home projects.
+        </p>
+
+        {/* Feature bullets */}
+        <div style={{ marginTop: 18, display: "grid", gap: 12, justifyItems: "center" }}>
+          <Badge icon={Lock} text="Escrow-secured payments for true peace of mind." />
+          <Badge icon={Zap} text="Quick contractor sign-up—get paid faster." />
+          <Badge icon={MessagesSquare} text="Direct chat between homeowners and contractors." />
+          <Badge icon={UsersRound} text="Bring your own clients, or get matched (coming soon)." />
+        </div>
+
+        {/* CTAs */}
+        <div
+          style={{
+            marginTop: 22,
+            display: "flex",
+            gap: 12,
+            justifyContent: "center",
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            onClick={openSignup}
+            className="mhb-btn primary"
+            style={{ fontSize: 16, padding: "12px 18px" }}
           >
             Contractor Sign Up
-          </motion.button>
-          <motion.button
-            className="border-2 border-white/70 text-white hover:bg-blue-800 font-bold py-3 px-10 rounded-2xl text-xl shadow-xl transition duration-150 focus:ring-2 focus:ring-blue-200"
-            whileHover={{ scale: 1.08 }}
-            onClick={handleCtaSignIn}
-            aria-label="Sign In"
+          </button>
+          <button
+            onClick={() => openLogin("login")}
+            className="mhb-btn"
+            style={{ fontSize: 16, padding: "12px 18px" }}
           >
             Sign In
-          </motion.button>
+          </button>
         </div>
       </div>
 
-      <div className="w-full max-w-6xl mx-auto mt-2 mb-14 px-2">
-        <div className="flex gap-7 overflow-x-auto py-4 px-1 scrollbar-thin scrollbar-thumb-blue-200 scrollbar-track-transparent">
-          {features.map((feature, idx) => (
-            <div
-              key={idx}
-              className="min-w-[260px] max-w-xs bg-white/95 rounded-2xl shadow-2xl p-7 flex flex-col items-center text-center border border-blue-100 hover:scale-105 transition"
-            >
-              <span className="text-4xl mb-3">{feature.icon}</span>
-              <h3 className="text-xl font-bold mb-2 text-blue-900">{feature.title}</h3>
-              <p className="text-blue-800">{feature.text}</p>
-            </div>
-          ))}
+      {/* Bottom tile scroller */}
+      <section className="mhb-hscroll">
+        <div className="mhb-hscroll-track">
+          <Tile
+            icon={ShieldCheck}
+            title="Secure Escrow"
+            text="Funds are held safely until milestones are approved—no more payment risk."
+          />
+          <Tile
+            icon={Handshake}
+            title="Bring Your Clients"
+            text="Use MyHomeBro with your existing customers to keep payments organized."
+          />
+          <Tile
+            icon={Scale}
+            title="Dispute Resolution"
+            text="Structured workflow with evidence, mediation, and third-party arbitration options."
+          />
+          <Tile
+            icon={Camera}
+            title="Photo Evidence"
+            text="Attach progress photos to milestones—build a clear record for approvals."
+          />
         </div>
-      </div>
+      </section>
+    </div>
+  );
+}
 
-      <motion.div
-        className="w-full flex flex-col items-center gap-2 mt-2"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 0.95 }}
-        transition={{ delay: 1.5 }}
+function Badge({ icon: Icon, text }) {
+  return (
+    <div
+      className="mhb-glass"
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "10px 14px",
+        borderRadius: 12,
+        color: "var(--mhb-text-strong)",
+        minWidth: 420,
+        maxWidth: 640,
+      }}
+    >
+      <div
+        style={{
+          width: 28,
+          height: 28,
+          display: "grid",
+          placeItems: "center",
+          borderRadius: 10,
+          background:
+            "linear-gradient(135deg, rgba(255,255,255,.8), rgba(255,255,255,.25))",
+          border: "1px solid rgba(255,255,255,.6)",
+          color: "var(--mhb-text)",
+        }}
       >
-        <div className="flex gap-4 flex-wrap justify-center">
-          <span className="bg-white/80 rounded-full px-5 py-2 shadow text-blue-800 font-medium flex items-center gap-2">
-            🏆 Trusted by Contractors
-          </span>
-          <span className="bg-white/80 rounded-full px-5 py-2 shadow text-yellow-700 font-medium flex items-center gap-2">
-            ⭐ Secure & Reliable
-          </span>
-        </div>
-      </motion.div>
+        <Icon size={16} />
+      </div>
+      <div style={{ fontWeight: 700 }}>{text}</div>
+    </div>
+  );
+}
 
-      <footer className="z-10 mt-8 text-white/80 text-base text-center w-full mb-2 font-medium tracking-wide">
-        © {new Date().getFullYear()} MyHomeBro. All rights reserved.
-      </footer>
+function Tile({ icon: Icon, title, text }) {
+  return (
+    <div className="mhb-tile">
+      <div className="mhb-tile-icon">
+        <Icon size={22} />
+      </div>
+      <div className="mhb-tile-title">{title}</div>
+      <div className="mhb-tile-text">{text}</div>
     </div>
   );
 }

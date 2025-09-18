@@ -1,140 +1,301 @@
 // src/components/SignatureModal.jsx
-import React, { useState, useEffect } from "react";
-import { Spinner } from "./Spinner"; // Assuming a spinner component exists
+import React, { useEffect, useMemo, useState } from "react";
+import Modal from "react-modal";
+import toast from "react-hot-toast";
+import api from "../api";
 
-export default function SignatureModal({ visible, onClose, onSubmit, loading, errorText }) {
-  const [accepted, setAccepted] = useState(false);
+Modal.setAppElement("#root");
+
+export default function SignatureModal({
+  isOpen,
+  onClose,
+  agreement,
+  signingRole,   // "contractor" | "homeowner" (LOCKED)
+  onSigned,
+}) {
   const [typedName, setTypedName] = useState("");
-  const [signatureFile, setSignatureFile] = useState(null);
-  const [showFileError, setShowFileError] = useState(false);
+  const [consentEsign, setConsentEsign] = useState(true);
+  const [acceptTos, setAcceptTos] = useState(false);
+  const [acceptPrivacy, setAcceptPrivacy] = useState(false);
+  const [ackAddenda, setAckAddenda] = useState(false);
+
+  const [sigFile, setSigFile] = useState(null);
+  const [sigPreview, setSigPreview] = useState(null);
+
+  const [attachments, setAttachments] = useState([]);
+  const [loadingAtts, setLoadingAtts] = useState(false);
+
+  const [submitting, setSubmitting] = useState(false);
+  const [activeTab, setActiveTab] = useState("preview"); // preview | sign
+
+  const pdfUrl = useMemo(() => {
+    if (!agreement) return null;
+    if (agreement.pdf_url) return agreement.pdf_url;
+    return `/api/projects/agreements/${agreement.id}/pdf/preview/`;
+  }, [agreement]);
+
+  const TOS_PDF = "/static/legal/terms_of_service.pdf";
+  const PRIVACY_PDF = "/static/legal/privacy_policy.pdf";
+
+  const loadAttachments = async () => {
+    if (!agreement?.id) return;
+    try {
+      setLoadingAtts(true);
+      const { data } = await api.get(`/projects/agreements/${agreement.id}/attachments/`);
+      setAttachments(Array.isArray(data) ? data : []);
+    } catch {
+      // non-fatal
+    } finally {
+      setLoadingAtts(false);
+    }
+  };
 
   useEffect(() => {
-    if (!visible) {
-      setAccepted(false);
+    if (isOpen) loadAttachments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, agreement?.id]);
+
+  useEffect(() => {
+    if (!isOpen) {
       setTypedName("");
-      setSignatureFile(null);
-      setShowFileError(false);
+      setConsentEsign(true);
+      setAcceptTos(false);
+      setAcceptPrivacy(false);
+      setAckAddenda(false);
+      setSigFile(null);
+      setSigPreview(null);
+      setSubmitting(false);
+      setActiveTab("preview");
     }
-  }, [visible]);
+  }, [isOpen]);
 
-  if (!visible) return null;
-
-  const handleFileChange = (e) => {
-    setShowFileError(false);
-    const file = e.target.files?.[0] || null;
-    setSignatureFile(file);
-  };
-
-  const handleSubmit = () => {
-    if (!typedName.trim() && !signatureFile) {
-      setShowFileError(true);
+  const onFileChange = (e) => {
+    const f = e.target.files?.[0];
+    if (!f) {
+      setSigFile(null); setSigPreview(null);
       return;
     }
-    onSubmit({ typedName: typedName.trim(), signatureFile });
+    if (!f.type.startsWith("image/")) {
+      toast.error("Please upload an image (PNG/JPG).");
+      return;
+    }
+    setSigFile(f);
+    setSigPreview(URL.createObjectURL(f));
   };
 
-  const isSubmitDisabled = !accepted || loading || (!typedName.trim() && !signatureFile);
+  const requireAck = attachments.some((a) => a.ack_required && a.visible_to_homeowner);
+  const canSign =
+    !!agreement &&
+    !!signingRole &&
+    consentEsign &&
+    acceptTos &&
+    acceptPrivacy &&
+    (!requireAck || ackAddenda) &&
+    typedName.trim().length > 1 &&
+    !submitting;
+
+  const handleSign = async () => {
+    if (!canSign) return;
+    setSubmitting(true);
+    try {
+      // Your existing AgreementSignSerializer fields:
+      // signer_name, signer_role, agree_tos, agree_privacy, signature_text (+ optional signature_image)
+      const form = new FormData();
+      form.append("signer_name", typedName.trim());
+      form.append("signer_role", signingRole);
+      form.append("agree_tos", acceptTos ? "true" : "false");
+      form.append("agree_privacy", acceptPrivacy ? "true" : "false");
+      form.append("signature_text", typedName.trim());
+      if (sigFile) form.append("signature_image", sigFile);
+      // NOTE: we do NOT send ackAddenda to keep serializer unchanged; it is enforced client-side.
+
+      const { data } = await api.post(
+        `/projects/agreements/${agreement.id}/sign/`,
+        form
+      );
+
+      toast.success("Signature captured.");
+      onSigned?.(data);
+      onClose();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Unable to sign right now.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-      <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md relative">
-        <button onClick={onClose} className="absolute top-3 right-3 text-gray-400 hover:text-gray-600" aria-label="Close">&times;</button>
-        
-        <h3 className="text-xl font-bold mb-4">Sign Agreement</h3>
-
-        <div className="mb-4 p-3 bg-yellow-100 text-yellow-900 text-sm border-l-4 border-yellow-500 rounded-r-lg space-y-2">
-          <p>
-            <strong>Important:</strong> By signing, you agree this constitutes a legally binding electronic signature per the{' '}
-            <a 
-              href="https://www.fdic.gov/regulations/laws/rules/6500-3170.html" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="font-semibold underline hover:text-yellow-900"
-            >
-              E-SIGN Act
-            </a>.
-          </p>
-          <p>
-            <strong>Please Note:</strong> Escrow account must be funded for this agreement to be considered valid.
-          </p>
+    <Modal
+      isOpen={isOpen}
+      onRequestClose={() => (!submitting ? onClose() : null)}
+      contentLabel="Sign Agreement"
+      style={{
+        overlay: { zIndex: 1000, backgroundColor: "rgba(0,0,0,0.55)" },
+        content: {
+          inset: "4% 6%", borderRadius: 14, padding: 0,
+          border: "1px solid rgba(255,255,255,0.1)",
+          background: "linear-gradient(180deg, #0f172a 0%, #111827 40%, #0b1220 100%)",
+          color: "#e5e7eb",
+        },
+      }}
+    >
+      {/* Header */}
+      <div className="flex items-center gap-3 px-5 py-3 border-b border-white/10">
+        <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-400 via-blue-500 to-blue-700" />
+        <div className="flex-1 min-w-0">
+          <div className="font-bold text-base">Sign Agreement</div>
+          <div className="opacity-80 text-xs truncate" title={agreement?.title || `Agreement #${agreement?.id ?? ""}`}>
+            {agreement?.title || `Agreement #${agreement?.id ?? ""}`}
+          </div>
         </div>
+        <button onClick={onClose} disabled={submitting} className="text-gray-400 text-xl px-1">✕</button>
+      </div>
 
-        <div className="legal-documents-section mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-          <h4 className="text-md font-semibold text-gray-800">Legal Documents</h4>
-          <p className="mt-1 text-xs text-gray-600">
-            This agreement incorporates by reference the full Terms of Service and Privacy Policy.
-          </p>
-          
-          <ul className="mt-3 space-y-1.5 text-sm">
-            <li><a href="/legal/terms_of_service.html" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">View Summarized Terms (Web)</a></li>
-            <li><a href="/static/legal/Full_terms_of_service.pdf" download className="text-blue-600 hover:underline">Download Full Binding Terms PDF</a></li>
-            <li><a href="/legal/privacy_policy.html" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">View Summarized Privacy Policy (Web)</a></li>
-            <li><a href="/static/legal/Full_privacy_policy.pdf" download className="text-blue-600 hover:underline">Download Full Binding Privacy Policy PDF</a></li>
-          </ul>
+      {/* Tabs + legal links */}
+      <div className="flex gap-2 px-4 py-2 border-b border-white/10">
+        {["preview", "sign"].map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-3 py-2 rounded-lg border ${activeTab===tab ? "bg-blue-500/20 text-white border-white/20" : "bg-white/5 text-slate-300 border-white/10"}`}
+          >
+            {tab === "preview" ? "Agreement Preview" : "Sign"}
+          </button>
+        ))}
+        <div className="flex-1" />
+        <a href={TOS_PDF} target="_blank" rel="noopener noreferrer" className="px-3 py-2 rounded-lg border border-white/10 text-blue-200">
+          Terms of Service
+        </a>
+        <a href={PRIVACY_PDF} target="_blank" rel="noopener noreferrer" className="px-3 py-2 rounded-lg border border-white/10 text-blue-200">
+          Privacy Policy
+        </a>
+      </div>
 
-          <hr className="my-4" />
-
-          <label htmlFor="terms-agree" className="flex items-start cursor-pointer">
-            <input
-              type="checkbox"
-              id="terms-agree"
-              checked={accepted}
-              onChange={(e) => setAccepted(e.target.checked)}
-              className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 mt-0.5 shrink-0"
-            />
-            <span className="ml-3 text-sm text-gray-700">
-              By checking this box, I acknowledge that I have read, understood, and agree to the MyHomeBro{' '}
-              <a href="/legal/terms_of_service.html" target="_blank" rel="noopener noreferrer" className="font-semibold text-blue-600 hover:underline">
-                Terms of Service
-              </a>{' '}and{' '}
-              <a href="/legal/privacy_policy.html" target="_blank" rel="noopener noreferrer" className="font-semibold text-blue-600 hover:underline">
-                Privacy Policy
-              </a>.
-            </span>
-          </label>
-        </div>
-
-        <div className={`transition-opacity duration-300 ${accepted ? 'opacity-100' : 'opacity-50'}`}>
-          <input
-            type="text"
-            value={typedName}
-            onChange={(e) => setTypedName(e.target.value)}
-            placeholder="Type your full name as signature"
-            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-            disabled={!accepted}
-          />
-
-          <div className="text-center my-3 text-gray-500 font-semibold">— OR —</div>
-
-          <div>
-            <label htmlFor="signature-file" className="block text-sm font-medium text-gray-700 mb-1">Upload Signature Image</label>
-            <input
-              id="signature-file"
-              type="file"
-              accept="image/png, image/jpeg"
-              onChange={handleFileChange}
-              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-              disabled={!accepted}
-            />
+      {/* Body */}
+      <div className={`grid ${activeTab==="preview" ? "grid-cols-1" : "grid-cols-[1.1fr_0.9fr]"} min-h-[60vh] max-h-[calc(92vh-110px)]`}>
+        {/* Preview */}
+        <div className={`bg-[#0b1220] ${activeTab==="sign" ? "border-r border-white/10" : ""} p-2`}>
+          <div className="h-full rounded-xl overflow-hidden border border-white/10">
+            {pdfUrl ? (
+              <iframe title="Agreement Preview" src={pdfUrl} className="w-full h-full border-0" />
+            ) : (
+              <div className="p-5 text-slate-300">Agreement preview unavailable.</div>
+            )}
           </div>
         </div>
 
-        {(showFileError || errorText) && (
-          <div className="mt-4 text-red-600 text-sm">
-            {errorText || "You must provide either a typed name or upload a signature image."}
+        {/* Sign form */}
+        {activeTab === "sign" && (
+          <div className="p-4 overflow-y-auto">
+            {/* Attachments viewer + acknowledgement if any */}
+            <div className="mb-4 p-3 rounded-xl border border-white/10 bg-white/5">
+              <div className="font-semibold mb-2">Attachments & Addenda</div>
+              {loadingAtts ? (
+                <div className="text-sm text-slate-300">Loading…</div>
+              ) : attachments.length === 0 ? (
+                <div className="text-sm text-slate-300">None.</div>
+              ) : (
+                <ul className="text-sm list-disc pl-5 space-y-1">
+                  {attachments.map((a) => (
+                    <li key={a.id}>
+                      <a href={a.file_url} target="_blank" rel="noreferrer" className="text-blue-200 hover:underline">
+                        {a.title} [{a.category}] ({a.file_name})
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {attachments.some((a) => a.ack_required && a.visible_to_homeowner) && (
+                <label className="mt-3 flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={ackAddenda} onChange={(e)=>setAckAddenda(e.target.checked)} />
+                  <span>I have reviewed the attachments/addenda.</span>
+                </label>
+              )}
+            </div>
+
+            {/* E-SIGN consent */}
+            <div className="mb-4 p-3 rounded-xl border border-white/10 bg-white/5">
+              <div className="font-semibold mb-2">Electronic Records & Signatures (E-SIGN)</div>
+              <div className="text-sm opacity-90">
+                By checking the box below and clicking <b>Sign Agreement</b>, you consent to use electronic
+                records and signatures. Your typed name has the same legal effect as a handwritten signature.
+              </div>
+              <label className="mt-2 flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={consentEsign} onChange={(e)=>setConsentEsign(e.target.checked)} />
+                <span>I consent to use electronic records and signatures.</span>
+              </label>
+            </div>
+
+            {/* Accept legal docs */}
+            <div className="mb-4 p-3 rounded-xl border border-white/10 bg-white/5">
+              <label className="flex items-center gap-2 text-sm mb-2">
+                <input type="checkbox" checked={acceptTos} onChange={(e)=>setAcceptTos(e.target.checked)} />
+                <span>I have reviewed and agree to the <a href={TOS_PDF} target="_blank" rel="noreferrer" className="text-blue-200 underline">Terms of Service</a>.</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={acceptPrivacy} onChange={(e)=>setAcceptPrivacy(e.target.checked)} />
+                <span>I have reviewed and agree to the <a href={PRIVACY_PDF} target="_blank" rel="noreferrer" className="text-blue-200 underline">Privacy Policy</a>.</span>
+              </label>
+            </div>
+
+            {/* Role (locked) */}
+            <div className="mb-4 p-3 rounded-xl border border-white/10 bg-white/5">
+              <div className="font-semibold mb-1">I am signing as</div>
+              <div className="inline-block px-3 py-2 rounded-lg border border-white/10 bg-blue-500/20 font-bold">
+                {signingRole === "contractor" ? "Contractor" : "Homeowner"}
+              </div>
+              <div className="text-xs opacity-70 mt-1">(Role is fixed to prevent accidental mis-signing.)</div>
+            </div>
+
+            {/* Typed name + optional wet signature */}
+            <div className="mb-4 p-3 rounded-xl border border-white/10 bg-white/5">
+              <label className="block font-semibold">Type your full name (electronic signature)</label>
+              <input
+                type="text"
+                className="mt-2 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2 outline-none text-white"
+                placeholder="e.g., John Q. Public"
+                value={typedName}
+                onChange={(e)=>setTypedName(e.target.value)}
+              />
+              <div className="text-xs opacity-70 mt-1">Your IP address and timestamp will be recorded.</div>
+
+              <div className="mt-4">
+                <div className="font-semibold mb-1">Optional: Upload handwritten (wet) signature</div>
+                <input type="file" accept="image/*" onChange={onFileChange} />
+                {sigPreview && (
+                  <div className="mt-2 border border-dashed border-white/20 rounded-lg p-2 max-w-xs bg-white/5">
+                    <img src={sigPreview} alt="Signature preview" className="w-full h-auto bg-white rounded" />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button onClick={onClose} disabled={submitting} className="px-4 py-2 rounded border border-white/20 text-slate-200">
+                Cancel
+              </button>
+              <button
+                onClick={handleSign}
+                disabled={!canSign}
+                className={`px-4 py-2 rounded font-bold text-white ${canSign ? "bg-blue-600 hover:bg-blue-700" : "bg-slate-600 cursor-not-allowed"}`}
+              >
+                {submitting ? "Signing…" : "Sign Agreement"}
+              </button>
+            </div>
           </div>
         )}
+      </div>
 
-        <div className="mt-6">
+      {activeTab === "preview" && (
+        <div className="px-4 py-3 border-t border-white/10 flex justify-end">
           <button
-            onClick={handleSubmit}
-            disabled={isSubmitDisabled}
-            className="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+            onClick={() => setActiveTab("sign")}
+            className="px-4 py-2 rounded bg-blue-600 hover:bg-blue-700 text-white font-bold"
           >
-            {loading ? <Spinner /> : "Sign & Accept"}
+            Continue to Sign
           </button>
         </div>
-      </div>
-    </div>
+      )}
+    </Modal>
   );
 }

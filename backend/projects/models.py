@@ -2,7 +2,9 @@
 from django.conf import settings
 from django.db import models, transaction
 from django.utils import timezone
+from .models_dispute import Dispute, DisputeAttachment
 import uuid
+
 
 # --- TextChoices for status fields ---
 class ProjectStatus(models.TextChoices):
@@ -202,11 +204,23 @@ class Agreement(models.Model):
     # Legal & escrow
     terms_text = models.TextField(blank=True)
     privacy_text = models.TextField(blank=True)
+
+    # Warranty (NEW)
+    warranty_type = models.CharField(
+        max_length=16,
+        choices=[("default", "Default"), ("custom", "Custom")],
+        default="default",
+    )
+    warranty_text_snapshot = models.TextField(blank=True, default="")
+
     escrow_payment_intent_id = models.CharField(max_length=255, blank=True)
     escrow_funded = models.BooleanField(default=False)
 
     # Review & signatures
-    reviewed = models.BooleanField(default=False)
+    reviewed = models.BooleanField(default=False)  # existing boolean
+    reviewed_at = models.DateTimeField(null=True, blank=True)           # NEW
+    reviewed_by = models.CharField(max_length=32, null=True, blank=True)  # NEW
+
     signed_by_contractor = models.BooleanField(default=False)
     signed_at_contractor = models.DateTimeField(null=True, blank=True)
     signed_by_homeowner = models.BooleanField(default=False)

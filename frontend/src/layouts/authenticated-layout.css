@@ -1,0 +1,20 @@
+.mhb-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  backdrop-filter: saturate(1.2) blur(6px);
+  background: rgba(255, 255, 255, 0.3);
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+.mhb-topbar-inner { display:flex; align-items:center; justify-content:space-between; padding:10px 16px; }
+.mhb-topbar-left { display:flex; align-items:center; gap:8px; color:#0f172a; font-weight:600; }
+.mhb-brand { display:inline-flex; align-items:center; gap:6px; color:#1f2937; text-decoration:none; }
+.mhb-brand-mark { font-size:18px; }
+.mhb-brand-text { font-weight:800; letter-spacing:.1px; }
+.mhb-divider { opacity:.5; }
+.mhb-route-title { color:#111827; font-weight:700; }
+.mhb-topbar-right { display:flex; align-items:center; gap:10px; }
+.mhb-topbar-link { color:#1f2937; text-decoration:none; font-weight:600; }
+.mhb-topbar-link:hover { text-decoration:underline; }
+.mhb-content-scroll { flex:1; overflow:auto; }
+.mhb-content-pad { padding:16px; }
