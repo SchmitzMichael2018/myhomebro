@@ -4,9 +4,9 @@ import api from "../api";
 
 export default function AttachmentSection({ agreementId, onChange }) {
   const [title, setTitle] = useState("");
-  const [category, setCategory] = useState("WARRANTY"); // uppercase (model choices):contentReference[oaicite:14]{index=14}
+  const [category, setCategory] = useState("WARRANTY");
   const [visible, setVisible] = useState(true);
-  const [ackReq, setAckReq] = useState(false);          // model uses ack_required:contentReference[oaicite:15]{index=15}
+  const [ackReq, setAckReq] = useState(false);
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -18,11 +18,11 @@ export default function AttachmentSection({ agreementId, onChange }) {
     setLoading(true);
     try {
       const { data } = await api.get(`/projects/agreements/${agreementId}/attachments/`);
-      setItems(Array.isArray(data) ? data : (data?.results || []));
+      setItems(Array.isArray(data) ? data : data?.results || []);
     } catch (err) {
       try {
         const { data } = await api.get(`/projects/attachments/`, { params: { agreement: agreementId } });
-        setItems(Array.isArray(data) ? data : (data?.results || []));
+        setItems(Array.isArray(data) ? data : data?.results || []);
       } catch (e2) {
         console.error(e2);
         toast.error("Failed to load attachments.");
@@ -33,7 +33,10 @@ export default function AttachmentSection({ agreementId, onChange }) {
     }
   };
 
-  useEffect(() => { if (agreementId) load(); /* eslint-disable-next-line */ }, [agreementId]);
+  useEffect(() => {
+    if (agreementId) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agreementId]);
 
   const onUpload = async (e) => {
     e.preventDefault();
@@ -48,15 +51,12 @@ export default function AttachmentSection({ agreementId, onChange }) {
 
     try {
       const resp = await api.post(`/projects/agreements/${agreementId}/attachments/`, form);
+      // Use refreshed list from server immediately
       const list = Array.isArray(resp?.data) ? resp.data : [];
       if (list.length) setItems(list); else await load();
-      toast.success("Attachment uploaded.");
 
-      setTitle("");
-      setCategory("WARRANTY");
-      setVisible(true);
-      setAckReq(false);
-      setFile(null);
+      toast.success("Attachment uploaded.");
+      setTitle(""); setCategory("WARRANTY"); setVisible(true); setAckReq(false); setFile(null);
     } catch (err) {
       console.error(err);
       toast.error("Upload failed.");

@@ -1,11 +1,12 @@
-# backend/backend/projects/views/milestone.py
+# backend/projects/views/milestone.py
+from django.shortcuts import get_object_or_404
+from django.db import transaction
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied, NotFound
-from django.shortcuts import get_object_or_404
 
-from ..models import Milestone, MilestoneFile, MilestoneComment, Invoice, InvoiceStatus
+from ..models import Milestone, MilestoneFile, MilestoneComment, Invoice, InvoiceStatus, Agreement
 from ..serializers import MilestoneSerializer, MilestoneFileSerializer, MilestoneCommentSerializer
 from ..tasks import task_send_invoice_notification
 
@@ -19,11 +20,12 @@ class MilestoneViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = Milestone.objects.filter(
-            agreement__project__contractor__user=user
-        ).select_related("agreement", "agreement__project").distinct()
-
-        # 🔒 Strict scoping by agreement when provided
+        qs = (
+            Milestone.objects.filter(agreement__project__contractor__user=user)
+            .select_related("agreement", "agreement__project")
+            .order_by("order", "id")
+            .distinct()
+        )
         agreement_id = self.request.query_params.get("agreement")
         if agreement_id:
             try:
@@ -31,14 +33,37 @@ class MilestoneViewSet(viewsets.ModelViewSet):
             except (TypeError, ValueError):
                 return Milestone.objects.none()
             qs = qs.filter(agreement_id=agreement_id)
-
         return qs
+
+    def _ensure_owns_agreement(self, agreement_id: int):
+        ag = get_object_or_404(Agreement, pk=agreement_id)
+        if ag.project.contractor.user != self.request.user:
+            raise PermissionDenied("You do not have permission for this agreement.")
+        return ag
+
+    @transaction.atomic
+    def perform_create(self, serializer):
+        # enforce ownership on create
+        agreement_obj = serializer.validated_data.get("agreement")
+        agreement_id = getattr(agreement_obj, "id", None) if agreement_obj else self.request.data.get("agreement")
+        if not agreement_id:
+            raise PermissionDenied("An agreement is required for milestone creation.")
+        ag = self._ensure_owns_agreement(int(agreement_id))
+        serializer.save(agreement=ag)
+
+    @transaction.atomic
+    def perform_update(self, serializer):
+        instance: Milestone = self.get_object()
+        incoming_agreement = serializer.validated_data.get("agreement")
+        if incoming_agreement and incoming_agreement.id != instance.agreement_id:
+            raise PermissionDenied("Cannot change the agreement of an existing milestone.")
+        self._ensure_owns_agreement(instance.agreement_id)
+        serializer.save()
 
     @action(detail=True, methods=["post"])
     def mark_complete(self, request, pk=None):
         milestone = self.get_object()
         agreement = milestone.agreement
-
         if not agreement.is_fully_signed:
             raise PermissionDenied("Cannot complete milestones until the agreement is fully signed.")
         if not agreement.escrow_funded:
@@ -48,7 +73,6 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         if milestone.completed:
             return Response({"detail": "This milestone has already been marked as complete."},
                             status=status.HTTP_400_BAD_REQUEST)
-
         milestone.completed = True
         milestone.save(update_fields=["completed"])
         return Response(self.get_serializer(milestone).data)
@@ -64,7 +88,6 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         if milestone.is_invoiced:
             return Response({"detail": "An invoice has already been sent for this milestone."},
                             status=status.HTTP_400_BAD_REQUEST)
-
         invoice = Invoice.objects.create(
             agreement=milestone.agreement,
             amount=milestone.amount,
@@ -72,18 +95,14 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         )
         milestone.is_invoiced = True
         milestone.save(update_fields=["is_invoiced"])
-
-        # Optional async notification
         try:
             task_send_invoice_notification.delay(invoice.id)
         except Exception:
             pass
-
         return Response(
             {"status": "success", "message": "Invoice created and notification sent.", "invoice_id": invoice.id},
             status=status.HTTP_201_CREATED,
         )
-
 
 class MilestoneFileViewSet(viewsets.ModelViewSet):
     serializer_class = MilestoneFileSerializer
@@ -91,9 +110,11 @@ class MilestoneFileViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        return MilestoneFile.objects.filter(
-            milestone__agreement__project__contractor__user=user
-        ).select_related("uploaded_by")
+        return (
+            MilestoneFile.objects.filter(milestone__agreement__project__contractor__user=user)
+            .select_related("uploaded_by")
+            .order_by("-created_at", "id")
+        )
 
     def perform_create(self, serializer):
         milestone_id = self.request.data.get("milestone")
@@ -101,7 +122,6 @@ class MilestoneFileViewSet(viewsets.ModelViewSet):
         if milestone.agreement.project.contractor.user != self.request.user:
             raise PermissionDenied("You do not have permission to upload files to this milestone.")
         serializer.save(uploaded_by=self.request.user, milestone=milestone)
-
 
 class MilestoneCommentViewSet(viewsets.ModelViewSet):
     serializer_class = MilestoneCommentSerializer

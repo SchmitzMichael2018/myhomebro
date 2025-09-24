@@ -1,4 +1,6 @@
 // frontend/src/pages/AgreementList.jsx
+// v2025-09-23-project+homeowner-clean-fallbacks
+
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../api";
 import toast from "react-hot-toast";
@@ -13,13 +15,25 @@ import {
   Star,
 } from "lucide-react";
 
-console.log("AgreementList.jsx v2025-09-17-actions+merge+primary+delete-detail");
+console.log("AgreementList.jsx v2025-09-23-project+homeowner-clean-fallbacks");
 
 const fmtMoney = (n) => {
-  const v = Number(n);
-  return Number.isFinite(v) ? `$${v.toFixed(2)}` : n ?? "—";
+  if (n === null || n === undefined || n === "") return "—";
+  const num = Number(n);
+  if (!Number.isFinite(num)) return String(n);
+  return num.toLocaleString(undefined, { style: "currency", currency: "USD" });
 };
-const fmtDate = (s) => (s ? new Date(s).toISOString().slice(0, 10) : "—");
+
+const fmtDate = (s) => {
+  if (!s) return "—";
+  try {
+    const d = new Date(s);
+    if (Number.isNaN(d.getTime())) return "—";
+    return d.toISOString().slice(0, 10);
+  } catch {
+    return "—";
+  }
+};
 
 export default function AgreementList() {
   const [rows, setRows] = useState([]);
@@ -67,7 +81,14 @@ export default function AgreementList() {
       )
       .filter((r) => {
         if (!search) return true;
-        const hay = [r.title, r.project_title, r.homeowner_name, r.id, r.status]
+        const hay = [
+          r.id,
+          r.status,
+          r.project_title,
+          r.title,
+          r.homeowner_name,
+          r.homeowner_email, // include email for search
+        ]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
@@ -199,6 +220,17 @@ export default function AgreementList() {
     }
   };
 
+  // Support either naming scheme from the API:
+  const contractorSigned = (r) =>
+    (typeof r.signed_by_contractor !== "undefined"
+      ? r.signed_by_contractor
+      : r.contractor_signed) || false;
+
+  const homeownerSigned = (r) =>
+    (typeof r.signed_by_homeowner !== "undefined"
+      ? r.signed_by_homeowner
+      : r.homeowner_signed) || false;
+
   const SignatureBadge = ({ ok, who }) =>
     ok ? (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">
@@ -210,6 +242,20 @@ export default function AgreementList() {
       </span>
     );
 
+  // ---- Column render helpers (clean placeholders) ----
+  const renderProject = (r) => {
+    // Prefer the serializer-computed project_title; if it looks like "Agreement #123", treat as empty
+    const raw = (r.project_title || r.title || "").trim();
+    if (/^agreement\s*#\d+$/i.test(raw)) return "—";
+    return raw || "—";
+  };
+
+  const renderHomeowner = (r) => {
+    const nm = (r.homeowner_name || "").trim();
+    const em = (r.homeowner_email || "").trim();
+    return nm || em || "—";
+  };
+
   return (
     <div className="p-6 space-y-4">
       {/* Header */}
@@ -217,7 +263,7 @@ export default function AgreementList() {
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search by project, homeowner…"
+          placeholder="Search by project, homeowner, email, ID…"
           className="border rounded-lg px-3 py-2 w-72"
         />
         <select
@@ -359,42 +405,31 @@ export default function AgreementList() {
                         {String(r.status || "—")}
                       </span>
                     </td>
-                    <td className="p-2 border">{r.title || r.project_title || "—"}</td>
-                    <td className="p-2 border">{r.homeowner_name || "—"}</td>
+
+                    {/* Project — cleaned placeholder */}
+                    <td className="p-2 border max-w-[460px] truncate" title={renderProject(r)}>
+                      {renderProject(r)}
+                    </td>
+
+                    {/* Homeowner — name → email → — */}
+                    <td className="p-2 border max-w-[460px] truncate" title={renderHomeowner(r)}>
+                      {renderHomeowner(r)}
+                    </td>
+
                     <td className="p-2 border">{fmtDate(r.start)}</td>
                     <td className="p-2 border">{fmtDate(r.end)}</td>
+
                     <td className="p-2 border">
                       <div className="flex items-center gap-2">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
-                            r.signed_by_contractor
-                              ? "bg-green-100 text-green-800"
-                              : "bg-red-100 text-red-800"
-                          }`}
-                        >
-                          {r.signed_by_contractor ? (
-                            <CheckCircle2 size={14} />
-                          ) : (
-                            <XCircle size={14} />
-                          )}{" "}
-                          Contractor
+                        <span>
+                          <SignatureBadge ok={contractorSigned(r)} who="Contractor" />
                         </span>
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
-                            r.signed_by_homeowner
-                              ? "bg-green-100 text-green-800"
-                              : "bg-red-100 text-red-800"
-                          }`}
-                        >
-                          {r.signed_by_homeowner ? (
-                            <CheckCircle2 size={14} />
-                          ) : (
-                            <XCircle size={14} />
-                          )}{" "}
-                          Homeowner
+                        <span>
+                          <SignatureBadge ok={homeownerSigned(r)} who="Homeowner" />
                         </span>
                       </div>
                     </td>
+
                     <td className="p-2 border text-right">
                       {fmtMoney(r.display_total ?? r.total_cost)}
                     </td>

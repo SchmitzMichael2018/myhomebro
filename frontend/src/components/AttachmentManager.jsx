@@ -1,4 +1,3 @@
-// src/components/AttachmentManager.jsx
 import React, { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import api from "../api";
@@ -24,7 +23,7 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
     try {
       setLoading(true);
       const { data } = await api.get(`/projects/agreements/${agreementId}/attachments/`);
-      setItems(data || []);
+      setItems(Array.isArray(data) ? data : data?.results || []);
     } catch {
       toast.error("Failed to load attachments.");
     } finally {
@@ -46,12 +45,16 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
       form.append("visible_to_homeowner", visible ? "true" : "false");
       form.append("ack_required", ackReq ? "true" : "false");
 
-      await api.post(`/projects/agreements/${agreementId}/attachments/`, form);
+      const resp = await api.post(`/projects/agreements/${agreementId}/attachments/`, form);
+      // Use server’s refreshed list immediately (expected from backend action)
+      const list = Array.isArray(resp?.data) ? resp.data : [];
+      if (list.length) setItems(list); else await load();
+
       setFile(null); setTitle(""); setCategory("WARRANTY"); setVisible(true); setAckReq(true);
       toast.success("Attachment uploaded.");
-      load();
     } catch (err) {
-      toast.error(err?.response?.data?.detail || "Upload failed.");
+      const d = err?.response?.data;
+      toast.error(d?.detail || Object.values(d || {})?.[0] || "Upload failed.");
     } finally {
       setSubmitting(false);
     }
@@ -61,8 +64,8 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
     if (!window.confirm("Delete this attachment?")) return;
     try {
       await api.delete(`/projects/agreements/${agreementId}/attachments/${id}/`);
+      await load();
       toast.success("Attachment deleted.");
-      load();
     } catch {
       toast.error("Delete failed.");
     }
@@ -95,12 +98,30 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
             <tbody>
               {items.map((it) => (
                 <tr key={it.id} className="odd:bg-white even:bg-gray-50">
-                  <td className="p-2 border">{it.title}</td>
+                  <td className="p-2 border">{it.title || "—"}</td>
                   <td className="p-2 border">{it.category}</td>
                   <td className="p-2 border">
-                    <a className="text-blue-600 hover:underline" href={it.file_url} target="_blank" rel="noreferrer">
-                      {it.file_name}
-                    </a>
+                    {it.file_url ? (
+                      <>
+                        <a
+                          className="text-blue-700 hover:underline"
+                          href={it.file_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {it.file_name || "Open"}
+                        </a>
+                        <a
+                          className="ml-3 text-blue-600 hover:underline"
+                          href={it.file_url}
+                          download={it.file_name || true}
+                        >
+                          Download
+                        </a>
+                      </>
+                    ) : (
+                      <span className="text-gray-500">no file</span>
+                    )}
                     {typeof it.size_bytes === "number" && (
                       <span className="text-gray-500 ml-2">({Math.ceil(it.size_bytes / 1024)} KB)</span>
                     )}

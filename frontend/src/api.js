@@ -7,6 +7,8 @@ import axios from "axios";
  * - Attaches Authorization on every request (instance AND global axios)
  * - Refreshes access token once on 401 and retries
  * - Rewrites legacy endpoints to /projects/* paths
+ * - Forces JSON for non-attachment writes to avoid 415s
+ * - Auto-recovers from 415 (multipart sent to JSON endpoint) by retrying as JSON
  * - Fallback: if PATCH/PUT /contractors/me/ returns 405, retry as /contractors/{id}/
  */
 
@@ -66,6 +68,12 @@ function applyAuthHeader(token) {
   }
 }
 
+/* ----------------- Small type guards ----------------- */
+const isFormData = (v) => typeof FormData !== "undefined" && v instanceof FormData;
+const isBlob = (v) => typeof Blob !== "undefined" && v instanceof Blob;
+const isURLSearchParams = (v) => typeof URLSearchParams !== "undefined" && v instanceof URLSearchParams;
+const isPlainObject = (v) => v && typeof v === "object" && !Array.isArray(v) && !isFormData(v) && !isBlob(v) && !isURLSearchParams(v);
+
 /* --------------- Legacy endpoint rewrite --------------- */
 const LEGACY_PREFIX_MAP = [
   ["/homeowners", "/projects/homeowners"],
@@ -83,14 +91,56 @@ function rewriteLegacyUrl(url) {
   return url;
 }
 
+function isAttachmentRoute(url = "") {
+  // Treat any .../attachments or .../attachments/ as "multipart ok"
+  return /\/attachments\/?(\?|$)/.test(url);
+}
+
 /* --------------- Axios instance --------------- */
 const api = axios.create({
   baseURL: BASE_URL,
   timeout: 30000,
 });
 
+/* -------- Ensure JSON for non-attachment writes -------- */
+function normalizeForJson(config) {
+  const method = (config.method || "get").toLowerCase();
+  const wantsBody = /post|put|patch/.test(method);
+  if (!wantsBody) return config;
+
+  const url = config.url || "";
+  const onAttachments = isAttachmentRoute(url);
+
+  // Skip forcing JSON for attachment endpoints
+  if (onAttachments) return config;
+
+  // If the payload is NOT FormData/Blob/URLSearchParams, ensure JSON headers
+  const body = config.data;
+  if (!isFormData(body) && !isBlob(body) && !isURLSearchParams(body)) {
+    config.headers = {
+      ...(config.headers || {}),
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    };
+    // Axios will JSON.stringify plain objects automatically when content-type is application/json
+  }
+  return config;
+}
+
+/* -------- Convert FormData -> plain object (safe keys only) -------- */
+function formDataToObject(fd) {
+  const obj = {};
+  fd.forEach((v, k) => {
+    // Skip binary values when converting (JSON endpoints shouldn't get files)
+    if (isBlob(v)) return;
+    // For duplicate keys, last one wins (sufficient for our edit forms)
+    obj[k] = v;
+  });
+  return obj;
+}
+
 function installInterceptors(instance) {
-  // Request interceptor: attach token and rewrite legacy URLs
+  // Request interceptor: attach token, rewrite legacy URLs, and enforce JSON when appropriate
   instance.interceptors.request.use((config) => {
     const token = getAccessToken();
     if (token) {
@@ -101,10 +151,11 @@ function installInterceptors(instance) {
       const isRelative = !/^https?:\/\//i.test(config.url);
       if (isRelative) config.url = rewriteLegacyUrl(config.url);
     }
-    return config;
+
+    return normalizeForJson(config);
   });
 
-  // Response interceptor: refresh-once for 401 + 405 fallback for PATCH/PUT /contractors/me/
+  // Response interceptor: refresh-once for 401, 415 auto-recovery, 405 fallback for /contractors/me/
   let isRefreshing = false;
   let queue = [];
 
@@ -177,6 +228,31 @@ function installInterceptors(instance) {
         }
       }
 
+      /* ---------- 415 auto-recovery (multipart -> JSON) ---------- */
+      if (
+        error.response &&
+        error.response.status === 415 &&
+        original &&
+        /post|put|patch/i.test(original.method || "") &&
+        !isAttachmentRoute(original.url || "") &&
+        isFormData(original.data) &&
+        !original._retried_as_json
+      ) {
+        // Convert FormData (non-binary keys only) into a plain object and retry as JSON
+        const jsonBody = formDataToObject(original.data);
+        const retryConfig = {
+          ...original,
+          data: jsonBody,
+          headers: {
+            ...(original.headers || {}),
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          _retried_as_json: true,
+        };
+        return instance(retryConfig);
+      }
+
       /* ---------- 405 fallback for /contractors/me/ update ---------- */
       if (
         error.response &&
@@ -214,5 +290,20 @@ installInterceptors(axios);
 
 // Set initial Authorization header if tokens exist
 applyAuthHeader(getAccessToken() || null);
+
+/* ----------------- Convenience helpers ----------------- */
+/**
+ * Upload a FormData body to a (probably) /attachments/ endpoint.
+ * Do not set Content-Type manually; axios will include the boundary.
+ * Example:
+ *   const fd = new FormData();
+ *   fd.append("agreement", agreementId);
+ *   fd.append("title", "12-Month Workmanship Warranty");
+ *   fd.append("file", file);
+ *   await uploadMultipart(`/projects/agreements/${agreementId}/attachments/`, fd);
+ */
+export async function uploadMultipart(url, formData) {
+  return api.post(url, formData); // headers set by browser; interceptor won't force JSON on attachments
+}
 
 export default api;

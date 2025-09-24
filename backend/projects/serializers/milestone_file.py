@@ -1,29 +1,27 @@
 from rest_framework import serializers
-from projects.models_attachments import AgreementAttachment
+from projects.models import MilestoneFile
 
 
-class AgreementAttachmentSerializer(serializers.ModelSerializer):
+class MilestoneFileSerializer(serializers.ModelSerializer):
     file_url = serializers.SerializerMethodField()
     file_name = serializers.SerializerMethodField()
     size_bytes = serializers.SerializerMethodField()
+    uploaded_by_name = serializers.SerializerMethodField()
 
     class Meta:
-        model = AgreementAttachment
+        model = MilestoneFile
         fields = [
             "id",
-            "agreement",
-            "title",
-            "category",                # WARRANTY | ADDENDUM | EXHIBIT | OTHER
-            "visible_to_homeowner",
-            "ack_required",
-            "file",                    # write-only in practice
-            "file_url",                # UI link
-            "file_name",               # nice filename
-            "size_bytes",              # size if available
-            "uploaded_at",
+            "milestone",
             "uploaded_by",
+            "uploaded_by_name",
+            "file",
+            "file_url",
+            "file_name",
+            "size_bytes",
+            "uploaded_at",
         ]
-        read_only_fields = ["id", "uploaded_at", "uploaded_by", "file_url", "file_name", "size_bytes"]
+        read_only_fields = ["id", "uploaded_at", "file_url", "file_name", "size_bytes", "uploaded_by_name"]
 
     def get_file_url(self, obj):
         try:
@@ -49,5 +47,15 @@ class AgreementAttachmentSerializer(serializers.ModelSerializer):
         try:
             f = getattr(obj, "file", None)
             return getattr(f, "size", None)
+        except Exception:
+            return None
+
+    def get_uploaded_by_name(self, obj):
+        try:
+            u = getattr(obj, "uploaded_by", None)
+            if not u:
+                return None
+            full = getattr(u, "get_full_name", lambda: "")() or ""
+            return full or getattr(u, "email", "") or getattr(u, "username", "")
         except Exception:
             return None
