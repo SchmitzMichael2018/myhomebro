@@ -1,78 +1,88 @@
-import React, { useMemo, useState, useEffect } from "react";
+// src/components/Calendar.jsx
+// v2025-09-25 hand-cursor on events + opens MilestoneDetailModal; no layout changes
+
+import React, { useMemo, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import api from "../api";
-import MilestoneModal from "./MilestoneModal";
+import toast from "react-hot-toast";
+import MilestoneDetailModal from "./MilestoneDetailModal";
 
 export default function Calendar() {
   const [events, setEvents] = useState([]);
-  const [active, setActive] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let mounted = true;
+  const [activeMilestone, setActiveMilestone] = useState(null);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  React.useEffect(() => {
     (async () => {
+      setLoading(true);
       try {
-        const { data } = await api.get("/projects/milestones/");
-        if (!mounted) return;
-
-        const rows = Array.isArray(data) ? data : data?.results || [];
-        const mapped = rows.map((m) => ({
-          id: String(m.id),
-          title: m.title ?? "Milestone",
-          start: m.due_date || m.date || m.start_date || m.completion_date,
-          extendedProps: m,
-        }));
-        setEvents(mapped);
+        const { data } = await api.get("/projects/milestones/", { params: { page_size: 500 } });
+        const list = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];
+        const evts = list.map(m => {
+          const start = m.start_date || m.scheduled_for || m.date;
+          const end = m.completion_date || m.end_date || start;
+          return {
+            id: String(m.id),
+            title: m.title || "Milestone",
+            start,
+            end,
+            extendedProps: { milestone: m },
+          };
+        });
+        setEvents(evts);
       } catch (e) {
-        console.error("Failed to load milestones for calendar.", e);
+        console.error(e);
+        toast.error("Failed to load calendar.");
+      } finally {
+        setLoading(false);
       }
     })();
-    return () => (mounted = false);
   }, []);
 
   const handleEventClick = (info) => {
-    info.jsEvent.preventDefault();
-    info.jsEvent.stopPropagation();
-    setActive(info.event.extendedProps);
+    const m = info?.event?.extendedProps?.milestone;
+    if (!m) return;
+    setActiveMilestone(m);
+    setModalOpen(true);
   };
 
-  const headerToolbar = useMemo(
-    () => ({
-      left: "prev,next today",
-      center: "title",
-      right: "dayGridMonth,dayGridWeek,dayGridDay",
-    }),
-    []
-  );
+  // Ensure a hand cursor for clickable events
+  const eventDidMount = (arg) => {
+    try {
+      arg.el.style.cursor = "pointer";
+    } catch {}
+  };
 
   return (
-    <div style={{ padding: 24 }}>
-      <div
-        style={{
-          background: "white",
-          borderRadius: 12,
-          border: "1px solid #e5e7eb",
-          padding: 16,
-          position: "relative",
-          zIndex: 0,
+    <div className="p-4 md:p-6">
+      <FullCalendar
+        plugins={[dayGridPlugin, interactionPlugin]}
+        initialView="dayGridMonth"
+        headerToolbar={{
+          left: "prev,next today",
+          center: "title",
+          right: "dayGridMonth,dayGridWeek,dayGridDay",
         }}
-      >
-        <FullCalendar
-          plugins={[dayGridPlugin, interactionPlugin]}
-          initialView="dayGridMonth"
-          headerToolbar={headerToolbar}
-          height="auto"
-          events={events}
-          eventClick={handleEventClick}
-        />
-      </div>
-
-      <MilestoneModal
-        visible={!!active}
-        onClose={() => setActive(null)}
-        milestone={active}
+        events={events}
+        eventClick={handleEventClick}
+        eventDidMount={eventDidMount}
+        height="auto"
       />
+
+      {modalOpen && activeMilestone && (
+        <MilestoneDetailModal
+          visible={modalOpen}
+          milestone={activeMilestone}
+          onClose={() => {
+            setModalOpen(false);
+            setActiveMilestone(null);
+          }}
+        />
+      )}
     </div>
   );
 }

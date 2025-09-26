@@ -1,5 +1,5 @@
 // frontend/src/pages/AgreementList.jsx
-// v2025-09-23-project+homeowner-clean-fallbacks
+// v2025-09-23-project+homeowner+type-subtype+nocache
 
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../api";
@@ -15,7 +15,7 @@ import {
   Star,
 } from "lucide-react";
 
-console.log("AgreementList.jsx v2025-09-23-project+homeowner-clean-fallbacks");
+console.log("AgreementList.jsx v2025-09-23-project+homeowner+type-subtype+nocache");
 
 const fmtMoney = (n) => {
   if (n === null || n === undefined || n === "") return "—";
@@ -51,7 +51,12 @@ export default function AgreementList() {
     try {
       setLoading(true);
       const { data } = await api.get("/projects/agreements/", {
-        params: { page_size: 250 },
+        // cache buster ensures we never see a stale 200 from any intermediary
+        params: { page_size: 250, _ts: Date.now() },
+        headers: {
+          "Cache-Control": "no-cache",
+          Pragma: "no-cache",
+        },
       });
       const list = Array.isArray(data?.results)
         ? data.results
@@ -69,6 +74,15 @@ export default function AgreementList() {
 
   useEffect(() => {
     load();
+    // Listen for broadcasted refresh from the Edit page (if you add it later)
+    const onStorage = (e) => {
+      if (e.key === "agreements:refresh" && e.newValue === "1") {
+        localStorage.removeItem("agreements:refresh");
+        load();
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   const filtered = useMemo(() => {
@@ -87,7 +101,9 @@ export default function AgreementList() {
           r.project_title,
           r.title,
           r.homeowner_name,
-          r.homeowner_email, // include email for search
+          r.homeowner_email,
+          r.project_type,
+          r.project_subtype,
         ]
           .filter(Boolean)
           .join(" ")
@@ -177,7 +193,8 @@ export default function AgreementList() {
           if (d3?.detail) toast.error(String(d3.detail));
           try {
             await api.get("/projects/agreements/merge/", {
-              params: { ids: ids.join(",") },
+              params: { ids: ids.join(","), _ts: Date.now() },
+              headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
             });
             toast.success("Agreements merged.");
             setSelected(new Set());
@@ -220,7 +237,6 @@ export default function AgreementList() {
     }
   };
 
-  // Support either naming scheme from the API:
   const contractorSigned = (r) =>
     (typeof r.signed_by_contractor !== "undefined"
       ? r.signed_by_contractor
@@ -242,9 +258,7 @@ export default function AgreementList() {
       </span>
     );
 
-  // ---- Column render helpers (clean placeholders) ----
   const renderProject = (r) => {
-    // Prefer the serializer-computed project_title; if it looks like "Agreement #123", treat as empty
     const raw = (r.project_title || r.title || "").trim();
     if (/^agreement\s*#\d+$/i.test(raw)) return "—";
     return raw || "—";
@@ -256,6 +270,9 @@ export default function AgreementList() {
     return nm || em || "—";
   };
 
+  const renderType = (r) => (r.project_type || "—");
+  const renderSubtype = (r) => (r.project_subtype || "—");
+
   return (
     <div className="p-6 space-y-4">
       {/* Header */}
@@ -263,8 +280,8 @@ export default function AgreementList() {
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search by project, homeowner, email, ID…"
-          className="border rounded-lg px-3 py-2 w-72"
+          placeholder="Search by project, homeowner, type, subtype, email, ID…"
+          className="border rounded-lg px-3 py-2 w-80"
         />
         <select
           value={statusFilter}
@@ -339,6 +356,8 @@ export default function AgreementList() {
               <th className="p-2 text-left border">Agreement ID</th>
               <th className="p-2 text-left border">Status</th>
               <th className="p-2 text-left border">Project</th>
+              <th className="p-2 text-left border">Type</th>
+              <th className="p-2 text-left border">Subtype</th>
               <th className="p-2 text-left border">Homeowner</th>
               <th className="p-2 text-left border">Start</th>
               <th className="p-2 text-left border">End</th>
@@ -351,13 +370,13 @@ export default function AgreementList() {
           <tbody>
             {loading ? (
               <tr>
-                <td className="p-3 border text-gray-600" colSpan={12}>
+                <td className="p-3 border text-gray-600" colSpan={14}>
                   Loading…
                 </td>
               </tr>
             ) : page.length === 0 ? (
               <tr>
-                <td className="p-3 border text-gray-500" colSpan={12}>
+                <td className="p-3 border text-gray-500" colSpan={14}>
                   No agreements found.
                 </td>
               </tr>
@@ -406,13 +425,19 @@ export default function AgreementList() {
                       </span>
                     </td>
 
-                    {/* Project — cleaned placeholder */}
-                    <td className="p-2 border max-w-[460px] truncate" title={renderProject(r)}>
+                    <td className="p-2 border max-w-[320px] truncate" title={renderProject(r)}>
                       {renderProject(r)}
                     </td>
 
-                    {/* Homeowner — name → email → — */}
-                    <td className="p-2 border max-w-[460px] truncate" title={renderHomeowner(r)}>
+                    <td className="p-2 border whitespace-nowrap" title={renderType(r)}>
+                      {renderType(r)}
+                    </td>
+
+                    <td className="p-2 border whitespace-nowrap" title={renderSubtype(r)}>
+                      {renderSubtype(r)}
+                    </td>
+
+                    <td className="p-2 border max-w-[320px] truncate" title={renderHomeowner(r)}>
                       {renderHomeowner(r)}
                     </td>
 
@@ -440,7 +465,7 @@ export default function AgreementList() {
                       <div className="flex flex-wrap items-center gap-2">
                         <button
                           onClick={() => goEdit(r.id)}
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border hover:bg-gray-50"
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md border hover:bg-gray-50"
                           title="Continue Editing"
                         >
                           <Pencil size={14} /> Edit
@@ -448,7 +473,7 @@ export default function AgreementList() {
                         <button
                           onClick={() => deleteDraft(r)}
                           disabled={busyRow === r.id}
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg ${
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md ${
                             String(r.status).toLowerCase() === "draft"
                               ? "border border-red-300 text-red-700 hover:bg-red-50"
                               : "border border-gray-300 text-gray-400 cursor-not-allowed"

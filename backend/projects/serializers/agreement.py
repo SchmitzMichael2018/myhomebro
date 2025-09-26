@@ -1,5 +1,3 @@
-# projects/serializers/agreement.py
-
 from rest_framework import serializers
 from django.db.models import Sum, Count
 from projects.models import Agreement, Milestone, Invoice
@@ -13,6 +11,7 @@ class AgreementSerializer(serializers.ModelSerializer):
       - display_total        (sum of milestone.amount)
       - start, end           (model values or computed from milestones if empty)
       - invoices_count
+      - project_type, project_subtype  (pulled from related Project or Agreement fallbacks)
 
     WRITE: tolerate legacy aliases from older UIs:
       - job_description -> description
@@ -20,13 +19,15 @@ class AgreementSerializer(serializers.ModelSerializer):
     """
 
     # ---- READ convenience fields ----
-    project_title   = serializers.SerializerMethodField()
-    homeowner_name  = serializers.SerializerMethodField()
-    homeowner_email = serializers.SerializerMethodField()
-    display_total   = serializers.SerializerMethodField()
-    start           = serializers.SerializerMethodField()
-    end             = serializers.SerializerMethodField()
-    invoices_count  = serializers.SerializerMethodField()
+    project_title     = serializers.SerializerMethodField()
+    homeowner_name    = serializers.SerializerMethodField()
+    homeowner_email   = serializers.SerializerMethodField()
+    display_total     = serializers.SerializerMethodField()
+    start             = serializers.SerializerMethodField()
+    end               = serializers.SerializerMethodField()
+    invoices_count    = serializers.SerializerMethodField()
+    project_type      = serializers.SerializerMethodField()
+    project_subtype   = serializers.SerializerMethodField()
 
     # ---- WRITE compatibility aliases ----
     job_description      = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -39,29 +40,23 @@ class AgreementSerializer(serializers.ModelSerializer):
 
     # ---------------------- READ helpers ---------------------- #
     def get_project_title(self, obj: Agreement) -> str:
-        """
-        Prefer an actual project title if present.
-        If there is a related project but it has no title, show 'Project #<id>'.
-        If there's no related project and no explicit title snapshot, return '' (not 'Agreement #').
-        This prevents the UI from showing 'Agreement #<id>' in the Project column.
-        """
         try:
             p = getattr(obj, "project", None)
             if p:
-                # common naming fields on Project
                 for attr in ("title", "name"):
                     val = (getattr(p, attr, "") or "").strip()
                     if val:
                         return val
-                # fallback if we at least know the project id
                 pid = getattr(p, "id", None)
                 if pid:
                     return f"Project #{pid}"
-                return ""  # related project exists but no usable title/id
-            # no related project; try any snapshot on Agreement that is NOT a placeholder
-            snap = (getattr(obj, "project_title", "") or getattr(obj, "title", "") or "").strip()
-            if snap and not snap.lower().startswith("agreement #"):
+            # Snapshot / fallback
+            snap = (getattr(obj, "project_title_snapshot", "") or "").strip()
+            if snap:
                 return snap
+            title = (getattr(obj, "title", "") or "").strip()
+            if title and not title.lower().startswith("agreement #"):
+                return title
             return ""
         except Exception:
             return ""
@@ -82,14 +77,26 @@ class AgreementSerializer(serializers.ModelSerializer):
                 val = (getattr(h, attr, "") or "").strip() if h else ""
                 if val:
                     return val
-            return (getattr(obj, "homeowner_name", "") or getattr(obj, "homeowner_full_name", "") or "").strip()
+            # snapshots on Agreement
+            for attr in ("homeowner_name_snapshot", "homeowner_full_name", "homeowner_name"):
+                v = (getattr(obj, attr, "") or "").strip()
+                if v:
+                    return v
+            return ""
         except Exception:
             return ""
 
     def get_homeowner_email(self, obj: Agreement) -> str:
         try:
             h = self._resolve_homeowner(obj)
-            return (getattr(h, "email", "") or getattr(obj, "homeowner_email", "") or "").strip()
+            val = (getattr(h, "email", "") or "").strip() if h else ""
+            if val:
+                return val
+            for attr in ("homeowner_email_snapshot", "homeowner_email"):
+                v = (getattr(obj, attr, "") or "").strip()
+                if v:
+                    return v
+            return ""
         except Exception:
             return ""
 
@@ -136,16 +143,42 @@ class AgreementSerializer(serializers.ModelSerializer):
         except Exception:
             return 0
 
-    # Always include the computed keys, even if a view/paginator messes with fields
+    def get_project_type(self, obj: Agreement) -> str:
+        """Prefer related Project.type/project_type, fallback to Agreement.project_type."""
+        try:
+            p = getattr(obj, "project", None)
+            for attr in ("type", "project_type"):
+                v = (getattr(p, attr, "") or "").strip() if p else ""
+                if v:
+                    return v
+            return (getattr(obj, "project_type", "") or "").strip()
+        except Exception:
+            return (getattr(obj, "project_type", "") or "").strip()
+
+    def get_project_subtype(self, obj: Agreement) -> str:
+        """Prefer related Project.subtype/project_subtype, fallback to Agreement.project_subtype."""
+        try:
+            p = getattr(obj, "project", None)
+            for attr in ("subtype", "project_subtype"):
+                v = (getattr(p, attr, "") or "").strip() if p else ""
+                if v:
+                    return v
+            return (getattr(obj, "project_subtype", "") or "").strip()
+        except Exception:
+            return (getattr(obj, "project_subtype", "") or "").strip()
+
+    # Always include computed keys
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        data["project_title"]   = self.get_project_title(instance)
-        data["homeowner_name"]  = self.get_homeowner_name(instance)
-        data["homeowner_email"] = self.get_homeowner_email(instance)
-        data["display_total"]   = self.get_display_total(instance)
-        data["start"]           = self.get_start(instance)
-        data["end"]             = self.get_end(instance)
-        data["invoices_count"]  = self.get_invoices_count(instance)
+        data["project_title"]     = self.get_project_title(instance)
+        data["homeowner_name"]    = self.get_homeowner_name(instance)
+        data["homeowner_email"]   = self.get_homeowner_email(instance)
+        data["display_total"]     = self.get_display_total(instance)
+        data["start"]             = self.get_start(instance)
+        data["end"]               = self.get_end(instance)
+        data["invoices_count"]    = self.get_invoices_count(instance)
+        data["project_type"]      = self.get_project_type(instance)
+        data["project_subtype"]   = self.get_project_subtype(instance)
         return data
 
     # --------------------- WRITE mapping ---------------------- #

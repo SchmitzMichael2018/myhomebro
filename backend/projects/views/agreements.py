@@ -44,9 +44,12 @@ def _compute_agreement_dates_for(ag, milestone_model) -> Tuple[Optional[Any], Op
     """
     if milestone_model is None or ag is None:
         return None, None
-    qs = milestone_model.objects.filter(agreement=ag).only(
-        *([f for f in ("start_date", "completion_date", "scheduled_date") if f in _field_names(milestone_model)])
-    )
+    names = _field_names(milestone_model)
+    only_fields: List[str] = []
+    for cand in ("start_date", "completion_date", "scheduled_date"):
+        if cand in names:
+            only_fields.append(cand)
+    qs = milestone_model.objects.filter(agreement=ag).only(*only_fields) if only_fields else milestone_model.objects.filter(agreement=ag)
     earliest, latest = None, None
     for m in qs:
         s = getattr(m, "start_date", None) or getattr(m, "scheduled_date", None)
@@ -156,16 +159,82 @@ class IsAuthenticatedOrReadOnly(permissions.BasePermission):
         return bool(request.user and request.user.is_authenticated)
 
 
+# ------------------------- Snapshot hydration mixin ------------------------- #
+class AgreementSnapshotMixin:
+    """
+    Ensures Agreement has *display snapshots* for project/homeowner so the
+    serializer can always surface user-friendly strings even if relations
+    are absent or their labels are empty.
+
+    Call hydrate_snapshots(agreement, save=True) after create/update.
+    """
+
+    SNAPSHOT_TITLE_FIELDS = ("title", "name")
+
+    def _first_nonempty_attr(self, obj, fields):
+        if not obj:
+            return ""
+        for f in fields:
+            v = getattr(obj, f, "") or ""
+            v = v.strip() if isinstance(v, str) else v
+            if v:
+                return v
+        return ""
+
+    def hydrate_snapshots(self, ag, save=True):
+        # ---- Project snapshot ----
+        proj = getattr(ag, "project", None)
+        proj_title = self._first_nonempty_attr(proj, self.SNAPSHOT_TITLE_FIELDS)
+        if not proj_title:
+            pid = getattr(proj, "id", None)
+            if pid:
+                proj_title = f"Project #{pid}"
+
+        if hasattr(ag, "project_title_snapshot"):
+            cur = getattr(ag, "project_title_snapshot", "") or ""
+            if not cur and proj_title:
+                ag.project_title_snapshot = proj_title
+        else:
+            if not (getattr(ag, "title", "") or "").strip() and proj_title:
+                ag.title = proj_title
+
+        # ---- Homeowner snapshot ----
+        homeowner = getattr(ag, "homeowner", None) or getattr(proj, "homeowner", None)
+        ho_name = self._first_nonempty_attr(homeowner, ("full_name", "name"))
+        ho_email = self._first_nonempty_attr(homeowner, ("email",))
+
+        if hasattr(ag, "homeowner_name_snapshot"):
+            if not (getattr(ag, "homeowner_name_snapshot", "") or "") and ho_name:
+                ag.homeowner_name_snapshot = ho_name
+        if hasattr(ag, "homeowner_email_snapshot"):
+            if not (getattr(ag, "homeowner_email_snapshot", "") or "") and ho_email:
+                ag.homeowner_email_snapshot = ho_email
+
+        if save:
+            update_fields = []
+            if hasattr(ag, "project_title_snapshot"):
+                update_fields.append("project_title_snapshot")
+            if hasattr(ag, "homeowner_name_snapshot"):
+                update_fields.append("homeowner_name_snapshot")
+            if hasattr(ag, "homeowner_email_snapshot"):
+                update_fields.append("homeowner_email_snapshot")
+            if not hasattr(ag, "project_title_snapshot") and hasattr(ag, "title"):
+                update_fields.append("title")
+            try:
+                if update_fields:
+                    ag.save(update_fields=update_fields)
+                else:
+                    ag.save()
+            except Exception:
+                pass
+
+
 # --------------------------------- ViewSet ---------------------------------- #
-class AgreementViewSet(viewsets.ModelViewSet):
+
+
+class AgreementViewSet(AgreementSnapshotMixin, viewsets.ModelViewSet):
     """
     Public GET; auth-required writes.
-
-    Endpoints:
-      • CRUD (JSON or multipart tolerant via parser_classes)
-      • GET  /agreements/:id/milestones/
-      • POST /agreements/:id/milestones_bulk_update/
-      • GET/POST /agreements/:id/attachments/ (+ delete_attachment)
     """
     permission_classes = [IsAuthenticatedOrReadOnly]
     parser_classes = (JSONParser, MultiPartParser, FormParser)
@@ -175,14 +244,123 @@ class AgreementViewSet(viewsets.ModelViewSet):
         mdl = Agreement or _get_model("projects", "Agreement")
         if mdl is None:
             return []
+        # Always join the related project so the serializer sees fresh Project fields
+        base_qs = mdl.objects.select_related("project")
         if "updated_at" in _field_names(mdl):
-            return mdl.objects.all().order_by("-updated_at", "-id")
-        return mdl.objects.all().order_by("-id")
+            return base_qs.order_by("-updated_at", "-id")
+        return base_qs.order_by("-id")
 
     serializer_class = AgreementSerializer  # type: ignore
 
     def get_queryset(self) -> Iterable[Any]:
         return self.queryset
+
+
+    # ---------- helper: update related Project from incoming data ----------
+    def _update_related_project_from_payload(self, agreement, payload: Dict[str, Any]) -> None:
+        proj = getattr(agreement, "project", None)
+        if not proj:
+            return
+        names = _field_names(proj.__class__)
+        touched = False
+
+        # title / project_title / name
+        for key in ("title", "project_title", "name"):
+            if key in payload and "title" in names:
+                val = (payload.get(key) or "").strip()
+                if val != "" and getattr(proj, "title", None) != val:
+                    proj.title = val
+                    touched = True
+                    break
+
+        # project type (try both styles)
+        incoming_type = payload.get("project_type", payload.get("type", None))
+        if incoming_type is not None:
+            val = (incoming_type or "").strip()
+            if "type" in names and getattr(proj, "type", None) != val:
+                proj.type = val
+                touched = True
+            if "project_type" in names and getattr(proj, "project_type", None) != val:
+                proj.project_type = val
+                touched = True
+
+        # project subtype (both styles)
+        incoming_subtype = payload.get("project_subtype", payload.get("subtype", None))
+        if incoming_subtype is not None:
+            val = (incoming_subtype or "").strip()
+            if "subtype" in names and getattr(proj, "subtype", None) != val:
+                proj.subtype = val
+                touched = True
+            if "project_subtype" in names and getattr(proj, "project_subtype", None) != val:
+                proj.project_subtype = val
+                touched = True
+
+        if touched:
+            try:
+                proj.save()
+            except Exception:
+                # don't hard-fail the whole PATCH
+                pass
+
+    # ---- tolerant UPDATE/PATCH ----
+    @transaction.atomic
+    def update(self, request: Request, *args, **kwargs) -> Response:
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        mdl = Agreement or _get_model("projects", "Agreement")
+
+        # 1) FIRST: map project fields (title/type/subtype) to the related Project
+        raw = request.data.copy() if hasattr(request, "data") else {}
+        self._update_related_project_from_payload(instance, raw)
+
+        # 2) NOW: clean Agreement payload to known fields/aliases and PATCH Agreement
+        def _clean_payload_for_model(model, data: Dict[str, Any]) -> Dict[str, Any]:
+            names = _field_names(model)
+            allowed_aliases = {"job_description", "use_default_warranty", "custom_warranty_text"}
+            # Explicitly EXCLUDE any project fields from the serializer payload
+            project_keys_to_strip = {"project_type", "project_subtype", "type", "subtype", "project_title", "title"}
+            cleaned: Dict[str, Any] = {}
+            for k, v in (data or {}).items():
+                if k in project_keys_to_strip:
+                    continue  # handled above for Project; do not send to Agreement serializer
+                if k in names or k in allowed_aliases:
+                    cleaned[k] = v
+            return cleaned
+
+        cleaned = _clean_payload_for_model(mdl, raw)
+        serializer = self.get_serializer(instance, data=cleaned, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        ag = serializer.save()
+        self.hydrate_snapshots(ag, save=True)
+        return Response(self.get_serializer(ag).data, status=200)
+
+    @transaction.atomic
+    def partial_update(self, request: Request, *args, **kwargs) -> Response:
+        kwargs["partial"] = True
+        return self.update(request, *args, **kwargs)
+
+    @transaction.atomic
+    def perform_create(self, serializer):
+        ag = serializer.save()
+        self.hydrate_snapshots(ag, save=True)
+
+    @transaction.atomic
+    def perform_update(self, serializer):
+        ag = serializer.save()
+        self.hydrate_snapshots(ag, save=True)
+
+    # Optional admin/test hook to re-hydrate a single record
+    @action(detail=True, methods=["post"])
+    def hydrate(self, request: Request, pk: Optional[str] = None) -> Response:
+        mdl = Agreement or _get_model("projects", "Agreement")
+        if mdl is None:
+            return Response({"detail": "Agreement model unavailable."}, status=503)
+        try:
+            ag = mdl.objects.get(pk=pk)
+        except mdl.DoesNotExist:
+            return Response({"detail": "Not found."}, status=404)
+        self.hydrate_snapshots(ag, save=True)
+        return Response({"status": "ok"})
 
     # --------------------- Milestones (list) --------------------- #
     @action(detail=True, methods=["get"])
@@ -220,7 +398,6 @@ class AgreementViewSet(viewsets.ModelViewSet):
         prune_missing = bool(request.data.get("prune_missing", False))
         seen_ids: List[int] = []
 
-        # determine permitted fields dynamically
         m_names = _field_names(mdl)
         supports = {name: (name in m_names) for name in (
             "start_date", "completion_date", "scheduled_date", "completed", "is_invoiced", "order", "amount", "title", "description"
@@ -235,7 +412,6 @@ class AgreementViewSet(viewsets.ModelViewSet):
                     mid = item.get("id")
                     payload: Dict[str, Any] = {"agreement": ag.id}
 
-                    # core fields (guarded)
                     if supports["title"]:
                         payload["title"] = item.get("title") or ""
                     if supports["description"]:
@@ -249,14 +425,12 @@ class AgreementViewSet(viewsets.ModelViewSet):
                     if supports["order"]:
                         payload["order"] = item.get("order")
 
-                    # Accept either completion_date or end_date from the client
                     if supports["completion_date"]:
                         if _nonempty(item.get("completion_date")):
                             payload["completion_date"] = item.get("completion_date")
                         elif _nonempty(item.get("end_date")):
                             payload["completion_date"] = item.get("end_date")
 
-                    # Friendly "status" mapping -> booleans
                     if _nonempty(item.get("status")):
                         s = str(item.get("status")).strip().lower()
                         if supports["completed"]:
@@ -280,7 +454,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
                 if prune_missing:
                     mdl.objects.filter(agreement=ag).exclude(id__in=seen_ids).delete()
 
-                # === Recompute Agreement.start/end from milestones (safe) ===
+                # Recompute Agreement.start/end safely
                 new_start, new_end = _compute_agreement_dates_for(ag, mdl)
                 changed = False
                 update_fields = []
@@ -296,15 +470,13 @@ class AgreementViewSet(viewsets.ModelViewSet):
                     try:
                         ag.save(update_fields=update_fields)
                     except Exception:
-                        ag.save()  # last resort
+                        ag.save()
 
         except serializers.ValidationError as ve:
             return Response({"detail": "Invalid milestone payload.", "errors": ve.detail}, status=400)
         except Exception as e:
-            # Don’t leak internals; return a clean error for the UI
             return Response({"detail": f"Could not update milestones: {e.__class__.__name__}"}, status=400)
 
-        # Return fresh milestones (ordered if possible)
         order_fields = _safe_order_fields(
             mdl, ("start_date", "completion_date", "end_date", "scheduled_date", "order", "id")
         )
@@ -317,7 +489,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
     @action(
         detail=True,
         methods=["get", "post"],
-        parser_classes=[MultiPartParser, FormParser],  # multipart here
+        parser_classes=[MultiPartParser, FormParser],
     )
     def attachments(self, request: Request, pk: Optional[str] = None) -> Response:
         ag_mdl = Agreement or _get_model("projects", "Agreement")
