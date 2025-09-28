@@ -1,878 +1,549 @@
 // src/components/AgreementEdit.jsx
-// v2025-09-23-draft-guardrails — keeps your design; adds draft/amendment locking for edits, deletes & save
+// v2025-09-27 — save Project title + Agreement fields; in-app PDF viewer; same UI
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams, Link } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import api from "../api";
+
+import MilestoneEditModal from "./MilestoneEditModal";
 import AttachmentSection from "./AttachmentSection";
-import DateField from "../components/DateField";
+import PdfPreviewModal from "./PdfPreviewModal";
 
-console.log("AgreementEdit.jsx v2025-09-23 single PATCH sends project fields + draft guardrails");
+// Align with the create wizard options (edit should feel identical).  See wizard.  :contentReference[oaicite:6]{index=6}
+const PROJECT_TYPES = ["Remodel", "Repair", "Installation", "Painting", "Outdoor", "Inspection", "Custom", "DIY Help"];
+const PROJECT_SUBTYPES = [
+  "Interior","Exterior","Roofing","Flooring","Electrical","Plumbing","HVAC","Windows/Doors","Drywall","Insulation",
+  "Carpentry","Masonry","Concrete","Landscaping","Kitchen","Bathroom","Garage","Fence/Deck/Patio","Lighting",
+  "Appliances","Waterproofing","Siding","Solar","Pool/Spa","Gutter","Whole-Home","Other",
+];
 
-const DEFAULT_WARRANTY_TEXT =
-  "Contractor warrants workmanship for one (1) year from substantial completion. Materials are covered by manufacturer warranties where applicable. Warranty excludes damage caused by misuse, neglect, unauthorized modifications, or normal wear. Remedy is limited to repair or replacement at Contractor’s discretion.";
+const isLockedAgreementState = (s) => {
+  if (!s) return false;
+  const up = String(s).trim().toUpperCase();
+  return ["SIGNED","EXECUTED","ACTIVE","APPROVED","ARCHIVED"].includes(up);
+};
+const pick = (...vals) => vals.find(v => v !== undefined && v !== null && v !== "") ?? "";
+const money = (n) => `$${Number(n || 0).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+const getStatus = (m) => (pick(m.status_label, m.status, m.state, m.phase) || "").toLowerCase();
+const getIsLate = (m) => !!pick(m.is_late, m.late, m.overdue);
 
-const toISO = (v) => {
-  if (!v) return "";
-  const s = String(v).trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const mdy = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (mdy) return `${mdy[3]}-${mdy[1]}-${mdy[2]}`;
-  try {
-    const d = new Date(s);
-    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-  } catch {}
-  return s;
+const API = {
+  agreementDetail: (id) => `/projects/agreements/${id}/`,
+  agreementMs:     (id) => `/projects/agreements/${id}/milestones/`,
+  agreementPatch:  (id) => `/projects/agreements/${id}/`,
+  // ⬇️ patch the linked Project so the list reflects the new title
+  projectPatch:    (id) => `/projects/projects/${id}/`,
+  milestoneDelete: (id) => `/projects/milestones/${id}/`,
+  milestoneComplete:(id)=> `/projects/milestones/${id}/complete/`,
+  previewPdf:      (id) => `/projects/agreements/${id}/preview_pdf/`,
+  signContractor:  (id) => `/projects/agreements/${id}/sign_contractor/`,
+  dispatch:        (id) => `/projects/agreements/${id}/dispatch/`,
+  createAmendment: (id) => `/projects/agreements/${id}/amendments/`,
 };
 
-const deepClone = (obj) => JSON.parse(JSON.stringify(obj));
-const statusFromBooleans = (m) =>
-  (m.is_invoiced ? "invoiced" : m.completed ? "complete" : "incomplete");
-const booleansFromStatus = (status) => {
-  switch ((status || "").toLowerCase()) {
-    case "complete":
-      return { completed: true, is_invoiced: false };
-    case "invoiced":
-      return { completed: true, is_invoiced: true };
-    default:
-      return { completed: false, is_invoiced: false };
-  }
-};
+// Open PDFs in the in-app, frame-exempt viewer route (not the static viewer file).  :contentReference[oaicite:7]{index=7}
+const VIEW_TOS     = `/pdf/viewer/?file=${encodeURIComponent("/static/legal/terms_of_service.pdf")}`;
+const VIEW_PRIVACY = `/pdf/viewer/?file=${encodeURIComponent("/static/legal/privacy_policy.pdf")}`;
 
-/* ---------------- Milestone Edit Modal (unchanged layout; locked if not draft) ---------------- */
-function MilestoneModal({ open, onClose, value, onSave, locked }) {
-  const [form, setForm] = useState({ ...value });
-  useEffect(() => {
-    setForm({ ...value });
-  }, [value]);
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-[680px] max-w-[92vw] rounded-xl bg-white shadow-xl border border-slate-200 p-4">
-        <h3 className="text-sm font-semibold mb-3">
-          {locked ? "Milestone (Locked — Signed)" : "Edit Milestone"}
-        </h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 opacity-100">
-          <div className="md:col-span-2">
-            <label className="block text-xs font-medium text-slate-600 mb-1">Title</label>
-            <input
-              className="w-full rounded-md border border-slate-300 px-2 py-1"
-              value={form.title || ""}
-              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-              disabled={locked}
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Start</label>
-            <DateField
-              id={`modal-ms-${form.id || "new"}-start`}
-              name="start_date"
-              value={form.start_date ? String(form.start_date).slice(0, 10) : ""}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, start_date: toISO(e.target.value) }))
-              }
-              disabled={locked}
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">End</label>
-            <DateField
-              id={`modal-ms-${form.id || "new"}-end`}
-              name="completion_date"
-              value={form.end_date ? String(form.end_date).slice(0, 10) : ""}
-              onChange={(e) => setForm((f) => ({ ...f, end_date: toISO(e.target.value) }))}
-              disabled={locked}
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Amount ($)
-            </label>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              className="w-full rounded-md border border-slate-300 px-2 py-1"
-              value={form.amount ?? 0}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, amount: Number(e.target.value || 0) }))
-              }
-              disabled={locked}
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
-            <select
-              className="w-full rounded-md border border-slate-300 px-2 py-1"
-              value={form.status || "incomplete"}
-              onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-              disabled={locked}
-            >
-              <option value="incomplete">Incomplete</option>
-              <option value="complete">Completed</option>
-              <option value="invoiced">Invoiced</option>
-            </select>
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Description of Work
-            </label>
-            <textarea
-              rows={4}
-              className="w-full rounded-md border border-slate-300 px-2 py-1"
-              value={form.description || ""}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, description: e.target.value }))
-              }
-              disabled={locked}
-            />
-          </div>
-        </div>
-
-        <div className="mt-4 flex justify-end gap-2">
-          <button
-            className="px-3 py-2 text-xs rounded-md border border-slate-300"
-            onClick={onClose}
-          >
-            Close
-          </button>
-          {!locked && (
-            <button
-              className="px-3 py-2 text-xs rounded-md bg-blue-600 text-white"
-              onClick={() => onSave(form)}
-            >
-              Save
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ======================== Agreement Edit ======================== */
 export default function AgreementEdit() {
-  const { id } = useParams();
-  const navigate = useNavigate();
-
+  const [agreement, setAgreement] = useState(null);
+  const [milestones, setMilestones] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [activeMs, setActiveMs] = useState(null);
 
   const [form, setForm] = useState({
     title: "",
-    description: "",
     project_type: "",
     project_subtype: "",
-    warranty_mode: "default",
-    warranty_text: "",
+    description: "",
+    warranty_type: "DEFAULT",
+    warranty_text_snapshot: "",
   });
 
-  // New: status flags to enforce draft-only edits/deletes
-  const [agreementStatus, setAgreementStatus] = useState("draft");
-  const [isAmendment, setIsAmendment] = useState(false);
-  const [amendmentStatus, setAmendmentStatus] = useState(null);
+  // PDF modal
+  const [pdfOpen, setPdfOpen] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState("");
 
-  const originalAgreementRef = useRef(null);
-  const projectIdRef = useRef(null);
+  // Sign/dispatch
+  const [tosAck, setTosAck] = useState(false);
+  const [privacyAck, setPrivacyAck] = useState(false);
+  const [esignAck, setEsignAck] = useState(false);
+  const [signatureFile, setSignatureFile] = useState(null);
+  const [signing, setSigning] = useState(false);
+  const [sendEmail, setSendEmail] = useState(true);
+  const [sendSms, setSendSms] = useState(true);
+  const [message, setMessage] = useState("Hi! Please review and sign the agreement. Thank you.");
+  const [dispatching, setDispatching] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
 
-  const [milestones, setMilestones] = useState([]);
-  const originalMilestonesRef = useRef([]);
+  // /agreements/:id/edit
+  const agreementId = useMemo(() => {
+    const parts = window.location.pathname.split("/").filter(Boolean);
+    const idx = parts.findIndex((p) => p === "agreements");
+    return idx !== -1 ? parts[idx + 1] : null;
+  }, []);
 
-  // modal
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalIndex, setModalIndex] = useState(-1);
+  const readOnly = useMemo(() => isLockedAgreementState(agreement?.state || agreement?.status), [agreement]);
 
-  const typeOptions = ["Bathroom", "Kitchen", "Exterior", "General"];
-  const subtypeOptions = ["Remodel", "Repair", "Install", "Other"];
-  const defaultWarrantyPreview = useMemo(() => DEFAULT_WARRANTY_TEXT, []);
+  const typeOptions = useMemo(() => {
+    const base = PROJECT_TYPES.slice();
+    const cur = form.project_type?.trim();
+    return cur && !base.includes(cur) ? [cur, ...base] : base;
+  }, [form.project_type]);
 
-  // derived lock rule: draft (or amendment draft) can edit; else locked
-  const canEditAgreement = useMemo(() => {
-    const st = String(agreementStatus || "draft").toLowerCase();
-    if (isAmendment) {
-      const am = String(amendmentStatus || "").toLowerCase();
-      return am === "draft";
+  const subtypeOptions = useMemo(() => {
+    const base = PROJECT_SUBTYPES.slice();
+    const cur = form.project_subtype?.trim();
+    return cur && !base.includes(cur) ? [cur, ...base] : base;
+  }, [form.project_subtype]);
+
+  const load = useCallback(async () => {
+    if (!agreementId) return;
+    setLoading(true);
+    try {
+      const [{ data: a }, { data: ms }] = await Promise.all([
+        api.get(API.agreementDetail(agreementId)),
+        api.get(API.agreementMs(agreementId)),
+      ]);
+      setAgreement(a || null);
+      setForm({
+        title: a?.title || a?.project_title || "",   // wizard used projectName → project.title  :contentReference[oaicite:8]{index=8}
+        project_type: a?.project_type || "",
+        project_subtype: a?.project_subtype || "",
+        description: a?.description || a?.job_description || "",
+        warranty_type: (a?.warranty_type || (a?.use_default_warranty ? "DEFAULT" : "CUSTOM") || "DEFAULT").toUpperCase(),
+        warranty_text_snapshot: a?.warranty_text_snapshot || a?.custom_warranty_text || "",
+      });
+      setMilestones(Array.isArray(ms) ? ms : []);
+      setSendEmail(Boolean(a?.homeowner_email));
+      setSendSms(Boolean(a?.homeowner_phone));
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load agreement.");
+    } finally {
+      setLoading(false);
     }
-    return st === "draft";
-  }, [agreementStatus, isAmendment, amendmentStatus]);
+  }, [agreementId]);
 
-  useEffect(() => {
-    let mounted = true;
-    async function loadAll() {
-      setLoading(true);
-      try {
-        // Your existing load — keep structure
-        const [aRes, mRes] = await Promise.all([
-          api.get(`/projects/agreements/${id}/`),
-          api.get(`/projects/agreements/${id}/milestones/`),
-        ]);
+  useEffect(() => { load(); }, [load]);
 
-        const a = aRes.data || {};
-        projectIdRef.current = a.project || a.project_id || a.project?.id || null;
+  const onChange        = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
+  const onTypeChange    = (e) => setForm((f) => ({ ...f, project_type: e.target.value }));
+  const onSubtypeChange = (e) => setForm((f) => ({ ...f, project_subtype: e.target.value }));
 
-        // New: status flags detected from payload
-        setAgreementStatus(a.status || a.agreement_status || "draft");
-        setIsAmendment(!!(a.is_amendment || a.amendment_id));
-        setAmendmentStatus(a.amendment_status || null);
+  /** Save both Agreement and Project title so the list reflects the change */
+  const saveAgreement = async () => {
+    if (!agreement?.id) return;
+    try {
+      // 1) PATCH the Agreement (type/subtype/description/warranty)
+      const agPatch = {
+        project_type: form.project_type || null,
+        project_subtype: form.project_subtype || null,
+        description: form.description || "",
+        use_default_warranty: form.warranty_type !== "CUSTOM",
+        custom_warranty_text: form.warranty_type === "CUSTOM" ? (form.warranty_text_snapshot || "") : "",
+        // keep a copy of title on agreement in case your serializer stores it there too
+        title: form.title || "",
+        project_title: form.title || "",
+      };
+      await api.patch(API.agreementPatch(agreement.id), agPatch);
 
-        const msRaw = Array.isArray(mRes.data) ? mRes.data : (mRes.data?.results || []);
+      // 2) PATCH the linked Project’s title (wizard created it there).  :contentReference[oaicite:9]{index=9}
+      const projectId = agreement?.project;
+      if (projectId) {
+        await api.patch(API.projectPatch(projectId), { title: form.title || "" });
+      }
 
-        // Warranty mode (unchanged)
-        const warrantyMode =
-          (a.warranty_type || "").toLowerCase() === "custom" ||
-          (a.warranty_text_snapshot && a.warranty_text_snapshot.trim().length > 0)
-            ? "custom"
-            : "default";
-
-        const nextForm = {
-          title: a.project_title || a.title || "",
-          description: a.description ?? "",
-          project_type: a.project_type ?? a.type ?? "",
-          project_subtype: a.project_subtype ?? a.subtype ?? "",
-          warranty_mode: warrantyMode,
-          warranty_text: a.warranty_text_snapshot ?? "",
-        };
-
-        const nextMilestones = (msRaw || []).map((m, idx) => {
-          const s = m.start_date || m.scheduled_date || "";
-          const e = m.completion_date || m.end_date || "";
-          return {
-            id: m.id,
-            title: m.title ?? "",
-            start_date: toISO(s),
-            end_date: toISO(e),
-            amount: Number(m.amount ?? 0),
-            description: m.description ?? "",
-            status: statusFromBooleans(m),
-            order: m.order ?? idx + 1,
-          };
-        });
-
-        if (!mounted) return;
-        setForm(nextForm);
-        setMilestones(nextMilestones);
-        originalAgreementRef.current = deepClone(nextForm);
-        originalMilestonesRef.current = deepClone(nextMilestones);
-      } catch (err) {
-        console.error(err);
-        toast.error("Failed to load agreement.");
-      } finally {
-        if (mounted) setLoading(false);
+      toast.success("Agreement saved.");
+      await load();
+    } catch (e) {
+      console.error(e);
+      const data = e?.response?.data;
+      if (data && typeof data === "object") {
+        const k = Object.keys(data)[0];
+        const d = Array.isArray(data[k]) ? data[k][0] : data[k] || data.detail;
+        toast.error(`Save failed: ${k} — ${String(d)}`);
+      } else {
+        toast.error("Failed to save agreement.");
       }
     }
-    loadAll();
-    return () => {
-      mounted = false;
-    };
-  }, [id]);
-
-  const onChange = (e) => {
-    const { name, value } = e.target;
-    setForm((f) => ({ ...f, [name]: value }));
-  };
-  const onWarrantyModeChange = (mode) =>
-    setForm((f) => ({ ...f, warranty_mode: mode }));
-
-  const addMilestone = () => {
-    if (!canEditAgreement) {
-      toast("Add is locked. Agreement is not in Draft.");
-      return;
-    }
-    setMilestones((rows) => [
-      ...rows,
-      {
-        title: "",
-        start_date: toISO(new Date().toISOString().slice(0, 10)),
-        end_date: toISO(new Date().toISOString().slice(0, 10)),
-        amount: 0,
-        description: "",
-        status: "incomplete",
-        order: (rows[rows.length - 1]?.order || rows.length) + 1,
-      },
-    ]);
   };
 
-  const updateMilestone = (i, field, value) => {
-    if (!canEditAgreement) {
-      return; // silently ignore while locked; inputs are disabled anyway
-    }
-    setMilestones((rows) => {
-      const next = deepClone(rows);
-      next[i][field] = field === "amount" ? Number(value || 0) : value;
-      return next;
+  const openMsEdit = (m) => {
+    setActiveMs({
+      ...m,
+      agreement_state: agreement?.state || agreement?.status,
+      agreement_status: agreement?.status || agreement?.state,
+      agreement_number: agreement?.number || agreement?.id,
+      escrow_funded: !!agreement?.escrow_funded,
+      escrowFunded: !!agreement?.escrow_funded,
     });
   };
 
-  const removeMilestone = (i) => {
-    if (!canEditAgreement) {
-      toast("Delete is locked. Agreement is not in Draft.");
-      return;
-    }
-    setMilestones((rows) => rows.filter((_, idx) => idx !== i));
-  };
-
-  // ---------- Agreement PATCH body (includes project fields so backend updates Project) ----------
-  function buildAgreementPatchBody() {
-    const orig = originalAgreementRef.current || {};
-    const changed = {};
-
-    // Always send current status context so backend can choose to enforce too (optional):
-    changed._client_edit_intent = isAmendment ? "amendment" : "agreement";
-    changed._client_status = isAmendment ? amendmentStatus : agreementStatus;
-
-    // Project fields (safe to send even if unchanged)  — your existing approach
-    if ((form.title ?? "") !== (orig.title ?? "") || form.title) {
-      changed.title = form.title || "";
-      changed.project_title = form.title || "";
-    }
-    if ((form.project_type ?? "") !== (orig.project_type ?? "") || form.project_type) {
-      changed.project_type = form.project_type || "";
-      changed.type = form.project_type || "";
-    }
-    if (
-      (form.project_subtype ?? "") !== (orig.project_subtype ?? "") ||
-      form.project_subtype
-    ) {
-      changed.project_subtype = form.project_subtype || "";
-      changed.subtype = form.project_subtype || "";
-    }
-
-    // Agreement description (+ legacy alias)
-    if ((form.description ?? "") !== (orig.description ?? "") || form.description) {
-      changed.description = form.description || "";
-      changed.job_description = form.description || "";
-    }
-
-    // Warranty
-    if (form.warranty_mode === "default") {
-      changed.warranty_type = "default";
-      changed.warranty_text_snapshot = "";
-      changed.use_default_warranty = true;
-      changed.custom_warranty_text = "";
-    } else {
-      const txt = form.warranty_text || DEFAULT_WARRANTY_TEXT;
-      changed.warranty_type = "custom";
-      changed.warranty_text_snapshot = txt;
-      changed.use_default_warranty = false;
-      changed.custom_warranty_text = txt;
-    }
-
-    return changed;
-  }
-
-  function buildMilestonesPayload(list) {
-    return {
-      items: list.map((m) => {
-        const start = toISO(m.start_date) || null;
-        const end = toISO(m.end_date) || null;
-        const booleans = booleansFromStatus(m.status);
-        const payload = {
-          id: m.id || undefined,
-          agreement: Number(id),
-          title: m.title,
-          description: m.description || "",
-          start_date: start,
-          amount: Number(m.amount || 0),
-          order: m.order ?? null,
-          completed: !!booleans.completed,
-          is_invoiced: !!booleans.is_invoiced,
-        };
-        if (end) {
-          payload.completion_date = end; // new
-          payload.end_date = end; // legacy alias
-        }
-        return payload;
-      }),
-      prune_missing: true,
-    };
-  }
-
-  async function saveAgreementAndMilestones() {
-    if (!canEditAgreement) {
-      toast("Saving is locked. Agreement (or amendment) is not in Draft.");
-      return;
-    }
-    setSaving(true);
+  const removeMilestone = async (m) => {
+    if (readOnly) { toast("Delete is only available while the agreement is in Draft."); return; }
+    if (!window.confirm(`Delete milestone "${m.title}"?`)) return;
     try {
-      // 1) Single PATCH to Agreement: includes project fields + description + warranty
-      const patchBody = buildAgreementPatchBody();
-      await api.patch(`/projects/agreements/${id}/`, patchBody, {
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-      });
-
-      // 2) Milestones upsert
-      const payload = buildMilestonesPayload(milestones);
-      const r = await api.post(
-        `/projects/agreements/${id}/milestones_bulk_update/`,
-        payload,
-        {
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-        }
-      );
-
-      // 3) Refresh local milestones
-      const ms = Array.isArray(r.data) ? r.data : r.data?.results || [];
-      const next = (ms || []).map((m, idx) => {
-        const s = m.start_date || m.scheduled_date || "";
-        const e = m.completion_date || m.end_date || "";
-        return {
-          id: m.id,
-          title: m.title ?? "",
-          start_date: toISO(s),
-          end_date: toISO(e),
-          amount: Number(m.amount ?? 0),
-          description: m.description ?? "",
-          status: statusFromBooleans(m),
-          order: m.order ?? idx + 1,
-        };
-      });
-      setMilestones(next);
-      originalMilestonesRef.current = deepClone(next);
-
-      // Update local originals so form doesn’t “reset”
-      originalAgreementRef.current = deepClone({
-        ...originalAgreementRef.current,
-        ...patchBody,
-      });
-
-      toast.success("Agreement, project info, and milestones saved.");
-    } catch (err) {
-      console.error("Save failed:", err?.response?.data || err);
-      const detail =
-        err?.response?.data?.detail ||
-        (typeof err?.response?.data === "string" ? err.response.data : null) ||
-        "Save failed. Check console/network.";
-      toast.error(String(detail));
-    } finally {
-      setSaving(false);
+      await api.delete(API.milestoneDelete(m.id));
+      toast.success("Milestone deleted.");
+      await load();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to delete milestone.");
     }
-  }
+  };
 
-  // modal handlers (respect lock)
-  const openModal = (i) => {
-    if (!canEditAgreement) {
-      toast("Editing is locked. Agreement (or amendment) is not in Draft.");
+  const canComplete = useMemo(() =>
+    !!(agreement && (agreement.status || agreement.state)) &&
+    !!agreement?.escrow_funded &&
+    ["SIGNED","EXECUTED","ACTIVE","APPROVED"].includes(
+      String(agreement.status || agreement.state).toUpperCase()
+    ), [agreement]);
+
+  const markComplete = async (id) => {
+    if (!canComplete) {
+      if (!agreement?.escrow_funded) toast("You can’t complete a milestone until escrow is funded.");
+      else toast("Agreement must be signed/executed before completing milestones.");
       return;
     }
-    setModalIndex(i);
-    setModalOpen(true);
-  };
-  const closeModal = () => setModalOpen(false);
-  const saveModal = (updated) => {
-    if (modalIndex < 0) return closeModal();
-    ["title", "start_date", "end_date", "amount", "status", "description"].forEach(
-      (k) => updateMilestone(modalIndex, k, k.includes("date") ? toISO(updated[k]) : updated[k])
-    );
-    setModalOpen(false);
+    try {
+      await api.post(API.milestoneComplete(id)).catch(() =>
+        api.patch(`/projects/milestones/${id}/`, { status: "Complete" })
+      );
+      toast.success("Milestone marked complete → submitted for review");
+      await load();
+    } catch (e) {
+      console.error(e);
+      toast.error("Could not mark complete.");
+    }
   };
 
-  if (loading) {
-    return (
-      <div className="p-6">
-        <div className="animate-pulse text-sm text-slate-500">Loading agreement…</div>
-      </div>
-    );
-  }
+  /** In-app PDF viewer (frame-exempt) */
+  const previewPdf = async () => {
+    setPreviewing(true);
+    try {
+      const { data } = await api.post(API.previewPdf(agreement.id), {});
+      const url = data?.pdf_url;
+      if (url) {
+        setPdfUrl(url);
+        setPdfOpen(true);    // show PdfPreviewModal (uses /pdf/viewer/ under the hood)  :contentReference[oaicite:10]{index=10}
+      } else {
+        toast("PDF generated, but no URL returned.");
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to generate preview PDF.");
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const signAsContractor = async () => {
+    if (!tosAck || !privacyAck || !esignAck) {
+      toast("Please acknowledge ToS, Privacy Policy, and the ESIGN Act.");
+      return;
+    }
+    setSigning(true);
+    try {
+      const fd = new FormData();
+      fd.append("tos_ack", String(tosAck));
+      fd.append("privacy_ack", String(privacyAck));
+      fd.append("esign_ack", String(esignAck));
+      if (signatureFile) fd.append("signature_file", signatureFile);
+      await api.post(API.signContractor(agreement.id), fd, { headers: { "Content-Type": "multipart/form-data" } });
+      toast.success("Signed as Contractor.");
+      await load();
+    } catch (e) {
+      console.error(e);
+      toast.error("Signing failed.");
+    } finally {
+      setSigning(false);
+    }
+  };
+
+  const dispatchToHomeowner = async () => {
+    if (!sendEmail && !sendSms) { toast("Choose at least one channel."); return; }
+    setDispatching(true);
+    try {
+      await api.post(API.dispatch(agreement.id), { channels: { email: sendEmail, sms: sendSms }, message });
+      toast.success("Sent to homeowner.");
+    } catch (e) {
+      console.error(e);
+      toast.error("Could not send to homeowner.");
+    } finally {
+      setDispatching(false);
+    }
+  };
+
+  const addAmendment = async () => {
+    try {
+      const { data } = await api.post(API.createAmendment(agreement.id), {});
+      toast.success("Amendment started.");
+      const amendId = data?.id || data?.amendment_id;
+      if (amendId) window.location.href = `/agreements/${agreement.id}/amendments/${amendId}/edit`;
+    } catch (e) {
+      console.error(e);
+      toast("Amendment endpoint not configured yet.");
+    }
+  };
 
   return (
-    <div className="px-4 sm:px-6 md:px-10 py-6">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-semibold">
-            Edit {isAmendment ? "Amendment" : "Agreement"}
-          </h1>
-          <p className="text-xs text-slate-500">
-            #{id} •{" "}
-            <span className="inline-flex items-center gap-1">
-              Status:{" "}
-              <span
-                className={`px-2 py-0.5 rounded text-[11px] ${
-                  canEditAgreement ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"
-                }`}
-              >
-                {isAmendment ? (amendmentStatus || "—") : (agreementStatus || "—")}
-              </span>
-              {!canEditAgreement && (
-                <em className="text-[11px] text-slate-500">(locked)</em>
+    <div className="p-5">
+      {loading ? (
+        <div className="text-sm text-gray-500">Loading…</div>
+      ) : !agreement ? (
+        <div className="text-sm text-gray-500">Agreement not found.</div>
+      ) : (
+        <>
+          {/* Header */}
+          <div className="mb-5 flex items-center justify-between">
+            <div className="text-lg font-semibold">Edit Agreement #{agreement.number || agreement.id}</div>
+            <div className="text-sm text-gray-500">Status: <strong className="uppercase">{agreement.state || agreement.status || "DRAFT"}</strong></div>
+          </div>
+
+          {/* Details */}
+          <div className="rounded-xl border bg-white">
+            <div className="border-b bg-gray-50 px-4 py-3 text-sm font-medium">Agreement Details</div>
+            <div className="grid grid-cols-1 gap-4 p-4 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label className="mb-1 block text-sm font-medium text-gray-700">Agreement Title</label>
+                <input
+                  type="text" name="title" value={form.title} onChange={onChange} readOnly={readOnly}
+                  className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
+                  placeholder="Project Name (e.g., Kitchen Remodel)"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Project Type</label>
+                <select
+                  name="project_type" value={form.project_type} onChange={onTypeChange} disabled={readOnly}
+                  className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : "bg-white"}`}
+                >
+                  <option value="">— Select Type —</option>
+                  {typeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Project Subtype</label>
+                <select
+                  name="project_subtype" value={form.project_subtype} onChange={onSubtypeChange} disabled={readOnly}
+                  className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : "bg-white"}`}
+                >
+                  <option value="">— Select Subtype —</option>
+                  {subtypeOptions.map((st) => <option key={st} value={st}>{st}</option>)}
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
+                <textarea
+                  name="description" rows={4} value={form.description} onChange={onChange} readOnly={readOnly}
+                  className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
+                  placeholder="Scope of work, materials, exclusions, notes…"
+                />
+              </div>
+            </div>
+            {!readOnly && (
+              <div className="flex justify-end gap-2 px-4 pb-4">
+                <button onClick={saveAgreement} className="rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Save Agreement</button>
+              </div>
+            )}
+          </div>
+
+          {/* Warranty */}
+          <div className="mt-6 rounded-xl border bg-white">
+            <div className="border-b bg-gray-50 px-4 py-3 text-sm font-medium">Warranty</div>
+            <div className="p-4">
+              <div className="mb-3 flex gap-6">
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="radio" name="warranty_type" value="DEFAULT" checked={form.warranty_type === "DEFAULT"} onChange={onChange} disabled={readOnly}/> Use Default Warranty (read-only preview)
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="radio" name="warranty_type" value="CUSTOM" checked={form.warranty_type === "CUSTOM"} onChange={onChange} disabled={readOnly}/> Custom Warranty Text
+                </label>
+              </div>
+
+              {form.warranty_type === "DEFAULT" ? (
+                <div className="rounded-md border bg-gray-50 p-3 text-sm text-gray-700">
+                  {agreement?.default_warranty_text ||
+                    "Contractor warrants workmanship for one (1) year from substantial completion. Manufacturer warranties apply where applicable. Warranty excludes damage caused by misuse, neglect, unauthorized modifications, or normal wear. Remedy is limited to repair or replacement at Contractor’s discretion."}
+                </div>
+              ) : (
+                <textarea
+                  name="warranty_text_snapshot" rows={5} value={form.warranty_text_snapshot} onChange={onChange} readOnly={readOnly}
+                  className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
+                  placeholder="Enter your custom warranty terms here…"
+                />
               )}
-            </span>
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            disabled={saving || !canEditAgreement}
-            onClick={saveAgreementAndMilestones}
-            className={`px-4 py-2 text-xs rounded-md ${
-              canEditAgreement
-                ? "bg-blue-600 text-white hover:bg-blue-700"
-                : "bg-slate-300 text-slate-600 cursor-not-allowed"
-            } disabled:opacity-60`}
-            title={canEditAgreement ? "Save Changes" : "Locked after signing"}
-          >
-            {saving ? "Saving…" : "Save Changes"}
-          </button>
-        </div>
-      </div>
-
-      {/* Agreement Details */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
-        <h2 className="text-sm font-semibold mb-4">Agreement Details</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Title (Project Name)
-            </label>
-            <input
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              name="title"
-              value={form.title}
-              onChange={onChange}
-              placeholder="e.g., Kitchen Remodel"
-              disabled={!canEditAgreement}
-            />
+            </div>
+            {!readOnly && (
+              <div className="flex justify-end gap-2 px-4 pb-4">
+                <button onClick={saveAgreement} className="rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+                  Save Warranty
+                </button>
+              </div>
+            )}
           </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Project Type
-            </label>
-            <select
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              name="project_type"
-              value={form.project_type}
-              onChange={onChange}
-              disabled={!canEditAgreement}
-            >
-              <option value="">Select a type…</option>
-              {typeOptions.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
+
+          {/* Attachments & Addenda */}
+          <div className="mt-6 rounded-xl border bg-white">
+            <div className="border-b bg-gray-50 px-4 py-3 text-sm font-medium">Attachments &amp; Addenda</div>
+            <div className="p-4">
+              <AttachmentSection agreementId={agreement.id} onChange={() => {}} />
+            </div>
           </div>
-          <div className="md:col-span-2">
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Job Description
-            </label>
-            <textarea
-              rows={4}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              name="description"
-              value={form.description}
-              onChange={onChange}
-              placeholder="Scope of work, materials, exclusions…"
-              disabled={!canEditAgreement}
-            />
+
+          {/* Milestones */}
+          <div className="mt-6 rounded-xl border bg-white">
+            <div className="border-b bg-gray-50 px-4 py-3 text-sm font-medium">Milestones</div>
+            <div className="p-4">
+              <div className="overflow-hidden rounded-lg border">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr className="text-left text-xs uppercase text-gray-500">
+                      <th className="px-4 py-3">Title</th>
+                      <th className="px-4 py-3">Agreement #</th>
+                      <th className="px-4 py-3">Project</th>
+                      <th className="px-4 py-3">Customer</th>
+                      <th className="px-4 py-3">Due / Date</th>
+                      <th className="px-4 py-3 text-right">Amount</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {milestones.length ? milestones.map((m) => {
+                      const due = pick(m.end_date, m.completion_date, m.start_date, m.scheduled_for, m.date, "—");
+                      const rawStatus = getStatus(m) || "—";
+                      const late = getIsLate(m);
+                      return (
+                        <tr key={m.id} className="odd:bg-white/50 even:bg-white/30 hover:bg-white">
+                          <td className="px-4 py-3 font-medium">
+                            <div className="flex items-center gap-2">
+                              <span>{m.title}</span>
+                              {late && <span className="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">late</span>}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">#{agreement.number || agreement.id}</td>
+                          <td className="px-4 py-3">{agreement.project_title || form.title || "—"}</td>
+                          <td className="px-4 py-3">{agreement.homeowner_name || "—"}</td>
+                          <td className="px-4 py-3">{due}</td>
+                          <td className="px-4 py-3 text-right">{money(m.amount)}</td>
+                          <td className="px-4 py-3"><span className="text-gray-700">{rawStatus}</span></td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-2">
+                              <button type="button" disabled={!canComplete} onClick={() => markComplete(m.id)}
+                                      className={`px-3 py-1.5 text-sm rounded-md border bg-transparent ${canComplete ? "border-gray-300 text-gray-700 hover:bg-gray-50" : "border-gray-200 text-gray-400 opacity-50 cursor-not-allowed"}`}>
+                                ✓ Complete
+                              </button>
+                              {!readOnly ? (
+                                <button type="button" onClick={() => openMsEdit(m)}
+                                        className="px-3 py-1.5 text-sm rounded-md border bg-transparent border-blue-300 text-blue-700 hover:bg-blue-50">
+                                  Edit
+                                </button>
+                              ) : <span className="text-sm text-gray-400">Edit (locked)</span>}
+                              {!readOnly ? (
+                                <button type="button" onClick={() => removeMilestone(m)}
+                                        className="px-3 py-1.5 text-sm rounded-md border bg-transparent border-rose-300 text-rose-700 hover:bg-rose-50">
+                                  Delete
+                                </button>
+                              ) : <span className="text-sm text-gray-400">Delete (locked)</span>}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }) : (
+                      <tr><td colSpan={8} className="px-4 py-6 text-center text-sm text-gray-500">No milestones.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Project Subtype
-            </label>
-            <select
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              name="project_subtype"
-              value={form.project_subtype}
-              onChange={onChange}
-              disabled={!canEditAgreement}
-            >
-              <option value="">Select a subtype…</option>
-              {subtypeOptions.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
+
+          {/* Review & Sign */}
+          <div className="mt-6 rounded-xl border bg-white">
+            <div className="border-b bg-gray-50 px-4 py-3 text-sm font-medium">Review &amp; Sign</div>
+            <div className="p-4 space-y-4">
+              <div className="flex items-center gap-3">
+                <button onClick={previewPdf} disabled={previewing} className="rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:bg-gray-300">
+                  {previewing ? "Generating PDF…" : "Generate Preview PDF"}
+                </button>
+                <a href={VIEW_TOS} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">Open Terms of Service</a>
+                <a href={VIEW_PRIVACY} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">Open Privacy Policy</a>
+                <button onClick={addAmendment} className="ml-auto rounded border border-amber-300 text-amber-700 px-3 py-2 text-sm hover:bg-amber-50">
+                  + Add Amendment
+                </button>
+              </div>
+
+              <div className="rounded-md border p-3">
+                <div className="text-sm font-medium mb-2">Legal Acknowledgements</div>
+                <label className="flex items-center gap-2 text-sm mb-1">
+                  <input type="checkbox" checked={tosAck} onChange={(e)=>setTosAck(e.target.checked)} /> I have read and agree to the <a href={VIEW_TOS} target="_blank" rel="noopener" className="text-blue-600 hover:underline">Terms of Service</a>.
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={privacyAck} onChange={(e)=>setPrivacyAck(e.target.checked)} /> I have read the <a href={VIEW_PRIVACY} target="_blank" rel="noopener" className="text-blue-600 hover:underline">Privacy Policy</a>.
+                </label>
+              </div>
+
+              <div className="rounded-md border p-3">
+                <div className="text-sm font-medium mb-2">Electronic Signature</div>
+                <label className="flex items-center gap-2 text-sm mb-2">
+                  <input type="checkbox" checked={esignAck} onChange={(e)=>setEsignAck(e.target.checked)} /> I agree that my electronic signature has the same legal effect as a handwritten signature (U.S. ESIGN Act).
+                </label>
+                <div className="flex items-center gap-3">
+                  <input type="file" accept="image/*,.png,.jpg,.jpeg,.pdf" onChange={(e)=>setSignatureFile(e.target.files?.[0] || null)} className="text-sm" />
+                </div>
+                <div className="mt-3">
+                  <button onClick={signAsContractor} disabled={signing} className="rounded bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:bg-gray-300">
+                    {signing ? "Signing…" : "Sign as Contractor"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-md border p-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-medium">Send to Homeowner</div>
+                  <div className="text-xs text-gray-500">{agreement?.homeowner_name ? `Recipient: ${agreement.homeowner_name}` : ""}</div>
+                </div>
+                <div className="mt-2 flex items-center gap-6 text-sm">
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={sendEmail} onChange={(e)=>setSendEmail(e.target.checked)} disabled={!agreement?.homeowner_email} />
+                    Email {agreement?.homeowner_email ? <span className="text-gray-500">({agreement.homeowner_email})</span> : <span className="text-gray-400">(no email)</span>}
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={sendSms} onChange={(e)=>setSendSms(e.target.checked)} disabled={!agreement?.homeowner_phone} />
+                    Text {agreement?.homeowner_phone ? <span className="text-gray-500">({agreement.homeowner_phone})</span> : <span className="text-gray-400">(no phone)</span>}
+                  </label>
+                </div>
+                <div className="mt-3">
+                  <label className="mb-1 block text-xs text-gray-600">Message (optional)</label>
+                  <textarea rows={2} value={message} onChange={(e)=>setMessage(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" placeholder="Add a short note…" />
+                </div>
+                <div className="mt-3">
+                  <button onClick={dispatchToHomeowner} disabled={dispatching} className="rounded border border-emerald-300 text-emerald-700 px-3 py-2 text-sm hover:bg-emerald-50 disabled:opacity-60">
+                    {dispatching ? "Sending…" : "Send to Homeowner"}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* Warranty */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-6">
-        <h2 className="text-sm font-semibold mb-3">Warranty</h2>
-        <div className="flex items-center gap-6 mb-3">
-          <label className="inline-flex items-center gap-2 text-sm">
-            <input
-              type="radio"
-              className="accent-blue-600"
-              checked={form.warranty_mode === "default"}
-              onChange={() => onWarrantyModeChange("default")}
-              disabled={!canEditAgreement}
-            />
-            Use default warranty
-          </label>
-        </div>
-        <div className="flex items-center gap-6 mb-3">
-          <label className="inline-flex items-center gap-2 text-sm">
-            <input
-              type="radio"
-              className="accent-blue-600"
-              checked={form.warranty_mode === "custom"}
-              onChange={() => onWarrantyModeChange("custom")}
-              disabled={!canEditAgreement}
-            />
-            Provide custom warranty
-          </label>
-        </div>
-        {form.warranty_mode === "default" ? (
-          <>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Default Warranty (read-only preview)
-            </label>
-            <textarea
-              value={defaultWarrantyPreview}
-              readOnly
-              rows={4}
-              className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600"
-            />
-          </>
-        ) : (
-          <>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              Custom Warranty
-            </label>
-            <textarea
-              rows={5}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              name="warranty_text"
-              value={form.warranty_text || DEFAULT_WARRANTY_TEXT}
-              onChange={onChange}
-              disabled={!canEditAgreement}
-            />
-          </>
-        )}
-      </div>
-
-      {/* Attachments */}
-      <AttachmentSection agreementId={id} />
-
-      {/* Milestones */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold">Milestones</h2>
-          <button
-            type="button"
-            onClick={addMilestone}
-            className={`px-3 py-2 text-xs rounded-md border ${
-              canEditAgreement
-                ? "border-slate-300 hover:bg-slate-50"
-                : "border-slate-200 text-slate-400 cursor-not-allowed"
-            }`}
-            disabled={!canEditAgreement}
-            title={canEditAgreement ? "Add Milestone" : "Locked after signing"}
-          >
-            + Add Milestone
-          </button>
-        </div>
-
-        {milestones.length === 0 ? (
-          <div className="text-sm text-slate-500">No milestones yet.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs uppercase text-slate-500 border-b">
-                  <th className="py-2 pr-3">#</th>
-                  <th className="py-2 pr-3">Title</th>
-                  <th className="py-2 pr-3">Start</th>
-                  <th className="py-2 pr-3">End</th>
-                  <th className="py-2 pr-3">Amount ($)</th>
-                  <th className="py-2 pr-3">Status</th>
-                  <th className="py-2 pr-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {milestones.map((m, idx) => (
-                  <tr key={m.id ?? `new-${idx}`} className="border-b last:border-0">
-                    <td className="py-2 pr-3 align-top w-10">{idx + 1}</td>
-
-                    <td className="py-2 pr-3 align-top min-w-[220px]">
-                      <input
-                        className="w-full rounded-md border border-slate-300 px-2 py-1"
-                        value={m.title}
-                        onChange={(e) => updateMilestone(idx, "title", e.target.value)}
-                        disabled={!canEditAgreement}
-                      />
-                    </td>
-
-                    <td className="py-2 pr-3 align-top min-w-[170px]">
-                      <DateField
-                        id={`ms-${m.id || idx}-start`}
-                        name="start_date"
-                        value={
-                          m.start_date ? String(m.start_date).slice(0, 10) : ""
-                        }
-                        onChange={(e) =>
-                          updateMilestone(idx, "start_date", toISO(e.target.value))
-                        }
-                        disabled={!canEditAgreement}
-                      />
-                    </td>
-
-                    <td className="py-2 pr-3 align-top min-w-[170px]">
-                      <DateField
-                        id={`ms-${m.id || idx}-end`}
-                        name="completion_date"
-                        value={m.end_date ? String(m.end_date).slice(0, 10) : ""}
-                        onChange={(e) =>
-                          updateMilestone(idx, "end_date", toISO(e.target.value))
-                        }
-                        disabled={!canEditAgreement}
-                      />
-                    </td>
-
-                    <td className="py-2 pr-3 align-top w-32">
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        className="w-full rounded-md border border-slate-300 px-2 py-1"
-                        value={m.amount}
-                        onChange={(e) =>
-                          updateMilestone(idx, "amount", e.target.value)
-                        }
-                        disabled={!canEditAgreement}
-                      />
-                    </td>
-
-                    <td className="py-2 pr-3 align-top w-48">
-                      <select
-                        className="w-full rounded-md border border-slate-300 px-2 py-1"
-                        value={m.status}
-                        onChange={(e) =>
-                          updateMilestone(idx, "status", e.target.value)
-                        }
-                        disabled={!canEditAgreement}
-                      >
-                        <option value="incomplete">Incomplete</option>
-                        <option value="complete">Completed</option>
-                        <option value="invoiced">Invoiced</option>
-                      </select>
-                    </td>
-
-                    <td className="py-2 pr-3 align-top text-right">
-                      <div className="flex gap-2 justify-end">
-                        {canEditAgreement ? (
-                          <>
-                            <button
-                              className="px-2 py-1 text-xs rounded-md border border-slate-300"
-                              onClick={() => {
-                                setModalIndex(idx);
-                                setModalOpen(true);
-                              }}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              className="px-2 py-1 text-xs rounded-md border border-rose-200 text-rose-600"
-                              onClick={() => removeMilestone(idx)}
-                            >
-                              Remove
-                            </button>
-                          </>
-                        ) : (
-                          <span className="text-[11px] text-slate-400">
-                            (locked)
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <div className="mt-4 flex justify-end">
-          <button
-            type="button"
-            disabled={saving || !canEditAgreement}
-            onClick={saveAgreementAndMilestones}
-            className={`px-4 py-2 text-xs rounded-md ${
-              canEditAgreement
-                ? "bg-blue-600 text-white hover:bg-blue-700"
-                : "bg-slate-300 text-slate-600 cursor-not-allowed"
-            } disabled:opacity-60`}
-            title={canEditAgreement ? "Save Changes" : "Locked after signing"}
-          >
-            {saving ? "Saving…" : "Save Changes"}
-          </button>
-        </div>
-      </div>
-
-      {/* Review & Sign (UI text untouched) */}
-      <div className="mt-6 bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-        <h2 className="text-sm font-semibold mb-3">Review &amp; Sign</h2>
-        <p className="text-xs text-slate-600 mb-2">
-          Generate a preview, send to the homeowner for review, or sign as the contractor.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <button
-            className="px-3 py-2 text-xs rounded-md border border-slate-300"
-            onClick={async () => {
-              try {
-                await api.get(`/projects/signing/agreements/${id}/preview/`);
-                toast.success("Preview queued.");
-              } catch (e) {
-                toast.error("Preview failed.");
-              }
-            }}
-          >
-            Generate Preview
-          </button>
-
-          <button
-            className="px-3 py-2 text-xs rounded-md border border-slate-300"
-            onClick={() => toast("Open your signature flow (homeowner).")}
-          >
-            Send to Homeowner for Review/Signature
-          </button>
-
-          <button
-            className="px-3 py-2 text-xs rounded-md bg-emerald-600 text-white"
-            onClick={() => toast("Open your signature flow (contractor).")}
-          >
-            Sign as Contractor
-          </button>
-        </div>
-      </div>
-
-      <div className="mt-6 flex items-center justify-between text-xs text-slate-500">
-        <Link className="hover:underline" to="/agreements">
-          ← Back to Agreements
-        </Link>
-        <button
-          type="button"
-          onClick={() => navigate("/dashboard")}
-          className="hover:underline"
-        >
-          Go to Dashboard →
-        </button>
-      </div>
-
-      <MilestoneModal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        value={milestones[modalIndex] || {}}
-        onSave={saveModal}
-        locked={!canEditAgreement}
-      />
+          {/* Modals */}
+          <MilestoneEditModal
+            open={!!activeMs}
+            milestone={activeMs}
+            onClose={() => setActiveMs(null)}
+            onSaved={async () => { await load(); setActiveMs(null); toast.success("Milestone updated."); }}
+            onMarkComplete={markComplete}
+          />
+          <PdfPreviewModal
+            open={pdfOpen}
+            onClose={() => setPdfOpen(false)}
+            fileUrl={pdfUrl}
+            title={`Agreement #${agreement.number || agreement.id} — Preview`}
+          />
+        </>
+      )}
     </div>
   );
 }

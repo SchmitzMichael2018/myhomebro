@@ -24,16 +24,13 @@ def get_bool(name: str, default: bool = False) -> bool:
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Paths & .env
-#   This file lives at backend/core/settings.py
-#   BASE_DIR == inner Django project dir: ~/backend/backend
-#   REPO_DIR == repository root:          ~/backend
 # ──────────────────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent.parent       # ~/backend/backend
 REPO_DIR = BASE_DIR.parent                               # ~/backend
 FRONTEND_DIR = REPO_DIR / "frontend"
 FRONTEND_DIST_DIR = FRONTEND_DIR / "dist"
 
-# Robust .env loading (works even if CWD changes)
+# Robust .env loading
 explicit_env = REPO_DIR / ".env"
 if explicit_env.exists():
     load_dotenv(dotenv_path=explicit_env, override=True)
@@ -63,6 +60,12 @@ CSRF_TRUSTED_ORIGINS = [
         "https://myhomebro.com,https://www.myhomebro.com"
     ).split(",") if u.strip().startswith("http")
 ]
+
+# Allow our in-app PDF viewer to render in an iframe
+X_FRAME_OPTIONS = "SAMEORIGIN"
+
+# ★ Tighten referrer policy; safe for PDF/HTML previews
+SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Installed Apps & Middleware
@@ -118,13 +121,11 @@ AUTH_USER_MODEL = "accounts.User"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Database (absolute-path SQLite by default; Postgres via DATABASE_URL)
-#   Prefer existing SQLite path if present (repo root, then inner)
+# Database
 # ──────────────────────────────────────────────────────────────────────────────
-# Pick an existing db.sqlite3 if it already exists to avoid accidental new DBs
 _sqlite_candidates = [
-    REPO_DIR / "db.sqlite3",   # ~/backend/db.sqlite3  (repo root)
-    BASE_DIR / "db.sqlite3",   # ~/backend/backend/db.sqlite3 (inner)
+    REPO_DIR / "db.sqlite3",
+    BASE_DIR / "db.sqlite3",
 ]
 _sqlite_file = next((p for p in _sqlite_candidates if p.exists()), _sqlite_candidates[0])
 SQLITE_ABS_PATH = str(_sqlite_file.resolve())
@@ -166,18 +167,15 @@ AUTHENTICATION_BACKENDS = [
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Static & Media
-#   Vite builds to frontend/dist with base '/static/' (vite.config.js)
-#   collectstatic copies from FRONTEND_DIST_DIR → STATIC_ROOT
 # ──────────────────────────────────────────────────────────────────────────────
 STATIC_URL = "/static/"
-STATIC_ROOT = REPO_DIR / "staticfiles"              # ~/backend/staticfiles  (matches your PA path)
+STATIC_ROOT = REPO_DIR / "staticfiles"  # ~/backend/staticfiles
 
 STATICFILES_DIRS = [
-    FRONTEND_DIST_DIR,                               # ~/backend/frontend/dist
-    BASE_DIR / "static",                             # app-level static (optional)
+    FRONTEND_DIST_DIR,                    # ~/backend/frontend/dist
+    BASE_DIR / "static",                  # app-level static (optional)
 ]
 
-# Django 5+ storages config (preferred over STATICFILES_STORAGE)
 STORAGES = {
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
@@ -187,15 +185,14 @@ STORAGES = {
     },
 }
 
-# WhiteNoise options
 WHITENOISE_MANIFEST_STRICT = False
-WHITENOISE_AUTOREFRESH = DEBUG   # auto-reload static in DEBUG
+WHITENOISE_AUTOREFRESH = DEBUG
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = REPO_DIR / "media"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Stripe (optional; guarded by flag)
+# Stripe (optional; guarded)
 # ──────────────────────────────────────────────────────────────────────────────
 STRIPE_ENABLED = get_bool("STRIPE_ENABLED", default=False)
 STRIPE_SECRET_KEY     = get_env_var("STRIPE_SECRET_KEY",     required=False)
@@ -232,6 +229,7 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    "DEFAULT_FILTER_BACKENDS": ("django_filters.rest_framework.DjangoFilterBackend",),
 }
 
 SIMPLE_JWT = {
@@ -243,18 +241,29 @@ SIMPLE_JWT = {
     "SIGNING_KEY":            SECRET_KEY,
     "USER_ID_FIELD":          "id",
     "USER_ID_CLAIM":          "user_id",
+    # ★ Make sure "Bearer" is accepted by clients
+    "AUTH_HEADER_TYPES":      ("Bearer",),
+    "UPDATE_LAST_LOGIN":      False,
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CORS
 # ──────────────────────────────────────────────────────────────────────────────
+# ★ Include Vite's 5173 dev port by default; keep FRONTEND_URL too
+_default_cors = f"{FRONTEND_URL},http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:5173,http://localhost:5173"
 CORS_ALLOWED_ORIGINS = [
-    *[o.strip() for o in get_env_var(
-        "CORS_ALLOWED_ORIGINS",
-        f"{FRONTEND_URL},http://127.0.0.1:3000"
-    ).split(",") if o.strip()]
+    *[o.strip() for o in get_env_var("CORS_ALLOWED_ORIGINS", _default_cors).split(",") if o.strip()]
 ]
 CORS_ALLOW_CREDENTIALS = True
+# ★ Expose Content-Disposition so the browser can read filenames on PDF/CSV downloads
+CORS_EXPOSE_HEADERS = ["Content-Disposition"]
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Upload limits (useful for attachments / PDFs)
+# ──────────────────────────────────────────────────────────────────────────────
+# ★ Allow larger uploads without swapping to disk too early; tune via env
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(get_env_var("DATA_UPLOAD_MAX_MEMORY_SIZE", str(50 * 1024 * 1024)))  # 50MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = int(get_env_var("FILE_UPLOAD_MAX_MEMORY_SIZE", str(10 * 1024 * 1024)))  # 10MB
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Celery
@@ -282,7 +291,6 @@ TWILIO_PHONE_NUMBER = get_env_var("TWILIO_PHONE_NUMBER", required=False)
 if DEBUG:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 else:
-    # If you haven't set SMTP yet, fall back to console so deploy won't crash
     if os.getenv("EMAIL_HOST") and os.getenv("EMAIL_HOST_USER"):
         EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
     else:
@@ -303,30 +311,28 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+    # ★ Cookie samesite settings
+    SESSION_COOKIE_SAMESITE = "Lax"
+    CSRF_COOKIE_SAMESITE = "Lax"
     # Consider enabling HSTS after confirming HTTPS:
     # SECURE_HSTS_SECONDS = 31536000
     # SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     # SECURE_HSTS_PRELOAD = True
 
 # Require email verification before login?
-#   True  (prod): registration creates inactive user, no tokens until verified.
-#   False (dev):  registration creates active user, tokens included immediately.
 ACCOUNTS_REQUIRE_EMAIL_VERIFICATION = False
 
-# ── LOGGING (send app errors to console -> PA error log) ─────────────────────
+# ── LOGGING ───────────────────────────────────────────────────────────────────
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "handlers": {
         "console": {"class": "logging.StreamHandler"},
     },
-    "root": {
-        "handlers": ["console"],
-        "level": "INFO",
-    },
+    "root": {"handlers": ["console"], "level": "INFO"},
     "loggers": {
         "django": {"handlers": ["console"], "level": "INFO", "propagate": True},
-        # our app modules
         "accounts": {"handlers": ["console"], "level": "INFO", "propagate": True},
+        "projects": {"handlers": ["console"], "level": "INFO", "propagate": True},
     },
 }

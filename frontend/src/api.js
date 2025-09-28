@@ -10,6 +10,8 @@ import axios from "axios";
  * - Forces JSON for non-attachment writes to avoid 415s
  * - Auto-recovers from 415 (multipart sent to JSON endpoint) by retrying as JSON
  * - Fallback: if PATCH/PUT /contractors/me/ returns 405, retry as /contractors/{id}/
+ * - Smarter attachment detection (attachments, milestone-files, license-upload, /upload)
+ * - Optional light retry for idempotent GETs on transient errors (off by default)
  */
 
 const TOK = { access: "access", refresh: "refresh" };
@@ -31,7 +33,17 @@ export const getRefreshToken = () => {
   }
 };
 
-export const setTokens = (access, refresh, remember = true) => {
+const inferRememberFromStorage = () => {
+  try {
+    // If refresh token is in localStorage, treat as "remember me"
+    if (localStorage.getItem(TOK.refresh)) return true;
+    if (sessionStorage.getItem(TOK.refresh)) return false;
+  } catch { /* ignore */ }
+  // Default to true so tokens survive page reloads unless session-only is explicitly used
+  return true;
+};
+
+export const setTokens = (access, refresh, remember = inferRememberFromStorage()) => {
   try {
     const store = remember ? localStorage : sessionStorage;
     const other = remember ? sessionStorage : localStorage;
@@ -79,10 +91,17 @@ const LEGACY_PREFIX_MAP = [
   ["/homeowners", "/projects/homeowners"],
   ["/milestones", "/projects/milestones"],
   ["/contractors", "/projects/contractors"],
+  ["/attachments", "/projects/attachments"],         // flat attachments ViewSet
+  ["/expenses", "/projects/expenses"],               // keep parity with backend flat route
+  // add more lightweight rewrites here if needed
 ];
 
+function isAbsoluteUrl(url) {
+  return /^https?:\/\//i.test(url);
+}
+
 function rewriteLegacyUrl(url) {
-  if (!url || typeof url !== "string") return url;
+  if (!url || typeof url !== "string" || isAbsoluteUrl(url)) return url;
   for (const [oldPfx, newPfx] of LEGACY_PREFIX_MAP) {
     if (url === oldPfx || url.startsWith(oldPfx + "/") || url.startsWith(oldPfx + "?")) {
       return newPfx + url.slice(oldPfx.length);
@@ -91,9 +110,23 @@ function rewriteLegacyUrl(url) {
   return url;
 }
 
+/* --------------- Attachment-ish route detection --------------- */
+/**
+ * Treat these endpoints as multipart-friendly:
+ *  - .../attachments/...
+ *  - .../milestone-files/...
+ *  - .../license-upload/...
+ *  - any .../upload or .../upload/ paths
+ */
 function isAttachmentRoute(url = "") {
-  // Treat any .../attachments or .../attachments/ as "multipart ok"
-  return /\/attachments\/?(\?|$)/.test(url);
+  if (!url) return false;
+  const u = String(url);
+  return (
+    /\/attachments\/?(\?|$|\/)/i.test(u) ||
+    /\/milestone-files\/?(\?|$|\/)/i.test(u) ||
+    /\/license-upload\/?(\?|$|\/)/i.test(u) ||
+    /\/upload\/?(\?|$|\/)/i.test(u)
+  );
 }
 
 /* --------------- Axios instance --------------- */
@@ -114,15 +147,23 @@ function normalizeForJson(config) {
   // Skip forcing JSON for attachment endpoints
   if (onAttachments) return config;
 
+  // Respect an explicitly provided Content-Type
+  const existingCT =
+    (config.headers && (config.headers["Content-Type"] || config.headers["content-type"])) ||
+    (api.defaults.headers && api.defaults.headers["Content-Type"]);
+
   // If the payload is NOT FormData/Blob/URLSearchParams, ensure JSON headers
   const body = config.data;
-  if (!isFormData(body) && !isBlob(body) && !isURLSearchParams(body)) {
+  const shouldForceJson =
+    !existingCT && !isFormData(body) && !isBlob(body) && !isURLSearchParams(body);
+
+  if (shouldForceJson) {
     config.headers = {
       ...(config.headers || {}),
       "Content-Type": "application/json",
       Accept: "application/json",
     };
-    // Axios will JSON.stringify plain objects automatically when content-type is application/json
+    // Axios will JSON.stringify plain objects automatically for application/json
   }
   return config;
 }
@@ -139,6 +180,21 @@ function formDataToObject(fd) {
   return obj;
 }
 
+/* -------- Optional light retry for idempotent GETs -------- */
+const RETRY = {
+  enableGetRetry: false,      // set true to enable
+  max: 2,
+  baseDelayMs: 250,           // backoff start
+};
+function sleep(ms) { return new Promise(res => setTimeout(res, ms)); }
+function isTransient(error) {
+  // network error, timeout, 502/503/504 as transient
+  if (!error || !error.response) return true; // network / CORS / timeout
+  const s = error.response.status;
+  return s === 502 || s === 503 || s === 504;
+}
+
+/* -------- Install interceptors -------- */
 function installInterceptors(instance) {
   // Request interceptor: attach token, rewrite legacy URLs, and enforce JSON when appropriate
   instance.interceptors.request.use((config) => {
@@ -147,15 +203,15 @@ function installInterceptors(instance) {
       config.headers = { ...(config.headers || {}), Authorization: `Bearer ${token}` };
     }
 
-    if (config.url) {
-      const isRelative = !/^https?:\/\//i.test(config.url);
-      if (isRelative) config.url = rewriteLegacyUrl(config.url);
+    if (config.url && !isAbsoluteUrl(config.url)) {
+      config.url = rewriteLegacyUrl(config.url);
     }
 
     return normalizeForJson(config);
   });
 
-  // Response interceptor: refresh-once for 401, 415 auto-recovery, 405 fallback for /contractors/me/
+  // Response interceptor: refresh-once for 401, 415 auto-recovery, 405 fallback for /contractors/me/,
+  // optional GET retries for transient errors
   let isRefreshing = false;
   let queue = [];
 
@@ -171,6 +227,20 @@ function installInterceptors(instance) {
     (res) => res,
     async (error) => {
       const original = error.config || {};
+
+      /* ---------- Optional GET retry ---------- */
+      if (
+        RETRY.enableGetRetry &&
+        original &&
+        (original.method || "get").toLowerCase() === "get" &&
+        isTransient(error) &&
+        (original._retry_count || 0) < RETRY.max
+      ) {
+        original._retry_count = (original._retry_count || 0) + 1;
+        const delay = RETRY.baseDelayMs * Math.pow(2, original._retry_count - 1);
+        await sleep(delay);
+        return instance(original);
+      }
 
       /* ---------- 401 refresh-once ---------- */
       if (error.response && error.response.status === 401 && !original._retry) {
@@ -211,9 +281,9 @@ function installInterceptors(instance) {
           }
 
           const newAccess = data?.access || data?.access_token;
-          if (!newAccess) throw new Error("No access token returned on refresh.");
+          if (!newAccess || typeof newAccess !== "string") throw new Error("No access token returned on refresh.");
 
-          const remember = !!localStorage.getItem(TOK.refresh);
+          const remember = inferRememberFromStorage();
           setTokens(newAccess, refresh, remember);
 
           flush(null, newAccess);
