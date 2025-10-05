@@ -1,4 +1,4 @@
-# projects/models.py
+# backend/projects/models.py
 from django.conf import settings
 from django.db import models, transaction
 from django.utils import timezone
@@ -405,3 +405,7 @@ class AgreementAmendment(models.Model):
 
     def __str__(self):
         return f"Amendment #{self.amendment_number} to Agreement #{self.parent_id} (child #{self.child_id})"
+
+
+# 🔗 IMPORTANT: ensure Django registers AgreementAttachment from models_attachments.py
+from .models_attachments import AgreementAttachment  # noqa: E402,F401

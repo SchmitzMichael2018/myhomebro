@@ -1,63 +1,33 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+// frontend/src/components/AttachmentSection.jsx
+import React, { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import api from "../api";
 
 export default function AttachmentSection({ agreementId, onChange }) {
-  // form state
   const [title, setTitle] = useState("");
-  const [category, setCategory] = useState("WARRANTY");
+  const [category, setCategory] = useState("OTHER");
   const [visible, setVisible] = useState(true);
   const [ackReq, setAckReq] = useState(false);
   const [file, setFile] = useState(null);
-  const [dragOver, setDragOver] = useState(false);
-
-  // io state
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState([]);
+  const [lastError, setLastError] = useState("");
 
-  const fileInputRef = useRef(null);
-
-  const categories = useMemo(
-    () => ["WARRANTY", "ADDENDUM", "EXHIBIT", "PHOTO", "SPEC", "OTHER"],
-    []
-  );
-
-  const fmtDateTime = (v) => {
-    if (!v) return "—";
-    try {
-      const d = new Date(v);
-      if (Number.isNaN(d.getTime())) return String(v);
-      return `${d.toISOString().slice(0, 10)} ${d.toTimeString().slice(0, 5)}`;
-    } catch {
-      return String(v);
-    }
-  };
+  const categories = useMemo(() => ["WARRANTY", "ADDENDUM", "EXHIBIT", "OTHER"], []);
+  const listUrl = `/projects/agreements/${agreementId}/attachments/`;
 
   const load = async () => {
     setLoading(true);
+    setLastError("");
     try {
-      // Primary: nested agreement endpoint (returns the refreshed list on POST)
-      const { data } = await api.get(
-        `/projects/agreements/${agreementId}/attachments/`,
-        { params: { _ts: Date.now() }, headers: { "Cache-Control": "no-cache" } }
-      );
-      setItems(Array.isArray(data) ? data : data?.results || []);
-    } catch (err) {
-      try {
-        // Fallback: flat collection with filter param
-        const { data } = await api.get(`/projects/attachments/`, {
-          params: { agreement: agreementId, _ts: Date.now() },
-          headers: { "Cache-Control": "no-cache" },
-        });
-        setItems(Array.isArray(data) ? data : data?.results || []);
-      } catch (e2) {
-        console.error(e2);
-        toast.error("Failed to load attachments.");
-      }
+      const { data } = await api.get(listUrl);
+      setItems(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error(e);
+      setItems([]);
     } finally {
       setLoading(false);
-      onChange && onChange();
     }
   };
 
@@ -66,303 +36,258 @@ export default function AttachmentSection({ agreementId, onChange }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agreementId]);
 
-  const resetForm = () => {
-    setTitle("");
-    setCategory("WARRANTY");
-    setVisible(true);
-    setAckReq(false);
-    setFile(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+  const pickFile = (e) => setFile(e.target.files?.[0] || null);
+  const onDrop = (e) => {
+    e.preventDefault();
+    setFile(e.dataTransfer?.files?.[0] || null);
   };
 
-  const onUpload = async (e) => {
-    e.preventDefault();
-    if (!file) return toast.error("Choose a file first.");
-    setUploading(true);
+  const b = (v) => (v ? "true" : "false");
 
-    const form = new FormData();
-    form.append("title", title || file.name);
-    form.append("category", category);
-    form.append("visible_to_homeowner", visible ? "true" : "false");
-    form.append("ack_required", ackReq ? "true" : "false");
-    form.append("file", file);
+  const buildForm = ({ fileKey, visibleKey, ackKey }) => {
+    const fd = new FormData();
+    fd.append("title", title.trim());
+    fd.append("category", category);
+    fd.append(visibleKey, b(visible));
+    fd.append(ackKey, b(ackReq));
+    fd.append(fileKey, file);
+    // some serializers require the FK even on nested routes
+    fd.append("agreement", String(agreementId));
+    return fd;
+  };
+
+  // progressive fallbacks for different serializer field names
+  const attempts = [
+    { fileKey: "file",            visibleKey: "visible",              ackKey: "ack_required" },
+    { fileKey: "attachment",      visibleKey: "visible",              ackKey: "acknowledgement_required" },
+    { fileKey: "attachment_file", visibleKey: "is_visible",           ackKey: "requires_acknowledgement" },
+    { fileKey: "document",        visibleKey: "visible_to_homeowner", ackKey: "acknowledgement_required" },
+    { fileKey: "upload",          visibleKey: "visible",              ackKey: "ack_required" },
+  ];
+
+  const upload = async () => {
+    setLastError("");
+    if (!file) return toast.error("Please choose a file.");
+    if (!title.trim()) return toast.error("Please enter a title.");
+
+    setUploading(true);
+    let success = false;
+    let lastMsg = "Upload failed.";
 
     try {
-      const resp = await api.post(
-        `/projects/agreements/${agreementId}/attachments/`,
-        form,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
-      const list = Array.isArray(resp?.data) ? resp.data : [];
-      if (list.length) setItems(list);
-      else await load();
+      for (const map of attempts) {
+        try {
+          const fd = buildForm(map);
+          const res = await api.post(listUrl, fd); // let browser set multipart boundary
+          if (res && res.status >= 200 && res.status < 300) {
+            success = true;
+            break;
+          }
+        } catch (e) {
+          const data = e?.response?.data;
+          if (data) {
+            if (typeof data === "string") lastMsg = data;
+            else if (data?.detail) lastMsg = data.detail;
+            else if (typeof data === "object") {
+              lastMsg = Object.entries(data)
+                .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : String(v)}`)
+                .join(" | ");
+            }
+          }
+        }
+      }
+
+      if (!success) {
+        setLastError(lastMsg);
+        toast.error(lastMsg);
+        return;
+      }
+
       toast.success("Attachment uploaded.");
-      resetForm();
-    } catch (err) {
-      console.error(err);
-      const msg =
-        err?.response?.data?.detail ||
-        err?.response?.data?.error ||
-        "Upload failed.";
-      toast.error(String(msg));
+      setTitle("");
+      setCategory("OTHER");
+      setVisible(true);
+      setAckReq(false);
+      setFile(null);
+      await load();
+      onChange && onChange();
     } finally {
       setUploading(false);
     }
   };
 
-  const onDelete = async (id) => {
-    if (!window.confirm("Delete this attachment?")) return;
+  const remove = async (id) => {
     try {
-      await api.delete(
-        `/projects/agreements/${agreementId}/attachments/${id}/`
-      );
+      await api.delete(`/projects/attachments/${id}/`);
+      toast.success("Attachment removed.");
       await load();
-      toast.success("Attachment deleted.");
-    } catch (err) {
-      console.error(err);
-      toast.error("Delete failed.");
+      onChange && onChange();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to delete attachment.");
     }
   };
 
-  // drag & drop
-  const handleDrop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(false);
-    const f = e.dataTransfer?.files?.[0];
-    if (f) setFile(f);
-  };
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(true);
-  };
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(false);
+  // Extract a download URL & display name from a variety of API shapes
+  const getFileUrl = (it) => {
+    // common flat fields
+    const direct = it.file_url || it.url || it.download_url || it.file_path || it.path;
+    if (direct && typeof direct === "string") return direct;
+
+    // nested object like {file: {url: "...", name: "..."}} or string
+    if (it.file) {
+      if (typeof it.file === "string") return it.file;
+      if (typeof it.file === "object" && (it.file.url || it.file.download_url)) {
+        return it.file.url || it.file.download_url;
+      }
+    }
+    return "";
   };
 
-  // pill badge
-  const Badge = ({ children, tone = "slate" }) => {
-    const tones = {
-      slate: "badge text-bg-secondary",
-      blue: "badge text-bg-primary",
-      green: "badge text-bg-success",
-      amber: "badge text-bg-warning",
-      violet: "badge text-bg-info",
-      red: "badge text-bg-danger",
-    };
-    return <span className={tones[tone] || tones.slate}>{children}</span>;
+  const getFileName = (it) => {
+    const explicit =
+      it.filename || it.file_name || it.original_name || it.original_filename || it.name;
+    if (explicit) return String(explicit);
+    // nested file object name
+    if (it.file && typeof it.file === "object" && (it.file.name || it.file.filename)) {
+      return String(it.file.name || it.file.filename);
+    }
+    // last fallback: title (not ideal, but better than blank)
+    return it.title || "file";
   };
 
   return (
-    <div className="card mb-6">
-      <div className="card-header d-flex justify-content-between align-items-center">
-        <h3 className="card-title m-0">Attachments &amp; Addenda</h3>
-        {!loading && (
-          <span className="text-muted small">
-            {items.length} item{items.length === 1 ? "" : "s"}
-          </span>
-        )}
+    <div className="space-y-3">
+      <div className="text-sm text-gray-600">
+        Attachments & Addenda
+        <span className="ml-2 text-gray-400">
+          {loading ? "Loading…" : `${items.length} item${items.length === 1 ? "" : "s"}`}
+        </span>
       </div>
 
-      <div className="card-body">
-        {/* Upload panel: two columns */}
-        <form onSubmit={onUpload} className="mb-4">
-          <div className="row g-3">
-            {/* Left column - fields */}
-            <div className="col-12 col-md-6">
-              <div className="mb-2">
-                <label className="form-label">Title</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  placeholder="e.g., 12-Month Workmanship Warranty"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                />
-              </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <label className="block text-sm font-medium mb-1">Title</label>
+          <input
+            className="w-full border rounded px-3 py-2"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g., Manufacturer Warranty PDF"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Category</label>
+          <select
+            className="w-full border rounded px-3 py-2"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+          >
+            {categories.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+      </div>
 
-              <div className="row g-2">
-                <div className="col-6">
-                  <label className="form-label">Category</label>
-                  <select
-                    className="form-select"
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                  >
-                    {categories.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="col-6 d-flex align-items-end gap-3">
-                  <label className="form-check mb-0">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      checked={visible}
-                      onChange={(e) => setVisible(e.target.checked)}
-                    />
-                    <span className="form-check-label">Visible to Homeowner</span>
-                  </label>
-                  <label className="form-check mb-0">
-                    <input
-                      className="form-check-input"
-                      type="checkbox"
-                      checked={ackReq}
-                      onChange={(e) => setAckReq(e.target.checked)}
-                    />
-                    <span className="form-check-label">Acknowledgement Required</span>
-                  </label>
-                </div>
-              </div>
-            </div>
+      <div className="flex items-center gap-4">
+        <label className="inline-flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={visible} onChange={(e) => setVisible(e.target.checked)} />
+          <span>Visible to Homeowner</span>
+        </label>
+        <label className="inline-flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={ackReq} onChange={(e) => setAckReq(e.target.checked)} />
+          <span>Acknowledgement Required</span>
+        </label>
+      </div>
+      <div className="text-xs text-gray-500 -mt-2">
+        “Visible to Homeowner” means the homeowner can see and download this file in their portal. If unchecked, the
+        file is private to the contractor.
+      </div>
 
-            {/* Right column - drag & drop zone */}
-            <div className="col-12 col-md-6">
-              <label className="form-label">File</label>
-              <div
-                className={`p-4 border rounded text-center ${
-                  dragOver ? "border-primary bg-light" : "border-secondary"
-                }`}
-                onDrop={handleDrop}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-              >
-                {file ? (
-                  <div>
-                    <div className="fw-semibold">{file.name}</div>
-                    <div className="text-muted small">
-                      {(file.size / 1024 / 1024).toFixed(2)} MB
-                    </div>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline-secondary mt-2"
-                      onClick={() => {
-                        setFile(null);
-                        if (fileInputRef.current) fileInputRef.current.value = "";
-                      }}
-                    >
-                      Clear
-                    </button>
-                  </div>
-                ) : (
-                  <div className="text-muted">
-                    Drag &amp; drop a file here
-                    <div className="my-2">or</div>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-outline-secondary"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      Choose File
-                    </button>
-                  </div>
-                )}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="d-none"
-                  onChange={(e) => setFile(e.target.files?.[0] || null)}
-                />
-              </div>
+      <div
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={onDrop}
+        className="border rounded p-4 text-center text-sm"
+        style={{ minHeight: 120 }}
+      >
+        <div>Drag &amp; drop a file here</div>
+        <div className="my-2">or</div>
+        {/* BLUE "Choose File" */}
+        <label className="cursor-pointer inline-block" title="Choose a file to upload">
+          <span className="px-3 py-2 rounded bg-blue-600 text-white inline-block">Choose File</span>
+          <input type="file" className="hidden" onChange={pickFile} />
+        </label>
+        <div className="mt-2 text-gray-600">{file ? file.name : "No file chosen"}</div>
+      </div>
 
-              <div className="d-flex justify-content-end mt-3">
-                <button className="btn btn-primary" type="submit" disabled={uploading}>
-                  {uploading ? "Uploading…" : "Upload Attachment"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </form>
+      {lastError ? <div className="text-xs text-rose-600">{lastError}</div> : null}
 
-        {/* List */}
-        {loading ? (
-          <div className="text-muted">Loading…</div>
-        ) : items.length === 0 ? (
-          <div className="text-muted">None yet.</div>
-        ) : (
-          <div className="table-responsive">
-            <table className="table align-middle">
-              <thead>
-                <tr>
-                  <th style={{ width: "28%" }}>Title</th>
-                  <th style={{ width: "12%" }}>Category</th>
-                  <th style={{ width: "22%" }}>Flags</th>
-                  <th style={{ width: "16%" }}>Uploaded</th>
-                  <th style={{ width: "14%" }}>File</th>
-                  <th className="text-end" style={{ width: "8%" }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((a) => {
-                  const catTone =
-                    a.category === "WARRANTY"
-                      ? "blue"
-                      : a.category === "ADDENDUM"
-                      ? "violet"
-                      : a.category === "PHOTO"
-                      ? "amber"
-                      : a.category === "SPEC"
-                      ? "slate"
-                      : "slate";
+      <div className="flex gap-2">
+        {/* BLUE buttons */}
+        <button className="px-4 py-2 rounded bg-blue-600 text-white" disabled={uploading} onClick={upload}>
+          {uploading ? "Uploading…" : "Upload Attachment"}
+        </button>
+        <button className="px-4 py-2 rounded bg-blue-600 text-white" onClick={load} disabled={loading}>
+          Refresh
+        </button>
+      </div>
 
-                  const flags = [];
-                  if (a.visible_to_homeowner) flags.push(<Badge key="v" tone="green">Visible</Badge>);
-                  if (a.ack_required) flags.push(<Badge key="a" tone="amber">Acknowledgement Required</Badge>);
-                  if (flags.length === 0) flags.push(<span key="none" className="text-muted small">—</span>);
-
-                  const fileName = a.file_name || a.filename || (a.file_url ? "Open" : null);
-
-                  return (
-                    <tr key={a.id}>
-                      <td className="text-truncate" title={a.title || ""}>
-                        {a.title || <em>(untitled)</em>}
-                      </td>
-                      <td>
-                        <Badge tone={catTone}>{(a.category || "").toLowerCase() || "other"}</Badge>
-                      </td>
-                      <td>
-                        <div className="d-flex flex-wrap gap-1">{flags}</div>
-                      </td>
-                      <td className="text-muted small">{fmtDateTime(a.uploaded_at)}</td>
-                      <td>
-                        {a.file_url ? (
-                          <>
-                            <a href={a.file_url} target="_blank" rel="noreferrer">
-                              {fileName}
-                            </a>
-                            <a
-                              className="ms-3"
-                              href={a.file_url}
-                              download={a.file_name || true}
-                            >
-                              Download
-                            </a>
-                          </>
-                        ) : (
-                          <span className="text-muted small">no file</span>
-                        )}
-                      </td>
-                      <td className="text-end">
-                        <button
-                          className="btn btn-sm btn-outline-danger"
-                          onClick={() => onDelete(a.id)}
+      <div className="border rounded overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="text-left px-3 py-2">Title</th>
+              <th className="text-left px-3 py-2">Category</th>
+              <th className="text-left px-3 py-2">Visible</th>
+              <th className="text-left px-3 py-2">Ack Required</th>
+              <th className="text-left px-3 py-2">File</th>
+              <th className="text-left px-3 py-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.length === 0 ? (
+              <tr><td className="px-3 py-3" colSpan={6}>None yet.</td></tr>
+            ) : (
+              items.map((it) => {
+                const url = getFileUrl(it);
+                const name = getFileName(it);
+                return (
+                  <tr key={it.id}>
+                    <td className="px-3 py-2">{it.title}</td>
+                    <td className="px-3 py-2">{it.category}</td>
+                    <td className="px-3 py-2">{String(it.visible)}</td>
+                    <td className="px-3 py-2">{String(it.ack_required ?? it.acknowledgement_required ?? false)}</td>
+                    <td className="px-3 py-2">
+                      {url ? (
+                        <a
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline"
+                          title="Open file in new tab"
                         >
-                          Remove
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                          {name}
+                        </a>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      {/* RED delete */}
+                      <button
+                        className="px-2 py-1 rounded bg-rose-600 text-white"
+                        onClick={() => remove(it.id)}
+                        title="Delete attachment"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );

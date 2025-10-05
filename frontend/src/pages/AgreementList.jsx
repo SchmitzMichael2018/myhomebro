@@ -1,5 +1,5 @@
 // frontend/src/pages/AgreementList.jsx
-// v2025-09-23-project+homeowner+type-subtype+nocache
+// v2025-10-04-milestones+percent-complete
 
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../api";
@@ -15,7 +15,7 @@ import {
   Star,
 } from "lucide-react";
 
-console.log("AgreementList.jsx v2025-09-23-project+homeowner+type-subtype+nocache");
+console.log("AgreementList.jsx v2025-10-04-milestones+percent-complete");
 
 const fmtMoney = (n) => {
   if (n === null || n === undefined || n === "") return "—";
@@ -47,16 +47,15 @@ export default function AgreementList() {
   const [pageSize, setPageSize] = useState(10);
   const [busyRow, setBusyRow] = useState(null);
 
+  // --- NEW: milestone stats cache { [agreementId]: { total, complete, percent } }
+  const [msStats, setMsStats] = useState({});
+
   const load = async () => {
     try {
       setLoading(true);
       const { data } = await api.get("/projects/agreements/", {
-        // cache buster ensures we never see a stale 200 from any intermediary
         params: { page_size: 250, _ts: Date.now() },
-        headers: {
-          "Cache-Control": "no-cache",
-          Pragma: "no-cache",
-        },
+        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
       });
       const list = Array.isArray(data?.results)
         ? data.results
@@ -64,6 +63,10 @@ export default function AgreementList() {
         ? data
         : [];
       setRows(list);
+
+      // Fetch milestone stats in the background for the first N visible rows
+      // (We’ll refetch lazily as filters/paging change.)
+      fetchStatsFor(list.slice(0, pageSize));
     } catch (e) {
       console.error(e);
       toast.error("Failed to load agreements.");
@@ -72,9 +75,59 @@ export default function AgreementList() {
     }
   };
 
+  // --- NEW: Robust “is milestone complete?” detector
+  const isMsComplete = (m) => {
+    const sv = (x) =>
+      String(x || "").trim().toLowerCase();
+    const yes = (v) => v === true || v === "true" || v === 1 || v === "1";
+    const status = sv(m.status);
+    return (
+      yes(m.completed) ||
+      yes(m.is_complete) ||
+      yes(m.approved) ||
+      status === "complete" ||
+      status === "completed" ||
+      status === "approved" ||
+      status === "done"
+    );
+  };
+
+  // --- NEW: fetch stats for a subset (with tiny concurrency)
+  const fetchStatsFor = async (subset) => {
+    const ids = subset.map((r) => r.id).filter((id) => !msStats[id]);
+    if (ids.length === 0) return;
+
+    const limit = 5; // small concurrency to be gentle on the API
+    let idx = 0;
+
+    const runOne = async () => {
+      const i = idx++;
+      if (i >= ids.length) return;
+      const agreementId = ids[i];
+      try {
+        const { data } = await api.get(`/projects/agreements/${agreementId}/milestones/`, {
+          params: { _ts: Date.now() },
+          headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+        });
+        const list = Array.isArray(data) ? data : [];
+        const total = list.length;
+        const complete = list.filter(isMsComplete).length;
+        const percent = total > 0 ? Math.round((complete / total) * 100) : 0;
+        setMsStats((prev) => ({ ...prev, [agreementId]: { total, complete, percent } }));
+      } catch (e) {
+        // Don’t spam errors; just leave stats blank
+        console.warn("Milestone stats fetch failed for agreement", agreementId, e?.response?.status || e);
+      } finally {
+        await runOne();
+      }
+    };
+
+    const starters = Math.min(limit, ids.length);
+    await Promise.all(Array.from({ length: starters }, runOne));
+  };
+
   useEffect(() => {
     load();
-    // Listen for broadcasted refresh from the Edit page (if you add it later)
     const onStorage = (e) => {
       if (e.key === "agreements:refresh" && e.newValue === "1") {
         localStorage.removeItem("agreements:refresh");
@@ -83,7 +136,14 @@ export default function AgreementList() {
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // When filters change, make sure we fetch stats for newly-visible rows
+  useEffect(() => {
+    fetchStatsFor(rows.slice(0, pageSize));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, pageSize]);
 
   const filtered = useMemo(() => {
     const search = q.trim().toLowerCase();
@@ -273,6 +333,18 @@ export default function AgreementList() {
   const renderType = (r) => (r.project_type || "—");
   const renderSubtype = (r) => (r.project_subtype || "—");
 
+  // --- NEW: tiny progress bar
+  const Progress = ({ percent }) => (
+    <div className="w-24">
+      <div className="h-2 bg-gray-200 rounded">
+        <div
+          className="h-2 bg-blue-600 rounded"
+          style={{ width: `${Math.max(0, Math.min(100, percent))}%` }}
+        />
+      </div>
+    </div>
+  );
+
   return (
     <div className="p-6 space-y-4">
       {/* Header */}
@@ -361,6 +433,10 @@ export default function AgreementList() {
               <th className="p-2 text-left border">Homeowner</th>
               <th className="p-2 text-left border">Start</th>
               <th className="p-2 text-left border">End</th>
+              {/* NEW COLUMNS */}
+              <th className="p-2 text-right border">Milestones</th>
+              <th className="p-2 text-left border">% Complete</th>
+
               <th className="p-2 text-left border">Signatures</th>
               <th className="p-2 text-right border">Total</th>
               <th className="p-2 text-right border">Invoices</th>
@@ -370,13 +446,13 @@ export default function AgreementList() {
           <tbody>
             {loading ? (
               <tr>
-                <td className="p-3 border text-gray-600" colSpan={14}>
+                <td className="p-3 border text-gray-600" colSpan={16}>
                   Loading…
                 </td>
               </tr>
             ) : page.length === 0 ? (
               <tr>
-                <td className="p-3 border text-gray-500" colSpan={14}>
+                <td className="p-3 border text-gray-500" colSpan={16}>
                   No agreements found.
                 </td>
               </tr>
@@ -384,6 +460,8 @@ export default function AgreementList() {
               page.map((r) => {
                 const isChecked = selected.has(r.id);
                 const isPrimary = primaryId === r.id;
+                const stat = msStats[r.id] || { total: 0, complete: 0, percent: 0 };
+
                 return (
                   <tr key={r.id} className="odd:bg-white even:bg-gray-50">
                     <td className="p-2 border">
@@ -443,6 +521,17 @@ export default function AgreementList() {
 
                     <td className="p-2 border">{fmtDate(r.start)}</td>
                     <td className="p-2 border">{fmtDate(r.end)}</td>
+
+                    {/* NEW: milestone stats */}
+                    <td className="p-2 border text-right">
+                      {stat.total ? `${stat.complete} / ${stat.total}` : "—"}
+                    </td>
+                    <td className="p-2 border">
+                      <div className="flex items-center gap-2">
+                        <Progress percent={stat.percent} />
+                        <span className="w-10 text-xs">{stat.percent}%</span>
+                      </div>
+                    </td>
 
                     <td className="p-2 border">
                       <div className="flex items-center gap-2">

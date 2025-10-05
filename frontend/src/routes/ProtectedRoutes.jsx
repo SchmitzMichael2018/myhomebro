@@ -10,7 +10,7 @@ import ContractorDashboard from "../components/ContractorDashboard.jsx";
 
 /* Agreements */
 import AgreementWizard   from "../components/AgreementWizard.jsx";
-import AgreementEdit     from "../components/AgreementEdit";
+import AgreementEdit     from "../components/AgreementEdit.jsx";
 import AgreementDetail   from "../pages/AgreementDetail.jsx";
 import AgreementList     from "../pages/AgreementList.jsx";
 
@@ -57,8 +57,10 @@ export function protectedRoutes() {
         <Route path="/agreements/new" element={<AgreementWizard />} />
         <Route path="/agreements/:id" element={<AgreementDetail />} />
         <Route path="/agreements/:id/edit" element={<AgreementEdit />} />
+        {/* NEW: open the wizard for existing draft agreements (supports ?step=1..4) */}
+        <Route path="/agreements/:id/wizard" element={<AgreementWizard />} />
 
-        {/* Milestones (FIX) */}
+        {/* Milestones */}
         <Route path="/milestones" element={<MilestoneList />} />
         <Route path="/milestones/:id" element={<MilestoneDetail />} />
 

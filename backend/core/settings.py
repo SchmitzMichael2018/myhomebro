@@ -223,6 +223,7 @@ else:
 # DRF / JWT
 # ──────────────────────────────────────────────────────────────────────────────
 REST_FRAMEWORK = {
+    # JWT-only API auth (avoids CSRF enforcement on unsafe methods like DELETE)
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
@@ -241,7 +242,7 @@ SIMPLE_JWT = {
     "SIGNING_KEY":            SECRET_KEY,
     "USER_ID_FIELD":          "id",
     "USER_ID_CLAIM":          "user_id",
-    # ★ Make sure "Bearer" is accepted by clients
+    # ★ Ensure "Bearer" works for Authorization header
     "AUTH_HEADER_TYPES":      ("Bearer",),
     "UPDATE_LAST_LOGIN":      False,
 }
@@ -255,6 +256,11 @@ CORS_ALLOWED_ORIGINS = [
     *[o.strip() for o in get_env_var("CORS_ALLOWED_ORIGINS", _default_cors).split(",") if o.strip()]
 ]
 CORS_ALLOW_CREDENTIALS = True
+
+# Allow Authorization and Content-Disposition headers cross-origin if needed
+from corsheaders.defaults import default_headers as _cors_default_headers  # type: ignore
+CORS_ALLOW_HEADERS = list(_cors_default_headers) + ["authorization", "content-disposition"]
+
 # ★ Expose Content-Disposition so the browser can read filenames on PDF/CSV downloads
 CORS_EXPOSE_HEADERS = ["Content-Disposition"]
 

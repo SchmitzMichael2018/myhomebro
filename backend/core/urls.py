@@ -6,31 +6,25 @@ from django.conf import settings
 from django.contrib import admin
 from django.http import FileResponse, Http404, HttpResponse
 from django.urls import path, include, re_path
-from django.views.generic import RedirectView
+from django.views.generic import RedirectView, TemplateView
 
-# Frame-exempt PDF.js viewer
-from core.pdfviewer import viewer as pdf_viewer
-
-# JWT (SimpleJWT)
+# JWT (SimpleJWT) — safe to import
 from rest_framework_simplejwt.views import (
     TokenObtainPairView, TokenRefreshView, TokenVerifyView
 )
 
-# EXPLICIT function views for agreement subroutes (bind these FIRST)
-from projects.views.agreements import (
-    agreement_milestones,   # auth
-    agreement_attachments,  # auth
-)
-
-# Other views already used
-from projects.views.calendar import MilestoneCalendarView, AgreementCalendarView
-from projects.views.invoice import InvoiceViewSet
-from projects.views.contractor_me import ContractorMeView
+# Try to import the frame-exempt PDF viewer.
+# If it fails for any reason, fall back to a simple 404 responder to avoid 500s.
+try:
+    from core.pdfviewer import viewer as pdf_viewer  # type: ignore
+except Exception:
+    def pdf_viewer(_request):
+        return HttpResponse("PDF viewer unavailable", status=404, content_type="text/plain")
 
 # Optional: serve media in DEBUG
 try:
     from django.conf.urls.static import static as dj_static
-except Exception:
+except Exception:  # pragma: no cover
     dj_static = None
 
 
@@ -39,6 +33,10 @@ def health(_request):
 
 
 def spa_index(_request):
+    """
+    Inline SPA shell so we don't depend on template files at runtime.
+    Prevents 500 TemplateDoesNotExist on '/'. Static assets are served via WhiteNoise.
+    """
     html = """<!doctype html>
 <html lang="en">
   <head>
@@ -57,44 +55,28 @@ def spa_index(_request):
 
 
 def favicon(_request):
-    # Try collected static first
-    if getattr(settings, "STATIC_ROOT", None):
-        fav = Path(settings.STATIC_ROOT) / "favicon.ico"
-        if fav.exists():
-            with open(fav, "rb") as f:
-                return FileResponse(f, content_type="image/x-icon")
-    # Then Vite dist (useful during transitions)
-    dist_fav = Path(settings.BASE_DIR) / "frontend" / "dist" / "favicon.ico"
-    if dist_fav.exists():
-        with open(dist_fav, "rb") as f:
-            return FileResponse(f, content_type="image/x-icon")
+    """
+    Serve /favicon.ico from a stable location. Any I/O issue returns 404 (not 500).
+    Priority:
+      1) STATIC_ROOT/favicon.ico (collected static)
+      2) frontend/dist/favicon.ico (during transitions)
+    """
+    try:
+        static_root = getattr(settings, "STATIC_ROOT", None)
+        if static_root:
+            p = Path(static_root) / "favicon.ico"
+            if p.exists() and p.is_file():
+                return FileResponse(open(p, "rb"), content_type="image/x-icon")
+
+        dist_fav = Path(settings.BASE_DIR) / "frontend" / "dist" / "favicon.ico"
+        if dist_fav.exists() and dist_fav.is_file():
+            return FileResponse(open(dist_fav, "rb"), content_type="image/x-icon")
+    except Exception:
+        pass
     raise Http404("favicon.ico not found")
 
 
-# Stable invoice aliases (avoid heavy imports at startup)
-invoice_list_view = InvoiceViewSet.as_view({"get": "list", "post": "create"})
-invoice_detail_view = InvoiceViewSet.as_view(
-    {"get": "retrieve", "put": "update", "patch": "partial_update", "delete": "destroy"}
-)
-
 urlpatterns = [
-    # ───────────────────────────────────────────────────────────────
-    # EXPLICIT agreement subroutes FIRST (regex; with/without slash)
-    # These are the exact paths the frontend calls.
-    # ───────────────────────────────────────────────────────────────
-    re_path(r"^api/projects/agreements/(?P<pk>\d+)/attachments/?$",
-            agreement_attachments, name="agreement-attachments"),
-    re_path(r"^api/projects/agreements/(?P<pk>\d+)/milestones/?$",
-            agreement_milestones,  name="agreement-milestones"),
-
-    # Optional flat aliases (if FE ever calls /api/agreements/... directly)
-    re_path(r"^api/agreements/(?P<pk>\d+)/attachments/?$",
-            RedirectView.as_view(url="/api/projects/agreements/%(pk)s/attachments/", permanent=False),
-            name="agreements-attachments-alias"),
-    re_path(r"^api/agreements/(?P<pk>\d+)/milestones/?$",
-            RedirectView.as_view(url="/api/projects/agreements/%(pk)s/milestones/", permanent=False),
-            name="agreements-milestones-alias"),
-
     # Admin & health
     path("admin/", admin.site.urls),
     path("healthz", health),
@@ -104,30 +86,37 @@ urlpatterns = [
     path("api/auth/refresh/", TokenRefreshView.as_view(),    name="auth-refresh"),
     path("api/auth/verify/",  TokenVerifyView.as_view(),     name="auth-verify"),
 
-    # Projects API (DRF routers live here)
+    # === Primary API mountpoints ===
+    # All DRF routers (agreements, attachments, invoices, calendars, etc.) live inside projects.urls.
     path("api/projects/", include(("projects.urls", "projects"), namespace="projects")),
-
-    # Accounts (if you have a separate app)
     path("api/", include(("accounts.urls", "accounts"), namespace="accounts")),
 
-    # Flat aliases commonly used by the frontend
-    path("api/contractors/me/", ContractorMeView.as_view(), name="contractor-me-alias"),
-    path("api/milestones/calendar/", MilestoneCalendarView.as_view(), name="milestones-calendar-alias"),
-    path("api/agreements/calendar/", AgreementCalendarView.as_view(), name="agreements-calendar-alias"),
-    path("api/invoices/", invoice_list_view, name="invoice-list-alias"),
-    path("api/invoices/<int:pk>/", invoice_detail_view, name="invoice-detail-alias"),
+    # === Lightweight alias redirects (no heavy imports) ===
+    # Contractor "me"
+    path("api/contractors/me/", RedirectView.as_view(
+        url="/api/projects/contractors/me/", permanent=False), name="contractor-me-alias"),
 
-    # SAEF/legacy expenses aliases (clean redirects)
-    path("api/expenses/", RedirectView.as_view(url="/api/projects/expenses/", permanent=False), name="expense-list-alias"),
-    re_path(r"^api/expenses/(?P<pk>\d+)/$", RedirectView.as_view(url="/api/projects/expenses/%(pk)s/", permanent=False), name="expense-detail-alias"),
+    # Calendars
+    path("api/milestones/calendar/", RedirectView.as_view(
+        url="/api/projects/milestones/calendar/", permanent=False), name="milestones-calendar-alias"),
+    path("api/agreements/calendar/", RedirectView.as_view(
+        url="/api/projects/agreements/calendar/", permanent=False), name="agreements-calendar-alias"),
 
-    # Frame-exempt PDF.js viewer
+    # Invoices
+    path("api/invoices/", RedirectView.as_view(
+        url="/api/projects/invoices/", permanent=False), name="invoice-list-alias"),
+    path("api/invoices/<int:pk>/", RedirectView.as_view(
+        url="/api/projects/invoices/%(pk)s/", permanent=False), name="invoice-detail-alias"),
+
+    # Frame-exempt PDF.js viewer (guarded above)
     path("pdf/viewer/", pdf_viewer, name="pdf-viewer"),
 
-    # Favicon + SPA shell/fallback
+    # Favicon
     path("favicon.ico", favicon, name="favicon"),
+
+    # SPA shell
     path("", spa_index, name="spa_index"),
-    # SPA fallback: exclude admin, api, static, media
+    # SPA fallback for any non-API, non-admin, non-static, non-media routes
     re_path(r"^(?!admin/|api/|static/|media/).*$", spa_index, name="spa_fallback"),
 ]
 

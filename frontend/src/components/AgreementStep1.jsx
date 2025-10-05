@@ -1,9 +1,7 @@
+// frontend/src/components/AgreementStep1.jsx
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-
-const projectTypes = [
-  'Remodel', 'Repair', 'Installation', 'Painting', 'Outdoor', 'Inspection', 'Custom', 'DIY Help'
-];
+import { PROJECT_TYPES } from './options/projectOptions'; // <— shared
 
 const DRAFT_KEY = 'agreement:step1';
 
@@ -37,7 +35,6 @@ export default function AgreementStep1({ onNext, initialData = {}, allHomeowners
     return m;
   }, [allHomeowners]);
 
-  // autosave draft (debounced)
   useEffect(() => {
     const t = setTimeout(() => {
       try { localStorage.setItem(DRAFT_KEY, JSON.stringify(formData)); } catch {}
@@ -82,7 +79,6 @@ export default function AgreementStep1({ onNext, initialData = {}, allHomeowners
       homeownerEmail: selected?.email || '',
     };
 
-    // If using customer address, keep Step 1 consistent for later steps
     if (formData.useCustomerAddress && selected) {
       const street = selected.street_address || selected.address_line1 || selected.address || '';
       const line2 = selected.address_line_2 || '';
@@ -115,7 +111,6 @@ export default function AgreementStep1({ onNext, initialData = {}, allHomeowners
         <button type="button" onClick={discardDraft} className="text-sm text-red-600 hover:underline">Discard Draft</button>
       </div>
 
-      {/* --- fields unchanged except for inline errors --- */}
       {/* Project Name */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-center">
         <label htmlFor="projectName" className="sm:text-right text-sm font-medium text-gray-700">Project Name</label>
@@ -139,7 +134,7 @@ export default function AgreementStep1({ onNext, initialData = {}, allHomeowners
         <div className="sm:col-span-2 grid grid-cols-2 gap-4">
           <select id="projectType" name="projectType" value={formData.projectType} onChange={handleChange} className={`form-input ${errors.projectType ? 'ring-1 ring-red-500' : ''}`}>
             <option value="">-- Select a Type --</option>
-            {projectTypes.map(type => <option key={type} value={type}>{type}</option>)}
+            {PROJECT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
           <input name="projectSubtype" type="text" value={formData.projectSubtype} onChange={handleChange} className="form-input" placeholder="Sub-Type (Optional)" />
         </div>
@@ -163,7 +158,7 @@ export default function AgreementStep1({ onNext, initialData = {}, allHomeowners
         </div>
       </div>
 
-      {/* Address toggle + fields (unchanged UI, with errors) */}
+      {/* Address toggle + fields */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="sm:col-start-2 sm:col-span-2">
           <div className="flex items-center">
