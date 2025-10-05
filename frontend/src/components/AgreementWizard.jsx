@@ -1,7 +1,7 @@
 // frontend/src/components/AgreementWizard.jsx
-// v2025-10-04 restore-milestones + focus-guard + warranty-fallbacks
+// v2025-10-05 focus-persist + warranty-lowercase + NOT-NULL-guard + milestones-restored
 
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../api";
@@ -115,7 +115,13 @@ export default function AgreementWizard() {
   /* ----- Step 3 warranty fields ----- */
   const [useDefaultWarranty, setUseDefaultWarranty] = useState(true);
   const [customWarrantyText, setCustomWarrantyText] = useState("");
-  const [defaultWarrantyText, setDefaultWarrantyText] = useState("");
+  const [defaultWarrantyText, setDefaultWarrantyText] = useState(
+    "Standard workmanship warranty: Contractor warrants all labor performed under this Agreement for one (1) year from substantial completion. Materials are covered by the manufacturer’s warranties. This warranty excludes damage caused by misuse, neglect, alteration, improper maintenance, or acts of God."
+  );
+
+  // Focus management for custom textarea
+  const warrantyRef = useRef(null);
+  const [warrantyTyping, setWarrantyTyping] = useState(false);
 
   const ids = {
     projectTitle: "projectTitleInput",
@@ -163,19 +169,19 @@ export default function AgreementWizard() {
       setHomeownerId(String(data?.homeowner || data?.homeowner_id || ""));
       setDescription(data?.description || data?.job_description || "");
 
-      // Warranty snapshot
+      // Warranty snapshot from server, if present
       if (typeof data?.warranty_type === "string") {
-        setUseDefaultWarranty(data.warranty_type.toLowerCase() !== "custom");
+        const wt = String(data.warranty_type).trim().toLowerCase();
+        setUseDefaultWarranty(wt !== "custom");
       }
       if (data?.warranty_text_snapshot) {
-        setDefaultWarrantyText(data.warranty_text_snapshot);
-        if (data?.warranty_type && data.warranty_type.toLowerCase() === "custom") {
-          setCustomWarrantyText(data.warranty_text_snapshot);
+        const snap = String(data.warranty_text_snapshot || "");
+        if (snap) {
+          setDefaultWarrantyText(snap);
+          if (String(data?.warranty_type || "").toLowerCase() === "custom") {
+            setCustomWarrantyText(snap);
+          }
         }
-      } else {
-        setDefaultWarrantyText(
-          "Standard workmanship warranty: Contractor warrants all labor performed under this Agreement for one (1) year from substantial completion. Materials are covered by the manufacturer’s warranties. This warranty excludes damage caused by misuse, neglect, alteration, improper maintenance, or acts of God."
-        );
       }
     } catch (err) {
       console.error(err);
@@ -283,13 +289,25 @@ export default function AgreementWizard() {
     }
   };
 
-  /* ---------- Warranty save with fallbacks ---------- */
+  /* ---------- Warranty save (lowercase + NOT NULL guard) ---------- */
   const saveWarranty = async () => {
     const isDefault = !!useDefaultWarranty;
-    const snapshot = isDefault ? (defaultWarrantyText || "") : (customWarrantyText || "");
+    const trimmedCustom = (customWarrantyText || "").trim();
+    let snapshot = isDefault ? (defaultWarrantyText || "").trim() : trimmedCustom;
+
+    // NOT NULL guard for DB column
+    if (!snapshot) {
+      if (isDefault) {
+        snapshot =
+          "Standard workmanship warranty: Contractor warrants all labor performed under this Agreement for one (1) year from substantial completion. Materials are covered by the manufacturer’s warranties. This warranty excludes damage caused by misuse, neglect, alteration, improper maintenance, or acts of God.";
+      } else {
+        toast.error("Please enter your custom warranty text before saving.");
+        return;
+      }
+    }
 
     const primaryPayload = {
-      warranty_type: isDefault ? "DEFAULT" : "CUSTOM",
+      warranty_type: isDefault ? "default" : "custom", // lowercase for DRF choices
       warranty_text_snapshot: snapshot,
     };
     const aliasPayload = {
@@ -298,11 +316,11 @@ export default function AgreementWizard() {
     };
 
     const fmtErr = (err) => {
-      const data = err?.response?.data;
-      if (typeof data === "string") return data;
-      if (data?.detail) return data.detail;
-      if (data && typeof data === "object") {
-        return Object.entries(data)
+      const d = err?.response?.data;
+      if (typeof d === "string") return d;
+      if (d?.detail) return d.detail;
+      if (d && typeof d === "object") {
+        return Object.entries(d)
           .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : String(v)}`)
           .join(" | ");
       }
@@ -719,8 +737,8 @@ export default function AgreementWizard() {
               ) : (
                 milestones.map((m, idx) => {
                   const isDeleted = deletions.has(m.id);
+                  const d = daysInclusive(m.start, m.end);
                   const edit = rowEdits[m.id];
-                  const d = daysInclusive(edit?.start ?? m.start, edit?.end ?? m.end);
 
                   return (
                     <tr key={m.id} className={isDeleted ? "opacity-50" : ""}>
@@ -825,7 +843,19 @@ export default function AgreementWizard() {
                               <button
                                 type="button"
                                 className="px-2 py-1 rounded bg-emerald-600 text-white"
-                                onClick={() => commitEditRow(m.id)}
+                                onClick={() => {
+                                  const e = rowEdits[m.id];
+                                  if (!e) return;
+                                  setMilestones((prev) =>
+                                    prev.map((x) => (x.id === m.id ? { ...x, ...e, editing: undefined } : x))
+                                  );
+                                  setRowEdits((prev) => {
+                                    const n = { ...prev };
+                                    delete n[m.id];
+                                    return n;
+                                  });
+                                  toast.success("Row updated.");
+                                }}
                               >
                                 Save
                               </button>
@@ -899,7 +929,13 @@ export default function AgreementWizard() {
           <button type="button" className="px-4 py-2 rounded border" onClick={() => goStep(1)}>
             Back
           </button>
-          <button type="button" className="px-4 py-2 rounded border" onClick={persistMilestones}>
+          <button
+            type="button"
+            className="px-4 py-2 rounded border"
+            onClick={async () => {
+              await persistMilestones();
+            }}
+          >
             Save
           </button>
           <button
@@ -916,6 +952,21 @@ export default function AgreementWizard() {
       </div>
     );
   };
+
+  // Keep focus locked in the custom warranty box while typing
+  useEffect(() => {
+    if (!useDefaultWarranty && warrantyTyping && warrantyRef.current) {
+      // If focus was lost (rerender), put it back and move caret to end
+      if (document.activeElement !== warrantyRef.current) {
+        const el = warrantyRef.current;
+        el.focus({ preventScroll: true });
+        const len = el.value?.length ?? 0;
+        try {
+          el.setSelectionRange(len, len);
+        } catch {}
+      }
+    }
+  }, [useDefaultWarranty, customWarrantyText, warrantyTyping]);
 
   const Step3 = () => (
     <div className="space-y-6" onSubmit={(e) => e.preventDefault()}>
@@ -938,11 +989,16 @@ export default function AgreementWizard() {
           </label>
           <textarea
             id={ids.customWarranty}
+            ref={warrantyRef}
             className={`w-full border rounded px-3 py-2 ${useDefaultWarranty ? "bg-gray-100 text-gray-700" : ""}`}
             rows={6}
             disabled={useDefaultWarranty}
             value={useDefaultWarranty ? defaultWarrantyText : customWarrantyText}
-            onChange={(e) => !useDefaultWarranty && setCustomWarrantyText(e.target.value)}
+            onChange={(e) => {
+              if (!useDefaultWarranty) setCustomWarrantyText(e.target.value);
+            }}
+            onFocus={() => setWarrantyTyping(true)}
+            onBlur={() => setWarrantyTyping(false)}
             onKeyDownCapture={(e) => e.stopPropagation()}
             onKeyUpCapture={(e) => e.stopPropagation()}
             onInput={(e) => e.stopPropagation()}

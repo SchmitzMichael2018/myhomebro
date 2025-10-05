@@ -6,6 +6,15 @@ from .models_dispute import Dispute, DisputeAttachment
 import uuid
 
 
+# --- Safe default for warranty snapshot (used if blank/None) ---
+DEFAULT_WARRANTY_TEXT = (
+    "Standard workmanship warranty: Contractor warrants all labor performed under this "
+    "Agreement for one (1) year from substantial completion. Materials are covered by the "
+    "manufacturer’s warranties. This warranty excludes damage caused by misuse, neglect, "
+    "alteration, improper maintenance, or acts of God."
+)
+
+
 # --- TextChoices for status fields ---
 class ProjectStatus(models.TextChoices):
     DRAFT = 'draft', 'Draft'
@@ -205,12 +214,13 @@ class Agreement(models.Model):
     terms_text = models.TextField(blank=True)
     privacy_text = models.TextField(blank=True)
 
-    # Warranty (NEW)
+    # Warranty
     warranty_type = models.CharField(
         max_length=16,
         choices=[("default", "Default"), ("custom", "Custom")],
         default="default",
     )
+    # NOTE: DB has NOT NULL constraint from your trace; keep this non-null at runtime.
     warranty_text_snapshot = models.TextField(blank=True, default="")
 
     escrow_payment_intent_id = models.CharField(max_length=255, blank=True)
@@ -257,6 +267,13 @@ class Agreement(models.Model):
         return self.signed_by_contractor and self.signed_by_homeowner
 
     def save(self, *args, **kwargs):
+        """
+        Hardened save:
+        - Backfill contractor from project if missing
+        - Keep status transitions
+        - Normalize warranty_type to ('default'|'custom')
+        - Guarantee warranty_text_snapshot is never NULL/empty before persisting
+        """
         # Backfill contractor from project if not set
         if not self.contractor and self.project and self.project.contractor_id:
             self.contractor = self.project.contractor
@@ -266,6 +283,26 @@ class Agreement(models.Model):
             self.status = ProjectStatus.FUNDED
         elif self.is_fully_signed and self.status == ProjectStatus.DRAFT:
             self.status = ProjectStatus.SIGNED
+
+        # --- Normalize & enforce warranty fields ---
+        # Normalize type to our lowercase choices to play nice with any UPPERCASE inputs
+        if self.warranty_type:
+            self.warranty_type = str(self.warranty_type).strip().lower()
+            if self.warranty_type not in ("default", "custom"):
+                self.warranty_type = "default"
+        else:
+            self.warranty_type = "default"
+
+        # Ensure snapshot is never None or empty string (DB NOT NULL guard)
+        snap = (self.warranty_text_snapshot or "").strip()
+        if not snap:
+            # If marked default, inject the default text
+            if self.warranty_type == "default":
+                self.warranty_text_snapshot = DEFAULT_WARRANTY_TEXT
+            else:
+                # For 'custom' with no snapshot, still guard DB by using default text
+                # (alternatively, enforce ValidationError upstream)
+                self.warranty_text_snapshot = DEFAULT_WARRANTY_TEXT
 
         super().save(*args, **kwargs)
 
