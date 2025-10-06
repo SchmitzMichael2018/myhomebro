@@ -1,7 +1,7 @@
-# backend/projects/views/agreements.py
 from __future__ import annotations
 
 import base64
+import io
 from datetime import timedelta
 from typing import Set
 
@@ -22,11 +22,16 @@ from rest_framework.exceptions import ValidationError, PermissionDenied
 from projects.models import Agreement, Milestone
 from projects.serializers.agreement import AgreementSerializer
 
-# Optional PDF generator (if you’ve implemented it)
+# Use the full PDF service (renders complete agreement; no ToS/Privacy embedded)
 try:
-    from projects.services.pdfs import generate_full_agreement_pdf  # type: ignore
-except Exception:
-    generate_full_agreement_pdf = None
+    from projects.services.pdf import (
+        build_agreement_pdf_bytes,          # preview (bytes only)
+        generate_full_agreement_pdf,        # finalize (save/version)
+    )
+except Exception as _err:
+    # If the PDF service isn't available, we surface a clear error on preview/finalize
+    build_agreement_pdf_bytes = None   # type: ignore
+    generate_full_agreement_pdf = None # type: ignore
 
 
 # ---------------------------------------------------------------------
@@ -119,6 +124,8 @@ class AgreementViewSet(viewsets.ModelViewSet):
           • Contractor (or staff) may delete while NOT fully signed (i.e., draft).
           • When fully signed, deletion is blocked for RETENTION_YEARS years.
       - Actions:
+          GET  /agreements/<id>/preview_pdf/          (JSON envelope)
+          GET  /agreements/<id>/preview_pdf/?stream=1 (inline full PDF stream)
           POST /agreements/<id>/finalize_pdf/
           POST /agreements/<id>/send_for_signature/
           POST /agreements/<id>/contractor_sign/
@@ -223,22 +230,58 @@ class AgreementViewSet(viewsets.ModelViewSet):
         # If not fully signed, allow deletion (draft / in-progress)
         return super().destroy(request, *args, **kwargs)
 
-    # ---------------- Legacy/compat endpoint ----------------
+    # ---------------- PREVIEW (GET): JSON envelope + inline FULL PDF stream ----------------
 
-    @action(detail=True, methods=["post"])
+    @action(detail=True, methods=["get"], url_path="preview_pdf")
     def preview_pdf(self, request, pk=None):
-        return Response({"ok": True, "generated_at": now().isoformat()}, status=status.HTTP_200_OK)
+        """
+        GET  /agreements/<id>/preview_pdf/          -> { "url": "<absolute_url_with_stream=1>" }
+        GET  /agreements/<id>/preview_pdf/?stream=1 -> inline full PDF preview (no DB write)
+        """
+        stream = request.query_params.get("stream")
 
-    # ---------------- Wizard Step 4: (Re)build PDF ----------------
+        if not stream:
+            # One-liner your front-end expects: a URL we can open in a new tab
+            url = request.build_absolute_uri("?stream=1")
+            return Response({"url": url}, status=status.HTTP_200_OK)
+
+        # Stream mode
+        ag: Agreement = self.get_object()
+
+        if not build_agreement_pdf_bytes:
+            return Response(
+                {"detail": "PDF preview is not available (service missing)."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        try:
+            pdf_bytes = build_agreement_pdf_bytes(ag, is_preview=True)
+        except Exception as e:
+            return Response({"detail": f"Could not generate preview: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        buf = io.BytesIO(pdf_bytes)
+        filename = f"agreement_{ag.pk}_preview.pdf"
+        resp = FileResponse(buf, content_type="application/pdf")
+        resp["Content-Disposition"] = f'inline; filename="{filename}"'
+        return resp
+
+    # ---------------- Wizard Step 4: (Re)build consolidated PDF ----------------
 
     @action(detail=True, methods=["post"])
     def finalize_pdf(self, request, pk=None):
         ag = self.get_object()
-        if generate_full_agreement_pdf:
-            try:
-                generate_full_agreement_pdf(ag)  # expected to update ag.pdf_file internally
-            except Exception as e:
-                return Response({"detail": f"PDF generation failed: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        if not generate_full_agreement_pdf:
+            return Response(
+                {"detail": "PDF finalization is not available (service missing)."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        try:
+            generate_full_agreement_pdf(ag)  # expected to update ag.pdf_file internally (versioned)
+        except Exception as e:
+            return Response({"detail": f"PDF generation failed: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         ag.refresh_from_db()
         pdf_url = getattr(getattr(ag, "pdf_file", None), "url", None)
         return Response({"ok": True, "pdf_url": pdf_url}, status=status.HTTP_200_OK)
@@ -286,6 +329,10 @@ class AgreementViewSet(viewsets.ModelViewSet):
     def contractor_sign(self, request, pk=None):
         """
         Contractor signs. Still editable until BOTH parties sign.
+
+        Signature image is OPTIONAL. We record the typed name and accept
+        either a file upload (request.FILES["signature"]) or a data URL,
+        but an image is not required to proceed.
         """
         ag: Agreement = self.get_object()
 
@@ -293,17 +340,17 @@ class AgreementViewSet(viewsets.ModelViewSet):
         if not (request.user.is_staff or request.user.is_superuser or request.user == contractor_user):
             raise PermissionDenied("Only the assigned contractor (or staff) can sign as contractor.")
 
-        name = (request.data.get("name") or "").strip()
+        name = (request.data.get("typed_name") or request.data.get("name") or "").strip()
         if not name:
             return Response({"detail": "Signature name is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         signature_file = request.FILES.get("signature")
         data_url = request.data.get("signature_data_url")
 
-        if signature_file:
-            ag.contractor_signature.save(signature_file.name, signature_file, save=False)
-        elif data_url:
-            try:
+        try:
+            if signature_file:
+                ag.contractor_signature.save(signature_file.name, signature_file, save=False)
+            elif data_url:
                 header, b64 = data_url.split(",", 1)
                 if ";base64" not in header:
                     return Response({"detail": "Invalid signature data URL."}, status=status.HTTP_400_BAD_REQUEST)
@@ -312,14 +359,13 @@ class AgreementViewSet(viewsets.ModelViewSet):
                     ext = "jpg"
                 content = ContentFile(base64.b64decode(b64), name=f"contractor_signature.{ext}")
                 ag.contractor_signature.save(content.name, content, save=False)
-            except Exception:
-                return Response({"detail": "Could not decode signature image."}, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            return Response({"detail": "Signature image is required."}, status=status.HTTP_400_BAD_REQUEST)
+            # else: no image provided — that's OK now (typed-only signature)
+        except Exception:
+            return Response({"detail": "Could not process signature image."}, status=status.HTTP_400_BAD_REQUEST)
 
         ag.contractor_signature_name = name
         ag.signed_by_contractor = True
-        ag.signed_at_contractor = now()
+        ag.contractor_signed_at = now()
         ip = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip() or request.META.get("REMOTE_ADDR")
         ag.contractor_signed_ip = ip or None
 
@@ -327,7 +373,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
         ag.status = "draft"
         ag.save(update_fields=[
             "contractor_signature", "contractor_signature_name",
-            "signed_by_contractor", "signed_at_contractor", "contractor_signed_ip",
+            "signed_by_contractor", "contractor_signed_at", "contractor_signed_ip",
             "status", "updated_at"
         ])
 
@@ -349,7 +395,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
             raise ValidationError("Cannot unsign after both parties have signed.")
 
         ag.signed_by_contractor = False
-        ag.signed_at_contractor = None
+        ag.contractor_signed_at = None
         ag.contractor_signature_name = None
         # Optional: also clear signature file if you prefer:
         # if getattr(ag, "contractor_signature", None):
@@ -357,7 +403,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
 
         ag.status = "draft"
         ag.save(update_fields=[
-            "signed_by_contractor", "signed_at_contractor", "contractor_signature_name",
+            "signed_by_contractor", "contractor_signed_at", "contractor_signature_name",
             "status", "updated_at"
         ])
 
@@ -415,7 +461,7 @@ def agreement_pdf(request, agreement_id: int):
     ag = get_object_or_404(Agreement, pk=agreement_id)
 
     # Generate on the fly if possible and no file exists yet
-    if not getattr(ag, "pdf_file", None) or not getattr(ag.pdf_file, "name", ""):
+    if (not getattr(ag, "pdf_file", None)) or (not getattr(ag.pdf_file, "name", "")):
         if generate_full_agreement_pdf:
             try:
                 generate_full_agreement_pdf(ag)  # expected to attach to ag.pdf_file

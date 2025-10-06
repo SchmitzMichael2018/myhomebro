@@ -1,3 +1,4 @@
+# backend/projects/urls.py
 from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter
 from rest_framework_nested.routers import NestedDefaultRouter
@@ -133,11 +134,12 @@ urlpatterns = [
     path("contractor-onboarding-status/", ContractorOnboardingStatusView.as_view(), name="contractor-onboarding-status"),
 ]
 
-# Keep ONLY preview action as explicit re_path
+# ── Preview PDF explicit route ─────────────────────────────────────────────
+# Map GET to the viewset action so the front end's GET /preview_pdf/ works.
 urlpatterns += [
     re_path(
         r"^agreements/(?P<pk>\d+)/preview_pdf/?$",
-        AgreementViewSet.as_view({"post": "preview_pdf"}),
+        AgreementViewSet.as_view({"get": "preview_pdf"}),  # ← changed from {"post": "preview_pdf"}
         name="agreement-preview-pdf",
     ),
 ]

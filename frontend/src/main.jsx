@@ -1,5 +1,7 @@
 // src/main.jsx
-import "./index.css"; // pulls Tailwind into the bundle
+import "./index.css";           // Tailwind / your global styles
+// ⚠️ removed: import "./styles/mobile.css";
+
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
@@ -22,5 +24,5 @@ if (!mount.firstChild) {
   mount.appendChild(boot);
 }
 
-// Render the app (will replace the Booting… div)
+// Render the app (replaces the Booting… div)
 createRoot(mount).render(<App />);

@@ -1,5 +1,6 @@
-// frontend/src/components/AgreementWizard.jsx
-// v2025-10-05 focus-persist + warranty-lowercase + NOT-NULL-guard + milestones-restored
+// src/components/AgreementWizard.jsx
+// v2025-10-06 — Step 2 milestone list restored (editable table), authenticated PDF preview (Blob),
+// header public link/copy, fluid desktop layout, Step4Review wiring.
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -7,6 +8,7 @@ import toast from "react-hot-toast";
 import api from "../api";
 import { PROJECT_TYPES, SUBTYPES_BY_TYPE } from "./options/projectOptions";
 import AttachmentSection from "./AttachmentSection";
+import Step4Review from "./Step4Review";
 
 /* ---------- Tabs ---------- */
 const TABS = [
@@ -86,6 +88,7 @@ const routes = {
   milestonesList: (agreementId) => `/projects/agreements/${agreementId}/milestones/`,
   milestoneDetail: (milestoneId) => `/projects/milestones/${milestoneId}/`,
   homeowners: () => `/projects/homeowners/`,
+  previewPdf: (id) => `/projects/agreements/${id}/preview_pdf/`,
 };
 
 /* ========================================================= */
@@ -101,6 +104,10 @@ export default function AgreementWizard() {
   /* ----- Agreement shell ----- */
   const [agreement, setAgreement] = useState(null);
   const [loadingAgreement, setLoadingAgreement] = useState(true);
+
+  /* ----- Global preview/public link state ----- */
+  const [previewing, setPreviewing] = useState(false);
+  const [copying, setCopying] = useState(false);
 
   /* ----- Step 1 fields ----- */
   const [projectType, setProjectType] = useState("");
@@ -129,8 +136,6 @@ export default function AgreementWizard() {
     projectSubtype: "projectSubtypeSelect",
     homeowner: "homeownerSelect",
     description: "projectDescription",
-    defaultWarranty: "defaultWarrantyCheckbox",
-    customWarranty: "customWarrantyTextarea",
   };
 
   const typeOptions = useMemo(() => normalizeOptions(PROJECT_TYPES || []), []);
@@ -270,7 +275,7 @@ export default function AgreementWizard() {
     navigate({ search: `?${sp.toString()}` }, { replace: true });
   };
 
-  /* ---------- Step 1 save ---------- */
+  /* ---------- Saves ---------- */
   const saveStep1 = async () => {
     try {
       const payload = {
@@ -289,13 +294,11 @@ export default function AgreementWizard() {
     }
   };
 
-  /* ---------- Warranty save (lowercase + NOT NULL guard) ---------- */
   const saveWarranty = async () => {
     const isDefault = !!useDefaultWarranty;
     const trimmedCustom = (customWarrantyText || "").trim();
     let snapshot = isDefault ? (defaultWarrantyText || "").trim() : trimmedCustom;
 
-    // NOT NULL guard for DB column
     if (!snapshot) {
       if (isDefault) {
         snapshot =
@@ -307,7 +310,7 @@ export default function AgreementWizard() {
     }
 
     const primaryPayload = {
-      warranty_type: isDefault ? "default" : "custom", // lowercase for DRF choices
+      warranty_type: isDefault ? "default" : "custom",
       warranty_text_snapshot: snapshot,
     };
     const aliasPayload = {
@@ -488,8 +491,47 @@ export default function AgreementWizard() {
     toast.success("Milestones saved.");
   };
 
-  /* ---------- UI ---------- */
+  /* ---------- Header Actions ---------- */
 
+  // Authenticated preview: fetch Blob with Authorization and open in a new tab
+  const handleHeaderPreview = async () => {
+    try {
+      setPreviewing(true);
+      const res = await api.get(routes.previewPdf(id), {
+        params: { stream: 1 },
+        responseType: "blob",
+      });
+      const blob = new Blob([res.data], { type: "application/pdf" });
+      const url = window.URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      console.error(err);
+      toast.error("Could not generate preview. Please try again.");
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const handleViewPublic = () => {
+    const url = `${window.location.origin}/agreements/${id}`;
+    window.open(url, "_blank", "noopener");
+  };
+
+  const handleCopyPublic = async () => {
+    const url = `${window.location.origin}/agreements/${id}`;
+    try {
+      setCopying(true);
+      await navigator.clipboard.writeText(url);
+      toast.success("Public link copied to clipboard");
+    } catch {
+      toast.error("Unable to copy. You can copy from the new tab.");
+    } finally {
+      setCopying(false);
+    }
+  };
+
+  /* ---------- UI ---------- */
   const TabButtons = () => (
     <div className="flex flex-wrap gap-2 mb-4" onSubmit={(e) => e.preventDefault()}>
       {TABS.map((t) => (
@@ -497,9 +539,7 @@ export default function AgreementWizard() {
           key={t.step}
           type="button"
           onClick={() => goStep(t.step)}
-          className={`px-3 py-2 rounded border text-sm ${
-            step === t.step ? "bg-blue-600 text-white" : "bg-white"
-          }`}
+          className={`px-3 py-2 rounded border text-sm ${step === t.step ? "bg-blue-600 text-white" : "bg-white"}`}
         >
           {t.label}
         </button>
@@ -509,7 +549,7 @@ export default function AgreementWizard() {
 
   const Step1 = () => (
     <div className="space-y-4" onSubmit={(e) => e.preventDefault()}>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
         <div>
           <label htmlFor={ids.projectTitle} className="block text-sm font-medium mb-1">
             Project Title
@@ -622,10 +662,10 @@ export default function AgreementWizard() {
     return (
       <div className="space-y-6" onSubmit={(e) => e.preventDefault()}>
         {/* New Milestone form */}
-        <div className="border rounded p-4 bg-white shadow-sm">
+        <div className="border rounded p-4 bg-white shadow-sm w-full">
           <h3 className="font-semibold mb-3">New Milestone</h3>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
             <div>
               <label className="block text-sm font-medium mb-1">Title</label>
               <input
@@ -706,7 +746,7 @@ export default function AgreementWizard() {
           </div>
         </div>
 
-        {/* Condensed list */}
+        {/* ---- Milestone list (restored) ---- */}
         <div className="border rounded bg-white shadow-sm overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50">
@@ -843,19 +883,7 @@ export default function AgreementWizard() {
                               <button
                                 type="button"
                                 className="px-2 py-1 rounded bg-emerald-600 text-white"
-                                onClick={() => {
-                                  const e = rowEdits[m.id];
-                                  if (!e) return;
-                                  setMilestones((prev) =>
-                                    prev.map((x) => (x.id === m.id ? { ...x, ...e, editing: undefined } : x))
-                                  );
-                                  setRowEdits((prev) => {
-                                    const n = { ...prev };
-                                    delete n[m.id];
-                                    return n;
-                                  });
-                                  toast.success("Row updated.");
-                                }}
+                                onClick={() => commitEditRow(m.id)}
                               >
                                 Save
                               </button>
@@ -953,21 +981,6 @@ export default function AgreementWizard() {
     );
   };
 
-  // Keep focus locked in the custom warranty box while typing
-  useEffect(() => {
-    if (!useDefaultWarranty && warrantyTyping && warrantyRef.current) {
-      // If focus was lost (rerender), put it back and move caret to end
-      if (document.activeElement !== warrantyRef.current) {
-        const el = warrantyRef.current;
-        el.focus({ preventScroll: true });
-        const len = el.value?.length ?? 0;
-        try {
-          el.setSelectionRange(len, len);
-        } catch {}
-      }
-    }
-  }, [useDefaultWarranty, customWarrantyText, warrantyTyping]);
-
   const Step3 = () => (
     <div className="space-y-6" onSubmit={(e) => e.preventDefault()}>
       <div className="border rounded p-4 bg-white shadow-sm">
@@ -975,7 +988,6 @@ export default function AgreementWizard() {
 
         <label className="inline-flex items-center gap-2 mb-3">
           <input
-            id={ids.defaultWarranty}
             type="checkbox"
             checked={useDefaultWarranty}
             onChange={(e) => setUseDefaultWarranty(e.target.checked)}
@@ -984,11 +996,10 @@ export default function AgreementWizard() {
         </label>
 
         <div>
-          <label htmlFor={ids.customWarranty} className="block text-sm font-medium mb-1">
+          <label className="block text-sm font-medium mb-1">
             {useDefaultWarranty ? "Default Warranty (read-only)" : "Custom Warranty Text"}
           </label>
           <textarea
-            id={ids.customWarranty}
             ref={warrantyRef}
             className={`w-full border rounded px-3 py-2 ${useDefaultWarranty ? "bg-gray-100 text-gray-700" : ""}`}
             rows={6}
@@ -1029,38 +1040,76 @@ export default function AgreementWizard() {
   );
 
   const Step4 = () => (
-    <div className="space-y-4" onSubmit={(e) => e.preventDefault()}>
-      <p className="text-sm text-gray-600">Finalize & Review — preview/signature flow here.</p>
-      <div className="flex gap-2">
-        <button type="button" className="px-4 py-2 rounded border" onClick={() => goStep(3)}>
-          Back
-        </button>
-        <button type="button" className="px-4 py-2 rounded bg-emerald-600 text-white">
-          Finish
-        </button>
-      </div>
-    </div>
+    <Step4Review
+      agreementId={id}
+      onBack={() => goStep(3)}
+      onFinished={() => {
+        toast.success("Agreement sent to homeowner for signature.");
+      }}
+    />
   );
 
   return (
-    <div className="max-w-5xl mx-auto p-4" onSubmit={(e) => e.preventDefault()}>
-      <TabButtons />
-      <div className="mb-4">
-        {loadingAgreement ? (
-          <div className="text-sm text-gray-500">Loading agreement…</div>
-        ) : (
-          <div className="text-sm text-gray-700">
-            <div className="font-semibold">
-              Agreement #{agreement?.id}
-              {agreement?.project_title ? ` – ${agreement.project_title}` : ""}
-            </div>
-            <div className="text-gray-500">
-              Homeowner: {agreement?.homeowner_name || "—"} · Status: {agreement?.status || "—"}
-            </div>
-          </div>
-        )}
+    <div
+      id="agreement-wizard-root"
+      data-wizard-root="true"
+      className="wizard-fluid p-4"
+      style={{ maxWidth: "none", width: "100%", margin: 0 }}
+      onSubmit={(e) => e.preventDefault()}
+    >
+      {/* Header with global Preview + Public Link */}
+      <div className="mb-4 flex items-center justify-between gap-3 flex-wrap w-full">
+        <div className="text-sm text-gray-700">
+          {loadingAgreement ? (
+            <div className="text-sm text-gray-500">Loading agreement…</div>
+          ) : (
+            <>
+              <div className="font-semibold">
+                Agreement #{agreement?.id}
+                {agreement?.project_title ? ` – ${agreement.project_title}` : ""}
+              </div>
+              <div className="text-gray-500">
+                Homeowner: {agreement?.homeowner_name || "—"} · Status: {agreement?.status || "—"}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className="px-3 py-2 rounded border text-sm"
+            onClick={handleHeaderPreview}
+            disabled={previewing || loadingAgreement}
+            title="Open an authenticated PDF preview"
+          >
+            {previewing ? "Generating…" : "Preview PDF"}
+          </button>
+
+          <button
+            type="button"
+            className="px-3 py-2 rounded border text-sm"
+            onClick={handleViewPublic}
+            title="Open the read-only, public Agreement page"
+          >
+            View Public Link
+          </button>
+
+          <button
+            type="button"
+            className="px-3 py-2 rounded border text-sm"
+            onClick={handleCopyPublic}
+            disabled={copying}
+            title="Copy the public link to your clipboard"
+          >
+            {copying ? "Copying…" : "Copy Link"}
+          </button>
+        </div>
       </div>
-      <div className="space-y-6">
+
+      <TabButtons />
+
+      <div className="space-y-6 w-full">
         {step === 1 && <Step1 />}
         {step === 2 && <Step2 />}
         {step === 3 && <Step3 />}

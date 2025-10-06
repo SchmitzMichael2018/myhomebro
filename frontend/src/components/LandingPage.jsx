@@ -1,3 +1,4 @@
+// src/components/LandingPage.jsx
 import React from "react";
 import {
   Lock,
@@ -12,10 +13,14 @@ import {
 
 /**
  * LandingPage
- * - Two CTAs (Contractor Sign Up + Sign In)
- * - Framed hero logo + badges
- * - Bottom tile scroller
- * - Buttons trigger a global modal opener that we wire in LoginModal.jsx
+ * - Full-bleed gradient background (desktop + mobile)
+ * - Centered hero rail (max 1280px)
+ * - No horizontal scrollbar
+ * - Responsive features grid (auto-fills width on larger screens)
+ * - Buttons trigger your existing login modal hooks (mhbOpenLogin or mhb:open-login)
+ *
+ * This component is self-contained: all styles are inline so it won’t be affected by
+ * any global CSS (including the removal of mobile.css).
  */
 export default function LandingPage() {
   const openLogin = (mode = "login") => {
@@ -35,100 +40,47 @@ export default function LandingPage() {
   const openSignup = () => openLogin("signup");
 
   return (
-    <div className="mhb-gradient-bg" style={{ minHeight: "100vh" }}>
+    <div style={S.root}>
       {/* Hero */}
-      <div
-        style={{
-          maxWidth: 960,
-          margin: "0 auto",
-          padding: "32px 16px 36px",
-          textAlign: "center",
-          color: "#fff",
-        }}
-      >
-        {/* Framed logo */}
-        <div
-          className="mhb-logo-frame"
-          style={{ width: 220, height: 220, margin: "0 auto 18px" }}
-        >
+      <div style={S.rail}>
+        <div style={S.logoFrame}>
           <img
-            src="/static/assets/myhomebro_logo.png"
+            src="/static/myhomebro_logo.png"
             alt="MyHomeBro"
-            style={{ maxWidth: 180, maxHeight: 180, display: "block" }}
+            style={S.logo}
+            draggable={false}
           />
         </div>
 
-        {/* Title */}
-        <h1
-          style={{
-            margin: "8px 0 0",
-            fontSize: 56,
-            lineHeight: 1.05,
-            fontWeight: 900,
-            textShadow: "0 1px 2px rgba(0,0,0,.25)",
-          }}
-        >
-          Welcome to
-        </h1>
-        <div
-          style={{
-            fontSize: 56,
-            lineHeight: 1.05,
-            fontWeight: 900,
-            marginTop: 4,
-            textShadow: "0 1px 2px rgba(0,0,0,.25)",
-          }}
-        >
-          <span style={{ color: "#F2C94C" }}>MyHome</span>
-          <span style={{ color: "#dbeafe" }}>Bro</span>
+        <h1 style={S.title}>Welcome to</h1>
+        <div style={S.brand}>
+          <span style={S.brandMain}>MyHome</span>
+          <span style={S.brandSub}>Bro</span>
         </div>
 
-        {/* Subheading */}
-        <p style={{ marginTop: 12, fontSize: 18 }}>
-          Secure Escrow Payments for Contractors and Homeowners.
-        </p>
-        <p style={{ marginTop: 4, fontSize: 14, opacity: 0.9 }}>
-          The easiest way to pay and get paid for home projects.
-        </p>
+        <p style={S.subhead}>Secure Escrow Payments for Contractors and Homeowners.</p>
+        <p style={S.subheadTiny}>The easiest way to pay and get paid for home projects.</p>
 
-        {/* Feature bullets */}
-        <div style={{ marginTop: 18, display: "grid", gap: 12, justifyItems: "center" }}>
+        <div style={S.badges}>
           <Badge icon={Lock} text="Escrow-secured payments for true peace of mind." />
           <Badge icon={Zap} text="Quick contractor sign-up—get paid faster." />
           <Badge icon={MessagesSquare} text="Direct chat between homeowners and contractors." />
           <Badge icon={UsersRound} text="Bring your own clients, or get matched (coming soon)." />
         </div>
 
-        {/* CTAs */}
-        <div
-          style={{
-            marginTop: 22,
-            display: "flex",
-            gap: 12,
-            justifyContent: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <button
-            onClick={openSignup}
-            className="mhb-btn primary"
-            style={{ fontSize: 16, padding: "12px 18px" }}
-          >
+        <div style={S.ctas}>
+          <button onClick={openSignup} style={{ ...S.btn, ...S.btnPrimary }} type="button">
             Contractor Sign Up
           </button>
-          <button
-            onClick={() => openLogin("login")}
-            className="mhb-btn"
-            style={{ fontSize: 16, padding: "12px 18px" }}
-          >
+          <button onClick={() => openLogin("login")} style={S.btn} type="button">
             Sign In
           </button>
         </div>
       </div>
 
-      {/* Bottom tile scroller */}
-      <section className="mhb-hscroll">
-        <div className="mhb-hscroll-track">
+      {/* Features */}
+      <section style={S.featuresWrap}>
+        <div style={S.featuresGrid}>
           <Tile
             icon={ShieldCheck}
             title="Secure Escrow"
@@ -155,49 +107,177 @@ export default function LandingPage() {
   );
 }
 
+/* ---------------- helpers ---------------- */
+
 function Badge({ icon: Icon, text }) {
   return (
-    <div
-      className="mhb-glass"
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "10px 14px",
-        borderRadius: 12,
-        color: "var(--mhb-text-strong)",
-        minWidth: 420,
-        maxWidth: 640,
-      }}
-    >
-      <div
-        style={{
-          width: 28,
-          height: 28,
-          display: "grid",
-          placeItems: "center",
-          borderRadius: 10,
-          background:
-            "linear-gradient(135deg, rgba(255,255,255,.8), rgba(255,255,255,.25))",
-          border: "1px solid rgba(255,255,255,.6)",
-          color: "var(--mhb-text)",
-        }}
-      >
+    <div style={S.badge}>
+      <div style={S.badgeIcon}>
         <Icon size={16} />
       </div>
-      <div style={{ fontWeight: 700 }}>{text}</div>
+      <div style={S.badgeText}>{text}</div>
     </div>
   );
 }
 
 function Tile({ icon: Icon, title, text }) {
   return (
-    <div className="mhb-tile">
-      <div className="mhb-tile-icon">
+    <div style={S.tile}>
+      <div style={S.tileIcon}>
         <Icon size={22} />
       </div>
-      <div className="mhb-tile-title">{title}</div>
-      <div className="mhb-tile-text">{text}</div>
+      <div style={S.tileTitle}>{title}</div>
+      <div style={S.tileText}>{text}</div>
     </div>
   );
+}
+
+/* ---------------- styles ---------------- */
+
+const S = {
+  root: {
+    minHeight: "100vh",
+    background:
+      "linear-gradient(135deg, #0d47ff 0%, #2d5bff 35%, #6b86ff 60%, #e0c166 100%) fixed",
+    overflowX: "hidden",
+    WebkitFontSmoothing: "antialiased",
+    MozOsxFontSmoothing: "grayscale",
+  },
+  rail: {
+    maxWidth: 1280,
+    margin: "0 auto",
+    padding: "48px 16px 36px",
+    textAlign: "center",
+    color: "#fff",
+  },
+  logoFrame: {
+    width: 220,
+    height: 220,
+    margin: "0 auto 18px",
+    borderRadius: 20,
+    display: "grid",
+    placeItems: "center",
+    boxShadow: "0 10px 28px rgba(0,0,0,.28)",
+    background: "rgba(15,23,42,.25)",
+    border: "2px solid rgba(255,255,255,.4)",
+  },
+  logo: { width: 180, height: 180, objectFit: "cover", borderRadius: 16 },
+  title: {
+    margin: "8px 0 0",
+    fontSize: clamp(34, 56),
+    lineHeight: 1.05,
+    fontWeight: 900,
+    textShadow: "0 1px 2px rgba(0,0,0,.25)",
+  },
+  brand: {
+    fontSize: clamp(34, 56),
+    lineHeight: 1.05,
+    fontWeight: 900,
+    marginTop: 4,
+    textShadow: "0 1px 2px rgba(0,0,0,.25)",
+  },
+  brandMain: { color: "#F2C94C" },
+  brandSub: { color: "#dbeafe" },
+  subhead: { marginTop: 12, fontSize: 18, opacity: 0.95 },
+  subheadTiny: { marginTop: 4, fontSize: 14, opacity: 0.88 },
+
+  badges: {
+    marginTop: 18,
+    display: "grid",
+    gap: 12,
+    justifyItems: "center",
+  },
+  badge: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "10px 14px",
+    borderRadius: 12,
+    width: "100%",
+    maxWidth: 760,
+    background: "rgba(255,255,255,.92)",
+    color: "#0f172a",
+    boxShadow: "0 6px 18px rgba(0,0,0,.12)",
+    fontWeight: 700,
+  },
+  badgeIcon: {
+    width: 28,
+    height: 28,
+    display: "grid",
+    placeItems: "center",
+    borderRadius: 10,
+    background:
+      "linear-gradient(135deg, rgba(255,255,255,.8), rgba(255,255,255,.25))",
+    border: "1px solid rgba(255,255,255,.6)",
+    color: "#0f172a",
+    flex: "0 0 auto",
+  },
+  badgeText: { textAlign: "left" },
+
+  ctas: {
+    marginTop: 22,
+    display: "flex",
+    gap: 12,
+    justifyContent: "center",
+    flexWrap: "wrap",
+  },
+  btn: {
+    padding: "12px 18px",
+    borderRadius: 12,
+    border: "1px solid #e5e7eb",
+    background: "#ffffff",
+    color: "#0f172a",
+    fontWeight: 800,
+    minHeight: 44,
+    boxShadow: "0 8px 22px rgba(0,0,0,.16)",
+    cursor: "pointer",
+  },
+  btnPrimary: {
+    background: "linear-gradient(135deg, #0d47ff 0%, #6b86ff 60%)",
+    borderColor: "transparent",
+    color: "#fff",
+  },
+
+  featuresWrap: {
+    width: "100%",
+    padding: "0 16px 56px",
+  },
+  featuresGrid: {
+    maxWidth: 1280,
+    margin: "36px auto 0",
+    display: "grid",
+    gap: 16,
+    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+  },
+  tile: {
+    background: "rgba(255,255,255,.94)",
+    borderRadius: 18,
+    boxShadow: "0 10px 24px rgba(0,0,0,.12)",
+    padding: 18,
+    minHeight: 120,
+    display: "grid",
+    gridTemplateColumns: "auto 1fr",
+    gridTemplateAreas: `"icon title" "icon text"`,
+    columnGap: 12,
+    rowGap: 8,
+    alignItems: "start",
+  },
+  tileIcon: {
+    gridArea: "icon",
+    display: "grid",
+    placeItems: "center",
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    background: "#0d47ff",
+    color: "#fff",
+  },
+  tileTitle: { gridArea: "title", fontSize: 20, fontWeight: 800 },
+  tileText: { gridArea: "text", color: "#0f172a", opacity: 0.85 },
+};
+
+/* Utility: clamp font size between 34px and 56px based on viewport width */
+function clamp(minPx, maxPx) {
+  // translates roughly to clamp(minPx, 4vw, maxPx)
+  return `clamp(${minPx}px, 4vw, ${maxPx}px)`;
 }
