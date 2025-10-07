@@ -1,426 +1,380 @@
 # backend/projects/services/pdf.py
 from __future__ import annotations
 
-import io
-import os
-from typing import List, Iterable, Optional, Tuple
-
+import io, os
+from typing import List, Optional
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.utils.timezone import localtime
-
 from projects.models import Agreement
 
-DEFAULT_LOGO = os.path.join(getattr(settings, "STATIC_ROOT", ""), "assets", "myhomebro_logo.png")
+# Optional PDF merger for attached PDFs
+try:
+    from PyPDF2 import PdfMerger
+except Exception:
+    PdfMerger = None
 
 
-# ----------------------------- small helpers -----------------------------
+# ------------------------- helper utilities -------------------------
 
-def _safe(val) -> str:
-    return "" if val is None else str(val)
+def _s(v): return "" if v is None else str(v)
+def _currency(v):
+    try: return f"${float(v or 0):,.2f}"
+    except Exception: return "$0.00"
+def _exists(p): return bool(p and os.path.exists(p))
 
-def _currency(v) -> str:
-    try:
-        x = float(v or 0)
-    except Exception:
-        x = 0.0
-    return f"${x:,.2f}"
 
-def _file_exists(p: Optional[str]) -> bool:
-    return bool(p and os.path.exists(p))
-
-def _find_logo() -> Optional[str]:
-    """Find MyHomeBro logo. Try STATIC_ROOT/assets/ first, then BASE_DIR/static/."""
-    if _file_exists(DEFAULT_LOGO):
-        return DEFAULT_LOGO
-    base = getattr(settings, "BASE_DIR", os.getcwd())
-    for nm in ("myhomebro_logo.png", "myhomebro_logo.jpg", "myhomebro_logo.jpeg"):
-        p = os.path.join(base, "static", nm)
-        if _file_exists(p):
-            return p
+def _myhomebro_logo_path() -> Optional[str]:
+    """Find the MyHomeBro logo for the disclaimer."""
+    roots = []
+    static_root = getattr(settings, "STATIC_ROOT", None)
+    if static_root:
+        roots.append(os.path.join(static_root, "assets"))
+        roots.append(static_root)
+    roots.append(os.path.join(getattr(settings, "BASE_DIR", ""), "static"))
+    for root in roots:
+        for name in ("myhomebro_logo.png", "myhomebro_logo.jpg", "myhomebro_logo.jpeg"):
+            p = os.path.join(root, name)
+            if os.path.exists(p): return p
     return None
+
 
 def _contractor_logo_path(ag: Agreement) -> Optional[str]:
     try:
-        logo_field = getattr(getattr(ag, "contractor", None), "logo", None)
-        if logo_field and hasattr(logo_field, "path") and os.path.exists(logo_field.path):
-            return logo_field.path
+        field = getattr(getattr(ag, "contractor", None), "logo", None)
+        if field and hasattr(field, "path") and os.path.exists(field.path):
+            return field.path
     except Exception:
         pass
     return None
 
-def _signature_path(img_field) -> Optional[str]:
+
+def _signature_path(field) -> Optional[str]:
     try:
-        if img_field and hasattr(img_field, "path") and os.path.exists(img_field.path):
-            return img_field.path
+        if field and hasattr(field, "path") and os.path.exists(field.path):
+            return field.path
     except Exception:
         pass
     return None
 
 
-# --------------------------- watermark & footer --------------------------
+def _load_legal_text(filename: str) -> str:
+    """
+    Load legal text (ToS/Privacy) from static/legal/<filename>.
+    Falls back to empty string if not found.
+    """
+    base_dir = getattr(settings, "BASE_DIR", "")
+    candidates = [
+        os.path.join(base_dir, "static", "legal", filename),
+        os.path.join(getattr(settings, "STATIC_ROOT", "") or "", "legal", filename),
+    ]
+    for p in candidates:
+        if p and os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as fh:
+                    return fh.read().strip()
+            except Exception:
+                pass
+    return ""
 
-def _watermark_preview(c, text="PREVIEW – NOT SIGNED"):
-    c.saveState()
-    c.setFont("Helvetica-Bold", 48)
-    c.setFillGray(0.85)
-    # US Letter 612x792
-    c.translate(612 / 2, 792 / 2)
-    c.rotate(30)
-    c.drawCentredString(0, 0, text)
-    c.restoreState()
+
+# ------------------------- page chrome -------------------------
+
+def _watermark_preview(canvas):
+    canvas.saveState()
+    canvas.setFont("Helvetica-Bold", 48)
+    canvas.setFillGray(0.85)
+    canvas.translate(612/2, 792/2)
+    canvas.rotate(30)
+    canvas.drawCentredString(0, 0, "PREVIEW – NOT SIGNED")
+    canvas.restoreState()
 
 def _header_footer(canvas, doc):
-    """Header rule + page footer (timestamp + page N)."""
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.units import inch
-
     canvas.saveState()
     w, h = letter
-    # header rule
     canvas.setStrokeColor(colors.HexColor("#E5E7EB"))
     canvas.setLineWidth(0.6)
-    canvas.line(0.75 * inch, h - 0.85 * inch, w - 0.75 * inch, h - 0.85 * inch)
-
-    # footer text
+    canvas.line(0.75*inch, h-0.85*inch, w-0.75*inch, h-0.85*inch)
     canvas.setFont("Helvetica", 9)
     ts = localtime().strftime("%Y-%m-%d %H:%M")
     left = "MyHomeBro — Agreement PDF"
     right = f"Generated {ts}  |  Page {canvas.getPageNumber()}"
     canvas.setFillColor(colors.HexColor("#475569"))
-    canvas.drawString(0.75 * inch, 0.6 * inch, left)
+    canvas.drawString(0.75*inch, 0.6*inch, left)
     tw = canvas.stringWidth(right, "Helvetica", 9)
-    canvas.drawString(w - 0.75 * inch - tw, 0.6 * inch, right)
+    canvas.drawString(w-0.75*inch-tw, 0.6*inch, right)
     canvas.restoreState()
 
 
-# ------------------------- ReportLab / Platypus setup --------------------
+# ------------------------- main builder -------------------------
 
-def _styles():
+def build_agreement_pdf_bytes(ag: Agreement, *, is_preview=False) -> bytes:
+    """
+    Render a full, legally credible Agreement and append Terms of Service + Privacy Policy.
+    Keeps contractor logo in header and MyHomeBro logo only in the disclaimer.
+    """
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.units import inch
     from reportlab.lib import colors
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    ss = getSampleStyleSheet()
-    h1 = ss["Heading1"]; h1.fontSize = 18; h1.spaceAfter = 10
-    h2 = ss["Heading2"]; h2.fontSize = 14; h2.spaceBefore = 6; h2.spaceAfter = 6
-    body = ss["BodyText"]; body.fontSize = 10; body.leading = 13
-    small = ParagraphStyle("Small", parent=body, fontSize=9, leading=12, textColor=colors.HexColor("#475569"))
-    return h1, h2, body, small
-
-def _party_lines(ag: Agreement) -> Tuple[str, str]:
-    contractor_name = (
-        getattr(ag, "contractor_business_name", None)
-        or getattr(getattr(ag, "contractor", None), "business_name", None)
-        or getattr(getattr(ag, "contractor", None), "name", None)
-        or getattr(ag, "contractor_name", None)
-        or "Contractor"
-    )
-    contractor_email = getattr(ag, "contractor_email", None) or getattr(getattr(ag, "contractor", None), "email", None) or ""
-    contractor_phone = getattr(ag, "contractor_phone", None) or getattr(getattr(ag, "contractor", None), "phone", None) or ""
-    contractor_line = contractor_name
-    if contractor_email:
-        contractor_line += f" • {contractor_email}"
-    if contractor_phone:
-        contractor_line += f" • {contractor_phone}"
-
-    homeowner_name = (
-        getattr(ag, "homeowner_name", None)
-        or getattr(getattr(ag, "homeowner", None), "name", None)
-        or getattr(getattr(ag, "homeowner", None), "full_name", None)
-        or "Homeowner"
-    )
-    homeowner_email = getattr(ag, "homeowner_email", None) or getattr(getattr(ag, "homeowner", None), "email", None) or ""
-    homeowner_phone = getattr(getattr(ag, "homeowner", None), "phone", None) or ""
-    homeowner_line = homeowner_name
-    if homeowner_email:
-        homeowner_line += f" • {homeowner_email}"
-    if homeowner_phone:
-        homeowner_line += f" • {homeowner_phone}"
-
-    return contractor_line, homeowner_line
-
-
-# ----------------------------- Story builder -----------------------------
-
-def _build_story(ag: Agreement, *, is_preview=False) -> Iterable:
-    """
-    Build the full Agreement document story (auto-paginates), WITHOUT embedding ToS/Privacy.
-    """
-    from reportlab.lib import colors
-    from reportlab.lib.units import inch
     from reportlab.platypus import (
-        Paragraph, Spacer, Table, TableStyle, Image, PageBreak, KeepTogether
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak
     )
-
-    h1, h2, body, small = _styles()
-
-    story: List = []
-
-    # Logos row
-    myhb_logo = _find_logo()
-    co_logo = _contractor_logo_path(ag)
-    row = []
-    if co_logo:
-        try:
-            row.append(Image(co_logo, width=0.9 * inch, height=0.9 * inch))
-        except Exception:
-            row.append(Spacer(1, 0.9 * inch))
-    else:
-        row.append(Spacer(1, 0.9 * inch))
-    if myhb_logo:
-        try:
-            row.append(Image(myhb_logo, width=0.9 * inch, height=0.9 * inch))
-        except Exception:
-            row.append(Spacer(1, 0.9 * inch))
-    else:
-        row.append(Spacer(1, 0.9 * inch))
-    t_logo = Table([row], colWidths=[1 * inch, 1 * inch])
-    t_logo.setStyle(TableStyle([("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                                ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
-    story += [t_logo, Spacer(1, 6)]
-
-    # Title and meta
-    story.append(Paragraph(f"Agreement #{_safe(getattr(ag, 'pk', ''))}", h1))
-    proj_title = _safe(getattr(ag, "project_title", None) or getattr(ag, "title", None) or "Project")
-    story.append(Paragraph(proj_title, body))
-    story.append(Spacer(1, 2))
-
-    contractor_line, homeowner_line = _party_lines(ag)
-    story.append(Paragraph("<b>Contractor</b>: " + contractor_line, body))
-    story.append(Paragraph("<b>Homeowner</b>: " + homeowner_line, body))
-
-    ptype = _safe(getattr(ag, "project_type", None))
-    psub = _safe(getattr(ag, "project_subtype", None))
-    start = _safe(getattr(ag, "start", None) or "TBD")
-    end = _safe(getattr(ag, "end", None) or "TBD")
-    story.append(Paragraph(f"<b>Type</b>: {ptype or '—'}{(' — ' + psub) if psub else ''}", body))
-    story.append(Paragraph(f"<b>Schedule</b>: {start} → {end}", body))
-    status = _safe(getattr(ag, "status", "draft"))
-    story.append(Paragraph(f"<b>Status</b>: {status}", small))
-    story.append(Spacer(1, 10))
-
-    # Scope / description
-    desc = _safe(getattr(ag, "description", None) or getattr(ag, "scope_summary", None))
-    if desc:
-        story += [Paragraph("Scope / Description", h2),
-                  Paragraph(desc.replace("\n", "<br/>"), body),
-                  Spacer(1, 8)]
-
-    # Milestones table
-    from projects.models import Milestone
-    ms = Milestone.objects.filter(agreement=ag).order_by("order", "id")
-    data = [["#", "Milestone", "Due", "Amount", "Status"]]
-    total = 0.0
-    for i, m in enumerate(ms, 1):
-        title = _safe(m.title or m.description or "—")
-        due = getattr(m, "due_date", None) or getattr(m, "target_date", None) or \
-              getattr(m, "completion_date", None) or getattr(m, "end", None) or None
-        due_str = _safe(due) if due else "—"
-        amt = float(getattr(m, "amount", 0) or 0)
-        total += amt
-        status_str = "Complete" if getattr(m, "completed", False) else (_safe(getattr(m, "status", "")) or "Pending")
-        data.append([str(i), title, due_str, _currency(amt), status_str])
-
-    data.append(["", "", "Total", _currency(total), ""])
-    table = Table(data, colWidths=[0.35 * inch, 3.8 * inch, 1.25 * inch, 1.1 * inch, 1.2 * inch])
-    table.setStyle(TableStyle([
-        ("FONT", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F8FAFC")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#475569")),
-        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#E5E7EB")),
-        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-        ("ALIGN", (2, 1), (2, -1), "CENTER"),
-        ("ALIGN", (3, 1), (3, -1), "RIGHT"),
-        ("ALIGN", (4, 1), (4, -2), "CENTER"),
-        ("FONT", (2, -1), (3, -1), "Helvetica-Bold"),
-        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#FAFAFA")),
-    ]))
-    story += [Paragraph("Milestones", h2), table, Spacer(1, 10)]
-
-    # Warranty
-    story.append(Paragraph("Warranty", h2))
-    wtype = (_safe(getattr(ag, "warranty_type", ""))).strip().lower()
-    wtext = _safe(getattr(ag, "warranty_text_snapshot", ""))
-    if wtype in ("default", "standard", "std"):
-        story.append(Paragraph(
-            "Default workmanship warranty applies. Contractor warrants that all work will be "
-            "performed in a good and workmanlike manner and in accordance with applicable codes. "
-            "Defects arising from normal wear, misuse, abuse, or acts of God are excluded.",
-            body
-        ))
-    elif wtype == "custom" and wtext:
-        story.append(Paragraph(wtext.replace("\n", "<br/>"), body))
-    else:
-        story.append(Paragraph(wtext or "No specific warranty clause provided.", body))
-    story.append(Spacer(1, 10))
-
-    # Attachments & Addenda
-    story.append(Paragraph("Attachments & Addenda", h2))
-    try:
-        atts = list(ag.attachments.all())
-    except Exception:
-        atts = []
-    if atts:
-        rows = [["Category", "Title / File", "Acknowledgement Required"]]
-        for f in atts:
-            cat = _safe(getattr(f, "category", "OTHER")).upper()
-            ttl = _safe(getattr(f, "title", None) or getattr(f, "filename", None) or "Attachment")
-            ack = "Yes" if getattr(f, "require_acknowledgement", False) else "No"
-            rows.append([cat, ttl, ack])
-        att_table = Table(rows, colWidths=[1.2 * inch, 4.5 * inch, 1.3 * inch])
-        att_table.setStyle(TableStyle([
-            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F8FAFC")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#475569")),
-            ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#E5E7EB")),
-            ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-            ("ALIGN", (2, 1), (2, -1), "CENTER"),
-        ]))
-        story += [att_table, Spacer(1, 10)]
-    else:
-        story += [Paragraph("No additional attachments.", body), Spacer(1, 10)]
-
-    # Signatures page (separate page)
-    story.append(PageBreak())
-    story.append(Paragraph("Signatures", h2))
-    story.append(Spacer(1, 6))
-
-    from reportlab.platypus import Image, Table, TableStyle, Spacer as RLSpacer
-
-    c_sig_name = _safe(getattr(ag, "contractor_signature_name", None))
-    c_sig_img = _signature_path(getattr(ag, "contractor_signature", None))
-    c_sig_time = getattr(ag, "contractor_signed_at", None)
-    c_sig_time_str = localtime(c_sig_time).strftime("%Y-%m-%d %H:%M") if c_sig_time else "—"
-
-    h_sig_name = _safe(getattr(ag, "homeowner_signature_name", None))
-    h_sig_img = _signature_path(getattr(ag, "homeowner_signature", None))
-    h_sig_time = getattr(ag, "homeowner_signed_at", None)
-    h_sig_time_str = localtime(h_sig_time).strftime("%Y-%m-%d %H:%M") if h_sig_time else "—"
-
-    c_cell = []
-    if c_sig_img:
-        try:
-            c_cell += [Image(c_sig_img, width=1.8 * inch, height=0.6 * inch), RLSpacer(1, 3)]
-        except Exception:
-            pass
-    c_cell += [Paragraph(f"<b>Contractor Signature:</b> {c_sig_name or '—'}", body),
-               Paragraph(f"<b>Signed At:</b> {c_sig_time_str}", small)]
-
-    h_cell = []
-    if h_sig_img:
-        try:
-            h_cell += [Image(h_sig_img, width=1.8 * inch, height=0.6 * inch), RLSpacer(1, 3)]
-        except Exception:
-            pass
-    h_cell += [Paragraph(f"<b>Homeowner Signature:</b> {h_sig_name or '—'}", body),
-               Paragraph(f"<b>Signed At:</b> {h_sig_time_str}", small)]
-
-    sig_table = Table([[c_cell, h_cell]], colWidths=[3.5 * inch, 3.5 * inch])
-    sig_table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
-    story += [sig_table, Spacer(1, 10)]
-
-    # Preview watermark note
-    if is_preview:
-        story += [Paragraph("This is a preview. Final version will include updated signature data.", small)]
-
-    return story
-
-
-# ----------------------------- build / save ------------------------------
-
-def build_agreement_pdf_bytes(agreement: Agreement, *, is_preview: bool = False) -> bytes:
-    """
-    Render a complete Agreement PDF to bytes (for preview or final), WITHOUT ToS/Privacy.
-    """
-    # Lazy import so module import doesn't crash if reportlab is missing
-    try:
-        from reportlab.lib.pagesizes import letter
-        from reportlab.lib.units import inch
-        from reportlab.platypus import SimpleDocTemplate
-    except Exception as e:
-        raise ImportError(
-            "reportlab is required to generate Agreement PDFs. Install with: pip install reportlab"
-        ) from e
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf,
         pagesize=letter,
-        leftMargin=0.75 * inch,
-        rightMargin=0.75 * inch,
-        topMargin=1.0 * inch,
-        bottomMargin=0.75 * inch,
-        title=f"Agreement #{getattr(agreement, 'pk', '')}",
-        author="MyHomeBro",
+        leftMargin=0.75*inch,
+        rightMargin=0.75*inch,
+        topMargin=1.0*inch,
+        bottomMargin=0.75*inch,
+        title=f"Agreement #{getattr(ag,'pk','')}",
     )
 
-    story = list(_build_story(agreement, is_preview=is_preview))
+    ss = getSampleStyleSheet()
+    h1, h2, body = ss["Heading1"], ss["Heading2"], ss["BodyText"]
+    h1.fontSize, h2.fontSize = 18, 14
+    small = ParagraphStyle("Small", parent=body, fontSize=9, leading=12, textColor=colors.HexColor("#475569"))
+    mono  = ParagraphStyle("Mono", parent=body, fontName="Courier", fontSize=9, leading=12)
 
-    def _first(canvas, doc_):
-        if is_preview:
-            _watermark_preview(canvas)
-        _header_footer(canvas, doc_)
+    story: list = []
 
-    def _later(canvas, doc_):
-        if is_preview:
-            _watermark_preview(canvas)
-        _header_footer(canvas, doc_)
-
-    doc.build(story, onFirstPage=_first, onLaterPages=_later)
-    pdf = buf.getvalue()
-    buf.close()
-    return pdf
-
-
-def generate_full_agreement_pdf(agreement: Agreement, *, merge_attachments: bool = True) -> str:
-    """
-    Builds a complete Agreement PDF and saves a versioned file to agreement.pdf_file.
-    Returns the absolute file path. Optionally merges PDF attachments (if utilities exist).
-    """
-    version_num = int(getattr(agreement, "pdf_version", 0) or 0) + 1
-    bytes_ = build_agreement_pdf_bytes(agreement, is_preview=False)
-
-    # store temp base file
-    tmp_dir = os.path.join(getattr(settings, "MEDIA_ROOT", ""), "agreements", "tmp")
-    os.makedirs(tmp_dir, exist_ok=True)
-    base_path = os.path.join(tmp_dir, f"agreement_{agreement.id}_v{version_num}.pdf")
-    with open(base_path, "wb") as f:
-        f.write(bytes_)
-
-    final_path = base_path
-
-    if merge_attachments:
+    # ---- Header: contractor logo only ----
+    logo = _contractor_logo_path(ag)
+    if logo:
         try:
-            # Optional: merge PDF attachments (if your helper exists)
-            from projects.pdf_utils import append_pdf_attachments
-            from projects.models_attachments import AgreementAttachment
-
-            pdf_paths: List[str] = []
-            for att in AgreementAttachment.objects.filter(agreement=agreement).order_by("uploaded_at"):
-                try:
-                    p = att.file.path
-                except Exception:
-                    p = None
-                if p and p.lower().endswith(".pdf") and os.path.exists(p):
-                    pdf_paths.append(p)
-
-            merged = append_pdf_attachments(base_path, pdf_paths)
-            if merged and os.path.exists(merged):
-                final_path = merged
+            story.append(Image(logo, width=0.9*inch, height=0.9*inch))
         except Exception:
-            # If merge libs aren't available, skip silently.
             pass
+    story.append(Spacer(1, 6))
 
-    # save to the model FileField
-    with open(final_path, "rb") as fh:
-        content = ContentFile(fh.read())
-        fname = f"agreement_{agreement.id}_v{version_num}.pdf"
-        agreement.pdf_file.save(fname, content, save=True)
-        if hasattr(agreement, "pdf_version"):
+    # ---- 1. Project Info ----
+    story.append(Paragraph(f"Agreement #{ag.id}", h1))
+    title = _s(getattr(ag, "project_title", None) or getattr(ag, "title", None) or "Project")
+    story.append(Paragraph(title, body))
+    story.append(Spacer(1, 4))
+    contractor = getattr(ag, "contractor", None)
+    homeowner = getattr(ag, "homeowner", None)
+    contractor_line = " • ".join([_s(x) for x in [
+        getattr(contractor,"business_name",None) or getattr(contractor,"name",None),
+        getattr(contractor,"email",None), getattr(contractor,"phone",None)
+    ] if x])
+    homeowner_line = " • ".join([_s(x) for x in [
+        getattr(homeowner,"name",None) or getattr(homeowner,"full_name",None),
+        getattr(homeowner,"email",None)
+    ] if x])
+    story += [
+        Paragraph("<b>Contractor</b>: "+(contractor_line or "—"), body),
+        Paragraph("<b>Homeowner</b>: "+(homeowner_line or "—"), body),
+        Paragraph(f"<b>Type</b>: {_s(ag.project_type)} — {_s(ag.project_subtype)}", body),
+        Paragraph(f"<b>Schedule</b>: {_s(ag.start) or 'TBD'} → {_s(ag.end) or 'TBD'}", body),
+        Paragraph(f"<b>Status</b>: {_s(ag.status)}", small),
+        Spacer(1, 10)
+    ]
+
+    # ---- 2. Scope / Description ----
+    desc = _s(getattr(ag,"description",None))
+    if desc:
+        story += [Paragraph("Scope / Description", h2),
+                  Paragraph(desc.replace("\n","<br/>"), body),
+                  Spacer(1,8)]
+
+    # ---- 3. Milestones & Payment Terms ----
+    from projects.models import Milestone
+    ms = Milestone.objects.filter(agreement=ag).order_by("order","id")
+    rows=[["#","Milestone","Due","Amount","Status"]]
+    total=0
+    for i,m in enumerate(ms,1):
+        amt=float(getattr(m,"amount",0) or 0)
+        total+=amt
+        rows.append([i,_s(m.title or m.description),_s(getattr(m,"due_date",None)) or "—",
+                     _currency(amt),
+                     "Complete" if getattr(m,"completed",False) else (_s(getattr(m,"status","")) or "Pending")])
+    rows.append(["","","Total",_currency(total),""])
+    t=Table(rows,colWidths=[0.4*inch,3.7*inch,1.2*inch,1.1*inch,1.2*inch])
+    t.setStyle(TableStyle([
+        ("FONT",(0,0),(-1,0),"Helvetica-Bold"),
+        ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#F8FAFC")),
+        ("GRID",(0,0),(-1,-1),0.25,colors.HexColor("#E5E7EB")),
+        ("ALIGN",(2,1),(3,-1),"CENTER")
+    ]))
+    story += [Paragraph("Milestones & Payment Terms", h2), t, Spacer(1,8),
+              Paragraph("Payments will be made from escrow upon homeowner approval or 5 days after completion of each milestone, unless disputed in writing.", small),
+              Spacer(1,10)]
+
+    # ---- 4. Warranty ----
+    story.append(Paragraph("Warranty", h2))
+    wtext = _s(getattr(ag,"warranty_text_snapshot",""))
+    story.append(Paragraph(
+        f"Contractor warrants workmanship for a period of 12 months following completion. "
+        f"This warranty covers defects in workmanship and excludes materials, misuse, negligence, or normal wear. "
+        f"Contractor will repair or replace defective work at their expense within a reasonable time after notice. "
+        f"{wtext}", body))
+    story.append(Spacer(1,10))
+
+    # ---- 5. Homeowner Responsibilities ----
+    story.append(Paragraph("Homeowner Responsibilities", h2))
+    story.append(Paragraph(
+        "Homeowner agrees to provide timely access to the property, maintain a safe working environment, "
+        "and promptly review and approve milestone completions. Homeowner shall not unreasonably delay approval "
+        "or payment once work is completed as described.", body))
+    story.append(Spacer(1,10))
+
+    # ---- 6. Contractor Responsibilities & Insurance ----
+    story.append(Paragraph("Contractor Responsibilities & Insurance", h2))
+    story.append(Paragraph(
+        "Contractor represents they maintain all licenses, insurance, and permits required by law and will perform "
+        "all work in accordance with applicable building codes. Contractor assumes full responsibility for employee safety, "
+        "tools, and materials used in performance of this Agreement.", body))
+    story.append(Spacer(1,10))
+
+    # ---- 7. Dispute Resolution & Termination ----
+    story.append(Paragraph("Dispute Resolution & Termination", h2))
+    story.append(Paragraph(
+        "In the event of a dispute, both parties agree to attempt resolution through direct communication and mediation "
+        "before arbitration or litigation. Either party may terminate this Agreement with written notice if the other fails "
+        "to perform a material obligation, provided all completed work and costs are settled fairly.", body))
+    story.append(Spacer(1,10))
+
+    # ---- 8. Governing Law & Miscellaneous ----
+    story.append(Paragraph("Governing Law & Miscellaneous", h2))
+    story.append(Paragraph(
+        "This Agreement shall be governed by the laws of the State of Texas, without regard to conflicts of law principles. "
+        "If any provision is held invalid, the remaining provisions shall remain in effect. "
+        "Electronic signatures are legally binding under the U.S. ESIGN Act.", body))
+    story.append(Spacer(1,10))
+
+    # ---- 9. Attachments & Addenda ----
+    story.append(Paragraph("Attachments & Addenda", h2))
+    atts=[]
+    try: atts=list(ag.attachments.all())
+    except Exception: atts=[]
+    if atts:
+        rows=[["Category","Title / File","Acknowledgement Required"]]
+        for f in atts:
+            rows.append([_s(getattr(f,"category","OTHER")).upper(),
+                         _s(getattr(f,"title",None) or getattr(f,"filename",None) or "Attachment"),
+                         "Yes" if getattr(f,"require_acknowledgement",False) else "No"])
+        from reportlab.platypus import Table as RLTable, TableStyle as RLTableStyle
+        att_tbl=RLTable(rows,colWidths=[1.2*inch,4.6*inch,1.3*inch])
+        att_tbl.setStyle(RLTableStyle([
+            ("FONT",(0,0),(-1,0),"Helvetica-Bold"),
+            ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#F8FAFC")),
+            ("GRID",(0,0),(-1,-1),0.25,colors.HexColor("#E5E7EB")),
+            ("ALIGN",(2,1),(2,-1),"CENTER")
+        ]))
+        story.append(att_tbl)
+    else:
+        story.append(Paragraph("No additional attachments.", body))
+    story.append(Spacer(1,12))
+
+    # ---- 10. Platform Disclaimer (MyHomeBro logo) ----
+    story.append(Paragraph("Platform Disclaimer", h2))
+    mhb_logo=_myhomebro_logo_path()
+    if mhb_logo:
+        try:
+            from reportlab.platypus import Image as RLImage
+            story.append(RLImage(mhb_logo,width=0.8*inch,height=0.8*inch))
+            story.append(Spacer(1,6))
+        except Exception: pass
+    disclaimer=(
+        "MyHomeBro is a neutral platform facilitating communication, e-signatures, and escrow-style payments between "
+        "independent contractors and homeowners. MyHomeBro is not a general contractor, agent, or employer of either party "
+        "and does not guarantee the quality, safety, or legality of services. All contracts are directly between Contractor "
+        "and Homeowner. MyHomeBro’s role is limited to payment facilitation and recordkeeping through its escrow system. "
+        "See the appended Terms of Service and Privacy Policy."
+    )
+    story.append(Paragraph(disclaimer, small))
+    story.append(Spacer(1,10))
+
+    # ---- 11. Signatures ----
+    from reportlab.platypus import Image as RLImage, Table as RLTable, TableStyle as RLTableStyle, Spacer as RLSpacer
+    story.append(PageBreak())
+    story.append(Paragraph("Signatures", h2))
+    c_img=_signature_path(getattr(ag,"contractor_signature",None))
+    h_img=_signature_path(getattr(ag,"homeowner_signature",None))
+    c_block,h_block=[],[]
+    if c_img:
+        try: c_block+=[RLImage(c_img,width=1.8*inch,height=0.6*inch),RLSpacer(1,3)]
+        except Exception: pass
+    if h_img:
+        try: h_block+=[RLImage(h_img,width=1.8*inch,height=0.6*inch),RLSpacer(1,3)]
+        except Exception: pass
+    c_block+=[Paragraph(f"<b>Contractor:</b> {_s(getattr(ag,'contractor_signature_name',None))}",body),
+              Paragraph(f"<b>Signed:</b> {_s(getattr(ag,'contractor_signed_at',None))}",small)]
+    h_block+=[Paragraph(f"<b>Homeowner:</b> {_s(getattr(ag,'homeowner_signature_name',None))}",body),
+              Paragraph(f"<b>Signed:</b> {_s(getattr(ag,'homeowner_signed_at',None))}",small)]
+    sig_tbl=RLTable([[c_block,h_block]],colWidths=[3.5*inch,3.5*inch])
+    sig_tbl.setStyle(RLTableStyle([("VALIGN",(0,0),(-1,-1),"TOP")]))
+    story.append(sig_tbl)
+    if is_preview:
+        story.append(Spacer(1,6))
+        story.append(Paragraph("This is a preview. Final version will include any updated signatures.", small))
+
+    # ---- 12. Terms of Service (append full text) ----
+    tos_text = _load_legal_text("terms_of_service.txt")
+    if tos_text:
+        story.append(PageBreak())
+        story.append(Paragraph("Terms of Service", h2))
+        for line in tos_text.splitlines():
+            story.append(Paragraph(line.replace("  ", "&nbsp;&nbsp;"), mono if line.strip().startswith("-") else body))
+        story.append(Spacer(1,8))
+
+    # ---- 13. Privacy Policy (append full text) ----
+    privacy_text = _load_legal_text("privacy_policy.txt")
+    if privacy_text:
+        story.append(PageBreak())
+        story.append(Paragraph("Privacy Policy", h2))
+        for line in privacy_text.splitlines():
+            story.append(Paragraph(line.replace("  ", "&nbsp;&nbsp;"), mono if line.strip().startswith("-") else body))
+        story.append(Spacer(1,8))
+
+    # build
+    def first(c,d):
+        if is_preview: _watermark_preview(c)
+        _header_footer(c,d)
+    def later(c,d):
+        if is_preview: _watermark_preview(c)
+        _header_footer(c,d)
+    doc.build(story,onFirstPage=first,onLaterPages=later)
+    return buf.getvalue()
+
+
+def generate_full_agreement_pdf(ag: Agreement, *, merge_attachments=True) -> str:
+    """
+    Build + save versioned PDF, append attached PDFs if any.
+    """
+    version=int(getattr(ag,"pdf_version",0) or 0)+1
+    base=build_agreement_pdf_bytes(ag,is_preview=False)
+    tmp=os.path.join(getattr(settings,"MEDIA_ROOT",""),"agreements","tmp")
+    os.makedirs(tmp,exist_ok=True)
+    base_path=os.path.join(tmp,f"agreement_{ag.id}_v{version}.pdf")
+    with open(base_path,"wb") as f: f.write(base)
+    final_path=base_path
+    if merge_attachments and PdfMerger:
+        try:
+            atts=list(ag.attachments.all())
+        except Exception: atts=[]
+        pdfs=[getattr(a.file,"path",None) for a in atts if getattr(a.file,"path",None) and a.file.name.lower().endswith(".pdf")]
+        if pdfs:
             try:
-                agreement.pdf_version = version_num
-                agreement.save(update_fields=["pdf_version", "pdf_file"])
+                merger=PdfMerger()
+                merger.append(base_path)
+                for p in pdfs: merger.append(p)
+                merged=base_path.replace(".pdf","_merged.pdf")
+                merger.write(merged); merger.close()
+                final_path=merged
             except Exception:
                 pass
-
-    return agreement.pdf_file.path
+    with open(final_path,"rb") as fh:
+        content=ContentFile(fh.read())
+        fname=f"agreement_{ag.id}_v{version}.pdf"
+        ag.pdf_file.save(fname,content,save=True)
+        if hasattr(ag,"pdf_version"):
+            ag.pdf_version=version
+            ag.save(update_fields=["pdf_version","pdf_file"])
+    return ag.pdf_file.path

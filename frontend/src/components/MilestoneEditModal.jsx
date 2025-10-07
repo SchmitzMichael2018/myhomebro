@@ -1,5 +1,5 @@
 // src/components/MilestoneEditModal.jsx
-// v2025-09-26-fix — same UI; send completion_date; tolerate legacy end/completion fields
+// v2025-10-06 — overlap check + calendar icon + legacy completion/end fields
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import toast from "react-hot-toast";
@@ -39,6 +39,7 @@ export default function MilestoneEditModal({
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
 
+  // We keep your lock logic
   const readOnly = useMemo(() => {
     const s =
       milestone?.agreement_state ||
@@ -75,10 +76,58 @@ export default function MilestoneEditModal({
     setForm((f) => ({ ...f, [name]: value }));
   };
 
+  // ---- Overlap check (frontend → backend) ----
+  const checkOverlap = useCallback(async () => {
+    try {
+      const agreement =
+        milestone?.agreement ??
+        milestone?.agreement_id ??
+        milestone?.agreement_number ??
+        null;
+      if (!(agreement && form.start_date && form.end_date)) {
+        return { overlaps: false, conflicts: [] };
+      }
+      const { data } = await api.post("/projects/milestones/check-overlap/", {
+        id: milestone?.id,
+        agreement,
+        start_date: form.start_date,
+        completion_date: form.end_date, // backend expects completion/due
+      });
+      return data || { overlaps: false, conflicts: [] };
+    } catch (e) {
+      // If endpoint isn't present or errors, fail soft and allow save
+      return { overlaps: false, conflicts: [] };
+    }
+  }, [milestone, form.start_date, form.end_date]);
+
   const save = useCallback(async () => {
     if (!milestone?.id) return;
     setSaving(true);
     try {
+      // 1) Prompt on overlap (non-blocking if endpoint missing)
+      let allow_overlap = false;
+      const { overlaps, conflicts } = await checkOverlap();
+      if (overlaps) {
+        const names = (conflicts || [])
+          .slice(0, 3)
+          .map((c) => `${c.title || "Milestone"} (${c.start_date} → ${c.completion_date || c.due_date || ""})`);
+        const extra =
+          (conflicts || []).length > 3
+            ? ` and ${conflicts.length - 3} more...`
+            : "";
+        const proceed = window.confirm(
+          `This milestone overlaps with ${conflicts.length} existing milestone(s):\n` +
+            (names.length ? `- ${names.join("\n- ")}${extra}\n\n` : "\n") +
+            "Do you want to continue anyway?"
+        );
+        if (!proceed) {
+          setSaving(false);
+          return;
+        }
+        allow_overlap = true;
+      }
+
+      // 2) Prepare payload (tolerate legacy fields)
       const payload = {
         title: form.title,
         start_date: form.start_date || null,
@@ -86,12 +135,15 @@ export default function MilestoneEditModal({
         // include completion_date for serializers that expect it
         completion_date: form.end_date || null,
         amount:
-          form.amount === "" || form.amount === null
-            ? null
-            : Number(form.amount),
+            form.amount === "" || form.amount === null
+              ? null
+              : Number(form.amount),
         description: form.description,
         status: form.status,
+        // if user confirmed, allow serializer to pass overlap
+        allow_overlap,
       };
+
       const { data } = await api.patch(
         `/projects/milestones/${milestone.id}/`,
         payload
@@ -101,11 +153,17 @@ export default function MilestoneEditModal({
       onClose && onClose();
     } catch (err) {
       console.error(err);
-      toast.error("Unable to save milestone");
+      const msg =
+        err?.response?.data?.non_field_errors ||
+        err?.response?.data?.detail ||
+        "Unable to save milestone";
+      toast.error(
+        Array.isArray(msg) ? msg.join(", ") : typeof msg === "string" ? msg : "Unable to save milestone"
+      );
     } finally {
       setSaving(false);
     }
-  }, [milestone, form, onSaved, onClose]);
+  }, [milestone, form, checkOverlap, onSaved, onClose]);
 
   const sendComment = useCallback(async () => {
     if (!milestone?.id || !comment.trim()) return;
@@ -132,11 +190,9 @@ export default function MilestoneEditModal({
     try {
       const formData = new FormData();
       formData.append("file", file);
-      await api.post(
-        `/projects/milestones/${milestone.id}/files/`,
-        formData,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
+      await api.post(`/projects/milestones/${milestone.id}/files/`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
       toast.success("File uploaded");
       setFile(null);
     } catch (err) {
@@ -226,31 +282,49 @@ export default function MilestoneEditModal({
                 <label className="mb-1 block text-sm font-medium text-gray-700">
                   Start Date
                 </label>
-                <input
-                  type="date"
-                  name="start_date"
-                  value={form.start_date || ""}
-                  onChange={onChange}
-                  readOnly={readOnly}
-                  className={`w-full rounded border px-3 py-2 text-sm ${
-                    readOnly ? "bg-gray-50 text-gray-600" : ""
-                  }`}
-                />
+                <div className="relative">
+                  <input
+                    type="date"
+                    name="start_date"
+                    value={form.start_date || ""}
+                    onChange={onChange}
+                    readOnly={readOnly}
+                    className={`w-full rounded border px-3 py-2 pr-10 text-sm ${
+                      readOnly ? "bg-gray-50 text-gray-600" : ""
+                    }`}
+                  />
+                  <span
+                    className="absolute right-2 top-1/2 -translate-y-1/2 select-none"
+                    title="Pick a date"
+                    aria-hidden="true"
+                  >
+                    📅
+                  </span>
+                </div>
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
                   Completion Date
                 </label>
-                <input
-                  type="date"
-                  name="end_date"
-                  value={form.end_date || ""}
-                  onChange={onChange}
-                  readOnly={readOnly}
-                  className={`w-full rounded border px-3 py-2 text-sm ${
-                    readOnly ? "bg-gray-50 text-gray-600" : ""
-                  }`}
-                />
+                <div className="relative">
+                  <input
+                    type="date"
+                    name="end_date"
+                    value={form.end_date || ""}
+                    onChange={onChange}
+                    readOnly={readOnly}
+                    className={`w-full rounded border px-3 py-2 pr-10 text-sm ${
+                      readOnly ? "bg-gray-50 text-gray-600" : ""
+                    }`}
+                  />
+                  <span
+                    className="absolute right-2 top-1/2 -translate-y-1/2 select-none"
+                    title="Pick a date"
+                    aria-hidden="true"
+                  >
+                    📅
+                  </span>
+                </div>
               </div>
             </div>
 

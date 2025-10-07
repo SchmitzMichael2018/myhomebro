@@ -1,6 +1,7 @@
+# backend/projects/serializers/milestone.py
 from __future__ import annotations
 
-from django.db.models import Sum
+from django.db.models import Q
 from rest_framework import serializers
 
 from projects.models import Milestone, Agreement
@@ -8,14 +9,15 @@ from projects.models import Milestone, Agreement
 
 class MilestoneSerializer(serializers.ModelSerializer):
     """
-    Enriched milestone serializer for list/detail views.
+    Enriched milestone serializer + overlap validation.
 
     Adds:
-      - agreement_id
-      - project_title
+      - agreement_id, project_title
       - homeowner_name, homeowner_email
-      - due_date           (completion_date or scheduled_date or start_date)
-      - is_overdue         (bool)
+      - due_date (completion_date or scheduled_date or start_date)
+      - is_overdue (bool)
+    Validates:
+      - Blocks date overlaps within same agreement unless allow_overlap=true.
     """
 
     agreement_id    = serializers.SerializerMethodField()
@@ -24,6 +26,8 @@ class MilestoneSerializer(serializers.ModelSerializer):
     homeowner_email = serializers.SerializerMethodField()
     due_date        = serializers.SerializerMethodField()
     is_overdue      = serializers.SerializerMethodField()
+
+    allow_overlap   = serializers.BooleanField(write_only=True, required=False, default=False)
 
     class Meta:
         model  = Milestone
@@ -57,7 +61,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
             pid = getattr(p, "id", None)
             if pid:
                 return f"Project #{pid}"
-        # fall back to agreement snapshot/title if any
         ag = self._get_agreement(obj)
         snap = (getattr(ag, "project_title_snapshot", "") or "").strip() if ag else ""
         if snap:
@@ -66,7 +69,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
 
     def _resolve_homeowner(self, obj: Milestone):
         ag = self._get_agreement(obj)
-        # Agreement.homeowner or Project.homeowner
         h = getattr(ag, "homeowner", None) if ag else None
         if h:
             return h
@@ -83,7 +85,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
                 if v:
                     return v
         ag = self._get_agreement(obj)
-        # snapshots on Agreement for resiliency
         for attr in ("homeowner_name_snapshot", "homeowner_full_name", "homeowner_name"):
             v = (getattr(ag, attr, "") or "").strip() if ag else ""
             if v:
@@ -103,7 +104,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
         return ""
 
     def get_due_date(self, obj: Milestone):
-        # unified "due" for list sorting/display
         return (
             getattr(obj, "completion_date", None)
             or getattr(obj, "scheduled_date", None)
@@ -117,13 +117,40 @@ class MilestoneSerializer(serializers.ModelSerializer):
                 return False
             from django.utils.timezone import now
             today = now().date()
-            # Consider overdue when not completed and due date has passed
             completed = bool(getattr(obj, "completed", False))
-            return (not completed) and (hasattr(due, "date") and due.date() < today or due < today)
+            return (not completed) and ((hasattr(due, "date") and due.date() < today) or (due < today))
         except Exception:
             return False
 
-    # Always include our computed fields
+    # ------------- overlap validation ------------- #
+    def validate(self, attrs):
+        allow_overlap = attrs.get("allow_overlap", False)
+        agreement = attrs.get("agreement") or getattr(self.instance, "agreement", None)
+        start = attrs.get("start_date", getattr(self.instance, "start_date", None))
+        end = (
+            attrs.get("completion_date", getattr(self.instance, "completion_date", None))
+            or attrs.get("due_date", getattr(self.instance, "due_date", None))
+        )
+
+        if start and end and start > end:
+            raise serializers.ValidationError({"completion_date": "Completion/Due date must be on or after the start date."})
+
+        if agreement and start and end and not allow_overlap:
+            qs = Milestone.objects.filter(agreement=agreement)
+            if self.instance:
+                qs = qs.exclude(pk=self.instance.pk)
+            conflict = qs.filter(
+                Q(start_date__lte=end) &
+                (Q(completion_date__gte=start) | Q(due_date__gte=start))
+            ).exists()
+            if conflict:
+                raise serializers.ValidationError({
+                    "non_field_errors": "This milestone overlaps with an existing milestone for this agreement. "
+                                        "Resubmit with allow_overlap=true to override."
+                })
+        return attrs
+
+    # Always include computed fields
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data["agreement_id"]   = self.get_agreement_id(instance)
