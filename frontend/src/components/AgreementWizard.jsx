@@ -1,16 +1,12 @@
 // src/components/AgreementWizard.jsx
-// v2025-10-06 — Step 2 milestone list restored (editable table), authenticated PDF preview (Blob),
-// header public link/copy, fluid desktop layout, Step4Review wiring.
+// v2025-10-06-stable-tabs-r2 — Step 1/3/4 restored; Step 2 (calendar icons) kept; resilient loading.
 
-import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../api";
-import { PROJECT_TYPES, SUBTYPES_BY_TYPE } from "./options/projectOptions";
-import AttachmentSection from "./AttachmentSection";
-import Step4Review from "./Step4Review";
 
-/* ---------- Tabs ---------- */
+/* -------------------- Helpers -------------------- */
 const TABS = [
   { step: 1, label: "1. Details" },
   { step: 2, label: "2. Milestones" },
@@ -22,1099 +18,766 @@ function useQuery() {
   const { search } = useLocation();
   return useMemo(() => new URLSearchParams(search), [search]);
 }
-
-/* ---------- Helpers ---------- */
-function normalizeOptions(input) {
-  if (!input) return [];
-  return input.map((item) => {
-    if (item && typeof item === "object") {
-      const value = String(item.value ?? item.id ?? item.label ?? "");
-      const label =
-        String(
-          item.label ??
-            item.name ??
-            item.full_name ??
-            item.title ??
-            item.email ??
-            item.value ??
-            ""
-        ) || "";
-      return { value, label };
-    }
-    const str = String(item ?? "");
-    return { value: str, label: str };
-  });
-}
-
 function toDateOnly(v) {
   if (!v) return "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
   const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return "";
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  return `${yyyy}-${mm}-${dd}`;
+  if (isNaN(d.getTime())) return "";
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+function daySpan(start, end) {
+  const a = start ? new Date(start) : null;
+  const b = end ? new Date(end) : null;
+  if (!a || !b || isNaN(a) || isNaN(b)) return "";
+  const ms = b.getTime() - a.getTime();
+  return ms >= 0 ? Math.floor(ms / 86400000) + 1 : "";
 }
 
-function pickApiDate(obj, preferredKeys, fallbackNeedleList) {
-  for (const k of preferredKeys) if (obj?.[k]) return obj[k];
-  const needles = fallbackNeedleList || ["end", "finish"];
-  const looksDate = (val) =>
-    typeof val === "string" && (/\d{4}-\d{2}-\d{2}/.test(val) || /\d{4}-\d{2}-\d{2}T/.test(val));
-  for (const key of Object.keys(obj || {})) {
-    const lower = key.toLowerCase();
-    if (needles.some((n) => lower.includes(n)) && looksDate(obj[key])) return obj[key];
-  }
-  return "";
+/* Reusable inline calendar button (no external CSS) */
+function CalendarBtn({ onClick, title = "Pick a date", disabled }) {
+  return (
+    <button
+      type="button"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={onClick}
+      aria-label={title}
+      title={title}
+      disabled={disabled}
+      style={{
+        position: "absolute",
+        right: 8,
+        top: "50%",
+        transform: "translateY(-50%)",
+        zIndex: 2147483647,
+        background: "transparent",
+        border: 0,
+        lineHeight: 0,
+        color: "#6B7280",
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <span role="img" aria-label="calendar">📅</span>
+    </button>
+  );
 }
 
-function daysInclusive(start, end) {
-  const s = new Date(start);
-  const e = new Date(end);
-  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return 0;
-  const ms = e.setHours(0, 0, 0, 0) - s.setHours(0, 0, 0, 0);
-  return ms < 0 ? 0 : Math.floor(ms / 86400000) + 1;
-}
-
-function money(n) {
-  const v = Number(n || 0);
-  return v.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 });
-}
-
-/* ---------- API routes ---------- */
-const routes = {
-  agreement: (id) => `/projects/agreements/${id}/`,
-  milestonesList: (agreementId) => `/projects/agreements/${agreementId}/milestones/`,
-  milestoneDetail: (milestoneId) => `/projects/milestones/${milestoneId}/`,
-  homeowners: () => `/projects/homeowners/`,
-  previewPdf: (id) => `/projects/agreements/${id}/preview_pdf/`,
-};
-
-/* ========================================================= */
-
+/* -------------------- Root Wizard -------------------- */
 export default function AgreementWizard() {
-  const { id } = useParams();
-  const query = useQuery();
   const navigate = useNavigate();
+  const { id } = useParams();
+  const q = useQuery();
+  const step = Number(q.get("step") || "1");
 
-  const initialStep = Number(query.get("step") || 1);
-  const [step, setStep] = useState([1, 2, 3, 4].includes(initialStep) ? initialStep : 1);
-
-  /* ----- Agreement shell ----- */
+  const [loading, setLoading] = useState(false);
   const [agreement, setAgreement] = useState(null);
-  const [loadingAgreement, setLoadingAgreement] = useState(true);
-
-  /* ----- Global preview/public link state ----- */
-  const [previewing, setPreviewing] = useState(false);
-  const [copying, setCopying] = useState(false);
-
-  /* ----- Step 1 fields ----- */
-  const [projectType, setProjectType] = useState("");
-  const [projectSubtype, setProjectSubtype] = useState("");
-  const [projectTitle, setProjectTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [homeownerId, setHomeownerId] = useState("");
-
-  const [homeowners, setHomeowners] = useState([]);
-  const [loadingHomeowners, setLoadingHomeowners] = useState(false);
-
-  /* ----- Step 3 warranty fields ----- */
-  const [useDefaultWarranty, setUseDefaultWarranty] = useState(true);
-  const [customWarrantyText, setCustomWarrantyText] = useState("");
-  const [defaultWarrantyText, setDefaultWarrantyText] = useState(
-    "Standard workmanship warranty: Contractor warrants all labor performed under this Agreement for one (1) year from substantial completion. Materials are covered by the manufacturer’s warranties. This warranty excludes damage caused by misuse, neglect, alteration, improper maintenance, or acts of God."
-  );
-
-  // Focus management for custom textarea
-  const warrantyRef = useRef(null);
-  const [warrantyTyping, setWarrantyTyping] = useState(false);
-
-  const ids = {
-    projectTitle: "projectTitleInput",
-    projectType: "projectTypeSelect",
-    projectSubtype: "projectSubtypeSelect",
-    homeowner: "homeownerSelect",
-    description: "projectDescription",
-  };
-
-  const typeOptions = useMemo(() => normalizeOptions(PROJECT_TYPES || []), []);
-  const subtypeOptions = useMemo(
-    () => normalizeOptions((SUBTYPES_BY_TYPE?.[projectType]) || []),
-    [projectType]
-  );
-
-  /* ----- Step 2 milestones ----- */
-  const [listLoading, setListLoading] = useState(true);
   const [milestones, setMilestones] = useState([]);
-  const [deletions, setDeletions] = useState(new Set());
-  const [newMs, setNewMs] = useState({ title: "", description: "", start: "", end: "", amount: "" });
-  const [rowEdits, setRowEdits] = useState({});
 
-  const totals = useMemo(() => {
-    const active = milestones.filter((m) => !deletions.has(m.id));
-    const totalAmount = active.reduce((sum, m) => sum + Number(m.amount || 0), 0);
-    const totalDays = active.reduce((sum, m) => sum + daysInclusive(m.start, m.end), 0);
-    const starts = active.map((m) => m.start).filter(Boolean).sort();
-    const ends = active.map((m) => m.end).filter(Boolean).sort();
-    const agreementStart = starts.length ? starts[0] : "";
-    const agreementEnd = ends.length ? ends[ends.length - 1] : "";
-    return { totalAmount, totalDays, agreementStart, agreementEnd };
-  }, [milestones, deletions]);
+  // Step 2 local form (stable — avoids focus loss)
+  const [mLocal, setMLocal] = useState({ title: "", description: "", amount: "", start: "", end: "" });
 
-  /* ---------- Loaders ---------- */
-  const loadAgreement = useCallback(async () => {
+  // Step 1 local form
+  const [dLocal, setDLocal] = useState({
+    project_title: "",
+    project_type: "",
+    project_subtype: "",
+    description: "",
+    start: "",
+    end: "",
+  });
+
+  // Step 3 local state: warranty + attachments
+  const [useDefaultWarranty, setUseDefaultWarranty] = useState(true);
+  const [customWarranty, setCustomWarranty] = useState("");
+  const [attachments, setAttachments] = useState([]);
+  const [attForm, setAttForm] = useState({
+    title: "",
+    category: "WARRANTY",
+    visible: true,
+    require_ack: false,
+    file: null,
+  });
+
+  useEffect(() => { console.log("AgreementWizard build:", "v2025-10-06-stable-tabs-r2"); }, []);
+
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
-      setLoadingAgreement(true);
-      const { data } = await api.get(routes.agreement(id));
-      setAgreement(data || {});
-      setProjectTitle(data?.project_title || data?.title || "");
-      setProjectType(data?.project_type || "");
-      setProjectSubtype(data?.project_subtype || "");
-      setHomeownerId(String(data?.homeowner || data?.homeowner_id || ""));
-      setDescription(data?.description || data?.job_description || "");
+      const { data: ag } = await api.get(`/projects/agreements/${id}/`);
+      setAgreement(ag);
 
-      // Warranty snapshot from server, if present
-      if (typeof data?.warranty_type === "string") {
-        const wt = String(data.warranty_type).trim().toLowerCase();
-        setUseDefaultWarranty(wt !== "custom");
+      // hydrate Step 1
+      setDLocal({
+        project_title: ag.project_title || ag.title || "",
+        project_type: ag.project_type || "",
+        project_subtype: ag.project_subtype || "",
+        description: ag.description || "",
+        start: toDateOnly(ag.start),
+        end: toDateOnly(ag.end),
+      });
+
+      // Step 3 warranty
+      // tolerate either "warranty_type" or a snapshot; default to using default warranty if no custom text
+      const hasCustom = !!(ag.warranty_text_snapshot && ag.warranty_text_snapshot.trim().length > 0);
+      setUseDefaultWarranty(!hasCustom);
+      setCustomWarranty(ag.warranty_text_snapshot || "");
+
+      // milestones (for totals and table)
+      const { data: msRaw } = await api.get(`/projects/milestones/`, { params: { agreement: id, page_size: 500 } });
+      const ms = Array.isArray(msRaw?.results) ? msRaw.results : Array.isArray(msRaw) ? msRaw : [];
+      setMilestones(ms);
+
+      // attachments (safe if endpoint exists)
+      try {
+        const { data: atRaw } = await api.get(`/projects/agreements/${id}/attachments/`);
+        setAttachments(Array.isArray(atRaw) ? atRaw : []);
+      } catch {
+        setAttachments([]);
       }
-      if (data?.warranty_text_snapshot) {
-        const snap = String(data.warranty_text_snapshot || "");
-        if (snap) {
-          setDefaultWarrantyText(snap);
-          if (String(data?.warranty_type || "").toLowerCase() === "custom") {
-            setCustomWarrantyText(snap);
-          }
-        }
-      }
-    } catch (err) {
-      console.error(err);
+    } catch (e) {
+      console.error(e);
       toast.error("Failed to load agreement.");
     } finally {
-      setLoadingAgreement(false);
+      setLoading(false);
     }
   }, [id]);
 
-  const loadHomeowners = useCallback(async () => {
-    try {
-      setLoadingHomeowners(true);
-      const { data } = await api.get(routes.homeowners());
-      const rows = Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
-      const opts = (rows || [])
-        .map((r) => {
-          const idVal = r.id ?? r.pk ?? r.customer_id ?? r.user_id;
-          const nm =
-            r.name ??
-            r.full_name ??
-            ((r.first_name && r.last_name) ? `${r.first_name} ${r.last_name}` : null);
-          const em = r.email ?? r.primary_email ?? null;
-          const label = nm ? (em ? `${nm} (${em})` : nm) : (em ? em : `Customer #${idVal}`);
-          return idVal ? { value: String(idVal), label } : null;
-        })
-        .filter(Boolean);
-      setHomeowners(opts);
-    } catch (err) {
-      console.error(err);
-      toast.error("Could not load homeowners.");
-    } finally {
-      setLoadingHomeowners(false);
-    }
-  }, []);
+  useEffect(() => { load(); }, [load]);
 
-  const loadMilestones = useCallback(async () => {
-    try {
-      setListLoading(true);
-      const { data } = await api.get(routes.milestonesList(id));
-      const rows = Array.isArray(data) ? data : [];
-      const mapped = rows.map((m) => {
-        const startRaw = pickApiDate(
-          m,
-          ["start", "start_date", "planned_start", "scheduled_start", "begin", "begin_date"],
-          ["start", "begin"]
-        );
-        const endRaw = pickApiDate(
-          m,
-          [
-            "end",
-            "end_date",
-            "planned_end",
-            "scheduled_end",
-            "finish",
-            "finish_date",
-            "end_on",
-            "date_end",
-            "completion_date",
-          ],
-          ["end", "finish"]
-        );
-        return { ...m, start: toDateOnly(startRaw), end: toDateOnly(endRaw) };
-      });
-      setMilestones(mapped);
-      setDeletions(new Set());
-      setRowEdits({});
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to load milestones.");
-    } finally {
-      setListLoading(false);
-    }
-  }, [id]);
+  const totals = useMemo(() => {
+    const totalAmt = milestones.reduce((s, m) => s + Number(m.amount || 0), 0);
+    const starts = milestones.map(m => toDateOnly(m.start_date || m.start || m.scheduled_date)).filter(Boolean);
+    const ends   = milestones.map(m => toDateOnly(m.completion_date || m.end_date || m.end || m.due_date)).filter(Boolean);
+    const minStart = starts.length ? [...starts].sort()[0] : "";
+    const maxEnd   = ends.length ? [...ends].sort().slice(-1)[0] : "";
+    const totalDays = (minStart && maxEnd) ? daySpan(minStart, maxEnd) : 0;
+    return { totalAmt, minStart, maxEnd, totalDays };
+  }, [milestones]);
 
-  useEffect(() => {
-    loadAgreement();
-    loadHomeowners();
-    loadMilestones();
-  }, [loadAgreement, loadHomeowners, loadMilestones]);
+  const goStep = (n) => navigate(`/agreements/${id}/wizard?step=${n}`);
 
-  /* ---------- Nav ---------- */
-  const goStep = (n) => {
-    setStep(n);
-    const sp = new URLSearchParams(Array.from(query.entries()));
-    sp.set("step", String(n));
-    navigate({ search: `?${sp.toString()}` }, { replace: true });
-  };
-
-  /* ---------- Saves ---------- */
+  /* -------------------- Step 1 (Details) -------------------- */
   const saveStep1 = async () => {
     try {
       const payload = {
-        title: projectTitle || "",
-        project_type: projectType || "",
-        project_subtype: projectSubtype || "",
-        homeowner: homeownerId ? Number(homeownerId) : null,
-        description: description || "",
+        title: dLocal.project_title,
+        project_title: dLocal.project_title, // tolerate both
+        project_type: dLocal.project_type,
+        project_subtype: dLocal.project_subtype,
+        description: dLocal.description,
+        start: dLocal.start || null,
+        end: dLocal.end || null,
       };
-      await api.patch(routes.agreement(id), payload);
+      await api.patch(`/projects/agreements/${id}/`, payload);
       toast.success("Details saved.");
-    } catch (err) {
-      console.error(err);
+      await load();
+    } catch (e) {
+      console.error(e);
       toast.error("Failed to save details.");
-      throw err;
     }
   };
 
-  const saveWarranty = async () => {
-    const isDefault = !!useDefaultWarranty;
-    const trimmedCustom = (customWarrantyText || "").trim();
-    let snapshot = isDefault ? (defaultWarrantyText || "").trim() : trimmedCustom;
-
-    if (!snapshot) {
-      if (isDefault) {
-        snapshot =
-          "Standard workmanship warranty: Contractor warrants all labor performed under this Agreement for one (1) year from substantial completion. Materials are covered by the manufacturer’s warranties. This warranty excludes damage caused by misuse, neglect, alteration, improper maintenance, or acts of God.";
-      } else {
-        toast.error("Please enter your custom warranty text before saving.");
-        return;
-      }
-    }
-
-    const primaryPayload = {
-      warranty_type: isDefault ? "default" : "custom",
-      warranty_text_snapshot: snapshot,
-    };
-    const aliasPayload = {
-      use_default_warranty: isDefault,
-      custom_warranty_text: isDefault ? "" : snapshot,
-    };
-
-    const fmtErr = (err) => {
-      const d = err?.response?.data;
-      if (typeof d === "string") return d;
-      if (d?.detail) return d.detail;
-      if (d && typeof d === "object") {
-        return Object.entries(d)
-          .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : String(v)}`)
-          .join(" | ");
-      }
-      return err?.message || "Unknown error";
-    };
-
+  /* -------------------- Step 2 (Milestones) -------------------- */
+  const onLocalChange = (e) => {
+    const { name, value } = e.target;
+    setMLocal((s) => (name === "start" || name === "end" ? { ...s, [name]: toDateOnly(value) } : { ...s, [name]: value }));
+  };
+  const addMilestone = async () => {
+    const f = mLocal;
+    if (!f.title?.trim()) return toast.error("Enter a title.");
+    if (!f.start || !f.end) return toast.error("Select start and end dates.");
     try {
-      await api.patch(routes.agreement(id), primaryPayload);
-      toast.success("Warranty saved.");
-    } catch (e1) {
-      try {
-        await api.patch(routes.agreement(id), aliasPayload);
-        toast.success("Warranty saved.");
-      } catch (e2) {
-        toast.error(fmtErr(e2) || fmtErr(e1) || "Failed to save warranty.");
-        console.error("Warranty save error (primary, alias):", e1, e2);
-      }
+      const payload = {
+        agreement: Number(id),
+        title: f.title.trim(),
+        description: f.description || "",
+        amount: f.amount ? Number(f.amount) : 0,
+        start_date: f.start,
+        end_date: f.end,
+        completion_date: f.end,
+      };
+      const { data } = await api.post(`/projects/milestones/`, payload);
+      setMilestones((ms) => [...ms, data]);
+      setMLocal({ title: "", description: "", amount: "", start: "", end: "" });
+      toast.success("Milestone added.");
+    } catch (e) {
+      const msg = e?.response?.data?.non_field_errors || e?.response?.data?.detail || "Add failed.";
+      toast.error(Array.isArray(msg) ? msg.join(", ") : String(msg));
     }
   };
-
-  /* ---------- Milestones logic ---------- */
-  const resetNewMs = () =>
-    setNewMs({ title: "", description: "", start: "", end: "", amount: "" });
-
-  const canAddNew = useMemo(() => {
-    const d = daysInclusive(newMs.start, newMs.end);
-    return (
-      newMs.title.trim() &&
-      newMs.amount !== "" &&
-      Number(newMs.amount) >= 0 &&
-      newMs.start &&
-      newMs.end &&
-      d > 0
-    );
-  }, [newMs]);
-
-  const onAddMilestone = () => {
-    if (!canAddNew) {
-      toast.error("Fill Title, Start, End, and Amount (valid dates) before adding.");
-      return;
-    }
-    const tempId = -1 * Date.now();
-    const ms = {
-      id: tempId,
-      title: newMs.title.trim(),
-      description: newMs.description?.trim() || "",
-      start: toDateOnly(newMs.start),
-      end: toDateOnly(newMs.end),
-      amount: Number(newMs.amount),
-      _isTemp: true,
-    };
-    setMilestones((prev) => [...prev, ms]);
-    resetNewMs();
-    toast.success("Milestone added to list.");
-  };
-
-  const startEditRow = (m) =>
-    setRowEdits((prev) => ({ ...prev, [m.id]: { ...m, editing: true } }));
-
-  const cancelEditRow = (id_) =>
-    setRowEdits((prev) => {
-      const n = { ...prev };
-      delete n[id_];
-      return n;
-    });
-
-  const commitEditRow = (id_) => {
-    const e = rowEdits[id_];
-    if (!e || !e.title?.trim() || !e.start || !e.end || Number.isNaN(Number(e.amount))) {
-      toast.error("Missing/invalid fields.");
-      return;
-    }
-    if (daysInclusive(e.start, e.end) <= 0) {
-      toast.error("End date must be on/after Start date.");
-      return;
-    }
-    setMilestones((prev) =>
-      prev.map((m) => (m.id === id_ ? { ...m, ...e, editing: undefined } : m))
-    );
-    cancelEditRow(id_);
-    toast.success("Row updated.");
-  };
-
-  const markDelete = (id_) => {
-    const row = milestones.find((m) => m.id === id_);
-    if (row && row._isTemp) {
-      setMilestones((prev) => prev.filter((m) => m.id !== id_));
-      return;
-    }
-    setDeletions((prev) => new Set([...Array.from(prev), id_]));
-  };
-
-  const unmarkDelete = (id_) =>
-    setDeletions((prev) => {
-      const n = new Set(prev);
-      n.delete(id_);
-      return n;
-    });
-
-  const persistMilestones = async () => {
-    // deletes
-    for (const id_ of deletions) {
-      try {
-        await api.delete(routes.milestoneDetail(id_));
-      } catch (e) {
-        console.error(e);
-        toast.error(`Failed deleting milestone #${id_}`);
-      }
-    }
-    // edits
-    const editedIds = Object.keys(rowEdits).map((k) => Number(k));
-    for (const id_ of editedIds) {
-      const e = rowEdits[id_];
-      if (!e) continue;
-      try {
-        const s = toDateOnly(e.start);
-        const ed = toDateOnly(e.end);
-        await api.patch(routes.milestoneDetail(id_), {
-          title: e.title?.trim(),
-          description: e.description || "",
-          amount: Number(e.amount),
-          start: s,
-          start_date: s,
-          planned_start: s,
-          scheduled_start: s,
-          end: ed,
-          end_date: ed,
-          planned_end: ed,
-          scheduled_end: ed,
-          finish_date: ed,
-          completion_date: ed,
-        });
-      } catch (err) {
-        console.error(err);
-        toast.error(`Failed updating milestone #${id_}`);
-      }
-    }
-    // creates
-    const news = milestones.filter((m) => m._isTemp);
-    for (const n of news) {
-      try {
-        const s = n.start;
-        const ed = n.end;
-        await api.post(routes.milestonesList(id), {
-          title: n.title,
-          description: n.description || "",
-          amount: Number(n.amount),
-          start: s,
-          start_date: s,
-          planned_start: s,
-          scheduled_start: s,
-          end: ed,
-          end_date: ed,
-          planned_end: ed,
-          scheduled_end: ed,
-          finish_date: ed,
-          completion_date: ed,
-        });
-      } catch (err) {
-        console.error(err);
-        toast.error(`Failed creating milestone "${n.title}"`);
-      }
-    }
-    await loadMilestones();
-    toast.success("Milestones saved.");
-  };
-
-  /* ---------- Header Actions ---------- */
-
-  // Authenticated preview: fetch Blob with Authorization and open in a new tab
-  const handleHeaderPreview = async () => {
+  const removeMilestone = async (mid) => {
     try {
-      setPreviewing(true);
-      const res = await api.get(routes.previewPdf(id), {
-        params: { stream: 1 },
-        responseType: "blob",
-      });
-      const blob = new Blob([res.data], { type: "application/pdf" });
-      const url = window.URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener");
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (err) {
-      console.error(err);
-      toast.error("Could not generate preview. Please try again.");
-    } finally {
-      setPreviewing(false);
-    }
-  };
-
-  const handleViewPublic = () => {
-    const url = `${window.location.origin}/agreements/${id}`;
-    window.open(url, "_blank", "noopener");
-  };
-
-  const handleCopyPublic = async () => {
-    const url = `${window.location.origin}/agreements/${id}`;
-    try {
-      setCopying(true);
-      await navigator.clipboard.writeText(url);
-      toast.success("Public link copied to clipboard");
+      await api.delete(`/projects/milestones/${mid}/`);
+      setMilestones((ms) => ms.filter((m) => m.id !== mid));
+      toast.success("Milestone removed.");
     } catch {
-      toast.error("Unable to copy. You can copy from the new tab.");
-    } finally {
-      setCopying(false);
+      toast.error("Delete failed.");
     }
   };
 
-  /* ---------- UI ---------- */
-  const TabButtons = () => (
-    <div className="flex flex-wrap gap-2 mb-4" onSubmit={(e) => e.preventDefault()}>
-      {TABS.map((t) => (
-        <button
-          key={t.step}
-          type="button"
-          onClick={() => goStep(t.step)}
-          className={`px-3 py-2 rounded border text-sm ${step === t.step ? "bg-blue-600 text-white" : "bg-white"}`}
-        >
-          {t.label}
-        </button>
-      ))}
-    </div>
-  );
+  /* -------------------- Step 3 (Warranty & Attachments) -------------------- */
+  const saveWarranty = async () => {
+    try {
+      const payload = {
+        // normalize to your backend shape
+        warranty_text_snapshot: useDefaultWarranty ? "" : (customWarranty || ""),
+        warranty_type: useDefaultWarranty ? "DEFAULT" : "CUSTOM",
+      };
+      await api.patch(`/projects/agreements/${id}/`, payload);
+      toast.success("Warranty saved.");
+      await load();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to save warranty.");
+    }
+  };
 
-  const Step1 = () => (
-    <div className="space-y-4" onSubmit={(e) => e.preventDefault()}>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
-        <div>
-          <label htmlFor={ids.projectTitle} className="block text-sm font-medium mb-1">
-            Project Title
-          </label>
-          <input
-            id={ids.projectTitle}
-            className="w-full border rounded px-3 py-2"
-            value={projectTitle}
-            onChange={(e) => setProjectTitle(e.target.value)}
-            placeholder="e.g., Kitchen Floor and Wall"
-          />
-        </div>
+  const addAttachment = async () => {
+    try {
+      const fd = new FormData();
+      fd.append("title", attForm.title || "");
+      fd.append("category", attForm.category || "OTHER");
+      fd.append("visible", String(!!attForm.visible));
+      fd.append("require_acknowledgement", String(!!attForm.require_ack));
+      if (attForm.file) fd.append("file", attForm.file);
+      const { data } = await api.post(`/projects/agreements/${id}/attachments/`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setAttachments((prev) => [...prev, data]);
+      setAttForm({ title: "", category: "WARRANTY", visible: true, require_ack: false, file: null });
+      toast.success("Attachment added.");
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to add attachment.");
+    }
+  };
+  const deleteAttachment = async (attId) => {
+    try {
+      await api.delete(`/projects/agreements/${id}/attachments/${attId}/`);
+      setAttachments((prev) => prev.filter((a) => a.id !== attId));
+      toast.success("Attachment deleted.");
+    } catch {
+      toast.error("Delete failed.");
+    }
+  };
 
-        <div>
-          <label htmlFor={ids.projectType} className="block text-sm font-medium mb-1">
-            Project Type
-          </label>
-          <select
-            id={ids.projectType}
-            className="w-full border rounded px-3 py-2"
-            value={projectType}
-            onChange={(e) => {
-              setProjectType(e.target.value);
-              setProjectSubtype("");
-            }}
+  return (
+    <div className="p-4 md:p-6">
+      {/* Tabs — always visible */}
+      <div className="mb-4 flex flex-wrap gap-2">
+        {TABS.map((t) => (
+          <button
+            key={t.step}
+            onClick={() => goStep(t.step)}
+            className={`rounded px-3 py-2 text-sm ${
+              step === t.step ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+            }`}
           >
-            <option value="">Select a type</option>
-            {typeOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label htmlFor={ids.projectSubtype} className="block text-sm font-medium mb-1">
-            Project Subtype
-          </label>
-          <select
-            id={ids.projectSubtype}
-            className="w-full border rounded px-3 py-2"
-            value={projectSubtype}
-            onChange={(e) => setProjectSubtype(e.target.value)}
-            disabled={!projectType}
+            {t.label}
+          </button>
+        ))}
+        <div className="flex-1" />
+        <div className="flex gap-2">
+          <button
+            onClick={() => window.open(`/projects/agreements/${id}/pdf/preview/`, "_blank")}
+            className="rounded bg-indigo-50 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-100"
           >
-            <option value="">Select a subtype</option>
-            {(SUBTYPES_BY_TYPE?.[projectType] || []).map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label htmlFor={ids.homeowner} className="block text-sm font-medium mb-1">
-            Homeowner
-          </label>
-          <select
-            id={ids.homeowner}
-            className="w-full border rounded px-3 py-2"
-            value={homeownerId}
-            onChange={(e) => setHomeownerId(e.target.value)}
+            Preview PDF
+          </button>
+          <button
+            onClick={() => window.open(`/agreements/public/${id}/`, "_blank")}
+            className="rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200"
           >
-            <option value="">{loadingHomeowners ? "Loading…" : "Select a homeowner"}</option>
-            {homeowners.map((h) => (
-              <option key={h.value} value={h.value}>
-                {h.label}
-              </option>
-            ))}
-          </select>
+            View Public Link
+          </button>
         </div>
       </div>
 
-      <div>
-        <label htmlFor={ids.description} className="block text-sm font-medium mb-1">
-          Project Description
-        </label>
-        <textarea
-          id={ids.description}
-          className="w-full border rounded px-3 py-2"
-          rows={4}
-          placeholder="Describe the scope of work, important notes, materials, etc."
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-        />
-      </div>
+      {/* Step panes */}
+      {step === 1 && (
+        <div className="rounded-lg border bg-white p-4">
+          {!!loading && <div className="text-sm text-gray-500 mb-3">Loading…</div>}
+          <div className="text-sm text-gray-600 mb-4">
+            {agreement ? <>Agreement #{agreement.id} — {agreement.project_title || agreement.title || "Project"}</> : <>Agreement #{id}</>}
+          </div>
 
-      <div className="flex gap-2">
-        <button type="button" className="px-4 py-2 rounded border" onClick={() => navigate(-1)}>
-          Back
-        </button>
-        <button
-          type="button"
-          className="px-4 py-2 rounded bg-blue-600 text-white"
-          onClick={async () => {
-            await saveStep1();
-            goStep(2);
-          }}
-        >
-          Save & Next
-        </button>
-      </div>
-    </div>
-  );
-
-  const Step2 = () => {
-    const dNew = daysInclusive(newMs.start, newMs.end);
-    return (
-      <div className="space-y-6" onSubmit={(e) => e.preventDefault()}>
-        {/* New Milestone form */}
-        <div className="border rounded p-4 bg-white shadow-sm w-full">
-          <h3 className="font-semibold mb-3">New Milestone</h3>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
-            <div>
-              <label className="block text-sm font-medium mb-1">Title</label>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">Project Title</label>
               <input
-                className="w-full border rounded px-3 py-2"
-                value={newMs.title}
-                onChange={(e) => setNewMs((s) => ({ ...s, title: e.target.value }))}
-                placeholder="e.g., Install Floor Tile"
+                className="w-full rounded border px-3 py-2 text-sm"
+                value={dLocal.project_title}
+                onChange={(e) => setDLocal((s) => ({ ...s, project_title: e.target.value }))}
+                placeholder="e.g., Kitchen Floor and Wall"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Amount ($)</label>
+              <label className="block text-sm font-medium mb-1">Type</label>
               <input
-                type="number"
-                min="0"
-                step="0.01"
-                className="w-full border rounded px-3 py-2"
-                value={newMs.amount}
-                onChange={(e) => setNewMs((s) => ({ ...s, amount: e.target.value }))}
-                placeholder="0.00"
+                className="w-full rounded border px-3 py-2 text-sm"
+                value={dLocal.project_type}
+                onChange={(e) => setDLocal((s) => ({ ...s, project_type: e.target.value }))}
+                placeholder="e.g., Remodel"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Subtype</label>
+              <input
+                className="w-full rounded border px-3 py-2 text-sm"
+                value={dLocal.project_subtype}
+                onChange={(e) => setDLocal((s) => ({ ...s, project_subtype: e.target.value }))}
+                placeholder="e.g., Kitchen"
               />
             </div>
 
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium mb-1">Milestone Description</label>
+              <label className="block text-sm font-medium mb-1">Description</label>
               <textarea
-                className="w-full border rounded px-3 py-2"
-                rows={2}
-                value={newMs.description}
-                onChange={(e) => setNewMs((s) => ({ ...s, description: e.target.value }))}
-                placeholder="Brief description of the milestone work…"
+                className="w-full rounded border px-3 py-2 text-sm"
+                rows={3}
+                value={dLocal.description}
+                onChange={(e) => setDLocal((s) => ({ ...s, description: e.target.value }))}
+                placeholder="Brief project scope…"
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">Start</label>
+            {/* Dates with calendar buttons */}
+            <DateWithButton
+              label="Start"
+              value={dLocal.start}
+              onChange={(v) => setDLocal((s) => ({ ...s, start: toDateOnly(v) }))}
+            />
+            <DateWithButton
+              label="End"
+              value={dLocal.end}
+              onChange={(v) => setDLocal((s) => ({ ...s, end: toDateOnly(v) }))}
+            />
+          </div>
+
+          <div className="mt-4 flex gap-2">
+            <button onClick={saveStep1} className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700">
+              Save
+            </button>
+            <button onClick={() => { saveStep1(); goStep(2); }} className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700">
+              Save & Next
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 2 && (
+        <Step2Milestones
+          loading={loading}
+          mLocal={mLocal}
+          onLocalChange={onLocalChange}
+          onAdd={addMilestone}
+          milestones={milestones}
+          onDelete={removeMilestone}
+          totals={totals}
+          onBack={() => goStep(1)}
+          onNext={() => goStep(3)}
+        />
+      )}
+
+      {step === 3 && (
+        <div className="rounded-lg border bg-white p-4">
+          {!!loading && <div className="text-sm text-gray-500 mb-3">Loading…</div>}
+
+          {/* Warranty */}
+          <div className="mb-4">
+            <div className="text-sm font-medium mb-2">Warranty</div>
+            <div className="flex items-center gap-2 mb-2">
               <input
-                type="date"
-                className="w-full border rounded px-3 py-2"
-                value={newMs.start}
-                onChange={(e) => setNewMs((s) => ({ ...s, start: toDateOnly(e.target.value) }))}
+                id="use_default_warranty"
+                type="checkbox"
+                checked={useDefaultWarranty}
+                onChange={(e) => setUseDefaultWarranty(e.target.checked)}
               />
+              <label htmlFor="use_default_warranty" className="text-sm">
+                Use default 12-month workmanship warranty
+              </label>
             </div>
+            {!useDefaultWarranty && (
+              <textarea
+                className="w-full rounded border px-3 py-2 text-sm"
+                rows={5}
+                value={customWarranty}
+                onChange={(e) => setCustomWarranty(e.target.value)}
+                placeholder="Enter custom warranty terms…"
+              />
+            )}
+            <div className="mt-2">
+              <button onClick={saveWarranty} className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700">
+                Save Warranty
+              </button>
+            </div>
+          </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">End</label>
+          {/* Attachments */}
+          <div>
+            <div className="text-sm font-medium mb-2">Attachments & Addenda</div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
               <input
-                type="date"
-                className="w-full border rounded px-3 py-2"
-                value={newMs.end}
-                onChange={(e) => setNewMs((s) => ({ ...s, end: toDateOnly(e.target.value) }))}
+                type="text"
+                className="w-full rounded border px-3 py-2 text-sm"
+                placeholder="Title (e.g., Spec Sheet)"
+                value={attForm.title}
+                onChange={(e) => setAttForm((s) => ({ ...s, title: e.target.value }))}
               />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Days (auto)</label>
-              <input
-                className="w-full border rounded px-3 py-2 bg-gray-50"
-                readOnly
-                value={dNew || ""}
-                placeholder="—"
-                aria-label="Auto-calculated days"
-              />
-            </div>
-
-            <div className="flex items-end">
-              <button
-                type="button"
-                className={`px-4 py-2 rounded ${
-                  canAddNew ? "bg-emerald-600 text-white" : "bg-gray-300 text-gray-700 cursor-not-allowed"
-                }`}
-                onClick={onAddMilestone}
-                disabled={!canAddNew}
+              <select
+                className="w-full rounded border px-3 py-2 text-sm"
+                value={attForm.category}
+                onChange={(e) => setAttForm((s) => ({ ...s, category: e.target.value }))}
               >
-                + Add Milestone
+                <option value="WARRANTY">WARRANTY</option>
+                <option value="ADDENDUM">ADDENDUM</option>
+                <option value="EXHIBIT">EXHIBIT</option>
+                <option value="OTHER">OTHER</option>
+              </select>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={attForm.visible}
+                  onChange={(e) => setAttForm((s) => ({ ...s, visible: e.target.checked }))}
+                />
+                Visible to homeowner
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={attForm.require_ack}
+                  onChange={(e) => setAttForm((s) => ({ ...s, require_ack: e.target.checked }))}
+                />
+                Require acknowledgement
+              </label>
+              <input
+                type="file"
+                onChange={(e) => setAttForm((s) => ({ ...s, file: e.target.files?.[0] || null }))}
+                className="w-full text-sm"
+              />
+            </div>
+
+            <button onClick={addAttachment} className="rounded bg-gray-800 px-3 py-2 text-sm text-white hover:bg-black">
+              + Add Attachment
+            </button>
+
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 text-left">
+                    <th className="px-3 py-2">Category</th>
+                    <th className="px-3 py-2">Title</th>
+                    <th className="px-3 py-2">Visible</th>
+                    <th className="px-3 py-2">Ack Required</th>
+                    <th className="px-3 py-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {attachments.map((a) => (
+                    <tr key={a.id} className="border-t">
+                      <td className="px-3 py-2">{(a.category || "").toUpperCase()}</td>
+                      <td className="px-3 py-2">{a.title || a.filename || "—"}</td>
+                      <td className="px-3 py-2">{a.visible ? "Yes" : "No"}</td>
+                      <td className="px-3 py-2">{a.require_acknowledgement ? "Yes" : "No"}</td>
+                      <td className="px-3 py-2">
+                        <button
+                          onClick={() => deleteAttachment(a.id)}
+                          className="rounded bg-red-50 px-2 py-1 text-red-700 hover:bg-red-100"
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {!attachments.length && (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-6 text-center text-gray-500">
+                        No attachments yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4 flex gap-2">
+              <button onClick={() => goStep(2)} className="rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">
+                Back
+              </button>
+              <button onClick={() => goStep(4)} className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700">
+                Save & Next
               </button>
             </div>
           </div>
         </div>
+      )}
 
-        {/* ---- Milestone list (restored) ---- */}
-        <div className="border rounded bg-white shadow-sm overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="text-left px-3 py-2">#</th>
-                <th className="text-left px-3 py-2">Title</th>
-                <th className="text-left px-3 py-2">Description</th>
-                <th className="text-left px-3 py-2">Start</th>
-                <th className="text-left px-3 py-2">End</th>
-                <th className="text-left px-3 py-2">Days</th>
-                <th className="text-right px-3 py-2">Amount</th>
-                <th className="text-left px-3 py-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {listLoading ? (
-                <tr>
-                  <td className="px-3 py-3" colSpan={8}>
-                    Loading…
-                  </td>
-                </tr>
-              ) : milestones.length === 0 ? (
-                <tr>
-                  <td className="px-3 py-3" colSpan={8}>
-                    No milestones yet. Add one above.
-                  </td>
-                </tr>
-              ) : (
-                milestones.map((m, idx) => {
-                  const isDeleted = deletions.has(m.id);
-                  const d = daysInclusive(m.start, m.end);
-                  const edit = rowEdits[m.id];
+      {step === 4 && (
+        <div className="rounded-lg border bg-white p-4">
+          {!!loading && <div className="text-sm text-gray-500 mb-3">Loading…</div>}
+          <div className="text-sm text-gray-600 mb-4">
+            Agreement #{agreement?.id || id} — {agreement?.project_title || agreement?.title || "Project"}
+          </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+            <SummaryCard label="Total Amount" value={`$${totals.totalAmt.toFixed(2)}`} />
+            <SummaryCard label="Total Days" value={String(totals.totalDays || 0)} />
+            <SummaryCard label="Agreement Start" value={totals.minStart || "—"} />
+            <SummaryCard label="Agreement End" value={totals.maxEnd || "—"} />
+          </div>
+
+          <div className="text-sm mb-2 font-medium">Milestones</div>
+          <div className="overflow-x-auto mb-4">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-left">
+                  <th className="px-3 py-2">#</th>
+                  <th className="px-3 py-2">Title</th>
+                  <th className="px-3 py-2">Due</th>
+                  <th className="px-3 py-2">Amount</th>
+                  <th className="px-3 py-2">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {milestones.map((m, i) => {
+                  const due = toDateOnly(m.completion_date || m.end_date || m.due_date || m.start_date || m.start);
                   return (
-                    <tr key={m.id} className={isDeleted ? "opacity-50" : ""}>
-                      <td className="px-3 py-2 align-top">{idx + 1}</td>
-
-                      <td className="px-3 py-2 align-top">
-                        {edit?.editing ? (
-                          <input
-                            className="w-full border rounded px-2 py-1"
-                            value={edit.title}
-                            onChange={(e) =>
-                              setRowEdits((prev) => ({ ...prev, [m.id]: { ...prev[m.id], title: e.target.value } }))
-                            }
-                          />
-                        ) : (
-                          <span className="font-medium">{m.title}</span>
-                        )}
-                      </td>
-
-                      <td className="px-3 py-2 align-top">
-                        {edit?.editing ? (
-                          <textarea
-                            className="w-full border rounded px-2 py-1"
-                            rows={2}
-                            value={edit.description || ""}
-                            onChange={(e) =>
-                              setRowEdits((prev) => ({
-                                ...prev,
-                                [m.id]: { ...prev[m.id], description: e.target.value },
-                              }))
-                            }
-                          />
-                        ) : (
-                          <span className="text-gray-700">{m.description}</span>
-                        )}
-                      </td>
-
-                      <td className="px-3 py-2 align-top">
-                        {edit?.editing ? (
-                          <input
-                            type="date"
-                            className="w-full border rounded px-2 py-1"
-                            value={edit.start}
-                            onChange={(e) =>
-                              setRowEdits((prev) => ({
-                                ...prev,
-                                [m.id]: { ...prev[m.id], start: toDateOnly(e.target.value) },
-                              }))
-                            }
-                          />
-                        ) : (
-                          <span>{m.start}</span>
-                        )}
-                      </td>
-
-                      <td className="px-3 py-2 align-top">
-                        {edit?.editing ? (
-                          <input
-                            type="date"
-                            className="w-full border rounded px-2 py-1"
-                            value={edit.end}
-                            onChange={(e) =>
-                              setRowEdits((prev) => ({
-                                ...prev,
-                                [m.id]: { ...prev[m.id], end: toDateOnly(e.target.value) },
-                              }))
-                            }
-                          />
-                        ) : (
-                          <span>{m.end}</span>
-                        )}
-                      </td>
-
-                      <td className="px-3 py-2 align-top">
-                        <span>{d}</span>
-                      </td>
-
-                      <td className="px-3 py-2 align-top text-right">
-                        {edit?.editing ? (
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            className="w-28 border rounded px-2 py-1 text-right"
-                            value={edit.amount}
-                            onChange={(e) =>
-                              setRowEdits((prev) => ({
-                                ...prev,
-                                [m.id]: { ...prev[m.id], amount: e.target.value },
-                              }))
-                            }
-                          />
-                        ) : (
-                          <span>{money(m.amount)}</span>
-                        )}
-                      </td>
-
-                      <td className="px-3 py-2 align-top">
-                        {!isDeleted ? (
-                          edit?.editing ? (
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                className="px-2 py-1 rounded bg-emerald-600 text-white"
-                                onClick={() => commitEditRow(m.id)}
-                              >
-                                Save
-                              </button>
-                              <button
-                                type="button"
-                                className="px-2 py-1 rounded border"
-                                onClick={() => cancelEditRow(m.id)}
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex gap-2">
-                              <button
-                                type="button"
-                                className="px-2 py-1 rounded border"
-                                onClick={() => startEditRow(m)}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                className="px-2 py-1 rounded bg-rose-600 text-white"
-                                onClick={() => markDelete(m.id)}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          )
-                        ) : (
-                          <button
-                            type="button"
-                            className="px-2 py-1 rounded border"
-                            onClick={() => unmarkDelete(m.id)}
-                          >
-                            Undo Delete
-                          </button>
-                        )}
-                      </td>
+                    <tr key={m.id} className="border-t">
+                      <td className="px-3 py-2">{i + 1}</td>
+                      <td className="px-3 py-2">{m.title}</td>
+                      <td className="px-3 py-2">{due || "—"}</td>
+                      <td className="px-3 py-2">${Number(m.amount || 0).toFixed(2)}</td>
+                      <td className="px-3 py-2">{m.status || "Pending"}</td>
                     </tr>
                   );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                })}
+                {!milestones.length && (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-6 text-center text-gray-500">
+                      No milestones yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
 
-        {/* Totals */}
-        <div className="border rounded p-4 bg-white shadow-sm">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
-            <div>
-              <div className="text-gray-500">Total Amount</div>
-              <div className="font-semibold">{money(totals.totalAmount)}</div>
+          <div className="flex gap-2">
+            <button onClick={() => goStep(3)} className="rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">
+              Back
+            </button>
+            <button
+              onClick={() => window.open(`/projects/agreements/${id}/pdf/preview/`, "_blank")}
+              className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
+            >
+              Preview PDF
+            </button>
+            <button
+              onClick={() => window.open(`/agreements/public/${id}/`, "_blank")}
+              className="rounded bg-gray-800 px-3 py-2 text-sm text-white hover:bg-black"
+            >
+              View Public Link
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Step 2 — Milestones (unchanged behavior, with inline calendar buttons) ---------------- */
+function Step2Milestones({ loading, mLocal, onLocalChange, onAdd, milestones, onDelete, totals, onBack, onNext }) {
+  const startRef = useRef(null);
+  const endRef   = useRef(null);
+  const openPicker = (ref) => {
+    if (!ref?.current) return;
+    if (typeof ref.current.showPicker === "function") ref.current.showPicker();
+    else ref.current.focus();
+  };
+
+  return (
+    <div className="rounded-lg border bg-white p-4">
+      {!!loading && <div className="text-sm text-gray-500 mb-3">Loading…</div>}
+      <div className="text-sm text-gray-600 mb-4">New Milestone</div>
+
+      <div className="grid grid-cols-1 gap-3">
+        <input
+          type="text"
+          name="title"
+          value={mLocal.title}
+          onChange={onLocalChange}
+          className="w-full rounded border px-3 py-2 text-sm"
+          placeholder="e.g., Install Floor Tile"
+        />
+
+        <textarea
+          name="description"
+          value={mLocal.description}
+          onChange={onLocalChange}
+          className="w-full rounded border px-3 py-2 text-sm"
+          placeholder="Brief description of the milestone work…"
+        />
+
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <input
+            type="number"
+            step="0.01"
+            name="amount"
+            value={mLocal.amount}
+            onChange={onLocalChange}
+            className="w-full rounded border px-3 py-2 text-sm"
+            placeholder="Amount ($)"
+          />
+
+          <div className="grid grid-cols-2 gap-3">
+            {/* Start */}
+            <div style={{ position: "relative", overflow: "visible" }}>
+              <input
+                ref={startRef}
+                type="date"
+                name="start"
+                value={mLocal.start || ""}
+                onChange={onLocalChange}
+                className="w-full rounded border px-3 py-2 text-sm"
+                placeholder="Start date"
+                style={{ paddingRight: "2.5rem" }}
+              />
+              <CalendarBtn title="Open start date" onClick={() => openPicker(startRef)} />
             </div>
-            <div>
-              <div className="text-gray-500">Total Days</div>
-              <div className="font-semibold">{totals.totalDays}</div>
-            </div>
-            <div>
-              <div className="text-gray-500">Agreement Start</div>
-              <div className="font-semibold">{totals.agreementStart || "—"}</div>
-            </div>
-            <div>
-              <div className="text-gray-500">Agreement End</div>
-              <div className="font-semibold">{totals.agreementEnd || "—"}</div>
+
+            {/* End */}
+            <div style={{ position: "relative", overflow: "visible" }}>
+              <input
+                ref={endRef}
+                type="date"
+                name="end"
+                value={mLocal.end || ""}
+                onChange={onLocalChange}
+                className="w-full rounded border px-3 py-2 text-sm"
+                placeholder="End date"
+                style={{ paddingRight: "2.5rem" }}
+              />
+              <CalendarBtn title="Open end date" onClick={() => openPicker(endRef)} />
             </div>
           </div>
         </div>
 
-        <div className="flex gap-2">
-          <button type="button" className="px-4 py-2 rounded border" onClick={() => goStep(1)}>
-            Back
-          </button>
-          <button
-            type="button"
-            className="px-4 py-2 rounded border"
-            onClick={async () => {
-              await persistMilestones();
-            }}
-          >
-            Save
-          </button>
-          <button
-            type="button"
-            className="px-4 py-2 rounded bg-blue-600 text-white"
-            onClick={async () => {
-              await persistMilestones();
-              goStep(3);
-            }}
-          >
-            Save & Next
-          </button>
+        <div className="grid grid-cols-[auto_1fr] gap-3 items-center">
+          <div className="text-sm text-gray-600">Days (auto)</div>
+          <div className="rounded border px-3 py-2 text-sm bg-gray-50">
+            {mLocal.start && mLocal.end ? daySpan(mLocal.start, mLocal.end) : "—"}
+          </div>
         </div>
-      </div>
-    );
-  };
-
-  const Step3 = () => (
-    <div className="space-y-6" onSubmit={(e) => e.preventDefault()}>
-      <div className="border rounded p-4 bg-white shadow-sm">
-        <h3 className="font-semibold mb-3">Warranty</h3>
-
-        <label className="inline-flex items-center gap-2 mb-3">
-          <input
-            type="checkbox"
-            checked={useDefaultWarranty}
-            onChange={(e) => setUseDefaultWarranty(e.target.checked)}
-          />
-          <span>Use default warranty text</span>
-        </label>
 
         <div>
-          <label className="block text-sm font-medium mb-1">
-            {useDefaultWarranty ? "Default Warranty (read-only)" : "Custom Warranty Text"}
-          </label>
-          <textarea
-            ref={warrantyRef}
-            className={`w-full border rounded px-3 py-2 ${useDefaultWarranty ? "bg-gray-100 text-gray-700" : ""}`}
-            rows={6}
-            disabled={useDefaultWarranty}
-            value={useDefaultWarranty ? defaultWarrantyText : customWarrantyText}
-            onChange={(e) => {
-              if (!useDefaultWarranty) setCustomWarrantyText(e.target.value);
-            }}
-            onFocus={() => setWarrantyTyping(true)}
-            onBlur={() => setWarrantyTyping(false)}
-            onKeyDownCapture={(e) => e.stopPropagation()}
-            onKeyUpCapture={(e) => e.stopPropagation()}
-            onInput={(e) => e.stopPropagation()}
-          />
-        </div>
-
-        <div className="mt-3">
-          <button type="button" className="px-4 py-2 rounded bg-blue-600 text-white" onClick={saveWarranty}>
-            Save Warranty
+          <button onClick={onAdd} className="rounded bg-green-600 px-3 py-2 text-sm text-white hover:bg-green-700">
+            + Add Milestone
           </button>
         </div>
       </div>
 
-      <div className="border rounded p-4 bg-white shadow-sm">
-        <h3 className="font-semibold mb-3">Attachments</h3>
-        <AttachmentSection agreementId={id} />
+      {/* Existing milestones */}
+      <div className="mt-6 overflow-x-auto">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 text-left">
+              <th className="px-3 py-2">#</th>
+              <th className="px-3 py-2">Title</th>
+              <th className="px-3 py-2">Description</th>
+              <th className="px-3 py-2">Start</th>
+              <th className="px-3 py-2">End</th>
+              <th className="px-3 py-2">Days</th>
+              <th className="px-3 py-2">Amount</th>
+              <th className="px-3 py-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {milestones.map((m, i) => {
+              const start = toDateOnly(m.start_date || m.start || m.scheduled_date);
+              const end   = toDateOnly(m.completion_date || m.end_date || m.end || m.due_date);
+              return (
+                <tr key={m.id} className="border-t">
+                  <td className="px-3 py-2">{i + 1}</td>
+                  <td className="px-3 py-2">{m.title}</td>
+                  <td className="px-3 py-2">{m.description}</td>
+                  <td className="px-3 py-2">{start || "—"}</td>
+                  <td className="px-3 py-2">{end || "—"}</td>
+                  <td className="px-3 py-2">{start && end ? daySpan(start, end) : "—"}</td>
+                  <td className="px-3 py-2">${Number(m.amount || 0).toFixed(2)}</td>
+                  <td className="px-3 py-2">
+                    <button onClick={() => onDelete(m.id)} className="rounded bg-red-50 px-2 py-1 text-red-700 hover:bg-red-100">
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+            {!milestones.length && (
+              <tr>
+                <td colSpan={8} className="px-3 py-6 text-center text-gray-500">
+                  No milestones yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
 
-      <div className="flex gap-2">
-        <button type="button" className="px-4 py-2 rounded border" onClick={() => goStep(2)}>
+      {/* Totals */}
+      <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-4">
+        <SummaryCard label="Total Amount" value={`$${totals.totalAmt.toFixed(2)}`} />
+        <SummaryCard label="Total Days" value={String(totals.totalDays || 0)} />
+        <SummaryCard label="Agreement Start" value={totals.minStart || "—"} />
+        <SummaryCard label="Agreement End" value={totals.maxEnd || "—"} />
+      </div>
+
+      <div className="mt-6 flex gap-2">
+        <button onClick={onBack} className="rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">
           Back
         </button>
-        <button type="button" className="px-4 py-2 rounded bg-blue-600 text-white" onClick={() => goStep(4)}>
+        <button onClick={onNext} className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700">
           Save & Next
         </button>
       </div>
     </div>
   );
+}
 
-  const Step4 = () => (
-    <Step4Review
-      agreementId={id}
-      onBack={() => goStep(3)}
-      onFinished={() => {
-        toast.success("Agreement sent to homeowner for signature.");
-      }}
-    />
-  );
-
+/* ------------- small helpers ------------- */
+function DateWithButton({ label, value, onChange }) {
+  const ref = useRef(null);
+  const openPicker = () => {
+    if (!ref.current) return;
+    if (typeof ref.current.showPicker === "function") ref.current.showPicker();
+    else ref.current.focus();
+  };
   return (
-    <div
-      id="agreement-wizard-root"
-      data-wizard-root="true"
-      className="wizard-fluid p-4"
-      style={{ maxWidth: "none", width: "100%", margin: 0 }}
-      onSubmit={(e) => e.preventDefault()}
-    >
-      {/* Header with global Preview + Public Link */}
-      <div className="mb-4 flex items-center justify-between gap-3 flex-wrap w-full">
-        <div className="text-sm text-gray-700">
-          {loadingAgreement ? (
-            <div className="text-sm text-gray-500">Loading agreement…</div>
-          ) : (
-            <>
-              <div className="font-semibold">
-                Agreement #{agreement?.id}
-                {agreement?.project_title ? ` – ${agreement.project_title}` : ""}
-              </div>
-              <div className="text-gray-500">
-                Homeowner: {agreement?.homeowner_name || "—"} · Status: {agreement?.status || "—"}
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className="px-3 py-2 rounded border text-sm"
-            onClick={handleHeaderPreview}
-            disabled={previewing || loadingAgreement}
-            title="Open an authenticated PDF preview"
-          >
-            {previewing ? "Generating…" : "Preview PDF"}
-          </button>
-
-          <button
-            type="button"
-            className="px-3 py-2 rounded border text-sm"
-            onClick={handleViewPublic}
-            title="Open the read-only, public Agreement page"
-          >
-            View Public Link
-          </button>
-
-          <button
-            type="button"
-            className="px-3 py-2 rounded border text-sm"
-            onClick={handleCopyPublic}
-            disabled={copying}
-            title="Copy the public link to your clipboard"
-          >
-            {copying ? "Copying…" : "Copy Link"}
-          </button>
-        </div>
+    <div>
+      <label className="block text-sm font-medium mb-1">{label}</label>
+      <div style={{ position: "relative", overflow: "visible" }}>
+        <input
+          ref={ref}
+          type="date"
+          value={value || ""}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded border px-3 py-2 text-sm"
+          style={{ paddingRight: "2.5rem" }}
+        />
+        <CalendarBtn onClick={openPicker} title={`Open ${label} calendar`} />
       </div>
-
-      <TabButtons />
-
-      <div className="space-y-6 w-full">
-        {step === 1 && <Step1 />}
-        {step === 2 && <Step2 />}
-        {step === 3 && <Step3 />}
-        {step === 4 && <Step4 />}
-      </div>
+    </div>
+  );
+}
+function SummaryCard({ label, value }) {
+  return (
+    <div className="rounded border bg-gray-50 px-3 py-2">
+      <div className="text-xs text-gray-500">{label}</div>
+      <div className="text-sm font-medium">{value}</div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 // src/components/MilestoneEditModal.jsx
-// v2025-10-06-cal-icons — same UI; adds calendar icons that open native picker
+// v2025-10-06-calendar-wrap — wraps both date inputs with .calendar-date-wrap + button.
 
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import toast from "react-hot-toast";
@@ -13,7 +13,7 @@ const dollar = (v) => {
 };
 
 const isLockedAgreementState = (s) => {
-  if (!s) return false; // UNKNOWN -> EDITABLE
+  if (!s) return false;
   const up = String(s).trim().toUpperCase();
   return ["SIGNED", "EXECUTED", "ACTIVE", "APPROVED", "ARCHIVED"].includes(up);
 };
@@ -39,24 +39,12 @@ export default function MilestoneEditModal({
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
 
-  // refs for date inputs to trigger native picker from the calendar icon
   const startRef = useRef(null);
   const endRef = useRef(null);
-
   const openPicker = (ref) => {
-    // prevent the icon click from blurring the input
     if (!ref?.current) return;
-    try {
-      // Modern Chromium/Edge/Firefox (behind flag) support showPicker()
-      if (typeof ref.current.showPicker === "function") {
-        ref.current.showPicker();
-      } else {
-        ref.current.focus();
-        // focusing typically opens the picker in Safari/iOS; if not, user can click the icon again
-      }
-    } catch {
-      ref.current.focus();
-    }
+    if (typeof ref.current.showPicker === "function") ref.current.showPicker();
+    else ref.current.focus();
   };
 
   const readOnly = useMemo(() => {
@@ -76,7 +64,6 @@ export default function MilestoneEditModal({
       setForm({
         title: milestone.title || "",
         start_date: milestone.start_date || "",
-        // tolerate older completion_date
         end_date: milestone.end_date || milestone.completion_date || "",
         amount:
           milestone.amount === null || milestone.amount === undefined
@@ -103,7 +90,6 @@ export default function MilestoneEditModal({
         title: form.title,
         start_date: form.start_date || null,
         end_date: form.end_date || null,
-        // include completion_date for serializers that expect it
         completion_date: form.end_date || null,
         amount:
           form.amount === "" || form.amount === null
@@ -191,7 +177,7 @@ export default function MilestoneEditModal({
           </button>
         </div>
 
-        {/* Read-only banner (only when locked) */}
+        {/* Read-only banner */}
         {readOnly && (
           <div className="mx-5 mt-4 rounded-md bg-indigo-50 px-4 py-2 text-xs text-indigo-700">
             Agreement has been executed — milestone fields are read-only.
@@ -240,13 +226,13 @@ export default function MilestoneEditModal({
               </div>
             </div>
 
-            {/* Dates with calendar icons */}
+            {/* Dates with calendar buttons */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
                   Start Date
                 </label>
-                <div className="relative">
+                <div className="calendar-date-wrap">
                   <input
                     ref={startRef}
                     type="date"
@@ -254,20 +240,20 @@ export default function MilestoneEditModal({
                     value={form.start_date || ""}
                     onChange={onChange}
                     readOnly={readOnly}
-                    className={`w-full rounded border px-3 py-2 pr-10 text-sm ${
+                    className={`w-full rounded border px-3 py-2 text-sm ${
                       readOnly ? "bg-gray-50 text-gray-600" : ""
                     }`}
                   />
                   <button
                     type="button"
+                    className="calendar-date-button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => openPicker(startRef)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
                     aria-label="Open start date calendar"
                     title="Pick a date"
                     disabled={readOnly}
                   >
-                    <CalendarIcon />
+                    <span role="img" aria-label="calendar">📅</span>
                   </button>
                 </div>
               </div>
@@ -275,7 +261,7 @@ export default function MilestoneEditModal({
                 <label className="mb-1 block text-sm font-medium text-gray-700">
                   Completion Date
                 </label>
-                <div className="relative">
+                <div className="calendar-date-wrap">
                   <input
                     ref={endRef}
                     type="date"
@@ -283,20 +269,20 @@ export default function MilestoneEditModal({
                     value={form.end_date || ""}
                     onChange={onChange}
                     readOnly={readOnly}
-                    className={`w-full rounded border px-3 py-2 pr-10 text-sm ${
+                    className={`w-full rounded border px-3 py-2 text-sm ${
                       readOnly ? "bg-gray-50 text-gray-600" : ""
                     }`}
                   />
                   <button
                     type="button"
+                    className="calendar-date-button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => openPicker(endRef)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
                     aria-label="Open completion date calendar"
                     title="Pick a date"
                     disabled={readOnly}
                   >
-                    <CalendarIcon />
+                    <span role="img" aria-label="calendar">📅</span>
                   </button>
                 </div>
               </div>
@@ -412,29 +398,5 @@ export default function MilestoneEditModal({
         </div>
       </div>
     </div>
-  );
-}
-
-/** Minimal inline calendar icon (no external deps) */
-function CalendarIcon() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.6"/>
-      <path d="M8 3v4M16 3v4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-      <path d="M3 9h18" stroke="currentColor" strokeWidth="1.6"/>
-      <circle cx="8" cy="13" r="1" fill="currentColor"/>
-      <circle cx="12" cy="13" r="1" fill="currentColor"/>
-      <circle cx="16" cy="13" r="1" fill="currentColor"/>
-      <circle cx="8" cy="17" r="1" fill="currentColor"/>
-      <circle cx="12" cy="17" r="1" fill="currentColor"/>
-      <circle cx="16" cy="17" r="1" fill="currentColor"/>
-    </svg>
   );
 }

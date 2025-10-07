@@ -151,6 +151,49 @@
   to   { transform: rotate(360deg); }
 }
 
+/* === Calendar Date Input Helpers (for 📅 icon) === */
+/* Wrapper that guarantees the icon isn't clipped by parent overflow */
+.calendar-date-wrap {
+  position: relative;
+  overflow: visible !important;
+}
+
+/* Add room for the icon on the right; applies to any date input used with the helper */
+.calendar-date-wrap > input[type="date"] {
+  padding-right: 2.75rem !important;
+}
+
+/* The clickable calendar icon button */
+.calendar-date-button {
+  position: absolute !important;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 9999;               /* force above inputs/modals */
+  background: transparent;
+  border: 0;
+  line-height: 0;
+  color: #6b7280;              /* Tailwind gray-500 */
+  cursor: pointer;
+}
+
+.calendar-date-button:hover {
+  color: #374151;              /* Tailwind gray-700 */
+}
+
+/* Make sure the icon never blocks typing when users click inside input area */
+.calendar-date-button:focus {
+  outline: none;
+}
+
+/* Safari/iOS sometimes hides the native indicator—keep ours visible regardless */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 1;
+}
+
+/* If a global reset hides buttons inside forms, undo it here for our icon */
+.calendar-date-button[disabled] { opacity: .5; cursor: not-allowed; }
+
 /* === FullCalendar overrides (keep these LAST so they win) === */
 .fc .fc-daygrid-day-number {
   color: #111827 !important;   /* Tailwind gray-900 */
