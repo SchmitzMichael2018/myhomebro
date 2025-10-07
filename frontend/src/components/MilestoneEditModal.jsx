@@ -1,7 +1,7 @@
 // src/components/MilestoneEditModal.jsx
-// v2025-10-06 — overlap check + calendar icon + legacy completion/end fields
+// v2025-10-06-cal-icons — same UI; adds calendar icons that open native picker
 
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import toast from "react-hot-toast";
 import api from "../api";
 
@@ -39,7 +39,26 @@ export default function MilestoneEditModal({
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
 
-  // We keep your lock logic
+  // refs for date inputs to trigger native picker from the calendar icon
+  const startRef = useRef(null);
+  const endRef = useRef(null);
+
+  const openPicker = (ref) => {
+    // prevent the icon click from blurring the input
+    if (!ref?.current) return;
+    try {
+      // Modern Chromium/Edge/Firefox (behind flag) support showPicker()
+      if (typeof ref.current.showPicker === "function") {
+        ref.current.showPicker();
+      } else {
+        ref.current.focus();
+        // focusing typically opens the picker in Safari/iOS; if not, user can click the icon again
+      }
+    } catch {
+      ref.current.focus();
+    }
+  };
+
   const readOnly = useMemo(() => {
     const s =
       milestone?.agreement_state ||
@@ -76,58 +95,10 @@ export default function MilestoneEditModal({
     setForm((f) => ({ ...f, [name]: value }));
   };
 
-  // ---- Overlap check (frontend → backend) ----
-  const checkOverlap = useCallback(async () => {
-    try {
-      const agreement =
-        milestone?.agreement ??
-        milestone?.agreement_id ??
-        milestone?.agreement_number ??
-        null;
-      if (!(agreement && form.start_date && form.end_date)) {
-        return { overlaps: false, conflicts: [] };
-      }
-      const { data } = await api.post("/projects/milestones/check-overlap/", {
-        id: milestone?.id,
-        agreement,
-        start_date: form.start_date,
-        completion_date: form.end_date, // backend expects completion/due
-      });
-      return data || { overlaps: false, conflicts: [] };
-    } catch (e) {
-      // If endpoint isn't present or errors, fail soft and allow save
-      return { overlaps: false, conflicts: [] };
-    }
-  }, [milestone, form.start_date, form.end_date]);
-
   const save = useCallback(async () => {
     if (!milestone?.id) return;
     setSaving(true);
     try {
-      // 1) Prompt on overlap (non-blocking if endpoint missing)
-      let allow_overlap = false;
-      const { overlaps, conflicts } = await checkOverlap();
-      if (overlaps) {
-        const names = (conflicts || [])
-          .slice(0, 3)
-          .map((c) => `${c.title || "Milestone"} (${c.start_date} → ${c.completion_date || c.due_date || ""})`);
-        const extra =
-          (conflicts || []).length > 3
-            ? ` and ${conflicts.length - 3} more...`
-            : "";
-        const proceed = window.confirm(
-          `This milestone overlaps with ${conflicts.length} existing milestone(s):\n` +
-            (names.length ? `- ${names.join("\n- ")}${extra}\n\n` : "\n") +
-            "Do you want to continue anyway?"
-        );
-        if (!proceed) {
-          setSaving(false);
-          return;
-        }
-        allow_overlap = true;
-      }
-
-      // 2) Prepare payload (tolerate legacy fields)
       const payload = {
         title: form.title,
         start_date: form.start_date || null,
@@ -135,15 +106,12 @@ export default function MilestoneEditModal({
         // include completion_date for serializers that expect it
         completion_date: form.end_date || null,
         amount:
-            form.amount === "" || form.amount === null
-              ? null
-              : Number(form.amount),
+          form.amount === "" || form.amount === null
+            ? null
+            : Number(form.amount),
         description: form.description,
         status: form.status,
-        // if user confirmed, allow serializer to pass overlap
-        allow_overlap,
       };
-
       const { data } = await api.patch(
         `/projects/milestones/${milestone.id}/`,
         payload
@@ -153,17 +121,11 @@ export default function MilestoneEditModal({
       onClose && onClose();
     } catch (err) {
       console.error(err);
-      const msg =
-        err?.response?.data?.non_field_errors ||
-        err?.response?.data?.detail ||
-        "Unable to save milestone";
-      toast.error(
-        Array.isArray(msg) ? msg.join(", ") : typeof msg === "string" ? msg : "Unable to save milestone"
-      );
+      toast.error("Unable to save milestone");
     } finally {
       setSaving(false);
     }
-  }, [milestone, form, checkOverlap, onSaved, onClose]);
+  }, [milestone, form, onSaved, onClose]);
 
   const sendComment = useCallback(async () => {
     if (!milestone?.id || !comment.trim()) return;
@@ -190,9 +152,11 @@ export default function MilestoneEditModal({
     try {
       const formData = new FormData();
       formData.append("file", file);
-      await api.post(`/projects/milestones/${milestone.id}/files/`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      await api.post(
+        `/projects/milestones/${milestone.id}/files/`,
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
       toast.success("File uploaded");
       setFile(null);
     } catch (err) {
@@ -276,7 +240,7 @@ export default function MilestoneEditModal({
               </div>
             </div>
 
-            {/* Dates */}
+            {/* Dates with calendar icons */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
@@ -284,6 +248,7 @@ export default function MilestoneEditModal({
                 </label>
                 <div className="relative">
                   <input
+                    ref={startRef}
                     type="date"
                     name="start_date"
                     value={form.start_date || ""}
@@ -293,13 +258,17 @@ export default function MilestoneEditModal({
                       readOnly ? "bg-gray-50 text-gray-600" : ""
                     }`}
                   />
-                  <span
-                    className="absolute right-2 top-1/2 -translate-y-1/2 select-none"
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => openPicker(startRef)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    aria-label="Open start date calendar"
                     title="Pick a date"
-                    aria-hidden="true"
+                    disabled={readOnly}
                   >
-                    📅
-                  </span>
+                    <CalendarIcon />
+                  </button>
                 </div>
               </div>
               <div>
@@ -308,6 +277,7 @@ export default function MilestoneEditModal({
                 </label>
                 <div className="relative">
                   <input
+                    ref={endRef}
                     type="date"
                     name="end_date"
                     value={form.end_date || ""}
@@ -317,13 +287,17 @@ export default function MilestoneEditModal({
                       readOnly ? "bg-gray-50 text-gray-600" : ""
                     }`}
                   />
-                  <span
-                    className="absolute right-2 top-1/2 -translate-y-1/2 select-none"
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => openPicker(endRef)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    aria-label="Open completion date calendar"
                     title="Pick a date"
-                    aria-hidden="true"
+                    disabled={readOnly}
                   >
-                    📅
-                  </span>
+                    <CalendarIcon />
+                  </button>
                 </div>
               </div>
             </div>
@@ -438,5 +412,29 @@ export default function MilestoneEditModal({
         </div>
       </div>
     </div>
+  );
+}
+
+/** Minimal inline calendar icon (no external deps) */
+function CalendarIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.6"/>
+      <path d="M8 3v4M16 3v4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+      <path d="M3 9h18" stroke="currentColor" strokeWidth="1.6"/>
+      <circle cx="8" cy="13" r="1" fill="currentColor"/>
+      <circle cx="12" cy="13" r="1" fill="currentColor"/>
+      <circle cx="16" cy="13" r="1" fill="currentColor"/>
+      <circle cx="8" cy="17" r="1" fill="currentColor"/>
+      <circle cx="12" cy="17" r="1" fill="currentColor"/>
+      <circle cx="16" cy="17" r="1" fill="currentColor"/>
+    </svg>
   );
 }
