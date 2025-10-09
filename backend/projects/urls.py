@@ -1,4 +1,6 @@
 # backend/projects/urls.py
+from __future__ import annotations
+
 from django.urls import path, include, re_path
 from rest_framework.routers import DefaultRouter
 from rest_framework_nested.routers import NestedDefaultRouter
@@ -6,7 +8,6 @@ from rest_framework_nested.routers import NestedDefaultRouter
 from .views.agreements import (
     AgreementViewSet,
     agreement_pdf,
-    signing_preview,
     agreement_milestones,
 )
 from .views.invoice import InvoiceViewSet, InvoicePDFView
@@ -112,9 +113,6 @@ urlpatterns = [
     path("agreements/<int:agreement_id>/pdf/", agreement_pdf, name="agreement-pdf"),
     path("invoices/<int:pk>/pdf/", InvoicePDFView.as_view(), name="invoice-pdf"),
 
-    # ── Public signing preview ─────────────────────────────────────────────
-    path("signing/agreements/<int:pk>/preview/", signing_preview, name="agreement-signing-preview"),
-
     # ── Public contractor profile ──────────────────────────────────────────
     path("contractors/<int:pk>/public/", ContractorPublicProfileView.as_view(), name="contractor-public-profile"),
 
@@ -134,12 +132,12 @@ urlpatterns = [
     path("contractor-onboarding-status/", ContractorOnboardingStatusView.as_view(), name="contractor-onboarding-status"),
 ]
 
-# ── Preview PDF explicit route ─────────────────────────────────────────────
+# ── Preview PDF explicit route (legacy Blob flow) ─────────────────────────
 # Map GET to the viewset action so the front end's GET /preview_pdf/ works.
 urlpatterns += [
     re_path(
         r"^agreements/(?P<pk>\d+)/preview_pdf/?$",
-        AgreementViewSet.as_view({"get": "preview_pdf"}),  # ← changed from {"post": "preview_pdf"}
+        AgreementViewSet.as_view({"get": "preview_pdf"}),
         name="agreement-preview-pdf",
     ),
 ]

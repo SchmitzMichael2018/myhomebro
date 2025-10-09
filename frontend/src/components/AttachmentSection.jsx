@@ -7,7 +7,6 @@ export default function AttachmentSection({ agreementId, onChange }) {
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("OTHER");
   const [visible, setVisible] = useState(true);
-  const [ackReq, setAckReq] = useState(false);
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -44,26 +43,32 @@ export default function AttachmentSection({ agreementId, onChange }) {
 
   const b = (v) => (v ? "true" : "false");
 
-  const buildForm = ({ fileKey, visibleKey, ackKey }) => {
+  const buildForm = ({ fileKey, visibleKey }) => {
     const fd = new FormData();
     fd.append("title", title.trim());
     fd.append("category", category);
     fd.append(visibleKey, b(visible));
-    fd.append(ackKey, b(ackReq));
-    fd.append(fileKey, file);
+    if (file) fd.append(fileKey, file);
     // some serializers require the FK even on nested routes
     fd.append("agreement", String(agreementId));
     return fd;
   };
 
-  // progressive fallbacks for different serializer field names
+  // Progressive fallbacks for different serializer field names
   const attempts = [
-    { fileKey: "file",            visibleKey: "visible",              ackKey: "ack_required" },
-    { fileKey: "attachment",      visibleKey: "visible",              ackKey: "acknowledgement_required" },
-    { fileKey: "attachment_file", visibleKey: "is_visible",           ackKey: "requires_acknowledgement" },
-    { fileKey: "document",        visibleKey: "visible_to_homeowner", ackKey: "acknowledgement_required" },
-    { fileKey: "upload",          visibleKey: "visible",              ackKey: "ack_required" },
+    { fileKey: "file",            visibleKey: "visible" },
+    { fileKey: "attachment",      visibleKey: "visible" },
+    { fileKey: "attachment_file", visibleKey: "is_visible" },
+    { fileKey: "document",        visibleKey: "visible_to_homeowner" },
+    { fileKey: "upload",          visibleKey: "visible" },
   ];
+
+  const resetForm = () => {
+    setTitle("");
+    setCategory("OTHER");
+    setVisible(true);
+    setFile(null);
+  };
 
   const upload = async () => {
     setLastError("");
@@ -104,11 +109,7 @@ export default function AttachmentSection({ agreementId, onChange }) {
       }
 
       toast.success("Attachment uploaded.");
-      setTitle("");
-      setCategory("OTHER");
-      setVisible(true);
-      setAckReq(false);
-      setFile(null);
+      resetForm();
       await load();
       onChange && onChange();
     } finally {
@@ -159,7 +160,7 @@ export default function AttachmentSection({ agreementId, onChange }) {
   return (
     <div className="space-y-3">
       <div className="text-sm text-gray-600">
-        Attachments & Addenda
+        Attachments &amp; Addenda
         <span className="ml-2 text-gray-400">
           {loading ? "Loading…" : `${items.length} item${items.length === 1 ? "" : "s"}`}
         </span>
@@ -191,17 +192,16 @@ export default function AttachmentSection({ agreementId, onChange }) {
 
       <div className="flex items-center gap-4">
         <label className="inline-flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={visible} onChange={(e) => setVisible(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={visible}
+            onChange={(e) => setVisible(e.target.checked)}
+          />
           <span>Visible to Homeowner</span>
-        </label>
-        <label className="inline-flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={ackReq} onChange={(e) => setAckReq(e.target.checked)} />
-          <span>Acknowledgement Required</span>
         </label>
       </div>
       <div className="text-xs text-gray-500 -mt-2">
-        “Visible to Homeowner” means the homeowner can see and download this file in their portal. If unchecked, the
-        file is private to the contractor.
+        “Visible to Homeowner” means the homeowner can see and download this file in their portal. If unchecked, the file is private to the contractor.
       </div>
 
       <div
@@ -215,7 +215,7 @@ export default function AttachmentSection({ agreementId, onChange }) {
         {/* BLUE "Choose File" */}
         <label className="cursor-pointer inline-block" title="Choose a file to upload">
           <span className="px-3 py-2 rounded bg-blue-600 text-white inline-block">Choose File</span>
-          <input type="file" className="hidden" onChange={pickFile} />
+          <input type="file" className="hidden" onChange={pickFile} accept=".pdf,.png,.jpg,.jpeg,.webp" />
         </label>
         <div className="mt-2 text-gray-600">{file ? file.name : "No file chosen"}</div>
       </div>
@@ -239,14 +239,13 @@ export default function AttachmentSection({ agreementId, onChange }) {
               <th className="text-left px-3 py-2">Title</th>
               <th className="text-left px-3 py-2">Category</th>
               <th className="text-left px-3 py-2">Visible</th>
-              <th className="text-left px-3 py-2">Ack Required</th>
               <th className="text-left px-3 py-2">File</th>
               <th className="text-left px-3 py-2">Actions</th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr><td className="px-3 py-3" colSpan={6}>None yet.</td></tr>
+              <tr><td className="px-3 py-3" colSpan={5}>None yet.</td></tr>
             ) : (
               items.map((it) => {
                 const url = getFileUrl(it);
@@ -256,7 +255,6 @@ export default function AttachmentSection({ agreementId, onChange }) {
                     <td className="px-3 py-2">{it.title}</td>
                     <td className="px-3 py-2">{it.category}</td>
                     <td className="px-3 py-2">{String(it.visible)}</td>
-                    <td className="px-3 py-2">{String(it.ack_required ?? it.acknowledgement_required ?? false)}</td>
                     <td className="px-3 py-2">
                       {url ? (
                         <a

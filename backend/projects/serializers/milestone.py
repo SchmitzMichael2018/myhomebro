@@ -9,15 +9,17 @@ from projects.models import Milestone, Agreement
 
 class MilestoneSerializer(serializers.ModelSerializer):
     """
-    Enriched milestone serializer + overlap validation.
+    Enriched milestone serializer + safe overlap validation (no 'due_date' lookups).
 
-    Adds:
+    Adds (read helpers):
       - agreement_id, project_title
       - homeowner_name, homeowner_email
-      - due_date (completion_date or scheduled_date or start_date)
+      - due_date (read-only convenience: completion_date or scheduled_date or start_date)
       - is_overdue (bool)
+
     Validates:
       - Blocks date overlaps within same agreement unless allow_overlap=true.
+      - Accepts incoming 'end_date' from clients and maps it to 'completion_date'.
     """
 
     agreement_id    = serializers.SerializerMethodField()
@@ -27,13 +29,14 @@ class MilestoneSerializer(serializers.ModelSerializer):
     due_date        = serializers.SerializerMethodField()
     is_overdue      = serializers.SerializerMethodField()
 
+    # Write-only escape hatch for scheduling conflicts
     allow_overlap   = serializers.BooleanField(write_only=True, required=False, default=False)
 
     class Meta:
         model  = Milestone
         fields = "__all__"
 
-    # ------------------------ helpers ------------------------ #
+    # ------------------------ helpers (read) ------------------------ #
     def _get_agreement(self, obj: Milestone) -> Agreement | None:
         try:
             return getattr(obj, "agreement", None)
@@ -104,6 +107,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
         return ""
 
     def get_due_date(self, obj: Milestone):
+        # Convenience accessor used by UI; not persisted as a field.
         return (
             getattr(obj, "completion_date", None)
             or getattr(obj, "scheduled_date", None)
@@ -118,45 +122,76 @@ class MilestoneSerializer(serializers.ModelSerializer):
             from django.utils.timezone import now
             today = now().date()
             completed = bool(getattr(obj, "completed", False))
+            # handle both date and datetime
             return (not completed) and ((hasattr(due, "date") and due.date() < today) or (due < today))
         except Exception:
             return False
 
-    # ------------- overlap validation ------------- #
+    # ------------------------ validation ------------------------ #
     def validate(self, attrs):
+        """
+        Map incoming 'end_date' → 'completion_date' and run an overlap check using only
+        'start_date' and 'completion_date' (no reference to a non-existent 'due_date').
+        """
         allow_overlap = attrs.get("allow_overlap", False)
+
+        # Accept 'end_date' from clients and store as completion_date
+        if "end_date" in getattr(self, "initial_data", {}):
+            incoming_end = self.initial_data.get("end_date")
+            # only set if not already explicitly provided as completion_date
+            if "completion_date" not in attrs:
+                attrs["completion_date"] = incoming_end
+
+        # Resolve agreement for partial updates
         agreement = attrs.get("agreement") or getattr(self.instance, "agreement", None)
+
+        # Resolve start/end for validation on partial updates
         start = attrs.get("start_date", getattr(self.instance, "start_date", None))
-        end = (
-            attrs.get("completion_date", getattr(self.instance, "completion_date", None))
-            or attrs.get("due_date", getattr(self.instance, "due_date", None))
-        )
+        end   = attrs.get("completion_date", getattr(self.instance, "completion_date", None))
 
+        # Normalize empty strings
+        start = start or None
+        end   = end or None
+
+        # Basic range sanity
         if start and end and start > end:
-            raise serializers.ValidationError({"completion_date": "Completion/Due date must be on or after the start date."})
+            raise serializers.ValidationError({
+                "completion_date": "Completion date must be on or after the start date."
+            })
 
-        if agreement and start and end and not allow_overlap:
-            qs = Milestone.objects.filter(agreement=agreement)
-            if self.instance:
-                qs = qs.exclude(pk=self.instance.pk)
-            conflict = qs.filter(
-                Q(start_date__lte=end) &
-                (Q(completion_date__gte=start) | Q(due_date__gte=start))
-            ).exists()
-            if conflict:
-                raise serializers.ValidationError({
-                    "non_field_errors": "This milestone overlaps with an existing milestone for this agreement. "
-                                        "Resubmit with allow_overlap=true to override."
-                })
+        # Skip if insufficient context or override requested
+        if not (agreement and start and end) or allow_overlap:
+            return attrs
+
+        # Overlap check in same agreement (ignore self on update)
+        qs = Milestone.objects.filter(agreement=agreement)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+
+        # Intervals [s1,e1] & [s2,e2] overlap if s1 <= e2 and s2 <= e1
+        conflict = qs.filter(
+            Q(start_date__lte=end) & Q(completion_date__gte=start)
+        ).exists()
+
+        if conflict:
+            raise serializers.ValidationError({
+                "non_field_errors": (
+                    "This milestone overlaps an existing milestone in the same agreement. "
+                    "Resubmit with allow_overlap=true to override."
+                )
+            })
+
         return attrs
 
-    # Always include computed fields
+    # Always include computed fields for the client
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        data["agreement_id"]   = self.get_agreement_id(instance)
-        data["project_title"]  = self.get_project_title(instance)
-        data["homeowner_name"] = self.get_homeowner_name(instance)
-        data["homeowner_email"]= self.get_homeowner_email(instance)
-        data["due_date"]       = self.get_due_date(instance)
-        data["is_overdue"]     = self.get_is_overdue(instance)
+        data["agreement_id"]    = self.get_agreement_id(instance)
+        data["project_title"]   = self.get_project_title(instance)
+        data["homeowner_name"]  = self.get_homeowner_name(instance)
+        data["homeowner_email"] = self.get_homeowner_email(instance)
+        data["due_date"]        = self.get_due_date(instance)   # read-only convenience
+        data["is_overdue"]      = self.get_is_overdue(instance)
+        # Mirror end_date for UIs that still read it
+        data["end_date"]        = data.get("completion_date")
         return data
