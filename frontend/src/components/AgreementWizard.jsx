@@ -1,5 +1,5 @@
-// src/components/AgreementWizard.jsx
-// v2025-10-09-signed-preview-link — Step 4 uses signed-link preview; Steps 1–3 unchanged.
+// frontend/src/components/AgreementWizard.jsx
+// v2025-10-09 — Signed preview link (no 401) + totals fix + polished step flow.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -8,7 +8,8 @@ import api from "../api";
 import MilestoneEditModal from "../components/MilestoneEditModal";
 import { PROJECT_TYPES, SUBTYPES_BY_TYPE } from "./options/projectOptions";
 
-/* ---------- utilities ---------- */
+/* ---------- constants & small helpers ---------- */
+
 const TABS = [
   { step: 1, label: "1. Details" },
   { step: 2, label: "2. Milestones" },
@@ -20,19 +21,22 @@ function useQuery() {
   const { search } = useLocation();
   return useMemo(() => new URLSearchParams(search), [search]);
 }
+
 function toDateOnly(v) {
   if (!v) return "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
   const d = new Date(v);
-  if (Number.isNaN(d)) return "";
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${day}`;
+  if (Number.isNaN(d.getTime())) return "";
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${yyyy}-${mm}-${dd}`;
 }
+
 function daySpan(start, end) {
   const a = start ? new Date(start) : null;
   const b = end ? new Date(end) : null;
-  if (!a || !b || Number.isNaN(a) || Number.isNaN(b)) return "";
+  if (!a || !b || Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return "";
   const ms = b.getTime() - a.getTime();
   return ms >= 0 ? Math.floor(ms / 86400000) + 1 : "";
 }
@@ -51,17 +55,15 @@ const optValue = (x) =>
     ? String(x.id)
     : String(x);
 
-/* Prefer first+last → full_name → name → email → generic */
 const optLabel = (x) => {
   if (x == null) return "";
   if (typeof x === "string") return x;
   const first = x.first_name || x.firstName;
-  const last  = x.last_name || x.lastName;
+  const last = x.last_name || x.lastName;
   if (first || last) return [first, last].filter(Boolean).join(" ").trim();
   return x.full_name ?? x.name ?? x.label ?? x.title ?? x.email ?? String(x);
 };
 
-/* inline calendar icon button */
 function CalendarBtn({ onClick, title = "Pick a date", disabled }) {
   return (
     <button
@@ -93,8 +95,9 @@ function CalendarBtn({ onClick, title = "Pick a date", disabled }) {
 const DEFAULT_WARRANTY = `Standard workmanship warranty: Contractor warrants all labor performed under this Agreement for one (1) year from substantial completion. Materials are covered by the manufacturer’s warranties. This warranty excludes damage caused by misuse, neglect, alteration, improper maintenance, or acts of God.`;
 
 /* ---------- main ---------- */
+
 export default function AgreementWizard() {
-  console.log("%cAgreementWizard v2025-10-09-signed-preview-link", "color:#fff;background:#0ea5e9;padding:2px 6px;border-radius:4px");
+  console.log("%cAgreementWizard v2025-10-09", "color:#fff;background:#0ea5e9;padding:2px 6px;border-radius:4px");
 
   const navigate = useNavigate();
   const { id } = useParams();
@@ -105,7 +108,7 @@ export default function AgreementWizard() {
   const [agreement, setAgreement] = useState(null);
   const [milestones, setMilestones] = useState([]);
 
-  // Step 1 state
+  // Step 1
   const [homeowners, setHomeowners] = useState([]);
   const [dLocal, setDLocal] = useState({
     homeowner: "",
@@ -117,11 +120,11 @@ export default function AgreementWizard() {
     end: "",
   });
 
-  // Step 2 state
+  // Step 2
   const [mLocal, setMLocal] = useState({ title: "", description: "", amount: "", start: "", end: "" });
   const [editMilestone, setEditMilestone] = useState(null);
 
-  // Step 3 state (warranty + attachments)
+  // Step 3
   const [useDefaultWarranty, setUseDefaultWarranty] = useState(true);
   const [customWarranty, setCustomWarranty] = useState("");
   const [warrantySaving, setWarrantySaving] = useState(false);
@@ -131,7 +134,7 @@ export default function AgreementWizard() {
   const [attMeta, setAttMeta] = useState({ title: "", category: "WARRANTY", visible: true });
   const [attachError, setAttachError] = useState("");
 
-  // Step 4 state — preview/consent/signing
+  // Step 4
   const [hasPreviewed, setHasPreviewed] = useState(false);
   const [ackReviewed, setAckReviewed] = useState(false);
   const [ackTos, setAckTos] = useState(false);
@@ -209,7 +212,7 @@ export default function AgreementWizard() {
     const starts = milestones.map(m => toDateOnly(m.start_date || m.start || m.scheduled_date)).filter(Boolean);
     const ends   = milestones.map(m => toDateOnly(m.completion_date || m.end_date || m.end || m.due_date)).filter(Boolean);
     const minStart = starts.length ? [...starts].sort()[0] : "";
-    aconst maxEnd   = ends.length ? [...ends].sort().slice(-1)[0] : "";
+    const maxEnd   = ends.length ? [...ends].sort().slice(-1)[0] : "";
     const totalDays = (minStart && maxEnd) ? daySpan(minStart, maxEnd) : 0;
     return { totalAmt, minStart, maxEnd, totalDays };
   }, [milestones]);
@@ -217,6 +220,7 @@ export default function AgreementWizard() {
   const goStep = (n) => navigate(`/agreements/${id}/wizard?step=${n}`);
 
   /* ---------- Step 1 (Details) ---------- */
+
   const saveStep1 = async (navigateNext = false) => {
     try {
       const payload = {
@@ -241,10 +245,12 @@ export default function AgreementWizard() {
   };
 
   /* ---------- Step 2 (Milestones) ---------- */
+
   const onLocalChange = (e) => {
     const { name, value } = e.target;
     setMLocal((s) => (name === "start" || name === "end" ? { ...s, [name]: toDateOnly(value) } : { ...s, [name]: value }));
   };
+
   const addMilestone = async () => {
     const f = mLocal;
     if (!f.title?.trim()) return toast.error("Enter a title.");
@@ -268,6 +274,7 @@ export default function AgreementWizard() {
       toast.error(Array.isArray(msg) ? msg.join(", ") : String(msg));
     }
   };
+
   const removeMilestone = async (mid) => {
     try {
       await api.delete(`/projects/milestones/${mid}/`);
@@ -277,6 +284,7 @@ export default function AgreementWizard() {
       toast.error("Delete failed.");
     }
   };
+
   const markComplete = async (mid) => {
     try {
       await api.patch(`/projects/milestones/${mid}/`, { status: "Complete", completed: true });
@@ -290,24 +298,21 @@ export default function AgreementWizard() {
   };
 
   /* ---------- Step 3 (Warranty & Attachments) ---------- */
+
   const saveWarranty = async () => {
     setWarrantySaving(true);
     setWarrantyError("");
-
     const isDefault = !!useDefaultWarranty;
     const text = isDefault ? "" : (customWarranty || "");
-
-    // Single, merged payload (new + legacy keys)
     const payload = {
       warranty_type: isDefault ? "DEFAULT" : "CUSTOM",
       warranty_text_snapshot: text,
       use_default_warranty: isDefault,
       custom_warranty_text: text,
     };
-
     try {
       await api.patch(`/projects/agreements/${id}/`, payload);
-      await load(); // reflect server truth
+      await load();
       toast.success("Warranty saved.");
     } catch (e) {
       const resp = e?.response;
@@ -319,42 +324,35 @@ export default function AgreementWizard() {
     }
   };
 
-  // fetch+store attachments
   const fetchAttachments = async () => {
     const { data } = await api.get(`/projects/agreements/${id}/attachments/`);
     setAttachments(Array.isArray(data) ? data : []);
     return Array.isArray(data) ? data : [];
   };
 
-  // multipart PATCH helper
   const patchAttachmentMultipart = async (path, fields) => {
     const fd = new FormData();
     for (const [k, v] of Object.entries(fields)) fd.append(k, typeof v === "boolean" ? String(v) : v);
     return api.patch(path, fd, { headers: { "Content-Type": "multipart/form-data" } });
   };
 
-  // Set flags: visibility only (ack removed)
   const setAttachmentVisibility = async (attId, visible) => {
     const visBodies = [
       { visible }, { is_visible: visible }, { public: visible }, { is_public: visible },
       { visible: visible ? 1 : 0 }, { is_visible: visible ? 1 : 0 },
     ];
     const paths = [
-      `/projects/attachments/${attId}/`,                       // flat first
-      `/projects/agreements/${id}/attachments/${attId}/`,      // nested fallback
+      `/projects/attachments/${attId}/`,
+      `/projects/agreements/${id}/attachments/${attId}/`,
     ];
     for (const p of paths) {
       for (const body of visBodies) {
-        try {
-          await patchAttachmentMultipart(p, body);
-          return true;
-        } catch { /* next */ }
+        try { await patchAttachmentMultipart(p, body); return true; } catch { /* keep trying */ }
       }
     }
     return false;
   };
 
-  // Upload: POST (flat first) -> get id -> PATCH visibility (multipart) -> verify
   const uploadAttachments = async () => {
     if (!attFiles.length) return toast.error("Select or drop a file first.");
     setAttachError("");
@@ -362,10 +360,8 @@ export default function AgreementWizard() {
     const picked = attFiles[0];
     const title = attMeta.title || picked.name;
 
-    const postFD = async (url, fd) =>
-      api.post(url, fd, { headers: { "Content-Type": "multipart/form-data" } });
+    const postFD = async (url, fd) => api.post(url, fd, { headers: { "Content-Type": "multipart/form-data" } });
 
-    // flat first (to avoid nested 400s), then nested
     const attempts = [
       () => { const fd = new FormData(); fd.append("file", picked); fd.append("agreement", String(id)); fd.append("title", title); fd.append("category", attMeta.category || "OTHER"); return [ `/projects/attachments/`, fd ]; },
       () => { const fd = new FormData(); fd.append("file", picked); fd.append("agreement", String(id)); fd.append("title", title); return [ `/projects/attachments/`, fd ]; },
@@ -411,7 +407,6 @@ export default function AgreementWizard() {
     toast.success("Attachment added.");
   };
 
-  // Delete: FLAT first, then nested
   const deleteAttachment = async (attId) => {
     setAttachError("");
     try {
@@ -430,7 +425,8 @@ export default function AgreementWizard() {
     toast.success("Attachment deleted.");
   };
 
-  /* ---------- Step 4 (Finalize & Review) ---------- */
+  /* ---------- Step 4 (Preview/Sign) ---------- */
+
   const previewPdf = async () => {
     try {
       // Get a short-lived signed URL that can be opened in a new tab (no Authorization header).
@@ -448,16 +444,14 @@ export default function AgreementWizard() {
       toast.error("Could not open preview.");
     }
   };
-  const goPublic   = () => window.open(`/agreements/public/${id}/`, "_blank");
+
+  const goPublic = () => window.open(`/agreements/public/${id}/`, "_blank");
 
   const signContractor = async () => {
-    if (!hasPreviewed || !ackReviewed || !ackTos || !ackEsign || typedName.trim().length < 2) {
-      return;
-    }
+    if (!hasPreviewed || !ackReviewed || !ackTos || !ackEsign || typedName.trim().length < 2) return;
     setSigning(true);
     try {
-      const payload = { typed_name: typedName.trim() };
-      await api.post(`/projects/agreements/${id}/contractor_sign/`, payload);
+      await api.post(`/projects/agreements/${id}/contractor_sign/`, { typed_name: typedName.trim() });
       toast.success("Signed as Contractor.");
       window.location.reload();
     } catch (e) {
@@ -472,12 +466,18 @@ export default function AgreementWizard() {
 
   const canSign = hasPreviewed && ackReviewed && ackTos && ackEsign && typedName.trim().length >= 2;
 
+  /* ---------- render ---------- */
+
   return (
     <div className="p-4 md:p-6">
       {/* Tabs */}
       <div className="mb-4 flex flex-wrap gap-2">
         {TABS.map((t) => (
-          <button key={t.step} onClick={() => goStep(t.step)} className={`rounded px-3 py-2 text-sm ${step === t.step ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}>
+          <button
+            key={t.step}
+            onClick={() => goStep(t.step)}
+            className={`rounded px-3 py-2 text-sm ${step === t.step ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+          >
             {t.label}
           </button>
         ))}
@@ -488,9 +488,16 @@ export default function AgreementWizard() {
         </div>
       </div>
 
-      {/* Step panes */}
       {step === 1 && (
-        <Step1Details agreement={agreement} dLocal={dLocal} setDLocal={setDLocal} homeowners={homeowners} saveStep1={saveStep1} goStep={goStep} id={id} />
+        <Step1Details
+          agreement={agreement}
+          dLocal={dLocal}
+          setDLocal={setDLocal}
+          homeowners={homeowners}
+          saveStep1={saveStep1}
+          goStep={goStep}
+          id={id}
+        />
       )}
 
       {step === 2 && (
@@ -554,14 +561,12 @@ export default function AgreementWizard() {
           goPublic={goPublic}
           milestones={milestones}
           totals={totals}
-          // Step 4 state/handlers
           hasPreviewed={hasPreviewed}
           ackReviewed={ackReviewed} setAckReviewed={setAckReviewed}
           ackTos={ackTos} setAckTos={setAckTos}
           ackEsign={ackEsign} setAckEsign={setAckEsign}
           typedName={typedName} setTypedName={setTypedName}
           canSign={canSign} signing={signing} signContractor={signContractor}
-          // for attachments + warranty snapshot
           attachments={attachments}
           defaultWarrantyText={DEFAULT_WARRANTY}
           customWarranty={customWarranty}
@@ -584,7 +589,8 @@ export default function AgreementWizard() {
   );
 }
 
-/* ---------- Step 1 component (unchanged) ---------- */
+/* ---------- Step 1 ---------- */
+
 function Step1Details({ agreement, dLocal, setDLocal, homeowners, saveStep1, goStep, id }) {
   return (
     <div className="rounded-lg border bg-white p-4">
@@ -593,10 +599,13 @@ function Step1Details({ agreement, dLocal, setDLocal, homeowners, saveStep1, goS
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {/* Homeowner */}
         <div className="md:col-span-2">
           <label className="block text-sm font-medium mb-1">Homeowner</label>
-          <select className="w-full rounded border px-3 py-2 text-sm" value={dLocal.homeowner || ""} onChange={(e) => setDLocal((s) => ({ ...s, homeowner: e.target.value }))}>
+          <select
+            className="w-full rounded border px-3 py-2 text-sm"
+            value={dLocal.homeowner || ""}
+            onChange={(e) => setDLocal((s) => ({ ...s, homeowner: e.target.value }))}
+          >
             <option value="">— Select Homeowner —</option>
             {homeowners.map((h) => {
               const val = optValue(h);
@@ -606,16 +615,23 @@ function Step1Details({ agreement, dLocal, setDLocal, homeowners, saveStep1, goS
           </select>
         </div>
 
-        {/* Title */}
         <div className="md:col-span-2">
           <label className="block text-sm font-medium mb-1">Project Title</label>
-          <input className="w-full rounded border px-3 py-2 text-sm" value={dLocal.project_title} onChange={(e) => setDLocal((s) => ({ ...s, project_title: e.target.value }))} placeholder="e.g., Kitchen Floor and Wall" />
+          <input
+            className="w-full rounded border px-3 py-2 text-sm"
+            value={dLocal.project_title}
+            onChange={(e) => setDLocal((s) => ({ ...s, project_title: e.target.value }))}
+            placeholder="e.g., Kitchen Floor and Wall"
+          />
         </div>
 
-        {/* Type/Subtype */}
         <div>
           <label className="block text-sm font-medium mb-1">Type</label>
-          <select className="w-full rounded border px-3 py-2 text-sm" value={dLocal.project_type || ""} onChange={(e) => setDLocal((s) => ({ ...s, project_type: e.target.value, project_subtype: "" }))}>
+          <select
+            className="w-full rounded border px-3 py-2 text-sm"
+            value={dLocal.project_type || ""}
+            onChange={(e) => setDLocal((s) => ({ ...s, project_type: e.target.value, project_subtype: "" }))}
+          >
             <option value="">— Select Type —</option>
             {(Array.isArray(PROJECT_TYPES) ? PROJECT_TYPES : []).map((t) => {
               const val = optValue(t);
@@ -627,7 +643,11 @@ function Step1Details({ agreement, dLocal, setDLocal, homeowners, saveStep1, goS
 
         <div>
           <label className="block text-sm font-medium mb-1">Subtype</label>
-          <select className="w-full rounded border px-3 py-2 text-sm" value={dLocal.project_subtype || ""} onChange={(e) => setDLocal((s) => ({ ...s, project_subtype: e.target.value }))}>
+          <select
+            className="w-full rounded border px-3 py-2 text-sm"
+            value={dLocal.project_subtype || ""}
+            onChange={(e) => setDLocal((s) => ({ ...s, project_subtype: e.target.value }))}
+          >
             <option value="">— Select Subtype —</option>
             {((SUBTYPES_BY_TYPE || {})[dLocal.project_type] || []).map((st) => {
               const val = optValue(st);
@@ -637,13 +657,17 @@ function Step1Details({ agreement, dLocal, setDLocal, homeowners, saveStep1, goS
           </select>
         </div>
 
-        {/* Description */}
         <div className="md:col-span-2">
           <label className="block text-sm font-medium mb-1">Description</label>
-          <textarea className="w-full rounded border px-3 py-2 text-sm" rows={3} value={dLocal.description} onChange={(e) => setDLocal((s) => ({ ...s, description: e.target.value }))} placeholder="Brief project scope…" />
+          <textarea
+            className="w-full rounded border px-3 py-2 text-sm"
+            rows={3}
+            value={dLocal.description}
+            onChange={(e) => setDLocal((s) => ({ ...s, description: e.target.value }))}
+            placeholder="Brief project scope…"
+          />
         </div>
 
-        {/* Dates with calendar icons */}
         <DateWithButton label="Start" value={dLocal.start} onChange={(v) => setDLocal((s) => ({ ...s, start: toDateOnly(v) }))} />
         <DateWithButton label="End" value={dLocal.end} onChange={(v) => setDLocal((s) => ({ ...s, end: toDateOnly(v) }))} />
       </div>
@@ -656,7 +680,8 @@ function Step1Details({ agreement, dLocal, setDLocal, homeowners, saveStep1, goS
   );
 }
 
-/* ---------- Step 2 component (unchanged) ---------- */
+/* ---------- Step 2 ---------- */
+
 function Step2Milestones({
   loading,
   mLocal, onLocalChange, onAdd,
@@ -700,11 +725,19 @@ function Step2Milestones({
         <div><button onClick={onAdd} className="rounded bg-green-600 px-3 py-2 text-sm text-white hover:bg-green-700">+ Add Milestone</button></div>
       </div>
 
-      {/* Existing milestones table */}
       <div className="mt-6 overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead>
-            <tr className="bg-gray-50 text-left"><th className="px-3 py-2">#</th><th className="px-3 py-2">Title</th><th className="px-3 py-2">Description</th><th className="px-3 py-2">Start</th><th className="px-3 py-2">End</th><th className="px-3 py-2">Days</th><th className="px-3 py-2">Amount</th><th className="px-3 py-2">Actions</th></tr>
+            <tr className="bg-gray-50 text-left">
+              <th className="px-3 py-2">#</th>
+              <th className="px-3 py-2">Title</th>
+              <th className="px-3 py-2">Description</th>
+              <th className="px-3 py-2">Start</th>
+              <th className="px-3 py-2">End</th>
+              <th className="px-3 py-2">Days</th>
+              <th className="px-3 py-2">Amount</th>
+              <th className="px-3 py-2">Actions</th>
+            </tr>
           </thead>
           <tbody>
             {milestones.map((m, i) => {
@@ -731,12 +764,13 @@ function Step2Milestones({
                 </tr>
               );
             })}
-            {!milestones.length && (<tr><td colSpan={8} className="px-3 py-6 text-center text-gray-500">No milestones yet.</td></tr>)}
+            {!milestones.length && (
+              <tr><td colSpan={8} className="px-3 py-6 text-center text-gray-500">No milestones yet.</td></tr>
+            )}
           </tbody>
         </table>
       </div>
 
-      {/* Totals */}
       <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-4">
         <SummaryCard label="Total Amount" value={`$${totals.totalAmt.toFixed(2)}`} />
         <SummaryCard label="Total Days" value={String(totals.totalDays || 0)} />
@@ -752,7 +786,8 @@ function Step2Milestones({
   );
 }
 
-/* ---------- Step 3 component (unchanged / no ack UI) ---------- */
+/* ---------- Step 3 ---------- */
+
 function Step3WarrantyAttachments({
   loading,
   DEFAULT_WARRANTY,
@@ -872,7 +907,6 @@ function Step3WarrantyAttachments({
 
         <div className="mt-4 flex gap-2">
           <button onClick={goBack} className="rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Back</button>
-          {/* FIX: use goNext instead of goStep(4) */}
           <button onClick={goNext} className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700">Save & Next</button>
         </div>
       </div>
@@ -880,28 +914,25 @@ function Step3WarrantyAttachments({
   );
 }
 
-/* ---------- Step 4 component (rebuilt) ---------- */
+/* ---------- Step 4 ---------- */
+
 function Step4Finalize({
   agreement, id, previewPdf, goPublic, milestones, totals,
-  // consent/signing state
   hasPreviewed,
   ackReviewed, setAckReviewed,
   ackTos, setAckTos,
   ackEsign, setAckEsign,
   typedName, setTypedName,
   canSign, signing, signContractor,
-  // warranty + attachments context
   attachments, defaultWarrantyText, customWarranty, useDefaultWarranty,
   goBack,
 }) {
-  // Warranty snapshot shown to the user
   const warrantyText = useDefaultWarranty
     ? defaultWarrantyText
     : (customWarranty?.trim() ? customWarranty : defaultWarrantyText);
 
   return (
     <div className="rounded-lg border bg-white p-4 space-y-6">
-      {/* Summary */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         <SummaryCard label="Agreement" value={`#${agreement?.id || id} — ${agreement?.project_title || agreement?.title || "Project"}`} />
         <SummaryCard label="Total Amount" value={`$${Number(totals.totalAmt || 0).toFixed(2)}`} />
@@ -909,7 +940,6 @@ function Step4Finalize({
         <SummaryCard label="Total Days" value={String(totals.totalDays || 0)} />
       </div>
 
-      {/* Warranty Snapshot */}
       <section>
         <div className="text-sm font-semibold mb-2">Warranty (Snapshot)</div>
         <div className="border rounded bg-gray-50 p-3 max-h-44 overflow-auto text-sm leading-relaxed whitespace-pre-wrap">
@@ -917,7 +947,6 @@ function Step4Finalize({
         </div>
       </section>
 
-      {/* Milestones */}
       <section>
         <div className="text-sm font-semibold mb-2">Milestones</div>
         <div className="overflow-x-auto">
@@ -952,7 +981,6 @@ function Step4Finalize({
         </div>
       </section>
 
-      {/* Attachments (visible) */}
       <section>
         <div className="text-sm font-semibold mb-2">Attachments &amp; Addenda (Visible)</div>
         {attachments.filter(a => a.visible || a.is_visible || a.public || a.is_public).length ? (
@@ -986,7 +1014,6 @@ function Step4Finalize({
         )}
       </section>
 
-      {/* Review & Consents */}
       <section className="space-y-2 text-sm">
         <div className="text-sm font-semibold">Agreement Review</div>
         <label className="flex items-start gap-2">
@@ -1013,7 +1040,6 @@ function Step4Finalize({
         </div>
       </section>
 
-      {/* Signatures */}
       <section>
         <div className="text-sm font-semibold mb-2">Signatures</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1034,11 +1060,7 @@ function Step4Finalize({
                   onChange={(e) => setTypedName(e.target.value)}
                 />
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={previewPdf}
-                    className="rounded bg-indigo-50 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-100"
-                  >
+                  <button type="button" onClick={previewPdf} className="rounded bg-indigo-50 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-100">
                     Preview PDF
                   </button>
                   <button
@@ -1065,11 +1087,7 @@ function Step4Finalize({
               <>
                 <div className="text-sm text-gray-600">The homeowner signs via their public link.</div>
                 <div className="mt-3">
-                  <button
-                    type="button"
-                    onClick={goPublic}
-                    className="rounded bg-gray-800 px-3 py-2 text-sm text-white hover:bg-black"
-                  >
+                  <button type="button" onClick={goPublic} className="rounded bg-gray-800 px-3 py-2 text-sm text-white hover:bg-black">
                     Open Public Signing Link
                   </button>
                 </div>
@@ -1079,23 +1097,17 @@ function Step4Finalize({
         </div>
       </section>
 
-      {/* Footer actions */}
       <div className="flex gap-2">
-        <button type="button" onClick={goBack} className="rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">
-          Back
-        </button>
-        <button type="button" onClick={previewPdf} className="rounded bg-indigo-50 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-100">
-          Preview PDF
-        </button>
-        <button type="button" onClick={goPublic} className="rounded bg-gray-800 px-3 py-2 text-sm text-white hover:bg-black">
-          View Public Link
-        </button>
+        <button type="button" onClick={goBack} className="rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Back</button>
+        <button type="button" onClick={previewPdf} className="rounded bg-indigo-50 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-100">Preview PDF</button>
+        <button type="button" onClick={goPublic} className="rounded bg-gray-800 px-3 py-2 text-sm text-white hover:bg-black">View Public Link</button>
       </div>
     </div>
   );
 }
 
-/* ---------- shared helpers ---------- */
+/* ---------- shared UI ---------- */
+
 function DateWithButton({ label, value, onChange }) {
   const ref = useRef(null);
   const openPicker = () => { if (ref.current?.showPicker) ref.current.showPicker(); else ref.current?.focus(); };
@@ -1103,12 +1115,20 @@ function DateWithButton({ label, value, onChange }) {
     <div>
       <label className="block text-sm font-medium mb-1">{label}</label>
       <div style={{ position: "relative", overflow: "visible" }}>
-        <input ref={ref} type="date" value={value || ""} onChange={(e) => onChange(e.target.value)} className="w-full rounded border px-3 py-2 text-sm" style={{ paddingRight: "2.5rem" }} />
+        <input
+          ref={ref}
+          type="date"
+          value={value || ""}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded border px-3 py-2 text-sm"
+          style={{ paddingRight: "2.5rem" }}
+        />
         <CalendarBtn onClick={openPicker} title={`Open ${label} calendar`} />
       </div>
     </div>
   );
 }
+
 function SummaryCard({ label, value }) {
   return (
     <div className="rounded border bg-gray-50 px-3 py-2">
