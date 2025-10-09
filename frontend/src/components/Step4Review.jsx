@@ -1,13 +1,12 @@
-// src/components/Step4Review.jsx
-// v2025-10-06 — Mandatory preview gate + typed OR image signature,
-// warranty case-insensitive display, normalized milestone due dates,
-// authenticated PDF preview (Blob), aligned to /contractor_sign/ backend.
+// frontend/src/components/Step4Review.jsx
+// v2025-10-09 — Switches preview to use signed link (no 401),
+// keeps mandatory preview gate + typed/image signature flow.
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import toast from "react-hot-toast";
 import api from "../api";
+import PreviewAgreementPdfButton from "./PreviewAgreementPdfButton";
 
-/* ---------- utils ---------- */
 function toDateOnly(v) {
   if (!v) return "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
@@ -32,13 +31,12 @@ export default function Step4Review({ agreementId, onBack, onFinished }) {
   const [milestones, setMilestones] = useState([]);
   const [attachments, setAttachments] = useState([]);
   const [signName, setSignName] = useState("");
-  const [sigFile, setSigFile] = useState(null);     // optional signature image
+  const [sigFile, setSigFile] = useState(null);
   const [acceptESign, setAcceptESign] = useState(false);
   const [acceptTOS, setAcceptTOS] = useState(false);
   const [acceptPrivacy, setAcceptPrivacy] = useState(false);
-  const [hasPreviewed, setHasPreviewed] = useState(false); // gate signing
+  const [hasPreviewed, setHasPreviewed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [previewing, setPreviewing] = useState(false);
 
   const currency = useCallback((n) => {
     if (typeof n !== "number") return "$0.00";
@@ -95,28 +93,7 @@ export default function Step4Review({ agreementId, onBack, onFinished }) {
     return () => (mounted = false);
   }, [agreementId]);
 
-  /* ---- Authenticated PDF Preview (Blob) + set hasPreviewed ---- */
-  const handlePreview = async () => {
-    try {
-      setPreviewing(true);
-      const res = await api.get(
-        `/projects/agreements/${agreementId}/preview_pdf/`,
-        { params: { stream: 1 }, responseType: "blob" }
-      );
-      const blob = new Blob([res.data], { type: "application/pdf" });
-      const url = window.URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener");
-      setHasPreviewed(true); // mark mandatory review as completed
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (err) {
-      console.error(err);
-      toast.error("Could not generate preview. Please try again.");
-    } finally {
-      setPreviewing(false);
-    }
-  };
-
-  /* ---- Sign & Send (typed + optional signature image) ---- */
+  // — Sign & Send (typed + optional image) —
   const handleSignAndSend = async () => {
     if (!hasPreviewed) {
       toast.error("Please preview the agreement PDF before signing.");
@@ -134,22 +111,19 @@ export default function Step4Review({ agreementId, onBack, onFinished }) {
     try {
       setSubmitting(true);
 
-      // If the user uploaded a signature image, send multipart/form-data.
       if (sigFile) {
         const form = new FormData();
         form.append("typed_name", signName.trim());
-        form.append("signature", sigFile); // backend reads request.FILES["signature"]
+        form.append("signature", sigFile);
         await api.post(`/projects/agreements/${agreementId}/contractor_sign/`, form, {
           headers: { "Content-Type": "multipart/form-data" },
         });
       } else {
-        // Typed signature only (JSON) — supported by updated backend
         await api.post(`/projects/agreements/${agreementId}/contractor_sign/`, {
           typed_name: signName.trim(),
         });
       }
 
-      // Send to homeowner
       await api.post(`/projects/agreements/${agreementId}/send_for_signature/`);
       toast.success("Signed and sent to homeowner!");
       onFinished?.();
@@ -165,23 +139,16 @@ export default function Step4Review({ agreementId, onBack, onFinished }) {
   const hasDefaultWarranty = ["default","standard","std"].includes(warrantyType);
   const hasCustomWarranty = warrantyType === "custom";
 
-  const contractorLogo = agreement?.contractor_logo_url || agreement?.contractor?.logo_url || null;
-  const myHomeBroLogo = "/static/myhomebro_logo.png";
-
   if (loading) {
-    return (
-      <div style={{ padding: 20 }}>
-        <p>Loading review…</p>
-      </div>
-    );
+    return <div style={{ padding: 20 }}><p>Loading review…</p></div>;
   }
 
   return (
     <div style={{ padding: 16, display: "grid", gap: 16 }}>
       {/* Header: Contractor Branding */}
       <div className="mhb-card" style={{ background: "#fff", borderRadius: 18, padding: 16, display: "flex", alignItems: "center", gap: 14 }}>
-        {contractorLogo ? (
-          <img src={contractorLogo} alt="Contractor Logo" style={{ width: 60, height: 60, borderRadius: 12, objectFit: "cover" }} />
+        {agreement?.contractor_logo_url ? (
+          <img src={agreement.contractor_logo_url} alt="Contractor Logo" style={{ width: 60, height: 60, borderRadius: 12, objectFit: "cover" }} />
         ) : (
           <div style={{ width: 60, height: 60, borderRadius: 12, background: "#e2e8f0", display: "grid", placeItems: "center", color: "#64748b", fontWeight: 700 }}>LOGO</div>
         )}
@@ -290,6 +257,19 @@ export default function Step4Review({ agreementId, onBack, onFinished }) {
       <div className="mhb-card" style={{ background: "#fff", borderRadius: 18, padding: 16 }}>
         <h3 style={{ marginTop: 0 }}>Sign & Send</h3>
 
+        {/* Signed-link Preview button prevents 401s */}
+        <div style={{ marginBottom: 10 }}>
+          <PreviewAgreementPdfButton
+            agreementId={agreementId}
+            onPreviewed={() => setHasPreviewed(true)}
+          />
+          {!hasPreviewed && (
+            <p style={{ margin: "6px 0 0", color: "#b45309", fontSize: 13 }}>
+              You must preview the agreement PDF at least once before signing.
+            </p>
+          )}
+        </div>
+
         {/* Signature image upload (optional) */}
         <div style={{ marginBottom: 10 }}>
           <label className="block text-sm font-medium mb-1">Upload Signature (optional, PNG/JPG):</label>
@@ -330,10 +310,7 @@ export default function Step4Review({ agreementId, onBack, onFinished }) {
             </>} />
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
-            <button onClick={onBack} disabled={submitting || previewing} style={btn("ghost")} type="button">Back</button>
-            <button onClick={handlePreview} disabled={submitting || previewing} style={btn("secondary")} type="button">
-              {previewing ? "Generating Preview…" : (hasPreviewed ? "Preview Again" : "Preview PDF")}
-            </button>
+            <button onClick={onBack} disabled={submitting} style={btn("ghost")} type="button">Back</button>
             <button
               onClick={handleSignAndSend}
               disabled={submitting || !hasPreviewed || !acceptESign || !acceptTOS || !acceptPrivacy}
@@ -345,22 +322,11 @@ export default function Step4Review({ agreementId, onBack, onFinished }) {
             </button>
           </div>
 
-          {!hasPreviewed && (
-            <p style={{ margin: "6px 0 0", color: "#b45309", fontSize: 13 }}>
-              You must preview the agreement PDF at least once before signing.
-            </p>
-          )}
           <p style={{ margin: "6px 0 0", color: "#64748b", fontSize: 13 }}>
             By proceeding you acknowledge MyHomeBro acts as a neutral platform (not a party to the Agreement) and will
             store a versioned PDF with signature metadata.
           </p>
         </div>
-      </div>
-
-      {/* Footer */}
-      <div style={{ display: "grid", placeItems: "center", padding: 16, color: "#475569", gap: 6 }}>
-        <img src="/static/myhomebro_logo.png" alt="MyHomeBro" style={{ width: 36, height: 36, borderRadius: 8, opacity: 0.9 }} />
-        <small>Agreement facilitated & e-signed via MyHomeBro</small>
       </div>
     </div>
   );
@@ -392,6 +358,5 @@ function CheckboxRow({ checked, onChange, label }) {
 function btn(variant) {
   const base = { padding: "10px 14px", borderRadius: 12, border: "1px solid transparent", fontWeight: 700, cursor: "pointer", minHeight: 44 };
   if (variant === "primary") return { ...base, background: "linear-gradient(135deg, #0d47ff 0%, #6b86ff 50%)", color: "#fff", boxShadow: "0 6px 16px rgba(13,71,255,0.25)" };
-  if (variant === "secondary") return { ...base, background: "#0f172a", color: "#fff" };
   return { ...base, background: "#ffffff", border: "1px solid #e5e7eb", color: "#111827" };
 }
