@@ -1,5 +1,5 @@
 // src/components/AgreementWizard.jsx
-// v2025-10-08-finalize-polish-fix — Step 4 rebuilt; Steps 1–3 unchanged; Step 3 Save&Next uses goNext (fix).
+// v2025-10-09-signed-preview-link — Step 4 uses signed-link preview; Steps 1–3 unchanged.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -94,7 +94,7 @@ const DEFAULT_WARRANTY = `Standard workmanship warranty: Contractor warrants all
 
 /* ---------- main ---------- */
 export default function AgreementWizard() {
-  console.log("%cAgreementWizard v2025-10-08-finalize-polish-fix", "color:#fff;background:#0ea5e9;padding:2px 6px;border-radius:4px");
+  console.log("%cAgreementWizard v2025-10-09-signed-preview-link", "color:#fff;background:#0ea5e9;padding:2px 6px;border-radius:4px");
 
   const navigate = useNavigate();
   const { id } = useParams();
@@ -209,7 +209,7 @@ export default function AgreementWizard() {
     const starts = milestones.map(m => toDateOnly(m.start_date || m.start || m.scheduled_date)).filter(Boolean);
     const ends   = milestones.map(m => toDateOnly(m.completion_date || m.end_date || m.end || m.due_date)).filter(Boolean);
     const minStart = starts.length ? [...starts].sort()[0] : "";
-    const maxEnd   = ends.length ? [...ends].sort().slice(-1)[0] : "";
+    aconst maxEnd   = ends.length ? [...ends].sort().slice(-1)[0] : "";
     const totalDays = (minStart && maxEnd) ? daySpan(minStart, maxEnd) : 0;
     return { totalAmt, minStart, maxEnd, totalDays };
   }, [milestones]);
@@ -432,13 +432,21 @@ export default function AgreementWizard() {
 
   /* ---------- Step 4 (Finalize & Review) ---------- */
   const previewPdf = async () => {
-    // Use the streaming endpoint so it opens a PDF tab, not the dashboard
-    const url = `/api/projects/agreements/${id}/preview_pdf/?stream=1`;
-    window.open(url, "_blank", "noopener");
-    setHasPreviewed(true);
-
-    // (optional) notify backend you've previewed; ignore failure if not implemented
-    try { await api.post(`/projects/agreements/${id}/mark_previewed/`); } catch {}
+    try {
+      // Get a short-lived signed URL that can be opened in a new tab (no Authorization header).
+      const { data } = await api.post(`/projects/agreements/${id}/preview_link/`);
+      const url = data?.url;
+      if (!url) {
+        toast.error("Preview link unavailable.");
+        return;
+      }
+      window.open(url, "_blank", "noopener");
+      setHasPreviewed(true);
+      try { await api.post(`/projects/agreements/${id}/mark_previewed/`); } catch {}
+    } catch (err) {
+      console.error(err);
+      toast.error("Could not open preview.");
+    }
   };
   const goPublic   = () => window.open(`/agreements/public/${id}/`, "_blank");
 
