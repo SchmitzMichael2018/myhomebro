@@ -1,43 +1,82 @@
 # backend/projects/services/pdf.py
 from __future__ import annotations
 
-import io, os
-from typing import List, Optional
+import io
+import os
+from typing import List, Optional, Iterable
+from datetime import date, datetime
+
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.utils.timezone import localtime
-from projects.models import Agreement
 
-# Optional PDF merger for attached PDFs
+from projects.models import Agreement, Milestone  # Milestone for schedule logic
+
+# Optional PDF merger (append attached PDFs on finalize)
 try:
     from PyPDF2 import PdfMerger
 except Exception:
-    PdfMerger = None
+    PdfMerger = None  # type: ignore
+
+# Optional: state-aware legal clauses
+try:
+    from projects.services.legal_clauses import build_legal_notices
+except Exception:
+    def build_legal_notices(project_state: Optional[str] = None) -> List[tuple[str, str]]:
+        return [
+            ("Terms Incorporated",
+             "The MyHomeBro Terms of Service, Privacy Policy, and any Escrow Program Terms are incorporated into this "
+             "Agreement by reference."),
+            ("Electronic Signatures & Records",
+             "The parties consent to do business electronically and agree that electronic signatures and records have "
+             "the same force and effect as wet ink signatures."),
+        ]
 
 
-# ------------------------- helper utilities -------------------------
+# ----------------------------- small helpers -----------------------------
 
-def _s(v): return "" if v is None else str(v)
-def _currency(v):
-    try: return f"${float(v or 0):,.2f}"
-    except Exception: return "$0.00"
-def _exists(p): return bool(p and os.path.exists(p))
+def _s(v) -> str:
+    return "" if v is None else str(v)
 
+def _currency(v) -> str:
+    try:
+        return f"${float(v or 0):,.2f}"
+    except Exception:
+        return "$0.00"
 
-def _myhomebro_logo_path() -> Optional[str]:
-    """Find the MyHomeBro logo for the disclaimer."""
-    roots = []
-    static_root = getattr(settings, "STATIC_ROOT", None)
-    if static_root:
-        roots.append(os.path.join(static_root, "assets"))
-        roots.append(static_root)
-    roots.append(os.path.join(getattr(settings, "BASE_DIR", ""), "static"))
-    for root in roots:
-        for name in ("myhomebro_logo.png", "myhomebro_logo.jpg", "myhomebro_logo.jpeg"):
-            p = os.path.join(root, name)
-            if os.path.exists(p): return p
+def _first_existing(paths: list[str]) -> Optional[str]:
+    for p in paths:
+        if p and os.path.exists(p):
+            return p
     return None
 
+def _myhomebro_logo_path() -> Optional[str]:
+    override = getattr(settings, "MHB_LOGO_PATH", None) or os.environ.get("MHB_LOGO_PATH")
+    if override and os.path.exists(override):
+        return override
+
+    roots: List[str] = []
+    static_root = getattr(settings, "STATIC_ROOT", None)
+    if static_root:
+        roots += [
+            static_root,
+            os.path.join(static_root, "assets"),
+            os.path.join(static_root, "static"),
+            os.path.join(static_root, "staticfiles"),
+            os.path.join(static_root, "staticfiles", "assets"),
+        ]
+    roots.append(os.path.join(getattr(settings, "BASE_DIR", ""), "static"))
+    roots += [str(p) for p in getattr(settings, "STATICFILES_DIRS", []) or []]
+
+    candidates: List[str] = []
+    for r in roots:
+        candidates += [
+            os.path.join(r, "myhomebro_logo.png"),
+            os.path.join(r, "img", "myhomebro_logo.png"),
+            os.path.join(r, "images", "myhomebro_logo.png"),
+            os.path.join(r, "assets", "myhomebro_logo.png"),
+        ]
+    return _first_existing(candidates)
 
 def _contractor_logo_path(ag: Agreement) -> Optional[str]:
     try:
@@ -48,7 +87,6 @@ def _contractor_logo_path(ag: Agreement) -> Optional[str]:
         pass
     return None
 
-
 def _signature_path(field) -> Optional[str]:
     try:
         if field and hasattr(field, "path") and os.path.exists(field.path):
@@ -57,34 +95,226 @@ def _signature_path(field) -> Optional[str]:
         pass
     return None
 
-
-def _load_legal_text(filename: str) -> str:
-    """
-    Load legal text (ToS/Privacy) from static/legal/<filename>.
-    Falls back to empty string if not found.
-    """
-    base_dir = getattr(settings, "BASE_DIR", "")
-    candidates = [
-        os.path.join(base_dir, "static", "legal", filename),
-        os.path.join(getattr(settings, "STATIC_ROOT", "") or "", "legal", filename),
-    ]
-    for p in candidates:
-        if p and os.path.exists(p):
+def _due_of(m) -> Optional[str]:
+    for attr in (
+        "completion_date", "due_date", "end_date", "end",
+        "target_date", "finish_date", "scheduled_date", "start_date",
+    ):
+        val = getattr(m, attr, None)
+        if val:
             try:
-                with open(p, "r", encoding="utf-8") as fh:
-                    return fh.read().strip()
+                val = val.date()
             except Exception:
                 pass
-    return ""
+            return _s(val)
+    return None
+
+def _start_of(m) -> Optional[str]:
+    """Find a reasonable 'start' for a milestone."""
+    for attr in ("start_date", "scheduled_date", "begin_date", "start"):
+        val = getattr(m, attr, None)
+        if val:
+            try:
+                val = val.date()
+            except Exception:
+                pass
+            return _s(val)
+    return None
+
+def _fmt_date_friendly(v: object) -> Optional[str]:
+    """
+    Return 'Oct 1, 2025' style. Accepts date/datetime/ISO string.
+    """
+    if not v:
+        return None
+    try:
+        if isinstance(v, datetime):
+            d = v.date()
+        elif isinstance(v, date):
+            d = v
+        else:
+            d = datetime.fromisoformat(str(v)).date()
+        txt = d.strftime("%b %d, %Y")
+        return txt.replace(" 0", " ")
+    except Exception:
+        try:
+            s = str(v)
+            if len(s) == 10 and s[4] == "-" and s[7] == "-":
+                return s
+        except Exception:
+            pass
+        return str(v)
 
 
-# ------------------------- page chrome -------------------------
+# ---------- Address builders (expanded & snapshot-aware) ----------
+
+def _get_first(obj, keys: Iterable[str]) -> Optional[str]:
+    for k in keys:
+        try:
+            v = getattr(obj, k, None)
+        except Exception:
+            v = None
+        if v:
+            s = str(v).strip()
+            if s:
+                return s
+    return None
+
+def _fmt_addr_from(obj) -> str:
+    """
+    Build a single-line address from many common field names on an object
+    (contractor / homeowner / project). Includes aliases:
+      street_address, address_line1/2, line1/2, street/street2, unit/apt/suite,
+      city/town, state/region/province/state_code, zip/zip_code/zipcode/postal_code/postcode
+    Also supports nested obj.address (recursively).
+    """
+    if not obj:
+        return ""
+
+    line1 = _get_first(obj, (
+        "street_address", "address_line1", "line1", "address1",
+        "street1", "street", "address"
+    ))
+    line2 = _get_first(obj, (
+        "address_line2", "line2", "address2", "street2", "unit", "apt", "suite"
+    ))
+    city  = _get_first(obj, ("city", "town", "city_name"))
+    state = _get_first(obj, ("state", "state_code", "region", "province"))
+    zipc  = _get_first(obj, ("zip_code", "zip", "zipcode", "postal_code", "postcode"))
+
+    parts: List[str] = []
+    if line1: parts.append(line1)
+    if line2: parts.append(line2)
+    tail = " ".join([p for p in (city, state, zipc) if p])
+    if tail:
+        parts.append(tail)
+
+    if not parts:
+        addr_obj = getattr(obj, "address", None)
+        if addr_obj:
+            return _fmt_addr_from(addr_obj)
+
+    return " — ".join(parts) if parts else ""
+
+def _composite_addr_from_snapshots(obj, prefix: str) -> str:
+    """
+    Build an address from *snapshot* fields on Agreement:
+      e.g., prefix='homeowner' tries:
+        homeowner_address_line1_snapshot / homeowner_street_address_snapshot / homeowner_street_snapshot / homeowner_address_snapshot
+        + homeowner_address_line2_snapshot / homeowner_unit_snapshot / homeowner_apt_snapshot / homeowner_suite_snapshot
+        + homeowner_city_snapshot + homeowner_state_snapshot(+region/state_code) + homeowner_zip/zipcode/postal_code/postcode _snapshot
+      Similarly for prefix='project'.
+    """
+    if not obj:
+        return ""
+
+    def g(name: str) -> Optional[str]:
+        return _get_first(obj, (name,))
+
+    line1 = (
+        g(f"{prefix}_address_line1_snapshot") or
+        g(f"{prefix}_street_address_snapshot") or
+        g(f"{prefix}_street_snapshot") or
+        g(f"{prefix}_address_snapshot")
+    )
+    line2 = (
+        g(f"{prefix}_address_line2_snapshot") or
+        g(f"{prefix}_unit_snapshot") or
+        g(f"{prefix}_apt_snapshot") or
+        g(f"{prefix}_suite_snapshot")
+    )
+    city  = g(f"{prefix}_city_snapshot")
+    state = g(f"{prefix}_state_snapshot") or g(f"{prefix}_region_snapshot") or g(f"{prefix}_state_code_snapshot")
+    zipc  = g(f"{prefix}_zip_snapshot") or g(f"{prefix}_zipcode_snapshot") or g(f"{prefix}_postal_code_snapshot") or g(f"{prefix}_postcode_snapshot")
+
+    parts: List[str] = []
+    if line1: parts.append(line1.strip())
+    if line2: parts.append(line2.strip())
+    tail = " ".join([p for p in (city, state, zipc) if p and str(p).strip()])
+    if tail:
+        parts.append(tail.strip())
+    return " — ".join(parts).strip() if parts else ""
+
+def _project_address(ag: Agreement) -> str:
+    """
+    Priority:
+      1) Agreement.project address fields
+      2) Agreement project_*_snapshot composite
+      3) Agreement's own address fields
+      4) Homeowner object
+      5) Homeowner_*_snapshot composite
+    """
+    proj = getattr(ag, "project", None)
+    s = _fmt_addr_from(proj)
+    if s:
+        return s
+
+    s = _composite_addr_from_snapshots(ag, "project")
+    if s:
+        return s
+
+    s = _fmt_addr_from(ag)
+    if s:
+        return s
+
+    h = getattr(ag, "homeowner", None)
+    s = _fmt_addr_from(h)
+    if s:
+        return s
+
+    s = _composite_addr_from_snapshots(ag, "homeowner")
+    return s or ""
+
+
+def _detect_project_state(ag: Agreement) -> Optional[str]:
+    """
+    Try to infer a 2-letter state code (or state name) from common fields.
+    Order: Agreement.project.state -> Homeowner.state -> Contractor.state -> Agreement.state
+           -> snapshot fallbacks (project_state_snapshot, homeowner_state_snapshot).
+    """
+    candidates: List[Optional[str]] = []
+    try:
+        proj = getattr(ag, "project", None)
+        if proj:
+            candidates += [getattr(proj, "state", None), getattr(proj, "region", None)]
+    except Exception:
+        pass
+    try:
+        h = getattr(ag, "homeowner", None)
+        if h:
+            candidates += [getattr(h, "state", None), getattr(h, "region", None)]
+    except Exception:
+        pass
+    try:
+        c = getattr(ag, "contractor", None)
+        if c:
+            candidates += [getattr(c, "state", None), getattr(c, "region", None)]
+    except Exception:
+        pass
+    candidates += [getattr(ag, "state", None)]
+    # Snapshots as last resort
+    candidates += [
+        getattr(ag, "project_state_snapshot", None),
+        getattr(ag, "homeowner_state_snapshot", None),
+    ]
+
+    for v in candidates:
+        if not v:
+            continue
+        s = str(v).strip()
+        if not s:
+            continue
+        return s.upper() if len(s) == 2 else s
+    return None
+
+
+# --------------------------- page chrome (header/footer/watermark) ---------------------------
 
 def _watermark_preview(canvas):
     canvas.saveState()
     canvas.setFont("Helvetica-Bold", 48)
     canvas.setFillGray(0.85)
-    canvas.translate(612/2, 792/2)
+    canvas.translate(612 / 2, 792 / 2)
     canvas.rotate(30)
     canvas.drawCentredString(0, 0, "PREVIEW – NOT SIGNED")
     canvas.restoreState()
@@ -93,28 +323,62 @@ def _header_footer(canvas, doc):
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.units import inch
+    from reportlab.lib.utils import ImageReader
+
     canvas.saveState()
     w, h = letter
+
+    # Top rule
     canvas.setStrokeColor(colors.HexColor("#E5E7EB"))
     canvas.setLineWidth(0.6)
-    canvas.line(0.75*inch, h-0.85*inch, w-0.75*inch, h-0.85*inch)
+    canvas.line(0.75 * inch, h - 0.9 * inch, w - 0.75 * inch, h - 0.9 * inch)
+
+    # Right muted label
+    canvas.setFont("Helvetica", 9.5)
+    canvas.setFillColor(colors.HexColor("#6B7280"))
+    canvas.drawRightString(w - 0.8 * inch, h - 0.72 * inch, "Agreement")
+
+    # Bottom rule
+    canvas.setStrokeColor(colors.HexColor("#E5E7EB"))
+    canvas.setLineWidth(0.6)
+    canvas.line(0.75 * inch, 0.9 * inch, w - 0.75 * inch, 0.9 * inch)
+
+    # Footer left: small MHB logo
+    mhb_path = _myhomebro_logo_path()
+    if mhb_path and os.path.exists(mhb_path):
+        try:
+            im = ImageReader(mhb_path)
+            iw, ih = im.getSize()
+            max_w, max_h = 75, 18
+            scale = min(max_w / iw, max_h / ih, 1.0)
+            fw, fh = iw * scale, ih * scale
+            canvas.drawImage(im, 0.8 * inch, 0.86 * inch - fh + 4, width=fw, height=fh, mask='auto')
+        except Exception:
+            canvas.setFont("Helvetica-Bold", 9)
+            canvas.setFillColor(colors.HexColor("#111827"))
+            canvas.drawString(0.8 * inch, 0.73 * inch, "MyHomeBro")
+    else:
+        canvas.setFont("Helvetica-Bold", 9)
+        canvas.setFillColor(colors.HexColor("#111827"))
+        canvas.drawString(0.8 * inch, 0.73 * inch, "MyHomeBro")
+
+    # Footer right: timestamp + page number
     canvas.setFont("Helvetica", 9)
     ts = localtime().strftime("%Y-%m-%d %H:%M")
-    left = "MyHomeBro — Agreement PDF"
     right = f"Generated {ts}  |  Page {canvas.getPageNumber()}"
     canvas.setFillColor(colors.HexColor("#475569"))
-    canvas.drawString(0.75*inch, 0.6*inch, left)
     tw = canvas.stringWidth(right, "Helvetica", 9)
-    canvas.drawString(w-0.75*inch-tw, 0.6*inch, right)
+    canvas.drawString(w - 0.8 * inch - tw, 0.7 * inch, right)
+
     canvas.restoreState()
 
 
-# ------------------------- main builder -------------------------
+# ------------------------------------- core render -------------------------------------
 
-def build_agreement_pdf_bytes(ag: Agreement, *, is_preview=False) -> bytes:
+def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> bytes:
     """
-    Render a full, legally credible Agreement and append Terms of Service + Privacy Policy.
-    Keeps contractor logo in header and MyHomeBro logo only in the disclaimer.
+    Render Agreement PDF to bytes (Oct-09 layout) + header with addresses & license.
+    Milestones table spans full printable width. No escrow line.
     """
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.units import inch
@@ -124,257 +388,322 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview=False) -> bytes:
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, PageBreak
     )
 
+    def _scaled_image(path: Optional[str], max_w: float, max_h: float) -> Optional[Image]:
+        try:
+            if not path or not os.path.exists(path):
+                return None
+            img = Image(path)
+            iw = getattr(img, "imageWidth", None) or getattr(img, "drawWidth", None) or 0
+            ih = getattr(img, "imageHeight", None) or getattr(img, "drawHeight", None) or 0
+            if not iw or not ih:
+                return None
+            scale = min(max_w / float(iw), max_h / float(ih), 1.0)
+            img.drawWidth = float(iw) * scale
+            img.drawHeight = float(ih) * scale
+            return img
+        except Exception:
+            return None
+
+    def _paragraphs_from(text: str) -> List[str]:
+        if not text:
+            return []
+        chunks = [p.strip() for p in text.replace("\r\n", "\n").split("\n\n")]
+        out: List[str] = []
+        for ch in chunks:
+            if len(ch) <= 1800:
+                out.append(ch)
+            else:
+                lines = ch.split("\n")
+                buf = []
+                cur = 0
+                for ln in lines:
+                    ln = ln.strip()
+                    if not ln:
+                        if buf:
+                            out.append(" ".join(buf)); buf = []; cur = 0
+                        continue
+                    ln_len = len(ln)
+                    if cur + ln_len > 1800 and buf:
+                        out.append(" ".join(buf)); buf = [ln]; cur = ln_len
+                    else:
+                        buf.append(ln); cur += ln_len + 1
+                if buf:
+                    out.append(" ".join(buf))
+        return out
+
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf,
         pagesize=letter,
-        leftMargin=0.75*inch,
-        rightMargin=0.75*inch,
-        topMargin=1.0*inch,
-        bottomMargin=0.75*inch,
+        leftMargin=0.75 * inch,
+        rightMargin=0.75 * inch,
+        topMargin=1.2 * inch,
+        bottomMargin=0.9 * inch,
         title=f"Agreement #{getattr(ag,'pk','')}",
     )
 
     ss = getSampleStyleSheet()
-    h1, h2, body = ss["Heading1"], ss["Heading2"], ss["BodyText"]
-    h1.fontSize, h2.fontSize = 18, 14
-    small = ParagraphStyle("Small", parent=body, fontSize=9, leading=12, textColor=colors.HexColor("#475569"))
-    mono  = ParagraphStyle("Mono", parent=body, fontName="Courier", fontSize=9, leading=12)
+    s_h1   = ss["Heading1"]; s_h1.fontSize = 22; s_h1.textColor = colors.HexColor("#111827")
+    s_h2   = ss["Heading2"]; s_h2.fontSize = 14
+    s_body = ss["BodyText"]
+    s_small= ParagraphStyle("Small", parent=s_body, fontSize=9.5, leading=13, textColor=colors.HexColor("#6B7280"))
+    s_muted= ParagraphStyle("Muted", parent=s_body, fontSize=10, textColor=colors.HexColor("#6B7280"))
+    s_just = ParagraphStyle("Just",  parent=s_body, fontSize=10.5, leading=14)
+    s_h3   = ParagraphStyle("h3",    parent=s_h2, fontSize=12.5)
+    s_lbl  = ParagraphStyle("lbl",   parent=s_body, fontSize=10.5, leading=14, textColor=colors.HexColor("#111827"))
+    s_val  = ParagraphStyle("val",   parent=s_body, fontSize=10.5, leading=14)
 
     story: list = []
 
-    # ---- Header: contractor logo only ----
-    logo = _contractor_logo_path(ag)
-    if logo:
-        try:
-            story.append(Image(logo, width=0.9*inch, height=0.9*inch))
-        except Exception:
-            pass
+    # ---- Header: Contractor logo ONLY ----
+    contractor_logo = _contractor_logo_path(ag)
+    img_logo = _scaled_image(contractor_logo, max_w=170, max_h=44)
+    if img_logo:
+        story.append(img_logo); story.append(Spacer(1, 6))
+
+    # === Title: Agreement #ID ===
+    story.append(Paragraph(f"Agreement #{ag.id}", s_h1))
     story.append(Spacer(1, 6))
 
-    # ---- 1. Project Info ----
-    story.append(Paragraph(f"Agreement #{ag.id}", h1))
-    title = _s(getattr(ag, "project_title", None) or getattr(ag, "title", None) or "Project")
-    story.append(Paragraph(title, body))
-    story.append(Spacer(1, 4))
-    contractor = getattr(ag, "contractor", None)
-    homeowner = getattr(ag, "homeowner", None)
-    contractor_line = " • ".join([_s(x) for x in [
-        getattr(contractor,"business_name",None) or getattr(contractor,"name",None),
-        getattr(contractor,"email",None), getattr(contractor,"phone",None)
-    ] if x])
-    homeowner_line = " • ".join([_s(x) for x in [
-        getattr(homeowner,"name",None) or getattr(homeowner,"full_name",None),
-        getattr(homeowner,"email",None)
-    ] if x])
-    story += [
-        Paragraph("<b>Contractor</b>: "+(contractor_line or "—"), body),
-        Paragraph("<b>Homeowner</b>: "+(homeowner_line or "—"), body),
-        Paragraph(f"<b>Type</b>: {_s(ag.project_type)} — {_s(ag.project_subtype)}", body),
-        Paragraph(f"<b>Schedule</b>: {_s(ag.start) or 'TBD'} → {_s(ag.end) or 'TBD'}", body),
-        Paragraph(f"<b>Status</b>: {_s(ag.status)}", small),
-        Spacer(1, 10)
-    ]
+    # === Project header (addresses, license) ===
+    story.append(Paragraph("Project", s_lbl))
 
-    # ---- 2. Scope / Description ----
-    desc = _s(getattr(ag,"description",None))
-    if desc:
-        story += [Paragraph("Scope / Description", h2),
-                  Paragraph(desc.replace("\n","<br/>"), body),
-                  Spacer(1,8)]
+    contractor  = getattr(ag, "contractor", None)
+    homeowner   = getattr(ag, "homeowner", None)
+    project     = getattr(ag, "project", None)
 
-    # ---- 3. Milestones & Payment Terms ----
-    from projects.models import Milestone
-    ms = Milestone.objects.filter(agreement=ag).order_by("order","id")
-    rows=[["#","Milestone","Due","Amount","Status"]]
-    total=0
-    for i,m in enumerate(ms,1):
-        amt=float(getattr(m,"amount",0) or 0)
-        total+=amt
-        rows.append([i,_s(m.title or m.description),_s(getattr(m,"due_date",None)) or "—",
-                     _currency(amt),
-                     "Complete" if getattr(m,"completed",False) else (_s(getattr(m,"status","")) or "Pending")])
-    rows.append(["","","Total",_currency(total),""])
-    t=Table(rows,colWidths=[0.4*inch,3.7*inch,1.2*inch,1.1*inch,1.2*inch])
-    t.setStyle(TableStyle([
-        ("FONT",(0,0),(-1,0),"Helvetica-Bold"),
-        ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#F8FAFC")),
-        ("GRID",(0,0),(-1,-1),0.25,colors.HexColor("#E5E7EB")),
-        ("ALIGN",(2,1),(3,-1),"CENTER")
-    ]))
-    story += [Paragraph("Milestones & Payment Terms", h2), t, Spacer(1,8),
-              Paragraph("Payments will be made from escrow upon homeowner approval or 5 days after completion of each milestone, unless disputed in writing.", small),
-              Spacer(1,10)]
+    c_name   = _s(getattr(contractor, "business_name", None) or getattr(contractor, "full_name", None))
+    c_email  = _s(getattr(contractor, "email", None))
+    c_phone  = _s(getattr(contractor, "phone", None))
+    c_addr   = _fmt_addr_from(contractor)
+    c_lic_no = _s(getattr(contractor, "license_number", None))
+    c_lic_ex = _s(getattr(contractor, "license_expiration", None))
 
-    # ---- 4. Warranty ----
-    story.append(Paragraph("Warranty", h2))
-    wtext = _s(getattr(ag,"warranty_text_snapshot",""))
-    story.append(Paragraph(
-        f"Contractor warrants workmanship for a period of 12 months following completion. "
-        f"This warranty covers defects in workmanship and excludes materials, misuse, negligence, or normal wear. "
-        f"Contractor will repair or replace defective work at their expense within a reasonable time after notice. "
-        f"{wtext}", body))
-    story.append(Spacer(1,10))
+    h_name  = _s(getattr(homeowner, "full_name", None) or getattr(homeowner, "name", None))
+    h_email = _s(getattr(homeowner, "email", None))
+    h_addr  = _fmt_addr_from(homeowner) or _composite_addr_from_snapshots(ag, "homeowner")
 
-    # ---- 5. Homeowner Responsibilities ----
-    story.append(Paragraph("Homeowner Responsibilities", h2))
-    story.append(Paragraph(
-        "Homeowner agrees to provide timely access to the property, maintain a safe working environment, "
-        "and promptly review and approve milestone completions. Homeowner shall not unreasonably delay approval "
-        "or payment once work is completed as described.", body))
-    story.append(Spacer(1,10))
+    p_addr  = _project_address(ag)
 
-    # ---- 6. Contractor Responsibilities & Insurance ----
-    story.append(Paragraph("Contractor Responsibilities & Insurance", h2))
-    story.append(Paragraph(
-        "Contractor represents they maintain all licenses, insurance, and permits required by law and will perform "
-        "all work in accordance with applicable building codes. Contractor assumes full responsibility for employee safety, "
-        "tools, and materials used in performance of this Agreement.", body))
-    story.append(Spacer(1,10))
+    proj_type    = _s(getattr(ag, "project_type", None) or getattr(project, "type", None))
+    proj_subtype = _s(getattr(ag, "project_subtype", None) or getattr(project, "subtype", None))
+    type_line = proj_type if proj_type else "—"
+    if proj_subtype:
+        type_line = f"{proj_type} — {proj_subtype}" if proj_type else proj_subtype
 
-    # ---- 7. Dispute Resolution & Termination ----
-    story.append(Paragraph("Dispute Resolution & Termination", h2))
-    story.append(Paragraph(
-        "In the event of a dispute, both parties agree to attempt resolution through direct communication and mediation "
-        "before arbitration or litigation. Either party may terminate this Agreement with written notice if the other fails "
-        "to perform a material obligation, provided all completed work and costs are settled fairly.", body))
-    story.append(Spacer(1,10))
+    # ====== SCHEDULE: from first and last milestone (friendly + TBD) ======
+    milestones_qs = Milestone.objects.filter(agreement=ag).order_by("order", "id")
+    first_start: Optional[str] = None
+    last_due: Optional[str] = None
+    if milestones_qs.exists():
+        first_m = milestones_qs.first()
+        last_m = milestones_qs.last()
+        if first_m:
+            first_start = _start_of(first_m)
+        if last_m:
+            last_due = _due_of(last_m)
 
-    # ---- 8. Governing Law & Miscellaneous ----
-    story.append(Paragraph("Governing Law & Miscellaneous", h2))
-    story.append(Paragraph(
-        "This Agreement shall be governed by the laws of the State of Texas, without regard to conflicts of law principles. "
-        "If any provision is held invalid, the remaining provisions shall remain in effect. "
-        "Electronic signatures are legally binding under the U.S. ESIGN Act.", body))
-    story.append(Spacer(1,10))
-
-    # ---- 9. Attachments & Addenda ----
-    story.append(Paragraph("Attachments & Addenda", h2))
-    atts=[]
-    try: atts=list(ag.attachments.all())
-    except Exception: atts=[]
-    if atts:
-        rows=[["Category","Title / File","Acknowledgement Required"]]
-        for f in atts:
-            rows.append([_s(getattr(f,"category","OTHER")).upper(),
-                         _s(getattr(f,"title",None) or getattr(f,"filename",None) or "Attachment"),
-                         "Yes" if getattr(f,"require_acknowledgement",False) else "No"])
-        from reportlab.platypus import Table as RLTable, TableStyle as RLTableStyle
-        att_tbl=RLTable(rows,colWidths=[1.2*inch,4.6*inch,1.3*inch])
-        att_tbl.setStyle(RLTableStyle([
-            ("FONT",(0,0),(-1,0),"Helvetica-Bold"),
-            ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#F8FAFC")),
-            ("GRID",(0,0),(-1,-1),0.25,colors.HexColor("#E5E7EB")),
-            ("ALIGN",(2,1),(2,-1),"CENTER")
-        ]))
-        story.append(att_tbl)
+    schedule_line = "—"
+    if first_start or last_due:
+        start_txt = _fmt_date_friendly(first_start) if first_start else "TBD"
+        end_txt = _fmt_date_friendly(last_due) if last_due else "TBD"
+        schedule_line = f"{start_txt} → {end_txt} (est.)"
     else:
-        story.append(Paragraph("No additional attachments.", body))
-    story.append(Spacer(1,12))
+        ag_start = _s(getattr(ag, "start", None))
+        ag_end   = _s(getattr(ag, "end", None))
+        if ag_start or ag_end:
+            start_txt = _fmt_date_friendly(ag_start) if ag_start else "TBD"
+            end_txt = _fmt_date_friendly(ag_end) if ag_end else "TBD"
+            schedule_line = f"{start_txt} → {end_txt} (est.)"
 
-    # ---- 10. Platform Disclaimer (MyHomeBro logo) ----
-    story.append(Paragraph("Platform Disclaimer", h2))
-    mhb_logo=_myhomebro_logo_path()
-    if mhb_logo:
-        try:
-            from reportlab.platypus import Image as RLImage
-            story.append(RLImage(mhb_logo,width=0.8*inch,height=0.8*inch))
-            story.append(Spacer(1,6))
-        except Exception: pass
-    disclaimer=(
-        "MyHomeBro is a neutral platform facilitating communication, e-signatures, and escrow-style payments between "
-        "independent contractors and homeowners. MyHomeBro is not a general contractor, agent, or employer of either party "
-        "and does not guarantee the quality, safety, or legality of services. All contracts are directly between Contractor "
-        "and Homeowner. MyHomeBro’s role is limited to payment facilitation and recordkeeping through its escrow system. "
-        "See the appended Terms of Service and Privacy Policy."
-    )
-    story.append(Paragraph(disclaimer, small))
-    story.append(Spacer(1,10))
+    status_line = (_s(getattr(ag, "status", "")) or "draft").lower()
 
-    # ---- 11. Signatures ----
-    from reportlab.platypus import Image as RLImage, Table as RLTable, TableStyle as RLTableStyle, Spacer as RLSpacer
+    def _dot_join(parts: list[str]) -> str:
+        return " • ".join([p for p in parts if p])
+
+    story.append(Paragraph(f"<b>Contractor:</b> {_dot_join([c_name, c_email, c_phone]) or '—'}", s_val))
+    if c_addr:
+        story.append(Paragraph(f"<b>Contractor Address:</b> {c_addr}", s_val))
+    if c_lic_no:
+        lic = f"License #{c_lic_no}"
+        if c_lic_ex:
+            lic += f" (exp {c_lic_ex})"
+        story.append(Paragraph(f"<b>{lic}</b>", s_small))
+
+    story.append(Paragraph(f"<b>Homeowner:</b> {_dot_join([h_name, h_email]) or '—'}",  s_val))
+    if h_addr:
+        story.append(Paragraph(f"<b>Homeowner Address:</b> {h_addr}", s_val))
+
+    if p_addr:
+        story.append(Paragraph(f"<b>Project Address:</b> {p_addr}", s_val))
+
+    story.append(Paragraph(f"<b>Type:</b> {type_line}", s_val))
+    story.append(Paragraph(f"<b>Schedule:</b> {schedule_line}", s_val))
+    story.append(Paragraph(f"<b>Status:</b> {status_line}", s_small))
+    story.append(Spacer(1, 12))
+
+    # ---- Milestones (SPAN FULL WIDTH) ----
+    ms = milestones_qs  # reuse the ordered queryset
+    story.append(Paragraph("Milestones", s_h2))
+    if ms.exists():
+        rows = [["#", "Milestone", "Due", "Amount", "Status"]]
+        total_amt = 0.0
+        for i, m in enumerate(ms, 1):
+            title = _s(m.title or m.description or "—")
+            amt = float(getattr(m, "amount", 0) or 0)
+            total_amt += amt
+            due_raw = _due_of(m)
+            due = _fmt_date_friendly(due_raw) if due_raw else "TBD"
+            status = "Complete" if getattr(m, "completed", False) else (_s(getattr(m, "status", "")) or "Pending")
+            rows.append([str(i), title, due, _currency(amt), status])
+        rows.append(["", "", "Total", _currency(total_amt), ""])
+
+        c1 = 0.55 * inch
+        c3 = 1.25 * inch
+        c4 = 1.20 * inch
+        c5 = 1.20 * inch
+        c2 = max(1.0 * inch, doc.width - (c1 + c3 + c4 + c5))
+        col_widths = [c1, c2, c3, c4, c5]
+
+        t = Table(rows, colWidths=col_widths)
+        t.setStyle(TableStyle([
+            ("FONT", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F3F4F6")),
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#E5E7EB")),
+            ("ALIGN", (0, 1), (0, -1), "CENTER"),
+            ("ALIGN", (2, 1), (2, -2), "CENTER"),
+            ("ALIGN", (3, 1), (3, -2), "RIGHT"),
+            ("ALIGN", (4, 1), (4, -2), "CENTER"),
+            ("FONT", (2, -1), (3, -1), "Helvetica-Bold"),
+            ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#FAFAFA")),
+        ]))
+        story += [t, Spacer(1, 12)]
+    else:
+        story += [Paragraph("No milestones defined.", s_muted), Spacer(1, 12)]
+
+    # ---- Warranty ----
+    story.append(Paragraph("Warranty", s_h2))
+    wtype = (_s(getattr(ag, "warranty_type", ""))).strip().lower()
+    wtext = _s(getattr(ag, "warranty_text_snapshot", ""))
+    if wtype in ("default", "standard", "std") or not wtext:
+        story.append(Paragraph(
+            "Default workmanship warranty applies. Contractor warrants that all work will be performed in a good and "
+            "workmanlike manner and in accordance with applicable codes. Defects arising from normal wear, misuse, "
+            "negligence, alteration, or acts of God are excluded.",
+            s_just
+        ))
+    else:
+        story.append(Paragraph(wtext.replace("\n", "<br/>"), s_just))
+    story.append(Spacer(1, 12))
+
+    # ====================== Legal Notices & Conditions ======================
     story.append(PageBreak())
-    story.append(Paragraph("Signatures", h2))
-    c_img=_signature_path(getattr(ag,"contractor_signature",None))
-    h_img=_signature_path(getattr(ag,"homeowner_signature",None))
-    c_block,h_block=[],[]
-    if c_img:
-        try: c_block+=[RLImage(c_img,width=1.8*inch,height=0.6*inch),RLSpacer(1,3)]
-        except Exception: pass
-    if h_img:
-        try: h_block+=[RLImage(h_img,width=1.8*inch,height=0.6*inch),RLSpacer(1,3)]
-        except Exception: pass
-    c_block+=[Paragraph(f"<b>Contractor:</b> {_s(getattr(ag,'contractor_signature_name',None))}",body),
-              Paragraph(f"<b>Signed:</b> {_s(getattr(ag,'contractor_signed_at',None))}",small)]
-    h_block+=[Paragraph(f"<b>Homeowner:</b> {_s(getattr(ag,'homeowner_signature_name',None))}",body),
-              Paragraph(f"<b>Signed:</b> {_s(getattr(ag,'homeowner_signed_at',None))}",small)]
-    sig_tbl=RLTable([[c_block,h_block]],colWidths=[3.5*inch,3.5*inch])
-    sig_tbl.setStyle(RLTableStyle([("VALIGN",(0,0),(-1,-1),"TOP")]))
+    story.append(Paragraph("Legal Notices & Conditions", s_h2))
+    story.append(Spacer(1, 6))
+
+    project_state = _detect_project_state(ag)
+    clauses = build_legal_notices(project_state)
+
+    for title, text in clauses:
+        story.append(Paragraph(title, s_h3))
+        for para in _paragraphs_from(text):
+            story.append(Paragraph(para.replace("\n", "<br/>"), s_just))
+        story.append(Spacer(1, 8))
+
+    # ---- Signatures page ----
+    from reportlab.platypus import Table as RLTable, TableStyle as RLTableStyle, Spacer as RLSpacer, PageBreak
+    story.append(PageBreak())
+    story.append(Paragraph("Signatures", s_h2))
+
+    c_img = _signature_path(getattr(ag, "contractor_signature", None))
+    h_img = _signature_path(getattr(ag, "homeowner_signature", None))
+
+    def _sig_block(name: str, img_path: Optional[str], signed_at, label: str) -> list:
+        block: list = []
+        simg = _scaled_image(img_path, max_w=200, max_h=80)
+        if simg:
+            block += [simg, RLSpacer(1, 3)]
+        block += [
+            Paragraph(f"<b>{label}:</b> {_s(name) or '—'}", s_body),
+            Paragraph(f"<b>Signed:</b> {_s(signed_at) or '—'}", s_small),
+        ]
+        return block
+
+    c_name = _s(getattr(ag, "contractor_signature_name", None))
+    h_name = _s(getattr(ag, "homeowner_signature_name", None))
+    c_at   = _s(getattr(ag, "contractor_signed_at", None))
+    h_at   = _s(getattr(ag, "homeowner_signed_at", None))
+
+    sig_tbl = RLTable(
+        [[_sig_block(c_name, c_img, c_at, "Contractor"),
+          _sig_block(h_name, h_img, h_at, "Homeowner")]],
+        colWidths=[3.5 * inch, 3.5 * inch]
+    )
+    sig_tbl.setStyle(RLTableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
     story.append(sig_tbl)
+
     if is_preview:
-        story.append(Spacer(1,6))
-        story.append(Paragraph("This is a preview. Final version will include any updated signatures.", small))
+        story.append(Spacer(1, 6))
+        story.append(Paragraph("This is a preview. Final version will include any updated signatures.", s_small))
 
-    # ---- 12. Terms of Service (append full text) ----
-    tos_text = _load_legal_text("terms_of_service.txt")
-    if tos_text:
-        story.append(PageBreak())
-        story.append(Paragraph("Terms of Service", h2))
-        for line in tos_text.splitlines():
-            story.append(Paragraph(line.replace("  ", "&nbsp;&nbsp;"), mono if line.strip().startswith("-") else body))
-        story.append(Spacer(1,8))
+    def _first(c, d):
+        if is_preview:
+            _watermark_preview(c)
+        _header_footer(c, d)
 
-    # ---- 13. Privacy Policy (append full text) ----
-    privacy_text = _load_legal_text("privacy_policy.txt")
-    if privacy_text:
-        story.append(PageBreak())
-        story.append(Paragraph("Privacy Policy", h2))
-        for line in privacy_text.splitlines():
-            story.append(Paragraph(line.replace("  ", "&nbsp;&nbsp;"), mono if line.strip().startswith("-") else body))
-        story.append(Spacer(1,8))
+    def _later(c, d):
+        if is_preview:
+            _watermark_preview(c)
+        _header_footer(c, d)
 
-    # build
-    def first(c,d):
-        if is_preview: _watermark_preview(c)
-        _header_footer(c,d)
-    def later(c,d):
-        if is_preview: _watermark_preview(c)
-        _header_footer(c,d)
-    doc.build(story,onFirstPage=first,onLaterPages=later)
+    doc.build(story, onFirstPage=_first, onLaterPages=_later)
     return buf.getvalue()
 
 
-def generate_full_agreement_pdf(ag: Agreement, *, merge_attachments=True) -> str:
-    """
-    Build + save versioned PDF, append attached PDFs if any.
-    """
-    version=int(getattr(ag,"pdf_version",0) or 0)+1
-    base=build_agreement_pdf_bytes(ag,is_preview=False)
-    tmp=os.path.join(getattr(settings,"MEDIA_ROOT",""),"agreements","tmp")
-    os.makedirs(tmp,exist_ok=True)
-    base_path=os.path.join(tmp,f"agreement_{ag.id}_v{version}.pdf")
-    with open(base_path,"wb") as f: f.write(base)
-    final_path=base_path
+def generate_full_agreement_pdf(ag: Agreement, *, merge_attachments: bool = True) -> str:
+    version = int(getattr(ag, "pdf_version", 0) or 0) + 1
+
+    base_bytes = build_agreement_pdf_bytes(ag, is_preview=False)
+
+    tmp_dir = os.path.join(getattr(settings, "MEDIA_ROOT", ""), "agreements", "tmp")
+    os.makedirs(tmp_dir, exist_ok=True)
+    base_path = os.path.join(tmp_dir, f"agreement_{ag.id}_v{version}.pdf")
+    with open(base_path, "wb") as f:
+        f.write(base_bytes)
+
+    final_path = base_path
+
     if merge_attachments and PdfMerger:
         try:
-            atts=list(ag.attachments.all())
-        except Exception: atts=[]
-        pdfs=[getattr(a.file,"path",None) for a in atts if getattr(a.file,"path",None) and a.file.name.lower().endswith(".pdf")]
-        if pdfs:
+            atts = list(ag.attachments.all())
+        except Exception:
+            atts = []
+        pdf_paths: List[str] = []
+        for att in atts:
+            p = getattr(att.file, "path", None)
+            if p and p.lower().endswith(".pdf") and os.path.exists(p):
+                pdf_paths.append(p)
+
+        if pdf_paths:
             try:
-                merger=PdfMerger()
+                merger = PdfMerger()
                 merger.append(base_path)
-                for p in pdfs: merger.append(p)
-                merged=base_path.replace(".pdf","_merged.pdf")
-                merger.write(merged); merger.close()
-                final_path=merged
+                for p in pdf_paths:
+                    merger.append(p)
+                merged_path = base_path.replace(".pdf", "_merged.pdf")
+                with open(merged_path, "wb") as out:
+                    merger.write(out)
+                merger.close()
+                final_path = merged_path
             except Exception:
-                pass
-    with open(final_path,"rb") as fh:
-        content=ContentFile(fh.read())
-        fname=f"agreement_{ag.id}_v{version}.pdf"
-        ag.pdf_file.save(fname,content,save=True)
-        if hasattr(ag,"pdf_version"):
-            ag.pdf_version=version
-            ag.save(update_fields=["pdf_version","pdf_file"])
+                final_path = base_path
+
+    with open(final_path, "rb") as fh:
+        content = ContentFile(fh.read())
+        fname = f"agreement_{ag.id}_v{version}.pdf"
+        ag.pdf_file.save(fname, content, save=True)
+        if hasattr(ag, "pdf_version"):
+            ag.pdf_version = version
+            ag.save(update_fields=["pdf_version", "pdf_file"])
+
     return ag.pdf_file.path

@@ -49,6 +49,9 @@ from .views.stripe_onboarding import (
 from .views.account import ChangePasswordView
 from .views.contractor_me import ContractorMeView
 
+# ✅ Add the preview (public signed link + contractor/staff tokenless) view
+from .views_pdf import preview_signed
+
 # Optional debug (guarded)
 try:
     from .views.debug import env_debug
@@ -112,6 +115,12 @@ urlpatterns = [
     # ── PDFs ────────────────────────────────────────────────────────────────
     path("agreements/<int:agreement_id>/pdf/", agreement_pdf, name="agreement-pdf"),
     path("invoices/<int:pk>/pdf/", InvoicePDFView.as_view(), name="invoice-pdf"),
+
+    # ✅ Public/Contractor preview (no login with token; or contractor/staff with ?agreement_id=)
+    # Examples:
+    #   GET /agreements/preview_signed/?t=<token>
+    #   GET /agreements/preview_signed/?agreement_id=5   (contractor/staff only)
+    path("agreements/preview_signed/", preview_signed, name="agreements-preview-signed"),
 
     # ── Public contractor profile ──────────────────────────────────────────
     path("contractors/<int:pk>/public/", ContractorPublicProfileView.as_view(), name="contractor-public-profile"),

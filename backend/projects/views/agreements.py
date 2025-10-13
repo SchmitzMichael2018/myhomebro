@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import base64
 import io
+import os
 from datetime import timedelta
-from typing import Set
+from typing import Set, Optional
 
 from django.conf import settings
 from django.core import signing
@@ -23,15 +24,72 @@ from rest_framework.exceptions import ValidationError, PermissionDenied
 from projects.models import Agreement, Milestone
 from projects.serializers.agreement import AgreementSerializer
 
-# Use the full PDF service for a complete preview/final (matches your generator)
+# ---------------------------------------------------------------------------------------
+# Resilient PDF loader:
+#  - Prefer projects.services.pdf (build_agreement_pdf_bytes + generate_full_agreement_pdf)
+#  - Fallback to projects.utils.pdf.generate_full_agreement_pdf(...) with adapters:
+#       build_agreement_pdf_bytes(agreement, is_preview=True) -> bytes
+#       generate_full_agreement_pdf(agreement) -> saves FileField + bumps pdf_version
+# ---------------------------------------------------------------------------------------
+build_agreement_pdf_bytes = None  # type: ignore
+generate_full_agreement_pdf = None  # type: ignore
+
+def _abs_media_path(rel_path: str) -> Optional[str]:
+    if not rel_path:
+        return None
+    mr = getattr(settings, "MEDIA_ROOT", "") or ""
+    return os.path.join(mr, rel_path)
+
+# Try preferred service first
 try:
-    from projects.services.pdf import (
-        build_agreement_pdf_bytes,   # preview (bytes only)
-        generate_full_agreement_pdf, # finalize (save/version)
+    from projects.services.pdf import (  # type: ignore
+        build_agreement_pdf_bytes as _svc_build_bytes,
+        generate_full_agreement_pdf as _svc_generate_full,
     )
+    build_agreement_pdf_bytes = _svc_build_bytes  # type: ignore
+    generate_full_agreement_pdf = _svc_generate_full  # type: ignore
 except Exception:
-    build_agreement_pdf_bytes = None   # type: ignore
-    generate_full_agreement_pdf = None # type: ignore
+    # Fallback: adapt the utils generator
+    try:
+        from projects.utils.pdf import (  # type: ignore
+            generate_full_agreement_pdf as _utils_generate_full,
+        )
+        from django.core.files.base import ContentFile as _CF  # local alias
+
+        def _fallback_build_bytes(ag: Agreement, is_preview: bool = True) -> bytes:
+            """
+            Call the utils generator in 'preview' mode, which returns a relative path,
+            then read the bytes and return them.
+            """
+            rel_path = _utils_generate_full(ag.id, preview=True)  # returns RELATIVE media path
+            abs_path = _abs_media_path(rel_path)
+            if not abs_path or not os.path.exists(abs_path):
+                # Defensive fallback: tiny valid PDF header if something goes wrong
+                return b"%PDF-1.4\n% Empty preview\n"
+            with open(abs_path, "rb") as fh:
+                return fh.read()
+
+        def _fallback_generate_full(ag: Agreement):
+            """
+            Use utils generator in final mode, then attach to FileField and bump version.
+            """
+            version = int(getattr(ag, "pdf_version", 0) or 0) + 1
+            rel_path = _utils_generate_full(ag.id, preview=False)  # RELATIVE
+            abs_path = _abs_media_path(rel_path)
+            if not abs_path or not os.path.exists(abs_path):
+                raise RuntimeError("PDF generator returned a path that does not exist.")
+            with open(abs_path, "rb") as fh:
+                content = _CF(fh.read(), name=os.path.basename(abs_path))
+                ag.pdf_file.save(content.name, content, save=True)
+            if hasattr(ag, "pdf_version"):
+                ag.pdf_version = version
+                ag.save(update_fields=["pdf_version", "pdf_file"])
+
+        build_agreement_pdf_bytes = _fallback_build_bytes  # type: ignore
+        generate_full_agreement_pdf = _fallback_generate_full  # type: ignore
+    except Exception:
+        # Leave both as None -> guarded by 503 checks.
+        pass
 
 
 # ---------------------------------------------------------------------
@@ -186,7 +244,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
                 raise PermissionDenied(f"Deletion blocked by retention policy ({RETENTION_YEARS} years).")
         return super().destroy(request, *args, **kwargs)
 
-    # ---------------- AUTH preview (XHR Blob) — still works for legacy callers ----------------
+    # ---------------- AUTH preview (XHR Blob) — legacy callers ----------------
 
     @action(detail=True, methods=["get"], url_path="preview_pdf")
     def preview_pdf(self, request, pk=None):
@@ -215,7 +273,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
         resp["Content-Disposition"] = f'inline; filename="{filename}"'
         return resp
 
-    # ---------------- NEW: signed-link preview for new-tab UX (no Authorization header needed) ----------------
+    # ---------------- NEW: signed-link preview for new-tab UX (no Authorization header) ----------------
 
     @action(detail=True, methods=["post"])
     def preview_link(self, request, pk=None):
@@ -225,7 +283,6 @@ class AgreementViewSet(viewsets.ModelViewSet):
         """
         signer = signing.TimestampSigner(salt=_PREVIEW_SALT)
         token = signer.sign_object({"agreement_id": int(pk), "uid": request.user.id})
-        # Absolute URL to the collection action below
         absolute = request.build_absolute_uri(f"/api/projects/agreements/preview_signed/?t={token}")
         return Response({"url": absolute}, status=status.HTTP_200_OK)
 
@@ -267,14 +324,6 @@ class AgreementViewSet(viewsets.ModelViewSet):
         resp = FileResponse(buf, content_type="application/pdf")
         resp["Content-Disposition"] = f'inline; filename="{filename}"'
         return resp
-
-    @action(detail=True, methods=["post"])
-    def mark_previewed(self, request, pk=None):
-        """
-        Optional hook your UI calls after opening the preview.
-        Currently a no-op; returns 204 so you can flip 'hasPreviewed' client-side.
-        """
-        return Response(status=status.HTTP_204_NO_CONTENT)
 
     # ---------------- Finalize (save/version) ----------------
 

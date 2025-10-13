@@ -19,7 +19,7 @@ if str(REPO_ROOT) not in sys.path:
 
 # --- Pin DJANGO_SETTINGS_MODULE ---------------------------------------------------
 # IMPORTANT: set this to your *actual* settings module (e.g., "backend.settings")
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "backend.settings")
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")
 
 # --- Optional: force consistent timezone/locale ----------------------------------
 # os.environ.setdefault("TZ", "UTC")

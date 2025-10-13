@@ -1,7 +1,8 @@
-// frontend/src/pages/AgreementList.jsx
-// v2025-10-04-milestones+percent-complete
+// /home/myhomebro/backend/frontend/src/pages/AgreementList.jsx
+// v2025-10-11-hydrate-homeowner: fills homeowner column even if agreements API
+// does not return homeowner_name or nested homeowner object.
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../api";
 import toast from "react-hot-toast";
 import {
@@ -15,7 +16,7 @@ import {
   Star,
 } from "lucide-react";
 
-console.log("AgreementList.jsx v2025-10-04-milestones+percent-complete");
+console.log("AgreementList.jsx v2025-10-11-hydrate-homeowner");
 
 const fmtMoney = (n) => {
   if (n === null || n === undefined || n === "") return "—";
@@ -35,6 +36,22 @@ const fmtDate = (s) => {
   }
 };
 
+// Pull reasonable label from a homeowner/customer object
+const labelFromHomeownerObj = (h) => {
+  if (!h || typeof h !== "object") return "";
+  const first = h.first_name || h.firstName || "";
+  const last  = h.last_name || h.lastName || "";
+  const fullFromParts = [first, last].filter(Boolean).join(" ").trim();
+  return (
+    h.full_name ||
+    h.name ||
+    fullFromParts ||
+    h.email ||
+    h.username ||
+    ""
+  );
+};
+
 export default function AgreementList() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -47,12 +64,18 @@ export default function AgreementList() {
   const [pageSize, setPageSize] = useState(10);
   const [busyRow, setBusyRow] = useState(null);
 
-  // --- NEW: milestone stats cache { [agreementId]: { total, complete, percent } }
+  // homeowner dictionary: id -> { name, email }
+  const [hmIndex, setHmIndex] = useState({});
+
+  // milestone stats cache { [agreementId]: { total, complete, percent } }
   const [msStats, setMsStats] = useState({});
 
-  const load = async () => {
+  // Load agreements + a homeowners index (so we can display a name even if API omits it)
+  const load = useCallback(async () => {
     try {
       setLoading(true);
+
+      // 1) Agreements
       const { data } = await api.get("/projects/agreements/", {
         params: { page_size: 250, _ts: Date.now() },
         headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
@@ -64,8 +87,36 @@ export default function AgreementList() {
         : [];
       setRows(list);
 
-      // Fetch milestone stats in the background for the first N visible rows
-      // (We’ll refetch lazily as filters/paging change.)
+      // 2) Build homeowner index (try two endpoints; tolerate either)
+      const index = {};
+      const mergeIntoIndex = (arr) => {
+        if (!Array.isArray(arr)) return;
+        for (const h of arr) {
+          const id = String(h.id ?? h.pk ?? "");
+          if (!id) continue;
+          const name = labelFromHomeownerObj(h);
+          const email = h.email || h.username || "";
+          index[id] = {
+            name: name || email || "",
+            email: email || "",
+            raw: h,
+          };
+        }
+      };
+
+      try {
+        const { data: h1 } = await api.get("/projects/homeowners/", { params: { page_size: 1000 } });
+        mergeIntoIndex(h1?.results || h1);
+      } catch (_) { /* ignore */ }
+
+      try {
+        const { data: h2 } = await api.get("/projects/customers/", { params: { page_size: 1000 } });
+        mergeIntoIndex(h2?.results || h2);
+      } catch (_) { /* ignore */ }
+
+      setHmIndex(index);
+
+      // Prefetch milestone stats for the first page
       fetchStatsFor(list.slice(0, pageSize));
     } catch (e) {
       console.error(e);
@@ -73,12 +124,11 @@ export default function AgreementList() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [pageSize]);
 
-  // --- NEW: Robust “is milestone complete?” detector
+  // Helper: is milestone complete
   const isMsComplete = (m) => {
-    const sv = (x) =>
-      String(x || "").trim().toLowerCase();
+    const sv = (x) => String(x || "").trim().toLowerCase();
     const yes = (v) => v === true || v === "true" || v === 1 || v === "1";
     const status = sv(m.status);
     return (
@@ -92,12 +142,12 @@ export default function AgreementList() {
     );
   };
 
-  // --- NEW: fetch stats for a subset (with tiny concurrency)
+  // Prefetch milestone stats
   const fetchStatsFor = async (subset) => {
     const ids = subset.map((r) => r.id).filter((id) => !msStats[id]);
     if (ids.length === 0) return;
 
-    const limit = 5; // small concurrency to be gentle on the API
+    const limit = 5; // small concurrency
     let idx = 0;
 
     const runOne = async () => {
@@ -109,13 +159,12 @@ export default function AgreementList() {
           params: { _ts: Date.now() },
           headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
         });
-        const list = Array.isArray(data) ? data : [];
+        const list = Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
         const total = list.length;
         const complete = list.filter(isMsComplete).length;
         const percent = total > 0 ? Math.round((complete / total) * 100) : 0;
         setMsStats((prev) => ({ ...prev, [agreementId]: { total, complete, percent } }));
       } catch (e) {
-        // Don’t spam errors; just leave stats blank
         console.warn("Milestone stats fetch failed for agreement", agreementId, e?.response?.status || e);
       } finally {
         await runOne();
@@ -136,15 +185,48 @@ export default function AgreementList() {
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [load]);
 
-  // When filters change, make sure we fetch stats for newly-visible rows
   useEffect(() => {
     fetchStatsFor(rows.slice(0, pageSize));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, pageSize]);
 
+  // Build homeowner display value with robust fallbacks
+  const homeownerDisplay = useCallback((r) => {
+    // 1) If API already gave us a flat string/email
+    const flat =
+      r.homeowner_name ||
+      r.homeowner_email ||
+      "";
+
+    if (flat) return flat;
+
+    // 2) If nested object exists
+    if (r.homeowner && typeof r.homeowner === "object") {
+      const nm = labelFromHomeownerObj(r.homeowner);
+      const em = r.homeowner.email || "";
+      return nm || em || "—";
+    }
+
+    // 3) If only an ID reference exists, hydrate from hmIndex
+    const idCandidate =
+      r.homeowner_id ??
+      r.homeowner ??
+      null;
+
+    const hid = (idCandidate !== null && idCandidate !== undefined)
+      ? String(idCandidate)
+      : "";
+
+    if (hid && hmIndex[hid]) {
+      return hmIndex[hid].name || hmIndex[hid].email || "—";
+    }
+
+    return "—";
+  }, [hmIndex]);
+
+  // Filter + search (now also searches hydrated homeowner labels)
   const filtered = useMemo(() => {
     const search = q.trim().toLowerCase();
     return rows
@@ -155,22 +237,30 @@ export default function AgreementList() {
       )
       .filter((r) => {
         if (!search) return true;
+
+        const homeownerLabel = homeownerDisplay(r);
+
         const hay = [
           r.id,
           r.status,
           r.project_title,
           r.title,
-          r.homeowner_name,
-          r.homeowner_email,
           r.project_type,
           r.project_subtype,
+          r.homeowner_name,
+          r.homeowner_email,
+          homeownerLabel,
+          r?.homeowner?.full_name,
+          r?.homeowner?.name,
+          r?.homeowner?.email,
         ]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
+
         return hay.includes(search);
       });
-  }, [rows, q, statusFilter]);
+  }, [rows, q, statusFilter, homeownerDisplay]);
 
   const page = filtered.slice(0, pageSize);
 
@@ -273,7 +363,7 @@ export default function AgreementList() {
     }
   };
 
-  const goEdit = (id) => (window.location.href = `/agreements/${id}/edit`);
+  const goEdit = (id) => (window.location.href = `/agreements/${id}/wizard?step=1`);
 
   const deleteDraft = async (row) => {
     if (String(row.status).toLowerCase() !== "draft") {
@@ -323,17 +413,9 @@ export default function AgreementList() {
     if (/^agreement\s*#\d+$/i.test(raw)) return "—";
     return raw || "—";
   };
-
-  const renderHomeowner = (r) => {
-    const nm = (r.homeowner_name || "").trim();
-    const em = (r.homeowner_email || "").trim();
-    return nm || em || "—";
-  };
-
   const renderType = (r) => (r.project_type || "—");
   const renderSubtype = (r) => (r.project_subtype || "—");
 
-  // --- NEW: tiny progress bar
   const Progress = ({ percent }) => (
     <div className="w-24">
       <div className="h-2 bg-gray-200 rounded">
@@ -433,10 +515,8 @@ export default function AgreementList() {
               <th className="p-2 text-left border">Homeowner</th>
               <th className="p-2 text-left border">Start</th>
               <th className="p-2 text-left border">End</th>
-              {/* NEW COLUMNS */}
               <th className="p-2 text-right border">Milestones</th>
               <th className="p-2 text-left border">% Complete</th>
-
               <th className="p-2 text-left border">Signatures</th>
               <th className="p-2 text-right border">Total</th>
               <th className="p-2 text-right border">Invoices</th>
@@ -461,6 +541,7 @@ export default function AgreementList() {
                 const isChecked = selected.has(r.id);
                 const isPrimary = primaryId === r.id;
                 const stat = msStats[r.id] || { total: 0, complete: 0, percent: 0 };
+                const homeowner = homeownerDisplay(r);
 
                 return (
                   <tr key={r.id} className="odd:bg-white even:bg-gray-50">
@@ -515,20 +596,26 @@ export default function AgreementList() {
                       {renderSubtype(r)}
                     </td>
 
-                    <td className="p-2 border max-w-[320px] truncate" title={renderHomeowner(r)}>
-                      {renderHomeowner(r)}
+                    <td className="p-2 border max-w-[320px] truncate" title={homeowner}>
+                      {homeowner}
                     </td>
 
                     <td className="p-2 border">{fmtDate(r.start)}</td>
                     <td className="p-2 border">{fmtDate(r.end)}</td>
 
-                    {/* NEW: milestone stats */}
                     <td className="p-2 border text-right">
                       {stat.total ? `${stat.complete} / ${stat.total}` : "—"}
                     </td>
                     <td className="p-2 border">
                       <div className="flex items-center gap-2">
-                        <Progress percent={stat.percent} />
+                        <div className="w-24">
+                          <div className="h-2 bg-gray-200 rounded">
+                            <div
+                              className="h-2 bg-blue-600 rounded"
+                              style={{ width: `${Math.max(0, Math.min(100, stat.percent))}%` }}
+                            />
+                          </div>
+                        </div>
                         <span className="w-10 text-xs">{stat.percent}%</span>
                       </div>
                     </td>
@@ -553,7 +640,7 @@ export default function AgreementList() {
                     <td className="p-2 border">
                       <div className="flex flex-wrap items-center gap-2">
                         <button
-                          onClick={() => goEdit(r.id)}
+                          onClick={() => (window.location.href = `/agreements/${r.id}/wizard?step=1`)}
                           className="inline-flex items-center gap-1 px-2 py-1 rounded-md border hover:bg-gray-50"
                           title="Continue Editing"
                         >

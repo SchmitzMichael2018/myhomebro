@@ -1,5 +1,5 @@
 // frontend/src/components/AgreementWizard.jsx
-// v2025-10-09 — Signed preview link (no 401) + totals fix + polished step flow.
+// v2025-10-12-fix-openingPreview — pass openingPreview to Step4Finalize and use it safely
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -22,8 +22,16 @@ function useQuery() {
   return useMemo(() => new URLSearchParams(search), [search]);
 }
 
+// Normalize to YYYY-MM-DD (accepts ISO strings or timestamps)
 function toDateOnly(v) {
   if (!v) return "";
+  if (typeof v === "number") {
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return "";
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${d.getFullYear()}-${mm}-${dd}`;
+  }
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return "";
@@ -97,7 +105,7 @@ const DEFAULT_WARRANTY = `Standard workmanship warranty: Contractor warrants all
 /* ---------- main ---------- */
 
 export default function AgreementWizard() {
-  console.log("%cAgreementWizard v2025-10-09", "color:#fff;background:#0ea5e9;padding:2px 6px;border-radius:4px");
+  console.log("%cAgreementWizard v2025-10-12-fix-openingPreview", "color:#fff;background:#0ea5e9;padding:2px 6px;border-radius:4px");
 
   const navigate = useNavigate();
   const { id } = useParams();
@@ -141,6 +149,9 @@ export default function AgreementWizard() {
   const [ackEsign, setAckEsign] = useState(false);
   const [typedName, setTypedName] = useState("");
   const [signing, setSigning] = useState(false);
+
+  // FIX: openingPreview state lives here and is passed to Step4Finalize
+  const [openingPreview, setOpeningPreview] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -239,7 +250,11 @@ export default function AgreementWizard() {
       await load();
     } catch (e) {
       const resp = e?.response;
-      const body = (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) || resp?.statusText || e?.message || "Save failed";
+      const body =
+        (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) ||
+        resp?.statusText ||
+        e?.message ||
+        "Save failed";
       toast.error(`Save failed: ${body}`);
     }
   };
@@ -292,7 +307,11 @@ export default function AgreementWizard() {
       toast.success("Marked complete.");
     } catch (e) {
       const resp = e?.response;
-      const body = (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) || resp?.statusText || e?.message || "Save failed";
+      const body =
+        (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) ||
+        resp?.statusText ||
+        e?.message ||
+        "Save failed";
       toast.error(`Could not mark complete: ${body}`);
     }
   };
@@ -316,7 +335,11 @@ export default function AgreementWizard() {
       toast.success("Warranty saved.");
     } catch (e) {
       const resp = e?.response;
-      const body = (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) || resp?.statusText || e?.message || "Save failed";
+      const body =
+        (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) ||
+        resp?.statusText ||
+        e?.message ||
+        "Save failed";
       setWarrantyError(body);
       toast.error(`Warranty save failed: ${body}`);
     } finally {
@@ -391,7 +414,11 @@ export default function AgreementWizard() {
       const found = list.find((a) => (a.title && a.title === title) || (a.filename && a.filename === picked.name));
       if (!found) {
         const resp = lastErr?.response;
-        const body = (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) || resp?.statusText || lastErr?.message || "Upload failed";
+        const body =
+          (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) ||
+          resp?.statusText ||
+          lastErr?.message ||
+          "Upload failed";
         setAttachError(body);
         toast.error(`Upload failed: ${body}`);
         return;
@@ -415,7 +442,11 @@ export default function AgreementWizard() {
       try { await api.delete(`/projects/agreements/${id}/attachments/${attId}/`); }
       catch (e2) {
         const resp = e2?.response;
-        const body = (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) || resp?.statusText || e2?.message || "Delete failed";
+        const body =
+          (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) ||
+          resp?.statusText ||
+          e2?.message ||
+          "Delete failed";
         setAttachError(body);
         toast.error(`Delete failed: ${body}`);
         return;
@@ -427,28 +458,34 @@ export default function AgreementWizard() {
 
   /* ---------- Step 4 (Preview/Sign) ---------- */
 
+  // Safer Preview: try signed link (no auth header). If that fails, fall back to tokenless contractor/staff path.
   const previewPdf = async () => {
     try {
-      // Get a short-lived signed URL that can be opened in a new tab (no Authorization header).
+      setOpeningPreview(true);
       const { data } = await api.post(`/projects/agreements/${id}/preview_link/`);
       const url = data?.url;
-      if (!url) {
-        toast.error("Preview link unavailable.");
+      if (url) {
+        window.open(url, "_blank", "noopener,noreferrer");
+        setHasPreviewed(true);
+        try { await api.post(`/projects/agreements/${id}/mark_previewed/`); } catch {}
         return;
       }
-      window.open(url, "_blank", "noopener");
+      // Fallback
+      window.open(`/api/projects/agreements/preview_signed/?agreement_id=${id}`, "_blank", "noopener,noreferrer");
       setHasPreviewed(true);
       try { await api.post(`/projects/agreements/${id}/mark_previewed/`); } catch {}
     } catch (err) {
       console.error(err);
       toast.error("Could not open preview.");
+    } finally {
+      setOpeningPreview(false);
     }
   };
 
   const goPublic = () => window.open(`/agreements/public/${id}/`, "_blank");
 
   const signContractor = async () => {
-    if (!hasPreviewed || !ackReviewed || !ackTos || !ackEsign || typedName.trim().length < 2) return;
+    if (!(hasPreviewed && ackReviewed && ackTos && ackEsign && typedName.trim().length >= 2)) return;
     setSigning(true);
     try {
       await api.post(`/projects/agreements/${id}/contractor_sign/`, { typed_name: typedName.trim() });
@@ -456,8 +493,11 @@ export default function AgreementWizard() {
       window.location.reload();
     } catch (e) {
       const resp = e?.response;
-      const msg = (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) ||
-                  resp?.statusText || e?.message || "Sign failed";
+      const msg =
+        (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) ||
+        resp?.statusText ||
+        e?.message ||
+        "Sign failed";
       toast.error(`Sign failed: ${msg}`);
     } finally {
       setSigning(false);
@@ -483,7 +523,16 @@ export default function AgreementWizard() {
         ))}
         <div className="flex-1" />
         <div className="flex gap-2">
-          <button onClick={previewPdf} className="rounded bg-indigo-50 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-100">Preview PDF</button>
+          <button
+            onClick={previewPdf}
+            disabled={openingPreview}
+            className={`rounded px-3 py-2 text-sm ${
+              openingPreview ? "bg-indigo-100 text-indigo-400 cursor-wait" : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+            }`}
+            title="Open PDF preview"
+          >
+            {openingPreview ? "Opening…" : "Preview PDF"}
+          </button>
           <button onClick={goPublic} className="rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">View Public Link</button>
         </div>
       </div>
@@ -572,6 +621,8 @@ export default function AgreementWizard() {
           customWarranty={customWarranty}
           useDefaultWarranty={useDefaultWarranty}
           goBack={() => goStep(3)}
+          /* FIX: pass openingPreview down so the child can disable its buttons correctly */
+          openingPreview={openingPreview}
         />
       )}
 
@@ -753,7 +804,7 @@ function Step2Milestones({
                   <td className="px-3 py-2">{start && end ? daySpan(start, end) : "—"}</td>
                   <td className="px-3 py-2">${Number(m.amount || 0).toFixed(2)}</td>
                   <td className="px-3 py-2 flex flex-wrap gap-2">
-                    {isDraft && (
+                    {(agreement?.status || "").toLowerCase() === "draft" && (
                       <>
                         <button onClick={() => onEdit(m)} className="rounded bg-gray-100 px-2 py-1 text-gray-700 hover:bg-gray-200">Edit</button>
                         <button onClick={() => onComplete(m.id)} className="rounded bg-indigo-50 px-2 py-1 text-indigo-700 hover:bg-indigo-100">Complete</button>
@@ -926,6 +977,8 @@ function Step4Finalize({
   canSign, signing, signContractor,
   attachments, defaultWarrantyText, customWarranty, useDefaultWarranty,
   goBack,
+  // FIX: receive openingPreview from parent to drive disabled state
+  openingPreview = false,
 }) {
   const warrantyText = useDefaultWarranty
     ? defaultWarrantyText
@@ -961,20 +1014,17 @@ function Step4Finalize({
               </tr>
             </thead>
             <tbody>
-              {milestones.map((m, i) => {
-                const due = toDateOnly(m.completion_date || m.end_date || m.due_date || m.start_date || m.start);
-                return (
-                  <tr key={m.id} className="border-t">
-                    <td className="px-3 py-2">{i + 1}</td>
-                    <td className="px-3 py-2">{m.title}</td>
-                    <td className="px-3 py-2">{due || "—"}</td>
-                    <td className="px-3 py-2">${Number(m.amount || 0).toFixed(2)}</td>
-                    <td className="px-3 py-2">{m.status || (m.completed ? "Completed" : "Pending")}</td>
-                  </tr>
-                );
-              })}
-              {!milestones.length && (
-                <tr><td className="px-3 py-6 text-center text-gray-500" colSpan={5}>No milestones.</td></tr>
+              {(milestones || []).map((m, i) => (
+                <tr key={m.id || i} className="border-t">
+                  <td className="px-3 py-2">{i + 1}</td>
+                  <td className="px-3 py-2">{m.title || m.description || "—"}</td>
+                  <td className="px-3 py-2">{toDateOnly(m.completion_date || m.end_date || m.end || m.due_date || m.scheduled_date || m.start_date || m.start) || "—"}</td>
+                  <td className="px-3 py-2">${Number(m.amount || 0).toFixed(2)}</td>
+                  <td className="px-3 py-2">{m.status || (m.completed ? "Completed" : "Pending")}</td>
+                </tr>
+              ))}
+              {!milestones?.length && (
+                <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-500">No milestones.</td></tr>
               )}
             </tbody>
           </table>
@@ -983,7 +1033,7 @@ function Step4Finalize({
 
       <section>
         <div className="text-sm font-semibold mb-2">Attachments &amp; Addenda (Visible)</div>
-        {attachments.filter(a => a.visible || a.is_visible || a.public || a.is_public).length ? (
+        {(attachments || []).filter(a => a.visible || a.is_visible || a.public || a.is_public).length ? (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
@@ -994,7 +1044,7 @@ function Step4Finalize({
                 </tr>
               </thead>
               <tbody>
-                {attachments
+                {(attachments || [])
                   .filter(a => a.visible || a.is_visible || a.public || a.is_public)
                   .map((a) => {
                     const url = a.file || a.url || a.file_url || a.download_url || a.download || a.absolute_url || null;
@@ -1017,11 +1067,11 @@ function Step4Finalize({
       <section className="space-y-2 text-sm">
         <div className="text-sm font-semibold">Agreement Review</div>
         <label className="flex items-start gap-2">
-          <input type="checkbox" checked={ackReviewed} onChange={(e) => setAckReviewed(e.target.checked)} />
+          <input type="checkbox" checked={!!ackReviewed} onChange={(e) => setAckReviewed(e.target.checked)} />
           <span>I have reviewed the entire agreement and all attached exhibits/attachments.</span>
         </label>
         <label className="flex items-start gap-2">
-          <input type="checkbox" checked={ackTos} onChange={(e) => setAckTos(e.target.checked)} />
+          <input type="checkbox" checked={!!ackTos} onChange={(e) => setAckTos(e.target.checked)} />
           <span>
             I agree to the&nbsp;
             <a className="text-blue-600 hover:underline" href="/static/legal/terms_of_service.txt" target="_blank" rel="noreferrer">Terms of Service</a>
@@ -1030,9 +1080,10 @@ function Step4Finalize({
           </span>
         </label>
         <label className="flex items-start gap-2">
-          <input type="checkbox" checked={ackEsign} onChange={(e) => setAckEsign(e.target.checked)} />
+          <input type="checkbox" checked={!!ackEsign} onChange={(e) => setAckEsign(e.target.checked)} />
           <span>
-            I consent to conduct business electronically and use electronic signatures under the U.S. E-SIGN Act. I understand my electronic signature is legally binding, and I can request a paper copy.
+            I consent to conduct business electronically and use electronic signatures under the U.S. E-SIGN Act.
+            I understand my electronic signature is legally binding, and I can request a paper copy.
           </span>
         </label>
         <div className="rounded border bg-yellow-50 text-yellow-800 px-3 py-2">
@@ -1046,6 +1097,7 @@ function Step4Finalize({
           {/* Contractor */}
           <div className="rounded border p-3">
             <div className="text-sm font-medium mb-2">Contractor Signature</div>
+
             {agreement?.signed_by_contractor ? (
               <div className="text-sm text-green-700">
                 ✓ Already signed by contractor {agreement?.contractor_signature_name ? `(${agreement.contractor_signature_name})` : ""}.
@@ -1060,8 +1112,16 @@ function Step4Finalize({
                   onChange={(e) => setTypedName(e.target.value)}
                 />
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button type="button" onClick={previewPdf} className="rounded bg-indigo-50 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-100">
-                    Preview PDF
+                  <button
+                    type="button"
+                    onClick={previewPdf}
+                    disabled={openingPreview}
+                    className={`rounded px-3 py-2 text-sm ${
+                      openingPreview ? "bg-indigo-100 text-indigo-400 cursor-wait" : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+                    }`}
+                    title="Open PDF preview in a new tab"
+                  >
+                    {openingPreview ? "Opening…" : "Preview PDF"}
                   </button>
                   <button
                     type="button"
@@ -1087,7 +1147,12 @@ function Step4Finalize({
               <>
                 <div className="text-sm text-gray-600">The homeowner signs via their public link.</div>
                 <div className="mt-3">
-                  <button type="button" onClick={goPublic} className="rounded bg-gray-800 px-3 py-2 text-sm text-white hover:bg-black">
+                  <button
+                    type="button"
+                    onClick={goPublic}
+                    className="rounded bg-gray-800 px-3 py-2 text-sm text-white hover:bg-black"
+                    title="Open the public signing link"
+                  >
                     Open Public Signing Link
                   </button>
                 </div>
@@ -1097,10 +1162,35 @@ function Step4Finalize({
         </div>
       </section>
 
+      {/* Footer actions */}
       <div className="flex gap-2">
-        <button type="button" onClick={goBack} className="rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Back</button>
-        <button type="button" onClick={previewPdf} className="rounded bg-indigo-50 px-3 py-2 text-sm text-indigo-700 hover:bg-indigo-100">Preview PDF</button>
-        <button type="button" onClick={goPublic} className="rounded bg-gray-800 px-3 py-2 text-sm text-white hover:bg-black">View Public Link</button>
+        <button
+          type="button"
+          onClick={goBack}
+          className="rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200"
+          title="Back to previous step"
+        >
+          Back
+        </button>
+        <button
+          type="button"
+          onClick={previewPdf}
+          disabled={openingPreview}
+          className={`rounded px-3 py-2 text-sm ${
+            openingPreview ? "bg-indigo-100 text-indigo-400 cursor-wait" : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+          }`}
+          title="Open PDF preview in a new tab"
+        >
+          {openingPreview ? "Opening…" : "Preview PDF"}
+        </button>
+        <button
+          type="button"
+          onClick={goPublic}
+          className="rounded bg-gray-800 px-3 py-2 text-sm text-white hover:bg-black"
+          title="Open the public signing link"
+        >
+          View Public Link
+        </button>
       </div>
     </div>
   );
