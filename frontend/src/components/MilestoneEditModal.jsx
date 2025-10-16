@@ -1,10 +1,16 @@
 // src/components/MilestoneEditModal.jsx
-// v2025-10-06-modal-r8 — overlap-aware save (confirm → retry with allow_overlap), diff-only PATCH,
-// verified upload, Recent Attachments (Download + Delete), calendar icons.
+// v2025-10-15 modal-r10 — adds Info Bar (Homeowner/Address/Agreement links) + keeps r9 features
+// - Preserves: overlap-aware save (confirm → allow_overlap), diff-only PATCH,
+//   verified upload, Recent Attachments (Download + Delete), calendar icons,
+//   strict YYYY-MM-DD normalization on load and onChange.
+// - New: compact header info bar with Homeowner, Address (if present), Agreement Total,
+//   "View Agreement" + "Preview PDF" buttons when available via Calendar meta.
 
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import toast from "react-hot-toast";
 import api from "../api";
+
+/* ---------------- helpers ---------------- */
 
 const dollar = (v) => {
   if (v === "" || v === null || v === undefined) return "";
@@ -12,11 +18,31 @@ const dollar = (v) => {
   return Number.isNaN(n) ? v : n.toFixed(2);
 };
 
+const fmtMoney = (n) => {
+  if (n === null || n === undefined || n === "") return "";
+  const num = typeof n === "number" ? n : parseFloat(n);
+  if (Number.isNaN(num)) return "";
+  return num.toLocaleString(undefined, { style: "currency", currency: "USD" });
+};
+
 const isLockedAgreementState = (s) => {
   if (!s) return false;
   const up = String(s).trim().toUpperCase();
   return ["SIGNED", "EXECUTED", "ACTIVE", "APPROVED", "ARCHIVED"].includes(up);
 };
+
+// Normalize various input forms (Date/string) → "YYYY-MM-DD" or ""
+function toDateOnly(v) {
+  if (!v) return "";
+  const str = String(v);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  const d = new Date(str);
+  if (Number.isNaN(d.getTime())) return "";
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
 
 function CalendarBtn({ onClick, title = "Pick a date", disabled }) {
   return (
@@ -56,6 +82,8 @@ const ALLOWED_STATUS = new Set([
   "INCOMPLETE", "COMPLETE", "PENDING", "APPROVED", "DISPUTED", "SCHEDULED",
 ]);
 
+/* ---------------- component ---------------- */
+
 export default function MilestoneEditModal({
   open,
   onClose,
@@ -94,7 +122,7 @@ export default function MilestoneEditModal({
   };
 
   useEffect(() => {
-    if (open) console.log("MilestoneEditModal build:", "v2025-10-06-modal-r8");
+    if (open) console.log("MilestoneEditModal build:", "v2025-10-15-modal-r10");
   }, [open]);
 
   const readOnly = useMemo(() => {
@@ -119,12 +147,19 @@ export default function MilestoneEditModal({
   // keep an original snapshot for diffing
   const [original, setOriginal] = useState(null);
 
+  /* ---------- load / reset form ---------- */
   useEffect(() => {
     if (open && milestone) {
       const snapshot = {
         title: milestone.title || "",
-        start_date: milestone.start_date || "",
-        end_date: milestone.end_date || milestone.completion_date || "",
+        start_date: toDateOnly(milestone.start_date || milestone.start || ""),
+        end_date: toDateOnly(
+          milestone.end_date ||
+          milestone.completion_date ||
+          milestone.end ||
+          milestone.due_date ||
+          ""
+        ),
         amount: milestone.amount == null ? "" : String(milestone.amount),
         description: milestone.description || "",
         status: milestone.status || "Incomplete",
@@ -153,9 +188,17 @@ export default function MilestoneEditModal({
     }
   };
 
-  const onChange = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
+  const onChange = (e) => {
+    const { name, value } = e.target;
+    // Hard-normalize date fields to YYYY-MM-DD on change
+    if (name === "start_date" || name === "end_date") {
+      setForm((f) => ({ ...f, [name]: toDateOnly(value) }));
+    } else {
+      setForm((f) => ({ ...f, [name]: value }));
+    }
+  };
 
-  // diff-only payload builder with normalization
+  /* ---------- diff-only payload with normalization ---------- */
   const buildDiffPayload = (allowOverlap = false) => {
     const payload = {};
     const addIfChanged = (key, transform = (x) => x) => {
@@ -172,15 +215,15 @@ export default function MilestoneEditModal({
     // amount -> number; skip if blank
     addIfChanged("amount", (v) => (v === "" ? undefined : Number(v)));
 
-    // dates (YYYY-MM-DD); when end_date changes, also send completion_date
+    // dates (YYYY-MM-DD); when end_date changes, also send completion_date mirror
     const normDate = (v) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
     const endBefore = original ? original.end_date : undefined;
     const endAfter = form.end_date;
 
-    addIfChanged("start_date", normDate);
-    addIfChanged("end_date", normDate);
-    if (endAfter !== endBefore && normDate(endAfter)) {
-      payload["completion_date"] = normDate(endAfter);
+    addIfChanged("start_date", (v) => normDate(toDateOnly(v)));
+    addIfChanged("end_date", (v) => normDate(toDateOnly(v)));
+    if (endAfter !== endBefore && normDate(toDateOnly(endAfter))) {
+      payload["completion_date"] = normDate(toDateOnly(endAfter));
     }
 
     // status only if allowed & changed
@@ -192,14 +235,12 @@ export default function MilestoneEditModal({
     return payload;
   };
 
-  // overlap-aware save: try normal, detect overlap error → confirm → retry with allow_overlap
+  /* ---------- save (overlap-aware) ---------- */
   const save = useCallback(async () => {
     if (!milestone?.id) return;
     setSaving(true);
 
-    const attempt = async (payload) => {
-      return api.patch(`/projects/milestones/${milestone.id}/`, payload);
-    };
+    const attempt = async (payload) => api.patch(`/projects/milestones/${milestone.id}/`, payload);
 
     try {
       // Attempt 1 — normal diff-only
@@ -226,12 +267,9 @@ export default function MilestoneEditModal({
         body &&
         typeof body === "object" &&
         Array.isArray(body.non_field_errors) &&
-        body.non_field_errors.some((t) =>
-          String(t).toLowerCase().includes("overlap")
-        );
+        body.non_field_errors.some((t) => String(t).toLowerCase().includes("overlap"));
 
       if (isOverlap) {
-        // Prompt user to proceed
         const ok = window.confirm(
           "This milestone overlaps another milestone in the same agreement.\n\nDo you want to save anyway?"
         );
@@ -258,7 +296,6 @@ export default function MilestoneEditModal({
           setSaving(false);
         }
       } else {
-        // Not an overlap error → show exact backend message
         toast.error(`Save failed: ${bodyStr || "Unknown error"}`);
         console.error("PATCH error payload:", body ?? bodyStr);
         setSaving(false);
@@ -266,6 +303,7 @@ export default function MilestoneEditModal({
     }
   }, [milestone, form, original, onSaved, onClose]);
 
+  /* ---------- comments ---------- */
   const sendComment = useCallback(async () => {
     if (!milestone?.id || !comment.trim()) return;
     setSendingComment(true);
@@ -285,6 +323,7 @@ export default function MilestoneEditModal({
     }
   }, [milestone, comment]);
 
+  /* ---------- attachments ---------- */
   const fetchAgreementAttachments = async (agId) => {
     try {
       const { data } = await api.get(`/projects/agreements/${agId}/attachments/`);
@@ -313,7 +352,9 @@ export default function MilestoneEditModal({
       const list = await fetchAgreementAttachments(agreementId);
       setRecentAttachments(list.slice(0, 10));
       return list.find(
-        (a) => (a.title && a.title.includes(file.name)) || (a.filename && a.filename === file.name)
+        (a) =>
+          (a.title && a.title.includes(file.name)) ||
+          (a.filename && a.filename === file.name)
       );
     };
 
@@ -419,14 +460,39 @@ export default function MilestoneEditModal({
 
   if (!open) return null;
 
+  /* ---------- meta (from Calendar extendedProps) ---------- */
+  const meta = milestone?._meta || {};
+  const homeowner =
+    meta.homeownerName ||
+    milestone?.homeowner_name ||
+    milestone?.homeowner?.name ||
+    "";
+  const address =
+    meta.projectAddress ||
+    milestone?.project_address ||
+    milestone?.project?.address ||
+    "";
+  const agreementNumber =
+    meta.agreementNumber ||
+    milestone?.agreement_number ||
+    milestone?.agreement_id ||
+    milestone?.agreement?.id ||
+    null;
+  const agreementTotal = meta.agreementTotal ?? milestone?.agreement?.total_cost ?? null;
+  const links = meta.links || {};
+  const agreementDetailUrl =
+    links.agreementDetailUrl || (agreementNumber ? `/agreements/${agreementNumber}` : null);
+  const previewSignedUrl = links.previewSignedUrl || null;
+
+  /* ---------- render ---------- */
   return (
     <div className="fixed inset-0 z-[9999] flex items-start justify-center bg-black/40 p-6 overflow-y-auto">
       <div className="w-full max-w-3xl rounded-xl bg-white shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b px-5 py-3">
           <div className="text-sm text-gray-500">
-            {milestone?.agreement_number
-              ? `Agreement #${milestone.agreement_number}`
+            {agreementNumber
+              ? `Agreement #${agreementNumber}`
               : milestone?.agreement_id
               ? `Agreement ID ${milestone.agreement_id}`
               : null}
@@ -443,6 +509,41 @@ export default function MilestoneEditModal({
 
         {/* Body */}
         <div className="px-5 pb-5 pt-3">
+          {/* Info Bar (new) */}
+          <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <div><span className="font-semibold">Homeowner</span>: {homeowner || "—"}</div>
+              {address ? (
+                <div className="truncate max-w-[420px]">
+                  <span className="font-semibold">Address</span>: {address}
+                </div>
+              ) : null}
+              {agreementTotal !== null && agreementTotal !== undefined ? (
+                <div><span className="font-semibold">Agreement Total</span>: {fmtMoney(agreementTotal)}</div>
+              ) : null}
+              <div className="ml-auto flex gap-2">
+                {agreementDetailUrl ? (
+                  <button
+                    type="button"
+                    onClick={() => window.location.assign(agreementDetailUrl)}
+                    className="px-3 py-1 rounded-md bg-gray-900 text-white hover:opacity-90"
+                  >
+                    View Agreement
+                  </button>
+                ) : null}
+                {previewSignedUrl ? (
+                  <button
+                    type="button"
+                    onClick={() => window.open(previewSignedUrl, "_blank", "noopener,noreferrer")}
+                    className="px-3 py-1 rounded-md bg-indigo-600 text-white hover:opacity-90"
+                  >
+                    Preview PDF
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {/* Title */}
             <div className="md:col-span-2">
@@ -483,7 +584,7 @@ export default function MilestoneEditModal({
                     type="date"
                     name="start_date"
                     value={form.start_date || ""}
-                    onChange={(e) => setForm((f) => ({ ...f, start_date: e.target.value }))}
+                    onChange={onChange}
                     readOnly={readOnly}
                     className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
                     style={{ paddingRight: "2.5rem" }}
@@ -499,7 +600,7 @@ export default function MilestoneEditModal({
                     type="date"
                     name="end_date"
                     value={form.end_date || ""}
-                    onChange={(e) => setForm((f) => ({ ...f, end_date: e.target.value }))}
+                    onChange={onChange}
                     readOnly={readOnly}
                     className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
                     style={{ paddingRight: "2.5rem" }}
@@ -515,7 +616,7 @@ export default function MilestoneEditModal({
               <textarea
                 name="description"
                 value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                onChange={onChange}
                 readOnly={readOnly}
                 rows={4}
                 className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}

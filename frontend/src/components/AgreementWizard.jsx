@@ -1,15 +1,15 @@
 // frontend/src/components/AgreementWizard.jsx
-// v2025-10-12-fix-openingPreview — pass openingPreview to Step4Finalize and use it safely
+// v2025-10-16 step3-delete-quiet+fix + Step 4 consolidated to external component
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../api";
-import MilestoneEditModal from "../components/MilestoneEditModal";
+import MilestoneEditModal from "./MilestoneEditModal";
 import { PROJECT_TYPES, SUBTYPES_BY_TYPE } from "./options/projectOptions";
+import Step4Finalize from "./Step4Finalize"; // <-- use external Step 4
 
-/* ---------- constants & small helpers ---------- */
-
+/* ---------------- small helpers ---------------- */
 const TABS = [
   { step: 1, label: "1. Details" },
   { step: 2, label: "2. Milestones" },
@@ -17,107 +17,123 @@ const TABS = [
   { step: 4, label: "4. Finalize & Review" },
 ];
 
-function useQuery() {
-  const { search } = useLocation();
-  return useMemo(() => new URLSearchParams(search), [search]);
-}
+const pickArray = (raw) =>
+  Array.isArray(raw?.results) ? raw.results : Array.isArray(raw) ? raw : [];
 
-// Normalize to YYYY-MM-DD (accepts ISO strings or timestamps)
 function toDateOnly(v) {
   if (!v) return "";
-  if (typeof v === "number") {
-    const d = new Date(v);
-    if (Number.isNaN(d.getTime())) return "";
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${d.getFullYear()}-${mm}-${dd}`;
-  }
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return "";
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  return `${yyyy}-${mm}-${dd}`;
+  return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
-function daySpan(start, end) {
-  const a = start ? new Date(start) : null;
-  const b = end ? new Date(end) : null;
-  if (!a || !b || Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return "";
-  const ms = b.getTime() - a.getTime();
-  return ms >= 0 ? Math.floor(ms / 86400000) + 1 : "";
-}
-
-/* normalize option inputs: strings OR {value,label} OR {id,name} */
-const optValue = (x) =>
-  x == null
-    ? ""
-    : typeof x === "string"
-    ? x
-    : typeof x === "number"
-    ? String(x)
-    : x.value != null
-    ? String(x.value)
-    : x.id != null
-    ? String(x.id)
-    : String(x);
-
-const optLabel = (x) => {
-  if (x == null) return "";
-  if (typeof x === "string") return x;
-  const first = x.first_name || x.firstName;
-  const last = x.last_name || x.lastName;
-  if (first || last) return [first, last].filter(Boolean).join(" ").trim();
-  return x.full_name ?? x.name ?? x.label ?? x.title ?? x.email ?? String(x);
-};
-
-function CalendarBtn({ onClick, title = "Pick a date", disabled }) {
-  return (
-    <button
-      type="button"
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={onClick}
-      aria-label={title}
-      title={title}
-      disabled={disabled}
-      style={{
-        position: "absolute",
-        right: 8,
-        top: "50%",
-        transform: "translateY(-50%)",
-        zIndex: 2147483647,
-        background: "transparent",
-        border: 0,
-        lineHeight: 0,
-        color: "#6B7280",
-        cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.5 : 1,
-      }}
-    >
-      <span role="img" aria-label="calendar">📅</span>
-    </button>
+function sortPeople(list) {
+  return [...list].sort((a, b) =>
+    (a.full_name || a.last_name || a.email || `id:${a.id}`).localeCompare(
+      b.full_name || b.last_name || b.email || `id:${b.id}`
+    )
   );
 }
 
-const DEFAULT_WARRANTY = `Standard workmanship warranty: Contractor warrants all labor performed under this Agreement for one (1) year from substantial completion. Materials are covered by the manufacturer’s warranties. This warranty excludes damage caused by misuse, neglect, alteration, improper maintenance, or acts of God.`;
+function normalizeCustomer(rec) {
+  if (!rec || typeof rec !== "object") return null;
+  const id = rec.id ?? rec.pk;
+  if (!id) return null;
+  const full_name = String(rec.full_name ?? rec.name ?? "").trim();
+  const email = String(rec.email ?? "").trim();
+  let first_name = "",
+    last_name = "";
+  if (full_name.includes(" ")) {
+    const parts = full_name.split(/\s+/);
+    first_name = parts.slice(0, -1).join(" ");
+    last_name = parts.slice(-1)[0];
+  } else {
+    first_name = full_name;
+  }
+  return { id, first_name, last_name, full_name, email, _src: "customers" };
+}
 
-/* ---------- main ---------- */
+function normalizeHomeowner(rec) {
+  if (!rec || typeof rec !== "object") return null;
+  const id = rec.id ?? rec.pk;
+  if (!id) return null;
+  const first_name = String(rec.first_name ?? rec.firstName ?? "").trim();
+  const last_name = String(rec.last_name ?? rec.lastName ?? "").trim();
+  const email = String(rec.email ?? "").trim();
+  const full_name = String(
+    rec.full_name ??
+      rec.fullName ??
+      rec.name ??
+      [first_name, last_name].filter(Boolean).join(" ")
+  ).trim();
+  return { id, first_name, last_name, full_name, email, _src: "homeowners" };
+}
 
+function synthesizeFromMilestones(raw, agreementHomeownerId) {
+  const arr = pickArray(raw);
+  const map = new Map();
+  for (const m of arr) {
+    const nm = String(m?.homeowner_name || "").trim();
+    const em = String(m?.homeowner_email || "").trim();
+    if (!nm && !em) continue;
+    const key = em || nm;
+    if (!map.has(key)) map.set(key, { full_name: nm, email: em });
+  }
+  return [...map.entries()].map(([key, v]) => ({
+    id: agreementHomeownerId || key,
+    first_name: "",
+    last_name: "",
+    full_name: v.full_name || "",
+    email: v.email || "",
+    _src: "milestones-fallback",
+  }));
+}
+
+function buildLabel(p) {
+  const l = (p.last_name || "").trim();
+  const f = (p.first_name || "").trim();
+  const full = (p.full_name || "").trim();
+  const email = (p.email || "").trim();
+  if (l || f) {
+    const lf = [l, f].filter(Boolean).join(", ");
+    return email ? `${lf} — ${email}` : lf;
+  }
+  if (full) return email ? `${full} — ${email}` : full;
+  if (email) return email;
+  return `ID ${p.id}`;
+}
+
+function friendly(d) {
+  if (!d) return "";
+  const dt = new Date(d);
+  if (isNaN(dt)) return d;
+  return dt.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/* ---------------- main ---------------- */
 export default function AgreementWizard() {
-  console.log("%cAgreementWizard v2025-10-12-fix-openingPreview", "color:#fff;background:#0ea5e9;padding:2px 6px;border-radius:4px");
-
+  const { id: idParam } = useParams();
   const navigate = useNavigate();
-  const { id } = useParams();
-  const q = useQuery();
-  const step = Number(q.get("step") || "1");
+  const search = new URLSearchParams(useLocation().search);
+  const step = Number(search.get("step") || "1");
+
+  const agreementId =
+    idParam && /^\d+$/.test(String(idParam)) ? String(idParam) : null;
+  const isEdit = !!agreementId;
 
   const [loading, setLoading] = useState(false);
   const [agreement, setAgreement] = useState(null);
   const [milestones, setMilestones] = useState([]);
+  const [people, setPeople] = useState([]);
 
-  // Step 1
-  const [homeowners, setHomeowners] = useState([]);
+  // Step 1 form
   const [dLocal, setDLocal] = useState({
     homeowner: "",
     project_title: "",
@@ -128,21 +144,20 @@ export default function AgreementWizard() {
     end: "",
   });
 
-  // Step 2
-  const [mLocal, setMLocal] = useState({ title: "", description: "", amount: "", start: "", end: "" });
+  // Step 2 form
+  const [mLocal, setMLocal] = useState({
+    title: "",
+    description: "",
+    amount: "",
+    start: "",
+    end: "",
+  });
   const [editMilestone, setEditMilestone] = useState(null);
 
-  // Step 3
+  // Warranty & signing bits
   const [useDefaultWarranty, setUseDefaultWarranty] = useState(true);
   const [customWarranty, setCustomWarranty] = useState("");
-  const [warrantySaving, setWarrantySaving] = useState(false);
-  const [warrantyError, setWarrantyError] = useState("");
   const [attachments, setAttachments] = useState([]);
-  const [attFiles, setAttFiles] = useState([]);
-  const [attMeta, setAttMeta] = useState({ title: "", category: "WARRANTY", visible: true });
-  const [attachError, setAttachError] = useState("");
-
-  // Step 4
   const [hasPreviewed, setHasPreviewed] = useState(false);
   const [ackReviewed, setAckReviewed] = useState(false);
   const [ackTos, setAckTos] = useState(false);
@@ -150,13 +165,44 @@ export default function AgreementWizard() {
   const [typedName, setTypedName] = useState("");
   const [signing, setSigning] = useState(false);
 
-  // FIX: openingPreview state lives here and is passed to Step4Finalize
-  const [openingPreview, setOpeningPreview] = useState(false);
+  /* -------- explicit people loader -------- */
+  const loadPeopleStrict = useCallback(async () => {
+    const cfg = {
+      params: { page: 1, page_size: 1000, ordering: "-created_at" },
+    };
 
-  const load = useCallback(async () => {
+    try {
+      const { data } = await api.get(`/customers/`, cfg);
+      const list = pickArray(data).map(normalizeCustomer).filter(Boolean);
+      if (list.length) return sortPeople(list);
+    } catch {}
+
+    try {
+      const { data } = await api.get(`/homeowners/`, cfg);
+      const list = pickArray(data).map(normalizeHomeowner).filter(Boolean);
+      if (list.length) return sortPeople(list);
+    } catch {}
+
+    try {
+      const { data } = await api.get(`/projects/customers/`, cfg);
+      const list = pickArray(data).map(normalizeCustomer).filter(Boolean);
+      if (list.length) return sortPeople(list);
+    } catch {}
+
+    try {
+      const { data } = await api.get(`/projects/homeowners/`, cfg);
+      const list = pickArray(data).map(normalizeHomeowner).filter(Boolean);
+      if (list.length) return sortPeople(list);
+    } catch {}
+
+    return [];
+  }, []);
+
+  /* -------- edit mode -------- */
+  const loadEdit = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: ag } = await api.get(`/projects/agreements/${id}/`);
+      const { data: ag } = await api.get(`/projects/agreements/${agreementId}/`);
       setAgreement(ag);
 
       const agHomeownerId =
@@ -168,74 +214,152 @@ export default function AgreementWizard() {
           ? String(ag.homeowner_id)
           : "";
 
+      const seed = [];
+      if (agHomeownerId || ag.homeowner_name || ag.homeowner_email) {
+        seed.push({
+          id: agHomeownerId || (ag.homeowner_email || ag.homeowner_name || "unknown"),
+          first_name: "",
+          last_name: "",
+          full_name: ag.homeowner_name || "",
+          email: ag.homeowner_email || "",
+          _src: "agreement-snapshot",
+        });
+      }
+      setPeople(seed);
+
       setDLocal({
-        homeowner: agHomeownerId,
+        homeowner: String(agHomeownerId || ""),
         project_title: ag.project_title || ag.title || "",
-        project_type: optValue(ag.project_type || ""),
-        project_subtype: optValue(ag.project_subtype || ""),
+        project_type: (ag.project_type ?? "") || "",
+        project_subtype: (ag.project_subtype ?? "") || "",
         description: ag.description || "",
         start: toDateOnly(ag.start),
         end: toDateOnly(ag.end),
       });
 
-      // homeowners
-      try {
-        const { data: h1 } = await api.get(`/projects/homeowners/`, { params: { page_size: 500 } });
-        setHomeowners(Array.isArray(h1?.results) ? h1.results : Array.isArray(h1) ? h1 : []);
-      } catch {
+      let loaded = await loadPeopleStrict();
+
+      if (!loaded.length) {
         try {
-          const { data: h2 } = await api.get(`/projects/customers/`, { params: { page_size: 500 } });
-          setHomeowners(Array.isArray(h2?.results) ? h2.results : Array.isArray(h2) ? h2 : []);
-        } catch {
-          setHomeowners([]);
-        }
+          const { data: msRaw } = await api.get(`/projects/milestones/`, {
+            params: { agreement: agreementId, page_size: 500 },
+          });
+          loaded = synthesizeFromMilestones(msRaw, agHomeownerId);
+        } catch {}
       }
 
-      // milestones
-      const { data: msRaw } = await api.get(`/projects/milestones/`, { params: { agreement: id, page_size: 500 } });
-      setMilestones(Array.isArray(msRaw?.results) ? msRaw.results : Array.isArray(msRaw) ? msRaw : []);
+      const byKey = new Map();
+      for (const p of [...seed, ...loaded]) {
+        const key = /^\d+$/.test(String(p.id))
+          ? `id:${p.id}`
+          : `email:${(p.email || "").toLowerCase()}`;
+        if (!byKey.has(key)) byKey.set(key, p);
+      }
+      setPeople(sortPeople([...byKey.values()]));
 
-      // warranty state from server
-      const isDefault =
+      try {
+        const { data: ms } = await api.get(`/projects/milestones/`, {
+          params: { agreement: agreementId, page_size: 500 },
+        });
+        setMilestones(pickArray(ms));
+      } catch {
+        setMilestones([]);
+      }
+
+      const isDef =
         String(ag.warranty_type || "").toUpperCase() === "DEFAULT" ||
         Boolean(ag.use_default_warranty) ||
         !ag.warranty_text_snapshot ||
-        String(ag.warranty_text_snapshot || "").trim() === "" ||
-        String(ag.warranty_text_snapshot || "").trim() === DEFAULT_WARRANTY.trim();
-      setUseDefaultWarranty(isDefault);
-      setCustomWarranty(isDefault ? "" : (ag.warranty_text_snapshot || ""));
+        String(ag.warranty_text_snapshot || "").trim() === "";
+      setUseDefaultWarranty(isDef);
+      setCustomWarranty(isDef ? "" : ag.warranty_text_snapshot || "");
 
-      // attachments
-      await fetchAttachments();
-      setAttachError("");
+      try {
+        const { data: atts } = await api.get(
+          `/projects/agreements/${agreementId}/attachments/`
+        );
+        setAttachments(Array.isArray(atts) ? atts : pickArray(atts));
+      } catch {
+        setAttachments([]);
+      }
     } catch (e) {
       console.error(e);
       toast.error("Failed to load agreement.");
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [agreementId, loadPeopleStrict]);
 
-  useEffect(() => { load(); }, [load]);
-
-  const totals = useMemo(() => {
-    const totalAmt = milestones.reduce((s, m) => s + Number(m.amount || 0), 0);
-    const starts = milestones.map(m => toDateOnly(m.start_date || m.start || m.scheduled_date)).filter(Boolean);
-    const ends   = milestones.map(m => toDateOnly(m.completion_date || m.end_date || m.end || m.due_date)).filter(Boolean);
-    const minStart = starts.length ? [...starts].sort()[0] : "";
-    const maxEnd   = ends.length ? [...ends].sort().slice(-1)[0] : "";
-    const totalDays = (minStart && maxEnd) ? daySpan(minStart, maxEnd) : 0;
-    return { totalAmt, minStart, maxEnd, totalDays };
-  }, [milestones]);
-
-  const goStep = (n) => navigate(`/agreements/${id}/wizard?step=${n}`);
-
-  /* ---------- Step 1 (Details) ---------- */
-
-  const saveStep1 = async (navigateNext = false) => {
+  /* -------- create mode -------- */
+  const loadCreate = useCallback(async () => {
+    setLoading(true);
     try {
+      setAgreement(null);
+      setMilestones([]);
+      setAttachments([]);
+
+      const loaded = await loadPeopleStrict();
+      setPeople(loaded);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load form.");
+    } finally {
+      setLoading(false);
+    }
+  }, [loadPeopleStrict]);
+
+  useEffect(() => {
+    if (agreementId) loadEdit();
+    else loadCreate();
+  }, [agreementId, loadEdit, loadCreate]);
+
+  /* -------- totals -------- */
+  const totals = useMemo(() => {
+    const starts = milestones
+      .map((m) =>
+        toDateOnly(m.start_date || m.start || m.scheduled_date)
+      )
+      .filter(Boolean);
+    const ends = milestones
+      .map((m) =>
+        toDateOnly(m.completion_date || m.end_date || m.end || m.due_date)
+      )
+      .filter(Boolean);
+    const minStart = starts.length
+      ? [...starts].sort()[0]
+      : toDateOnly(agreement?.start) || "";
+    const maxEnd = ends.length
+      ? [...ends].sort().slice(-1)[0]
+      : toDateOnly(agreement?.end) || "";
+    const totalAmt = milestones.reduce(
+      (s, m) => s + Number(m.amount || 0),
+      0
+    );
+    const totalDays =
+      minStart && maxEnd
+        ? Math.max(
+            1,
+            Math.floor((new Date(maxEnd) - new Date(minStart)) / 86400000) + 1
+          )
+        : 0;
+    return { totalAmt, minStart, maxEnd, totalDays };
+  }, [milestones, agreement]);
+
+  const goStep = (n) =>
+    navigate(
+      agreementId
+        ? `/agreements/${agreementId}/wizard?step=${n}`
+        : `/agreements/new?step=${n}`
+    );
+
+  /* -------- Step 1 save (POST vs PATCH) -------- */
+  const saveStep1 = async (next = false) => {
+    try {
+      const val = String(dLocal.homeowner || "");
+      const homeownerField = /^\d+$/.test(val) ? Number(val) : null;
+
       const payload = {
-        homeowner: dLocal.homeowner || null,
+        homeowner: homeownerField,
         title: dLocal.project_title,
         project_title: dLocal.project_title,
         project_type: dLocal.project_type || null,
@@ -244,270 +368,155 @@ export default function AgreementWizard() {
         start: dLocal.start || null,
         end: dLocal.end || null,
       };
-      await api.patch(`/projects/agreements/${id}/`, payload);
-      toast.success("Details saved.");
-      if (navigateNext) goStep(2);
-      await load();
+
+      if (agreementId) {
+        await api.patch(`/projects/agreements/${agreementId}/`, payload);
+        toast.success("Details saved.");
+        if (next) goStep(2);
+        else await loadEdit();
+      } else {
+        const { data: created } = await api.post(
+          `/projects/agreements/`,
+          payload
+        );
+        const newId = created?.id ?? created?.pk;
+        if (!newId) return toast.error("Could not determine new Agreement ID.");
+        toast.success("Agreement created.");
+        navigate(`/agreements/${newId}/wizard?step=${next ? 2 : 1}`, {
+          replace: true,
+        });
+      }
     } catch (e) {
-      const resp = e?.response;
-      const body =
-        (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) ||
-        resp?.statusText ||
-        e?.message ||
-        "Save failed";
-      toast.error(`Save failed: ${body}`);
+      toast.error(
+        `Save failed: ${e?.response?.statusText || e?.message || "Unknown error"}`
+      );
     }
   };
 
-  /* ---------- Step 2 (Milestones) ---------- */
-
+  /* -------- Step 2 -------- */
   const onLocalChange = (e) => {
     const { name, value } = e.target;
-    setMLocal((s) => (name === "start" || name === "end" ? { ...s, [name]: toDateOnly(value) } : { ...s, [name]: value }));
+    setMLocal((s) => ({
+      ...s,
+      [name]: name === "start" || name === "end" ? toDateOnly(value) : value,
+    }));
   };
 
   const addMilestone = async () => {
+    if (!agreementId) return toast.error("Create and save Agreement first.");
     const f = mLocal;
     if (!f.title?.trim()) return toast.error("Enter a title.");
     if (!f.start || !f.end) return toast.error("Select start and end dates.");
     try {
-      const payload = {
-        agreement: Number(id),
+      await api.post(`/projects/milestones/`, {
+        agreement: Number(agreementId),
         title: f.title.trim(),
         description: f.description || "",
         amount: f.amount ? Number(f.amount) : 0,
         start_date: f.start,
         end_date: f.end,
         completion_date: f.end,
-      };
-      await api.post(`/projects/milestones/`, payload);
-      await load();
+      });
       setMLocal({ title: "", description: "", amount: "", start: "", end: "" });
+      await loadEdit();
       toast.success("Milestone added.");
     } catch (e) {
-      const msg = e?.response?.data?.non_field_errors || e?.response?.data?.detail || "Add failed.";
-      toast.error(Array.isArray(msg) ? msg.join(", ") : String(msg));
+      toast.error(e?.response?.data?.detail || "Add failed.");
     }
   };
 
   const removeMilestone = async (mid) => {
+    if (!agreementId) return;
     try {
       await api.delete(`/projects/milestones/${mid}/`);
-      await load();
+      await loadEdit();
       toast.success("Milestone removed.");
     } catch {
       toast.error("Delete failed.");
     }
   };
 
-  const markComplete = async (mid) => {
-    try {
-      await api.patch(`/projects/milestones/${mid}/`, { status: "Complete", completed: true });
-      await load();
-      toast.success("Marked complete.");
-    } catch (e) {
-      const resp = e?.response;
-      const body =
-        (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) ||
-        resp?.statusText ||
-        e?.message ||
-        "Save failed";
-      toast.error(`Could not mark complete: ${body}`);
-    }
-  };
-
-  /* ---------- Step 3 (Warranty & Attachments) ---------- */
-
+  /* -------- Step 3 (warranty) -------- */
   const saveWarranty = async () => {
-    setWarrantySaving(true);
-    setWarrantyError("");
-    const isDefault = !!useDefaultWarranty;
-    const text = isDefault ? "" : (customWarranty || "");
-    const payload = {
-      warranty_type: isDefault ? "DEFAULT" : "CUSTOM",
-      warranty_text_snapshot: text,
-      use_default_warranty: isDefault,
-      custom_warranty_text: text,
-    };
+    if (!agreementId) return toast.error("Create and save Agreement first.");
     try {
-      await api.patch(`/projects/agreements/${id}/`, payload);
-      await load();
+      const text = useDefaultWarranty ? "" : customWarranty || "";
+      await api.patch(`/projects/agreements/${agreementId}/`, {
+        warranty_type: useDefaultWarranty ? "DEFAULT" : "CUSTOM",
+        warranty_text_snapshot: text,
+        use_default_warranty: useDefaultWarranty,
+        custom_warranty_text: text,
+      });
+      await loadEdit();
       toast.success("Warranty saved.");
     } catch (e) {
-      const resp = e?.response;
-      const body =
-        (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) ||
-        resp?.statusText ||
-        e?.message ||
-        "Save failed";
-      setWarrantyError(body);
-      toast.error(`Warranty save failed: ${body}`);
-    } finally {
-      setWarrantySaving(false);
+      toast.error(
+        e?.response?.statusText || e?.message || "Save failed"
+      );
     }
   };
 
-  const fetchAttachments = async () => {
-    const { data } = await api.get(`/projects/agreements/${id}/attachments/`);
-    setAttachments(Array.isArray(data) ? data : []);
-    return Array.isArray(data) ? data : [];
-  };
-
-  const patchAttachmentMultipart = async (path, fields) => {
-    const fd = new FormData();
-    for (const [k, v] of Object.entries(fields)) fd.append(k, typeof v === "boolean" ? String(v) : v);
-    return api.patch(path, fd, { headers: { "Content-Type": "multipart/form-data" } });
-  };
-
-  const setAttachmentVisibility = async (attId, visible) => {
-    const visBodies = [
-      { visible }, { is_visible: visible }, { public: visible }, { is_public: visible },
-      { visible: visible ? 1 : 0 }, { is_visible: visible ? 1 : 0 },
-    ];
-    const paths = [
-      `/projects/attachments/${attId}/`,
-      `/projects/agreements/${id}/attachments/${attId}/`,
-    ];
-    for (const p of paths) {
-      for (const body of visBodies) {
-        try { await patchAttachmentMultipart(p, body); return true; } catch { /* keep trying */ }
-      }
-    }
-    return false;
-  };
-
-  const uploadAttachments = async () => {
-    if (!attFiles.length) return toast.error("Select or drop a file first.");
-    setAttachError("");
-
-    const picked = attFiles[0];
-    const title = attMeta.title || picked.name;
-
-    const postFD = async (url, fd) => api.post(url, fd, { headers: { "Content-Type": "multipart/form-data" } });
-
-    const attempts = [
-      () => { const fd = new FormData(); fd.append("file", picked); fd.append("agreement", String(id)); fd.append("title", title); fd.append("category", attMeta.category || "OTHER"); return [ `/projects/attachments/`, fd ]; },
-      () => { const fd = new FormData(); fd.append("file", picked); fd.append("agreement", String(id)); fd.append("title", title); return [ `/projects/attachments/`, fd ]; },
-      () => { const fd = new FormData(); fd.append("file", picked); fd.append("agreement", String(id)); return [ `/projects/attachments/`, fd ]; },
-
-      () => { const fd = new FormData(); fd.append("file", picked); fd.append("title", title); fd.append("category", attMeta.category || "OTHER"); return [ `/projects/agreements/${id}/attachments/`, fd ]; },
-      () => { const fd = new FormData(); fd.append("file", picked); fd.append("title", title); return [ `/projects/agreements/${id}/attachments/`, fd ]; },
-      () => { const fd = new FormData(); fd.append("file", picked); return [ `/projects/agreements/${id}/attachments/`, fd ]; },
-    ];
-
-    let createdId = null;
-    let lastErr = null;
-
-    for (const build of attempts) {
-      const [url, fd] = build();
-      try {
-        const res = await postFD(url, fd);
-        createdId = res?.data?.id ?? null;
-        break;
-      } catch (e) {
-        lastErr = e;
-      }
-    }
-
-    if (!createdId) {
-      const list = await fetchAttachments();
-      const found = list.find((a) => (a.title && a.title === title) || (a.filename && a.filename === picked.name));
-      if (!found) {
-        const resp = lastErr?.response;
-        const body =
-          (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) ||
-          resp?.statusText ||
-          lastErr?.message ||
-          "Upload failed";
-        setAttachError(body);
-        toast.error(`Upload failed: ${body}`);
-        return;
-      }
-      createdId = found.id;
-    }
-
-    const ok = await setAttachmentVisibility(createdId, !!attMeta.visible);
-    if (!ok) toast.error("Added file, but could not set visibility.");
-
-    await fetchAttachments();
-    setAttFiles((prev) => prev.slice(1));
-    toast.success("Attachment added.");
-  };
-
-  const deleteAttachment = async (attId) => {
-    setAttachError("");
-    try {
-      await api.delete(`/projects/attachments/${attId}/`);
-    } catch {
-      try { await api.delete(`/projects/agreements/${id}/attachments/${attId}/`); }
-      catch (e2) {
-        const resp = e2?.response;
-        const body =
-          (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) ||
-          resp?.statusText ||
-          e2?.message ||
-          "Delete failed";
-        setAttachError(body);
-        toast.error(`Delete failed: ${body}`);
-        return;
-      }
-    }
-    await fetchAttachments();
-    toast.success("Attachment deleted.");
-  };
-
-  /* ---------- Step 4 (Preview/Sign) ---------- */
-
-  // Safer Preview: try signed link (no auth header). If that fails, fall back to tokenless contractor/staff path.
+  /* -------- Step 4 (preview/sign) -------- */
   const previewPdf = async () => {
+    if (!agreementId) return toast.error("Create and save Agreement first.");
     try {
-      setOpeningPreview(true);
-      const { data } = await api.post(`/projects/agreements/${id}/preview_link/`);
+      const { data } = await api.post(
+        `/projects/agreements/${agreementId}/preview_link/`
+      );
       const url = data?.url;
-      if (url) {
-        window.open(url, "_blank", "noopener,noreferrer");
-        setHasPreviewed(true);
-        try { await api.post(`/projects/agreements/${id}/mark_previewed/`); } catch {}
-        return;
-      }
-      // Fallback
-      window.open(`/api/projects/agreements/preview_signed/?agreement_id=${id}`, "_blank", "noopener,noreferrer");
+      if (!url) return toast.error("Preview link unavailable.");
+      window.open(url, "_blank", "noopener");
       setHasPreviewed(true);
-      try { await api.post(`/projects/agreements/${id}/mark_previewed/`); } catch {}
-    } catch (err) {
-      console.error(err);
+      try {
+        await api.post(
+          `/projects/agreements/${agreementId}/mark_previewed/`
+        );
+      } catch {}
+    } catch {
       toast.error("Could not open preview.");
-    } finally {
-      setOpeningPreview(false);
     }
   };
-
-  const goPublic = () => window.open(`/agreements/public/${id}/`, "_blank");
-
+  const goPublic = () => {
+    if (!agreementId) return toast.error("Create and save Agreement first.");
+    window.open(`/agreements/public/${agreementId}/`, "_blank");
+  };
   const signContractor = async () => {
-    if (!(hasPreviewed && ackReviewed && ackTos && ackEsign && typedName.trim().length >= 2)) return;
+    if (!agreementId) return toast.error("Create and save Agreement first.");
+    if (
+      !(
+        hasPreviewed &&
+        ackReviewed &&
+        ackTos &&
+        ackEsign &&
+        typedName.trim().length >= 2
+      )
+    )
+      return;
     setSigning(true);
     try {
-      await api.post(`/projects/agreements/${id}/contractor_sign/`, { typed_name: typedName.trim() });
+      await api.post(
+        `/projects/agreements/${agreementId}/contractor_sign/`,
+        { typed_name: typedName.trim() }
+      );
       toast.success("Signed as Contractor.");
       window.location.reload();
     } catch (e) {
-      const resp = e?.response;
-      const msg =
-        (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) ||
-        resp?.statusText ||
-        e?.message ||
-        "Sign failed";
-      toast.error(`Sign failed: ${msg}`);
+      toast.error(
+        `Sign failed: ${e?.response?.statusText || e?.message || "Save failed"}`
+      );
     } finally {
       setSigning(false);
     }
   };
+  const canSign =
+    !!agreementId &&
+    hasPreviewed &&
+    ackReviewed &&
+    ackTos &&
+    ackEsign &&
+    typedName.trim().length >= 2;
 
-  const canSign = hasPreviewed && ackReviewed && ackTos && ackEsign && typedName.trim().length >= 2;
-
-  /* ---------- render ---------- */
-
+  /* -------- render -------- */
   return (
     <div className="p-4 md:p-6">
       {/* Tabs */}
@@ -515,138 +524,152 @@ export default function AgreementWizard() {
         {TABS.map((t) => (
           <button
             key={t.step}
-            onClick={() => goStep(t.step)}
-            className={`rounded px-3 py-2 text-sm ${step === t.step ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+            onClick={() =>
+              navigate(
+                agreementId
+                  ? `/agreements/${agreementId}/wizard?step=${t.step}`
+                  : `/agreements/new?step=${t.step}`
+              )
+            }
+            className={`rounded px-3 py-2 text-sm ${
+              step === t.step
+                ? "bg-indigo-600 text-white"
+                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+            }`}
           >
             {t.label}
           </button>
         ))}
-        <div className="flex-1" />
-        <div className="flex gap-2">
-          <button
-            onClick={previewPdf}
-            disabled={openingPreview}
-            className={`rounded px-3 py-2 text-sm ${
-              openingPreview ? "bg-indigo-100 text-indigo-400 cursor-wait" : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
-            }`}
-            title="Open PDF preview"
-          >
-            {openingPreview ? "Opening…" : "Preview PDF"}
-          </button>
-          <button onClick={goPublic} className="rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">View Public Link</button>
-        </div>
       </div>
 
       {step === 1 && (
         <Step1Details
-          agreement={agreement}
+          isEdit={isEdit}
+          agreementId={agreementId}
           dLocal={dLocal}
           setDLocal={setDLocal}
-          homeowners={homeowners}
+          people={people}
           saveStep1={saveStep1}
-          goStep={goStep}
-          id={id}
         />
       )}
 
       {step === 2 && (
         <Step2Milestones
-          loading={loading}
+          agreement={agreement}
           mLocal={mLocal}
           onLocalChange={onLocalChange}
           onAdd={addMilestone}
           milestones={milestones}
           onDelete={removeMilestone}
           onEdit={(m) => setEditMilestone(m)}
-          onComplete={markComplete}
-          agreement={agreement}
-          totals={totals}
-          onBack={() => goStep(1)}
-          onNext={() => goStep(3)}
+          onBack={() =>
+            navigate(
+              agreementId
+                ? `/agreements/${agreementId}/wizard?step=1`
+                : `/agreements/new?step=1`
+            )
+          }
+          onNext={() =>
+            navigate(
+              agreementId
+                ? `/agreements/${agreementId}/wizard?step=3`
+                : `/agreements/new?step=3`
+            )
+          }
         />
       )}
 
       {step === 3 && (
         <Step3WarrantyAttachments
-          loading={loading}
-          DEFAULT_WARRANTY={DEFAULT_WARRANTY}
+          agreementId={agreementId}
+          DEFAULT_WARRANTY={
+            "Standard workmanship warranty: Contractor warrants all labor performed under this Agreement for one (1) year from substantial completion. Materials are covered by the manufacturer’s warranties. This warranty excludes damage caused by misuse, neglect, alteration, improper maintenance, or acts of God."
+          }
           useDefaultWarranty={useDefaultWarranty}
           setUseDefaultWarranty={setUseDefaultWarranty}
           customWarranty={customWarranty}
           setCustomWarranty={setCustomWarranty}
           saveWarranty={saveWarranty}
-          warrantySaving={warrantySaving}
-          warrantyError={warrantyError}
           attachments={attachments}
-          attFiles={attFiles}
-          setAttFiles={setAttFiles}
-          attMeta={attMeta}
-          setAttMeta={setAttMeta}
-          onDropFiles={(e) => {
-            e.preventDefault();
-            const files = Array.from(e.dataTransfer?.files || []);
-            if (!files.length) return;
-            setAttFiles((prev) => [...prev, ...files]);
-          }}
-          onPickFiles={(e) => {
-            const files = Array.from(e.target.files || []);
-            if (!files.length) return;
-            setAttFiles((prev) => [...prev, ...files]);
-            e.target.value = "";
-          }}
-          uploadAttachments={uploadAttachments}
-          deleteAttachment={deleteAttachment}
-          attachError={attachError}
-          goBack={() => goStep(2)}
-          goNext={() => goStep(4)}
+          refreshAttachments={loadEdit}
+          onBack={() =>
+            navigate(
+              agreementId
+                ? `/agreements/${agreementId}/wizard?step=2`
+                : `/agreements/new?step=2`
+            )
+          }
+          onNext={() =>
+            navigate(
+              agreementId
+                ? `/agreements/${agreementId}/wizard?step=4`
+                : `/agreements/new?step=4`
+            )
+          }
         />
       )}
 
       {step === 4 && (
         <Step4Finalize
           agreement={agreement}
-          id={id}
+          id={agreementId}
           previewPdf={previewPdf}
           goPublic={goPublic}
           milestones={milestones}
           totals={totals}
           hasPreviewed={hasPreviewed}
-          ackReviewed={ackReviewed} setAckReviewed={setAckReviewed}
-          ackTos={ackTos} setAckTos={setAckTos}
-          ackEsign={ackEsign} setAckEsign={setAckEsign}
-          typedName={typedName} setTypedName={setTypedName}
-          canSign={canSign} signing={signing} signContractor={signContractor}
+          ackReviewed={ackReviewed}
+          setAckReviewed={setAckReviewed}
+          ackTos={ackTos}
+          setAckTos={setAckTos}
+          ackEsign={ackEsign}
+          setAckEsign={setAckEsign}
+          typedName={typedName}
+          setTypedName={setTypedName}
+          canSign={canSign}
+          signing={signing}
+          signContractor={signContractor}
           attachments={attachments}
-          defaultWarrantyText={DEFAULT_WARRANTY}
+          defaultWarrantyText={
+            "Standard workmanship warranty: Contractor warrants all labor performed under this Agreement for one (1) year from substantial completion. Materials are covered by the manufacturer’s warranties. This warranty excludes damage caused by misuse, neglect, alteration, improper maintenance, or acts of God."
+          }
           customWarranty={customWarranty}
           useDefaultWarranty={useDefaultWarranty}
-          goBack={() => goStep(3)}
-          /* FIX: pass openingPreview down so the child can disable its buttons correctly */
-          openingPreview={openingPreview}
+          goBack={() =>
+            navigate(
+              agreementId
+                ? `/agreements/${agreementId}/wizard?step=3`
+                : `/agreements/new?step=3`
+            )
+          }
         />
       )}
 
-      {/* Edit modal for Step 2 */}
       {editMilestone && (
         <MilestoneEditModal
           open={!!editMilestone}
           milestone={editMilestone}
           onClose={() => setEditMilestone(null)}
-          onSaved={() => { setEditMilestone(null); load(); }}
-          onMarkComplete={async (mid) => { await markComplete(mid); setEditMilestone(null); }}
+          onSaved={() => {
+            setEditMilestone(null);
+            isEdit ? loadEdit() : loadCreate();
+          }}
         />
+      )}
+
+      {loading && (
+        <div className="mt-4 text-sm text-gray-500">Loading…</div>
       )}
     </div>
   );
 }
 
-/* ---------- Step 1 ---------- */
-
-function Step1Details({ agreement, dLocal, setDLocal, homeowners, saveStep1, goStep, id }) {
+/* ---------------- Step 1 ---------------- */
+function Step1Details({ isEdit, agreementId, dLocal, setDLocal, people, saveStep1 }) {
   return (
     <div className="rounded-lg border bg-white p-4">
       <div className="text-sm text-gray-600 mb-4">
-        {agreement ? <>Agreement #{agreement.id} — {agreement.project_title || agreement.title || "Project"}</> : <>Agreement #{id}</>}
+        {isEdit ? <>Agreement #{agreementId}</> : <>New Agreement</>}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -654,14 +677,25 @@ function Step1Details({ agreement, dLocal, setDLocal, homeowners, saveStep1, goS
           <label className="block text-sm font-medium mb-1">Homeowner</label>
           <select
             className="w-full rounded border px-3 py-2 text-sm"
-            value={dLocal.homeowner || ""}
-            onChange={(e) => setDLocal((s) => ({ ...s, homeowner: e.target.value }))}
+            value={String(dLocal.homeowner || "")}
+            onChange={(e) =>
+              setDLocal((s) => ({ ...s, homeowner: e.target.value }))
+            }
           >
             <option value="">— Select Homeowner —</option>
-            {homeowners.map((h) => {
-              const val = optValue(h);
-              const lbl = optLabel(h);
-              return <option key={val || lbl} value={val}>{lbl}</option>;
+            {people.length === 0 && (
+              <option value="" disabled>
+                (loading customers…)
+              </option>
+            )}
+            {(people || []).map((p) => {
+              const val = String(p.id);
+              const lbl = buildLabel(p);
+              return (
+                <option key={`${val}-${lbl}`} value={val}>
+                  {lbl}
+                </option>
+              );
             })}
           </select>
         </div>
@@ -671,7 +705,9 @@ function Step1Details({ agreement, dLocal, setDLocal, homeowners, saveStep1, goS
           <input
             className="w-full rounded border px-3 py-2 text-sm"
             value={dLocal.project_title}
-            onChange={(e) => setDLocal((s) => ({ ...s, project_title: e.target.value }))}
+            onChange={(e) =>
+              setDLocal((s) => ({ ...s, project_title: e.target.value }))
+            }
             placeholder="e.g., Kitchen Floor and Wall"
           />
         </div>
@@ -681,13 +717,23 @@ function Step1Details({ agreement, dLocal, setDLocal, homeowners, saveStep1, goS
           <select
             className="w-full rounded border px-3 py-2 text-sm"
             value={dLocal.project_type || ""}
-            onChange={(e) => setDLocal((s) => ({ ...s, project_type: e.target.value, project_subtype: "" }))}
+            onChange={(e) =>
+              setDLocal((s) => ({
+                ...s,
+                project_type: e.target.value,
+                project_subtype: "",
+              }))
+            }
           >
             <option value="">— Select Type —</option>
             {(Array.isArray(PROJECT_TYPES) ? PROJECT_TYPES : []).map((t) => {
-              const val = optValue(t);
-              const lbl = optLabel(t);
-              return <option key={val || lbl} value={val}>{lbl}</option>;
+              const val = t?.value ?? t?.id ?? t,
+                lbl = t?.label ?? t?.name ?? t?.title ?? t;
+              return (
+                <option key={String(val)} value={String(val)}>
+                  {String(lbl)}
+                </option>
+              );
             })}
           </select>
         </div>
@@ -697,14 +743,22 @@ function Step1Details({ agreement, dLocal, setDLocal, homeowners, saveStep1, goS
           <select
             className="w-full rounded border px-3 py-2 text-sm"
             value={dLocal.project_subtype || ""}
-            onChange={(e) => setDLocal((s) => ({ ...s, project_subtype: e.target.value }))}
+            onChange={(e) =>
+              setDLocal((s) => ({ ...s, project_subtype: e.target.value }))
+            }
           >
             <option value="">— Select Subtype —</option>
-            {((SUBTYPES_BY_TYPE || {})[dLocal.project_type] || []).map((st) => {
-              const val = optValue(st);
-              const lbl = optLabel(st);
-              return <option key={val || lbl} value={val}>{lbl}</option>;
-            })}
+            {((SUBTYPES_BY_TYPE || {})[dLocal.project_type] || []).map(
+              (st) => {
+                const val = st?.value ?? st?.id ?? st,
+                  lbl = st?.label ?? st?.name ?? st?.title ?? st;
+                return (
+                  <option key={String(val)} value={String(val)}>
+                    {String(lbl)}
+                  </option>
+                );
+              }
+            )}
           </select>
         </div>
 
@@ -714,497 +768,56 @@ function Step1Details({ agreement, dLocal, setDLocal, homeowners, saveStep1, goS
             className="w-full rounded border px-3 py-2 text-sm"
             rows={3}
             value={dLocal.description}
-            onChange={(e) => setDLocal((s) => ({ ...s, description: e.target.value }))}
+            onChange={(e) =>
+              setDLocal((s) => ({ ...s, description: e.target.value }))
+            }
             placeholder="Brief project scope…"
           />
         </div>
 
-        <DateWithButton label="Start" value={dLocal.start} onChange={(v) => setDLocal((s) => ({ ...s, start: toDateOnly(v) }))} />
-        <DateWithButton label="End" value={dLocal.end} onChange={(v) => setDLocal((s) => ({ ...s, end: toDateOnly(v) }))} />
+        <DateWithButton
+          label="Start"
+          value={dLocal.start}
+          onChange={(v) =>
+            setDLocal((s) => ({ ...s, start: toDateOnly(v) }))
+          }
+        />
+        <DateWithButton
+          label="End"
+          value={dLocal.end}
+          onChange={(v) => setDLocal((s) => ({ ...s, end: toDateOnly(v) }))}
+        />
       </div>
 
       <div className="mt-4 flex gap-2">
-        <button onClick={() => saveStep1(false)} className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700">Save</button>
-        <button onClick={() => saveStep1(true)} className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700">Save & Next</button>
-      </div>
-    </div>
-  );
-}
-
-/* ---------- Step 2 ---------- */
-
-function Step2Milestones({
-  loading,
-  mLocal, onLocalChange, onAdd,
-  milestones, onDelete, onEdit, onComplete, agreement,
-  totals, onBack, onNext,
-}) {
-  const startRef = useRef(null);
-  const endRef = useRef(null);
-  const openPicker = (ref) => {
-    if (!ref?.current) return;
-    if (typeof ref.current.showPicker === "function") ref.current.showPicker();
-    else ref.current.focus();
-  };
-  const isDraft = (agreement?.status || "").toLowerCase() === "draft";
-
-  return (
-    <div className="rounded-lg border bg-white p-4">
-      {!!loading && <div className="text-sm text-gray-500 mb-3">Loading…</div>}
-      <div className="text-sm text-gray-600 mb-4">New Milestone</div>
-
-      <div className="grid grid-cols-1 gap-3">
-        <input type="text" name="title" value={mLocal.title} onChange={onLocalChange} className="w-full rounded border px-3 py-2 text-sm" placeholder="e.g., Install Floor Tile" />
-        <textarea name="description" value={mLocal.description} onChange={onLocalChange} className="w-full rounded border px-3 py-2 text-sm" placeholder="Brief description of the milestone work…" />
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <input type="number" step="0.01" name="amount" value={mLocal.amount} onChange={onLocalChange} className="w-full rounded border px-3 py-2 text-sm" placeholder="Amount ($)" />
-          <div className="grid grid-cols-2 gap-3">
-            <div style={{ position: "relative", overflow: "visible" }}>
-              <input ref={startRef} type="date" name="start" value={mLocal.start || ""} onChange={onLocalChange} className="w-full rounded border px-3 py-2 text-sm" style={{ paddingRight: "2.5rem" }} />
-              <CalendarBtn title="Open start date" onClick={() => openPicker(startRef)} />
-            </div>
-            <div style={{ position: "relative", overflow: "visible" }}>
-              <input ref={endRef} type="date" name="end" value={mLocal.end || ""} onChange={onLocalChange} className="w-full rounded border px-3 py-2 text-sm" style={{ paddingRight: "2.5rem" }} />
-              <CalendarBtn title="Open end date" onClick={() => openPicker(endRef)} />
-            </div>
-          </div>
-        </div>
-        <div className="grid grid-cols-[auto_1fr] gap-3 items-center">
-          <div className="text-sm text-gray-600">Days (auto)</div>
-          <div className="rounded border px-3 py-2 text-sm bg-gray-50">{mLocal.start && mLocal.end ? daySpan(mLocal.start, mLocal.end) : "—"}</div>
-        </div>
-        <div><button onClick={onAdd} className="rounded bg-green-600 px-3 py-2 text-sm text-white hover:bg-green-700">+ Add Milestone</button></div>
-      </div>
-
-      <div className="mt-6 overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr className="bg-gray-50 text-left">
-              <th className="px-3 py-2">#</th>
-              <th className="px-3 py-2">Title</th>
-              <th className="px-3 py-2">Description</th>
-              <th className="px-3 py-2">Start</th>
-              <th className="px-3 py-2">End</th>
-              <th className="px-3 py-2">Days</th>
-              <th className="px-3 py-2">Amount</th>
-              <th className="px-3 py-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {milestones.map((m, i) => {
-              const start = toDateOnly(m.start_date || m.start || m.scheduled_date);
-              const end   = toDateOnly(m.completion_date || m.end_date || m.end || m.due_date);
-              return (
-                <tr key={m.id} className="border-t">
-                  <td className="px-3 py-2">{i + 1}</td>
-                  <td className="px-3 py-2">{m.title}</td>
-                  <td className="px-3 py-2">{m.description}</td>
-                  <td className="px-3 py-2">{start || "—"}</td>
-                  <td className="px-3 py-2">{end || "—"}</td>
-                  <td className="px-3 py-2">{start && end ? daySpan(start, end) : "—"}</td>
-                  <td className="px-3 py-2">${Number(m.amount || 0).toFixed(2)}</td>
-                  <td className="px-3 py-2 flex flex-wrap gap-2">
-                    {(agreement?.status || "").toLowerCase() === "draft" && (
-                      <>
-                        <button onClick={() => onEdit(m)} className="rounded bg-gray-100 px-2 py-1 text-gray-700 hover:bg-gray-200">Edit</button>
-                        <button onClick={() => onComplete(m.id)} className="rounded bg-indigo-50 px-2 py-1 text-indigo-700 hover:bg-indigo-100">Complete</button>
-                      </>
-                    )}
-                    <button onClick={() => onDelete(m.id)} className="rounded bg-red-50 px-2 py-1 text-red-700 hover:bg-red-100">Delete</button>
-                  </td>
-                </tr>
-              );
-            })}
-            {!milestones.length && (
-              <tr><td colSpan={8} className="px-3 py-6 text-center text-gray-500">No milestones yet.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-4">
-        <SummaryCard label="Total Amount" value={`$${totals.totalAmt.toFixed(2)}`} />
-        <SummaryCard label="Total Days" value={String(totals.totalDays || 0)} />
-        <SummaryCard label="Agreement Start" value={totals.minStart || "—"} />
-        <SummaryCard label="Agreement End" value={totals.maxEnd || "—"} />
-      </div>
-
-      <div className="mt-6 flex gap-2">
-        <button onClick={onBack} className="rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Back</button>
-        <button onClick={onNext} className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700">Save & Next</button>
-      </div>
-    </div>
-  );
-}
-
-/* ---------- Step 3 ---------- */
-
-function Step3WarrantyAttachments({
-  loading,
-  DEFAULT_WARRANTY,
-  useDefaultWarranty, setUseDefaultWarranty,
-  customWarranty, setCustomWarranty,
-  saveWarranty, warrantySaving, warrantyError,
-  attachments,
-  attFiles, setAttFiles,
-  attMeta, setAttMeta,
-  onDropFiles, onPickFiles,
-  uploadAttachments, deleteAttachment,
-  attachError,
-  goBack, goNext,
-}) {
-  return (
-    <div className="rounded-lg border bg-white p-4">
-      {!!loading && <div className="text-sm text-gray-500 mb-3">Loading…</div>}
-
-      {/* Warranty */}
-      <div className="mb-4">
-        <div className="text-sm font-medium mb-2">Warranty</div>
-        <div className="flex items-center gap-2 mb-2">
-          <input id="use_default_warranty" type="checkbox" checked={useDefaultWarranty} onChange={(e) => setUseDefaultWarranty(e.target.checked)} />
-          <label htmlFor="use_default_warranty" className="text-sm">Use default 12-month workmanship warranty</label>
-        </div>
-        <textarea
-          className="w-full rounded border px-3 py-2 text-sm"
-          rows={5}
-          value={useDefaultWarranty ? DEFAULT_WARRANTY : customWarranty}
-          onChange={(e) => !useDefaultWarranty && setCustomWarranty(e.target.value)}
-          readOnly={useDefaultWarranty}
-          placeholder={useDefaultWarranty ? "" : "Example: Standard workmanship warranty... (edit as needed)"}
-          style={useDefaultWarranty ? { background: "#F9FAFB", color: "#374151" } : { color: "#111827" }}
-        />
-        <div className="mt-2 flex items-center gap-3">
-          <button onClick={saveWarranty} disabled={warrantySaving} className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-60">
-            {warrantySaving ? "Saving…" : "Save Warranty"}
-          </button>
-          {!!warrantyError && (<div className="text-xs text-red-600">Server response: {warrantyError}</div>)}
-        </div>
-      </div>
-
-      {/* Attachments */}
-      <div>
-        <div className="text-sm font-medium mb-2">Attachments & Addenda</div>
-
-        <div onDragOver={(e) => e.preventDefault()} onDrop={onDropFiles} style={{ border: "2px dashed #CBD5E1", borderRadius: 8, padding: 16, background: "#F8FAFC" }} className="mb-3">
-          <div className="text-sm mb-2">Drag & drop files here, or choose files:</div>
-          <input type="file" multiple onChange={onPickFiles} className="text-sm" />
-          {!!attFiles.length && (<div className="mt-2 text-xs text-gray-600">Pending: {attFiles.map((f) => f.name).join(", ")}</div>)}
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-          <input
-            type="text"
-            className="w-full rounded border px-3 py-2 text-sm"
-            placeholder="Title (e.g., Spec Sheet)"
-            value={attMeta.title}
-            onChange={(e) => setAttMeta((s) => ({ ...s, title: e.target.value }))}
-          />
-          <select
-            className="w-full rounded border px-3 py-2 text-sm"
-            value={attMeta.category}
-            onChange={(e) => setAttMeta((s) => ({ ...s, category: e.target.value }))}
-          >
-            <option value="WARRANTY">WARRANTY</option>
-            <option value="ADDENDUM">ADDENDUM</option>
-            <option value="EXHIBIT">EXHIBIT</option>
-            <option value="OTHER">OTHER</option>
-          </select>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={attMeta.visible}
-              onChange={(e) => setAttMeta((s) => ({ ...s, visible: e.target.checked }))}
-            />
-            Visible to homeowner
-          </label>
-        </div>
-
-        <div className="flex gap-2">
-          <button onClick={uploadAttachments} className="rounded bg-gray-800 px-3 py-2 text-sm text-white hover:bg-black">+ Add Attachment</button>
-          {!!attachError && <div className="text-xs text-red-600 self-center">Server response: {attachError}</div>}
-        </div>
-
-        <div className="mt-4 overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 text-left">
-                <th className="px-3 py-2">Category</th>
-                <th className="px-3 py-2">Title</th>
-                <th className="px-3 py-2">Visible</th>
-                <th className="px-3 py-2">File</th>
-                <th className="px-3 py-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {attachments.map((a) => {
-                const isVisible = a.visible || a.is_visible || a.public || a.is_public;
-                const url = a.file || a.url || a.file_url || a.download_url || a.download || a.absolute_url || null;
-                return (
-                  <tr key={a.id} className="border-t">
-                    <td className="px-3 py-2">{(a.category || "").toUpperCase()}</td>
-                    <td className="px-3 py-2">{a.title || a.filename || "—"}</td>
-                    <td className="px-3 py-2">{isVisible ? "Yes" : "No"}</td>
-                    <td className="px-3 py-2">{url ? (<a className="text-blue-600 hover:underline" href={url} target="_blank" rel="noreferrer">Download</a>) : "—"}</td>
-                    <td className="px-3 py-2">
-                      <button onClick={() => deleteAttachment(a.id)} className="rounded bg-red-50 px-2 py-1 text-red-700 hover:bg-red-100">Delete</button>
-                    </td>
-                  </tr>
-                );
-              })}
-              {!attachments.length && (<tr><td colSpan={5} className="px-3 py-6 text-center text-gray-500">No attachments yet.</td></tr>)}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="mt-4 flex gap-2">
-          <button onClick={goBack} className="rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200">Back</button>
-          <button onClick={goNext} className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700">Save & Next</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ---------- Step 4 ---------- */
-
-function Step4Finalize({
-  agreement, id, previewPdf, goPublic, milestones, totals,
-  hasPreviewed,
-  ackReviewed, setAckReviewed,
-  ackTos, setAckTos,
-  ackEsign, setAckEsign,
-  typedName, setTypedName,
-  canSign, signing, signContractor,
-  attachments, defaultWarrantyText, customWarranty, useDefaultWarranty,
-  goBack,
-  // FIX: receive openingPreview from parent to drive disabled state
-  openingPreview = false,
-}) {
-  const warrantyText = useDefaultWarranty
-    ? defaultWarrantyText
-    : (customWarranty?.trim() ? customWarranty : defaultWarrantyText);
-
-  return (
-    <div className="rounded-lg border bg-white p-4 space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        <SummaryCard label="Agreement" value={`#${agreement?.id || id} — ${agreement?.project_title || agreement?.title || "Project"}`} />
-        <SummaryCard label="Total Amount" value={`$${Number(totals.totalAmt || 0).toFixed(2)}`} />
-        <SummaryCard label="Start → End" value={`${totals.minStart || "—"} → ${totals.maxEnd || "—"}`} />
-        <SummaryCard label="Total Days" value={String(totals.totalDays || 0)} />
-      </div>
-
-      <section>
-        <div className="text-sm font-semibold mb-2">Warranty (Snapshot)</div>
-        <div className="border rounded bg-gray-50 p-3 max-h-44 overflow-auto text-sm leading-relaxed whitespace-pre-wrap">
-          {warrantyText}
-        </div>
-      </section>
-
-      <section>
-        <div className="text-sm font-semibold mb-2">Milestones</div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 text-left">
-                <th className="px-3 py-2">#</th>
-                <th className="px-3 py-2">Title</th>
-                <th className="px-3 py-2">Due</th>
-                <th className="px-3 py-2">Amount</th>
-                <th className="px-3 py-2">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(milestones || []).map((m, i) => (
-                <tr key={m.id || i} className="border-t">
-                  <td className="px-3 py-2">{i + 1}</td>
-                  <td className="px-3 py-2">{m.title || m.description || "—"}</td>
-                  <td className="px-3 py-2">{toDateOnly(m.completion_date || m.end_date || m.end || m.due_date || m.scheduled_date || m.start_date || m.start) || "—"}</td>
-                  <td className="px-3 py-2">${Number(m.amount || 0).toFixed(2)}</td>
-                  <td className="px-3 py-2">{m.status || (m.completed ? "Completed" : "Pending")}</td>
-                </tr>
-              ))}
-              {!milestones?.length && (
-                <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-500">No milestones.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section>
-        <div className="text-sm font-semibold mb-2">Attachments &amp; Addenda (Visible)</div>
-        {(attachments || []).filter(a => a.visible || a.is_visible || a.public || a.is_public).length ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 text-left">
-                  <th className="px-3 py-2">Category</th>
-                  <th className="px-3 py-2">Title</th>
-                  <th className="px-3 py-2">File</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(attachments || [])
-                  .filter(a => a.visible || a.is_visible || a.public || a.is_public)
-                  .map((a) => {
-                    const url = a.file || a.url || a.file_url || a.download_url || a.download || a.absolute_url || null;
-                    return (
-                      <tr key={a.id} className="border-t">
-                        <td className="px-3 py-2">{(a.category || "").toUpperCase()}</td>
-                        <td className="px-3 py-2">{a.title || a.filename || "—"}</td>
-                        <td className="px-3 py-2">{url ? <a className="text-blue-600 hover:underline" href={url} target="_blank" rel="noreferrer">Download</a> : "—"}</td>
-                      </tr>
-                    );
-                  })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="text-sm text-gray-500">No visible attachments.</div>
-        )}
-      </section>
-
-      <section className="space-y-2 text-sm">
-        <div className="text-sm font-semibold">Agreement Review</div>
-        <label className="flex items-start gap-2">
-          <input type="checkbox" checked={!!ackReviewed} onChange={(e) => setAckReviewed(e.target.checked)} />
-          <span>I have reviewed the entire agreement and all attached exhibits/attachments.</span>
-        </label>
-        <label className="flex items-start gap-2">
-          <input type="checkbox" checked={!!ackTos} onChange={(e) => setAckTos(e.target.checked)} />
-          <span>
-            I agree to the&nbsp;
-            <a className="text-blue-600 hover:underline" href="/static/legal/terms_of_service.txt" target="_blank" rel="noreferrer">Terms of Service</a>
-            &nbsp;and&nbsp;
-            <a className="text-blue-600 hover:underline" href="/static/legal/privacy_policy.txt" target="_blank" rel="noreferrer">Privacy Policy</a>.
-          </span>
-        </label>
-        <label className="flex items-start gap-2">
-          <input type="checkbox" checked={!!ackEsign} onChange={(e) => setAckEsign(e.target.checked)} />
-          <span>
-            I consent to conduct business electronically and use electronic signatures under the U.S. E-SIGN Act.
-            I understand my electronic signature is legally binding, and I can request a paper copy.
-          </span>
-        </label>
-        <div className="rounded border bg-yellow-50 text-yellow-800 px-3 py-2">
-          <strong>Note:</strong> You must preview the PDF before signing.
-        </div>
-      </section>
-
-      <section>
-        <div className="text-sm font-semibold mb-2">Signatures</div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Contractor */}
-          <div className="rounded border p-3">
-            <div className="text-sm font-medium mb-2">Contractor Signature</div>
-
-            {agreement?.signed_by_contractor ? (
-              <div className="text-sm text-green-700">
-                ✓ Already signed by contractor {agreement?.contractor_signature_name ? `(${agreement.contractor_signature_name})` : ""}.
-              </div>
-            ) : (
-              <>
-                <label className="block text-sm mb-1">Type full legal name</label>
-                <input
-                  className="w-full rounded border px-3 py-2 text-sm"
-                  placeholder="e.g., Jane Q. Contractor"
-                  value={typedName}
-                  onChange={(e) => setTypedName(e.target.value)}
-                />
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={previewPdf}
-                    disabled={openingPreview}
-                    className={`rounded px-3 py-2 text-sm ${
-                      openingPreview ? "bg-indigo-100 text-indigo-400 cursor-wait" : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
-                    }`}
-                    title="Open PDF preview in a new tab"
-                  >
-                    {openingPreview ? "Opening…" : "Preview PDF"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!canSign || signing}
-                    onClick={signContractor}
-                    className={`rounded px-3 py-2 text-sm text-white ${canSign ? "bg-indigo-600 hover:bg-indigo-700" : "bg-gray-400 cursor-not-allowed"}`}
-                    title={!canSign ? "Preview + all checkboxes + typed name required" : "Sign as Contractor"}
-                  >
-                    {signing ? "Signing…" : "Sign as Contractor"}
-                  </button>
-                </div>
-                {!hasPreviewed && <div className="mt-2 text-xs text-amber-700">Please preview the PDF before signing.</div>}
-              </>
-            )}
-          </div>
-
-          {/* Homeowner */}
-          <div className="rounded border p-3">
-            <div className="text-sm font-medium mb-2">Homeowner Signature</div>
-            {agreement?.signed_by_homeowner ? (
-              <div className="text-sm text-green-700">✓ Already signed by homeowner.</div>
-            ) : (
-              <>
-                <div className="text-sm text-gray-600">The homeowner signs via their public link.</div>
-                <div className="mt-3">
-                  <button
-                    type="button"
-                    onClick={goPublic}
-                    className="rounded bg-gray-800 px-3 py-2 text-sm text-white hover:bg-black"
-                    title="Open the public signing link"
-                  >
-                    Open Public Signing Link
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* Footer actions */}
-      <div className="flex gap-2">
         <button
-          type="button"
-          onClick={goBack}
-          className="rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200"
-          title="Back to previous step"
+          onClick={() => saveStep1(false)}
+          className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
         >
-          Back
+          Save
         </button>
         <button
-          type="button"
-          onClick={previewPdf}
-          disabled={openingPreview}
-          className={`rounded px-3 py-2 text-sm ${
-            openingPreview ? "bg-indigo-100 text-indigo-400 cursor-wait" : "bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
-          }`}
-          title="Open PDF preview in a new tab"
+          onClick={() => saveStep1(true)}
+          className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
         >
-          {openingPreview ? "Opening…" : "Preview PDF"}
-        </button>
-        <button
-          type="button"
-          onClick={goPublic}
-          className="rounded bg-gray-800 px-3 py-2 text-sm text-white hover:bg-black"
-          title="Open the public signing link"
-        >
-          View Public Link
+          Save & Next
         </button>
       </div>
     </div>
   );
 }
 
-/* ---------- shared UI ---------- */
-
+/* ---------------- shared UI ---------------- */
 function DateWithButton({ label, value, onChange }) {
   const ref = useRef(null);
-  const openPicker = () => { if (ref.current?.showPicker) ref.current.showPicker(); else ref.current?.focus(); };
+  const open = () => {
+    if (ref.current?.showPicker) ref.current.showPicker();
+    else ref.current?.focus();
+  };
   return (
     <div>
       <label className="block text-sm font-medium mb-1">{label}</label>
-      <div style={{ position: "relative", overflow: "visible" }}>
+      <div style={{ position: "relative" }}>
         <input
           ref={ref}
           type="date"
@@ -1213,17 +826,570 @@ function DateWithButton({ label, value, onChange }) {
           className="w-full rounded border px-3 py-2 text-sm"
           style={{ paddingRight: "2.5rem" }}
         />
-        <CalendarBtn onClick={openPicker} title={`Open ${label} calendar`} />
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={open}
+          aria-label={label}
+          title={label}
+          style={{
+            position: "absolute",
+            right: 8,
+            top: "50%",
+            transform: "translateY(-50%)",
+            background: "transparent",
+            border: 0,
+            lineHeight: 0,
+            color: "#6B7280",
+          }}
+        >
+          <span role="img" aria-label="calendar">📅</span>
+        </button>
       </div>
     </div>
   );
 }
 
-function SummaryCard({ label, value }) {
+/* ---------------- Step 2 ---------------- */
+function Step2Milestones({
+  agreement,
+  mLocal,
+  onLocalChange,
+  onAdd,
+  milestones,
+  onDelete,
+  onEdit,
+  onBack,
+  onNext,
+}) {
+  const total = milestones.reduce((s, m) => s + Number(m.amount || 0), 0);
+  const minStart = useMemo(() => {
+    const s = milestones
+      .map((m) => toDateOnly(m.start_date || m.start))
+      .filter(Boolean)
+      .sort()[0];
+    return s || "";
+  }, [milestones]);
+  const maxEnd = useMemo(() => {
+    const e = milestones
+      .map((m) => toDateOnly(m.completion_date || m.end_date || m.end || m.due_date))
+      .filter(Boolean)
+      .sort()
+      .slice(-1)[0];
+    return e || "";
+  }, [milestones]);
+
   return (
-    <div className="rounded border bg-gray-50 px-3 py-2">
-      <div className="text-xs text-gray-500">{label}</div>
-      <div className="text-sm font-medium">{value}</div>
+    <div className="rounded-lg border bg-white p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-lg font-semibold">Milestones</h3>
+        <div className="text-sm text-gray-600">
+          Schedule:{" "}
+          {minStart && maxEnd ? (
+            <span className="font-medium">
+              {friendly(minStart)} → {friendly(maxEnd)} (est.)
+            </span>
+          ) : (
+            <span className="text-gray-400">add dates to see range</span>
+          )}
+        </div>
+      </div>
+
+      {/* Inline add form */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 mb-2">
+        <input
+          className="md:col-span-4 rounded border px-3 py-2 text-sm"
+          placeholder="Title"
+          name="title"
+          value={mLocal.title}
+          onChange={onLocalChange}
+        />
+        <input
+          type="date"
+          className="md:col-span-3 rounded border px-3 py-2 text-sm"
+          name="start"
+          value={mLocal.start || ""}
+          onChange={onLocalChange}
+          aria-label="Start date"
+        />
+        <input
+          type="date"
+          className="md:col-span-3 rounded border px-3 py-2 text-sm"
+          name="end"
+          value={mLocal.end || ""}
+          onChange={onLocalChange}
+          aria-label="End date"
+        />
+        <input
+          type="number"
+          min="0"
+          step="0.01"
+          className="md:col-span-2 rounded border px-3 py-2 text-sm"
+          placeholder="Amount"
+          name="amount"
+          value={mLocal.amount}
+          onChange={onLocalChange}
+        />
+        <div className="md:col-span-12">
+          <textarea
+            className="w-full rounded border px-3 py-2 text-sm resize-y"
+            rows={3}
+            placeholder="Description (details, materials, notes)…"
+            name="description"
+            value={mLocal.description}
+            onChange={onLocalChange}
+          />
+        </div>
+      </div>
+      <div className="mb-6">
+        <button
+          onClick={onAdd}
+          className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
+        >
+          + Add Milestone
+        </button>
+      </div>
+
+      {/* Summary table */}
+      <div className="rounded-2xl border overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50">
+            <tr className="[&>*]:px-3 [&>*]:py-2 text-left">
+              <th>#</th>
+              <th>Title</th>
+              <th>Description</th>
+              <th>Start</th>
+              <th>Due</th>
+              <th>Amount</th>
+              <th />
+            </tr>
+          </thead>
+        <tbody>
+            {milestones.map((m, idx) => (
+              <tr key={m.id || `${m.title}-${idx}`} className="border-t align-top">
+                <td className="[&>*]:px-3 [&>*]:py-2">{idx + 1}</td>
+                <td className="[&>*]:px-3 [&>*]:py-2">{m.title || "—"}</td>
+                <td className="[&>*]:px-3 [&>*]:py-2 whitespace-pre-wrap">
+                  {m.description || "—"}
+                </td>
+                <td className="[&>*]:px-3 [&>*]:py-2">
+                  {friendly(toDateOnly(m.start_date || m.start))}
+                </td>
+                <td className="[&>*]:px-3 [&>*]:py-2">
+                  {friendly(
+                    toDateOnly(
+                      m.completion_date || m.end_date || m.end || m.due_date
+                    )
+                  )}
+                </td>
+                <td className="[&>*]:px-3 [&>*]:py-2">
+                  {Number(m.amount || 0).toLocaleString(undefined, {
+                    style: "currency",
+                    currency: "USD",
+                  })}
+                </td>
+                <td className="[&>*]:px-3 [&>*]:py-2 text-right">
+                  <div className="inline-flex gap-2">
+                    <button
+                      className="rounded border px-2 py-1"
+                      onClick={() => onEdit?.(m)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="rounded border px-2 py-1"
+                      onClick={() => onDelete?.(m.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {!milestones.length && (
+              <tr>
+                <td
+                  colSpan={7}
+                  className="text-center text-gray-400 py-6"
+                >
+                  No milestones yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+          <tfoot>
+            <tr className="bg-gray-50 font-semibold [&>*]:px-3 [&>*]:py-2">
+              <td colSpan={5}>Total</td>
+              <td>
+                {total.toLocaleString(undefined, {
+                  style: "currency",
+                  currency: "USD",
+                })}
+              </td>
+              <td />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div className="mt-4 flex items-center justify-between">
+        <button onClick={onBack} className="rounded border px-3 py-2 text-sm">
+          Back
+        </button>
+        <button
+          onClick={onNext}
+          className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Step 3 (attachments — quiet 404 delete) ---------------- */
+function Step3WarrantyAttachments({
+  agreementId,
+  DEFAULT_WARRANTY,
+  useDefaultWarranty,
+  setUseDefaultWarranty,
+  customWarranty,
+  setCustomWarranty,
+  saveWarranty,
+  attachments,
+  refreshAttachments,
+  onBack,
+  onNext,
+}) {
+  const [file, setFile] = useState(null);
+  const [title, setTitle] = useState("");
+  const [category, setCategory] = useState("WARRANTY");
+  const [visible, setVisible] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const inputRef = useRef(null);
+  const dropRef = useRef(null);
+
+  useEffect(() => {
+    const el = dropRef.current;
+    if (!el) return;
+    const onDragOver = (e) => { e.preventDefault(); el.classList.add("ring-2","ring-indigo-400"); };
+    const onDragLeave = (e) => { e.preventDefault(); el.classList.remove("ring-2","ring-indigo-400"); };
+    const onDrop = (e) => {
+      e.preventDefault();
+      el.classList.remove("ring-2","ring-indigo-400");
+      if (e.dataTransfer?.files?.[0]) setFile(e.dataTransfer.files[0]);
+    };
+    el.addEventListener("dragover", onDragOver);
+    el.addEventListener("dragleave", onDragLeave);
+    el.addEventListener("drop", onDrop);
+    return () => {
+      el.removeEventListener("dragover", onDragOver);
+      el.removeEventListener("dragleave", onDragLeave);
+      el.removeEventListener("drop", onDrop);
+    };
+  }, []);
+
+  const tryPostAttachment = async (form) => {
+    const urls = [
+      agreementId ? `/projects/agreements/${agreementId}/attachments/` : null,
+      `/projects/attachments/`,
+    ].filter(Boolean);
+
+    let lastErr;
+    for (const url of urls) {
+      try {
+        const { data } = await api.post(url, form);
+        return data;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    throw lastErr;
+  };
+
+  const addAttachment = async () => {
+    if (!agreementId) return toast.error("Create and save Agreement first.");
+    if (!file) return toast.error("Choose a file to upload.");
+
+    try {
+      setUploading(true);
+      const form = new FormData();
+      const resolvedTitle = title || file.name;
+
+      // FK + names
+      form.set("agreement", String(agreementId));
+      form.set("title", resolvedTitle);
+      form.set("name", resolvedTitle);
+
+      // category
+      form.set("category", category);
+
+      // visibility
+      form.set("visible_to_homeowner", visible);
+      form.set("visible", visible);
+
+      // file aliases
+      form.set("file", file, file.name);
+      form.set("document", file, file.name);
+
+      await tryPostAttachment(form);
+
+      // reset
+      setTitle("");
+      setCategory("WARRANTY");
+      setVisible(true);
+      setFile(null);
+      if (inputRef.current) inputRef.current.value = "";
+
+      await refreshAttachments?.();
+      toast.success("Attachment uploaded.");
+    } catch (e) {
+      const msg =
+        e?.response?.data?.detail ||
+        e?.response?.statusText ||
+        e?.message ||
+        "Upload failed.";
+      toast.error(msg);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Delete with validateStatus so a 404 doesn't trigger interceptor noise
+  const quietDelete = (url) =>
+    api.delete(url, {
+      validateStatus: (s) => (s >= 200 && s < 300) || s === 404,
+    });
+
+  const deleteAttachment = async (attId) => {
+    if (!agreementId || !attId) return;
+    const nestedUrl = `/projects/agreements/${agreementId}/attachments/${attId}/`;
+    const genericUrl = `/projects/attachments/${attId}/`;
+    try {
+      const res1 = await quietDelete(nestedUrl);
+      if (res1?.status === 200 || res1?.status === 204) {
+        await refreshAttachments?.();
+        toast.success("Attachment deleted.");
+        return;
+      }
+      const res2 = await quietDelete(genericUrl);
+      if (res2?.status === 200 || res2?.status === 204 || res2?.status === 404) {
+        await refreshAttachments?.();
+        toast.success("Attachment deleted.");
+      } else {
+        toast.error("Delete failed.");
+      }
+    } catch (e) {
+      const msg =
+        e?.response?.data?.detail ||
+        e?.response?.statusText ||
+        e?.message ||
+        "Delete failed.";
+      toast.error(msg);
+    }
+  };
+
+  return (
+    <div className="rounded-lg border bg-white p-4 space-y-6">
+      {/* Warranty */}
+      <div>
+        <label className="inline-flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={useDefaultWarranty}
+            onChange={(e) => setUseDefaultWarranty(e.target.checked)}
+          />
+          <span className="text-sm">Use default 12-month workmanship warranty</span>
+        </label>
+
+        {useDefaultWarranty ? (
+          <div className="mt-3 rounded border p-3 bg-gray-50 text-sm whitespace-pre-wrap">
+            {DEFAULT_WARRANTY}
+          </div>
+        ) : (
+          <div className="mt-3">
+            <label className="block text-sm font-medium mb-1">Custom Warranty</label>
+            <textarea
+              className="w-full rounded border px-3 py-2 text-sm min-h-[120px]"
+              placeholder="Enter your custom warranty text…"
+              value={customWarranty}
+              onChange={(e) => setCustomWarranty(e.target.value)}
+            />
+          </div>
+        )}
+
+        <div className="mt-3">
+          <button
+            onClick={saveWarranty}
+            className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
+          >
+            Save Warranty
+          </button>
+        </div>
+      </div>
+
+      {/* Attachments */}
+      <div className="rounded-2xl border">
+        <div className="p-4 border-b">
+          <h3 className="text-base font-semibold">Attachments &amp; Addenda</h3>
+        </div>
+
+        <div className="p-4 space-y-3">
+          {/* Drop zone */}
+          <div
+            ref={dropRef}
+            className="border-2 border-dashed rounded-md p-4 text-sm text-gray-600 flex flex-col gap-2 items-start"
+          >
+            <div className="flex items-center gap-2">
+              <input
+                ref={inputRef}
+                id="wizard-step3-file"
+                type="file"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                className="hidden"
+              />
+              <label
+                htmlFor="wizard-step3-file"
+                className="inline-flex items-center px-3 py-1.5 rounded-md border bg-white hover:bg-gray-50 cursor-pointer"
+              >
+                Choose Files
+              </label>
+              <span className="text-gray-500">{file ? file.name : "No file chosen"}</span>
+            </div>
+            <p className="text-xs text-gray-500">Drag &amp; drop files here, or click.</p>
+          </div>
+
+          {/* Meta */}
+          <div className="grid grid-cols-12 gap-3">
+            <div className="col-span-6">
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full border rounded-md p-2 text-sm"
+                placeholder="Title (e.g., Spec Sheet)"
+              />
+            </div>
+            <div className="col-span-3">
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full border rounded-md p-2 text-sm"
+              >
+                <option value="WARRANTY">WARRANTY</option>
+                <option value="SPEC">SPEC / SCOPE</option>
+                <option value="PERMIT">PERMIT / LICENSE</option>
+                <option value="PHOTO">PHOTO / IMAGE</option>
+                <option value="OTHER">OTHER</option>
+              </select>
+            </div>
+            <div className="col-span-3 flex items-center gap-4">
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={visible}
+                  onChange={(e) => setVisible(e.target.checked)}
+                />
+                <span className="text-sm">Visible to homeowner</span>
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <button
+              type="button"
+              onClick={addAttachment}
+              disabled={uploading}
+              className="px-3 py-2 text-sm rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60"
+            >
+              {uploading ? "Uploading..." : "Add Attachment"}
+            </button>
+          </div>
+
+          {/* List */}
+          <div className="mt-4 overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left border-b">
+                  <th className="py-2 pr-3 font-semibold text-gray-700">Category</th>
+                  <th className="py-2 pr-3 font-semibold text-gray-700">Title</th>
+                  <th className="py-2 pr-3 font-semibold text-gray-700">Visible</th>
+                  <th className="py-2 pr-3 font-semibold text-gray-700">File</th>
+                  <th className="py-2 pr-3 font-semibold text-gray-700">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {attachments?.length ? (
+                  attachments.map((a) => {
+                    const v = (a.visible_to_homeowner ?? a.visible) ? true : false;
+                    const name = a.file_name || a.filename || a.name || a.title || "File";
+                    const url = a.file_url || a.url || a.download_url || a.file || null;
+                    return (
+                      <tr key={a.id || name} className="border-b last:border-b-0">
+                        <td className="py-2 pr-3">{a.category || "-"}</td>
+                        <td className="py-2 pr-3">{a.title || name}</td>
+                        <td className="py-2 pr-3">{v ? "Yes" : "No"}</td>
+                        <td className="py-2 pr-3">
+                          {url ? (
+                            <a href={url} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
+                              {name}
+                            </a>
+                          ) : (
+                            name
+                          )}
+                        </td>
+                        <td className="py-2 pr-3">
+                          <div className="flex gap-2">
+                            {url && (
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-2 py-1 rounded border text-xs hover:bg-gray-50"
+                              >
+                                Download
+                              </a>
+                            )}
+                            {a?.id && (
+                              <button
+                                type="button"
+                                onClick={() => deleteAttachment(a.id)}
+                                className="px-2 py-1 rounded border text-xs text-red-600 hover:bg-red-50"
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="py-6 text-center text-gray-500">
+                      No attachments uploaded.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Footer nav */}
+        <div className="px-4 py-3 border-t flex items-center justify-between">
+          <button onClick={onBack} className="rounded border px-3 py-2 text-sm">
+            Back
+          </button>
+          <button
+            onClick={onNext}
+            className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
+          >
+            Save & Next
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

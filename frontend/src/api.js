@@ -1,48 +1,95 @@
 // src/api.js
-import axios from "axios";
+// v2025-10-13 endpoint-shim+auth (handles absolute same-origin URLs)
+// - Rewrites legacy "customers" routes to /homeowners/ for BOTH relative and absolute URLs.
 
-/**
- * Axios core with resilient auth:
- * - In-memory token (preferred) + storage fallback (access/accessToken)
- * - Always attaches Authorization: Bearer … to every request (incl. DELETE)
- * - Legacy URL rewrites → /projects/*
- * - Forces JSON for non-attachment writes to avoid 415
- * - 401 refresh-once; 415 auto-recovery; 405 /contractors/me/ fallback
- */
+console.log("api.js v2025-10-13-shim+auth+abs");
+
+import axios from "axios";
 
 const TOK = { access: "access", refresh: "refresh", legacyAccess: "accessToken" };
 const BASE_URL = "/api";
 
-// ---------- In-memory tokens (survive storage blocking within the tab) ----------
+// —— In-memory tokens
 let MEM_ACCESS = null;
 let MEM_REFRESH = null;
 
-// ---------- Helpers ----------
+// —— Helpers
 const isFormData = (v) => typeof FormData !== "undefined" && v instanceof FormData;
 const isBlob = (v) => typeof Blob !== "undefined" && v instanceof Blob;
 const isURLSearchParams = (v) => typeof URLSearchParams !== "undefined" && v instanceof URLSearchParams;
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
-const LEGACY_PREFIX_MAP = [
-  ["/homeowners", "/projects/homeowners"],
+const SAME_ORIGIN =
+  (typeof window !== "undefined" && window.location && window.location.origin) || "";
+
+// Legacy → canonical endpoint remaps (order matters)
+const ENDPOINT_REMAP = [
+  ["/projects/customers", "/homeowners"],
+  ["/customers", "/homeowners"],
+
+  // keep homeowners canonical (do NOT remap to /projects/homeowners)
+  ["/projects/homeowners", "/homeowners"],
+
+  // other namespaced remaps you rely on
   ["/milestones", "/projects/milestones"],
   ["/contractors", "/projects/contractors"],
   ["/attachments", "/projects/attachments"],
   ["/expenses", "/projects/expenses"],
 ];
 
-const isAbsoluteUrl = (url) => /^https?:\/\//i.test(url);
-function rewriteLegacyUrl(url) {
-  if (!url || typeof url !== "string" || isAbsoluteUrl(url)) return url;
-  for (const [oldPfx, newPfx] of LEGACY_PREFIX_MAP) {
-    if (url === oldPfx || url.startsWith(oldPfx + "/") || url.startsWith(oldPfx + "?")) {
-      return newPfx + url.slice(oldPfx.length);
+function normalizePath(url) {
+  if (!url || typeof url !== "string") return "/";
+  const [path, rest] = url.split(/(?=[?#])/);
+  const fixed = ("/" + path).replace(/\/{2,}/g, "/");
+  return rest ? fixed + rest : fixed;
+}
+
+/** Remap relative paths like /api/... or /projects/... (we pass only the path in here) */
+function remapRelativePath(pathWithQuery) {
+  const path = normalizePath(pathWithQuery);
+  for (const [legacy, target] of ENDPOINT_REMAP) {
+    const base = legacy.endsWith("/") ? legacy.slice(0, -1) : legacy;
+    if (
+      path === base ||
+      path === base + "/" ||
+      path.startsWith(base + "/") ||
+      path.startsWith(base + "?")
+    ) {
+      const replaced = path.replace(base, target);
+      if (process?.env?.NODE_ENV !== "production") {
+        // eslint-disable-next-line no-console
+        console.log(`[api-shim] ${legacy} → ${target} :: ${path} → ${replaced}`);
+      }
+      return replaced;
     }
   }
-  return url;
+  return path;
 }
+
+/** Remap any URL (relative OR absolute same-origin) */
+function remapAny(url) {
+  if (!url) return url;
+
+  // Absolute same-origin? Rewrite its pathname then rebuild
+  try {
+    const u = new URL(url, SAME_ORIGIN || "http://localhost");
+    const isAbsolute = /^[a-z]+:\/\//i.test(url);
+    const sameOrigin = SAME_ORIGIN && u.origin === SAME_ORIGIN;
+
+    if (isAbsolute && sameOrigin) {
+      const rebuiltPath = remapRelativePath(u.pathname + u.search + u.hash);
+      return u.origin + rebuiltPath;
+    }
+  } catch {
+    /* ignore parse errors; fall through to relative handling */
+  }
+
+  // Relative (or different-origin we don't touch): just rewrite the path/query/hash
+  return remapRelativePath(url);
+}
+
 function isAttachmentRoute(url = "") {
-  if (!url) return false;
-  const u = String(url);
+  const u = String(url || "");
   return (
     /\/attachments\/?(\?|$|\/)/i.test(u) ||
     /\/milestone-files\/?(\?|$|\/)/i.test(u) ||
@@ -51,7 +98,7 @@ function isAttachmentRoute(url = "") {
   );
 }
 
-// ---------- Storage token helpers ----------
+// —— Storage token helpers
 export const getAccessToken = () => {
   if (MEM_ACCESS) return MEM_ACCESS;
   try {
@@ -76,13 +123,31 @@ export const getRefreshToken = () => {
 };
 function inferRememberFromStorage() {
   try {
-    if (localStorage.getItem(TOK.refresh)) return true;   // persisted
-    if (sessionStorage.getItem(TOK.refresh)) return false; // session-only
+    if (localStorage.getItem(TOK.refresh)) return true;
+    if (sessionStorage.getItem(TOK.refresh)) return false;
   } catch {}
-  return true; // default: persist
+  return true;
 }
 
-// ---------- Public API for login/logout ----------
+// —— Axios instance
+const api = axios.create({
+  baseURL: BASE_URL,
+  timeout: 30000,
+  withCredentials: false,
+});
+
+// SINGLE definition
+function applyAuthHeader(token) {
+  if (token) {
+    api.defaults.headers.common.Authorization = `Bearer ${token}`;
+    axios.defaults.headers.common.Authorization = `Bearer ${token}`;
+  } else {
+    delete api.defaults.headers.common.Authorization;
+    delete axios.defaults.headers.common.Authorization;
+  }
+}
+
+// —— Public API for login/logout
 export function setAuthToken(access, refresh = null, remember = true) {
   MEM_ACCESS = access || null;
   MEM_REFRESH = refresh || null;
@@ -92,8 +157,7 @@ export function setAuthToken(access, refresh = null, remember = true) {
 
     if (access) {
       store.setItem(TOK.access, access);
-      // keep legacy key in sync for older code paths
-      store.setItem(TOK.legacyAccess, access);
+      store.setItem(TOK.legacyAccess, access); // legacy key in sync
     }
     if (refresh) store.setItem(TOK.refresh, refresh);
 
@@ -103,9 +167,7 @@ export function setAuthToken(access, refresh = null, remember = true) {
   } catch {}
   applyAuthHeader(access);
 }
-// back-compat alias some code may still call
-export const setTokens = (access, refresh, remember = true) =>
-  setAuthToken(access, refresh, remember);
+export const setTokens = (a, r, remember = true) => setAuthToken(a, r, remember);
 
 export function clearAuth() {
   MEM_ACCESS = null;
@@ -121,24 +183,7 @@ export function clearAuth() {
   applyAuthHeader(null);
 }
 
-function applyAuthHeader(token) {
-  if (token) {
-    api.defaults.headers.common.Authorization = `Bearer ${token}`;
-    axios.defaults.headers.common.Authorization = `Bearer ${token}`;
-  } else {
-    delete api.defaults.headers.common.Authorization;
-    delete axios.defaults.headers.common.Authorization;
-  }
-}
-
-// ---------- Axios instance ----------
-const api = axios.create({
-  baseURL: BASE_URL,
-  timeout: 30000,
-  withCredentials: false, // avoid session/CSRF ambiguity
-});
-
-// Ensure JSON for non-attachment writes
+// Force JSON for non-attachment writes
 function normalizeForJson(config) {
   const method = (config.method || "get").toLowerCase();
   const wantsBody = /post|put|patch/.test(method);
@@ -167,13 +212,11 @@ function normalizeForJson(config) {
 
 // Optional GET retry
 const RETRY = { enableGetRetry: false, max: 2, baseDelayMs: 250 };
-const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
-const isTransient = (err) => !err?.response || [502, 503, 504].includes(err.response.status);
+const isTransient = (err) => !err?.response || [502, 503, 504].includes(err.response?.status);
 
-// Interceptors
+// —— Interceptors
 function installInterceptors(instance) {
   instance.interceptors.request.use((config) => {
-    // Prefer in-memory token; fallback to storage
     const token = MEM_ACCESS || getAccessToken();
     if (token) {
       config.headers = { ...(config.headers || {}), Authorization: `Bearer ${token}` };
@@ -181,9 +224,10 @@ function installInterceptors(instance) {
       delete config.headers.Authorization;
     }
 
-    if (config.url && !isAbsoluteUrl(config.url)) {
-      config.url = rewriteLegacyUrl(config.url);
+    if (config.url) {
+      config.url = remapAny(config.url);
     }
+
     return normalizeForJson(config);
   });
 
@@ -212,7 +256,7 @@ function installInterceptors(instance) {
         return instance(original);
       }
 
-      // 401 refresh-once
+      // 401 → refresh once
       if (error.response && error.response.status === 401 && !original._retry) {
         original._retry = true;
 
@@ -220,7 +264,9 @@ function installInterceptors(instance) {
           return new Promise((resolve, reject) => {
             queue.push({
               resolve: (token) => {
-                if (token) original.headers = { ...(original.headers || {}), Authorization: `Bearer ${token}` };
+                if (token) {
+                  original.headers = { ...(original.headers || {}), Authorization: `Bearer ${token}` };
+                }
                 resolve(instance(original));
               },
               reject,
@@ -251,9 +297,8 @@ function installInterceptors(instance) {
           }
 
           const newAccess = data?.access || data?.access_token;
-          if (typeof newAccess !== "string" || !newAccess) throw new Error("No access token returned on refresh.");
+          if (typeof newAccess !== "string" || !newAccess) throw new Error("No access token on refresh.");
 
-          // Reapply tokens to memory & storage
           setAuthToken(newAccess, refresh, inferRememberFromStorage());
 
           flush(null, newAccess);
@@ -268,7 +313,7 @@ function installInterceptors(instance) {
         }
       }
 
-      // 415 recovery (multipart -> JSON) excluding attachments
+      // 415 recovery (multipart → JSON) excluding attachments
       if (
         error.response &&
         error.response.status === 415 &&
@@ -307,7 +352,9 @@ function installInterceptors(instance) {
             _retry: true,
           };
           return instance(retryConfig);
-        } catch {/* ignore */}
+        } catch {
+          /* ignore */
+        }
       }
 
       return Promise.reject(error);
@@ -323,7 +370,7 @@ applyAuthHeader(getAccessToken());
 
 // Convenience helper for attachments
 export function uploadMultipart(url, formData) {
-  return api.post(url, formData); // browser sets boundary automatically
+  return api.post(url, formData);
 }
 
 export default api;

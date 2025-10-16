@@ -1,5 +1,7 @@
-// src/main.jsx
-import "./index.css";           // Tailwind / your global styles
+// src/main.jsx — load endpoint shim BEFORE anything else
+import "./utils/globalEndpointShim";   // 👈 MUST be first so it patches fetch/XHR
+
+import "./index.css";                  // Tailwind / your global styles
 // ⚠️ removed: import "./styles/mobile.css";
 
 import React from "react";

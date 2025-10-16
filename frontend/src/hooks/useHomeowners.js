@@ -1,24 +1,28 @@
-// src/hooks/useHomeowners.js (or wherever)
-import { useEffect, useState } from "react";
-import { loadHomeowners } from "@/lib/homeownersCache";
-import api from "@/api";
+// frontend/src/hooks/useHomeowners.js
+// v2025-10-15 use customers-first cache (with /homeowners alias)
 
-export function useHomeowners() {
+import { useEffect, useState } from "react";
+import api from "@/api";
+import { loadHomeowners, labelForPerson, clearHomeownersCache } from "@/lib/homeownersCache";
+
+export function useHomeowners({ force = false } = {}) {
   const [data, setData] = useState([]);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const controller = new AbortController();
-    loadHomeowners(api, { signal: controller.signal })
-      .then(setData)
+    setLoading(true);
+    loadHomeowners(api, { force, signal: controller.signal })
+      .then((list) => setData(Array.isArray(list) ? list : []))
       .catch((e) => {
-        if (e.name !== "CanceledError" && e.name !== "AbortError") setError(e);
+        if (e?.name !== "CanceledError" && e?.name !== "AbortError") setError(e);
       })
       .finally(() => setLoading(false));
     return () => controller.abort();
-  }, []);
+  }, [force]);
 
-  // optional manual refresh: loadHomeowners(api, { force: true })
-  return { data, error, loading };
+  return { data, loading, error, labelForPerson, clearHomeownersCache };
 }
+
+export default useHomeowners;

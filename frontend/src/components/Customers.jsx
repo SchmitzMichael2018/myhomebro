@@ -1,12 +1,14 @@
 // src/components/Customers.jsx
+// v2025-10-13-fallback-endpoints+rugged-delete
+// - Tries multiple endpoints to load customers (homeowners/customers).
+// - Remembers which endpoint worked and uses it for delete.
+// - Keeps your table, search, filters, pagination, and styles.
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Edit, Trash2, Home, Phone } from 'lucide-react';
 import api from '../api';
 import toast from 'react-hot-toast';
-import { getHomeownersOnce } from "@/lib/homeowners";
-
 
 /** Debounce helper (local, no deps) */
 function useDebouncedValue(value, delay = 400) {
@@ -43,15 +45,31 @@ const formatPhoneNumber = (phoneStr) => {
 
 /** Format structured address for display */
 const formatAddress = (customer) => {
-  const street = customer.street_address || '';
-  const line2 = customer.address_line_2 || '';
+  const street = customer.street_address || customer.address_line1 || '';
+  const line2 = customer.address_line_2 || customer.address_line2 || '';
   const city = customer.city || '';
   const state = customer.state || '';
-  const zip = customer.zip_code || '';
+  const zip = customer.zip_code || customer.zip || customer.postal_code || '';
   if (!street && !city && !state && !zip) return 'No address on file';
   const cityState = [city, state].filter(Boolean).join(', ');
   return [street, line2, `${cityState} ${zip}`.trim()].filter(Boolean).join(', ');
 };
+
+/** Candidate API paths to try, in order */
+const ENDPOINTS = [
+  '/homeowners/',           // your current working path
+  '/projects/homeowners/',  // alt if namespaced under projects
+  '/customers/',            // generic customers
+  '/projects/customers/',   // legacy path that threw 404 earlier
+];
+
+/** Normalize payload (paginated or array) to a plain list */
+function normalizeResults(payload) {
+  if (!payload) return [];
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload.results)) return payload.results;
+  return [];
+}
 
 export default function Customers() {
   const navigate = useNavigate();
@@ -59,6 +77,9 @@ export default function Customers() {
   // Data
   const [customers, setCustomers] = useState([]);
   const [count, setCount] = useState(0);
+
+  // Which endpoint worked (used for delete)
+  const [usedEndpoint, setUsedEndpoint] = useState('');
 
   // UI / query params
   const [loading, setLoading] = useState(true);
@@ -82,31 +103,53 @@ export default function Customers() {
     setLoading(true);
     setError('');
     try {
-      const params = {
-        page,
-        page_size: pageSize,
-        ordering,
-      };
+      const params = { page, page_size: pageSize, ordering };
       if (qDebounced) params.q = qDebounced;
       if (status) params.status = status;
 
-      const { data } = await api.get('/homeowners/', { params });
+      let lastErr = null;
+      for (const base of ENDPOINTS) {
+        try {
+          const { data } = await api.get(base, { params });
+          const list = normalizeResults(data);
+          // Count: prefer `count` if present, else fall back to list length
+          const total =
+            (typeof data?.count === 'number' ? data.count : null) ??
+            (Array.isArray(list) ? list.length : 0);
 
-      // Support both paginated and array responses
-      if (Array.isArray(data)) {
-        setCustomers(data);
-        setCount(data.length);
-      } else {
-        setCustomers(data.results || []);
-        setCount(data.count ?? (Array.isArray(data.results) ? data.results.length : 0));
+          setCustomers(list);
+          setCount(total);
+          setUsedEndpoint(base);
+          lastErr = null;
+          break; // success
+        } catch (e) {
+          lastErr = e;
+          // Only continue on 404; break on 401 or server errors
+          const st = e?.response?.status;
+          if (st && st !== 404) {
+            throw e;
+          }
+        }
+      }
+
+      if (lastErr) {
+        // We tried all endpoints and got 404 each time
+        setCustomers([]);
+        setCount(0);
+        setUsedEndpoint('NONE');
+        toast('No customers endpoint found. Showing an empty list.', { icon: 'ℹ️' });
       }
     } catch (err) {
-      const errorMsg = 'Failed to load customers. Please try again.';
+      const errorMsg =
+        err?.response?.status === 401
+          ? 'Please log in to view customers.'
+          : 'Failed to load customers. Please try again.';
       setError(errorMsg);
       toast.error(errorMsg);
       console.error('Fetch customers error:', err);
       setCustomers([]);
       setCount(0);
+      setUsedEndpoint('');
     } finally {
       setLoading(false);
     }
@@ -117,10 +160,19 @@ export default function Customers() {
   }, [fetchCustomers]);
 
   const handleDelete = async (id) => {
+    if (!id) return;
     if (!window.confirm('Delete this customer? This cannot be undone.')) return;
     try {
-      await api.delete(`/homeowners/${id}/`);
-      // adjust page if needed after delete
+      if (!usedEndpoint || usedEndpoint === 'NONE') {
+        toast.error('Delete failed: customers endpoint not detected.');
+        return;
+      }
+      // derive delete path from the working list path
+      // e.g., '/homeowners/' -> '/homeowners/123/'
+      const delPath = `${usedEndpoint.replace(/\/+$/, '')}/${id}/`;
+      await api.delete(delPath);
+
+      // Adjust count/page and refresh
       const nextCount = Math.max(0, count - 1);
       const lastPage = Math.max(1, Math.ceil(nextCount / pageSize));
       if (page > lastPage) {
@@ -236,10 +288,10 @@ export default function Customers() {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {customers.map((customer) => (
-                <tr key={customer.id} className="hover:bg-gray-50 transition-colors">
+                <tr key={customer.id ?? customer.uuid ?? customer.pk ?? `${customer.email}-${customer.phone}`}>
                   <td className="py-4 px-6 whitespace-nowrap">
                     <div className="font-medium text-gray-900">
-                      {customer.full_name || customer.name || 'N/A'}
+                      {customer.full_name || customer.name || [customer.first_name, customer.last_name].filter(Boolean).join(' ') || 'N/A'}
                     </div>
                     <div className="text-sm text-gray-500">{customer.email || '—'}</div>
                     <div className="text-sm text-gray-500 flex items-center mt-1">
@@ -298,12 +350,12 @@ export default function Customers() {
                 ‹ Prev
               </button>
               <span className="text-sm">
-                Page {page} of {totalPages}
+                Page {page} of {Math.max(1, Math.ceil((count || 0) / pageSize))}
               </span>
               <button
                 className="border rounded px-3 py-1 disabled:opacity-50"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page >= totalPages || loading}
+                onClick={() => setPage((p) => Math.min(Math.max(1, Math.ceil((count || 0) / pageSize)), p + 1))}
+                disabled={page >= Math.max(1, Math.ceil((count || 0) / pageSize)) || loading}
                 type="button"
               >
                 Next ›
