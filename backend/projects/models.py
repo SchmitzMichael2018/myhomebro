@@ -83,8 +83,19 @@ class Contractor(models.Model):
     license_expiration = models.DateField(null=True, blank=True)
     logo = models.ImageField(upload_to='logos/', null=True, blank=True)
     license_file = models.FileField(upload_to='licenses/', null=True, blank=True)
+
+    # --- Stripe / Connect ---
     stripe_account_id = models.CharField(max_length=255, blank=True, db_index=True)
     onboarding_status = models.CharField(max_length=50, blank=True)
+
+    # ✅ New fields used by webhook + UI badges
+    charges_enabled = models.BooleanField(default=False)
+    payouts_enabled = models.BooleanField(default=False)
+    details_submitted = models.BooleanField(default=False)
+    requirements_due_count = models.IntegerField(default=0)
+    stripe_status_updated_at = models.DateTimeField(default=timezone.now)
+    stripe_deauthorized_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     terms_accepted_at = models.DateTimeField(null=True, blank=True)
@@ -110,6 +121,15 @@ class Contractor(models.Model):
     @property
     def public_profile_url(self):
         return f"/contractors/{self.id}/profile"
+
+    # --- Convenience helpers for the UI ---
+    @property
+    def stripe_connected(self) -> bool:
+        return bool(self.charges_enabled or self.payouts_enabled)
+
+    @property
+    def stripe_action_required(self) -> bool:
+        return int(self.requirements_due_count or 0) > 0
 
 
 class Homeowner(models.Model):
@@ -285,7 +305,6 @@ class Agreement(models.Model):
             self.status = ProjectStatus.SIGNED
 
         # --- Normalize & enforce warranty fields ---
-        # Normalize type to our lowercase choices to play nice with any UPPERCASE inputs
         if self.warranty_type:
             self.warranty_type = str(self.warranty_type).strip().lower()
             if self.warranty_type not in ("default", "custom"):
@@ -293,15 +312,11 @@ class Agreement(models.Model):
         else:
             self.warranty_type = "default"
 
-        # Ensure snapshot is never None or empty string (DB NOT NULL guard)
         snap = (self.warranty_text_snapshot or "").strip()
         if not snap:
-            # If marked default, inject the default text
             if self.warranty_type == "default":
                 self.warranty_text_snapshot = DEFAULT_WARRANTY_TEXT
             else:
-                # For 'custom' with no snapshot, still guard DB by using default text
-                # (alternatively, enforce ValidationError upstream)
                 self.warranty_text_snapshot = DEFAULT_WARRANTY_TEXT
 
         super().save(*args, **kwargs)

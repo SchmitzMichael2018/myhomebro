@@ -1,13 +1,15 @@
-// src/api.js
-// v2025-10-13 endpoint-shim+auth (handles absolute same-origin URLs)
-// - Rewrites legacy "customers" routes to /homeowners/ for BOTH relative and absolute URLs.
+// ~/backend/frontend/src/api.js
+// v2025-10-17 — endpoint-shim+auth (abs) with /api dedupe + onboarding remaps
+// - baseURL stays "/api" (server-side API prefix)
+// - request interceptor now de-dupes leading "/api" on config.url when baseURL="/api"
+// - legacy onboarding routes remap to /payments/... (no extra /api)
 
 console.log("api.js v2025-10-13-shim+auth+abs");
 
 import axios from "axios";
 
 const TOK = { access: "access", refresh: "refresh", legacyAccess: "accessToken" };
-const BASE_URL = "/api";
+const BASE_URL = "/api"; // already your API prefix (keep)  ← proves double-/api root cause:contentReference[oaicite:2]{index=2}
 
 // —— In-memory tokens
 let MEM_ACCESS = null;
@@ -26,15 +28,17 @@ const SAME_ORIGIN =
 const ENDPOINT_REMAP = [
   ["/projects/customers", "/homeowners"],
   ["/customers", "/homeowners"],
-
-  // keep homeowners canonical (do NOT remap to /projects/homeowners)
   ["/projects/homeowners", "/homeowners"],
 
-  // other namespaced remaps you rely on
   ["/milestones", "/projects/milestones"],
   ["/contractors", "/projects/contractors"],
   ["/attachments", "/projects/attachments"],
   ["/expenses", "/projects/expenses"],
+
+  // Onboarding: legacy → payments (targets do NOT start with "/api" because baseURL is "/api")
+  ["/api/projects/contractor-onboarding-status", "/payments/onboarding/status"],
+  ["/api/projects/contractor-onboarding",       "/payments/onboarding/start"],
+  ["/api/projects/contractor-onboarding-manage", "/payments/onboarding/manage"],
 ];
 
 function normalizePath(url) {
@@ -44,7 +48,6 @@ function normalizePath(url) {
   return rest ? fixed + rest : fixed;
 }
 
-/** Remap relative paths like /api/... or /projects/... (we pass only the path in here) */
 function remapRelativePath(pathWithQuery) {
   const path = normalizePath(pathWithQuery);
   for (const [legacy, target] of ENDPOINT_REMAP) {
@@ -57,7 +60,6 @@ function remapRelativePath(pathWithQuery) {
     ) {
       const replaced = path.replace(base, target);
       if (process?.env?.NODE_ENV !== "production") {
-        // eslint-disable-next-line no-console
         console.log(`[api-shim] ${legacy} → ${target} :: ${path} → ${replaced}`);
       }
       return replaced;
@@ -66,36 +68,20 @@ function remapRelativePath(pathWithQuery) {
   return path;
 }
 
-/** Remap any URL (relative OR absolute same-origin) */
 function remapAny(url) {
   if (!url) return url;
-
-  // Absolute same-origin? Rewrite its pathname then rebuild
   try {
     const u = new URL(url, SAME_ORIGIN || "http://localhost");
     const isAbsolute = /^[a-z]+:\/\//i.test(url);
     const sameOrigin = SAME_ORIGIN && u.origin === SAME_ORIGIN;
-
     if (isAbsolute && sameOrigin) {
       const rebuiltPath = remapRelativePath(u.pathname + u.search + u.hash);
       return u.origin + rebuiltPath;
     }
   } catch {
-    /* ignore parse errors; fall through to relative handling */
+    /* fall through */
   }
-
-  // Relative (or different-origin we don't touch): just rewrite the path/query/hash
   return remapRelativePath(url);
-}
-
-function isAttachmentRoute(url = "") {
-  const u = String(url || "");
-  return (
-    /\/attachments\/?(\?|$|\/)/i.test(u) ||
-    /\/milestone-files\/?(\?|$|\/)/i.test(u) ||
-    /\/license-upload\/?(\?|$|\/)/i.test(u) ||
-    /\/upload\/?(\?|$|\/)/i.test(u)
-  );
 }
 
 // —— Storage token helpers
@@ -157,7 +143,7 @@ export function setAuthToken(access, refresh = null, remember = true) {
 
     if (access) {
       store.setItem(TOK.access, access);
-      store.setItem(TOK.legacyAccess, access); // legacy key in sync
+      store.setItem(TOK.legacyAccess, access);
     }
     if (refresh) store.setItem(TOK.refresh, refresh);
 
@@ -183,14 +169,19 @@ export function clearAuth() {
   applyAuthHeader(null);
 }
 
-// Force JSON for non-attachment writes
+// Normalize JSON for non-attachment writes
 function normalizeForJson(config) {
   const method = (config.method || "get").toLowerCase();
   const wantsBody = /post|put|patch/.test(method);
   if (!wantsBody) return config;
 
   const url = config.url || "";
-  if (isAttachmentRoute(url)) return config;
+  const isAttachment =
+    /\/attachments\/?(\?|$|\/)/i.test(url) ||
+    /\/milestone-files\/?(\?|$|\/)/i.test(url) ||
+    /\/license-upload\/?(\?|$|\/)/i.test(url) ||
+    /\/upload\/?(\?|$|\/)/i.test(url);
+  if (isAttachment) return config;
 
   const existingCT =
     (config.headers && (config.headers["Content-Type"] || config.headers["content-type"])) ||
@@ -198,7 +189,9 @@ function normalizeForJson(config) {
 
   const body = config.data;
   const shouldForceJson =
-    !existingCT && !isFormData(body) && !isBlob(body) && !isURLSearchParams(body);
+    !existingCT && !(typeof FormData !== "undefined" && body instanceof FormData) &&
+    !(typeof Blob !== "undefined" && body instanceof Blob) &&
+    !(typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams);
 
   if (shouldForceJson) {
     config.headers = {
@@ -224,8 +217,25 @@ function installInterceptors(instance) {
       delete config.headers.Authorization;
     }
 
+    // 1) remap legacy → canonical
     if (config.url) {
       config.url = remapAny(config.url);
+    }
+
+    // 2) de-dupe "/api" when baseURL is "/api" and url mistakenly begins with "/api"
+    //    e.g., baseURL "/api" + url "/api/payments/..."  -> collapse to "/payments/..."
+    if (
+      instance.defaults.baseURL === "/api" &&
+      typeof config.url === "string" &&
+      config.url.startsWith("/api/")
+    ) {
+      config.url = config.url.slice(4); // remove leading "/api"
+    } else if (
+      instance.defaults.baseURL === "/api" &&
+      typeof config.url === "string" &&
+      config.url === "/api"
+    ) {
+      config.url = "/";
     }
 
     return normalizeForJson(config);
@@ -243,7 +253,6 @@ function installInterceptors(instance) {
     async (error) => {
       const original = error.config || {};
 
-      // Optional GET retry
       if (
         RETRY.enableGetRetry &&
         (original.method || "get").toLowerCase() === "get" &&
@@ -256,7 +265,6 @@ function installInterceptors(instance) {
         return instance(original);
       }
 
-      // 401 → refresh once
       if (error.response && error.response.status === 401 && !original._retry) {
         original._retry = true;
 
@@ -313,13 +321,14 @@ function installInterceptors(instance) {
         }
       }
 
-      // 415 recovery (multipart → JSON) excluding attachments
+      // 415 recovery (multipart → JSON) excluding attachments handled above
       if (
         error.response &&
         error.response.status === 415 &&
         /post|put|patch/i.test(original.method || "") &&
-        !isAttachmentRoute(original.url || "") &&
-        isFormData(original.data) &&
+        typeof original.url === "string" &&
+        !/\/(attachments|milestone-files|license-upload|upload)\/?(\?|$|\/)/i.test(original.url) &&
+        (typeof FormData !== "undefined" && original.data instanceof FormData) &&
         !original._retried_as_json
       ) {
         const obj = {};

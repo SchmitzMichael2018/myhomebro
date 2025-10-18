@@ -16,7 +16,7 @@ from .views.milestone import (
     MilestoneFileViewSet,
     MilestoneCommentViewSet,
 )
-from .views.contractor import ContractorViewSet, ContractorLicenseUploadView
+# REMOVED: from .views.contractor import ContractorViewSet, ContractorLicenseUploadView
 from .views.homeowner import HomeownerViewSet
 from .views.project import ProjectViewSet
 from .views.dispute import DisputeViewSet
@@ -42,14 +42,10 @@ from .views.magic_invoice import (
     MagicInvoiceApproveView,
     MagicInvoiceDisputeView,
 )
-from .views.stripe_onboarding import (
-    ContractorOnboardingView,
-    ContractorOnboardingStatusView,
-)
 from .views.account import ChangePasswordView
 from .views.contractor_me import ContractorMeView
 
-# ✅ Add the preview (public signed link + contractor/staff tokenless) view
+# Preview (public signed link + contractor/staff tokenless)
 from .views_pdf import preview_signed
 
 # Optional debug (guarded)
@@ -65,7 +61,7 @@ app_name = "projects_api"
 # Routers with OPTIONAL trailing slash to prevent 404 on `/attachments` (no slash)
 # -----------------------------------------------------------------------------------
 router = DefaultRouter(trailing_slash='/?')
-router.register(r"contractors", ContractorViewSet, basename="contractors")
+# REMOVED: router.register(r"contractors", ContractorViewSet, basename="contractors")
 router.register(r"homeowners", HomeownerViewSet, basename="homeowners")
 router.register(r"projects", ProjectViewSet, basename="projects")
 router.register(r"agreements", AgreementViewSet, basename="agreements")
@@ -75,7 +71,7 @@ router.register(r"milestone-files", MilestoneFileViewSet, basename="milestone-fi
 router.register(r"disputes", DisputeViewSet, basename="disputes")
 router.register(r"expenses", ExpenseViewSet, basename="expenses")
 
-# ✅ Flat attachments route (GET/POST works with or without trailing slash)
+# Flat attachments route (GET/POST works with or without trailing slash)
 router.register(r"attachments", AgreementAttachmentViewSet, basename="attachments")
 
 # Nested routers (also optional trailing slash)
@@ -104,11 +100,9 @@ urlpatterns = [
     # ── Notifications / profile / calendars ────────────────────────────────
     path("notifications/", NotificationListView.as_view(), name="notifications"),
     path("contractors/me/", ContractorMeView.as_view(), name="contractor-me"),
-    path(
-        "contractors/license-upload/",
-        ContractorLicenseUploadView.as_view({"post": "create"}),
-        name="contractor-license-upload",
-    ),
+    # REMOVED: ContractorLicenseUploadView endpoint (was using removed views.contractor)
+    # If you still need license upload, reintroduce a tiny view later and add it here.
+
     path("milestones/calendar/", MilestoneCalendarView.as_view(), name="milestones-calendar"),
     path("agreements/calendar/", AgreementCalendarView.as_view(), name="agreements-calendar"),
 
@@ -120,7 +114,7 @@ urlpatterns = [
     # Examples:
     #   GET /agreements/preview_signed/?t=<token>
     #   GET /agreements/preview_signed/?agreement_id=5   (contractor/staff only)
-    path("agreements/preview_signed/", preview_signed, name="agreements-preview-signed"),
+
 
     # ── Public contractor profile ──────────────────────────────────────────
     path("contractors/<int:pk>/public/", ContractorPublicProfileView.as_view(), name="contractor-public-profile"),
@@ -136,9 +130,6 @@ urlpatterns = [
     path("invoices/magic/<int:pk>/",          MagicInvoiceView.as_view(),        name="magic-invoice-detail"),
     path("invoices/magic/<int:pk>/approve/",  MagicInvoiceApproveView.as_view(), name="magic-invoice-approve"),
     path("invoices/magic/<int:pk>/dispute/",  MagicInvoiceDisputeView.as_view(), name="magic-invoice-dispute"),
-
-    path("contractor-onboarding/",        ContractorOnboardingView.as_view(),       name="contractor-onboarding"),
-    path("contractor-onboarding-status/", ContractorOnboardingStatusView.as_view(), name="contractor-onboarding-status"),
 ]
 
 # ── Preview PDF explicit route (legacy Blob flow) ─────────────────────────

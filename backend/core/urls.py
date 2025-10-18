@@ -1,3 +1,4 @@
+# backend/core/urls.py
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,22 +8,31 @@ from django.http import FileResponse, Http404, HttpResponse
 from django.urls import path, include, re_path
 from django.views.generic import RedirectView
 
-# JWT (SimpleJWT)
 from rest_framework_simplejwt.views import (
     TokenObtainPairView, TokenRefreshView, TokenVerifyView
 )
 
-# Try to import the frame-exempt PDF viewer.
+from payments.webhooks import stripe_webhook
+
+# Guarded import: Stripe return handlers
+try:
+    from payments.return_views import stripe_return, ok as stripe_ok  # type: ignore
+except Exception:
+    def stripe_return(_request):
+        return HttpResponse("Stripe return handler not configured.", status=501, content_type="text/plain")
+    def stripe_ok(_request):
+        return HttpResponse("ok", content_type="text/plain")
+
+# Guarded import: frame-exempt PDF viewer
 try:
     from core.pdfviewer import viewer as pdf_viewer  # type: ignore
 except Exception:
     def pdf_viewer(_request):
         return HttpResponse("PDF viewer unavailable", status=404, content_type="text/plain")
 
-# Optional: serve media in DEBUG
 try:
     from django.conf.urls.static import static as dj_static
-except Exception:  # pragma: no cover
+except Exception:
     dj_static = None
 
 
@@ -31,10 +41,6 @@ def health(_request):
 
 
 def spa_index(_request):
-    """
-    Inline SPA shell so we don't depend on template files at runtime.
-    Static assets are served via WhiteNoise.
-    """
     html = """<!doctype html>
 <html lang="en">
   <head>
@@ -53,12 +59,6 @@ def spa_index(_request):
 
 
 def favicon(_request):
-    """
-    Serve /favicon.ico from a stable location. Any I/O issue returns 404 (not 500).
-    Priority:
-      1) STATIC_ROOT/favicon.ico (collected static)
-      2) frontend/dist/favicon.ico (during transitions)
-    """
     try:
         static_root = getattr(settings, "STATIC_ROOT", None)
         if static_root:
@@ -84,40 +84,51 @@ urlpatterns = [
     path("api/auth/refresh/", TokenRefreshView.as_view(),    name="auth-refresh"),
     path("api/auth/verify/",  TokenVerifyView.as_view(),     name="auth-verify"),
 
-    # === Primary API mountpoints ===
+    # Primary API mountpoints
     path("api/projects/", include(("projects.urls", "projects"), namespace="projects")),
     path("api/", include(("accounts.urls", "accounts"), namespace="accounts")),
 
-    # === Lightweight alias redirects (preserve query strings) ===
-    # Contractor "me"
-    path("api/contractors/me/", RedirectView.as_view(
-        url="/api/projects/contractors/me/", permanent=False, query_string=True), name="contractor-me-alias"),
+    # Payments (Stripe Connect onboarding)
+    path("api/payments/", include(("payments.urls", "payments"), namespace="payments")),
 
-    # Calendars
+    # Stripe webhook & return targets
+    path("stripe/webhook/", stripe_webhook, name="stripe-webhook"),
+    path("stripe/return/", stripe_return, name="stripe-return"),
+    path("stripe/ok", stripe_ok, name="stripe-ok"),
+
+    # Calendars aliases (keep if you still need them)
     path("api/milestones/calendar/", RedirectView.as_view(
-        url="/api/projects/milestones/calendar/", permanent=False, query_string=True), name="milestones-calendar-alias"),
+        url="/api/projects/milestones/calendar/", permanent=False, query_string=True
+    ), name="milestones-calendar-alias"),
     path("api/agreements/calendar/", RedirectView.as_view(
-        url="/api/projects/agreements/calendar/", permanent=False, query_string=True), name="agreements-calendar-alias"),
+        url="/api/projects/agreements/calendar/", permanent=False, query_string=True
+    ), name="agreements-calendar-alias"),
 
-    # Invoices
+    # Invoices aliases (keep if you still need them)
     path("api/invoices/", RedirectView.as_view(
-        url="/api/projects/invoices/", permanent=False, query_string=True), name="invoice-list-alias"),
+        url="/api/projects/invoices/", permanent=False, query_string=True
+    ), name="invoice-list-alias"),
     path("api/invoices/<int:pk>/", RedirectView.as_view(
-        url="/api/projects/invoices/%(pk)s/", permanent=False, query_string=True), name="invoice-detail-alias"),
+        url="/api/projects/invoices/%(pk)s/", permanent=False, query_string=True
+    ), name="invoice-detail-alias"),
 
-    # ✅ Homeowners (compat for UIs that call /api/homeowners/)
+    # Homeowners aliases
     path("api/homeowners/", RedirectView.as_view(
-        url="/api/projects/homeowners/", permanent=False, query_string=True), name="homeowner-list-alias"),
+        url="/api/projects/homeowners/", permanent=False, query_string=True
+    ), name="homeowner-list-alias"),
     path("api/homeowners/<int:pk>/", RedirectView.as_view(
-        url="/api/projects/homeowners/%(pk)s/", permanent=False, query_string=True), name="homeowner-detail-alias"),
+        url="/api/projects/homeowners/%(pk)s/", permanent=False, query_string=True
+    ), name="homeowner-detail-alias"),
 
-    # ✅ Optional legacy "customers" alias → same homeowners data
+    # Optional legacy "customers" alias → same homeowners data
     path("api/customers/", RedirectView.as_view(
-        url="/api/projects/homeowners/", permanent=False, query_string=True), name="customers-list-alias"),
+        url="/api/projects/homeowners/", permanent=False, query_string=True
+    ), name="customers-list-alias"),
     path("api/customers/<int:pk>/", RedirectView.as_view(
-        url="/api/projects/homeowners/%(pk)s/", permanent=False, query_string=True), name="customers-detail-alias"),
+        url="/api/projects/homeowners/%(pk)s/", permanent=False, query_string=True
+    ), name="customers-detail-alias"),
 
-    # Frame-exempt PDF.js viewer (guarded above)
+    # PDF viewer
     path("pdf/viewer/", pdf_viewer, name="pdf-viewer"),
 
     # Favicon
@@ -128,6 +139,6 @@ urlpatterns = [
     re_path(r"^(?!admin/|api/|static/|media/).*$", spa_index, name="spa_fallback"),
 ]
 
-# Serve /media/ in DEBUG (local dev convenience)
+# Serve /media/ in DEBUG
 if settings.DEBUG and dj_static:
     urlpatterns += dj_static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

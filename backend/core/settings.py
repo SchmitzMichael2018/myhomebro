@@ -1,4 +1,4 @@
-# backend/core/settings.py
+# ~/backend/backend/core/settings.py
 import os
 from pathlib import Path
 from datetime import timedelta
@@ -44,7 +44,7 @@ else:
 # ──────────────────────────────────────────────────────────────────────────────
 SECRET_KEY = get_env_var("SECRET_KEY", required=True)
 DEBUG = get_bool("DEBUG", default=False)
-ALLOWED_HOSTS = [h.strip() for h in get_env_var("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h.strip()]
+ALLOWED_HOSTS = [h.strip() for h in get_env_var("ALLOWED_HOSTS", "localhost,127.0.0.1,myhomebro.com,www.myhomebro.com").split(",") if h.strip()]
 
 # Public URLs (used for CSRF/CORS defaults)
 FRONTEND_URL = get_env_var("FRONTEND_URL", "http://localhost:3000").rstrip("/")
@@ -64,11 +64,11 @@ CSRF_TRUSTED_ORIGINS = [
 # Allow our in-app PDF viewer to render in an iframe
 X_FRAME_OPTIONS = "SAMEORIGIN"
 
-# ★ Tighten referrer policy; safe for PDF/HTML previews
+# Tighten referrer policy; safe for PDF/HTML previews
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Installed Apps & Middleware
+# Installed Apps & Middleware  (Channels & chat removed)
 # ──────────────────────────────────────────────────────────────────────────────
 INSTALLED_APPS = [
     # Django core
@@ -90,7 +90,6 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt.token_blacklist",
     "django_extensions",
     "django_filters",
-    "channels",
     "django_celery_beat",
     "django_celery_results",
 
@@ -98,7 +97,7 @@ INSTALLED_APPS = [
     "core",
     "accounts",
     "projects",
-    "chat",
+    "payments",
 ]
 
 MIDDLEWARE = [
@@ -114,6 +113,8 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = "core.urls"
+
+# WSGI/ASGI (plain ASGI; no Channels)
 WSGI_APPLICATION = "core.wsgi.application"
 ASGI_APPLICATION = "core.asgi.application"
 
@@ -204,20 +205,9 @@ if STRIPE_ENABLED and STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Channels (Redis optional; fallback to in-memory)
+# Channels — REMOVED
 # ──────────────────────────────────────────────────────────────────────────────
-REDIS_URL = get_env_var("REDIS_URL", "")
-if REDIS_URL:
-    CHANNEL_LAYERS = {
-        "default": {
-            "BACKEND": "channels_redis.core.RedisChannelLayer",
-            "CONFIG": {"hosts": [REDIS_URL]},
-        }
-    }
-else:
-    CHANNEL_LAYERS = {
-        "default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}
-    }
+# No CHANNEL_LAYERS; no "channels" or "chat" in INSTALLED_APPS.
 
 # ──────────────────────────────────────────────────────────────────────────────
 # DRF / JWT
@@ -242,15 +232,13 @@ SIMPLE_JWT = {
     "SIGNING_KEY":            SECRET_KEY,
     "USER_ID_FIELD":          "id",
     "USER_ID_CLAIM":          "user_id",
-    # ★ Ensure "Bearer" works for Authorization header
-    "AUTH_HEADER_TYPES":      ("Bearer",),
+    "AUTH_HEADER_TYPES":      ("Bearer",),  # allows Authorization: Bearer <token>
     "UPDATE_LAST_LOGIN":      False,
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CORS
 # ──────────────────────────────────────────────────────────────────────────────
-# ★ Include Vite's 5173 dev port by default; keep FRONTEND_URL too
 _default_cors = f"{FRONTEND_URL},http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:5173,http://localhost:5173"
 CORS_ALLOWED_ORIGINS = [
     *[o.strip() for o in get_env_var("CORS_ALLOWED_ORIGINS", _default_cors).split(",") if o.strip()]
@@ -261,13 +249,12 @@ CORS_ALLOW_CREDENTIALS = True
 from corsheaders.defaults import default_headers as _cors_default_headers  # type: ignore
 CORS_ALLOW_HEADERS = list(_cors_default_headers) + ["authorization", "content-disposition"]
 
-# ★ Expose Content-Disposition so the browser can read filenames on PDF/CSV downloads
+# Expose Content-Disposition so the browser can read filenames on PDF/CSV downloads
 CORS_EXPOSE_HEADERS = ["Content-Disposition"]
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Upload limits (useful for attachments / PDFs)
 # ──────────────────────────────────────────────────────────────────────────────
-# ★ Allow larger uploads without swapping to disk too early; tune via env
 DATA_UPLOAD_MAX_MEMORY_SIZE = int(get_env_var("DATA_UPLOAD_MAX_MEMORY_SIZE", str(50 * 1024 * 1024)))  # 50MB
 FILE_UPLOAD_MAX_MEMORY_SIZE = int(get_env_var("FILE_UPLOAD_MAX_MEMORY_SIZE", str(10 * 1024 * 1024)))  # 10MB
 
@@ -275,7 +262,7 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = int(get_env_var("FILE_UPLOAD_MAX_MEMORY_SIZE", str
 # Celery
 # ──────────────────────────────────────────────────────────────────────────────
 from celery.schedules import crontab
-CELERY_BROKER_URL     = REDIS_URL or "redis://localhost:6379/0"
+CELERY_BROKER_URL     = get_env_var("REDIS_URL", "") or "redis://localhost:6379/0"
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
 CELERY_BEAT_SCHEDULE  = {
     "auto-release-undisputed-invoices-daily": {
@@ -317,10 +304,9 @@ if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    # ★ Cookie samesite settings
     SESSION_COOKIE_SAMESITE = "Lax"
     CSRF_COOKIE_SAMESITE = "Lax"
-    # Consider enabling HSTS after confirming HTTPS:
+    # Consider enabling HSTS after confirming HTTPS works end-to-end:
     # SECURE_HSTS_SECONDS = 31536000
     # SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     # SECURE_HSTS_PRELOAD = True
@@ -328,7 +314,9 @@ if not DEBUG:
 # Require email verification before login?
 ACCOUNTS_REQUIRE_EMAIL_VERIFICATION = False
 
-# ── LOGGING ───────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
+# Logging
+# ──────────────────────────────────────────────────────────────────────────────
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -340,5 +328,6 @@ LOGGING = {
         "django": {"handlers": ["console"], "level": "INFO", "propagate": True},
         "accounts": {"handlers": ["console"], "level": "INFO", "propagate": True},
         "projects": {"handlers": ["console"], "level": "INFO", "propagate": True},
+        "payments": {"handlers": ["console"], "level": "INFO", "propagate": True},
     },
 }

@@ -2,155 +2,167 @@
 Re-export serializer classes so views can do:
     from projects.serializers import <Name>Serializer
 
-This avoids ImportError at import time. When a specific serializer
-module is absent, we provide a safe fallback so the app boots rather
-than 500 on import.
+Hardened version:
+- Only constructs a ModelSerializer when the model exists.
+- Otherwise provides a minimal plain Serializer fallback.
+- Avoids runtime crashes if app load order or migrations delay model registration.
+- Provides a single, explicit __all__ export list for predictability.
 """
 
-from rest_framework import serializers  # for fallbacks
 from django.apps import apps
+from rest_framework import serializers
 
 
-def _model(app_label, name):
+def _model(app_label: str, name: str):
     try:
         return apps.get_model(app_label, name)
     except Exception:
         return None
 
 
-Agreement         = _model("projects", "Agreement")
-Milestone         = _model("projects", "Milestone")
-Invoice           = _model("projects", "Invoice")
-Expense           = _model("projects", "Expense")
-HomeownerModel    = _model("projects", "Homeowner")
-ContractorModel   = _model("projects", "Contractor")
-ProjectModel      = _model("projects", "Project")
-DisputeModel      = _model("projects", "Dispute")
-MilestoneFileModel   = _model("projects", "MilestoneFile")
-MilestoneCommentModel = _model("projects", "MilestoneComment")
+def _mk_model_or_plain_serializer(name: str, model):
+    """
+    If model is available, return a ModelSerializer subclass bound to that model.
+    Otherwise, return a minimal plain Serializer so imports don't crash at startup.
+    """
+    if model is not None:
+        return type(
+            name,
+            (serializers.ModelSerializer,),
+            {"Meta": type("Meta", (), {"model": model, "fields": "__all__"})},
+        )
+    # Plain serializer with a simple id field so DRF doesn't choke on emptiness.
+    return type(
+        name,
+        (serializers.Serializer,),
+        {"id": serializers.IntegerField(required=False)},
+    )
+
+
+# ---------------- Resolve models (safe if not yet loaded) ---------------- #
+Agreement              = _model("projects", "Agreement")
+Milestone              = _model("projects", "Milestone")
+Invoice                = _model("projects", "Invoice")
+Expense                = _model("projects", "Expense")
+HomeownerModel         = _model("projects", "Homeowner")
+ContractorModel        = _model("projects", "Contractor")
+ProjectModel           = _model("projects", "Project")
+DisputeModel           = _model("projects", "Dispute")
+MilestoneFileModel     = _model("projects", "MilestoneFile")
+MilestoneCommentModel  = _model("projects", "MilestoneComment")
+
 
 # ---------------- Agreement / Milestone ---------------- #
 try:
-    from .agreement import AgreementSerializer  # noqa: F401
+    from .agreement import AgreementSerializer, AgreementDetailSerializer  # type: ignore
 except Exception:
-    class AgreementSerializer(serializers.ModelSerializer):  # type: ignore
-        class Meta:
-            model = Agreement
-            fields = "__all__"
+    AgreementSerializer = _mk_model_or_plain_serializer("AgreementSerializer", Agreement)
+    AgreementDetailSerializer = AgreementSerializer
 
 try:
-    from .agreement import AgreementDetailSerializer  # noqa: F401
+    from .milestone import MilestoneSerializer  # type: ignore
 except Exception:
-    AgreementDetailSerializer = AgreementSerializer  # type: ignore
+    MilestoneSerializer = _mk_model_or_plain_serializer("MilestoneSerializer", Milestone)
 
-try:
-    from .milestone import MilestoneSerializer  # noqa: F401
-except Exception:
-    class MilestoneSerializer(serializers.ModelSerializer):  # type: ignore
-        class Meta:
-            model = Milestone
-            fields = "__all__"
 
 # ---------------- Milestone files & comments ---------------- #
 try:
-    from .milestone_file import MilestoneFileSerializer  # noqa: F401
+    from .milestone_file import MilestoneFileSerializer  # type: ignore
 except Exception:
-    class MilestoneFileSerializer(serializers.ModelSerializer):  # type: ignore
-        class Meta:
-            model = MilestoneFileModel
-            fields = "__all__"
+    MilestoneFileSerializer = _mk_model_or_plain_serializer("MilestoneFileSerializer", MilestoneFileModel)
 
 try:
-    from .milestone_comment import MilestoneCommentSerializer  # noqa: F401
+    from .milestone_comment import MilestoneCommentSerializer  # type: ignore
 except Exception:
-    class MilestoneCommentSerializer(serializers.ModelSerializer):  # type: ignore
-        class Meta:
-            model = MilestoneCommentModel
-            fields = "__all__"
+    MilestoneCommentSerializer = _mk_model_or_plain_serializer("MilestoneCommentSerializer", MilestoneCommentModel)
+
 
 # ---------------- Invoices / Expenses --------------------- #
 try:
-    from .invoice import InvoiceSerializer  # noqa: F401
+    from .invoice import InvoiceSerializer  # type: ignore
 except Exception:
-    class InvoiceSerializer(serializers.ModelSerializer):  # type: ignore
-        class Meta:
-            model = Invoice
-            fields = "__all__"
+    InvoiceSerializer = _mk_model_or_plain_serializer("InvoiceSerializer", Invoice)
 
 try:
-    from .expense import ExpenseSerializer  # noqa: F401
+    from .expense import ExpenseSerializer  # type: ignore
 except Exception:
-    class ExpenseSerializer(serializers.ModelSerializer):  # type: ignore
-        class Meta:
-            model = Expense
-            fields = "__all__"
+    ExpenseSerializer = _mk_model_or_plain_serializer("ExpenseSerializer", Expense)
+
 
 # ---------------- Attachments (and legacy alias) ----------- #
 try:
-    from .attachment import AgreementAttachmentSerializer  # noqa: F401
-    from .attachment import AgreementAttachmentSerializer as AttachmentSerializer  # noqa: F401
+    from .attachment import AgreementAttachmentSerializer  # type: ignore
+    # Keep legacy alias for older imports
+    AttachmentSerializer = AgreementAttachmentSerializer
 except Exception:
-    class AgreementAttachmentSerializer(serializers.Serializer):  # type: ignore
-        id = serializers.IntegerField(required=False)
-    AttachmentSerializer = AgreementAttachmentSerializer  # type: ignore
+    AgreementAttachmentSerializer = _mk_model_or_plain_serializer("AgreementAttachmentSerializer", None)
+    AttachmentSerializer = AgreementAttachmentSerializer
+
 
 # ---------------- Homeowner ------------------------------- #
 try:
-    from .homeowner import HomeownerSerializer  # noqa: F401
+    from .homeowner import HomeownerSerializer, HomeownerWriteSerializer  # type: ignore
 except Exception:
-    class HomeownerSerializer(serializers.ModelSerializer):  # type: ignore
-        class Meta:
-            model = HomeownerModel
-            fields = "__all__"
+    HomeownerSerializer = _mk_model_or_plain_serializer("HomeownerSerializer", HomeownerModel)
+    HomeownerWriteSerializer = HomeownerSerializer
 
-try:
-    from .homeowner import HomeownerWriteSerializer  # noqa: F401
-except Exception:
-    HomeownerWriteSerializer = HomeownerSerializer  # type: ignore
 
 # ---------------- Contractor (incl. Public) ---------------- #
+# Prefer explicit contractor module if present
 try:
-    from .contractor import ContractorSerializer  # noqa: F401
+    from .contractor import (
+        ContractorSerializer,
+        ContractorWriteSerializer,
+        PublicContractorSerializer,
+    )  # type: ignore
 except Exception:
-    class ContractorSerializer(serializers.ModelSerializer):  # type: ignore
-        class Meta:
-            model = ContractorModel
-            fields = "__all__"
+    ContractorSerializer = _mk_model_or_plain_serializer("ContractorSerializer", ContractorModel)
+    ContractorWriteSerializer = ContractorSerializer
+    PublicContractorSerializer = ContractorSerializer
 
-try:
-    from .contractor import ContractorWriteSerializer  # noqa: F401
-except Exception:
-    ContractorWriteSerializer = ContractorSerializer  # type: ignore
-
-try:
-    from .contractor import PublicContractorSerializer  # noqa: F401
-except Exception:
-    PublicContractorSerializer = ContractorSerializer  # type: ignore
 
 # ---------------- Project / Dispute / Notifications ------- #
 try:
-    from .project import ProjectSerializer  # noqa: F401
+    from .project import ProjectSerializer, ProjectWriteSerializer  # type: ignore
 except Exception:
-    class ProjectSerializer(serializers.ModelSerializer):  # type: ignore
-        class Meta:
-            model = ProjectModel
-            fields = "__all__"
+    ProjectSerializer = _mk_model_or_plain_serializer("ProjectSerializer", ProjectModel)
+    ProjectWriteSerializer = ProjectSerializer
 
 try:
-    from .project import ProjectWriteSerializer  # noqa: F401
+    from .dispute import DisputeSerializer  # type: ignore
 except Exception:
-    ProjectWriteSerializer = ProjectSerializer  # type: ignore
+    DisputeSerializer = _mk_model_or_plain_serializer("DisputeSerializer", DisputeModel)
 
 try:
-    from .dispute import DisputeSerializer  # noqa: F401
+    from .notifications import NotificationSerializer  # type: ignore
 except Exception:
-    class DisputeSerializer(serializers.ModelSerializer):  # type: ignore
-        class Meta:
-            model = DisputeModel
-            fields = "__all__"
+    NotificationSerializer = _mk_model_or_plain_serializer("NotificationSerializer", None)
 
-try:
-    from .notifications import NotificationSerializer  # noqa: F401
-except Exception:
-    class NotificationSerializer(serializers.Serializer):  # type: ignore
-        id = serializers.IntegerField(required=False)
+
+# ---------------- Public exports -------------------------- #
+__all__ = [
+    # Agreement / Milestones
+    "AgreementSerializer",
+    "AgreementDetailSerializer",
+    "MilestoneSerializer",
+    "MilestoneFileSerializer",
+    "MilestoneCommentSerializer",
+    # Financial
+    "InvoiceSerializer",
+    "ExpenseSerializer",
+    # Attachments (and legacy alias)
+    "AgreementAttachmentSerializer",
+    "AttachmentSerializer",
+    # Homeowner
+    "HomeownerSerializer",
+    "HomeownerWriteSerializer",
+    # Contractor + public
+    "ContractorSerializer",
+    "ContractorWriteSerializer",
+    "PublicContractorSerializer",
+    # Project / Dispute / Notifications
+    "ProjectSerializer",
+    "ProjectWriteSerializer",
+    "DisputeSerializer",
+    "NotificationSerializer",
+]

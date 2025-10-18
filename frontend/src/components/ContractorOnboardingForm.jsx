@@ -1,20 +1,18 @@
-// src/components/ContractorOnboardingForm.jsx
+// ~/backend/frontend/src/components/ContractorOnboardingForm.jsx
+// v2025-10-17-patch2 — uses payments/onboarding endpoints WITHOUT extra '/api' (baseURL is '/api').
+
 import React, { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import api from "../api";
 
 /**
- * Contractor Stripe Onboarding
+ * Contractor Stripe Onboarding (Payments App)
  *
- * Backend routes (as defined in your projects/urls.py):
- *   POST /api/projects/contractor-onboarding/          -> { url | onboarding_url | redirect_url }
- *   GET  /api/projects/contractor-onboarding-status/   -> status object
+ * Backend routes (relative to baseURL="/api"):
+ *   GET  /payments/onboarding/status/   -> status object
+ *   POST /payments/onboarding/start/    -> { url | onboarding_url | redirect_url }
  *
- * Notes:
- * - Uses the shared axios client `api` (baseURL="/api") — do NOT prefix paths with "/api".
- * - The text fields are optional for now (kept for future profile save flow).
- * - Click "Start / Continue Onboarding" to get redirected to Stripe Connect.
- * - Click "Refresh Status" after returning from Stripe.
+ * NOTE: Do NOT prefix with '/api' because api.js already sets baseURL='/api'.
  */
 
 export default function ContractorOnboardingForm() {
@@ -36,7 +34,7 @@ export default function ContractorOnboardingForm() {
   const fetchStatus = async () => {
     try {
       setStatusLoading(true);
-      const { data } = await api.get("/projects/contractor-onboarding-status/");
+      const { data } = await api.get("/payments/onboarding/status/");
       setStatus(data || null);
     } catch (err) {
       console.error(err);
@@ -54,8 +52,7 @@ export default function ContractorOnboardingForm() {
     setMsg(null);
     setLoading(true);
     try {
-      // Your backend should return a redirect URL under one of these keys:
-      const { data } = await api.post("/projects/contractor-onboarding/", {});
+      const { data } = await api.post("/payments/onboarding/start/", {});
       const url = data?.url || data?.onboarding_url || data?.redirect_url;
       if (!url) {
         setMsg("Onboarding URL not returned by server.");
@@ -78,10 +75,15 @@ export default function ContractorOnboardingForm() {
   const StatusBadge = ({ text, tone = "gray" }) => (
     <span
       className={`inline-flex items-center px-2 py-0.5 text-xs rounded
-        ${tone === "green" ? "bg-green-100 text-green-800" :
-          tone === "yellow" ? "bg-yellow-100 text-yellow-800" :
-          tone === "red" ? "bg-red-100 text-red-800" :
-          "bg-gray-100 text-gray-800"}`}
+        ${
+          tone === "green"
+            ? "bg-green-100 text-green-800"
+            : tone === "yellow"
+            ? "bg-yellow-100 text-yellow-800"
+            : tone === "red"
+            ? "bg-red-100 text-red-800"
+            : "bg-gray-100 text-gray-800"
+        }`}
     >
       {text}
     </span>
@@ -127,21 +129,26 @@ export default function ContractorOnboardingForm() {
       );
     }
 
-    return pills.length ? <div className="flex flex-wrap gap-2">{pills}</div> : <StatusBadge text="Status loaded" />;
+    return pills.length ? (
+      <div className="flex flex-wrap gap-2">{pills}</div>
+    ) : (
+      <StatusBadge text="Status loaded" />
+    );
   };
 
   return (
     <form
-      onSubmit={(e) => { e.preventDefault(); startOnboarding(); }}
+      onSubmit={(e) => {
+        e.preventDefault();
+        startOnboarding();
+      }}
       className="max-w-lg mx-auto mt-16 p-8 bg-white rounded-2xl shadow-lg"
     >
       <h2 className="text-2xl font-bold mb-2 text-center text-blue-800">
         Contractor Stripe Onboarding
       </h2>
 
-      <div className="flex items-center justify-center mb-6">
-        {renderStatus()}
-      </div>
+      <div className="flex items-center justify-center mb-6">{renderStatus()}</div>
 
       {msg && <div className="mb-4 text-red-600 text-sm">{msg}</div>}
 
@@ -211,7 +218,7 @@ export default function ContractorOnboardingForm() {
       </button>
 
       <div className="text-xs text-gray-500 mt-4 text-center">
-        You’ll be redirected to Stripe to complete verification. After you return, click{" "}
+        You’ll be redirected to Stripe to complete verification. After returning, click{" "}
         <span className="font-semibold">Refresh Status</span>.
       </div>
 

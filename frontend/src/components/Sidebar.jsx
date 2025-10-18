@@ -1,27 +1,100 @@
-// src/components/Sidebar.jsx
-import React, { useCallback } from "react";
+// ~/backend/frontend/src/components/Sidebar.jsx
+// COMPLETE FILE — Sidebar with Stripe status badge (r3)
+// Fix: use "/payments/onboarding/status/" (no extra "/api")
+
+import React, { useCallback, useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
+import api from "../api";
 
 /**
  * Compact, route-aligned sidebar.
  * - Highlights active route via NavLink
  * - Includes "My Profile"
  * - Adds a footer Logout button (clears JWT and returns to landing)
+ * - Shows Stripe onboarding status badge (Connected / Pending)
  */
 export default function Sidebar() {
   const navigate = useNavigate();
+
+  // --- Stripe status state ---
+  const [stripeStatus, setStripeStatus] = useState({
+    connected: false,
+    status: "", // e.g., "completed", "in_progress", "disabled"
+    loading: true,
+    error: "",
+  });
 
   const handleLogout = useCallback(() => {
     try {
       localStorage.removeItem("access");
       localStorage.removeItem("refresh");
     } catch {}
-    // If you set Authorization header globally somewhere, clear it here too.
-    // e.g., api.defaults.headers.common.Authorization = undefined;
+    // Clear any global auth header if you set one
+    try {
+      if (api?.defaults?.headers?.common) {
+        delete api.defaults.headers.common.Authorization;
+      }
+    } catch {}
     navigate("/", { replace: true });
   }, [navigate]);
 
-  const Item = ({ to, label, emoji }) => (
+  // Fetch Stripe onboarding status on mount
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        // NOTE: baseURL is "/api", so do NOT prefix with "/api" here.
+        const { data } = await api.get("/payments/onboarding/status/");
+        const status = String(data?.onboarding_status || "");
+        const connected = Boolean(data?.linked || data?.connected || status === "completed");
+        if (isMounted) {
+          setStripeStatus({
+            connected,
+            status,
+            loading: false,
+            error: "",
+          });
+        }
+      } catch (err) {
+        console.error(err);
+        if (isMounted) {
+          setStripeStatus((s) => ({ ...s, loading: false, error: "Failed to load Stripe status" }));
+        }
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Small pill badge for Stripe state
+  const StripeBadge = () => {
+    if (stripeStatus.loading) {
+      return (
+        <span className="ml-2 inline-flex items-center rounded-full px-2 py-[1px] text-[10px] bg-gray-200 text-gray-700">
+          Checking…
+        </span>
+      );
+    }
+    if (stripeStatus.connected) {
+      return (
+        <span className="ml-2 inline-flex items-center rounded-full px-2 py-[1px] text-[10px] bg-green-500 text-white">
+          Connected
+        </span>
+      );
+    }
+    const label = stripeStatus.status
+      ? stripeStatus.status.charAt(0).toUpperCase() + stripeStatus.status.slice(1)
+      : "Pending";
+    return (
+      <span className="ml-2 inline-flex items-center rounded-full px-2 py-[1px] text-[10px] bg-amber-400 text-black">
+        {label}
+      </span>
+    );
+  };
+
+  // Nav item — accepts either string or ReactNode for label.
+  const Item = ({ to, label, emoji, title }) => (
     <NavLink
       to={to}
       className={({ isActive }) =>
@@ -32,10 +105,10 @@ export default function Sidebar() {
         ].join(" ")
       }
       end={to === "/dashboard"}
-      title={label}
+      title={title || (typeof label === "string" ? label : undefined)}
     >
       <span className="text-base" aria-hidden="true">{emoji}</span>
-      <span>{label}</span>
+      <span className="flex items-center">{label}</span>
     </NavLink>
   );
 
@@ -47,10 +120,11 @@ export default function Sidebar() {
       {/* Brand */}
       <div className="px-4 pt-4 pb-3 border-b border-black/5">
         <div className="flex items-center gap-2">
-          {/* If your logo path differs, update src accordingly */}
           <img
             src="/static/assets/myhomebro_logo.png"
-            onError={(e) => { e.currentTarget.style.display = "none"; }}
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+            }}
             alt="MyHomeBro"
             className="h-8 w-8 rounded-md object-contain"
           />
@@ -86,8 +160,17 @@ export default function Sidebar() {
           </div>
           <div className="space-y-1">
             <Item to="/profile" label="My Profile" emoji="👤" />
-            {/* Keep this if you use it; otherwise remove */}
-            <Item to="/onboarding" label="Stripe Onboarding" emoji="🔗" />
+            <Item
+              to="/onboarding"
+              emoji="🔗"
+              title="Stripe Onboarding"
+              label={
+                <>
+                  <span>Stripe Onboarding</span>
+                  <StripeBadge />
+                </>
+              }
+            />
           </div>
         </div>
       </nav>
