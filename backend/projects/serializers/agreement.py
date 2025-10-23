@@ -1,3 +1,4 @@
+# backend/projects/serializers/agreement.py
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
@@ -13,8 +14,7 @@ from projects.models import (
     Homeowner,
 )
 
-# Optional: Milestone/Invoice are used for totals, start/end, invoices_count.
-# If your models live elsewhere, adjust the import path. Guarded so a missing model doesn't break import.
+# Optional/guarded imports for rollups
 try:
     from projects.models import Milestone, Invoice  # type: ignore
 except Exception:  # pragma: no cover
@@ -67,18 +67,11 @@ def _empty_to_none(val):
 
 class AgreementSerializer(serializers.ModelSerializer):
     """
-    Serializer that:
-      - Accepts UI aliases (use_default_warranty, custom_warranty_text).
-      - Normalizes project_type, numeric fields, and empties -> None.
-      - DOES NOT allow client to set status directly.
-
-    PLUS: emits stable convenience fields used by AgreementList.jsx and other UIs:
-      - project_title           (read)
-      - homeowner_name/email    (read)
-      - display_total/total/amount (read)
-      - start/end               (read; explicit or derived from milestones)
-      - invoices_count          (read)
-      - is_editable / is_locked (read; based on signatures ONLY)
+    Enriched Agreement serializer:
+      - READ conveniences for UI (is_fully_signed, project_title, totals, rollup dates, etc.)
+      - WRITE normalization (project_type mapping, empty->None, numeric coercions)
+      - Warranty UI aliases -> model fields
+      - Ignores client-provided 'status' to keep server as source of truth
     """
 
     # ---- READ conveniences ----
@@ -87,8 +80,8 @@ class AgreementSerializer(serializers.ModelSerializer):
     homeowner_name  = serializers.SerializerMethodField(read_only=True)
     homeowner_email = serializers.SerializerMethodField(read_only=True)
     display_total   = serializers.SerializerMethodField(read_only=True)
-    total           = serializers.SerializerMethodField(read_only=True)   # alias for grids
-    amount          = serializers.SerializerMethodField(read_only=True)   # alias for grids
+    total           = serializers.SerializerMethodField(read_only=True)   # alias
+    amount          = serializers.SerializerMethodField(read_only=True)   # alias
     start           = serializers.SerializerMethodField(read_only=True)   # derived if empty
     end             = serializers.SerializerMethodField(read_only=True)
     invoices_count  = serializers.SerializerMethodField(read_only=True)
@@ -99,7 +92,7 @@ class AgreementSerializer(serializers.ModelSerializer):
     use_default_warranty = serializers.BooleanField(write_only=True, required=False, default=True)
     custom_warranty_text = serializers.CharField(write_only=True, required=False, allow_blank=True, default="")
 
-    # Keep accepting title/project_title from UI (you sync to Project.title in update()).
+    # Accept a title from UI; optionally sync it to Project on update()
     title = serializers.CharField(required=False, allow_blank=True, default="")
     project_title_in = serializers.CharField(source="project_title", write_only=True, required=False, allow_blank=True, default="")
 
@@ -115,8 +108,8 @@ class AgreementSerializer(serializers.ModelSerializer):
             "total_cost",
             "total_time_estimate",
             "milestone_count",
-            "start",        # note: get_start derives if empty
-            "end",          # note: get_end derives if empty
+            "start",
+            "end",
             "status",
             "project_type",
             "project_subtype",
@@ -182,16 +175,17 @@ class AgreementSerializer(serializers.ModelSerializer):
     # ----- READ helpers -----
 
     def get_is_fully_signed(self, obj: Agreement) -> bool:
-        return bool(obj.signed_by_contractor and obj.signed_by_homeowner)
+        return bool(getattr(obj, "signed_by_contractor", False) and getattr(obj, "signed_by_homeowner", False))
 
     def get_is_editable(self, obj: Agreement) -> bool:
-        # Draft/editable until BOTH sign (escrow does not lock by itself unless you intend it to)
+        # Editable until BOTH sign
         return not self.get_is_fully_signed(obj)
 
     def get_is_locked(self, obj: Agreement) -> bool:
         return not self.get_is_editable(obj)
 
     def get_project_title(self, obj: Agreement) -> Optional[str]:
+        # Prefer Agreement.title if you mirror it there; fallback to Project.title
         if getattr(obj, "title", None):
             return obj.title
         proj = getattr(obj, "project", None)
@@ -217,17 +211,32 @@ class AgreementSerializer(serializers.ModelSerializer):
         return getattr(ho, "email", None) if ho else None
 
     # ---- Totals and date rollups from milestones ----
+    def _milestone_qs(self, obj: Agreement):
+        if not Milestone:
+            return None
+        # Prefer explicit related_name if set
+        if hasattr(obj, "milestones"):
+            return obj.milestones.all()
+        if hasattr(obj, "milestone_set"):
+            return obj.milestone_set.all()
+        try:
+            return Milestone.objects.filter(agreement=obj)
+        except Exception:
+            return None
+
     def _milestone_rollups(self, obj: Agreement):
         """
         Returns dict with keys:
           sum_amount (Decimal), min_start (date), max_end (date)
-        Uses Milestone.start_date / completion_date
+        Uses Milestone.start_date / completion_date if available.
         """
-        if Milestone is None:
+        if not Milestone:
+            return {"sum_amount": Decimal("0"), "min_start": None, "max_end": None}
+        qs = self._milestone_qs(obj)
+        if qs is None:
             return {"sum_amount": Decimal("0"), "min_start": None, "max_end": None}
         try:
             from django.db.models import Sum, Min, Max
-            qs = Milestone.objects.filter(agreement=obj)
             agg = qs.aggregate(
                 sum_amount=Sum("amount"),
                 min_start=Min("start_date"),
@@ -239,7 +248,6 @@ class AgreementSerializer(serializers.ModelSerializer):
             return {"sum_amount": Decimal("0"), "min_start": None, "max_end": None}
 
     def get_display_total(self, obj: Agreement):
-        # Prefer explicit total_cost if present, else sum milestones
         total = getattr(obj, "total_cost", None)
         if total not in (None, ""):
             return total
@@ -266,8 +274,19 @@ class AgreementSerializer(serializers.ModelSerializer):
         return self._milestone_rollups(obj)["max_end"]
 
     def get_invoices_count(self, obj: Agreement) -> int:
-        if Invoice is None:
+        if not Invoice:
             return 0
+        # Prefer explicit related_name if set
+        if hasattr(obj, "invoices"):
+            try:
+                return obj.invoices.count()
+            except Exception:
+                pass
+        if hasattr(obj, "invoice_set"):
+            try:
+                return obj.invoice_set.count()
+            except Exception:
+                pass
         try:
             return Invoice.objects.filter(agreement=obj).count()
         except Exception:
@@ -278,12 +297,11 @@ class AgreementSerializer(serializers.ModelSerializer):
     def to_internal_value(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Normalize incoming UI payload:
-         - Empty strings -> None for nullable fields
+         - Empty strings -> None
          - project_type normalization
          - numeric coercion for total_cost / milestone_count
          - map warranty aliases -> warranty_type / warranty_text_snapshot
          - ignore incoming 'status'
-         - accept 'title'/'project_title' as cosmetic fields (no-op unless you want to update Project)
         """
         data = dict(data)
 
@@ -295,7 +313,7 @@ class AgreementSerializer(serializers.ModelSerializer):
             if key in data:
                 data[key] = _empty_to_none(data.get(key))
 
-        # Dates / duration: convert "" -> None for Agreement.start/end if present
+        # Dates / duration: convert "" -> None for start/end/total_time_estimate
         for key in ("start", "end", "total_time_estimate"):
             if key in data and data.get(key) == "":
                 data[key] = None
@@ -316,7 +334,7 @@ class AgreementSerializer(serializers.ModelSerializer):
         if "project_type" in data:
             data["project_type"] = _normalize_project_type(data.get("project_type"))
 
-        # Warranty mapping
+        # Warranty mapping from UI aliases
         use_default = data.pop("use_default_warranty", None)
         custom_text = data.pop("custom_warranty_text", None)
         if use_default is not None:
@@ -333,8 +351,7 @@ class AgreementSerializer(serializers.ModelSerializer):
 
     def update(self, instance: Agreement, validated_data: Dict[str, Any]) -> Agreement:
         """
-        Keep normal update; model.save() enforces your automatic status transitions.
-        Also sync project_title/title to Project.title if client provided it.
+        Normal update; plus optional sync of UI-provided title -> Project.title.
         """
         project_title = (
             self.initial_data.get("project_title")
@@ -343,10 +360,10 @@ class AgreementSerializer(serializers.ModelSerializer):
         )
         if project_title:
             try:
-                if instance.project and instance.project.title != project_title:
-                    instance.project.title = project_title
-                    # include updated_at if your Project model has it
-                    instance.project.save(update_fields=["title"])
+                proj = getattr(instance, "project", None)
+                if isinstance(proj, Project) and getattr(proj, "title", None) != project_title:
+                    proj.title = project_title
+                    proj.save(update_fields=["title"])
             except Exception:
                 pass
 
@@ -357,7 +374,7 @@ class AgreementSerializer(serializers.ModelSerializer):
 
         return super().update(instance, validated_data)
 
-    # Optional: field-level validation (lightweight)
+    # Optional field-level validation
     def validate_project_type(self, value: Optional[str]) -> Optional[str]:
         if value is None:
             return value

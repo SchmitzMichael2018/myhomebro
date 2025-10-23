@@ -1,15 +1,19 @@
 // ~/backend/frontend/src/api.js
-// v2025-10-17 — endpoint-shim+auth (abs) with /api dedupe + onboarding remaps
-// - baseURL stays "/api" (server-side API prefix)
-// - request interceptor now de-dupes leading "/api" on config.url when baseURL="/api"
-// - legacy onboarding routes remap to /payments/... (no extra /api)
-
-console.log("api.js v2025-10-13-shim+auth+abs");
+// v2025-10-22 — endpoint-shim+auth (abs) with /api de-dupe, onboarding remaps,
+// GET cachebuster, and global helpers for quick manual auth testing.
+//
+// Highlights:
+// - baseURL = "/api" (server-side API prefix).
+// - Request interceptor de-dupes any accidental leading "/api" on config.url.
+// - Legacy onboarding remaps → /payments/...
+// - Always attach Authorization: Bearer <token> if available.
+// - Adds _ts cache-buster to GETs.
+// - Exposes window.apiSetAuthToken() / window.apiClearAuth() to set/clear JWT manually.
 
 import axios from "axios";
 
 const TOK = { access: "access", refresh: "refresh", legacyAccess: "accessToken" };
-const BASE_URL = "/api"; // already your API prefix (keep)  ← proves double-/api root cause:contentReference[oaicite:2]{index=2}
+const BASE_URL = "/api"; // server API prefix
 
 // —— In-memory tokens
 let MEM_ACCESS = null;
@@ -167,6 +171,9 @@ export function clearAuth() {
     sessionStorage.removeItem(TOK.legacyAccess);
   } catch {}
   applyAuthHeader(null);
+  try {
+    window.dispatchEvent(new CustomEvent("auth:logout", { detail: { reason: "manual-clear" } }));
+  } catch {}
 }
 
 // Normalize JSON for non-attachment writes
@@ -223,7 +230,6 @@ function installInterceptors(instance) {
     }
 
     // 2) de-dupe "/api" when baseURL is "/api" and url mistakenly begins with "/api"
-    //    e.g., baseURL "/api" + url "/api/payments/..."  -> collapse to "/payments/..."
     if (
       instance.defaults.baseURL === "/api" &&
       typeof config.url === "string" &&
@@ -236,6 +242,13 @@ function installInterceptors(instance) {
       config.url === "/api"
     ) {
       config.url = "/";
+    }
+
+    // 3) add a tiny cache-buster for GETs so lists reload cleanly
+    if ((config.method || "get").toLowerCase() === "get") {
+      const url = new URL(config.url, SAME_ORIGIN || "http://localhost");
+      url.searchParams.set("_ts", String(Date.now()));
+      config.url = url.pathname + url.search + url.hash;
     }
 
     return normalizeForJson(config);
@@ -287,6 +300,9 @@ function installInterceptors(instance) {
         if (!refresh) {
           isRefreshing = false;
           clearAuth();
+          try {
+            window.dispatchEvent(new CustomEvent("auth:logout", { detail: { reason: "401" } }));
+          } catch {}
           return Promise.reject(error);
         }
 
@@ -315,6 +331,9 @@ function installInterceptors(instance) {
         } catch (err) {
           flush(err, null);
           clearAuth();
+          try {
+            window.dispatchEvent(new CustomEvent("auth:logout", { detail: { reason: "refresh-failed" } }));
+          } catch {}
           throw err;
         } finally {
           isRefreshing = false;
@@ -380,6 +399,15 @@ applyAuthHeader(getAccessToken());
 // Convenience helper for attachments
 export function uploadMultipart(url, formData) {
   return api.post(url, formData);
+}
+
+// ---- Global helpers to quickly test auth without changing your UI ----
+// DevTools console examples:
+//   window.apiSetAuthToken("YOUR_JWT_HERE")
+//   window.apiClearAuth()
+if (typeof window !== "undefined") {
+  window.apiSetAuthToken = (jwt) => setAuthToken(jwt, null, true);
+  window.apiClearAuth = () => clearAuth();
 }
 
 export default api;

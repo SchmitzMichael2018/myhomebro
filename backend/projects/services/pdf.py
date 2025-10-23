@@ -1,4 +1,10 @@
 # backend/projects/services/pdf.py
+# v2025-10-22 — Hardened:
+#  - Safe saves even if Agreement lacks pdf_file field
+#  - Attachment merge guards
+#  - Clear return contract (returns path string)
+#  - Minor defensive checks to avoid 500s
+
 from __future__ import annotations
 
 import io
@@ -442,6 +448,7 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
         title=f"Agreement #{getattr(ag,'pk','')}",
     )
 
+    from reportlab.lib import colors
     ss = getSampleStyleSheet()
     s_h1   = ss["Heading1"]; s_h1.fontSize = 22; s_h1.textColor = colors.HexColor("#111827")
     s_h2   = ss["Heading2"]; s_h2.fontSize = 14
@@ -461,8 +468,14 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     if img_logo:
         story.append(img_logo); story.append(Spacer(1, 6))
 
-    # === Title: Agreement #ID ===
-    story.append(Paragraph(f"Agreement #{ag.id}", s_h1))
+    # === Title: Agreement #ID (with optional Amendment badge) ===
+    amend = 0
+    try:
+        amend = int(getattr(ag, "amendment_number", 0) or 0)
+    except Exception:
+        amend = 0
+    title_txt = f"Agreement #{ag.id}" + (f" — Amendment {amend}" if amend > 0 else "")
+    story.append(Paragraph(title_txt, s_h1))
     story.append(Spacer(1, 6))
 
     # === Project header (addresses, license) ===
@@ -492,12 +505,18 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
         type_line = f"{proj_type} — {proj_subtype}" if proj_type else proj_subtype
 
     # ====== SCHEDULE: from first and last milestone (friendly + TBD) ======
-    milestones_qs = Milestone.objects.filter(agreement=ag).order_by("order", "id")
+    # If you don't have an "order" field, the ORM still allows ordering by it; but to be safe,
+    # fall back to start_date/end_date/id.
+    try:
+        ms_qs = Milestone.objects.filter(agreement=ag).order_by("order", "id")
+    except Exception:
+        ms_qs = Milestone.objects.filter(agreement=ag).order_by("start_date", "end_date", "id")
+
     first_start: Optional[str] = None
     last_due: Optional[str] = None
-    if milestones_qs.exists():
-        first_m = milestones_qs.first()
-        last_m = milestones_qs.last()
+    if ms_qs.exists():
+        first_m = ms_qs.first()
+        last_m = ms_qs.last()
         if first_m:
             first_start = _start_of(first_m)
         if last_m:
@@ -543,13 +562,13 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     story.append(Spacer(1, 12))
 
     # ---- Milestones (SPAN FULL WIDTH) ----
-    ms = milestones_qs  # reuse the ordered queryset
+    ms = ms_qs
     story.append(Paragraph("Milestones", s_h2))
     if ms.exists():
         rows = [["#", "Milestone", "Due", "Amount", "Status"]]
         total_amt = 0.0
         for i, m in enumerate(ms, 1):
-            title = _s(m.title or m.description or "—")
+            title = _s(getattr(m, "title", None) or getattr(m, "description", None) or "—")
             amt = float(getattr(m, "amount", 0) or 0)
             total_amt += amt
             due_raw = _due_of(m)
@@ -558,6 +577,8 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
             rows.append([str(i), title, due, _currency(amt), status])
         rows.append(["", "", "Total", _currency(total_amt), ""])
 
+        from reportlab.lib.units import inch
+        from reportlab.platypus import Table, TableStyle
         c1 = 0.55 * inch
         c3 = 1.25 * inch
         c4 = 1.20 * inch
@@ -597,6 +618,7 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     story.append(Spacer(1, 12))
 
     # ====================== Legal Notices & Conditions ======================
+    from reportlab.platypus import PageBreak
     story.append(PageBreak())
     story.append(Paragraph("Legal Notices & Conditions", s_h2))
     story.append(Spacer(1, 6))
@@ -610,33 +632,39 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
             story.append(Paragraph(para.replace("\n", "<br/>"), s_just))
         story.append(Spacer(1, 8))
 
-    # ---- Signatures page ----
-    from reportlab.platypus import Table as RLTable, TableStyle as RLTableStyle, Spacer as RLSpacer, PageBreak
+    # ---- Signatures page (always reads live fields; cleared → shows '—') ----
+    from reportlab.platypus import Table as RLTable, TableStyle as RLTableStyle, Spacer as RLSpacer
     story.append(PageBreak())
     story.append(Paragraph("Signatures", s_h2))
 
     c_img = _signature_path(getattr(ag, "contractor_signature", None))
     h_img = _signature_path(getattr(ag, "homeowner_signature", None))
 
-    def _sig_block(name: str, img_path: Optional[str], signed_at, label: str) -> list:
+    # pull live fields including alias timestamps
+    c_name_live = _s(getattr(ag, "contractor_signature_name", None))
+    h_name_live = _s(getattr(ag, "homeowner_signature_name", None))
+    c_at_live   = getattr(ag, "contractor_signed_at", None) or getattr(ag, "signed_at_contractor", None)
+    h_at_live   = getattr(ag, "homeowner_signed_at", None)  or getattr(ag, "signed_at_homeowner", None)
+
+    c_at_txt = _fmt_date_friendly(c_at_live) or "—"
+    h_at_txt = _fmt_date_friendly(h_at_live) or "—"
+    c_name_txt = c_name_live.strip() if c_name_live and c_name_live.strip() not in ("None", "—") else "—"
+    h_name_txt = h_name_live.strip() if h_name_live and h_name_live.strip() not in ("None", "—") else "—"
+
+    def _sig_block(name_txt: str, img_path: Optional[str], signed_txt: str, label: str) -> list:
         block: list = []
         simg = _scaled_image(img_path, max_w=200, max_h=80)
         if simg:
             block += [simg, RLSpacer(1, 3)]
         block += [
-            Paragraph(f"<b>{label}:</b> {_s(name) or '—'}", s_body),
-            Paragraph(f"<b>Signed:</b> {_s(signed_at) or '—'}", s_small),
+            Paragraph(f"<b>{label}:</b> {name_txt}", s_body),
+            Paragraph(f"<b>Signed:</b> {signed_txt}", s_small),
         ]
         return block
 
-    c_name = _s(getattr(ag, "contractor_signature_name", None))
-    h_name = _s(getattr(ag, "homeowner_signature_name", None))
-    c_at   = _s(getattr(ag, "contractor_signed_at", None))
-    h_at   = _s(getattr(ag, "homeowner_signed_at", None))
-
     sig_tbl = RLTable(
-        [[_sig_block(c_name, c_img, c_at, "Contractor"),
-          _sig_block(h_name, h_img, h_at, "Homeowner")]],
+        [[_sig_block(c_name_txt, c_img, c_at_txt, "Contractor"),
+          _sig_block(h_name_txt, h_img, h_at_txt, "Homeowner")]],
         colWidths=[3.5 * inch, 3.5 * inch]
     )
     sig_tbl.setStyle(RLTableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
@@ -661,6 +689,10 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
 
 
 def generate_full_agreement_pdf(ag: Agreement, *, merge_attachments: bool = True) -> str:
+    """
+    Generate and persist a full Agreement PDF.
+    Returns the final filesystem path (string). Also attempts to save to ag.pdf_file if present.
+    """
     version = int(getattr(ag, "pdf_version", 0) or 0) + 1
 
     base_bytes = build_agreement_pdf_bytes(ag, is_preview=False)
@@ -673,14 +705,15 @@ def generate_full_agreement_pdf(ag: Agreement, *, merge_attachments: bool = True
 
     final_path = base_path
 
+    # Merge attachments if configured and available
     if merge_attachments and PdfMerger:
+        pdf_paths: List[str] = []
         try:
-            atts = list(ag.attachments.all())
+            atts = list(getattr(ag, "attachments", None).all()) if hasattr(ag, "attachments") else []
         except Exception:
             atts = []
-        pdf_paths: List[str] = []
         for att in atts:
-            p = getattr(att.file, "path", None)
+            p = getattr(getattr(att, "file", None), "path", None)
             if p and p.lower().endswith(".pdf") and os.path.exists(p):
                 pdf_paths.append(p)
 
@@ -696,14 +729,23 @@ def generate_full_agreement_pdf(ag: Agreement, *, merge_attachments: bool = True
                 merger.close()
                 final_path = merged_path
             except Exception:
+                # Fall back to the base document on any merge error
                 final_path = base_path
 
-    with open(final_path, "rb") as fh:
-        content = ContentFile(fh.read())
-        fname = f"agreement_{ag.id}_v{version}.pdf"
-        ag.pdf_file.save(fname, content, save=True)
-        if hasattr(ag, "pdf_version"):
-            ag.pdf_version = version
-            ag.save(update_fields=["pdf_version", "pdf_file"])
+    # Try to persist on the model filefield if it exists; otherwise just return the path.
+    saved_on_model = False
+    if hasattr(ag, "pdf_file") and getattr(ag, "pdf_file") is not None:
+        try:
+            with open(final_path, "rb") as fh:
+                content = ContentFile(fh.read())
+                fname = f"agreement_{ag.id}_v{version}.pdf"
+                ag.pdf_file.save(fname, content, save=True)
+                if hasattr(ag, "pdf_version"):
+                    ag.pdf_version = version
+                    ag.save(update_fields=["pdf_version", "pdf_file"])
+            saved_on_model = True
+        except Exception:
+            # Don't crash; still return final_path
+            saved_on_model = False
 
-    return ag.pdf_file.path
+    return getattr(ag.pdf_file, "path", None) if saved_on_model else final_path
