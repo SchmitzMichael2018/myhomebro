@@ -121,7 +121,7 @@ export default function Sidebar() {
       <div className="px-4 pt-4 pb-3 border-b border-black/5">
         <div className="flex items-center gap-2">
           <img
-            src="/static/assets/myhomebro_logo.png"
+            src={new URL('../assets/myhomebro_logo.png', import.meta.url).href}
             onError={(e) => {
               e.currentTarget.style.display = "none";
             }}

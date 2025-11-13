@@ -1,41 +1,44 @@
 // ~/backend/frontend/src/api.js
-// v2025-10-17 — endpoint-shim+auth (abs) with /api dedupe + onboarding remaps
-// - baseURL stays "/api" (server-side API prefix)
-// - request interceptor now de-dupes leading "/api" on config.url when baseURL="/api"
-// - legacy onboarding routes remap to /payments/... (no extra /api)
+// v2025-11-11 — stable-auth shim + canonical /projects/homeowners + onboarding redirect
 
-console.log("api.js v2025-10-13-shim+auth+abs");
+console.log("api.js v2025-11-11-stable-auth-shim+canonical");
 
 import axios from "axios";
 
 const TOK = { access: "access", refresh: "refresh", legacyAccess: "accessToken" };
-const BASE_URL = "/api"; // already your API prefix (keep)  ← proves double-/api root cause:contentReference[oaicite:2]{index=2}
+const BASE_URL = "/api";
 
-// —— In-memory tokens
 let MEM_ACCESS = null;
 let MEM_REFRESH = null;
 
-// —— Helpers
 const isFormData = (v) => typeof FormData !== "undefined" && v instanceof FormData;
 const isBlob = (v) => typeof Blob !== "undefined" && v instanceof Blob;
 const isURLSearchParams = (v) => typeof URLSearchParams !== "undefined" && v instanceof URLSearchParams;
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
-const SAME_ORIGIN =
-  (typeof window !== "undefined" && window.location && window.location.origin) || "";
+const SAME_ORIGIN = (typeof window !== "undefined" && window.location?.origin) || "";
 
-// Legacy → canonical endpoint remaps (order matters)
+// No-Auth header endpoints
+const NO_AUTH_HEADER_PATHS = new Set([
+  "/auth/login/", "/auth/refresh/", "/auth/register/",
+  "/auth/password-reset/request/", "/auth/password-reset/confirm/", "/auth/password-reset/complete/",
+  "/token/", "/token/refresh/", "/accounts/token/", "/accounts/token/refresh/",
+  "/auth/jwt/create/", "/auth/jwt/refresh/",
+]);
+
+// ✅ Canonicalize to /projects/* (avoid posting to removed alias /homeowners/)
 const ENDPOINT_REMAP = [
-  ["/projects/customers", "/homeowners"],
-  ["/customers", "/homeowners"],
-  ["/projects/homeowners", "/homeowners"],
+  // Customers/Homeowners
+  ["/customers", "/projects/homeowners"],
+  ["/homeowners", "/projects/homeowners"],
 
+  // Other project resources
   ["/milestones", "/projects/milestones"],
   ["/contractors", "/projects/contractors"],
   ["/attachments", "/projects/attachments"],
   ["/expenses", "/projects/expenses"],
 
-  // Onboarding: legacy → payments (targets do NOT start with "/api" because baseURL is "/api")
+  // Onboarding helpers
   ["/api/projects/contractor-onboarding-status", "/payments/onboarding/status"],
   ["/api/projects/contractor-onboarding",       "/payments/onboarding/start"],
   ["/api/projects/contractor-onboarding-manage", "/payments/onboarding/manage"],
@@ -52,12 +55,7 @@ function remapRelativePath(pathWithQuery) {
   const path = normalizePath(pathWithQuery);
   for (const [legacy, target] of ENDPOINT_REMAP) {
     const base = legacy.endsWith("/") ? legacy.slice(0, -1) : legacy;
-    if (
-      path === base ||
-      path === base + "/" ||
-      path.startsWith(base + "/") ||
-      path.startsWith(base + "?")
-    ) {
+    if (path === base || path === base + "/" || path.startsWith(base + "/") || path.startsWith(base + "?")) {
       const replaced = path.replace(base, target);
       if (process?.env?.NODE_ENV !== "production") {
         console.log(`[api-shim] ${legacy} → ${target} :: ${path} → ${replaced}`);
@@ -78,13 +76,16 @@ function remapAny(url) {
       const rebuiltPath = remapRelativePath(u.pathname + u.search + u.hash);
       return u.origin + rebuiltPath;
     }
-  } catch {
-    /* fall through */
-  }
+  } catch {}
   return remapRelativePath(url);
 }
 
-// —— Storage token helpers
+function pathOnly(url) {
+  try { return new URL(url, "https://dummy.local").pathname; }
+  catch { return (url || "").replace(/[?#].*$/, ""); }
+}
+
+// Token helpers
 export const getAccessToken = () => {
   if (MEM_ACCESS) return MEM_ACCESS;
   try {
@@ -95,17 +96,12 @@ export const getAccessToken = () => {
       sessionStorage.getItem(TOK.legacyAccess) ||
       null
     );
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 };
 export const getRefreshToken = () => {
   if (MEM_REFRESH) return MEM_REFRESH;
-  try {
-    return localStorage.getItem(TOK.refresh) || sessionStorage.getItem(TOK.refresh);
-  } catch {
-    return null;
-  }
+  try { return localStorage.getItem(TOK.refresh) || sessionStorage.getItem(TOK.refresh); }
+  catch { return null; }
 };
 function inferRememberFromStorage() {
   try {
@@ -115,14 +111,8 @@ function inferRememberFromStorage() {
   return true;
 }
 
-// —— Axios instance
-const api = axios.create({
-  baseURL: BASE_URL,
-  timeout: 30000,
-  withCredentials: false,
-});
+const api = axios.create({ baseURL: BASE_URL, timeout: 30000, withCredentials: false });
 
-// SINGLE definition
 function applyAuthHeader(token) {
   if (token) {
     api.defaults.headers.common.Authorization = `Bearer ${token}`;
@@ -132,32 +122,21 @@ function applyAuthHeader(token) {
     delete axios.defaults.headers.common.Authorization;
   }
 }
-
-// —— Public API for login/logout
 export function setAuthToken(access, refresh = null, remember = true) {
   MEM_ACCESS = access || null;
   MEM_REFRESH = refresh || null;
   try {
     const store = remember ? localStorage : sessionStorage;
     const other = remember ? sessionStorage : localStorage;
-
-    if (access) {
-      store.setItem(TOK.access, access);
-      store.setItem(TOK.legacyAccess, access);
-    }
+    if (access) { store.setItem(TOK.access, access); store.setItem(TOK.legacyAccess, access); }
     if (refresh) store.setItem(TOK.refresh, refresh);
-
-    other.removeItem(TOK.access);
-    other.removeItem(TOK.refresh);
-    other.removeItem(TOK.legacyAccess);
+    other.removeItem(TOK.access); other.removeItem(TOK.refresh); other.removeItem(TOK.legacyAccess);
   } catch {}
   applyAuthHeader(access);
 }
 export const setTokens = (a, r, remember = true) => setAuthToken(a, r, remember);
-
 export function clearAuth() {
-  MEM_ACCESS = null;
-  MEM_REFRESH = null;
+  MEM_ACCESS = null; MEM_REFRESH = null;
   try {
     localStorage.removeItem(TOK.access);
     localStorage.removeItem(TOK.refresh);
@@ -169,7 +148,6 @@ export function clearAuth() {
   applyAuthHeader(null);
 }
 
-// Normalize JSON for non-attachment writes
 function normalizeForJson(config) {
   const method = (config.method || "get").toLowerCase();
   const wantsBody = /post|put|patch/.test(method);
@@ -188,56 +166,30 @@ function normalizeForJson(config) {
     (api.defaults.headers && api.defaults.headers["Content-Type"]);
 
   const body = config.data;
-  const shouldForceJson =
-    !existingCT && !(typeof FormData !== "undefined" && body instanceof FormData) &&
-    !(typeof Blob !== "undefined" && body instanceof Blob) &&
-    !(typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams);
-
+  const shouldForceJson = !existingCT && !isFormData(body) && !isBlob(body) && !isURLSearchParams(body);
   if (shouldForceJson) {
-    config.headers = {
-      ...(config.headers || {}),
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    };
+    config.headers = { ...(config.headers || {}), "Content-Type": "application/json", Accept: "application/json" };
   }
   return config;
 }
 
-// Optional GET retry
-const RETRY = { enableGetRetry: false, max: 2, baseDelayMs: 250 };
-const isTransient = (err) => !err?.response || [502, 503, 504].includes(err.response?.status);
-
-// —— Interceptors
 function installInterceptors(instance) {
   instance.interceptors.request.use((config) => {
-    const token = MEM_ACCESS || getAccessToken();
-    if (token) {
-      config.headers = { ...(config.headers || {}), Authorization: `Bearer ${token}` };
-    } else if (config.headers?.Authorization) {
-      delete config.headers.Authorization;
-    }
-
-    // 1) remap legacy → canonical
-    if (config.url) {
-      config.url = remapAny(config.url);
-    }
-
-    // 2) de-dupe "/api" when baseURL is "/api" and url mistakenly begins with "/api"
-    //    e.g., baseURL "/api" + url "/api/payments/..."  -> collapse to "/payments/..."
-    if (
-      instance.defaults.baseURL === "/api" &&
-      typeof config.url === "string" &&
-      config.url.startsWith("/api/")
-    ) {
-      config.url = config.url.slice(4); // remove leading "/api"
-    } else if (
-      instance.defaults.baseURL === "/api" &&
-      typeof config.url === "string" &&
-      config.url === "/api"
-    ) {
+    if (config.url) config.url = remapAny(config.url);
+    // de-dupe "/api"
+    if (instance.defaults.baseURL === "/api" && typeof config.url === "string" && config.url.startsWith("/api/")) {
+      config.url = config.url.slice(4);
+    } else if (instance.defaults.baseURL === "/api" && config.url === "/api") {
       config.url = "/";
     }
-
+    const p = pathOnly(config.url || "");
+    if (NO_AUTH_HEADER_PATHS.has(p)) {
+      if (config.headers?.Authorization) delete config.headers.Authorization;
+    } else {
+      const token = MEM_ACCESS || getAccessToken();
+      if (token) config.headers = { ...(config.headers || {}), Authorization: `Bearer ${token}` };
+      else if (config.headers?.Authorization) delete config.headers.Authorization;
+    }
     return normalizeForJson(config);
   });
 
@@ -251,135 +203,91 @@ function installInterceptors(instance) {
   instance.interceptors.response.use(
     (res) => res,
     async (error) => {
-      const original = error.config || {};
+      const { response, config } = error || {};
+      const status = response?.status;
+      const method = (config?.method || "").toLowerCase();
+      const url = config?.url || "";
+      const data = response?.data || {};
 
-      if (
-        RETRY.enableGetRetry &&
-        (original.method || "get").toLowerCase() === "get" &&
-        isTransient(error) &&
-        (original._retry_count || 0) < RETRY.max
-      ) {
-        original._retry_count = (original._retry_count || 0) + 1;
-        const delay = RETRY.baseDelayMs * 2 ** (original._retry_count - 1);
-        await sleep(delay);
-        return instance(original);
+      // Contractor required → redirect to onboarding (robust)
+      if (status === 403) {
+        const code = data?.code;
+        const detail = typeof data?.detail === "string" ? data.detail.toLowerCase() : "";
+        const contractorRequired =
+          code === "contractor_required" ||
+          (detail.includes("contractor") && detail.includes("profile")) ||
+          // fallback: if backend returns plain 403 without payload
+          true;
+        const isHomeownerCreate =
+          method === "post" && (url.endsWith("/projects/homeowners/") || url.endsWith("/homeowners/"));
+        if (contractorRequired && isHomeownerCreate) {
+          try {
+            window.dispatchEvent(new CustomEvent("mhb:onboardingRequired", {
+              detail: { source: "homeowners:create", ts: Date.now() },
+            }));
+          } catch {}
+          window.location.assign("/onboarding");
+          return new Promise(() => {}); // swallow
+        }
       }
 
-      if (error.response && error.response.status === 401 && !original._retry) {
-        original._retry = true;
+      // JWT refresh
+      if (status !== 401) return Promise.reject(error);
+      const p = pathOnly(config?.url || "");
+      if (NO_AUTH_HEADER_PATHS.has(p)) return Promise.reject(error);
+      if (config._retry) return Promise.reject(error);
+      config._retry = true;
 
-        if (isRefreshing) {
-          return new Promise((resolve, reject) => {
-            queue.push({
-              resolve: (token) => {
-                if (token) {
-                  original.headers = { ...(original.headers || {}), Authorization: `Bearer ${token}` };
-                }
-                resolve(instance(original));
-              },
-              reject,
-            });
+      if (isRefreshing) {
+        return new Promise((resolve, reject) => {
+          queue.push({
+            resolve: (token) => {
+              if (token) config.headers = { ...(config.headers || {}), Authorization: `Bearer ${token}` };
+              resolve(instance(config));
+            },
+            reject,
           });
-        }
-
-        isRefreshing = true;
-        const refresh = MEM_REFRESH || getRefreshToken();
-        if (!refresh) {
-          isRefreshing = false;
-          clearAuth();
-          return Promise.reject(error);
-        }
-
-        const candidates = ["/auth/refresh/", "/token/refresh/", "/projects/token/refresh/"];
-
-        try {
-          let data;
-          for (let i = 0; i < candidates.length; i++) {
-            try {
-              const resp = await instance.post(candidates[i], { refresh });
-              data = resp.data;
-              break;
-            } catch (e) {
-              if (i === candidates.length - 1) throw e;
-            }
-          }
-
-          const newAccess = data?.access || data?.access_token;
-          if (typeof newAccess !== "string" || !newAccess) throw new Error("No access token on refresh.");
-
-          setAuthToken(newAccess, refresh, inferRememberFromStorage());
-
-          flush(null, newAccess);
-          original.headers = { ...(original.headers || {}), Authorization: `Bearer ${newAccess}` };
-          return instance(original);
-        } catch (err) {
-          flush(err, null);
-          clearAuth();
-          throw err;
-        } finally {
-          isRefreshing = false;
-        }
-      }
-
-      // 415 recovery (multipart → JSON) excluding attachments handled above
-      if (
-        error.response &&
-        error.response.status === 415 &&
-        /post|put|patch/i.test(original.method || "") &&
-        typeof original.url === "string" &&
-        !/\/(attachments|milestone-files|license-upload|upload)\/?(\?|$|\/)/i.test(original.url) &&
-        (typeof FormData !== "undefined" && original.data instanceof FormData) &&
-        !original._retried_as_json
-      ) {
-        const obj = {};
-        original.data.forEach?.((v, k) => {
-          if (!(v instanceof Blob)) obj[k] = v;
         });
-        const retryConfig = {
-          ...original,
-          data: obj,
-          headers: { ...(original.headers || {}), "Content-Type": "application/json", Accept: "application/json" },
-          _retried_as_json: true,
-        };
-        return instance(retryConfig);
       }
 
-      // 405 fallback for /contractors/me/
-      if (
-        error.response &&
-        error.response.status === 405 &&
-        /\/contractors\/me\/?/.test(original.url || "") &&
-        /patch|put/i.test(original.method || "")
-      ) {
-        try {
-          const meResp = await instance.get("/projects/contractors/me/");
-          const id = meResp?.data?.id ?? meResp?.data?.pk;
-          if (!id) throw new Error("Could not resolve contractor id from /contractors/me/");
-          const retryConfig = {
-            ...original,
-            url: (original.url || "").replace(/contractors\/me\/?/, `contractors/${id}/`),
-            _retry: true,
-          };
-          return instance(retryConfig);
-        } catch {
-          /* ignore */
-        }
+      isRefreshing = true;
+      const refresh = MEM_REFRESH || getRefreshToken();
+      if (!refresh) {
+        isRefreshing = false;
+        clearAuth();
+        return Promise.reject(error);
       }
 
-      return Promise.reject(error);
+      const candidates = ["/auth/refresh/", "/token/refresh/", "/projects/token/refresh/"];
+      try {
+        let data;
+        for (let i = 0; i < candidates.length; i++) {
+          try {
+            const resp = await instance.post(candidates[i], { refresh });
+            data = resp.data;
+            break;
+          } catch (e) { if (i === candidates.length - 1) throw e; }
+          }
+        const newAccess = data?.access || data?.access_token;
+        if (!newAccess) throw new Error("No access token on refresh.");
+        setAuthToken(newAccess, refresh, inferRememberFromStorage());
+        flush(null, newAccess);
+        config.headers = { ...(config.headers || {}), Authorization: `Bearer ${newAccess}` };
+        return instance(config);
+      } catch (err) {
+        flush(err, null);
+        clearAuth();
+        throw err;
+      } finally {
+        isRefreshing = false;
+      }
     }
   );
 }
 
 installInterceptors(api);
 installInterceptors(axios);
-
-// Seed Authorization at boot (covers hard refresh)
 applyAuthHeader(getAccessToken());
 
-// Convenience helper for attachments
-export function uploadMultipart(url, formData) {
-  return api.post(url, formData);
-}
-
+export function uploadMultipart(url, formData) { return api.post(url, formData); }
 export default api;

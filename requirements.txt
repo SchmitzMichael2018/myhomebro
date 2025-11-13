@@ -1,2 +1,9 @@
 icalendar==6.3.1
 dj-database-url
+python-dotenv==1.0.1
+stripe
+django-cors-headers
+django-extensions
+drf-nested-routers
+twilio
+postmarker

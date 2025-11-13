@@ -15,7 +15,7 @@ export default function PageShell({ title, subtitle, children, showLogo = true }
           <div className="mhb-topbar">
             {showLogo ? (
               <div className="mhb-logo-frame mhb-logo-lg" title="MyHomeBro">
-                <img src="/static/assets/myhomebro_logo.png" alt="MyHomeBro" />
+                <img src={new URL('../assets/myhomebro_logo.png', import.meta.url).href} alt="MyHomeBro" />
               </div>
             ) : null}
             <div>

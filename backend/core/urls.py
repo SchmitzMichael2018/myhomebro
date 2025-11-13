@@ -79,10 +79,14 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("healthz", health),
 
-    # JWT (SimpleJWT)
+    # JWT (SimpleJWT) — primary
     path("api/auth/login/",   TokenObtainPairView.as_view(), name="auth-login"),
     path("api/auth/refresh/", TokenRefreshView.as_view(),    name="auth-refresh"),
     path("api/auth/verify/",  TokenVerifyView.as_view(),     name="auth-verify"),
+
+    # JWT (SimpleJWT) — aliases for current frontend bundle
+    path("api/token/", TokenObtainPairView.as_view(), name="auth-login-alias"),
+    path("api/token/refresh/", TokenRefreshView.as_view(), name="auth-refresh-alias"),
 
     # Primary API mountpoints
     path("api/projects/", include(("projects.urls", "projects"), namespace="projects")),
@@ -112,21 +116,8 @@ urlpatterns = [
         url="/api/projects/invoices/%(pk)s/", permanent=False, query_string=True
     ), name="invoice-detail-alias"),
 
-    # Homeowners aliases
-    path("api/homeowners/", RedirectView.as_view(
-        url="/api/projects/homeowners/", permanent=False, query_string=True
-    ), name="homeowner-list-alias"),
-    path("api/homeowners/<int:pk>/", RedirectView.as_view(
-        url="/api/projects/homeowners/%(pk)s/", permanent=False, query_string=True
-    ), name="homeowner-detail-alias"),
-
-    # Optional legacy "customers" alias → same homeowners data
-    path("api/customers/", RedirectView.as_view(
-        url="/api/projects/homeowners/", permanent=False, query_string=True
-    ), name="customers-list-alias"),
-    path("api/customers/<int:pk>/", RedirectView.as_view(
-        url="/api/projects/homeowners/%(pk)s/", permanent=False, query_string=True
-    ), name="customers-detail-alias"),
+    # ❌ Removed homeowners/customers RedirectView aliases to avoid CSRF on POST
+    # (Use /api/projects/homeowners/ directly from the frontend.)
 
     # PDF viewer
     path("pdf/viewer/", pdf_viewer, name="pdf-viewer"),

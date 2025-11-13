@@ -20,8 +20,6 @@ export default function ContractorProfile() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const [contractorId, setContractorId] = useState(null);
-
   const [form, setForm] = useState({
     full_name: "",
     email: "",
@@ -51,24 +49,24 @@ export default function ContractorProfile() {
       try {
         const me = await api.get("/projects/contractors/me/");
         const data = me?.data || {};
-        const id = data.id ?? data.pk ?? null;
-        setContractorId(id);
 
         setForm({
           full_name: data.full_name || data.name || "",
-          email: data.email || "",
+          email: data.email || (data.user && data.user.email) || "",
           business_name: data.business_name || "",
           phone: data.phone || "",
           address: data.address || data.address_line1 || "",
           city: data.city || "",
           state: data.state || "",
           license_number: data.license_number || "",
-          license_expiration_date: (data.license_expiration_date || "").slice(0, 10),
+          license_expiration_date: (data.license_expiration_date || data.license_expiration || "").slice(0, 10),
           skills: Array.isArray(data.skills)
             ? data.skills.map((s) =>
                 typeof s === "string" ? s : (s.name || s.title || "")
               ).filter(Boolean)
-            : [],
+            : (typeof data.skills === "string"
+                ? data.skills.split(",").map((s) => s.trim()).filter(Boolean)
+                : []),
         });
 
         setLogoPreview(data.logo || data.logo_url || null);
@@ -110,7 +108,12 @@ export default function ContractorProfile() {
 
     try {
       const fd = new FormData();
-      fd.append("full_name", form.full_name || "");
+
+      // Linked user
+      fd.append("email", (form.email || "").trim());
+      if (form.full_name) fd.append("full_name", form.full_name);
+
+      // Contractor
       fd.append("business_name", form.business_name || "");
       fd.append("phone", form.phone || "");
       fd.append("address", form.address || "");
@@ -121,26 +124,13 @@ export default function ContractorProfile() {
         fd.append("license_expiration_date", form.license_expiration_date);
       }
 
-      // send skills both as repeated field and as JSON string (backend compatibility)
       form.skills.forEach((s) => fd.append("skills", s));
       fd.append("skills_json", JSON.stringify(form.skills));
 
       if (logoFile) fd.append("logo", logoFile);
 
-      let id = contractorId;
-      if (!id) {
-        try {
-          const me = await api.get("/projects/contractors/me/");
-          id = me?.data?.id ?? me?.data?.pk;
-          setContractorId(id || null);
-        } catch { /* ignore */ }
-      }
-
-      const url = id
-        ? `/projects/contractors/${id}/`
-        : `/projects/contractors/me/`;
-
-      await api.patch(url, fd, {
+      // Always PATCH /me/ (backend supports it)
+      await api.patch("/projects/contractors/me/", fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
@@ -192,11 +182,10 @@ export default function ContractorProfile() {
               <div>
                 <label className="block text-sm font-semibold mb-1">Email Address</label>
                 <input
-                  className="w-full h-10 rounded border border-slate-300 px-3 bg-slate-100"
+                  className="w-full h-10 rounded border border-slate-300 px-3"
                   value={form.email}
                   onChange={onChange("email")}
                   placeholder="you@example.com"
-                  disabled
                 />
               </div>
             </div>

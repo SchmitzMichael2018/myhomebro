@@ -5,7 +5,6 @@ from django.utils import timezone
 from .models_dispute import Dispute, DisputeAttachment
 import uuid
 
-
 # --- Safe default for warranty snapshot (used if blank/None) ---
 DEFAULT_WARRANTY_TEXT = (
     "Standard workmanship warranty: Contractor warrants all labor performed under this "
@@ -13,7 +12,6 @@ DEFAULT_WARRANTY_TEXT = (
     "manufacturer’s warranties. This warranty excludes damage caused by misuse, neglect, "
     "alteration, improper maintenance, or acts of God."
 )
-
 
 # --- TextChoices for status fields ---
 class ProjectStatus(models.TextChoices):
@@ -23,7 +21,6 @@ class ProjectStatus(models.TextChoices):
     IN_PROGRESS = 'in_progress', 'In Progress'
     COMPLETED = 'completed', 'Completed'
     CANCELLED = 'cancelled', 'Cancelled'
-
 
 class AgreementProjectType(models.TextChoices):
     REMODEL = 'Remodel', 'Remodel'
@@ -35,7 +32,6 @@ class AgreementProjectType(models.TextChoices):
     CUSTOM = 'Custom', 'Custom'
     DIY_HELP = 'DIY Help', 'DIY Help'
 
-
 class InvoiceStatus(models.TextChoices):
     INCOMPLETE = 'incomplete', 'Incomplete'
     PENDING = 'pending', 'Pending Approval'
@@ -43,21 +39,18 @@ class InvoiceStatus(models.TextChoices):
     DISPUTED = 'disputed', 'Disputed'
     PAID = 'paid', 'Paid'
 
-
 class ExpenseStatus(models.TextChoices):
     PENDING = 'pending', 'Pending Approval'
     APPROVED = 'approved', 'Approved'
     DISPUTED = 'disputed', 'Disputed'
     PAID = 'paid', 'Paid'
 
-
 class HomeownerStatus(models.TextChoices):
     ACTIVE = 'active', 'Active'
     PROSPECT = 'prospect', 'Prospect'
     ARCHIVED = 'archived', 'Archived'
 
-
-# --- CORRECT ORDER: Define Skill before Contractor ---
+# --- Define Skill before Contractor ---
 class Skill(models.Model):
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(max_length=100, unique=True)
@@ -68,7 +61,6 @@ class Skill(models.Model):
     def __str__(self):
         return self.name
 
-
 class Contractor(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -78,6 +70,11 @@ class Contractor(models.Model):
     business_name = models.CharField(max_length=255, blank=True)
     phone = models.CharField(max_length=20, blank=True)
     address = models.TextField(blank=True)
+
+    # ➕ Added so City/State persist
+    city = models.CharField(max_length=100, blank=True)
+    state = models.CharField(max_length=50, blank=True)
+
     skills = models.ManyToManyField(Skill, blank=True)
     license_number = models.CharField(max_length=50, blank=True)
     license_expiration = models.DateField(null=True, blank=True)
@@ -88,7 +85,7 @@ class Contractor(models.Model):
     stripe_account_id = models.CharField(max_length=255, blank=True, db_index=True)
     onboarding_status = models.CharField(max_length=50, blank=True)
 
-    # ✅ New fields used by webhook + UI badges
+    # Status flags
     charges_enabled = models.BooleanField(default=False)
     payouts_enabled = models.BooleanField(default=False)
     details_submitted = models.BooleanField(default=False)
@@ -109,20 +106,17 @@ class Contractor(models.Model):
 
     @property
     def name(self):
-        # Full name if present, else business name, else user email
         full = getattr(self.user, "get_full_name", lambda: "")() or ""
         return full or self.business_name or getattr(self.user, "email", "") or ""
 
     @property
     def email(self):
-        # ✅ Return the attribute; do not call email()
         return getattr(self.user, "email", "") or ""
 
     @property
     def public_profile_url(self):
         return f"/contractors/{self.id}/profile"
 
-    # --- Convenience helpers for the UI ---
     @property
     def stripe_connected(self) -> bool:
         return bool(self.charges_enabled or self.payouts_enabled)
@@ -130,7 +124,6 @@ class Contractor(models.Model):
     @property
     def stripe_action_required(self) -> bool:
         return int(self.requirements_due_count or 0) > 0
-
 
 class Homeowner(models.Model):
     created_by = models.ForeignKey(
@@ -156,7 +149,6 @@ class Homeowner(models.Model):
 
     def __str__(self):
         return self.full_name
-
 
 class Project(models.Model):
     number = models.CharField(max_length=30, unique=True, editable=False, db_index=True)
@@ -199,7 +191,6 @@ class Project(models.Model):
         homeowner_name = getattr(self.homeowner, 'full_name', 'N/A')
         return f"[{self.number}] {self.title} ({homeowner_name})"
 
-
 class Agreement(models.Model):
     project = models.OneToOneField(Project, on_delete=models.CASCADE, related_name='agreement')
     contractor = models.ForeignKey(Contractor, on_delete=models.SET_NULL, null=True, blank=True)
@@ -214,11 +205,10 @@ class Agreement(models.Model):
     total_time_estimate = models.DurationField(null=True, blank=True)
     milestone_count = models.PositiveIntegerField(default=0)
 
-    # NEW: high-level timeline for the agreement (shown in list & editor)
+    # Timeline
     start = models.DateField(null=True, blank=True, db_index=True)
     end = models.DateField(null=True, blank=True, db_index=True)
 
-    # NEW: agreement status used by filters in UI
     status = models.CharField(
         max_length=20, choices=ProjectStatus.choices,
         default=ProjectStatus.DRAFT, db_index=True
@@ -240,16 +230,15 @@ class Agreement(models.Model):
         choices=[("default", "Default"), ("custom", "Custom")],
         default="default",
     )
-    # NOTE: DB has NOT NULL constraint from your trace; keep this non-null at runtime.
     warranty_text_snapshot = models.TextField(blank=True, default="")
 
     escrow_payment_intent_id = models.CharField(max_length=255, blank=True)
     escrow_funded = models.BooleanField(default=False)
 
     # Review & signatures
-    reviewed = models.BooleanField(default=False)  # existing boolean
-    reviewed_at = models.DateTimeField(null=True, blank=True)           # NEW
-    reviewed_by = models.CharField(max_length=32, null=True, blank=True)  # NEW
+    reviewed = models.BooleanField(default=False)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.CharField(max_length=32, null=True, blank=True)
 
     signed_by_contractor = models.BooleanField(default=False)
     signed_at_contractor = models.DateTimeField(null=True, blank=True)
@@ -268,7 +257,7 @@ class Agreement(models.Model):
     pdf_archived = models.BooleanField(default=False)
     signature_log = models.TextField(blank=True)
 
-    # Lifecycle & housekeeping
+    # Lifecycle
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     amendment_number = models.PositiveIntegerField(default=0, editable=False)
@@ -287,24 +276,14 @@ class Agreement(models.Model):
         return self.signed_by_contractor and self.signed_by_homeowner
 
     def save(self, *args, **kwargs):
-        """
-        Hardened save:
-        - Backfill contractor from project if missing
-        - Keep status transitions
-        - Normalize warranty_type to ('default'|'custom')
-        - Guarantee warranty_text_snapshot is never NULL/empty before persisting
-        """
-        # Backfill contractor from project if not set
         if not self.contractor and self.project and self.project.contractor_id:
             self.contractor = self.project.contractor
 
-        # Keep status generally sensible without being too clever
         if self.escrow_funded:
             self.status = ProjectStatus.FUNDED
         elif self.is_fully_signed and self.status == ProjectStatus.DRAFT:
             self.status = ProjectStatus.SIGNED
 
-        # --- Normalize & enforce warranty fields ---
         if self.warranty_type:
             self.warranty_type = str(self.warranty_type).strip().lower()
             if self.warranty_type not in ("default", "custom"):
@@ -314,13 +293,9 @@ class Agreement(models.Model):
 
         snap = (self.warranty_text_snapshot or "").strip()
         if not snap:
-            if self.warranty_type == "default":
-                self.warranty_text_snapshot = DEFAULT_WARRANTY_TEXT
-            else:
-                self.warranty_text_snapshot = DEFAULT_WARRANTY_TEXT
+            self.warranty_text_snapshot = DEFAULT_WARRANTY_TEXT
 
         super().save(*args, **kwargs)
-
 
 class Milestone(models.Model):
     agreement = models.ForeignKey(Agreement, on_delete=models.CASCADE, related_name='milestones')
@@ -345,7 +320,6 @@ class Milestone(models.Model):
     def is_late(self):
         return self.completion_date and not self.completed and timezone.now().date() > self.completion_date
 
-
 class MilestoneFile(models.Model):
     milestone = models.ForeignKey(Milestone, on_delete=models.CASCADE, related_name='files')
     uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
@@ -354,7 +328,6 @@ class MilestoneFile(models.Model):
 
     def __str__(self):
         return f"File {self.id} for milestone {self.milestone.title}"
-
 
 class MilestoneComment(models.Model):
     milestone = models.ForeignKey(Milestone, on_delete=models.CASCADE, related_name='comments')
@@ -369,9 +342,7 @@ class MilestoneComment(models.Model):
         author_name = "Deleted User"
         if self.author:
             author_name = self.author.get_full_name()
-    #        return f"Comment by {author_name} on {self.created_at.strftime('%Y-%m-%d')}"
         return f"Comment by {author_name} on {self.created_at.strftime('%Y-%m-%d')}"
-
 
 class Invoice(models.Model):
     agreement = models.ForeignKey(Agreement, on_delete=models.CASCADE, related_name='invoices')
@@ -418,7 +389,6 @@ class Invoice(models.Model):
     def __str__(self):
         return f"Invoice {self.invoice_number} (${self.amount})"
 
-
 class Expense(models.Model):
     agreement = models.ForeignKey(Agreement, on_delete=models.CASCADE, related_name='misc_expenses')
     description = models.CharField(max_length=255)
@@ -438,14 +408,7 @@ class Expense(models.Model):
     def __str__(self):
         return f"{self.description} – ${self.amount}"
 
-
 class AgreementAmendment(models.Model):
-    """
-    Links a child Agreement as an Amendment to a primary (parent) Agreement.
-    - child: the Agreement that is considered the amendment
-    - parent: the primary Agreement
-    - amendment_number: 1, 2, 3... (unique per parent)
-    """
     parent = models.ForeignKey("Agreement", on_delete=models.CASCADE, related_name="amendments")
     child = models.OneToOneField("Agreement", on_delete=models.CASCADE, related_name="as_amendment")
     amendment_number = models.PositiveIntegerField(default=1)
@@ -458,6 +421,5 @@ class AgreementAmendment(models.Model):
     def __str__(self):
         return f"Amendment #{self.amendment_number} to Agreement #{self.parent_id} (child #{self.child_id})"
 
-
-# 🔗 IMPORTANT: ensure Django registers AgreementAttachment from models_attachments.py
+# ensure AgreementAttachment is registered
 from .models_attachments import AgreementAttachment  # noqa: E402,F401

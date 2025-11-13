@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import io
 import os
+import sys
+import traceback
 from datetime import timedelta
 from typing import Set, Optional
 
@@ -21,7 +23,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError, PermissionDenied
 
-from projects.models import Agreement, Milestone
+from projects.models import Agreement, Milestone, Project, Homeowner, Contractor
 from projects.serializers.agreement import AgreementSerializer
 
 # ---------------------------------------------------------------------------------------
@@ -34,11 +36,13 @@ from projects.serializers.agreement import AgreementSerializer
 build_agreement_pdf_bytes = None  # type: ignore
 generate_full_agreement_pdf = None  # type: ignore
 
+
 def _abs_media_path(rel_path: str) -> Optional[str]:
     if not rel_path:
         return None
     mr = getattr(settings, "MEDIA_ROOT", "") or ""
     return os.path.join(mr, rel_path)
+
 
 # Try preferred service first
 try:
@@ -133,6 +137,7 @@ _PREVIEW_MAX_AGE = 10 * 60  # 10 minutes
 # Utility functions
 # ---------------------------------------------------------------------
 
+
 def _changed_fields(instance: Agreement, data: dict) -> Set[str]:
     changed: Set[str] = set()
     for k, v in data.items():
@@ -140,7 +145,9 @@ def _changed_fields(instance: Agreement, data: dict) -> Set[str]:
             continue
         try:
             cur = getattr(instance, k)
-            if (cur is None and v not in (None, "")) or (cur is not None and str(cur) != str(v)):
+            if (cur is None and v not in (None, "")) or (
+                cur is not None and str(cur) != str(v)
+            ):
                 changed.add(k)
         except Exception:
             changed.add(k)
@@ -148,7 +155,10 @@ def _changed_fields(instance: Agreement, data: dict) -> Set[str]:
 
 
 def _is_fully_signed(ag: Agreement) -> bool:
-    return bool(getattr(ag, "signed_by_contractor", False) and getattr(ag, "signed_by_homeowner", False))
+    return bool(
+        getattr(ag, "signed_by_contractor", False)
+        and getattr(ag, "signed_by_homeowner", False)
+    )
 
 
 def _fully_signed_at(ag: Agreement):
@@ -168,11 +178,14 @@ class AgreementViewSet(viewsets.ModelViewSet):
       GET  /agreements/preview_signed/?t=...  -> inline PDF (public, HMAC-validated)
       POST /agreements/<id>/mark_previewed/   -> 204 (no-op hook for UI)
     """
+
     permission_classes = [IsAuthenticated]
     serializer_class = AgreementSerializer
-    queryset = Agreement.objects.select_related(
-        "project", "contractor", "homeowner"
-    ).all().order_by("-updated_at")
+    queryset = (
+        Agreement.objects.select_related("project", "contractor", "homeowner")
+        .all()
+        .order_by("-updated_at")
+    )
 
     # ---------------- Editability enforcement ----------------
 
@@ -182,19 +195,33 @@ class AgreementViewSet(viewsets.ModelViewSet):
         if not _is_fully_signed(instance):
             return
         changed = _changed_fields(instance, data)
-        illegal = {f for f in changed if f not in ALWAYS_OK_FIELDS and f in (DRAFT_ONLY_FIELDS | changed)}
+        illegal = {
+            f
+            for f in changed
+            if f not in ALWAYS_OK_FIELDS and f in (DRAFT_ONLY_FIELDS | changed)
+        }
         if illegal:
-            raise ValidationError({
-                "detail": "Agreement is fully signed and locked. Create an amendment to change details.",
-                "blocked_fields": sorted(illegal),
-                "signed_by_contractor": instance.signed_by_contractor,
-                "signed_by_homeowner": instance.signed_by_homeowner,
-            })
+            raise ValidationError(
+                {
+                    "detail": "Agreement is fully signed and locked. Create an amendment to change details.",
+                    "blocked_fields": sorted(illegal),
+                    "signed_by_contractor": instance.signed_by_contractor,
+                    "signed_by_homeowner": instance.signed_by_homeowner,
+                }
+            )
 
     def _prepare_payload(self, request):
-        data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
+        data = request.data.copy() if hasattr(request.data, "copy") else dict(
+            request.data
+        )
         data.pop("status", None)
-        for k in ("description", "terms_text", "privacy_text", "project_subtype", "standardized_category"):
+        for k in (
+            "description",
+            "terms_text",
+            "privacy_text",
+            "project_subtype",
+            "standardized_category",
+        ):
             if k in data and data[k] == "":
                 data[k] = None
         for k in ("start", "end", "total_time_estimate"):
@@ -205,6 +232,145 @@ class AgreementViewSet(viewsets.ModelViewSet):
         if "milestone_count" in data and data["milestone_count"] == "":
             data["milestone_count"] = None
         return data
+
+    # ---------------- CREATE (Step 1 Wizard) ----------------
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        """
+        Step 1 Agreement creation:
+        - Resolves the contractor from the logged-in user.
+        - Creates a Project automatically if `project` is not provided.
+        - Normalizes description (no null).
+        - Accepts helper fields: project_title, project_type, project_subtype.
+        - Returns 400 with serializer error messages if invalid.
+        - On unexpected errors, logs full traceback and returns JSON 500.
+        """
+        try:
+            data = request.data.copy()
+            user = request.user
+
+            # Try multiple ways to get the contractor for this user.
+            contractor = getattr(user, "contractor", None)
+            if contractor is None:
+                contractor = getattr(user, "contractor_profile", None)
+            if contractor is None:
+                contractor = Contractor.objects.filter(user=user).first()
+
+            if contractor is None and not (user.is_staff or user.is_superuser):
+                return Response(
+                    {
+                        "detail": "Authenticated user has no contractor profile linked. "
+                        "Create a Contractor for this user or log in as a contractor."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Ensure description is not null
+            desc = data.get("description")
+            if desc is None:
+                data["description"] = ""
+            if data.get("description", "") is None:
+                data["description"] = ""
+
+            # Detect if we need to auto-create a Project
+            project_id = data.get("project")
+            if not project_id:
+                homeowner_id = data.get("homeowner")
+                if not homeowner_id:
+                    return Response(
+                        {"homeowner": ["Homeowner is required to create a project."]},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                try:
+                    homeowner = Homeowner.objects.get(pk=homeowner_id)
+                except Homeowner.DoesNotExist:
+                    return Response(
+                        {"homeowner": ["Homeowner does not exist."]},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                project_title = (
+                    data.get("project_title")
+                    or data.get("title")
+                    or "Untitled Project"
+                )
+                # Keep these in data for AgreementSerializer; do NOT send to Project.
+                project_type = data.get("project_type") or None
+                project_subtype = data.get("project_subtype") or None
+                project_description = data.get("description") or ""
+
+                # Create the Project (Project model does NOT have project_type/subtype)
+                project = Project.objects.create(
+                    title=project_title,
+                    contractor=contractor if contractor is not None else None,
+                    homeowner=homeowner,
+                    description=project_description,
+                )
+
+                data["project"] = project.pk
+
+            # Remove only helper fields that are NOT Agreement fields
+            # project_type and project_subtype stay for AgreementSerializer
+            data.pop("project_title", None)
+
+            # Ensure contractor is assigned to Agreement if we have one
+            if contractor is not None:
+                data["contractor"] = contractor.pk
+
+            serializer = self.get_serializer(data=data)
+            if not serializer.is_valid():
+                print(
+                    "AgreementSerializer errors on create():",
+                    serializer.errors,
+                    file=sys.stderr,
+                )
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+            # Instead of serializer.save(), manually create Agreement to strip non-model fields
+            self.perform_create(serializer)
+            headers = self.get_success_headers(serializer.data)
+            return Response(
+                serializer.data, status=status.HTTP_201_CREATED, headers=headers
+            )
+
+        except Exception as e:
+            # Log full traceback to the error log and return JSON 500
+            print(
+                "AgreementViewSet.create() unexpected error:",
+                repr(e),
+                file=sys.stderr,
+            )
+            traceback.print_exc()
+            return Response(
+                {
+                    "detail": f"Unexpected error while creating agreement: "
+                    f"{type(e).__name__}: {e}"
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    # Custom perform_create to strip wizard-only fields before creating Agreement
+    def perform_create(self, serializer: AgreementSerializer) -> None:
+        """
+        Create Agreement instance from validated_data, stripping any fields
+        that are not real model fields (wizard-only or write-only helpers).
+        """
+        validated = dict(serializer.validated_data)
+
+        # Fields that are present on the serializer but NOT on Agreement model:
+        for key in [
+            "use_default_warranty",
+            "custom_warranty_text",
+            "title",          # project title lives on Project, not Agreement
+            "project_title",  # pure wizard helper
+        ]:
+            validated.pop(key, None)
+
+        # Manually create the Agreement and attach it to the serializer
+        instance = Agreement.objects.create(**validated)
+        serializer.instance = instance
 
     # ---------------- REST overrides ----------------
 
@@ -236,12 +402,20 @@ class AgreementViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         instance: Agreement = self.get_object()
         contractor_user = getattr(getattr(instance, "contractor", None), "user", None)
-        if not (request.user.is_staff or request.user.is_superuser or request.user == contractor_user):
-            raise PermissionDenied("Only the assigned contractor (or staff) can delete this agreement.")
+        if not (
+            request.user.is_staff
+            or request.user.is_superuser
+            or request.user == contractor_user
+        ):
+            raise PermissionDenied(
+                "Only the assigned contractor (or staff) can delete this agreement."
+            )
         if _is_fully_signed(instance):
             signed_at = _fully_signed_at(instance)
             if not signed_at or (now() - signed_at).days < (RETENTION_YEARS * 365):
-                raise PermissionDenied(f"Deletion blocked by retention policy ({RETENTION_YEARS} years).")
+                raise PermissionDenied(
+                    f"Deletion blocked by retention policy ({RETENTION_YEARS} years)."
+                )
         return super().destroy(request, *args, **kwargs)
 
     # ---------------- AUTH preview (XHR Blob) — legacy callers ----------------
@@ -259,13 +433,19 @@ class AgreementViewSet(viewsets.ModelViewSet):
             return Response({"url": url}, status=status.HTTP_200_OK)
 
         if not build_agreement_pdf_bytes:
-            return Response({"detail": "PDF preview not available."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return Response(
+                {"detail": "PDF preview not available."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         ag: Agreement = self.get_object()
         try:
             pdf_bytes = build_agreement_pdf_bytes(ag, is_preview=True)
         except Exception as e:
-            return Response({"detail": f"Could not generate preview: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"detail": f"Could not generate preview: {e}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         buf = io.BytesIO(pdf_bytes)
         filename = f"agreement_{ag.pk}_preview.pdf"
@@ -278,12 +458,14 @@ class AgreementViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def preview_link(self, request, pk=None):
         """
-        Returns a short-lived signed URL (10 min) that streams the preview publicly.
+        Returns a short-lived signed URL (10 min) that streams the preview публичly.
         POST /agreements/<id>/preview_link/ -> {url}
         """
         signer = signing.TimestampSigner(salt=_PREVIEW_SALT)
         token = signer.sign_object({"agreement_id": int(pk), "uid": request.user.id})
-        absolute = request.build_absolute_uri(f"/api/projects/agreements/preview_signed/?t={token}")
+        absolute = request.build_absolute_uri(
+            f"/api/projects/agreements/preview_signed/?t={token}"
+        )
         return Response({"url": absolute}, status=status.HTTP_200_OK)
 
     @action(
@@ -298,26 +480,38 @@ class AgreementViewSet(viewsets.ModelViewSet):
         Validates HMAC+timestamp and streams the preview PDF.
         """
         if not build_agreement_pdf_bytes:
-            return Response({"detail": "PDF preview not available."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return Response(
+                {"detail": "PDF preview not available."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         token = request.query_params.get("t")
         if not token:
-            return Response({"detail": "Missing token."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Missing token."}, status=status.HTTP_400_BAD_REQUEST
+            )
 
         signer = signing.TimestampSigner(salt=_PREVIEW_SALT)
         try:
             data = signer.unsign_object(token, max_age=_PREVIEW_MAX_AGE)
             agreement_id = int(data.get("agreement_id"))
         except signing.SignatureExpired:
-            return Response({"detail": "Preview link expired."}, status=status.HTTP_410_GONE)
+            return Response(
+                {"detail": "Preview link expired."}, status=status.HTTP_410_GONE
+            )
         except Exception:
-            return Response({"detail": "Invalid preview token."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Invalid preview token."}, status=status.HTTP_400_BAD_REQUEST
+            )
 
         ag = get_object_or_404(Agreement, pk=agreement_id)
         try:
             pdf_bytes = build_agreement_pdf_bytes(ag, is_preview=True)
         except Exception as e:
-            return Response({"detail": f"Could not generate preview: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"detail": f"Could not generate preview: {e}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         buf = io.BytesIO(pdf_bytes)
         filename = f"agreement_{ag.pk}_preview.pdf"
@@ -331,11 +525,17 @@ class AgreementViewSet(viewsets.ModelViewSet):
     def finalize_pdf(self, request, pk=None):
         ag = self.get_object()
         if not generate_full_agreement_pdf:
-            return Response({"detail": "PDF finalization not available."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return Response(
+                {"detail": "PDF finalization not available."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
         try:
             generate_full_agreement_pdf(ag)
         except Exception as e:
-            return Response({"detail": f"PDF generation failed: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"detail": f"PDF generation failed: {e}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         ag.refresh_from_db()
         pdf_url = getattr(getattr(ag, "pdf_file", None), "url", None)
         return Response({"ok": True, "pdf_url": pdf_url}, status=status.HTTP_200_OK)
@@ -349,7 +549,10 @@ class AgreementViewSet(viewsets.ModelViewSet):
         homeowner_email = getattr(homeowner, "email", None)
         homeowner_name = getattr(homeowner, "full_name", "") or "Homeowner"
         if not homeowner_email:
-            return Response({"detail": "Agreement has no homeowner email."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Agreement has no homeowner email."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         domain = (
             getattr(settings, "PUBLIC_APP_ORIGIN", None)
@@ -360,7 +563,9 @@ class AgreementViewSet(viewsets.ModelViewSet):
         sign_url = f"{domain}/agreements/access/{token}/sign"
         pdf_url = f"{domain}/agreements/access/{token}/pdf"
 
-        subject = f"Agreement for {getattr(getattr(ag, 'project', None), 'title', 'your project')} — Signature Requested"
+        subject = (
+            f"Agreement for {getattr(getattr(ag, 'project', None), 'title', 'your project')} — Signature Requested"
+        )
         body = (
             f"Hello {homeowner_name},\n\n"
             "Please review and sign your agreement using the secure link below:\n\n"
@@ -370,12 +575,17 @@ class AgreementViewSet(viewsets.ModelViewSet):
             "— MyHomeBro"
         )
         try:
-            from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@myhomebro.com")
+            from_email = getattr(
+                settings, "DEFAULT_FROM_EMAIL", "no-reply@myhomebro.com"
+            )
             send_mail(subject, body, from_email, [homeowner_email], fail_silently=True)
         except Exception:
             pass
 
-        return Response({"ok": True, "sign_url": sign_url, "pdf_url": pdf_url}, status=status.HTTP_200_OK)
+        return Response(
+            {"ok": True, "sign_url": sign_url, "pdf_url": pdf_url},
+            status=status.HTTP_200_OK,
+        )
 
     # ---------------- Contractor e-signature ----------------
 
@@ -383,41 +593,74 @@ class AgreementViewSet(viewsets.ModelViewSet):
     def contractor_sign(self, request, pk=None):
         ag: Agreement = self.get_object()
         contractor_user = getattr(getattr(ag, "contractor", None), "user", None)
-        if not (request.user.is_staff or request.user.is_superuser or request.user == contractor_user):
-            raise PermissionDenied("Only the assigned contractor (or staff) can sign as contractor.")
+        if not (
+            request.user.is_staff
+            or request.user.is_superuser
+            or request.user == contractor_user
+        ):
+            raise PermissionDenied(
+                "Only the assigned contractor (or staff) can sign as contractor."
+            )
 
-        name = (request.data.get("typed_name") or request.data.get("name") or "").strip()
+        name = (
+            request.data.get("typed_name") or request.data.get("name") or ""
+        ).strip()
         if not name:
-            return Response({"detail": "Signature name is required."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Signature name is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         signature_file = request.FILES.get("signature")
         data_url = request.data.get("signature_data_url")
         try:
             if signature_file:
-                ag.contractor_signature.save(signature_file.name, signature_file, save=False)
+                ag.contractor_signature.save(
+                    signature_file.name, signature_file, save=False
+                )
             elif data_url:
                 header, b64 = data_url.split(",", 1)
                 if ";base64" not in header:
-                    return Response({"detail": "Invalid signature data URL."}, status=status.HTTP_400_BAD_REQUEST)
+                    return Response(
+                        {"detail": "Invalid signature data URL."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
                 ext = "png"
                 if "image/jpeg" in header or "image/jpg" in header:
                     ext = "jpg"
-                content = ContentFile(base64.b64decode(b64), name=f"contractor_signature.{ext}")
+                content = ContentFile(
+                    base64.b64decode(b64),
+                    name=f"contractor_signature.{ext}",
+                )
                 ag.contractor_signature.save(content.name, content, save=False)
         except Exception:
-            return Response({"detail": "Could not process signature image."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": "Could not process signature image."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         ag.contractor_signature_name = name
         ag.signed_by_contractor = True
         ag.contractor_signed_at = now()
-        ip = request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip() or request.META.get("REMOTE_ADDR")
+        ip = (
+            request.META.get("HTTP_X_FORWARDED_FOR", "")
+            .split(",")[0]
+            .strip()
+            or request.META.get("REMOTE_ADDR")
+        )
         ag.contractor_signed_ip = ip or None
         ag.status = "draft"
-        ag.save(update_fields=[
-            "contractor_signature", "contractor_signature_name",
-            "signed_by_contractor", "contractor_signed_at", "contractor_signed_ip",
-            "status", "updated_at"
-        ])
+        ag.save(
+            update_fields=[
+                "contractor_signature",
+                "contractor_signature_name",
+                "signed_by_contractor",
+                "contractor_signed_at",
+                "contractor_signed_ip",
+                "status",
+                "updated_at",
+            ]
+        )
 
         ser = self.get_serializer(ag)
         return Response({"ok": True, "agreement": ser.data}, status=status.HTTP_200_OK)
@@ -426,8 +669,14 @@ class AgreementViewSet(viewsets.ModelViewSet):
     def contractor_unsign(self, request, pk=None):
         ag: Agreement = self.get_object()
         contractor_user = getattr(getattr(ag, "contractor", None), "user", None)
-        if not (request.user.is_staff or request.user.is_superuser or request.user == contractor_user):
-            raise PermissionDenied("Only the assigned contractor (or staff) can unsign as contractor.")
+        if not (
+            request.user.is_staff
+            or request.user.is_superuser
+            or request.user == contractor_user
+        ):
+            raise PermissionDenied(
+                "Only the assigned contractor (or staff) can unsign as contractor."
+            )
         if _is_fully_signed(ag):
             raise ValidationError("Cannot unsign after both parties have signed.")
 
@@ -435,16 +684,22 @@ class AgreementViewSet(viewsets.ModelViewSet):
         ag.contractor_signed_at = None
         ag.contractor_signature_name = None
         ag.status = "draft"
-        ag.save(update_fields=[
-            "signed_by_contractor", "contractor_signed_at", "contractor_signature_name",
-            "status", "updated_at"
-        ])
+        ag.save(
+            update_fields=[
+                "signed_by_contractor",
+                "contractor_signed_at",
+                "contractor_signature_name",
+                "status",
+                "updated_at",
+            ]
+        )
 
         ser = self.get_serializer(ag)
         return Response({"ok": True, "agreement": ser.data}, status=status.HTTP_200_OK)
 
 
 # ---------- Auxiliary endpoints used by UI ----------
+
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])

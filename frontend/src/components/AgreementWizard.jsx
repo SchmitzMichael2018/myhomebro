@@ -1,5 +1,12 @@
 // frontend/src/components/AgreementWizard.jsx
-// v2025-10-16 step3-delete-quiet+fix + Step 4 consolidated to external component
+// v2025-11-11h — Fix: Create Project at /projects/projects/ before Agreement (project FK required)
+// - Step 1 has NO dates; address toggle kept.
+// - De-dupe homeowners; Quick Add Homeowner.
+// - Error panel.
+// - Smart create flow:
+//     1) Try Agreement create directly (in case project is optional on some envs)
+//     2) If server says project required (400 mentioning "project"), POST Project to
+//        /projects/projects/ (fallback /projects/) then re-POST Agreement with project FK.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -7,9 +14,9 @@ import toast from "react-hot-toast";
 import api from "../api";
 import MilestoneEditModal from "./MilestoneEditModal";
 import { PROJECT_TYPES, SUBTYPES_BY_TYPE } from "./options/projectOptions";
-import Step4Finalize from "./Step4Finalize"; // <-- use external Step 4
+import Step4Finalize from "./Step4Finalize";
 
-/* ---------------- small helpers ---------------- */
+/* ───────── helpers ───────── */
 const TABS = [
   { step: 1, label: "1. Details" },
   { step: 2, label: "2. Milestones" },
@@ -72,26 +79,6 @@ function normalizeHomeowner(rec) {
   return { id, first_name, last_name, full_name, email, _src: "homeowners" };
 }
 
-function synthesizeFromMilestones(raw, agreementHomeownerId) {
-  const arr = pickArray(raw);
-  const map = new Map();
-  for (const m of arr) {
-    const nm = String(m?.homeowner_name || "").trim();
-    const em = String(m?.homeowner_email || "").trim();
-    if (!nm && !em) continue;
-    const key = em || nm;
-    if (!map.has(key)) map.set(key, { full_name: nm, email: em });
-  }
-  return [...map.entries()].map(([key, v]) => ({
-    id: agreementHomeownerId || key,
-    first_name: "",
-    last_name: "",
-    full_name: v.full_name || "",
-    email: v.email || "",
-    _src: "milestones-fallback",
-  }));
-}
-
 function buildLabel(p) {
   const l = (p.last_name || "").trim();
   const f = (p.first_name || "").trim();
@@ -106,6 +93,40 @@ function buildLabel(p) {
   return `ID ${p.id}`;
 }
 
+/** Merge duplicates by email (case-insensitive). Prefer:
+ *  - source "homeowners" over "customers"
+ *  - then longer full_name
+ *  - then higher id
+ */
+function dedupePeople(rawList) {
+  const byKey = new Map();
+  for (const p of rawList) {
+    if (!p) continue;
+    const key =
+      (p.email && `email:${String(p.email).toLowerCase()}`) ||
+      (p.id != null && `id:${String(p.id)}`) ||
+      null;
+    if (!key) continue;
+
+    if (!byKey.has(key)) {
+      byKey.set(key, p);
+    } else {
+      const cur = byKey.get(key);
+      const score = (x) => [
+        x?._src === "homeowners" ? 1 : 0,
+        (x?.full_name || "").length,
+        Number.isFinite(Number(x?.id)) ? Number(x.id) : 0,
+      ];
+      const [a1, a2, a3] = score(cur);
+      const [b1, b2, b3] = score(p);
+      if (b1 > a1 || (b1 === a1 && (b2 > a2 || (b2 === a2 && b3 > a3)))) {
+        byKey.set(key, p);
+      }
+    }
+  }
+  return sortPeople([...byKey.values()]);
+}
+
 function friendly(d) {
   if (!d) return "";
   const dt = new Date(d);
@@ -117,7 +138,22 @@ function friendly(d) {
   });
 }
 
-/* ---------------- main ---------------- */
+function PrettyJson({ data }) {
+  if (!data) return null;
+  let text = "";
+  try {
+    text = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+  } catch {
+    text = String(data);
+  }
+  return (
+    <pre className="whitespace-pre-wrap break-words text-xs bg-red-50 border border-red-200 rounded p-2 text-red-800">
+      {text}
+    </pre>
+  );
+}
+
+/* ───────── main ───────── */
 export default function AgreementWizard() {
   const { id: idParam } = useParams();
   const navigate = useNavigate();
@@ -132,19 +168,33 @@ export default function AgreementWizard() {
   const [agreement, setAgreement] = useState(null);
   const [milestones, setMilestones] = useState([]);
   const [people, setPeople] = useState([]);
+  const [peopleLoadedOnce, setPeopleLoadedOnce] = useState(false);
 
-  // Step 1 form
+  // Step 1 state (no dates)
   const [dLocal, setDLocal] = useState({
     homeowner: "",
     project_title: "",
     project_type: "",
     project_subtype: "",
     description: "",
-    start: "",
-    end: "",
+    addressSame: true,
+    address_line1: "",
+    address_line2: "",
+    address_city: "",
+    address_state: "",
+    address_postal_code: "",
   });
 
-  // Step 2 form
+  // Step 1: server 400 debug panel
+  const [last400, setLast400] = useState(null);
+
+  // Quick Add Homeowner
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [qaName, setQaName] = useState("");
+  const [qaEmail, setQaEmail] = useState("");
+  const [qaBusy, setQaBusy] = useState(false);
+
+  // Step 2
   const [mLocal, setMLocal] = useState({
     title: "",
     description: "",
@@ -154,7 +204,7 @@ export default function AgreementWizard() {
   });
   const [editMilestone, setEditMilestone] = useState(null);
 
-  // Warranty & signing bits
+  // Step 3/4
   const [useDefaultWarranty, setUseDefaultWarranty] = useState(true);
   const [customWarranty, setCustomWarranty] = useState("");
   const [attachments, setAttachments] = useState([]);
@@ -165,40 +215,27 @@ export default function AgreementWizard() {
   const [typedName, setTypedName] = useState("");
   const [signing, setSigning] = useState(false);
 
-  /* -------- explicit people loader -------- */
-  const loadPeopleStrict = useCallback(async () => {
-    const cfg = {
-      params: { page: 1, page_size: 1000, ordering: "-created_at" },
-    };
-
+  /* ── people loader ── */
+  const loadPeople = useCallback(async () => {
+    const cfg = { params: { page: 1, page_size: 1000, ordering: "-created_at" } };
+    const pile = [];
     try {
       const { data } = await api.get(`/customers/`, cfg);
-      const list = pickArray(data).map(normalizeCustomer).filter(Boolean);
-      if (list.length) return sortPeople(list);
+      pile.push(...pickArray(data).map(normalizeCustomer).filter(Boolean));
     } catch {}
-
     try {
       const { data } = await api.get(`/homeowners/`, cfg);
-      const list = pickArray(data).map(normalizeHomeowner).filter(Boolean);
-      if (list.length) return sortPeople(list);
+      pile.push(...pickArray(data).map(normalizeHomeowner).filter(Boolean));
     } catch {}
-
-    try {
-      const { data } = await api.get(`/projects/customers/`, cfg);
-      const list = pickArray(data).map(normalizeCustomer).filter(Boolean);
-      if (list.length) return sortPeople(list);
-    } catch {}
-
     try {
       const { data } = await api.get(`/projects/homeowners/`, cfg);
-      const list = pickArray(data).map(normalizeHomeowner).filter(Boolean);
-      if (list.length) return sortPeople(list);
+      pile.push(...pickArray(data).map(normalizeHomeowner).filter(Boolean));
+      pile.push(...pickArray(data).map(normalizeCustomer).filter(Boolean));
     } catch {}
-
-    return [];
+    return dedupePeople(pile);
   }, []);
 
-  /* -------- edit mode -------- */
+  /* ── edit loader ── */
   const loadEdit = useCallback(async () => {
     setLoading(true);
     try {
@@ -225,7 +262,49 @@ export default function AgreementWizard() {
           _src: "agreement-snapshot",
         });
       }
-      setPeople(seed);
+
+      const loaded = await loadPeople();
+      setPeopleLoadedOnce(true);
+      setPeople(dedupePeople([...seed, ...loaded]));
+
+      // address normalization
+      const addressSame =
+        (ag.project_address_same_as_homeowner ??
+          ag.project_is_homeowner_address ??
+          ag.is_homeowner_address ??
+          true) ? true : false;
+
+      const address_line1 =
+        ag.project_address_line1 ??
+        ag.project_line1 ??
+        ag.address_line1 ??
+        ag.project_address?.line1 ??
+        "";
+      const address_line2 =
+        ag.project_address_line2 ??
+        ag.project_line2 ??
+        ag.address_line2 ??
+        ag.project_address?.line2 ??
+        "";
+      const address_city =
+        ag.project_city ??
+        ag.project_address_city ??
+        ag.city ??
+        ag.project_address?.city ??
+        "";
+      const address_state =
+        ag.project_state ??
+        ag.project_address_state ??
+        ag.state ??
+        ag.project_address?.state ??
+        "";
+      const address_postal_code =
+        ag.project_postal_code ??
+        ag.project_zip ??
+        ag.postal_code ??
+        ag.zip ??
+        ag.project_address?.postal_code ??
+        "";
 
       setDLocal({
         homeowner: String(agHomeownerId || ""),
@@ -233,30 +312,15 @@ export default function AgreementWizard() {
         project_type: (ag.project_type ?? "") || "",
         project_subtype: (ag.project_subtype ?? "") || "",
         description: ag.description || "",
-        start: toDateOnly(ag.start),
-        end: toDateOnly(ag.end),
+        addressSame,
+        address_line1: address_line1 || "",
+        address_line2: address_line2 || "",
+        address_city: address_city || "",
+        address_state: address_state || "",
+        address_postal_code: address_postal_code || "",
       });
 
-      let loaded = await loadPeopleStrict();
-
-      if (!loaded.length) {
-        try {
-          const { data: msRaw } = await api.get(`/projects/milestones/`, {
-            params: { agreement: agreementId, page_size: 500 },
-          });
-          loaded = synthesizeFromMilestones(msRaw, agHomeownerId);
-        } catch {}
-      }
-
-      const byKey = new Map();
-      for (const p of [...seed, ...loaded]) {
-        const key = /^\d+$/.test(String(p.id))
-          ? `id:${p.id}`
-          : `email:${(p.email || "").toLowerCase()}`;
-        if (!byKey.has(key)) byKey.set(key, p);
-      }
-      setPeople(sortPeople([...byKey.values()]));
-
+      // milestones
       try {
         const { data: ms } = await api.get(`/projects/milestones/`, {
           params: { agreement: agreementId, page_size: 500 },
@@ -288,9 +352,9 @@ export default function AgreementWizard() {
     } finally {
       setLoading(false);
     }
-  }, [agreementId, loadPeopleStrict]);
+  }, [agreementId, loadPeople]);
 
-  /* -------- create mode -------- */
+  /* ── create loader ── */
   const loadCreate = useCallback(async () => {
     setLoading(true);
     try {
@@ -298,43 +362,35 @@ export default function AgreementWizard() {
       setMilestones([]);
       setAttachments([]);
 
-      const loaded = await loadPeopleStrict();
-      setPeople(loaded);
+      const loaded = await loadPeople();
+      setPeopleLoadedOnce(true);
+      setPeople(dedupePeople(loaded));
     } catch (e) {
       console.error(e);
       toast.error("Failed to load form.");
     } finally {
       setLoading(false);
     }
-  }, [loadPeopleStrict]);
+  }, [loadPeople]);
 
   useEffect(() => {
     if (agreementId) loadEdit();
     else loadCreate();
   }, [agreementId, loadEdit, loadCreate]);
 
-  /* -------- totals -------- */
+  /* ── totals (derived) ── */
   const totals = useMemo(() => {
     const starts = milestones
-      .map((m) =>
-        toDateOnly(m.start_date || m.start || m.scheduled_date)
-      )
+      .map((m) => toDateOnly(m.start_date || m.start || m.scheduled_date))
       .filter(Boolean);
     const ends = milestones
       .map((m) =>
         toDateOnly(m.completion_date || m.end_date || m.end || m.due_date)
       )
       .filter(Boolean);
-    const minStart = starts.length
-      ? [...starts].sort()[0]
-      : toDateOnly(agreement?.start) || "";
-    const maxEnd = ends.length
-      ? [...ends].sort().slice(-1)[0]
-      : toDateOnly(agreement?.end) || "";
-    const totalAmt = milestones.reduce(
-      (s, m) => s + Number(m.amount || 0),
-      0
-    );
+    const minStart = starts.length ? [...starts].sort()[0] : "";
+    const maxEnd = ends.length ? [...ends].sort().slice(-1)[0] : "";
+    const totalAmt = milestones.reduce((s, m) => s + Number(m.amount || 0), 0);
     const totalDays =
       minStart && maxEnd
         ? Math.max(
@@ -343,7 +399,7 @@ export default function AgreementWizard() {
           )
         : 0;
     return { totalAmt, minStart, maxEnd, totalDays };
-  }, [milestones, agreement]);
+  }, [milestones]);
 
   const goStep = (n) =>
     navigate(
@@ -352,48 +408,319 @@ export default function AgreementWizard() {
         : `/agreements/new?step=${n}`
     );
 
-  /* -------- Step 1 save (POST vs PATCH) -------- */
+  /* ── Smart create/patch helpers ── */
+
+  // Build payload variants to try for Agreement CREATE
+  function buildAgreementCreateVariants(base, addr, projectId = null) {
+    const titles = [
+      { title: base.project_title, project_title: base.project_title },
+      { title: base.project_title },
+      { project_title: base.project_title },
+    ];
+    const homeowners = [];
+    if (base.homeowner != null) {
+      homeowners.push({ homeowner: base.homeowner });
+      homeowners.push({ homeowner_id: base.homeowner });
+      homeowners.push({ customer: base.homeowner });
+      homeowners.push({ customer_id: base.homeowner });
+      homeowners.push({ client: base.homeowner });
+      homeowners.push({ client_id: base.homeowner });
+    } else {
+      homeowners.push({});
+    }
+
+    const projectBits = projectId
+      ? [{ project: projectId }, { project_id: projectId }]
+      : [{}];
+
+    const shared = (t, h, p) => ({
+      ...t,
+      ...h,
+      ...p,
+      description: base.description,
+      project_type: base.project_type ?? null,
+      project_subtype: base.project_subtype ?? null,
+    });
+
+    const withAddr = addr.same
+      ? []
+      : [
+          {
+            project_address_same_as_homeowner: false,
+            project_address_line1: addr.line1 || "",
+            project_address_line2: addr.line2 || "",
+            project_address_city: addr.city || "",
+            project_address_state: addr.state || "",
+            project_postal_code: addr.postal || "",
+          },
+          {
+            project_is_homeowner_address: false,
+            address_line1: addr.line1 || "",
+            address_line2: addr.line2 || "",
+            city: addr.city || "",
+            state: addr.state || "",
+            postal_code: addr.postal || "",
+          },
+        ];
+
+    const variants = [];
+    for (const t of titles) {
+      for (const h of homeowners) {
+        for (const p of projectBits) {
+          variants.push(shared(t, h, p));
+          for (const ab of withAddr) variants.push({ ...shared(t, h, p), ...ab });
+        }
+      }
+    }
+    return variants;
+  }
+
+  async function tryVariants(url, variants, method = "post") {
+    let lastErr = null;
+    for (const body of variants) {
+      try {
+        setLast400(null);
+        const res = await api[method](url, body);
+        return res;
+      } catch (e) {
+        const status = e?.response?.status;
+        const data = e?.response?.data;
+        console.warn(
+          `[${method.toUpperCase()} ${url}] variant failed`,
+          { body, status, data }
+        );
+        if (status === 400) setLast400(data || { detail: "400 Bad Request" });
+        lastErr = e;
+        if (status && status !== 400) break; // non-400: stop trying
+      }
+    }
+    throw lastErr;
+  }
+
+  // Create a Project — try the DRF-typical mount first (/projects/projects/), then fallback (/projects/)
+  async function createProject(base, addr) {
+    const titles = [
+      { title: base.project_title },
+      { name: base.project_title },
+      { project_title: base.project_title },
+    ];
+    const homeowners =
+      base.homeowner != null
+        ? [
+            { homeowner: base.homeowner },
+            { homeowner_id: base.homeowner },
+            { customer: base.homeowner },
+          ]
+        : [{}];
+
+    const withAddr = addr.same
+      ? [{}]
+      : [
+          {
+            address_line1: addr.line1 || "",
+            address_line2: addr.line2 || "",
+            city: addr.city || "",
+            state: addr.state || "",
+            postal_code: addr.postal || "",
+          },
+          {
+            project_address_line1: addr.line1 || "",
+            project_address_line2: addr.line2 || "",
+            project_address_city: addr.city || "",
+            project_address_state: addr.state || "",
+            project_postal_code: addr.postal || "",
+          },
+        ];
+
+    const variants = [];
+    for (const t of titles) {
+      for (const h of homeowners) {
+        for (const a of withAddr) {
+          variants.push({
+            ...t,
+            ...h,
+            ...a,
+            description: base.description,
+            project_type: base.project_type ?? null,
+            project_subtype: base.project_subtype ?? null,
+          });
+        }
+      }
+    }
+
+    const endpoints = [`/projects/projects/`, `/projects/`];
+    let lastErr = null;
+
+    for (const ep of endpoints) {
+      for (const body of variants) {
+        try {
+          const res = await api.post(ep, body, {
+            validateStatus: (s) => s >= 200 && s < 300,
+          });
+          return res?.data;
+        } catch (e) {
+          lastErr = e;
+          const s = e?.response?.status;
+          // If endpoint is 405 (Method Not Allowed), try next endpoint immediately
+          if (s === 405) break;
+        }
+      }
+    }
+    throw lastErr;
+  }
+
   const saveStep1 = async (next = false) => {
     try {
-      const val = String(dLocal.homeowner || "");
-      const homeownerField = /^\d+$/.test(val) ? Number(val) : null;
+      // Front-end validation
+      const title = String(dLocal.project_title || "").trim();
+      if (!title) {
+        toast.error("Project Title is required.");
+        setLast400({ project_title: ["This field is required."] });
+        return;
+      }
+      const homeownerVal = String(dLocal.homeowner || "");
+      const homeownerField = /^\d+$/.test(homeownerVal)
+        ? Number(homeownerVal)
+        : null;
+      if (homeownerField == null) {
+        toast.error("Please select a homeowner.");
+        setLast400({ homeowner: ["This field is required."] });
+        return;
+      }
 
-      const payload = {
+      const base = {
         homeowner: homeownerField,
-        title: dLocal.project_title,
-        project_title: dLocal.project_title,
+        project_title: title,
         project_type: dLocal.project_type || null,
         project_subtype: dLocal.project_subtype || null,
         description: dLocal.description,
-        start: dLocal.start || null,
-        end: dLocal.end || null,
+      };
+
+      const addr = {
+        same: !!dLocal.addressSame,
+        line1: dLocal.address_line1,
+        line2: dLocal.address_line2,
+        city: dLocal.address_city,
+        state: dLocal.address_state,
+        postal: dLocal.address_postal_code,
       };
 
       if (agreementId) {
-        await api.patch(`/projects/agreements/${agreementId}/`, payload);
+        // PATCH
+        const primary = {
+          title: base.project_title,
+          project_title: base.project_title,
+          homeowner: homeownerField,
+          description: base.description,
+          project_type: base.project_type,
+          project_subtype: base.project_subtype,
+          ...(addr.same
+            ? { project_address_same_as_homeowner: true }
+            : {
+                project_address_same_as_homeowner: false,
+                project_address_line1: addr.line1 || "",
+                project_address_line2: addr.line2 || "",
+                project_address_city: addr.city || "",
+                project_address_state: addr.state || "",
+                project_postal_code: addr.postal || "",
+              }),
+        };
+        try {
+          setLast400(null);
+          await api.patch(`/projects/agreements/${agreementId}/`, primary);
+        } catch (e1) {
+          setLast400(e1?.response?.data || { detail: "400 Bad Request" });
+          const minimal = {
+            title: base.project_title,
+            project_title: base.project_title,
+            description: base.description,
+            homeowner_id: homeownerField,
+          };
+          await api.patch(`/projects/agreements/${agreementId}/`, minimal);
+        }
         toast.success("Details saved.");
         if (next) goStep(2);
         else await loadEdit();
       } else {
-        const { data: created } = await api.post(
-          `/projects/agreements/`,
-          payload
-        );
-        const newId = created?.id ?? created?.pk;
-        if (!newId) return toast.error("Could not determine new Agreement ID.");
-        toast.success("Agreement created.");
-        navigate(`/agreements/${newId}/wizard?step=${next ? 2 : 1}`, {
-          replace: true,
-        });
+        // CREATE: first try Agreement POST directly (maybe project optional)
+        const firstVariants = buildAgreementCreateVariants(base, addr, null);
+        try {
+          const { data: created } = await tryVariants(
+            `/projects/agreements/`,
+            firstVariants,
+            "post"
+          );
+          const newId = created?.id ?? created?.pk;
+          if (!newId) return toast.error("Could not determine new Agreement ID.");
+          toast.success("Agreement created.");
+          navigate(
+            `/agreements/${newId}/wizard?step=${next ? 2 : 1}`,
+            { replace: true }
+          );
+          return;
+        } catch (e0) {
+          const data = e0?.response?.data;
+          setLast400(data || { detail: "Save failed." });
+          const needProject =
+            data &&
+            typeof data === "object" &&
+            (("project" in data && Array.isArray(data.project)) ||
+              JSON.stringify(data).toLowerCase().includes('"project"') ||
+              JSON.stringify(data).toLowerCase().includes("project is required"));
+
+          if (!needProject) throw e0;
+
+          // Create Project now (use /projects/projects/ then fallback /projects/)
+          let projectRecord = null;
+          try {
+            projectRecord = await createProject(base, addr);
+          } catch (eProj) {
+            const msg = eProj?.response?.data
+              ? JSON.stringify(eProj.response.data)
+              : eProj?.message || "Project creation failed.";
+            setLast400({ project_create: msg });
+            toast.error(`Project create failed: ${msg}`);
+            throw e0; // preserve original agreement error context
+          }
+
+          const projectId = projectRecord?.id ?? projectRecord?.pk;
+          if (!projectId) {
+            setLast400({ project_create: "No project id returned." });
+            toast.error("Project create returned no ID.");
+            throw e0;
+          }
+
+          // Retry Agreement with `project`
+          const retryVariants = buildAgreementCreateVariants(base, addr, projectId);
+          const { data: created2 } = await tryVariants(
+            `/projects/agreements/`,
+            retryVariants,
+            "post"
+          );
+          const newId2 = created2?.id ?? created2?.pk;
+          if (!newId2)
+            return toast.error("Could not determine new Agreement ID.");
+          toast.success("Agreement created.");
+          navigate(
+            `/agreements/${newId2}/wizard?step=${next ? 2 : 1}`,
+            { replace: true }
+          );
+        }
       }
     } catch (e) {
-      toast.error(
-        `Save failed: ${e?.response?.statusText || e?.message || "Unknown error"}`
-      );
+      console.error(e);
+      const data = e?.response?.data;
+      setLast400(data || { detail: e?.message || "Save failed" });
+      const msg =
+        (data && typeof data === "object" ? JSON.stringify(data) : null) ||
+        e?.response?.statusText ||
+        e?.message ||
+        "Save failed";
+      toast.error(`Save failed: ${msg}`);
     }
   };
 
-  /* -------- Step 2 -------- */
+  /* ── Step 2 ── */
   const onLocalChange = (e) => {
     const { name, value } = e.target;
     setMLocal((s) => ({
@@ -406,7 +733,8 @@ export default function AgreementWizard() {
     if (!agreementId) return toast.error("Create and save Agreement first.");
     const f = mLocal;
     if (!f.title?.trim()) return toast.error("Enter a title.");
-    if (!f.start || !f.end) return toast.error("Select start and end dates.");
+    if (!f.start || !f.end)
+      return toast.error("Select start and end dates.");
     try {
       await api.post(`/projects/milestones/`, {
         agreement: Number(agreementId),
@@ -417,7 +745,13 @@ export default function AgreementWizard() {
         end_date: f.end,
         completion_date: f.end,
       });
-      setMLocal({ title: "", description: "", amount: "", start: "", end: "" });
+      setMLocal({
+        title: "",
+        description: "",
+        amount: "",
+        start: "",
+        end: "",
+      });
       await loadEdit();
       toast.success("Milestone added.");
     } catch (e) {
@@ -436,7 +770,7 @@ export default function AgreementWizard() {
     }
   };
 
-  /* -------- Step 3 (warranty) -------- */
+  /* ── Step 3 ── */
   const saveWarranty = async () => {
     if (!agreementId) return toast.error("Create and save Agreement first.");
     try {
@@ -456,7 +790,7 @@ export default function AgreementWizard() {
     }
   };
 
-  /* -------- Step 4 (preview/sign) -------- */
+  /* ── Step 4 ── */
   const previewPdf = async () => {
     if (!agreementId) return toast.error("Create and save Agreement first.");
     try {
@@ -476,10 +810,12 @@ export default function AgreementWizard() {
       toast.error("Could not open preview.");
     }
   };
+
   const goPublic = () => {
     if (!agreementId) return toast.error("Create and save Agreement first.");
     window.open(`/agreements/public/${agreementId}/`, "_blank");
   };
+
   const signContractor = async () => {
     if (!agreementId) return toast.error("Create and save Agreement first.");
     if (
@@ -496,18 +832,23 @@ export default function AgreementWizard() {
     try {
       await api.post(
         `/projects/agreements/${agreementId}/contractor_sign/`,
-        { typed_name: typedName.trim() }
+        {
+          typed_name: typedName.trim(),
+        }
       );
       toast.success("Signed as Contractor.");
       window.location.reload();
     } catch (e) {
       toast.error(
-        `Sign failed: ${e?.response?.statusText || e?.message || "Save failed"}`
+        `Sign failed: ${
+          e?.response?.statusText || e?.message || "Save failed"
+        }`
       );
     } finally {
       setSigning(false);
     }
   };
+
   const canSign =
     !!agreementId &&
     hasPreviewed &&
@@ -516,10 +857,9 @@ export default function AgreementWizard() {
     ackEsign &&
     typedName.trim().length >= 2;
 
-  /* -------- render -------- */
+  /* ── render ── */
   return (
     <div className="p-4 md:p-6">
-      {/* Tabs */}
       <div className="mb-4 flex flex-wrap gap-2">
         {TABS.map((t) => (
           <button
@@ -549,7 +889,69 @@ export default function AgreementWizard() {
           dLocal={dLocal}
           setDLocal={setDLocal}
           people={people}
+          peopleLoadedOnce={peopleLoadedOnce}
+          reloadPeople={async () => {
+            const loaded = await loadPeople();
+            setPeopleLoadedOnce(true);
+            setPeople(dedupePeople(loaded));
+          }}
+          showQuickAdd={showQuickAdd}
+          setShowQuickAdd={setShowQuickAdd}
+          qaName={qaName}
+          setQaName={setQaName}
+          qaEmail={qaEmail}
+          setQaEmail={setQaEmail}
+          qaBusy={qaBusy}
+          setQaBusy={setQaBusy}
+          onQuickAdd={async () => {
+            const name = qaName.trim();
+            const email = qaEmail.trim();
+            if (!name) return toast.error("Enter the homeowner's name.");
+            if (!email || !/^\S+@\S+\.\S+$/.test(email))
+              return toast.error("Enter a valid email.");
+            setQaBusy(true);
+            try {
+              const [first_name, ...rest] = name.split(/\s+/);
+              const last_name = rest.join(" ");
+              const body = {
+                first_name,
+                last_name,
+                full_name: name,
+                name,
+                email,
+              };
+              let created = null;
+              try {
+                const { data } = await api.post(`/customers/`, body);
+                created = data;
+              } catch {
+                const { data } = await api.post(`/homeowners/`, body);
+                created = data;
+              }
+              const newId = created?.id ?? created?.pk;
+              if (!newId)
+                throw new Error("Could not determine new homeowner ID.");
+              const loaded = await loadPeople();
+              setPeopleLoadedOnce(true);
+              setPeople(dedupePeople(loaded));
+              setDLocal((s) => ({ ...s, homeowner: String(newId) }));
+              setShowQuickAdd(false);
+              setQaName("");
+              setQaEmail("");
+              toast.success("Homeowner added.");
+            } catch (e) {
+              toast.error(
+                e?.response?.data?.detail ||
+                  e?.response?.statusText ||
+                  e?.message ||
+                  "Could not add homeowner."
+              );
+            } finally {
+              setQaBusy(false);
+            }
+          }}
           saveStep1={saveStep1}
+          last400={last400}
         />
       )}
 
@@ -557,7 +959,16 @@ export default function AgreementWizard() {
         <Step2Milestones
           agreement={agreement}
           mLocal={mLocal}
-          onLocalChange={onLocalChange}
+          onLocalChange={(e) => {
+            const { name, value } = e.target;
+            setMLocal((s) => ({
+              ...s,
+              [name]:
+                name === "start" || name === "end"
+                  ? toDateOnly(value)
+                  : value,
+            }));
+          }}
           onAdd={addMilestone}
           milestones={milestones}
           onDelete={removeMilestone}
@@ -591,7 +1002,7 @@ export default function AgreementWizard() {
           setCustomWarranty={setCustomWarranty}
           saveWarranty={saveWarranty}
           attachments={attachments}
-          refreshAttachments={loadEdit}
+          refreshAttachments={agreementId ? loadEdit : undefined}
           onBack={() =>
             navigate(
               agreementId
@@ -664,30 +1075,63 @@ export default function AgreementWizard() {
   );
 }
 
-/* ---------------- Step 1 ---------------- */
-function Step1Details({ isEdit, agreementId, dLocal, setDLocal, people, saveStep1 }) {
+/* ───────── Step 1 ───────── */
+function Step1Details({
+  isEdit,
+  agreementId,
+  dLocal,
+  setDLocal,
+  people,
+  peopleLoadedOnce,
+  reloadPeople,
+  showQuickAdd,
+  setShowQuickAdd,
+  qaName,
+  setQaName,
+  qaEmail,
+  setQaEmail,
+  qaBusy,
+  setQaBusy,
+  onQuickAdd,
+  saveStep1,
+  last400,
+}) {
+  const empty = (people?.length || 0) === 0;
+
   return (
     <div className="rounded-lg border bg-white p-4">
-      <div className="text-sm text-gray-600 mb-4">
+      <div className="text-sm text-gray-600 mb-2">
         {isEdit ? <>Agreement #{agreementId}</> : <>New Agreement</>}
       </div>
 
+      {/* Error panel */}
+      {last400 && (
+        <div className="mb-3">
+          <div className="text-sm font-semibold text-red-700">
+            Server response (400)
+          </div>
+          <PrettyJson data={last400} />
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium mb-1">Homeowner</label>
+          <label className="block text-sm font-medium mb-1">
+            Homeowner
+          </label>
           <select
             className="w-full rounded border px-3 py-2 text-sm"
             value={String(dLocal.homeowner || "")}
+            onFocus={() => {
+              if (!peopleLoadedOnce) reloadPeople?.();
+            }}
             onChange={(e) =>
               setDLocal((s) => ({ ...s, homeowner: e.target.value }))
             }
           >
-            <option value="">— Select Homeowner —</option>
-            {people.length === 0 && (
-              <option value="" disabled>
-                (loading customers…)
-              </option>
-            )}
+            <option value="">
+              {empty ? "— No homeowners yet —" : "— Select Homeowner —"}
+            </option>
             {(people || []).map((p) => {
               const val = String(p.id);
               const lbl = buildLabel(p);
@@ -698,10 +1142,71 @@ function Step1Details({ isEdit, agreementId, dLocal, setDLocal, people, saveStep
               );
             })}
           </select>
+          {empty && (
+            <div className="mt-2 text-xs text-gray-600">
+              No homeowners found.{" "}
+              <button
+                type="button"
+                onClick={() => setShowQuickAdd((v) => !v)}
+                className="text-indigo-600 underline"
+              >
+                Quick add one
+              </button>
+              .
+            </div>
+          )}
         </div>
 
+        {showQuickAdd && (
+          <div className="md:col-span-2 rounded-md border p-3 bg-indigo-50">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium mb-1">
+                  Full Name
+                </label>
+                <input
+                  className="w-full rounded border px-3 py-2 text-sm"
+                  value={qaName}
+                  onChange={(e) => setQaName(e.target.value)}
+                  placeholder="e.g., Jane Smith"
+                />
+              </div>
+              <div className="md:col-span-1">
+                <label className="block text-xs font-medium mb-1">
+                  Email
+                </label>
+                <input
+                  className="w-full rounded border px-3 py-2 text-sm"
+                  value={qaEmail}
+                  onChange={(e) => setQaEmail(e.target.value)}
+                  placeholder="jane@example.com"
+                />
+              </div>
+            </div>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={onQuickAdd}
+                disabled={qaBusy}
+                className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-60"
+              >
+                {qaBusy ? "Adding…" : "Add Homeowner"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowQuickAdd(false)}
+                className="rounded border px-3 py-2 text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium mb-1">Project Title</label>
+          <label className="block text-sm font-medium mb-1">
+            Project Title
+          </label>
           <input
             className="w-full rounded border px-3 py-2 text-sm"
             value={dLocal.project_title}
@@ -727,8 +1232,8 @@ function Step1Details({ isEdit, agreementId, dLocal, setDLocal, people, saveStep
           >
             <option value="">— Select Type —</option>
             {(Array.isArray(PROJECT_TYPES) ? PROJECT_TYPES : []).map((t) => {
-              const val = t?.value ?? t?.id ?? t,
-                lbl = t?.label ?? t?.name ?? t?.title ?? t;
+              const val = t?.value ?? t?.id ?? t;
+              const lbl = t?.label ?? t?.name ?? t?.title ?? t;
               return (
                 <option key={String(val)} value={String(val)}>
                   {String(lbl)}
@@ -750,8 +1255,8 @@ function Step1Details({ isEdit, agreementId, dLocal, setDLocal, people, saveStep
             <option value="">— Select Subtype —</option>
             {((SUBTYPES_BY_TYPE || {})[dLocal.project_type] || []).map(
               (st) => {
-                const val = st?.value ?? st?.id ?? st,
-                  lbl = st?.label ?? st?.name ?? st?.title ?? st;
+                const val = st?.value ?? st?.id ?? st;
+                const lbl = st?.label ?? st?.name ?? st?.title ?? st;
                 return (
                   <option key={String(val)} value={String(val)}>
                     {String(lbl)}
@@ -763,7 +1268,9 @@ function Step1Details({ isEdit, agreementId, dLocal, setDLocal, people, saveStep
         </div>
 
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium mb-1">Description</label>
+          <label className="block text-sm font-medium mb-1">
+            Description
+          </label>
           <textarea
             className="w-full rounded border px-3 py-2 text-sm"
             rows={3}
@@ -775,18 +1282,115 @@ function Step1Details({ isEdit, agreementId, dLocal, setDLocal, people, saveStep
           />
         </div>
 
-        <DateWithButton
-          label="Start"
-          value={dLocal.start}
-          onChange={(v) =>
-            setDLocal((s) => ({ ...s, start: toDateOnly(v) }))
-          }
-        />
-        <DateWithButton
-          label="End"
-          value={dLocal.end}
-          onChange={(v) => setDLocal((s) => ({ ...s, end: toDateOnly(v) }))}
-        />
+        {/* Address toggle */}
+        <div className="md:col-span-2">
+          <label className="inline-flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={!!dLocal.addressSame}
+              onChange={(e) =>
+                setDLocal((s) => ({
+                  ...s,
+                  addressSame: !!e.target.checked,
+                }))
+              }
+            />
+            <span className="text-sm">Project is homeowner address</span>
+          </label>
+          <p className="text-xs text-gray-500 mt-1">
+            Uncheck to enter an alternate project address.
+          </p>
+        </div>
+
+        {/* Conditional address fields */}
+        {!dLocal.addressSame && (
+          <>
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">
+                Address Line 1
+              </label>
+              <input
+                className="w-full rounded border px-3 py-2 text-sm"
+                value={dLocal.address_line1}
+                onChange={(e) =>
+                  setDLocal((s) => ({
+                    ...s,
+                    address_line1: e.target.value,
+                  }))
+                }
+                placeholder="Street address"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">
+                Address Line 2 (optional)
+              </label>
+              <input
+                className="w-full rounded border px-3 py-2 text-sm"
+                value={dLocal.address_line2}
+                onChange={(e) =>
+                  setDLocal((s) => ({
+                    ...s,
+                    address_line2: e.target.value,
+                  }))
+                }
+                placeholder="Apt, suite, etc."
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                City
+              </label>
+              <input
+                className="w-full rounded border px-3 py-2 text-sm"
+                value={dLocal.address_city}
+                onChange={(e) =>
+                  setDLocal((s) => ({
+                    ...s,
+                    address_city: e.target.value,
+                  }))
+                }
+                placeholder="City"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                State
+              </label>
+              <input
+                className="w-full rounded border px-3 py-2 text-sm"
+                value={dLocal.address_state}
+                onChange={(e) =>
+                  setDLocal((s) => ({
+                    ...s,
+                    address_state: e.target.value,
+                  }))
+                }
+                placeholder="State"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Postal Code
+              </label>
+              <input
+                className="w-full rounded border px-3 py-2 text-sm"
+                value={dLocal.address_postal_code}
+                onChange={(e) =>
+                  setDLocal((s) => ({
+                    ...s,
+                    address_postal_code: e.target.value,
+                  }))
+                }
+                placeholder="ZIP / Postal code"
+              />
+            </div>
+          </>
+        )}
       </div>
 
       <div className="mt-4 flex gap-2">
@@ -800,57 +1404,14 @@ function Step1Details({ isEdit, agreementId, dLocal, setDLocal, people, saveStep
           onClick={() => saveStep1(true)}
           className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
         >
-          Save & Next
+          Save &amp; Next
         </button>
       </div>
     </div>
   );
 }
 
-/* ---------------- shared UI ---------------- */
-function DateWithButton({ label, value, onChange }) {
-  const ref = useRef(null);
-  const open = () => {
-    if (ref.current?.showPicker) ref.current.showPicker();
-    else ref.current?.focus();
-  };
-  return (
-    <div>
-      <label className="block text-sm font-medium mb-1">{label}</label>
-      <div style={{ position: "relative" }}>
-        <input
-          ref={ref}
-          type="date"
-          value={value || ""}
-          onChange={(e) => onChange(e.target.value)}
-          className="w-full rounded border px-3 py-2 text-sm"
-          style={{ paddingRight: "2.5rem" }}
-        />
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={open}
-          aria-label={label}
-          title={label}
-          style={{
-            position: "absolute",
-            right: 8,
-            top: "50%",
-            transform: "translateY(-50%)",
-            background: "transparent",
-            border: 0,
-            lineHeight: 0,
-            color: "#6B7280",
-          }}
-        >
-          <span role="img" aria-label="calendar">📅</span>
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ---------------- Step 2 ---------------- */
+/* ───────── Step 2 ───────── */
 function Step2Milestones({
   agreement,
   mLocal,
@@ -872,7 +1433,9 @@ function Step2Milestones({
   }, [milestones]);
   const maxEnd = useMemo(() => {
     const e = milestones
-      .map((m) => toDateOnly(m.completion_date || m.end_date || m.end || m.due_date))
+      .map((m) =>
+        toDateOnly(m.completion_date || m.end_date || m.end || m.due_date)
+      )
       .filter(Boolean)
       .sort()
       .slice(-1)[0];
@@ -895,7 +1458,6 @@ function Step2Milestones({
         </div>
       </div>
 
-      {/* Inline add form */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-3 mb-2">
         <input
           className="md:col-span-4 rounded border px-3 py-2 text-sm"
@@ -950,7 +1512,6 @@ function Step2Milestones({
         </button>
       </div>
 
-      {/* Summary table */}
       <div className="rounded-2xl border overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50">
@@ -964,7 +1525,7 @@ function Step2Milestones({
               <th />
             </tr>
           </thead>
-        <tbody>
+          <tbody>
             {milestones.map((m, idx) => (
               <tr key={m.id || `${m.title}-${idx}`} className="border-t align-top">
                 <td className="[&>*]:px-3 [&>*]:py-2">{idx + 1}</td>
@@ -978,7 +1539,10 @@ function Step2Milestones({
                 <td className="[&>*]:px-3 [&>*]:py-2">
                   {friendly(
                     toDateOnly(
-                      m.completion_date || m.end_date || m.end || m.due_date
+                      m.completion_date ||
+                        m.end_date ||
+                        m.end ||
+                        m.due_date
                     )
                   )}
                 </td>
@@ -1047,7 +1611,7 @@ function Step2Milestones({
   );
 }
 
-/* ---------------- Step 3 (attachments — quiet 404 delete) ---------------- */
+/* ───────── Step 3: Warranty & Attachments ───────── */
 function Step3WarrantyAttachments({
   agreementId,
   DEFAULT_WARRANTY,
@@ -1072,11 +1636,17 @@ function Step3WarrantyAttachments({
   useEffect(() => {
     const el = dropRef.current;
     if (!el) return;
-    const onDragOver = (e) => { e.preventDefault(); el.classList.add("ring-2","ring-indigo-400"); };
-    const onDragLeave = (e) => { e.preventDefault(); el.classList.remove("ring-2","ring-indigo-400"); };
+    const onDragOver = (e) => {
+      e.preventDefault();
+      el.classList.add("ring-2", "ring-indigo-400");
+    };
+    const onDragLeave = (e) => {
+      e.preventDefault();
+      el.classList.remove("ring-2", "ring-indigo-400");
+    };
     const onDrop = (e) => {
       e.preventDefault();
-      el.classList.remove("ring-2","ring-indigo-400");
+      el.classList.remove("ring-2", "ring-indigo-400");
       if (e.dataTransfer?.files?.[0]) setFile(e.dataTransfer.files[0]);
     };
     el.addEventListener("dragover", onDragOver);
@@ -1091,7 +1661,9 @@ function Step3WarrantyAttachments({
 
   const tryPostAttachment = async (form) => {
     const urls = [
-      agreementId ? `/projects/agreements/${agreementId}/attachments/` : null,
+      agreementId
+        ? `/projects/agreements/${agreementId}/attachments/`
+        : null,
       `/projects/attachments/`,
     ].filter(Boolean);
 
@@ -1116,25 +1688,17 @@ function Step3WarrantyAttachments({
       const form = new FormData();
       const resolvedTitle = title || file.name;
 
-      // FK + names
       form.set("agreement", String(agreementId));
       form.set("title", resolvedTitle);
       form.set("name", resolvedTitle);
-
-      // category
       form.set("category", category);
-
-      // visibility
       form.set("visible_to_homeowner", visible);
       form.set("visible", visible);
-
-      // file aliases
       form.set("file", file, file.name);
       form.set("document", file, file.name);
 
       await tryPostAttachment(form);
 
-      // reset
       setTitle("");
       setCategory("WARRANTY");
       setVisible(true);
@@ -1173,7 +1737,11 @@ function Step3WarrantyAttachments({
         return;
       }
       const res2 = await quietDelete(genericUrl);
-      if (res2?.status === 200 || res2?.status === 204 || res2?.status === 404) {
+      if (
+        res2?.status === 200 ||
+        res2?.status === 204 ||
+        res2?.status === 404
+      ) {
         await refreshAttachments?.();
         toast.success("Attachment deleted.");
       } else {
@@ -1199,7 +1767,9 @@ function Step3WarrantyAttachments({
             checked={useDefaultWarranty}
             onChange={(e) => setUseDefaultWarranty(e.target.checked)}
           />
-          <span className="text-sm">Use default 12-month workmanship warranty</span>
+          <span className="text-sm">
+            Use default 12-month workmanship warranty
+          </span>
         </label>
 
         {useDefaultWarranty ? (
@@ -1208,7 +1778,9 @@ function Step3WarrantyAttachments({
           </div>
         ) : (
           <div className="mt-3">
-            <label className="block text-sm font-medium mb-1">Custom Warranty</label>
+            <label className="block text-sm font-medium mb-1">
+              Custom Warranty
+            </label>
             <textarea
               className="w-full rounded border px-3 py-2 text-sm min-h-[120px]"
               placeholder="Enter your custom warranty text…"
@@ -1231,7 +1803,9 @@ function Step3WarrantyAttachments({
       {/* Attachments */}
       <div className="rounded-2xl border">
         <div className="p-4 border-b">
-          <h3 className="text-base font-semibold">Attachments &amp; Addenda</h3>
+          <h3 className="text-base font-semibold">
+            Attachments &amp; Addenda
+          </h3>
         </div>
 
         <div className="p-4 space-y-3">
@@ -1248,15 +1822,19 @@ function Step3WarrantyAttachments({
                 onChange={(e) => setFile(e.target.files?.[0] || null)}
                 className="hidden"
               />
-              <label
-                htmlFor="wizard-step3-file"
-                className="inline-flex items-center px-3 py-1.5 rounded-md border bg-white hover:bg-gray-50 cursor-pointer"
-              >
-                Choose Files
-              </label>
-              <span className="text-gray-500">{file ? file.name : "No file chosen"}</span>
             </div>
-            <p className="text-xs text-gray-500">Drag &amp; drop files here, or click.</p>
+            <label
+              htmlFor="wizard-step3-file"
+              className="inline-flex items-center px-3 py-1.5 rounded-md border bg-white hover:bg-gray-50 cursor-pointer"
+            >
+              Choose Files
+            </label>
+            <span className="text-gray-500">
+              {file ? file.name : "No file chosen"}
+            </span>
+            <p className="text-xs text-gray-500">
+              Drag &amp; drop files here, or click.
+            </p>
           </div>
 
           {/* Meta */}
@@ -1312,27 +1890,62 @@ function Step3WarrantyAttachments({
             <table className="min-w-full text-sm">
               <thead>
                 <tr className="text-left border-b">
-                  <th className="py-2 pr-3 font-semibold text-gray-700">Category</th>
-                  <th className="py-2 pr-3 font-semibold text-gray-700">Title</th>
-                  <th className="py-2 pr-3 font-semibold text-gray-700">Visible</th>
-                  <th className="py-2 pr-3 font-semibold text-gray-700">File</th>
-                  <th className="py-2 pr-3 font-semibold text-gray-700">Actions</th>
+                  <th className="py-2 pr-3 font-semibold text-gray-700">
+                    Category
+                  </th>
+                  <th className="py-2 pr-3 font-semibold text-gray-700">
+                    Title
+                  </th>
+                  <th className="py-2 pr-3 font-semibold text-gray-700">
+                    Visible
+                  </th>
+                  <th className="py-2 pr-3 font-semibold text-gray-700">
+                    File
+                  </th>
+                  <th className="py-2 pr-3 font-semibold text-gray-700">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {attachments?.length ? (
                   attachments.map((a) => {
-                    const v = (a.visible_to_homeowner ?? a.visible) ? true : false;
-                    const name = a.file_name || a.filename || a.name || a.title || "File";
-                    const url = a.file_url || a.url || a.download_url || a.file || null;
+                    const v =
+                      (a.visible_to_homeowner ?? a.visible) ? true : false;
+                    const name =
+                      a.file_name ||
+                      a.filename ||
+                      a.name ||
+                      a.title ||
+                      "File";
+                    const url =
+                      a.file_url ||
+                      a.url ||
+                      a.download_url ||
+                      a.file ||
+                      null;
                     return (
-                      <tr key={a.id || name} className="border-b last:border-b-0">
-                        <td className="py-2 pr-3">{a.category || "-"}</td>
-                        <td className="py-2 pr-3">{a.title || name}</td>
-                        <td className="py-2 pr-3">{v ? "Yes" : "No"}</td>
+                      <tr
+                        key={a.id || name}
+                        className="border-b last:border-b-0"
+                      >
+                        <td className="py-2 pr-3">
+                          {a.category || "-"}
+                        </td>
+                        <td className="py-2 pr-3">
+                          {a.title || name}
+                        </td>
+                        <td className="py-2 pr-3">
+                          {v ? "Yes" : "No"}
+                        </td>
                         <td className="py-2 pr-3">
                           {url ? (
-                            <a href={url} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-indigo-600 hover:underline"
+                            >
                               {name}
                             </a>
                           ) : (
@@ -1367,7 +1980,10 @@ function Step3WarrantyAttachments({
                   })
                 ) : (
                   <tr>
-                    <td colSpan={5} className="py-6 text-center text-gray-500">
+                    <td
+                      colSpan={5}
+                      className="py-6 text-center text-gray-500"
+                    >
                       No attachments uploaded.
                     </td>
                   </tr>
@@ -1386,7 +2002,7 @@ function Step3WarrantyAttachments({
             onClick={onNext}
             className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
           >
-            Save & Next
+            Save &amp; Next
           </button>
         </div>
       </div>

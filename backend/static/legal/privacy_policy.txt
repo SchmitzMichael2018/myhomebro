@@ -11,47 +11,47 @@ MyHomeBro (“we,” “our,” “us”) is committed to protecting your privac
 <h3><strong>2. What Information We Collect</strong></h3>
 <hr/>
 
-a. Personal Information You Provide  
-   - When creating an account: name, email address, phone number, mailing address, and payment information (credit/debit card).  
-   - When creating a Contractor profile: business name, license number, skills, portfolio images.  
+a. Personal Information You Provide
+   - When creating an account: name, email address, phone number, mailing address, and payment information (credit/debit card).
+   - When creating a Contractor profile: business name, license number, skills, portfolio images.
    - When communicating via our messaging system: any messages or attachments you upload.
 
-b. Automatically Collected Information  
-   - Log data: IP address, browser type, operating system, pages visited, and referrer URL.  
+b. Automatically Collected Information
+   - Log data: IP address, browser type, operating system, pages visited, and referrer URL.
    - Cookies and tracking technologies: session cookies, local storage used for authentication and preferences.
 
 3. How We Use Your Information
 
-a. To Provide and Maintain Our Platform  
-   - Process registrations, generate Agreements, and facilitate escrow payments.  
+a. To Provide and Maintain Our Platform
+   - Process registrations, generate Agreements, and facilitate escrow payments.
    - Enable real-time messaging between Contractors and Homeowners.
 
-b. To Improve Our Services  
-   - Analyze usage patterns to enhance features.  
+b. To Improve Our Services
+   - Analyze usage patterns to enhance features.
    - Conduct anonymous or aggregated analytics.
 
-c. To Communicate With You  
-   - Send account confirmations, invoices, notifications about project milestones, and updates.  
+c. To Communicate With You
+   - Send account confirmations, invoices, notifications about project milestones, and updates.
    - Respond to support inquiries and questions.
 
-d. To Comply with Legal Obligations  
-   - Verify identity for KYC/AML purposes (as required by Stripe).  
+d. To Comply with Legal Obligations
+   - Verify identity for KYC/AML purposes (as required by Stripe).
    - Cooperate with law enforcement or court orders as required by law.
 
 4. How We Share Your Information
 --------------------------------
-a. Third-Party Service Providers  
-   - Stripe: to process payments and handle escrow.  
-   - Email providers (e.g., SendGrid) to deliver notifications.  
+a. Third-Party Service Providers
+   - Stripe: to process payments and handle escrow.
+   - Email providers (e.g., SendGrid) to deliver notifications.
    - Cloud storage (e.g., AWS S3) for file uploads and PDFs.
 
-b. Business Partners  
+b. Business Partners
    - Credit bureaus or background check services, if you (as a Contractor) authorize a background check.
 
-c. Legal Requirements  
+c. Legal Requirements
    - If required by law or to protect our rights (e.g., subpoena, legal process).
 
-d. With Your Consent  
+d. With Your Consent
    - You may opt-in to marketing communications or share certain data with third parties for contests or promotions.
 
 5. Data Retention
@@ -60,13 +60,13 @@ We retain your personal data for as long as necessary to fulfill the purposes ou
 
 6. Your Rights
 --------------
-a. Access and Correction  
+a. Access and Correction
    - You can review or update your profile information in account settings.
 
-b. Deletion  
+b. Deletion
    - You may request deletion of your account and personal data by emailing privacy@myhomebro.com. We will respond within 30 days.
 
-c. Opt-out of Marketing  
+c. Opt-out of Marketing
    - You can opt-out of promotional emails by clicking “unsubscribe” in the footer of any email.
 
 7. Security
@@ -90,6 +90,6 @@ Contact Us
 
 If you have any questions or concerns about this Privacy Policy, please contact us at:
 
-privacy@myhomebro.com  
-MyHomeBro, 123 Renovation Blvd, Suite 100, Anytown, USA  
-+1 (555) 123-4567
+info@myhomebro.com
+MyHomeBro LLC, San Antonio TX 78245
+

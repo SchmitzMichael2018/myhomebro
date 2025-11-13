@@ -34,7 +34,7 @@ export default function MobileTopBar({ onMenu }) {
       </button>
       <div style={{ display: "flex", alignItems: "center", gap: 10, color: "#fff" }}>
         <img
-          src="/static/myhomebro_logo.png"
+          src={new URL('../assets/myhomebro_logo.png', import.meta.url).href}
           alt="MyHomeBro"
           style={{ width: 32, height: 32, borderRadius: 8 }}
         />

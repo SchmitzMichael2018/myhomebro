@@ -1,4 +1,4 @@
-// frontend/src/auth.js
+// src/auth.js
 /**
  * Robust JWT auth helper for MyHomeBro frontend
  * - LocalStorage or SessionStorage (setRememberMe)
@@ -21,18 +21,27 @@ const BASE_URL = ""; // same-origin; set to "https://www.myhomebro.com" if hosti
 const DEFAULT_AUTH_ENDPOINTS = {
   // Order matters; we try each in sequence until one succeeds
   login: [
-    { url: "/accounts/token/", payload: (e, p) => ({ email: e, password: p }) },        // custom
-    { url: "/auth/jwt/create/", payload: (e, p) => ({ email: e, password: p }) },       // Djoser (email)
-    { url: "/token/", payload: (e, p) => ({ username: e, password: p }) },              // SimpleJWT default
-    { url: "/auth/login/", payload: (e, p) => ({ email: e, password: p }) },            // custom legacy
+    // ✅ Your working endpoint (SimpleJWT, email-based)
+    { url: "/token/", payload: (e, p) => ({ email: e, password: p }) },
+
+    // Optional fallbacks if enabled server-side (kept for robustness)
+    { url: "/auth/jwt/create/", payload: (e, p) => ({ email: e, password: p }) }, // Djoser (email)
+    { url: "/accounts/token/", payload: (e, p) => ({ email: e, password: p }) },  // custom
+    // { url: "/token/", payload: (e, p) => ({ username: e, password: p }) },     // SimpleJWT default (username) — disabled since you use email
+    // { url: "/auth/login/", payload: (e, p) => ({ email: e, password: p }) },   // legacy (404 on your server now)
   ],
   refresh: [
-    { url: "/accounts/token/refresh/" },  // custom
-    { url: "/auth/jwt/refresh/" },        // Djoser
-    { url: "/token/refresh/" },           // SimpleJWT default
-    { url: "/auth/refresh/" },            // custom legacy
+    // ✅ Your working refresh endpoint
+    { url: "/auth/refresh/" },
+
+    // Optional fallbacks if enabled server-side
+    { url: "/token/refresh/" },   // SimpleJWT default
+    { url: "/auth/jwt/refresh/" },// Djoser
+    { url: "/accounts/token/refresh/" }, // custom
   ],
-  registerContractor: "/accounts/auth/contractor-register/", // returns {access, refresh}
+
+  // Aligned to your API namespace (accounts:contractor-register lives at /api/auth/contractor-register/)
+  registerContractor: "/auth/contractor-register/", // returns {access, refresh} if your backend issues tokens on register
 };
 
 // If the backend uses different paths, define window.__MYHOMEBRO_AUTH_ENDPOINTS__ = { ... } before loading this file.
@@ -194,7 +203,7 @@ export async function login({ email, password }) {
 }
 
 export async function registerContractor({ email, password, first_name = "", last_name = "", phone_number = "" }) {
-  const ep = endpoints().registerContractor || "/accounts/auth/contractor-register/";
+  const ep = endpoints().registerContractor || "/auth/contractor-register/";
   const resp = await fetch(apiUrl(ep), {
     method: "POST",
     headers: { "Content-Type": "application/json" },

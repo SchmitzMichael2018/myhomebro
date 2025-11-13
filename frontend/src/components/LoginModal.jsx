@@ -1,15 +1,11 @@
+// src/components/LoginModal.jsx
 import React, { useEffect, useState, useCallback } from "react";
 import { toast } from "react-hot-toast";
 import api, { setTokens } from "../api";
+import logo from "../assets/myhomebro_logo.png";
 
 /**
  * LoginModal (Sign In only)
- * - Opens via:
- *   a) window.mhbOpenLogin('login'|'signup')
- *   b) window.dispatchEvent(new CustomEvent('mhb:open-login', { detail: { mode } }))
- *   c) URL hints: ?login=1 / #login (open); ?signup=1 / #signup (redirect to /stripe-onboarding)
- *
- * UX: Logo → Email → Password → Sign In
  */
 export default function LoginModal() {
   const [visible, setVisible] = useState(false);
@@ -19,16 +15,14 @@ export default function LoginModal() {
   const [loading, setLoading] = useState(false);
 
   const openLogin = useCallback(() => setVisible(true), []);
-  const close = () => {
-    if (!loading) setVisible(false);
-  };
+  const close = () => { if (!loading) setVisible(false); };
 
   // Global opener + event listener
   useEffect(() => {
-    // If someone calls signup mode, go straight to onboarding (no duplicate UI here)
     window.mhbOpenLogin = (mode = "login") => {
       if (mode === "signup") {
-        window.location.href = "/stripe-onboarding";
+        if (typeof window.mhbOpenSignup === "function") window.mhbOpenSignup();
+        else window.dispatchEvent(new CustomEvent("mhb:open-signup"));
         return;
       }
       openLogin();
@@ -36,7 +30,8 @@ export default function LoginModal() {
     const onEvt = (e) => {
       const mode = e?.detail?.mode || "login";
       if (mode === "signup") {
-        window.location.href = "/stripe-onboarding";
+        if (typeof window.mhbOpenSignup === "function") window.mhbOpenSignup();
+        else window.dispatchEvent(new CustomEvent("mhb:open-signup"));
       } else {
         openLogin();
       }
@@ -48,7 +43,7 @@ export default function LoginModal() {
     };
   }, [openLogin]);
 
-  // Auto-open / redirect from URL hints
+  // Auto-open / redirect from URL hints (kept as-is)
   useEffect(() => {
     const url = new URL(window.location.href);
     const q = url.searchParams;
@@ -58,11 +53,11 @@ export default function LoginModal() {
     const wantsSignup = q.get("signup") === "1" || hash.includes("signup");
 
     if (wantsSignup) {
-      // Clean URL then redirect
       if (q.get("signup")) q.delete("signup");
       const cleaned = `${url.pathname}${q.toString() ? "?" + q.toString() : ""}`;
       window.history.replaceState({}, "", cleaned);
-      window.location.href = "/stripe-onboarding";
+      if (typeof window.mhbOpenSignup === "function") window.mhbOpenSignup();
+      else window.dispatchEvent(new CustomEvent("mhb:open-signup"));
       return;
     }
     if (wantsLogin) {
@@ -77,16 +72,33 @@ export default function LoginModal() {
 
   const handleSubmit = async (e) => {
     e?.preventDefault?.();
-    if (!email || !password) {
+
+    // hard reset tokens before attempting auth
+    try {
+      localStorage.removeItem('access');
+      localStorage.removeItem('refresh');
+      sessionStorage.removeItem('access');
+      sessionStorage.removeItem('refresh');
+    } catch {}
+
+    const payload = {
+      email: String(email || '').trim().toLowerCase(),
+      password: String(password || ''),
+    };
+
+    if (!payload.email || !payload.password) {
       toast.error("Enter email and password.");
       return;
     }
+
     setLoading(true);
     try {
-      // api baseURL = "/api" -> POST /api/auth/login/
-      const { data } = await api.post("/auth/login/", { email, password });
-      if (!data?.access || !data?.refresh) throw new Error("Missing tokens");
-      setTokens(data.access, data.refresh);
+      // Correct endpoint
+      const { data } = await api.post("/auth/login/", payload);
+      const access = data?.access || data?.access_token;
+      const refresh = data?.refresh || data?.refresh_token;
+      if (!access) throw new Error("Missing tokens");
+      setTokens(access, refresh);
       toast.success("Signed in!");
       setVisible(false);
       window.location.href = "/dashboard";
@@ -96,6 +108,7 @@ export default function LoginModal() {
         err?.response?.data?.message ||
         "Sign-in failed.";
       toast.error(String(msg));
+      console.error("Login error:", err);
     } finally {
       setLoading(false);
     }
@@ -107,7 +120,6 @@ export default function LoginModal() {
     <div className="mhb-modal-overlay" role="dialog" aria-modal="true">
       <div className="mhb-modal-card" style={{ maxWidth: 520 }}>
         <div className="mhb-modal-header" style={{ justifyContent: "center" }}>
-          {/* Brand logo centered above title */}
           <div style={{ display: "grid", placeItems: "center", width: "100%" }}>
             <div
               style={{
@@ -126,7 +138,7 @@ export default function LoginModal() {
               }}
             >
               <img
-                src="/static/assets/myhomebro_logo.png"
+                src={logo}
                 alt="MyHomeBro"
                 style={{ maxWidth: 72, maxHeight: 72, display: "block" }}
               />
@@ -136,7 +148,6 @@ export default function LoginModal() {
             </h2>
           </div>
 
-          {/* Close button */}
           <button className="mhb-modal-close" onClick={close} aria-label="Close">
             ✕
           </button>
@@ -201,7 +212,6 @@ export default function LoginModal() {
               {loading ? "Signing in..." : "Sign In"}
             </button>
 
-            {/* optional tiny secondary link; remove if not wanted */}
             <div
               style={{
                 marginTop: 2,
@@ -212,11 +222,12 @@ export default function LoginModal() {
             >
               New contractor?{" "}
               <a
-                href="/stripe-onboarding"
+                href="/contractor/signup"
                 style={{ fontWeight: 800, color: "#0ea5e9" }}
                 onClick={(e) => {
                   e.preventDefault();
-                  window.location.href = "/stripe-onboarding";
+                  if (typeof window.mhbOpenSignup === "function") window.mhbOpenSignup();
+                  else window.dispatchEvent(new CustomEvent("mhb:open-signup"));
                 }}
               >
                 Sign up

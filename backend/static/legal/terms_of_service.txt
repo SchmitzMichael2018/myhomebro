@@ -96,24 +96,24 @@ c. Warranty Clause (Default)
 • If the Contractor specifies a Warranty Duration (in months) but does not upload a supplemental PDF, the Platform automatically inserts the following standard Warranty clause into the base Agreement:
 
 ```
- Section X: Workmanship Warranty  
- 
+ Section X: Workmanship Warranty
+
  The Contractor warrants to the Homeowner that all labor and workmanship performed under this Agreement shall be free from defects for a period of {Warranty Duration} months following the date of final acceptance of work. During this Warranty period, the Contractor shall, at no additional cost to the Homeowner, correct or replace any portion of the work found to be defective or not in compliance with the terms of this Agreement.
 
- Warranty Exclusions:  
-   1. Normal wear and tear, settlement, or damage caused by misuse, abuse, accident, neglect, or natural disasters (e.g., floods, earthquakes).  
-   2. Damage resulting from lack of proper maintenance, modifications, or repairs performed by parties other than the Contractor.  
-   3. Materials, appliances, or fixtures supplied by third parties (e.g., HVAC units, tile, cabinets) are covered only by the original manufacturer’s warranty.  
+ Warranty Exclusions:
+   1. Normal wear and tear, settlement, or damage caused by misuse, abuse, accident, neglect, or natural disasters (e.g., floods, earthquakes).
+   2. Damage resulting from lack of proper maintenance, modifications, or repairs performed by parties other than the Contractor.
+   3. Materials, appliances, or fixtures supplied by third parties (e.g., HVAC units, tile, cabinets) are covered only by the original manufacturer’s warranty.
    4. Minor cosmetic imperfections (e.g., small cracks in grout, paint touch-ups) unless specifically noted in writing before final acceptance.
 
- Claim Process:  
-   • The Homeowner must provide written notice to the Contractor at the address listed on page 1 of this Agreement, including a description and photographic evidence of the alleged defect, within {Warranty Duration} months of final acceptance.  
-   • The Contractor shall inspect any claimed defect within ten (10) business days of receiving notice. If the defect is covered under this Warranty, the Contractor will initiate repair or replacement work within thirty (30) calendar days.  
+ Claim Process:
+   • The Homeowner must provide written notice to the Contractor at the address listed on page 1 of this Agreement, including a description and photographic evidence of the alleged defect, within {Warranty Duration} months of final acceptance.
+   • The Contractor shall inspect any claimed defect within ten (10) business days of receiving notice. If the defect is covered under this Warranty, the Contractor will initiate repair or replacement work within thirty (30) calendar days.
    • If the Contractor fails to cure the defect within the specified timeframe, the Homeowner may engage a licensed third party to perform the repair. The Contractor agrees to reimburse the Homeowner for reasonable costs up to a maximum of 125% of the Contractor’s original cost for that portion of the work, upon receipt of proper invoices and documentation.
 
- Limitation of Liability for Warranty Claims:  
-   • The above remedies are the sole and exclusive remedies for breach of this Warranty.  
-   • Under no circumstances shall the Contractor be liable for any incidental, consequential, or special damages arising out of or in connection with this Warranty.  
+ Limitation of Liability for Warranty Claims:
+   • The above remedies are the sole and exclusive remedies for breach of this Warranty.
+   • Under no circumstances shall the Contractor be liable for any incidental, consequential, or special damages arising out of or in connection with this Warranty.
 ```
 
 ---
@@ -314,6 +314,6 @@ Electronic signatures shall have the same legal effect as handwritten signatures
 Contact Information
 ____________________
 If you have any questions or concerns about these Terms, please contact us at:
-[support@myhomebro.com](mailto:support@myhomebro.com)
-MyHomeBro, 123 Renovation Blvd, Suite 100, San Antonio, Texas, USA
-+1 (555) 123-4567
+[info@myhomebro.com](mailto:info@myhomebro.com)
+MyHomeBro LLC.  San Antonio, Texas, USA
+

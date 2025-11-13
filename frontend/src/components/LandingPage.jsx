@@ -10,17 +10,15 @@ import {
   Scale,
   Camera,
 } from "lucide-react";
+import logo from "../assets/myhomebro_logo.png";
 
 /**
  * LandingPage
  * - Full-bleed gradient background (desktop + mobile)
  * - Centered hero rail (max 1280px)
  * - No horizontal scrollbar
- * - Responsive features grid (auto-fills width on larger screens)
- * - Buttons trigger your existing login modal hooks (mhbOpenLogin or mhb:open-login)
- *
- * This component is self-contained: all styles are inline so it won’t be affected by
- * any global CSS (including the removal of mobile.css).
+ * - Responsive features grid
+ * - Buttons trigger your existing login modal hooks
  */
 export default function LandingPage() {
   const openLogin = (mode = "login") => {
@@ -37,7 +35,12 @@ export default function LandingPage() {
       }
     } catch {}
   };
-  const openSignup = () => openLogin("signup");
+
+  // changed: open signup modal instead of navigating away
+  const openSignup = () => {
+    if (typeof window.mhbOpenSignup === "function") window.mhbOpenSignup();
+    else window.dispatchEvent(new CustomEvent("mhb:open-signup"));
+  };
 
   return (
     <div style={S.root}>
@@ -45,7 +48,7 @@ export default function LandingPage() {
       <div style={S.rail}>
         <div style={S.logoFrame}>
           <img
-            src="/static/myhomebro_logo.png"
+            src={logo}
             alt="MyHomeBro"
             style={S.logo}
             draggable={false}
@@ -276,8 +279,6 @@ const S = {
   tileText: { gridArea: "text", color: "#0f172a", opacity: 0.85 },
 };
 
-/* Utility: clamp font size between 34px and 56px based on viewport width */
 function clamp(minPx, maxPx) {
-  // translates roughly to clamp(minPx, 4vw, maxPx)
   return `clamp(${minPx}px, 4vw, ${maxPx}px)`;
 }

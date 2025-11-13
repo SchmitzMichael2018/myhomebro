@@ -1,7 +1,8 @@
 # backend/projects/views/milestone.py
 from __future__ import annotations
 
-from django.db.models import Q
+from django.db import transaction
+from django.db.models import Q, Max
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -14,6 +15,7 @@ from projects.serializers.milestone import MilestoneSerializer
 class MilestoneViewSet(viewsets.ModelViewSet):
     """
     Main Milestone API:
+      • Auto-assigns `order` on create()
       • CRUD
       • POST   /projects/milestones/check-overlap/
       • POST   /projects/milestones/{id}/files/      (shim: 501 until wired)
@@ -23,6 +25,47 @@ class MilestoneViewSet(viewsets.ModelViewSet):
     serializer_class = MilestoneSerializer
     permission_classes = [IsAuthenticated]
 
+    # ------------------------------------------------------------
+    # AUTO-ORDERED CREATE
+    # ------------------------------------------------------------
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        """
+        Adds automatic `order` assignment:
+        - Looks up max(current order) for this agreement.
+        - If client did not provide `order`, assign next integer.
+        """
+        data = request.data.copy()
+
+        # agreement Id normalizing
+        agreement_id = data.get("agreement") or data.get("agreement_id")
+        if agreement_id:
+
+            # Only set order if missing or empty
+            incoming_order = data.get("order")
+            if incoming_order in (None, "", [], {}):
+                try:
+                    ag_id = int(agreement_id)
+                    max_order = (
+                        Milestone.objects.filter(agreement_id=ag_id)
+                        .aggregate(Max("order"))["order__max"]
+                        or 0
+                    )
+                    data["order"] = max_order + 1
+                except Exception:
+                    # If agreement is invalid or other error, fallback to 1
+                    data["order"] = 1
+
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    # ------------------------------------------------------------
+    # CHECK OVERLAP ENDPOINT
+    # ------------------------------------------------------------
     @action(detail=False, methods=["post"], url_path="check-overlap")
     def check_overlap(self, request, *args, **kwargs):
         """
@@ -54,23 +97,21 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         )
         return Response({"overlaps": bool(conflicts), "conflicts": conflicts}, status=200)
 
+    # ------------------------------------------------------------
+    # FILE UPLOAD SHIM
+    # ------------------------------------------------------------
     @action(detail=True, methods=["post"], url_path="files")
     def upload_file(self, request, pk=None, *args, **kwargs):
-        """
-        Shim so the frontend can POST /projects/milestones/{id}/files/
-        Returns 501 until a file model/storage is wired.
-        """
         return Response(
             {"detail": "Milestone file upload endpoint not configured."},
             status=status.HTTP_501_NOT_IMPLEMENTED,
         )
 
+    # ------------------------------------------------------------
+    # COMMENT SHIM
+    # ------------------------------------------------------------
     @action(detail=True, methods=["post"], url_path="comments")
     def add_comment(self, request, pk=None, *args, **kwargs):
-        """
-        Shim so the frontend can POST /projects/milestones/{id}/comments/
-        Returns 501 until a comment model is wired.
-        """
         text = (request.data or {}).get("text", "")
         if not text:
             return Response({"detail": "text is required."}, status=status.HTTP_400_BAD_REQUEST)
@@ -83,14 +124,9 @@ class MilestoneViewSet(viewsets.ModelViewSet):
 # -------------------- Compatibility shims for legacy imports --------------------
 
 class MilestoneFileViewSet(viewsets.ViewSet):
-    """
-    Legacy/compat shim: some urlconfs import MilestoneFileViewSet.
-    Keeping this avoids ImportError during Django checks/migrations.
-    """
     permission_classes = [IsAuthenticated]
 
     def create(self, request, *args, **kwargs):
-        # POST /projects/milestone-files/ (legacy)
         return Response(
             {"detail": "Milestone file upload endpoint not configured."},
             status=status.HTTP_501_NOT_IMPLEMENTED,
@@ -101,14 +137,9 @@ class MilestoneFileViewSet(viewsets.ViewSet):
 
 
 class MilestoneCommentViewSet(viewsets.ViewSet):
-    """
-    Legacy/compat shim: some urlconfs import MilestoneCommentViewSet.
-    Keeping this avoids ImportError during Django checks/migrations.
-    """
     permission_classes = [IsAuthenticated]
 
     def create(self, request, *args, **kwargs):
-        # POST /projects/milestone-comments/ (legacy)
         text = (request.data or {}).get("text", "")
         if not text:
             return Response({"detail": "text is required."}, status=status.HTTP_400_BAD_REQUEST)

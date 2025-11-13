@@ -27,12 +27,14 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = async ({ email, password, remember }) => {
-    const endpoints = ["/auth/login/", "/token/"]; // supports either style
+    // Use the working SimpleJWT endpoint
+    const endpoints = ["/token/"];
     let data;
 
     for (let i = 0; i < endpoints.length; i++) {
       try {
-        const resp = await api.post(endpoints[i], { email, username: email, password });
+        // Only send email/password; do NOT include a username field
+        const resp = await api.post(endpoints[i], { email, password });
         data = resp.data;
         break;
       } catch (e) {

@@ -1,117 +1,113 @@
 // src/components/SignUpForm.jsx
+// v2025-11-09 — contractor register → tokens (if active) → push to /onboarding
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../api";
+import api, { setTokens } from "../api";
+import toast from "react-hot-toast";
 
 export default function SignUpForm() {
   const navigate = useNavigate();
-  const nameRef = useRef(null);
+  const firstRef = useRef(null);
 
-  const [formData, setFormData] = useState({
-    name: "",
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({
+    first_name: "",
+    last_name: "",
     email: "",
     password: "",
     passwordConfirm: "",
-    businessName: "",
     phone: "",
-    skills: "",
+    agree: false,
   });
 
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  useEffect(() => { firstRef.current?.focus(); }, []);
 
-  useEffect(() => {
-    nameRef.current?.focus();
-  }, []);
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prevData) => ({
-      ...prevData,
-      [name]: value,
-    }));
+  const onChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setForm((s) => ({ ...s, [name]: type === "checkbox" ? checked : value }));
   };
 
-  const validateForm = () => {
-    if (formData.password !== formData.passwordConfirm) {
-      return "❌ Passwords do not match.";
-    }
-    if (formData.password.length < 8) {
-      return "❌ Password must be at least 8 characters.";
-    }
-    if (!/^\d{10}$/.test(formData.phone)) {
-      return "❌ Please enter a valid 10-digit phone number.";
-    }
+  const validate = () => {
+    if (!form.agree) return "Please agree to the Terms to continue.";
+    if (!form.first_name.trim() || !form.last_name.trim()) return "First and last name are required.";
+    if (!/^\S+@\S+\.\S+$/.test(form.email)) return "Enter a valid email.";
+    if (form.password.length < 8) return "Password must be at least 8 characters.";
+    if (form.password !== form.passwordConfirm) return "Passwords do not match.";
+    if (form.phone && !/^[0-9]{10}$/.test(form.phone)) return "Phone must be 10 digits (numbers only).";
     return null;
   };
 
-  const handleSubmit = async (e) => {
+  const submit = async (e) => {
     e.preventDefault();
-    setError("");
+    const err = validate();
+    if (err) { toast.error(err); return; }
+
     setLoading(true);
-
-    const validationError = validateForm();
-    if (validationError) {
-      setError(validationError);
-      setLoading(false);
-      return;
-    }
-
     try {
-      const response = await api.post("/accounts/auth/contractor-register/", {
-        name: formData.name,
-        email: formData.email,
-        password: formData.password,
-        business_name: formData.businessName,
-        phone: formData.phone,
-        skills: formData.skills,
-      });
+      // Your backend mounts accounts at /api/, route is /auth/contractor-register/
+      const payload = {
+        email: form.email.trim(),
+        password: form.password,
+        first_name: form.first_name.trim(),
+        last_name: form.last_name.trim(),
+        phone_number: form.phone, // serializer accepts phone_number
+      };
+      const { data } = await api.post("/auth/contractor-register/", payload);
 
-      if (response.status === 201) {
-        const { access, refresh } = response.data;
-        localStorage.setItem("access", access);
-        localStorage.setItem("refresh", refresh);
-        navigate("/onboarding/redirect");
+      // If email verification is OFF, backend includes tokens; else only message.
+      if (data?.access) {
+        setTokens(data.access, data.refresh || null, true);
+        toast.success("Account created!");
+        return navigate("/onboarding");
       }
-    } catch (err) {
-      console.error("Registration Error:", err);
-      if (err.response) {
-        setError(`❌ ${err.response.data?.error || err.response.data?.detail || "Registration failed. Please try again."}`);
-      } else {
-        setError("❌ Network error. Please check your connection.");
-      }
+      toast.success(data?.message || "Registration successful. Check your email to verify.");
+      navigate("/");
+    } catch (err2) {
+      const msg =
+        err2?.response?.data?.detail ||
+        err2?.response?.data?.email ||
+        (Array.isArray(err2?.response?.data?.password) ? err2.response.data.password[0] : null) ||
+        err2?.message ||
+        "Registration failed.";
+      toast.error(String(msg));
+      // eslint-disable-next-line no-console
+      console.error("SignUpForm error:", err2);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-r from-blue-50 to-blue-100">
+    <div className="flex items-center justify-center min-h-[70vh] bg-gradient-to-r from-blue-50 to-blue-100">
       <div className="bg-white p-8 rounded-xl shadow-md w-full max-w-md">
         <h2 className="text-3xl font-bold text-blue-700 mb-6 text-center">Contractor Sign Up</h2>
-        <form className="space-y-4" onSubmit={handleSubmit}>
+
+        <form onSubmit={submit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4">
-            <input ref={nameRef} name="name" value={formData.name} onChange={handleChange} placeholder="Full Name" required className="input-field" />
-            <input type="email" name="email" value={formData.email} onChange={handleChange} placeholder="Email" required className="input-field" />
-            <div className="relative">
-              <input type={showPassword ? "text" : "password"} name="password" value={formData.password} onChange={handleChange} placeholder="Password" required className="input-field" />
-              <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-600" tabIndex={-1}>
-                {showPassword ? "Hide" : "Show"}
-              </button>
-            </div>
-            <input type="password" name="passwordConfirm" value={formData.passwordConfirm} onChange={handleChange} placeholder="Confirm Password" required className="input-field" />
-            <input name="phone" value={formData.phone} onChange={handleChange} placeholder="Phone (10 digits)" required className="input-field" pattern="\d{10}" />
-            <input name="businessName" value={formData.businessName} onChange={handleChange} placeholder="Business Name (optional)" className="input-field" />
-            <input name="skills" value={formData.skills} onChange={handleChange} placeholder="Skills (optional)" className="input-field" />
+            <input ref={firstRef} name="first_name" value={form.first_name} onChange={onChange}
+                   placeholder="First Name" required className="input-field" />
+            <input name="last_name" value={form.last_name} onChange={onChange}
+                   placeholder="Last Name" required className="input-field" />
+            <input type="email" name="email" value={form.email} onChange={onChange}
+                   placeholder="Email" required className="input-field" />
+            <input type="password" name="password" value={form.password} onChange={onChange}
+                   placeholder="Password" required className="input-field" />
+            <input type="password" name="passwordConfirm" value={form.passwordConfirm} onChange={onChange}
+                   placeholder="Confirm Password" required className="input-field" />
+            <input name="phone" value={form.phone} onChange={onChange}
+                   placeholder="Phone (10 digits)" pattern="^[0-9]{10}$" className="input-field" />
           </div>
 
-          <button type="submit" disabled={loading} className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition duration-300">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="agree" checked={form.agree} onChange={onChange} />
+            <span>I agree to the Terms of Service and Privacy Policy.</span>
+          </label>
+
+          <button type="submit" disabled={loading}
+                  className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition">
             {loading ? "Signing Up..." : "Sign Up"}
           </button>
-
-          {error && <p className="text-red-500 text-center mt-4">{error}</p>}
         </form>
       </div>
     </div>
