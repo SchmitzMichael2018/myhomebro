@@ -7,3 +7,4 @@ django-extensions
 drf-nested-routers
 twilio
 postmarker
+reportlab>=3.6.0

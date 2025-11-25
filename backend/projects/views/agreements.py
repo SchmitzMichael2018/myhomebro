@@ -50,6 +50,7 @@ try:
         build_agreement_pdf_bytes as _svc_build_bytes,
         generate_full_agreement_pdf as _svc_generate_full,
     )
+
     build_agreement_pdf_bytes = _svc_build_bytes  # type: ignore
     generate_full_agreement_pdf = _svc_generate_full  # type: ignore
 except Exception:
@@ -167,6 +168,182 @@ def _fully_signed_at(ag: Agreement):
     if ch and hh:
         return ch if ch >= hh else hh
     return ch or hh
+
+
+def _format_address_like_pdf(line1, line2, city, state, postal):
+    """
+    Build a string similar to what your PDF currently shows, e.g.:
+
+        10750 Impala Springs — San Antonio TX 78245
+    """
+    parts = []
+    line1 = (line1 or "").strip()
+    line2 = (line2 or "").strip()
+    city = (city or "").strip()
+    state = (state or "").strip()
+    postal = (postal or "").strip()
+
+    if line1:
+        if line2:
+            parts.append(f"{line1}, {line2}")
+        else:
+            parts.append(line1)
+
+    loc_bits = []
+    if city:
+        loc_bits.append(city)
+    if state:
+        loc_bits.append(state)
+    if postal:
+        # keep state + postal adjacent: "TX 78245"
+        if loc_bits:
+            loc_bits[-1] = f"{loc_bits[-1]} {postal}"
+        else:
+            loc_bits.append(postal)
+
+    loc_str = " ".join(loc_bits) if loc_bits else ""
+    if loc_str:
+        if parts:
+            parts.append(f"— {loc_str}")
+        else:
+            parts.append(loc_str)
+
+    return " ".join(parts).strip()
+
+
+def _sync_project_address_from_agreement(ag: Agreement) -> None:
+    """
+    Keep the linked Project's address and Agreement address snapshots in sync.
+
+    NEW RULE (no toggle):
+      - Project Address is always explicit and mandatory on the Agreement.
+      - We always copy Agreement.project_address_* -> Project.address_*.
+      - Snapshots on the Agreement are built from:
+          * homeowner_* fields (for homeowner snapshot)
+          * project_address_* fields (for project snapshot)
+
+    This ensures the PDF and Step 4 always show the explicit project address
+    that was entered on Step 1.
+    """
+    project = getattr(ag, "project", None)
+    homeowner = getattr(ag, "homeowner", None)
+
+    # Nothing to sync if no linked Project
+    if not project:
+        return
+
+    # ---- 1) Copy explicit project address fields onto Project ----
+    p_line1 = getattr(ag, "project_address_line1", None)
+    p_line2 = getattr(ag, "project_address_line2", None)
+    p_city = getattr(ag, "project_address_city", None)
+    p_state = getattr(ag, "project_address_state", None)
+    p_postal = (
+        getattr(ag, "project_postal_code", None)
+        or getattr(ag, "project_zip", None)
+    )
+
+    changed_project_fields: list[str] = []
+
+    mapping = [
+        (p_line1, "address_line1"),
+        (p_line2, "address_line2"),
+        (p_city, "city"),
+        (p_state, "state"),
+        (p_postal, "postal_code"),
+    ]
+
+    for val, dest_field in mapping:
+        if val is None:
+            continue
+        if not hasattr(project, dest_field):
+            continue
+        if getattr(project, dest_field, None) != val:
+            setattr(project, dest_field, val)
+            changed_project_fields.append(dest_field)
+
+    if changed_project_fields:
+        try:
+            project.save(update_fields=changed_project_fields)
+        except Exception as e:
+            print(
+                "Warning: _sync_project_address_from_agreement (project) failed:",
+                repr(e),
+                file=sys.stderr,
+            )
+
+    # ---- 2) Update Agreement snapshots ----
+
+    # Homeowner address snapshot
+    if homeowner is not None and (
+        hasattr(ag, "homeowner_address_snapshot")
+        or hasattr(ag, "homeowner_address_text")
+    ):
+        h_line1 = getattr(homeowner, "address_line1", "") or ""
+        h_line2 = getattr(homeowner, "address_line2", "") or ""
+        h_city = getattr(homeowner, "city", "") or ""
+        h_state = getattr(homeowner, "state", "") or ""
+        h_postal = (
+            getattr(homeowner, "postal_code", "")
+            or getattr(homeowner, "zip", "")
+            or ""
+        )
+        h_snap = _format_address_like_pdf(h_line1, h_line2, h_city, h_state, h_postal)
+        if hasattr(ag, "homeowner_address_snapshot"):
+            ag.homeowner_address_snapshot = h_snap
+        if hasattr(ag, "homeowner_address_text"):
+            ag.homeowner_address_text = h_snap
+
+    # Project address snapshot (from Agreement.project_address_*;
+    # if those are blank for some reason, fall back to Project.*)
+    if any([p_line1, p_city, p_state, p_postal]):
+        snap_line1 = p_line1 or ""
+        snap_line2 = p_line2 or ""
+        snap_city = p_city or ""
+        snap_state = p_state or ""
+        snap_postal = p_postal or ""
+    else:
+        snap_line1 = getattr(project, "address_line1", "") or ""
+        snap_line2 = getattr(project, "address_line2", "") or ""
+        snap_city = getattr(project, "city", "") or ""
+        snap_state = getattr(project, "state", "") or ""
+        snap_postal = (
+            getattr(project, "postal_code", "")
+            or getattr(project, "zip", "")
+            or ""
+        )
+
+    p_snap = _format_address_like_pdf(
+        snap_line1,
+        snap_line2,
+        snap_city,
+        snap_state,
+        snap_postal,
+    )
+
+    if hasattr(ag, "project_address_snapshot"):
+        ag.project_address_snapshot = p_snap
+    if hasattr(ag, "project_address_text"):
+        ag.project_address_text = p_snap
+
+    fields_to_update = []
+    for f in [
+        "homeowner_address_snapshot",
+        "homeowner_address_text",
+        "project_address_snapshot",
+        "project_address_text",
+    ]:
+        if hasattr(ag, f):
+            fields_to_update.append(f)
+
+    if fields_to_update:
+        try:
+            ag.save(update_fields=fields_to_update)
+        except Exception as e:
+            print(
+                "Warning: _sync_project_address_from_agreement (agreement snapshots) failed:",
+                repr(e),
+                file=sys.stderr,
+            )
 
 
 class AgreementViewSet(viewsets.ModelViewSet):
@@ -296,9 +473,6 @@ class AgreementViewSet(viewsets.ModelViewSet):
                     or data.get("title")
                     or "Untitled Project"
                 )
-                # Keep these in data for AgreementSerializer; do NOT send to Project.
-                project_type = data.get("project_type") or None
-                project_subtype = data.get("project_subtype") or None
                 project_description = data.get("description") or ""
 
                 # Create the Project (Project model does NOT have project_type/subtype)
@@ -330,6 +504,17 @@ class AgreementViewSet(viewsets.ModelViewSet):
 
             # Instead of serializer.save(), manually create Agreement to strip non-model fields
             self.perform_create(serializer)
+
+            # Sync project + snapshot addresses so PDF has latest project address
+            try:
+                _sync_project_address_from_agreement(serializer.instance)
+            except Exception as e:
+                print(
+                    "Warning: address sync failed on create:",
+                    repr(e),
+                    file=sys.stderr,
+                )
+
             headers = self.get_success_headers(serializer.data)
             return Response(
                 serializer.data, status=status.HTTP_201_CREATED, headers=headers
@@ -382,6 +567,14 @@ class AgreementViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         with transaction.atomic():
             self.perform_update(serializer)
+            try:
+                _sync_project_address_from_agreement(serializer.instance)
+            except Exception as e:
+                print(
+                    "Warning: address sync failed on update:",
+                    repr(e),
+                    file=sys.stderr,
+                )
         return Response(serializer.data)
 
     def partial_update(self, request, *args, **kwargs):
@@ -392,6 +585,14 @@ class AgreementViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         with transaction.atomic():
             self.perform_update(serializer)
+            try:
+                _sync_project_address_from_agreement(serializer.instance)
+            except Exception as e:
+                print(
+                    "Warning: address sync failed on partial_update:",
+                    repr(e),
+                    file=sys.stderr,
+                )
         return Response(serializer.data)
 
     def perform_update(self, serializer):
@@ -458,7 +659,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def preview_link(self, request, pk=None):
         """
-        Returns a short-lived signed URL (10 min) that streams the preview публичly.
+        Returns a short-lived signed URL (10 min) that streams the preview publicly.
         POST /agreements/<id>/preview_link/ -> {url}
         """
         signer = signing.TimestampSigner(salt=_PREVIEW_SALT)

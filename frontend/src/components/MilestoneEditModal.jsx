@@ -1,12 +1,15 @@
 // src/components/MilestoneEditModal.jsx
-// v2025-10-15 modal-r10 — adds Info Bar (Homeowner/Address/Agreement links) + keeps r9 features
-// - Preserves: overlap-aware save (confirm → allow_overlap), diff-only PATCH,
-//   verified upload, Recent Attachments (Download + Delete), calendar icons,
-//   strict YYYY-MM-DD normalization on load and onChange.
-// - New: compact header info bar with Homeowner, Address (if present), Agreement Total,
-//   "View Agreement" + "Preview PDF" buttons when available via Calendar meta.
+// v2025-11-13 modal-r11 — Info Bar + overlap-aware save + diff-only PATCH +
+// verified upload + Recent Attachments + calendar icons + strict date normalization
+// NEW in r11: full comments list (load + append on send) using milestone comments API.
 
-import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
 import toast from "react-hot-toast";
 import api from "../api";
 
@@ -28,7 +31,9 @@ const fmtMoney = (n) => {
 const isLockedAgreementState = (s) => {
   if (!s) return false;
   const up = String(s).trim().toUpperCase();
-  return ["SIGNED", "EXECUTED", "ACTIVE", "APPROVED", "ARCHIVED"].includes(up);
+  return ["SIGNED", "EXECUTED", "ACTIVE", "APPROVED", "ARCHIVED"].includes(
+    up
+  );
 };
 
 // Normalize various input forms (Date/string) → "YYYY-MM-DD" or ""
@@ -42,6 +47,17 @@ function toDateOnly(v) {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${dd}`;
+}
+
+function friendlyDate(d) {
+  if (!d) return "";
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return d;
+  return dt.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function CalendarBtn({ onClick, title = "Pick a date", disabled }) {
@@ -67,19 +83,37 @@ function CalendarBtn({ onClick, title = "Pick a date", disabled }) {
         opacity: disabled ? 0.5 : 1,
       }}
     >
-      <span role="img" aria-label="calendar">📅</span>
+      <span role="img" aria-label="calendar">
+        📅
+      </span>
     </button>
   );
 }
 
 // choose best download URL
 const urlFor = (a) =>
-  a?.file || a?.url || a?.file_url || a?.download_url || a?.download || a?.absolute_url || null;
+  a?.file ||
+  a?.url ||
+  a?.file_url ||
+  a?.download_url ||
+  a?.download ||
+  a?.absolute_url ||
+  null;
 
 // allowed statuses if backend validates
 const ALLOWED_STATUS = new Set([
-  "Incomplete", "Complete", "Pending", "Approved", "Disputed", "Scheduled",
-  "INCOMPLETE", "COMPLETE", "PENDING", "APPROVED", "DISPUTED", "SCHEDULED",
+  "Incomplete",
+  "Complete",
+  "Pending",
+  "Approved",
+  "Disputed",
+  "Scheduled",
+  "INCOMPLETE",
+  "COMPLETE",
+  "PENDING",
+  "APPROVED",
+  "DISPUTED",
+  "SCHEDULED",
 ]);
 
 /* ---------------- component ---------------- */
@@ -101,9 +135,13 @@ export default function MilestoneEditModal({
   });
   const [saving, setSaving] = useState(false);
 
+  // comment box
   const [comment, setComment] = useState("");
   const [sendingComment, setSendingComment] = useState(false);
+  const [comments, setComments] = useState([]);
+  const [loadingComments, setLoadingComments] = useState(false);
 
+  // files / attachments (agreement-level, like before)
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -122,7 +160,8 @@ export default function MilestoneEditModal({
   };
 
   useEffect(() => {
-    if (open) console.log("MilestoneEditModal build:", "v2025-10-15-modal-r10");
+    if (open)
+      console.log("MilestoneEditModal build:", "v2025-11-13-modal-r11");
   }, [open]);
 
   const readOnly = useMemo(() => {
@@ -155,12 +194,13 @@ export default function MilestoneEditModal({
         start_date: toDateOnly(milestone.start_date || milestone.start || ""),
         end_date: toDateOnly(
           milestone.end_date ||
-          milestone.completion_date ||
-          milestone.end ||
-          milestone.due_date ||
-          ""
+            milestone.completion_date ||
+            milestone.end ||
+            milestone.due_date ||
+            ""
         ),
-        amount: milestone.amount == null ? "" : String(milestone.amount),
+        amount:
+          milestone.amount == null ? "" : String(milestone.amount),
         description: milestone.description || "",
         status: milestone.status || "Incomplete",
       };
@@ -170,6 +210,7 @@ export default function MilestoneEditModal({
       setFile(null);
       setUploadError("");
       if (agreementId) reloadAttachments(agreementId);
+      if (milestone.id) reloadComments(milestone.id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, milestone]);
@@ -177,7 +218,9 @@ export default function MilestoneEditModal({
   const reloadAttachments = async (agId) => {
     setLoadingAttachments(true);
     try {
-      const { data } = await api.get(`/projects/agreements/${agId}/attachments/`);
+      const { data } = await api.get(
+        `/projects/agreements/${agId}/attachments/`
+      );
       const list = Array.isArray(data) ? data : [];
       list.sort((a, b) => (b.id || 0) - (a.id || 0));
       setRecentAttachments(list.slice(0, 10));
@@ -185,6 +228,22 @@ export default function MilestoneEditModal({
       setRecentAttachments([]);
     } finally {
       setLoadingAttachments(false);
+    }
+  };
+
+  const reloadComments = async (milestoneId) => {
+    setLoadingComments(true);
+    try {
+      const { data } = await api.get(
+        `/projects/milestones/${milestoneId}/comments/`,
+        { validateStatus: (s) => s >= 200 && s < 300 }
+      );
+      setComments(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.warn("Failed to load milestone comments", e);
+      setComments([]);
+    } finally {
+      setLoadingComments(false);
     }
   };
 
@@ -209,26 +268,38 @@ export default function MilestoneEditModal({
     };
 
     // title/description (trim title)
-    addIfChanged("title", (v) => (v?.trim() ? v.trim() : undefined));
-    addIfChanged("description", (v) => (v !== undefined ? v : undefined));
+    addIfChanged("title", (v) =>
+      v?.trim() ? v.trim() : undefined
+    );
+    addIfChanged("description", (v) =>
+      v !== undefined ? v : undefined
+    );
 
     // amount -> number; skip if blank
-    addIfChanged("amount", (v) => (v === "" ? undefined : Number(v)));
+    addIfChanged("amount", (v) =>
+      v === "" ? undefined : Number(v)
+    );
 
     // dates (YYYY-MM-DD); when end_date changes, also send completion_date mirror
-    const normDate = (v) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
+    const normDate = (v) =>
+      v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined;
     const endBefore = original ? original.end_date : undefined;
     const endAfter = form.end_date;
 
-    addIfChanged("start_date", (v) => normDate(toDateOnly(v)));
-    addIfChanged("end_date", (v) => normDate(toDateOnly(v)));
+    addIfChanged("start_date", (v) =>
+      normDate(toDateOnly(v))
+    );
+    addIfChanged("end_date", (v) =>
+      normDate(toDateOnly(v))
+    );
     if (endAfter !== endBefore && normDate(toDateOnly(endAfter))) {
       payload["completion_date"] = normDate(toDateOnly(endAfter));
     }
 
     // status only if allowed & changed
     if (form.status && ALLOWED_STATUS.has(form.status)) {
-      if (!original || original.status !== form.status) payload.status = form.status;
+      if (!original || original.status !== form.status)
+        payload.status = form.status;
     }
 
     if (allowOverlap) payload.allow_overlap = true;
@@ -240,7 +311,8 @@ export default function MilestoneEditModal({
     if (!milestone?.id) return;
     setSaving(true);
 
-    const attempt = async (payload) => api.patch(`/projects/milestones/${milestone.id}/`, payload);
+    const attempt = async (payload) =>
+      api.patch(`/projects/milestones/${milestone.id}/`, payload);
 
     try {
       // Attempt 1 — normal diff-only
@@ -267,7 +339,9 @@ export default function MilestoneEditModal({
         body &&
         typeof body === "object" &&
         Array.isArray(body.non_field_errors) &&
-        body.non_field_errors.some((t) => String(t).toLowerCase().includes("overlap"));
+        body.non_field_errors.some((t) =>
+          String(t).toLowerCase().includes("overlap")
+        );
 
       if (isOverlap) {
         const ok = window.confirm(
@@ -286,7 +360,10 @@ export default function MilestoneEditModal({
         } catch (err2) {
           const r2 = err2?.response;
           const b2 =
-            (r2?.data && (typeof r2.data === "string" ? r2.data : JSON.stringify(r2.data))) ||
+            (r2?.data &&
+              (typeof r2.data === "string"
+                ? r2.data
+                : JSON.stringify(r2.data))) ||
             r2?.statusText ||
             err2?.message ||
             "Save failed";
@@ -308,16 +385,18 @@ export default function MilestoneEditModal({
     if (!milestone?.id || !comment.trim()) return;
     setSendingComment(true);
     try {
-      await api.post(
+      const { data } = await api.post(
         `/projects/milestones/${milestone.id}/comments/`,
-        { text: comment.trim() },
+        { content: comment.trim() },
         { headers: { "Content-Type": "application/json" } }
       );
       toast.success("Comment added");
       setComment("");
+      // prepend new comment to list
+      setComments((prev) => [data, ...(prev || [])]);
     } catch (err) {
       console.error(err);
-      toast.error("Comment failed (endpoint may be disabled)");
+      toast.error("Comment failed");
     } finally {
       setSendingComment(false);
     }
@@ -326,7 +405,9 @@ export default function MilestoneEditModal({
   /* ---------- attachments ---------- */
   const fetchAgreementAttachments = async (agId) => {
     try {
-      const { data } = await api.get(`/projects/agreements/${agId}/attachments/`);
+      const { data } = await api.get(
+        `/projects/agreements/${agId}/attachments/`
+      );
       return Array.isArray(data) ? data : [];
     } catch {
       return [];
@@ -344,9 +425,13 @@ export default function MilestoneEditModal({
     setUploading(true);
     setUploadError("");
 
-    const title = `${form.title || milestone.title || "Milestone"} — ${file.name}`;
+    const title = `${form.title || milestone.title || "Milestone"} — ${
+      file.name
+    }`;
     const postFD = (url, fd) =>
-      api.post(url, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      api.post(url, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
 
     const verify = async () => {
       const list = await fetchAgreementAttachments(agreementId);
@@ -365,7 +450,10 @@ export default function MilestoneEditModal({
       fd.append("agreement", String(agreementId)); // safe even when nested
       fd.append("title", title);
       fd.append("category", "OTHER");
-      await postFD(`/projects/agreements/${agreementId}/attachments/`, fd);
+      await postFD(
+        `/projects/agreements/${agreementId}/attachments/`,
+        fd
+      );
       const found = await verify();
       if (found) {
         toast.success("File uploaded");
@@ -395,7 +483,10 @@ export default function MilestoneEditModal({
     } catch (e2) {
       const resp = e2?.response;
       const body =
-        (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) ||
+        (resp?.data &&
+          (typeof resp.data === "string"
+            ? resp.data
+            : JSON.stringify(resp.data))) ||
         resp?.statusText ||
         e2?.message ||
         "Upload failed";
@@ -407,7 +498,9 @@ export default function MilestoneEditModal({
 
     // accepted but not visible
     setUploadError("Upload accepted but attachment not visible yet.");
-    toast.error("Server accepted upload, but attachment not visible yet.");
+    toast.error(
+      "Server accepted upload, but attachment not visible yet."
+    );
     setUploading(false);
   }, [file, agreementId, form.title, milestone.title]);
 
@@ -442,7 +535,10 @@ export default function MilestoneEditModal({
       if (!ok) {
         const resp = lastErr?.response;
         const body =
-          (resp?.data && (typeof resp.data === "string" ? resp.data : JSON.stringify(resp.data))) ||
+          (resp?.data &&
+            (typeof resp.data === "string"
+              ? resp.data
+              : JSON.stringify(resp.data))) ||
           resp?.statusText ||
           lastErr?.message ||
           "Delete failed";
@@ -478,10 +574,14 @@ export default function MilestoneEditModal({
     milestone?.agreement_id ||
     milestone?.agreement?.id ||
     null;
-  const agreementTotal = meta.agreementTotal ?? milestone?.agreement?.total_cost ?? null;
+  const agreementTotal =
+    meta.agreementTotal ??
+    milestone?.agreement?.total_cost ??
+    null;
   const links = meta.links || {};
   const agreementDetailUrl =
-    links.agreementDetailUrl || (agreementNumber ? `/agreements/${agreementNumber}` : null);
+    links.agreementDetailUrl ||
+    (agreementNumber ? `/agreements/${agreementNumber}` : null);
   const previewSignedUrl = links.previewSignedUrl || null;
 
   /* ---------- render ---------- */
@@ -509,23 +609,32 @@ export default function MilestoneEditModal({
 
         {/* Body */}
         <div className="px-5 pb-5 pt-3">
-          {/* Info Bar (new) */}
+          {/* Info Bar */}
           <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-              <div><span className="font-semibold">Homeowner</span>: {homeowner || "—"}</div>
+              <div>
+                <span className="font-semibold">Homeowner</span>:{" "}
+                {homeowner || "—"}
+              </div>
               {address ? (
                 <div className="truncate max-w-[420px]">
                   <span className="font-semibold">Address</span>: {address}
                 </div>
               ) : null}
-              {agreementTotal !== null && agreementTotal !== undefined ? (
-                <div><span className="font-semibold">Agreement Total</span>: {fmtMoney(agreementTotal)}</div>
+              {agreementTotal !== null &&
+              agreementTotal !== undefined ? (
+                <div>
+                  <span className="font-semibold">Agreement Total</span>:{" "}
+                  {fmtMoney(agreementTotal)}
+                </div>
               ) : null}
               <div className="ml-auto flex gap-2">
                 {agreementDetailUrl ? (
                   <button
                     type="button"
-                    onClick={() => window.location.assign(agreementDetailUrl)}
+                    onClick={() =>
+                      window.location.assign(agreementDetailUrl)
+                    }
                     className="px-3 py-1 rounded-md bg-gray-900 text-white hover:opacity-90"
                   >
                     View Agreement
@@ -534,7 +643,13 @@ export default function MilestoneEditModal({
                 {previewSignedUrl ? (
                   <button
                     type="button"
-                    onClick={() => window.open(previewSignedUrl, "_blank", "noopener,noreferrer")}
+                    onClick={() =>
+                      window.open(
+                        previewSignedUrl,
+                        "_blank",
+                        "noopener,noreferrer"
+                      )
+                    }
                     className="px-3 py-1 rounded-md bg-indigo-600 text-white hover:opacity-90"
                   >
                     Preview PDF
@@ -547,37 +662,53 @@ export default function MilestoneEditModal({
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {/* Title */}
             <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-gray-700">Title</label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Title
+              </label>
               <input
                 type="text"
                 name="title"
                 value={form.title}
-                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, title: e.target.value }))
+                }
                 readOnly={readOnly}
-                className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
+                className={`w-full rounded border px-3 py-2 text-sm ${
+                  readOnly ? "bg-gray-50 text-gray-600" : ""
+                }`}
                 placeholder="e.g., Install Sink and Mirror"
               />
             </div>
 
             {/* Amount */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">Amount ($)</label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Amount ($)
+              </label>
               <input
                 type="number"
                 step="0.01"
                 name="amount"
                 value={form.amount}
-                onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, amount: e.target.value }))
+                }
                 readOnly={readOnly}
-                className={`w-full rounded border px-3 py-2 text-sm text-right ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
+                className={`w-full rounded border px-3 py-2 text-sm text-right ${
+                  readOnly ? "bg-gray-50 text-gray-600" : ""
+                }`}
               />
-              <div className="mt-1 text-xs text-gray-400">Preview: ${dollar(form.amount)}</div>
+              <div className="mt-1 text-xs text-gray-400">
+                Preview: ${dollar(form.amount)}
+              </div>
             </div>
 
             {/* Dates */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Start Date</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Start Date
+                </label>
                 <div style={{ position: "relative", overflow: "visible" }}>
                   <input
                     ref={startRef}
@@ -586,14 +717,22 @@ export default function MilestoneEditModal({
                     value={form.start_date || ""}
                     onChange={onChange}
                     readOnly={readOnly}
-                    className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
+                    className={`w-full rounded border px-3 py-2 text-sm ${
+                      readOnly ? "bg-gray-50 text-gray-600" : ""
+                    }`}
                     style={{ paddingRight: "2.5rem" }}
                   />
-                  <CalendarBtn title="Open start date" onClick={() => openPicker(startRef)} disabled={readOnly} />
+                  <CalendarBtn
+                    title="Open start date"
+                    onClick={() => openPicker(startRef)}
+                    disabled={readOnly}
+                  />
                 </div>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">Completion Date</label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  Completion Date
+                </label>
                 <div style={{ position: "relative", overflow: "visible" }}>
                   <input
                     ref={endRef}
@@ -602,24 +741,34 @@ export default function MilestoneEditModal({
                     value={form.end_date || ""}
                     onChange={onChange}
                     readOnly={readOnly}
-                    className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
+                    className={`w-full rounded border px-3 py-2 text-sm ${
+                      readOnly ? "bg-gray-50 text-gray-600" : ""
+                    }`}
                     style={{ paddingRight: "2.5rem" }}
                   />
-                  <CalendarBtn title="Open completion date" onClick={() => openPicker(endRef)} disabled={readOnly} />
+                  <CalendarBtn
+                    title="Open completion date"
+                    onClick={() => openPicker(endRef)}
+                    disabled={readOnly}
+                  />
                 </div>
               </div>
             </div>
 
             {/* Description */}
             <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">
+                Description
+              </label>
               <textarea
                 name="description"
                 value={form.description}
                 onChange={onChange}
                 readOnly={readOnly}
                 rows={4}
-                className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
+                className={`w-full rounded border px-3 py-2 text-sm ${
+                  readOnly ? "bg-gray-50 text-gray-600" : ""
+                }`}
                 placeholder="Work description…"
               />
             </div>
@@ -635,7 +784,10 @@ export default function MilestoneEditModal({
               {saving ? "Saving…" : "Save Changes"}
             </button>
             <button
-              onClick={() => { save(); onClose && onClose(); }}
+              onClick={() => {
+                save();
+                onClose && onClose();
+              }}
               disabled={saving || readOnly}
               className="rounded bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:cursor-not-allowed disabled:bg-gray-300"
             >
@@ -644,8 +796,12 @@ export default function MilestoneEditModal({
             <div className="flex-1" />
             <button
               onClick={async () => {
-                try { await onMarkComplete?.(milestone.id); }
-                catch (e) { console.error(e); toast.error("Could not mark complete"); }
+                try {
+                  await onMarkComplete?.(milestone.id);
+                } catch (e) {
+                  console.error(e);
+                  toast.error("Could not mark complete");
+                }
               }}
               className="rounded bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
               title="Mark Complete to submit for review. Invoicing happens after approval."
@@ -658,7 +814,13 @@ export default function MilestoneEditModal({
           <div className="mt-6">
             <div className="text-sm font-medium text-gray-700">Files</div>
             <div className="mt-2 flex items-center gap-2">
-              <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} disabled={uploading} />
+              <input
+                type="file"
+                onChange={(e) =>
+                  setFile(e.target.files?.[0] || null)
+                }
+                disabled={uploading}
+              />
               <button
                 onClick={uploadFile}
                 disabled={!file || uploading}
@@ -667,10 +829,16 @@ export default function MilestoneEditModal({
                 {uploading ? "Uploading…" : "Upload"}
               </button>
             </div>
-            {!!uploadError && <div className="mt-2 text-xs text-red-600">Server response: {uploadError}</div>}
+            {!!uploadError && (
+              <div className="mt-2 text-xs text-red-600">
+                Server response: {uploadError}
+              </div>
+            )}
 
             <div className="mt-4">
-              <div className="text-sm font-medium text-gray-700 mb-2">Recent Attachments</div>
+              <div className="text-sm font-medium text-gray-700 mb-2">
+                Recent Attachments
+              </div>
               {loadingAttachments ? (
                 <div className="text-xs text-gray-500">Loading…</div>
               ) : recentAttachments.length ? (
@@ -678,18 +846,35 @@ export default function MilestoneEditModal({
                   {recentAttachments.map((a) => {
                     const url = urlFor(a);
                     return (
-                      <li key={a.id || `${a.title}-${a.filename}-${Math.random()}`} className="flex items-center justify-between">
+                      <li
+                        key={
+                          a.id ||
+                          `${a.title}-${a.filename}-${Math.random()}`
+                        }
+                        className="flex items-center justify-between"
+                      >
                         <span className="truncate">
-                          {(a.category ? `[${String(a.category).toUpperCase()}] ` : "")}
+                          {a.category
+                            ? `[${String(
+                                a.category
+                              ).toUpperCase()}] `
+                            : ""}
                           {a.title || a.filename || "Attachment"}
                         </span>
                         <span className="ml-3 flex items-center gap-3">
                           {url ? (
-                            <a className="text-blue-600 hover:underline" href={url} target="_blank" rel="noreferrer">
+                            <a
+                              className="text-blue-600 hover:underline"
+                              href={url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
                               Download
                             </a>
                           ) : (
-                            <span className="text-gray-400">No link</span>
+                            <span className="text-gray-400">
+                              No link
+                            </span>
                           )}
                           <button
                             onClick={() => deleteAttachment(a.id)}
@@ -697,7 +882,9 @@ export default function MilestoneEditModal({
                             className="text-red-600 hover:text-red-700 disabled:text-red-300"
                             title="Delete attachment"
                           >
-                            {deletingId === a.id ? "Deleting…" : "Delete"}
+                            {deletingId === a.id
+                              ? "Deleting…"
+                              : "Delete"}
                           </button>
                         </span>
                       </li>
@@ -705,11 +892,15 @@ export default function MilestoneEditModal({
                   })}
                 </ul>
               ) : (
-                <div className="text-xs text-gray-500">No attachments yet.</div>
+                <div className="text-xs text-gray-500">
+                  No attachments yet.
+                </div>
               )}
               <div className="mt-2">
                 <button
-                  onClick={() => agreementId && reloadAttachments(agreementId)}
+                  onClick={() =>
+                    agreementId && reloadAttachments(agreementId)
+                  }
                   className="rounded bg-gray-100 px-2 py-1 text-xs hover:bg-gray-200"
                 >
                   Refresh
@@ -720,7 +911,43 @@ export default function MilestoneEditModal({
 
           {/* Comments */}
           <div className="mt-6">
-            <div className="text-sm font-medium text-gray-700">Comments</div>
+            <div className="text-sm font-medium text-gray-700">
+              Comments
+            </div>
+
+            {/* existing comments */}
+            <div className="mt-2 max-h-40 overflow-y-auto rounded border bg-gray-50 p-2 text-xs">
+              {loadingComments ? (
+                <div className="text-gray-500">Loading comments…</div>
+              ) : comments && comments.length > 0 ? (
+                comments.map((c) => (
+                  <div
+                    key={c.id}
+                    className="mb-2 rounded bg-white px-2 py-1 shadow-sm last:mb-0"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold">
+                        {c.author_name || "User"}
+                      </span>
+                      <span className="text-[11px] text-gray-500">
+                        {c.created_at
+                          ? friendlyDate(c.created_at)
+                          : ""}
+                      </span>
+                    </div>
+                    <div className="mt-1 whitespace-pre-wrap text-[13px] text-gray-800">
+                      {c.content}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-gray-500">
+                  No comments yet. Be the first to add one.
+                </div>
+              )}
+            </div>
+
+            {/* new comment input */}
             <div className="mt-2 flex items-center gap-2">
               <input
                 type="text"
@@ -728,6 +955,12 @@ export default function MilestoneEditModal({
                 onChange={(e) => setComment(e.target.value)}
                 placeholder="Add a comment…"
                 className="flex-1 rounded border px-3 py-2 text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    if (!sendingComment) sendComment();
+                  }
+                }}
               />
               <button
                 onClick={sendComment}
@@ -737,8 +970,10 @@ export default function MilestoneEditModal({
                 {sendingComment ? "Sending…" : "Send"}
               </button>
             </div>
+
             <div className="mt-2 text-xs text-gray-500">
-              Mark <strong>Complete</strong> to submit for review. Invoicing happens after approval.
+              Mark <strong>Complete</strong> to submit for review. Invoicing
+              happens after approval.
             </div>
           </div>
         </div>

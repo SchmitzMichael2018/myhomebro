@@ -1,4 +1,3 @@
-# backend/projects/services/pdf.py
 from __future__ import annotations
 
 import io
@@ -21,15 +20,19 @@ except Exception:
 # Optional: state-aware legal clauses
 try:
     from projects.services.legal_clauses import build_legal_notices
-except Exception:
+except Exception:  # pragma: no cover
     def build_legal_notices(project_state: Optional[str] = None) -> List[tuple[str, str]]:
         return [
-            ("Terms Incorporated",
-             "The MyHomeBro Terms of Service, Privacy Policy, and any Escrow Program Terms are incorporated into this "
-             "Agreement by reference."),
-            ("Electronic Signatures & Records",
-             "The parties consent to do business electronically and agree that electronic signatures and records have "
-             "the same force and effect as wet ink signatures."),
+            (
+                "Terms Incorporated",
+                "The MyHomeBro Terms of Service, Privacy Policy, and any Escrow Program Terms are incorporated into this "
+                "Agreement by reference."
+            ),
+            (
+                "Electronic Signatures & Records",
+                "The parties consent to do business electronically and agree that electronic signatures and records have "
+                "the same force and effect as wet ink signatures."
+            ),
         ]
 
 
@@ -38,17 +41,20 @@ except Exception:
 def _s(v) -> str:
     return "" if v is None else str(v)
 
+
 def _currency(v) -> str:
     try:
         return f"${float(v or 0):,.2f}"
     except Exception:
         return "$0.00"
 
+
 def _first_existing(paths: list[str]) -> Optional[str]:
     for p in paths:
         if p and os.path.exists(p):
             return p
     return None
+
 
 def _myhomebro_logo_path() -> Optional[str]:
     override = getattr(settings, "MHB_LOGO_PATH", None) or os.environ.get("MHB_LOGO_PATH")
@@ -78,6 +84,7 @@ def _myhomebro_logo_path() -> Optional[str]:
         ]
     return _first_existing(candidates)
 
+
 def _contractor_logo_path(ag: Agreement) -> Optional[str]:
     try:
         field = getattr(getattr(ag, "contractor", None), "logo", None)
@@ -87,6 +94,7 @@ def _contractor_logo_path(ag: Agreement) -> Optional[str]:
         pass
     return None
 
+
 def _signature_path(field) -> Optional[str]:
     try:
         if field and hasattr(field, "path") and os.path.exists(field.path):
@@ -94,6 +102,7 @@ def _signature_path(field) -> Optional[str]:
     except Exception:
         pass
     return None
+
 
 def _due_of(m) -> Optional[str]:
     for attr in (
@@ -109,6 +118,7 @@ def _due_of(m) -> Optional[str]:
             return _s(val)
     return None
 
+
 def _start_of(m) -> Optional[str]:
     """Find a reasonable 'start' for a milestone."""
     for attr in ("start_date", "scheduled_date", "begin_date", "start"):
@@ -120,6 +130,7 @@ def _start_of(m) -> Optional[str]:
                 pass
             return _s(val)
     return None
+
 
 def _fmt_date_friendly(v: object) -> Optional[str]:
     """
@@ -160,41 +171,60 @@ def _get_first(obj, keys: Iterable[str]) -> Optional[str]:
                 return s
     return None
 
+
 def _fmt_addr_from(obj) -> str:
     """
-    Build a single-line address from many common field names on an object
-    (contractor / homeowner / project). Includes aliases:
-      street_address, address_line1/2, line1/2, street/street2, unit/apt/suite,
-      city/town, state/region/province/state_code, zip/zip_code/zipcode/postal_code/postcode
-    Also supports nested obj.address (recursively).
+    Build a single-line address from common *generic* field names on an object,
+    including:
+      • Contractor: address / city / state
+      • Homeowner: street_address / address_line_2 / zip_code
+    NOTE: We intentionally DO NOT look at project_address_* here; those are
+    handled explicitly by _project_address() so we don't accidentally fall
+    back to homeowner snapshots.
     """
     if not obj:
         return ""
 
     line1 = _get_first(obj, (
-        "street_address", "address_line1", "line1", "address1",
-        "street1", "street", "address"
+        "street_address",
+        "address_line1",
+        "address",
+        "line1",
+        "address1",
+        "street1",
+        "street",
     ))
+
+    # Include both address_line2 and address_line_2
     line2 = _get_first(obj, (
-        "address_line2", "line2", "address2", "street2", "unit", "apt", "suite"
+        "address_line2",
+        "address_line_2",
+        "line2",
+        "address2",
+        "street2",
+        "unit",
+        "apt",
+        "suite",
     ))
-    city  = _get_first(obj, ("city", "town", "city_name"))
+
+    city = _get_first(obj, ("city", "town", "city_name"))
+
     state = _get_first(obj, ("state", "state_code", "region", "province"))
-    zipc  = _get_first(obj, ("zip_code", "zip", "zipcode", "postal_code", "postcode"))
+
+    zipc = _get_first(obj, ("zip_code", "zip", "zipcode", "postal_code", "postcode"))
 
     parts: List[str] = []
-    if line1: parts.append(line1)
-    if line2: parts.append(line2)
+    if line1:
+        parts.append(line1)
+    if line2:
+        parts.append(line2)
+
     tail = " ".join([p for p in (city, state, zipc) if p])
     if tail:
         parts.append(tail)
 
-    if not parts:
-        addr_obj = getattr(obj, "address", None)
-        if addr_obj:
-            return _fmt_addr_from(addr_obj)
-
     return " — ".join(parts) if parts else ""
+
 
 def _composite_addr_from_snapshots(obj, prefix: str) -> str:
     """
@@ -223,47 +253,71 @@ def _composite_addr_from_snapshots(obj, prefix: str) -> str:
         g(f"{prefix}_apt_snapshot") or
         g(f"{prefix}_suite_snapshot")
     )
-    city  = g(f"{prefix}_city_snapshot")
+    city = g(f"{prefix}_city_snapshot")
     state = g(f"{prefix}_state_snapshot") or g(f"{prefix}_region_snapshot") or g(f"{prefix}_state_code_snapshot")
-    zipc  = g(f"{prefix}_zip_snapshot") or g(f"{prefix}_zipcode_snapshot") or g(f"{prefix}_postal_code_snapshot") or g(f"{prefix}_postcode_snapshot")
+    zipc = g(f"{prefix}_zip_snapshot") or g(f"{prefix}_zipcode_snapshot") or g(
+        f"{prefix}_postal_code_snapshot"
+    ) or g(f"{prefix}_postcode_snapshot")
 
     parts: List[str] = []
-    if line1: parts.append(line1.strip())
-    if line2: parts.append(line2.strip())
+    if line1:
+        parts.append(line1.strip())
+    if line2:
+        parts.append(line2.strip())
     tail = " ".join([p for p in (city, state, zipc) if p and str(p).strip()])
     if tail:
         parts.append(tail.strip())
     return " — ".join(parts).strip() if parts else ""
 
+
+def _project_addr_from_agreement(ag: Agreement) -> str:
+    """
+    Build a project address string purely from Agreement.project_address_* fields.
+    This is the data coming from Step 1 (alternate project address).
+    """
+    line1 = getattr(ag, "project_address_line1", None) or ""
+    line2 = getattr(ag, "project_address_line2", None) or ""
+    city = getattr(ag, "project_address_city", None) or ""
+    state = getattr(ag, "project_address_state", None) or ""
+    postal = getattr(ag, "project_postal_code", None) or ""
+
+    if not any([line1.strip(), line2.strip(), city.strip(), state.strip(), postal.strip()]):
+        return ""
+
+    parts: List[str] = []
+    if line1.strip():
+        parts.append(line1.strip())
+    if line2.strip():
+        parts.append(line2.strip())
+
+    tail_parts = [p.strip() for p in (city, state, postal) if str(p).strip()]
+    if tail_parts:
+        parts.append(" ".join(tail_parts))
+
+    return " — ".join(parts)
+
+
 def _project_address(ag: Agreement) -> str:
     """
+    Determine the Project Address string for the PDF.
     Priority:
-      1) Agreement.project address fields
-      2) Agreement project_*_snapshot composite
-      3) Agreement's own address fields
-      4) Homeowner object
-      5) Homeowner_*_snapshot composite
+    1. Explicit project_address_* fields (if present and non-empty).
+    2. "Same as Homeowner Address" marker (if the flag is set).
+    3. Empty string (if neither is set).
     """
-    proj = getattr(ag, "project", None)
-    s = _fmt_addr_from(proj)
-    if s:
-        return s
+    # 1) Direct project_* address fields from Agreement (Step 1)
+    direct = _project_addr_from_agreement(ag)
+    if direct:
+        return direct
 
-    s = _composite_addr_from_snapshots(ag, "project")
-    if s:
-        return s
+    # 2) "Same as Homeowner" check
+    # We check the virtual alias or the DB field name
+    is_same = getattr(ag, "project_is_homeowner_address", False) or getattr(ag, "project_address_same_as_homeowner", False)
+    if is_same:
+        return "Same as Homeowner Address"
 
-    s = _fmt_addr_from(ag)
-    if s:
-        return s
-
-    h = getattr(ag, "homeowner", None)
-    s = _fmt_addr_from(h)
-    if s:
-        return s
-
-    s = _composite_addr_from_snapshots(ag, "homeowner")
-    return s or ""
+    # 3) Fallback: No project-specific address; caller will display '---'
+    return ""
 
 
 def _detect_project_state(ag: Agreement) -> Optional[str]:
@@ -318,6 +372,7 @@ def _watermark_preview(canvas):
     canvas.rotate(30)
     canvas.drawCentredString(0, 0, "PREVIEW – NOT SIGNED")
     canvas.restoreState()
+
 
 def _header_footer(canvas, doc):
     from reportlab.lib import colors
@@ -377,8 +432,7 @@ def _header_footer(canvas, doc):
 
 def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> bytes:
     """
-    Render Agreement PDF to bytes (Oct-09 layout) + header with addresses & license.
-    Milestones table spans full printable width. No escrow line.
+    Render Agreement PDF to bytes (layout with Contractor/Homeowner/Project addresses).
     """
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.units import inch
@@ -420,13 +474,18 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
                     ln = ln.strip()
                     if not ln:
                         if buf:
-                            out.append(" ".join(buf)); buf = []; cur = 0
+                            out.append(" ".join(buf))
+                            buf = []
+                            cur = 0
                         continue
                     ln_len = len(ln)
                     if cur + ln_len > 1800 and buf:
-                        out.append(" ".join(buf)); buf = [ln]; cur = ln_len
+                        out.append(" ".join(buf))
+                        buf = [ln]
+                        cur = ln_len
                     else:
-                        buf.append(ln); cur += ln_len + 1
+                        buf.append(ln)
+                        cur += ln_len + 1
                 if buf:
                     out.append(" ".join(buf))
         return out
@@ -439,19 +498,22 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
         rightMargin=0.75 * inch,
         topMargin=1.2 * inch,
         bottomMargin=0.9 * inch,
-        title=f"Agreement #{getattr(ag,'pk','')}",
+        title=f"Agreement #{getattr(ag, 'pk', '')}",
     )
 
     ss = getSampleStyleSheet()
-    s_h1   = ss["Heading1"]; s_h1.fontSize = 22; s_h1.textColor = colors.HexColor("#111827")
-    s_h2   = ss["Heading2"]; s_h2.fontSize = 14
+    s_h1 = ss["Heading1"]
+    s_h1.fontSize = 22
+    s_h1.textColor = colors.HexColor("#111827")
+    s_h2 = ss["Heading2"]
+    s_h2.fontSize = 14
     s_body = ss["BodyText"]
-    s_small= ParagraphStyle("Small", parent=s_body, fontSize=9.5, leading=13, textColor=colors.HexColor("#6B7280"))
-    s_muted= ParagraphStyle("Muted", parent=s_body, fontSize=10, textColor=colors.HexColor("#6B7280"))
-    s_just = ParagraphStyle("Just",  parent=s_body, fontSize=10.5, leading=14)
-    s_h3   = ParagraphStyle("h3",    parent=s_h2, fontSize=12.5)
-    s_lbl  = ParagraphStyle("lbl",   parent=s_body, fontSize=10.5, leading=14, textColor=colors.HexColor("#111827"))
-    s_val  = ParagraphStyle("val",   parent=s_body, fontSize=10.5, leading=14)
+    s_small = ParagraphStyle("Small", parent=s_body, fontSize=9.5, leading=13, textColor=colors.HexColor("#6B7280"))
+    s_muted = ParagraphStyle("Muted", parent=s_body, fontSize=10, textColor=colors.HexColor("#6B7280"))
+    s_just = ParagraphStyle("Just", parent=s_body, fontSize=10.5, leading=14)
+    s_h3 = ParagraphStyle("h3", parent=s_h2, fontSize=12.5)
+    s_lbl = ParagraphStyle("lbl", parent=s_body, fontSize=10.5, leading=14, textColor=colors.HexColor("#111827"))
+    s_val = ParagraphStyle("val", parent=s_body, fontSize=10.5, leading=14)
 
     story: list = []
 
@@ -459,7 +521,8 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     contractor_logo = _contractor_logo_path(ag)
     img_logo = _scaled_image(contractor_logo, max_w=170, max_h=44)
     if img_logo:
-        story.append(img_logo); story.append(Spacer(1, 6))
+        story.append(img_logo)
+        story.append(Spacer(1, 6))
 
     # === Title: Agreement #ID ===
     story.append(Paragraph(f"Agreement #{ag.id}", s_h1))
@@ -468,24 +531,25 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     # === Project header (addresses, license) ===
     story.append(Paragraph("Project", s_lbl))
 
-    contractor  = getattr(ag, "contractor", None)
-    homeowner   = getattr(ag, "homeowner", None)
-    project     = getattr(ag, "project", None)
+    contractor = getattr(ag, "contractor", None)
+    homeowner = getattr(ag, "homeowner", None)
+    project = getattr(ag, "project", None)
 
-    c_name   = _s(getattr(contractor, "business_name", None) or getattr(contractor, "full_name", None))
-    c_email  = _s(getattr(contractor, "email", None))
-    c_phone  = _s(getattr(contractor, "phone", None))
-    c_addr   = _fmt_addr_from(contractor)
+    c_name = _s(getattr(contractor, "business_name", None) or getattr(contractor, "full_name", None))
+    c_email = _s(getattr(contractor, "email", None))
+    # support both phone and phone_number
+    c_phone = _s(getattr(contractor, "phone", None) or getattr(contractor, "phone_number", None))
+    c_addr = _fmt_addr_from(contractor)
     c_lic_no = _s(getattr(contractor, "license_number", None))
     c_lic_ex = _s(getattr(contractor, "license_expiration", None))
 
-    h_name  = _s(getattr(homeowner, "full_name", None) or getattr(homeowner, "name", None))
+    h_name = _s(getattr(homeowner, "full_name", None) or getattr(homeowner, "name", None))
     h_email = _s(getattr(homeowner, "email", None))
-    h_addr  = _fmt_addr_from(homeowner) or _composite_addr_from_snapshots(ag, "homeowner")
+    h_addr = _fmt_addr_from(homeowner) or _composite_addr_from_snapshots(ag, "homeowner")
 
-    p_addr  = _project_address(ag)
+    p_addr = _project_address(ag)
 
-    proj_type    = _s(getattr(ag, "project_type", None) or getattr(project, "type", None))
+    proj_type = _s(getattr(ag, "project_type", None) or getattr(project, "type", None))
     proj_subtype = _s(getattr(ag, "project_subtype", None) or getattr(project, "subtype", None))
     type_line = proj_type if proj_type else "—"
     if proj_subtype:
@@ -510,7 +574,7 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
         schedule_line = f"{start_txt} → {end_txt} (est.)"
     else:
         ag_start = _s(getattr(ag, "start", None))
-        ag_end   = _s(getattr(ag, "end", None))
+        ag_end = _s(getattr(ag, "end", None))
         if ag_start or ag_end:
             start_txt = _fmt_date_friendly(ag_start) if ag_start else "TBD"
             end_txt = _fmt_date_friendly(ag_end) if ag_end else "TBD"
@@ -530,20 +594,17 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
             lic += f" (exp {c_lic_ex})"
         story.append(Paragraph(f"<b>{lic}</b>", s_small))
 
-    story.append(Paragraph(f"<b>Homeowner:</b> {_dot_join([h_name, h_email]) or '—'}",  s_val))
-    if h_addr:
-        story.append(Paragraph(f"<b>Homeowner Address:</b> {h_addr}", s_val))
-
-    if p_addr:
-        story.append(Paragraph(f"<b>Project Address:</b> {p_addr}", s_val))
+    story.append(Paragraph(f"<b>Homeowner:</b> {_dot_join([h_name, h_email]) or '—'}", s_val))
+    story.append(Paragraph(f"<b>Homeowner Address:</b> {h_addr or '---'}", s_val))
+    story.append(Paragraph(f"<b>Project Address:</b> {p_addr or '---'}", s_val))
 
     story.append(Paragraph(f"<b>Type:</b> {type_line}", s_val))
     story.append(Paragraph(f"<b>Schedule:</b> {schedule_line}", s_val))
     story.append(Paragraph(f"<b>Status:</b> {status_line}", s_small))
     story.append(Spacer(1, 12))
 
-    # ---- Milestones (SPAN FULL WIDTH) ----
-    ms = milestones_qs  # reuse the ordered queryset
+    # ---- Milestones ----
+    ms = milestones_qs
     story.append(Paragraph("Milestones", s_h2))
     if ms.exists():
         rows = [["#", "Milestone", "Due", "Amount", "Status"]]
@@ -629,14 +690,14 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
         ]
         return block
 
-    c_name = _s(getattr(ag, "contractor_signature_name", None))
-    h_name = _s(getattr(ag, "homeowner_signature_name", None))
-    c_at   = _s(getattr(ag, "contractor_signed_at", None))
-    h_at   = _s(getattr(ag, "homeowner_signed_at", None))
+    c_name_sig = _s(getattr(ag, "contractor_signature_name", None))
+    h_name_sig = _s(getattr(ag, "homeowner_signature_name", None))
+    c_at = _s(getattr(ag, "contractor_signed_at", None))
+    h_at = _s(getattr(ag, "homeowner_signed_at", None))
 
     sig_tbl = RLTable(
-        [[_sig_block(c_name, c_img, c_at, "Contractor"),
-          _sig_block(h_name, h_img, h_at, "Homeowner")]],
+        [[_sig_block(c_name_sig, c_img, c_at, "Contractor"),
+          _sig_block(h_name_sig, h_img, h_at, "Homeowner")]],
         colWidths=[3.5 * inch, 3.5 * inch]
     )
     sig_tbl.setStyle(RLTableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
@@ -661,6 +722,12 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
 
 
 def generate_full_agreement_pdf(ag: Agreement, *, merge_attachments: bool = True) -> str:
+    """
+    Generate a FINAL (non-preview) PDF for an Agreement, optionally merging
+    any attached PDFs, save it to ag.pdf_file and bump pdf_version.
+
+    This is used when the Agreement is actually signed / finalized.
+    """
     version = int(getattr(ag, "pdf_version", 0) or 0) + 1
 
     base_bytes = build_agreement_pdf_bytes(ag, is_preview=False)

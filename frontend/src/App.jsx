@@ -14,8 +14,12 @@ import "./styles/ui.css";
 import "./styles/modal.css";
 
 import { protectedRoutes } from "./routes/ProtectedRoutes.jsx";
+import DashboardRouter from "./components/DashboardRouter.jsx";
+import TeamPage from "./pages/TeamPage.jsx";
 
-console.log("App.jsx v2025-11-09 — signup modal + onboarding route");
+console.log(
+  "App.jsx v2025-11-16 — signup modal + onboarding route + /app dashboard router + /team route"
+);
 
 export default function App() {
   return (
@@ -27,7 +31,13 @@ export default function App() {
           <Route path="/agreements/:id" element={<AgreementReview />} />
           <Route path="/onboarding" element={<ContractorOnboardingForm />} />
 
-          {/* Auth-protected app sections */}
+          {/* New unified dashboard route (contractor OR employee) */}
+          <Route path="/app" element={<DashboardRouter />} />
+
+          {/* Contractor team management (Team page) */}
+          <Route path="/team" element={<TeamPage />} />
+
+          {/* Auth-protected app sections (existing) */}
           {protectedRoutes()}
 
           {/* Fallback */}

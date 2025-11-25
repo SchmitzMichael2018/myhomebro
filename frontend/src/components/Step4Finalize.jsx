@@ -1,7 +1,10 @@
 // frontend/src/components/Step4Finalize.jsx
-// v2025-10-14 footer-only actions
+// v2025-11-24e — Force Project Address from Agreement.project_address_*
+//              - Uses explicit Agreement fields only.
+//              - Debug block shows exactly what React sees for addresses.
 
-import React from "react";
+import React, { useEffect, useState } from "react";
+import api from "../api";
 
 function toDateOnly(v) {
   if (!v) return "";
@@ -13,84 +16,431 @@ function toDateOnly(v) {
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
+function formatPhone(phoneStr) {
+  if (!phoneStr) return "—";
+  const cleaned = ("" + phoneStr).replace(/\D/g, "");
+  const match = cleaned.match(/^(\d{3})(\d{3})(\d{4})$/);
+  if (match) return `(${match[1]}) ${match[2]}-${match[3]}`;
+  return phoneStr;
+}
+
 function SummaryCard({ label, value }) {
   return (
-    <div className="rounded border bg-gray-50 px-3 py-2">
+    <div className="rounded border bg-gray-50 px-3 py-2 h-full">
       <div className="text-xs text-gray-500">{label}</div>
-      <div className="text-sm font-medium">{value}</div>
+      <div className="text-sm font-medium whitespace-pre-wrap text-gray-900 break-words">
+        {value}
+      </div>
     </div>
   );
 }
 
+/**
+ * Build "City, State ZIP" like the backend helpers.
+ */
+function buildCityStateZip(city, state, postal) {
+  const cityClean = (city || "").trim();
+  const stateClean = (state || "").trim();
+  const postalClean = (postal || "").trim();
+
+  const cs = [cityClean, stateClean].filter(Boolean).join(", ");
+  const tail = [cs, postalClean].filter(Boolean).join(" ");
+  return tail.trim();
+}
+
+/**
+ * Build homeowner address from Agreement + optional explicit homeowner object.
+ */
+function getHomeownerAddressFromAgreement(agreement, homeownerObj) {
+  if (!agreement) return "—";
+  const a = agreement;
+
+  // 0) Single-line snapshot string from backend sync
+  const snapSingle =
+    (typeof a.homeowner_address_snapshot === "string" &&
+      a.homeowner_address_snapshot.trim()) ||
+    (typeof a.homeowner_address_text === "string" &&
+      a.homeowner_address_text.trim());
+
+  if (snapSingle) {
+    return snapSingle;
+  }
+
+  // 1) NESTED HOMEOWNER OBJECT (if present)
+  const ho =
+    homeownerObj ||
+    (typeof a.homeowner === "object" ? a.homeowner : null) ||
+    null;
+  if (ho && typeof ho === "object") {
+    const hoLine1 =
+      (ho.address_line1 ||
+        ho.address1 ||
+        ho.street_address ||
+        ho.address ||
+        "").trim();
+    const hoLine2 =
+      (ho.address_line2 ||
+        ho.address2 ||
+        ho.unit ||
+        ho.apt ||
+        ho.suite ||
+        "").trim();
+    const hoCity = (ho.city || "").trim();
+    const hoState =
+      (ho.state || ho.region || ho.state_code || "").trim();
+    const hoPostal =
+      (ho.zip_code || ho.zip || ho.postal_code || ho.postcode || "").trim();
+
+    const hoLines = [];
+    if (hoLine1) hoLines.push(hoLine1);
+    if (hoLine2) hoLines.push(hoLine2);
+    const hoLastLine = buildCityStateZip(hoCity, hoState, hoPostal);
+    if (hoLastLine) hoLines.push(hoLastLine);
+    if (hoLines.length) return hoLines.join("\n");
+  }
+
+  // 2) As last resort, show homeowner_address from serializer (already formatted)
+  if (a.homeowner_address && String(a.homeowner_address).trim()) {
+    return String(a.homeowner_address).trim();
+  }
+
+  return "—";
+}
+
+/**
+ * Build project address from Agreement (EXPLICIT project_address_* fields only).
+ *
+ * This assumes the backend serializer is already returning:
+ * - project_address_line1
+ * - project_address_line2
+ * - project_address_city
+ * - project_address_state
+ * - project_postal_code
+ */
+function getProjectAddressFromAgreement(agreement) {
+  if (!agreement) return "—";
+  const a = agreement;
+
+  const line1 = (a.project_address_line1 || "").trim();
+  const line2 = (a.project_address_line2 || "").trim();
+  const city = (a.project_address_city || "").trim();
+  const state = (a.project_address_state || "").trim();
+  const postal = (a.project_postal_code || "").trim();
+
+  if (!line1 && !line2 && !city && !state && !postal) {
+    return "—";
+  }
+
+  const parts = [];
+  if (line1) parts.push(line1);
+  if (line2) parts.push(line2);
+
+  const lastLine = buildCityStateZip(city, state, postal);
+  if (lastLine) parts.push(lastLine);
+
+  return parts.join("\n").trim();
+}
+
 export default function Step4Finalize({
-  agreement, id, previewPdf, goPublic, milestones, totals,
+  agreement,
+  dLocal, // Step 1 view-model (for debug display only now)
+  id,
+  previewPdf,
+  goPublic,
+  milestones,
+  totals,
   hasPreviewed,
-  ackReviewed, setAckReviewed,
-  ackTos, setAckTos,
-  ackEsign, setAckEsign,
-  typedName, setTypedName,
-  canSign, signing, signContractor,
-  attachments, defaultWarrantyText, customWarranty, useDefaultWarranty,
+  ackReviewed,
+  setAckReviewed,
+  ackTos,
+  setAckTos,
+  ackEsign,
+  setAckEsign,
+  typedName,
+  setTypedName,
+  canSign,
+  signing,
+  signContractor,
+  submitSign,
+  attachments,
+  defaultWarrantyText,
+  customWarranty,
+  useDefaultWarranty,
   goBack,
+  isEdit,
 }) {
-  const warrantyText = useDefaultWarranty
-    ? defaultWarrantyText
-    : (customWarranty?.trim() ? customWarranty : defaultWarrantyText);
+  const [loadingHomeowner, setLoadingHomeowner] = useState(false);
+  const [homeownerObj, setHomeownerObj] = useState(null);
+
+  // If agreement.homeowner is just an ID, fetch full homeowner record.
+  useEffect(() => {
+    const fetchHomeowner = async () => {
+      if (!agreement) return;
+      const candidate = agreement.homeowner;
+
+      // If we already have an object snapshot, don't fetch.
+      if (
+        agreement.homeowner_snapshot &&
+        typeof agreement.homeowner_snapshot === "object"
+      ) {
+        setHomeownerObj(agreement.homeowner_snapshot);
+        return;
+      }
+
+      if (!candidate) return;
+      const idVal =
+        typeof candidate === "number"
+          ? candidate
+          : parseInt(candidate, 10);
+      if (!idVal || Number.isNaN(idVal)) return;
+
+      setLoadingHomeowner(true);
+      try {
+        const { data } = await api.get(`/projects/homeowners/${idVal}/`);
+        setHomeownerObj(data);
+      } catch (e) {
+        // fail silently
+      } finally {
+        setLoadingHomeowner(false);
+      }
+    };
+
+    fetchHomeowner();
+  }, [agreement]);
+
+  // Addresses from Agreement (backend truth)
+  const homeownerAddressDisplay = getHomeownerAddressFromAgreement(
+    agreement,
+    homeownerObj
+  );
+  const projectAddressDisplay = getProjectAddressFromAgreement(agreement);
+
+  // Homeowner Contact Details
+  const homeownerName =
+    agreement?.homeowner_name ||
+    homeownerObj?.full_name ||
+    agreement?.homeowner?.full_name ||
+    "—";
+  const homeownerEmail =
+    agreement?.homeowner_email ||
+    homeownerObj?.email ||
+    agreement?.homeowner?.email ||
+    "—";
+  const homeownerPhone =
+    homeownerObj?.phone_number ||
+    agreement?.homeowner?.phone_number ||
+    agreement?.homeowner?.phone ||
+    "—";
+
+  // Totals / summary
+  const totalAmount =
+    totals?.totalAmt ??
+    agreement?.display_milestone_total ??
+    agreement?.total_cost ??
+    agreement?.total ??
+    0;
+
+  const status = agreement?.status || "DRAFT";
+  const isSigned =
+    agreement?.signed_by_homeowner || agreement?.is_fully_signed;
+  const displayMilestones = milestones || agreement?.milestones || [];
 
   return (
-    <div className="rounded-lg border bg-white p-4 space-y-6">
-      {/* Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        <SummaryCard label="Agreement" value={`#${agreement?.id || id} — ${agreement?.project_title || agreement?.title || "Project"}`} />
-        <SummaryCard label="Total Amount" value={`$${Number(totals.totalAmt || 0).toFixed(2)}`} />
-        <SummaryCard label="Start → End" value={`${totals.minStart || "—"} → ${totals.maxEnd || "—"}`} />
-        <SummaryCard label="Total Days" value={String(totals.totalDays || 0)} />
+    <div className="mt-4 space-y-6">
+      {/* Top Summary Card: Agreement & Homeowner Details */}
+      <div className="rounded-lg border bg-white p-4 shadow">
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+          Agreement & Homeowner Details
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <SummaryCard
+            label="Project Title"
+            value={
+              agreement?.project_title ||
+              agreement?.title ||
+              "Untitled Project"
+            }
+          />
+          <SummaryCard
+            label="Agreement ID"
+            value={agreement?.id ? `#${agreement.id}` : "New"}
+          />
+          <SummaryCard
+            label="Project Type"
+            value={
+              agreement?.project_type ||
+              agreement?.project?.project_type ||
+              "—"
+            }
+          />
+          <SummaryCard label="Status" value={status} />
+
+          <SummaryCard label="Homeowner Name" value={homeownerName} />
+          <SummaryCard
+            label="Homeowner Phone"
+            value={formatPhone(homeownerPhone)}
+          />
+          <SummaryCard label="Homeowner Email" value={homeownerEmail} />
+        </div>
       </div>
 
-      {/* Warranty snapshot */}
+      {/* Addresses */}
       <section>
-        <div className="text-sm font-semibold mb-2">Warranty (Snapshot)</div>
-        <div className="border rounded bg-gray-50 p-3 max-h-44 overflow-auto text-sm leading-relaxed whitespace-pre-wrap">
-          {warrantyText}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="rounded-lg border bg-white p-4 shadow h-full">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">
+              Homeowner Address
+            </h3>
+            <div className="text-sm text-gray-800 whitespace-pre-wrap">
+              {homeownerAddressDisplay}
+            </div>
+          </div>
+          <div className="rounded-lg border bg-white p-4 shadow h-full">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">
+              Project Address
+            </h3>
+            <div className="text-sm text-gray-800 whitespace-pre-wrap">
+              {projectAddressDisplay}
+            </div>
+          </div>
+        </div>
+
+        {/* DEBUG: show the raw values so we can see exactly what React + API have */}
+        <details className="mt-2 text-xs">
+          <summary className="cursor-pointer text-gray-500">
+            Debug: Step1 dLocal vs Agreement project/homeowner snapshots
+          </summary>
+          <pre className="mt-1 whitespace-pre-wrap break-words bg-gray-50 border rounded p-2 text-[11px] text-gray-800">
+            {JSON.stringify(
+              {
+                dLocal: {
+                  address_line1: dLocal?.address_line1,
+                  address_line2: dLocal?.address_line2,
+                  address_city: dLocal?.address_city,
+                  address_state: dLocal?.address_state,
+                  address_postal_code: dLocal?.address_postal_code,
+                },
+                agreement_project_fields: {
+                  project_address_line1: agreement?.project_address_line1,
+                  project_address_line2: agreement?.project_address_line2,
+                  project_address_city: agreement?.project_address_city,
+                  project_address_state: agreement?.project_address_state,
+                  project_postal_code: agreement?.project_postal_code,
+                },
+                derived_projectAddressDisplay: projectAddressDisplay,
+                homeowner_address_snapshot:
+                  agreement?.homeowner_address_snapshot,
+                homeowner_address_text: agreement?.homeowner_address_text,
+                serializer_homeowner_address: agreement?.homeowner_address,
+                homeowner_nested_object: agreement?.homeowner || null,
+                fetched_homeowner: homeownerObj || null,
+              },
+              null,
+              2
+            )}
+          </pre>
+        </details>
+      </section>
+
+      {/* Project Scope */}
+      <section className="rounded-lg border bg-white p-4 shadow">
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+          Project Scope & Description
+        </h3>
+        <div className="whitespace-pre-wrap text-sm text-gray-700">
+          {agreement?.description || "No project description provided."}
         </div>
       </section>
 
       {/* Milestones */}
-      <section>
-        <div className="text-sm font-semibold mb-2">Milestones</div>
+      <section className="rounded-lg border bg-white p-4 shadow">
+        <div className="text-lg font-semibold mb-2">
+          Milestones &amp; Total ({displayMilestones.length})
+        </div>
+        <div className="mb-3 text-sm font-medium text-gray-700">
+          Total Project Cost: $
+          {Number(totalAmount || 0).toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
+        </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 text-left">
-                <th className="px-3 py-2">#</th>
-                <th className="px-3 py-2">Title</th>
-                <th className="px-3 py-2">Due</th>
-                <th className="px-3 py-2">Amount</th>
-                <th className="px-3 py-2">Status</th>
+          <table className="min-w-full text-sm divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  #
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Title
+                </th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Due
+                </th>
+                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Amount
+                </th>
+                <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
               </tr>
             </thead>
-            <tbody>
-              {(milestones || []).map((m, i) => (
+            <tbody className="bg-white divide-y divide-gray-200">
+              {displayMilestones.map((m, i) => (
                 <tr key={m.id || i} className="border-t">
-                  <td className="px-3 py-2">{i + 1}</td>
-                  <td className="px-3 py-2">{m.title || m.description || "—"}</td>
-                  <td className="px-3 py-2">{toDateOnly(m.completion_date || m.end_date || m.end || m.due_date || m.scheduled_date || m.start_date || m.start) || "—"}</td>
-                  <td className="px-3 py-2">${Number(m.amount || 0).toFixed(2)}</td>
-                  <td className="px-3 py-2">{m.status || (m.completed ? "Completed" : "Pending")}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
+                    {i + 1}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
+                    {m.title || "Untitled"}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
+                    {toDateOnly(
+                      m.due_date || m.completion_date || m.end_date
+                    ) || "—"}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-right text-sm text-gray-500">
+                    {typeof m.amount === "number"
+                      ? `$${m.amount.toFixed(2)}`
+                      : m.amount || "—"}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap text-center text-sm text-gray-500">
+                    {m.status_display || m.status || "Pending"}
+                  </td>
                 </tr>
               ))}
-              {!milestones?.length && (
-                <tr><td colSpan={5} className="px-3 py-6 text-center text-gray-500">No milestones.</td></tr>
+              {!displayMilestones.length && (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="px-3 py-6 text-center text-gray-500"
+                  >
+                    No milestones.
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
       </section>
 
-      {/* Attachments */}
-      <section>
-        <div className="text-sm font-semibold mb-2">Attachments &amp; Addenda (Visible)</div>
-        {(attachments || []).filter(a => a.visible || a.is_visible || a.public || a.is_public).length ? (
+      {/* Warranty & Attachments */}
+      <section className="rounded-lg border bg-white p-4 shadow">
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+          Warranty &amp; Attachments
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+          <SummaryCard
+            label="Warranty Type"
+            value={useDefaultWarranty ? "Default Warranty" : "Custom Warranty"}
+          />
+          <SummaryCard
+            label="Attachments"
+            value={attachments?.length || 0}
+          />
+        </div>
+
+        {(attachments || []).length > 0 ? (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead>
@@ -101,103 +451,185 @@ export default function Step4Finalize({
                 </tr>
               </thead>
               <tbody>
-                {(attachments || [])
-                  .filter(a => a.visible || a.is_visible || a.public || a.is_public)
-                  .map((a) => {
-                    const url = a.file || a.url || a.file_url || a.download_url || a.download || a.absolute_url || null;
-                    return (
-                      <tr key={a.id} className="border-t">
-                        <td className="px-3 py-2">{(a.category || "").toUpperCase()}</td>
-                        <td className="px-3 py-2">{a.title || a.filename || "—"}</td>
-                        <td className="px-3 py-2">{url ? <a className="text-blue-600 hover:underline" href={url} target="_blank" rel="noreferrer">Download</a> : "—"}</td>
-                      </tr>
-                    );
-                  })}
+                {(attachments || []).map((a) => {
+                  const url =
+                    a.file ||
+                    a.url ||
+                    a.file_url ||
+                    a.download_url ||
+                    a.download ||
+                    a.absolute_url ||
+                    null;
+                  return (
+                    <tr
+                      key={a.id || a.name || a.url}
+                      className="border-t"
+                    >
+                      <td className="px-3 py-2">
+                        {(a.category || "").toUpperCase()}
+                      </td>
+                      <td className="px-3 py-2">
+                        {a.title || a.filename || "Attachment"}
+                      </td>
+                      <td className="px-3 py-2">
+                        {url ? (
+                          <a
+                            className="text-blue-600 hover:underline"
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Download
+                          </a>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         ) : (
-          <div className="text-sm text-gray-500">No visible attachments.</div>
+          <div className="text-sm text-gray-500">
+            No visible attachments.
+          </div>
         )}
       </section>
 
-      {/* Review acknowledgments */}
-      <section className="space-y-2 text-sm">
-        <div className="text-sm font-semibold">Agreement Review</div>
-        <label className="flex items-start gap-2">
-          <input type="checkbox" checked={!!ackReviewed} onChange={(e) => setAckReviewed(e.target.checked)} />
-          <span>I have reviewed the entire agreement and all attached exhibits/attachments.</span>
-        </label>
-        <label className="flex items-start gap-2">
-          <input type="checkbox" checked={!!ackTos} onChange={(e) => setAckTos(e.target.checked)} />
-          <span>
-            I agree to the&nbsp;
-            <a className="text-blue-600 hover:underline" href="/static/legal/terms_of_service.txt" target="_blank" rel="noreferrer">Terms of Service</a>
-            &nbsp;and&nbsp;
-            <a className="text-blue-600 hover:underline" href="/static/legal/privacy_policy.txt" target="_blank" rel="noreferrer">Privacy Policy</a>.
-          </span>
-        </label>
-        <label className="flex items-start gap-2">
-          <input type="checkbox" checked={!!ackEsign} onChange={(e) => setAckEsign(e.target.checked)} />
-          <span>
-            I consent to conduct business electronically and use electronic signatures under the U.S. E-SIGN Act.
-            I understand my electronic signature is legally binding, and I can request a paper copy.
-          </span>
-        </label>
-        <div className="rounded border bg-yellow-50 text-yellow-800 px-3 py-2">
-          <strong>Note:</strong> You must preview the PDF before signing.
-        </div>
-      </section>
-
-      {/* Signatures (NO preview button beside Sign) */}
+      {/* Signatures */}
       <section>
-        <div className="text-sm font-semibold mb-2">Signatures</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Contractor */}
-          <div className="rounded border p-3">
-            <div className="text-sm font-medium mb-2">Contractor Signature</div>
-            {agreement?.signed_by_contractor ? (
-              <div className="text-sm text-green-700">
-                ✓ Already signed by contractor {agreement?.contractor_signature_name ? `(${agreement.contractor_signature_name})` : ""}.
+          <div className="rounded-lg border bg-white p-4 shadow flex flex-col justify-between">
+            <div>
+              <div className="text-lg font-semibold text-gray-900 mb-2">
+                Contractor Signature
               </div>
-            ) : (
-              <>
-                <label className="block text-sm mb-1">Type full legal name</label>
-                <input
-                  className="w-full rounded border px-3 py-2 text-sm"
-                  placeholder="e.g., Jane Q. Contractor"
-                  value={typedName}
-                  onChange={(e) => setTypedName(e.target.value)}
-                />
-                <div className="mt-3">
+              {agreement?.signed_by_contractor ? (
+                <div className="text-sm text-green-700 font-medium p-2 bg-green-50 rounded">
+                  ✓ Already signed by contractor{" "}
+                  {agreement?.contractor_signature_name
+                    ? `(${agreement.contractor_signature_name})`
+                    : ""}
+                  .
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-500 mb-4">
+                    Please review before signing.
+                  </p>
+
+                  {/* Agreements / Checkboxes */}
+                  <div className="space-y-2 text-sm mb-4">
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={!!ackReviewed}
+                        onChange={(e) => setAckReviewed(e.target.checked)}
+                        className="mt-1 h-4 w-4 text-indigo-600 border-gray-300 rounded"
+                      />
+                      <span className="text-xs text-gray-700">
+                        I have reviewed the entire agreement and all attached
+                        exhibits/attachments.
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={!!ackTos}
+                        onChange={(e) => setAckTos(e.target.checked)}
+                        className="mt-1 h-4 w-4 text-indigo-600 border-gray-300 rounded"
+                      />
+                      <span className="text-xs text-gray-700">
+                        I agree to the&nbsp;
+                        <a
+                          className="text-blue-600 hover:underline"
+                          href="/static/legal/terms_of_service.txt"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Terms of Service
+                        </a>
+                        &nbsp;and&nbsp;
+                        <a
+                          className="text-blue-600 hover:underline"
+                          href="/static/legal/privacy_policy.txt"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Privacy Policy
+                        </a>
+                        .
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={!!ackEsign}
+                        onChange={(e) => setAckEsign(e.target.checked)}
+                        className="mt-1 h-4 w-4 text-indigo-600 border-gray-300 rounded"
+                      />
+                      <span className="text-xs text-gray-700">
+                        I consent to conduct business electronically and use
+                        electronic signatures under the U.S. E-SIGN Act.
+                      </span>
+                    </label>
+                    {!hasPreviewed && (
+                      <div className="text-xs text-amber-700 bg-amber-50 p-2 rounded">
+                        ⚠️ You must <b>Preview PDF</b> before signing.
+                      </div>
+                    )}
+                  </div>
+
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Type full legal name
+                  </label>
+                  <input
+                    className="w-full rounded border px-3 py-2 text-sm mb-3"
+                    placeholder="e.g., Jane Q. Contractor"
+                    value={typedName}
+                    onChange={(e) => setTypedName(e.target.value)}
+                  />
+
                   <button
                     type="button"
                     disabled={!canSign || signing}
-                    onClick={signContractor}
-                    className={`rounded px-3 py-2 text-sm text-white ${canSign ? "bg-indigo-600 hover:bg-indigo-700" : "bg-gray-400 cursor-not-allowed"}`}
-                    title={!canSign ? "Preview + all checkboxes + typed name required" : "Sign as Contractor"}
+                    onClick={submitSign}
+                    className={`w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
+                      canSign
+                        ? "bg-indigo-600 hover:bg-indigo-700"
+                        : "bg-gray-400 cursor-not-allowed"
+                    }`}
                   >
                     {signing ? "Signing…" : "Sign as Contractor"}
                   </button>
-                </div>
-                {!hasPreviewed && <div className="mt-2 text-xs text-amber-700">Please preview the PDF before signing.</div>}
-              </>
-            )}
+                </>
+              )}
+            </div>
           </div>
 
           {/* Homeowner */}
-          <div className="rounded border p-3">
-            <div className="text-sm font-medium mb-2">Homeowner Signature</div>
+          <div className="rounded-lg border bg-white p-4 shadow flex flex-col">
+            <div className="text-lg font-semibold text-gray-900 mb-2">
+              Homeowner Signature
+            </div>
             {agreement?.signed_by_homeowner ? (
-              <div className="text-sm text-green-700">✓ Already signed by homeowner.</div>
+              <div className="text-sm text-green-700 font-medium p-2 bg-green-50 rounded">
+                ✓ Already signed by homeowner.
+              </div>
             ) : (
               <>
-                <div className="text-sm text-gray-600">The homeowner signs via their public link.</div>
-                <div className="mt-3">
+                <div className="text-sm text-gray-600 mb-4 flex-grow">
+                  The homeowner signs via their public link. You can email this
+                  link or open it on a tablet.
+                </div>
+                <div className="mt-auto">
                   <button
                     type="button"
-                    onClick={() => window.open(`/agreements/public/${id}/`, "_blank")}
-                    className="rounded bg-gray-800 px-3 py-2 text-sm text-white hover:bg-black"
+                    onClick={goPublic}
+                    className="w-full inline-flex justify-center items-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-gray-800 text-sm font-medium text-white hover:bg-black focus:outline-none"
                     title="Open the public signing link"
                   >
                     Open Public Signing Link
@@ -210,33 +642,26 @@ export default function Step4Finalize({
       </section>
 
       {/* Footer — ONLY HERE */}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-3 justify-between pt-4 border-t border-gray-200">
         <button
           type="button"
           onClick={goBack}
-          className="rounded bg-gray-100 px-3 py-2 text-sm text-gray-700 hover:bg-gray-200"
+          className="rounded bg-white border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           title="Back to previous step"
         >
           Back
         </button>
 
-        <button
-          type="button"
-          onClick={previewPdf}
-          className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
-          title="Open preview PDF"
-        >
-          Preview PDF
-        </button>
-
-        <button
-          type="button"
-          onClick={goPublic}
-          className="rounded bg-gray-800 px-3 py-2 text-sm text-white hover:bg-black"
-          title="Open the public link"
-        >
-          View Public Link
-        </button>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={previewPdf}
+            className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 shadow-sm"
+            title="Open preview PDF"
+          >
+            Preview PDF {!agreement?.signed_by_contractor && "(Required)"}
+          </button>
+        </div>
       </div>
     </div>
   );

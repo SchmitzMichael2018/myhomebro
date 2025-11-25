@@ -1,14 +1,17 @@
 // frontend/src/components/AgreementWizard.jsx
-// v2025-11-11h — Fix: Create Project at /projects/projects/ before Agreement (project FK required)
-// - Step 1 has NO dates; address toggle kept.
-// - De-dupe homeowners; Quick Add Homeowner.
-// - Error panel.
-// - Smart create flow:
-//     1) Try Agreement create directly (in case project is optional on some envs)
-//     2) If server says project required (400 mentioning "project"), POST Project to
-//        /projects/projects/ (fallback /projects/) then re-POST Agreement with project FK.
+// v2025-11-24i+k — COMPLETE UNTRUNCATED FILE.
+// - Project Address is MANDATORY (Step 1).
+// - Fix: saveStep1 sends full address payload (both 'project_address_*' and 'address_*').
+// - Fix: Step 2 inline form is add-only; Edit opens MilestoneEditModal.
+// - Fix: Milestone delete uses /projects/milestones/:id/ flat endpoint.
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../api";
@@ -93,11 +96,6 @@ function buildLabel(p) {
   return `ID ${p.id}`;
 }
 
-/** Merge duplicates by email (case-insensitive). Prefer:
- *  - source "homeowners" over "customers"
- *  - then longer full_name
- *  - then higher id
- */
 function dedupePeople(rawList) {
   const byKey = new Map();
   for (const p of rawList) {
@@ -177,7 +175,7 @@ export default function AgreementWizard() {
     project_type: "",
     project_subtype: "",
     description: "",
-    addressSame: true,
+    // Project address (mandatory)
     address_line1: "",
     address_line2: "",
     address_city: "",
@@ -267,43 +265,31 @@ export default function AgreementWizard() {
       setPeopleLoadedOnce(true);
       setPeople(dedupePeople([...seed, ...loaded]));
 
-      // address normalization
-      const addressSame =
-        (ag.project_address_same_as_homeowner ??
-          ag.project_is_homeowner_address ??
-          ag.is_homeowner_address ??
-          true) ? true : false;
-
+      // Hydrate address fields directly from Agreement.project_address_*
       const address_line1 =
         ag.project_address_line1 ??
         ag.project_line1 ??
         ag.address_line1 ??
-        ag.project_address?.line1 ??
         "";
       const address_line2 =
         ag.project_address_line2 ??
         ag.project_line2 ??
         ag.address_line2 ??
-        ag.project_address?.line2 ??
         "";
       const address_city =
-        ag.project_city ??
         ag.project_address_city ??
+        ag.project_city ??
         ag.city ??
-        ag.project_address?.city ??
         "";
       const address_state =
-        ag.project_state ??
         ag.project_address_state ??
+        ag.project_state ??
         ag.state ??
-        ag.project_address?.state ??
         "";
       const address_postal_code =
         ag.project_postal_code ??
         ag.project_zip ??
         ag.postal_code ??
-        ag.zip ??
-        ag.project_address?.postal_code ??
         "";
 
       setDLocal({
@@ -312,12 +298,11 @@ export default function AgreementWizard() {
         project_type: (ag.project_type ?? "") || "",
         project_subtype: (ag.project_subtype ?? "") || "",
         description: ag.description || "",
-        addressSame,
-        address_line1: address_line1 || "",
-        address_line2: address_line2 || "",
-        address_city: address_city || "",
-        address_state: address_state || "",
-        address_postal_code: address_postal_code || "",
+        address_line1,
+        address_line2,
+        address_city,
+        address_state,
+        address_postal_code,
       });
 
       // milestones
@@ -401,6 +386,53 @@ export default function AgreementWizard() {
     return { totalAmt, minStart, maxEnd, totalDays };
   }, [milestones]);
 
+  // Step 4 view-model — prefer dLocal, fallback to Agreement.
+  const dStep4 = useMemo(() => {
+    if (!agreement) return dLocal;
+    const ag = agreement;
+
+    const address_line1 =
+      dLocal.address_line1 ||
+      ag.project_address_line1 ||
+      ag.project_line1 ||
+      ag.address_line1 ||
+      "";
+    const address_line2 =
+      dLocal.address_line2 ||
+      ag.project_address_line2 ||
+      ag.project_line2 ||
+      ag.address_line2 ||
+      "";
+    const address_city =
+      dLocal.address_city ||
+      ag.project_address_city ||
+      ag.project_city ||
+      ag.city ||
+      "";
+    const address_state =
+      dLocal.address_state ||
+      ag.project_address_state ||
+      ag.project_state ||
+      ag.state ||
+      "";
+    const address_postal_code =
+      dLocal.address_postal_code ||
+      ag.project_postal_code ||
+      ag.project_zip ||
+      ag.postal_code ||
+      "";
+
+    return {
+      ...dLocal,
+      address_line1,
+      address_line2,
+      address_city,
+      address_state,
+      address_postal_code,
+    };
+  }, [agreement, dLocal]);
+
+  // Navigation Helper
   const goStep = (n) =>
     navigate(
       agreementId
@@ -408,9 +440,44 @@ export default function AgreementWizard() {
         : `/agreements/new?step=${n}`
     );
 
+  // --- MEMOIZED OPTIONS ---
+  const homeownerOptions = useMemo(
+    () =>
+      people.map((p) => ({
+        value: String(p.id),
+        label: buildLabel(p),
+      })),
+    [people]
+  );
+
+  const projectTypeOptions = useMemo(
+    () =>
+      (Array.isArray(PROJECT_TYPES) ? PROJECT_TYPES : []).map((t) => {
+        const val = typeof t === "string" ? t : t?.value || "";
+        const lbl =
+          typeof t === "string"
+            ? t.charAt(0).toUpperCase() + t.slice(1)
+            : t?.label || val;
+        return { value: val, label: lbl };
+      }),
+    []
+  );
+
+  const projectSubtypeOptions = useMemo(() => {
+    const key = dLocal.project_type || "";
+    const list = SUBTYPES_BY_TYPE[key] || [];
+    return list.map((t) => {
+      const val = typeof t === "string" ? t : t?.value || "";
+      const lbl =
+        typeof t === "string"
+          ? t.charAt(0).toUpperCase() + t.slice(1)
+          : t?.label || val;
+      return { value: val, label: lbl };
+    });
+  }, [dLocal.project_type]);
+
   /* ── Smart create/patch helpers ── */
 
-  // Build payload variants to try for Agreement CREATE
   function buildAgreementCreateVariants(base, addr, projectId = null) {
     const titles = [
       { title: base.project_title, project_title: base.project_title },
@@ -442,26 +509,20 @@ export default function AgreementWizard() {
       project_subtype: base.project_subtype ?? null,
     });
 
-    const withAddr = addr.same
-      ? []
-      : [
-          {
-            project_address_same_as_homeowner: false,
-            project_address_line1: addr.line1 || "",
-            project_address_line2: addr.line2 || "",
-            project_address_city: addr.city || "",
-            project_address_state: addr.state || "",
-            project_postal_code: addr.postal || "",
-          },
-          {
-            project_is_homeowner_address: false,
-            address_line1: addr.line1 || "",
-            address_line2: addr.line2 || "",
-            city: addr.city || "",
-            state: addr.state || "",
-            postal_code: addr.postal || "",
-          },
-        ];
+    const withAddr = [
+      {
+        project_address_line1: addr.line1 || "",
+        project_address_line2: addr.line2 || "",
+        project_address_city: addr.city || "",
+        project_address_state: addr.state || "",
+        project_postal_code: addr.postal || "",
+        address_line1: addr.line1 || "",
+        address_line2: addr.line2 || "",
+        address_city: addr.city || "",
+        address_state: addr.state || "",
+        address_postal_code: addr.postal || "",
+      },
+    ];
 
     const variants = [];
     for (const t of titles) {
@@ -491,13 +552,12 @@ export default function AgreementWizard() {
         );
         if (status === 400) setLast400(data || { detail: "400 Bad Request" });
         lastErr = e;
-        if (status && status !== 400) break; // non-400: stop trying
+        if (status && status !== 400) break;
       }
     }
     throw lastErr;
   }
 
-  // Create a Project — try the DRF-typical mount first (/projects/projects/), then fallback (/projects/)
   async function createProject(base, addr) {
     const titles = [
       { title: base.project_title },
@@ -513,24 +573,22 @@ export default function AgreementWizard() {
           ]
         : [{}];
 
-    const withAddr = addr.same
-      ? [{}]
-      : [
-          {
-            address_line1: addr.line1 || "",
-            address_line2: addr.line2 || "",
-            city: addr.city || "",
-            state: addr.state || "",
-            postal_code: addr.postal || "",
-          },
-          {
-            project_address_line1: addr.line1 || "",
-            project_address_line2: addr.line2 || "",
-            project_address_city: addr.city || "",
-            project_address_state: addr.state || "",
-            project_postal_code: addr.postal || "",
-          },
-        ];
+    const withAddr = [
+      {
+        address_line1: addr.line1 || "",
+        address_line2: addr.line2 || "",
+        city: addr.city || "",
+        state: addr.state || "",
+        postal_code: addr.postal || "",
+      },
+      {
+        project_address_line1: addr.line1 || "",
+        project_address_line2: addr.line2 || "",
+        project_address_city: addr.city || "",
+        project_address_state: addr.state || "",
+        project_postal_code: addr.postal || "",
+      },
+    ];
 
     const variants = [];
     for (const t of titles) {
@@ -561,7 +619,6 @@ export default function AgreementWizard() {
         } catch (e) {
           lastErr = e;
           const s = e?.response?.status;
-          // If endpoint is 405 (Method Not Allowed), try next endpoint immediately
           if (s === 405) break;
         }
       }
@@ -588,6 +645,24 @@ export default function AgreementWizard() {
         return;
       }
 
+      // Mandatory Address Checks
+      if (!dLocal.address_line1.trim()) {
+        toast.error("Project Address Line 1 is required.");
+        return;
+      }
+      if (!dLocal.address_city.trim()) {
+        toast.error("Project City is required.");
+        return;
+      }
+      if (!dLocal.address_state.trim()) {
+        toast.error("Project State is required.");
+        return;
+      }
+      if (!dLocal.address_postal_code.trim()) {
+        toast.error("Project ZIP/Postal Code is required.");
+        return;
+      }
+
       const base = {
         homeowner: homeownerField,
         project_title: title,
@@ -597,7 +672,6 @@ export default function AgreementWizard() {
       };
 
       const addr = {
-        same: !!dLocal.addressSame,
         line1: dLocal.address_line1,
         line2: dLocal.address_line2,
         city: dLocal.address_city,
@@ -606,145 +680,126 @@ export default function AgreementWizard() {
       };
 
       if (agreementId) {
-        // PATCH
-        const primary = {
+        // PATCH existing Agreement.
+        const payload = {
           title: base.project_title,
           project_title: base.project_title,
           homeowner: homeownerField,
           description: base.description,
           project_type: base.project_type,
           project_subtype: base.project_subtype,
-          ...(addr.same
-            ? { project_address_same_as_homeowner: true }
-            : {
-                project_address_same_as_homeowner: false,
-                project_address_line1: addr.line1 || "",
-                project_address_line2: addr.line2 || "",
-                project_address_city: addr.city || "",
-                project_address_state: addr.state || "",
-                project_postal_code: addr.postal || "",
-              }),
+
+          // Force explicit address update
+          project_address_same_as_homeowner: false,
+          project_is_homeowner_address: false,
+
+          // Send SPECIFIC keys
+          project_address_line1: addr.line1 || "",
+          project_address_line2: addr.line2 || "",
+          project_address_city: addr.city || "",
+          project_address_state: addr.state || "",
+          project_postal_code: addr.postal || "",
+
+          // Send GENERIC keys (for fallback)
+          address_line1: addr.line1 || "",
+          address_line2: addr.line2 || "",
+          address_city: addr.city || "",
+          address_state: addr.state || "",
+          address_postal_code: addr.postal || "",
+
+          // Legacy alias support
+          project_zip: addr.postal || "",
         };
+
         try {
           setLast400(null);
-          await api.patch(`/projects/agreements/${agreementId}/`, primary);
+          await api.patch(`/projects/agreements/${agreementId}/`, payload);
+          await loadEdit();
         } catch (e1) {
-          setLast400(e1?.response?.data || { detail: "400 Bad Request" });
-          const minimal = {
-            title: base.project_title,
-            project_title: base.project_title,
-            description: base.description,
-            homeowner_id: homeownerField,
-          };
-          await api.patch(`/projects/agreements/${agreementId}/`, minimal);
+          console.error("Step1 PATCH failed", e1?.response || e1);
+          setLast400(e1?.response?.data || { detail: "Save failed." });
+          toast.error("Could not save Step 1. Please review any errors.");
+          return;
         }
+
         toast.success("Details saved.");
-        if (next) goStep(2);
-        else await loadEdit();
+
+        if (next) {
+          goStep(2);
+        }
       } else {
-        // CREATE: first try Agreement POST directly (maybe project optional)
-        const firstVariants = buildAgreementCreateVariants(base, addr, null);
+        // CREATE
         try {
-          const { data: created } = await tryVariants(
-            `/projects/agreements/`,
-            firstVariants,
-            "post"
-          );
+          const payload = {
+            ...base,
+            project_address_same_as_homeowner: false,
+
+            project_address_line1: addr.line1,
+            project_address_line2: addr.line2,
+            project_address_city: addr.city,
+            project_address_state: addr.state,
+            project_postal_code: addr.postal,
+
+            address_line1: addr.line1,
+            address_line2: addr.line2,
+            address_city: addr.city,
+            address_state: addr.state,
+            address_postal_code: addr.postal,
+          };
+
+          const { data: created } = await api.post("/projects/agreements/", payload);
           const newId = created?.id ?? created?.pk;
           if (!newId) return toast.error("Could not determine new Agreement ID.");
+
           toast.success("Agreement created.");
           navigate(
             `/agreements/${newId}/wizard?step=${next ? 2 : 1}`,
             { replace: true }
           );
-          return;
         } catch (e0) {
           const data = e0?.response?.data;
           setLast400(data || { detail: "Save failed." });
-          const needProject =
-            data &&
-            typeof data === "object" &&
-            (("project" in data && Array.isArray(data.project)) ||
-              JSON.stringify(data).toLowerCase().includes('"project"') ||
-              JSON.stringify(data).toLowerCase().includes("project is required"));
-
-          if (!needProject) throw e0;
-
-          // Create Project now (use /projects/projects/ then fallback /projects/)
-          let projectRecord = null;
-          try {
-            projectRecord = await createProject(base, addr);
-          } catch (eProj) {
-            const msg = eProj?.response?.data
-              ? JSON.stringify(eProj.response.data)
-              : eProj?.message || "Project creation failed.";
-            setLast400({ project_create: msg });
-            toast.error(`Project create failed: ${msg}`);
-            throw e0; // preserve original agreement error context
-          }
-
-          const projectId = projectRecord?.id ?? projectRecord?.pk;
-          if (!projectId) {
-            setLast400({ project_create: "No project id returned." });
-            toast.error("Project create returned no ID.");
-            throw e0;
-          }
-
-          // Retry Agreement with `project`
-          const retryVariants = buildAgreementCreateVariants(base, addr, projectId);
-          const { data: created2 } = await tryVariants(
-            `/projects/agreements/`,
-            retryVariants,
-            "post"
-          );
-          const newId2 = created2?.id ?? created2?.pk;
-          if (!newId2)
-            return toast.error("Could not determine new Agreement ID.");
-          toast.success("Agreement created.");
-          navigate(
-            `/agreements/${newId2}/wizard?step=${next ? 2 : 1}`,
-            { replace: true }
-          );
+          toast.error("Could not create Agreement. Please check fields.");
         }
       }
     } catch (e) {
       console.error(e);
       const data = e?.response?.data;
       setLast400(data || { detail: e?.message || "Save failed" });
-      const msg =
-        (data && typeof data === "object" ? JSON.stringify(data) : null) ||
-        e?.response?.statusText ||
-        e?.message ||
-        "Save failed";
-      toast.error(`Save failed: ${msg}`);
+      toast.error(`Save failed: ${e?.message}`);
     }
   };
 
   /* ── Step 2 ── */
   const onLocalChange = (e) => {
     const { name, value } = e.target;
-    setMLocal((s) => ({
+    setDLocal((s) => ({
       ...s,
       [name]: name === "start" || name === "end" ? toDateOnly(value) : value,
     }));
   };
 
-  const addMilestone = async () => {
-    if (!agreementId) return toast.error("Create and save Agreement first.");
-    const f = mLocal;
-    if (!f.title?.trim()) return toast.error("Enter a title.");
-    if (!f.start || !f.end)
-      return toast.error("Select start and end dates.");
+  const onMLocalChange = (key, value) => {
+    setMLocal((s) => ({ ...s, [key]: value }));
+  };
+
+  const saveMilestone = async (m) => {
     try {
-      await api.post(`/projects/milestones/`, {
-        agreement: Number(agreementId),
-        title: f.title.trim(),
-        description: f.description || "",
-        amount: f.amount ? Number(f.amount) : 0,
-        start_date: f.start,
-        end_date: f.end,
-        completion_date: f.end,
-      });
+      const url = m.id
+        ? `/projects/agreements/${agreementId}/milestones/${m.id}/`
+        : `/projects/milestones/`;
+      const method = m.id ? api.put : api.post;
+      const { data } = await method(url, { ...m, agreement: agreementId });
+
+      if (m.id) {
+        // Update in-place
+        setMilestones((prev) => prev.map((x) => (x.id === m.id ? data : x)));
+      } else {
+        // Append new
+        setMilestones((prev) => [...prev, data]);
+      }
+
+      // Always reset the inline form fields after save
       setMLocal({
         title: "",
         description: "",
@@ -752,21 +807,24 @@ export default function AgreementWizard() {
         start: "",
         end: "",
       });
-      await loadEdit();
-      toast.success("Milestone added.");
+
+      setEditMilestone(null);
+
+      toast.success(m.id ? "Updated" : "Added");
     } catch (e) {
-      toast.error(e?.response?.data?.detail || "Add failed.");
+      toast.error("Failed to save milestone.");
     }
   };
 
-  const removeMilestone = async (mid) => {
-    if (!agreementId) return;
+  const deleteMilestone = async (id) => {
+    if (!id) return;
     try {
-      await api.delete(`/projects/milestones/${mid}/`);
-      await loadEdit();
-      toast.success("Milestone removed.");
-    } catch {
-      toast.error("Delete failed.");
+      await api.delete(`/projects/milestones/${id}/`);
+      setMilestones((s) => s.filter((m) => m.id !== id));
+      toast.success("Deleted milestone.");
+    } catch (e) {
+      console.error("Failed to delete milestone", e?.response || e);
+      toast.error("Failed to delete.");
     }
   };
 
@@ -952,42 +1010,42 @@ export default function AgreementWizard() {
           }}
           saveStep1={saveStep1}
           last400={last400}
+          onLocalChange={onLocalChange}
+          homeownerOptions={homeownerOptions}
+          projectTypeOptions={projectTypeOptions}
+          projectSubtypeOptions={projectSubtypeOptions}
         />
       )}
 
       {step === 2 && (
-        <Step2Milestones
-          agreement={agreement}
-          mLocal={mLocal}
-          onLocalChange={(e) => {
-            const { name, value } = e.target;
-            setMLocal((s) => ({
-              ...s,
-              [name]:
-                name === "start" || name === "end"
-                  ? toDateOnly(value)
-                  : value,
-            }));
-          }}
-          onAdd={addMilestone}
-          milestones={milestones}
-          onDelete={removeMilestone}
-          onEdit={(m) => setEditMilestone(m)}
-          onBack={() =>
-            navigate(
-              agreementId
-                ? `/agreements/${agreementId}/wizard?step=1`
-                : `/agreements/new?step=1`
-            )
-          }
-          onNext={() =>
-            navigate(
-              agreementId
-                ? `/agreements/${agreementId}/wizard?step=3`
-                : `/agreements/new?step=3`
-            )
-          }
-        />
+        <>
+          <Step2Milestones
+            agreementId={agreementId}
+            milestones={milestones}
+            mLocal={mLocal}
+            onLocalChange={onLocalChange}
+            onMLocalChange={onMLocalChange}
+            saveMilestone={saveMilestone}
+            deleteMilestone={deleteMilestone}
+            editMilestone={editMilestone}
+            setEditMilestone={setEditMilestone}
+            updateMilestone={() => {}}
+            onBack={() => navigate(`/agreements/${agreementId}/wizard?step=1`)}
+            onNext={() => navigate(`/agreements/${agreementId}/wizard?step=3`)}
+          />
+
+          {editMilestone && (
+            <MilestoneEditModal
+              open={!!editMilestone}
+              milestone={editMilestone}
+              onClose={() => setEditMilestone(null)}
+              onSaved={async () => {
+                setEditMilestone(null);
+                await loadEdit();
+              }}
+            />
+          )}
+        </>
       )}
 
       {step === 3 && (
@@ -1002,69 +1060,39 @@ export default function AgreementWizard() {
           setCustomWarranty={setCustomWarranty}
           saveWarranty={saveWarranty}
           attachments={attachments}
-          refreshAttachments={agreementId ? loadEdit : undefined}
-          onBack={() =>
-            navigate(
-              agreementId
-                ? `/agreements/${agreementId}/wizard?step=2`
-                : `/agreements/new?step=2`
-            )
-          }
-          onNext={() =>
-            navigate(
-              agreementId
-                ? `/agreements/${agreementId}/wizard?step=4`
-                : `/agreements/new?step=4`
-            )
-          }
+          refreshAttachments={loadEdit}
+          onBack={() => navigate(`/agreements/${agreementId}/wizard?step=2`)}
+          onNext={() => navigate(`/agreements/${agreementId}/wizard?step=4`)}
         />
       )}
 
       {step === 4 && (
         <Step4Finalize
           agreement={agreement}
-          id={agreementId}
+          dLocal={dStep4}
+          isEdit={isEdit}
+          goBack={() => navigate(`/agreements/${agreementId}/wizard?step=3`)}
           previewPdf={previewPdf}
           goPublic={goPublic}
-          milestones={milestones}
-          totals={totals}
-          hasPreviewed={hasPreviewed}
+          signing={signing}
+          typedName={typedName}
+          setTypedName={setTypedName}
           ackReviewed={ackReviewed}
           setAckReviewed={setAckReviewed}
           ackTos={ackTos}
           setAckTos={setAckTos}
           ackEsign={ackEsign}
           setAckEsign={setAckEsign}
-          typedName={typedName}
-          setTypedName={setTypedName}
-          canSign={canSign}
-          signing={signing}
-          signContractor={signContractor}
+          submitSign={signContractor}
+          hasPreviewed={hasPreviewed}
           attachments={attachments}
+          milestones={milestones}
+          totals={totals}
+          customWarranty={customWarranty}
+          useDefaultWarranty={useDefaultWarranty}
           defaultWarrantyText={
             "Standard workmanship warranty: Contractor warrants all labor performed under this Agreement for one (1) year from substantial completion. Materials are covered by the manufacturer’s warranties. This warranty excludes damage caused by misuse, neglect, alteration, improper maintenance, or acts of God."
           }
-          customWarranty={customWarranty}
-          useDefaultWarranty={useDefaultWarranty}
-          goBack={() =>
-            navigate(
-              agreementId
-                ? `/agreements/${agreementId}/wizard?step=3`
-                : `/agreements/new?step=3`
-            )
-          }
-        />
-      )}
-
-      {editMilestone && (
-        <MilestoneEditModal
-          open={!!editMilestone}
-          milestone={editMilestone}
-          onClose={() => setEditMilestone(null)}
-          onSaved={() => {
-            setEditMilestone(null);
-            isEdit ? loadEdit() : loadCreate();
-          }}
         />
       )}
 
@@ -1095,6 +1123,10 @@ function Step1Details({
   onQuickAdd,
   saveStep1,
   last400,
+  onLocalChange,
+  homeownerOptions,
+  projectTypeOptions,
+  projectSubtypeOptions,
 }) {
   const empty = (people?.length || 0) === 0;
 
@@ -1115,32 +1147,28 @@ function Step1Details({
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {/* Homeowner selector */}
         <div className="md:col-span-2">
           <label className="block text-sm font-medium mb-1">
             Homeowner
           </label>
           <select
             className="w-full rounded border px-3 py-2 text-sm"
+            name="homeowner"
             value={String(dLocal.homeowner || "")}
             onFocus={() => {
               if (!peopleLoadedOnce) reloadPeople?.();
             }}
-            onChange={(e) =>
-              setDLocal((s) => ({ ...s, homeowner: e.target.value }))
-            }
+            onChange={onLocalChange}
           >
             <option value="">
               {empty ? "— No homeowners yet —" : "— Select Homeowner —"}
             </option>
-            {(people || []).map((p) => {
-              const val = String(p.id);
-              const lbl = buildLabel(p);
-              return (
-                <option key={`${val}-${lbl}`} value={val}>
-                  {lbl}
-                </option>
-              );
-            })}
+            {(homeownerOptions || []).map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
           </select>
           {empty && (
             <div className="mt-2 text-xs text-gray-600">
@@ -1157,6 +1185,7 @@ function Step1Details({
           )}
         </div>
 
+        {/* Quick Add Homeowner */}
         {showQuickAdd && (
           <div className="md:col-span-2 rounded-md border p-3 bg-indigo-50">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -1203,43 +1232,38 @@ function Step1Details({
           </div>
         )}
 
+        {/* Project title */}
         <div className="md:col-span-2">
           <label className="block text-sm font-medium mb-1">
             Project Title
           </label>
           <input
             className="w-full rounded border px-3 py-2 text-sm"
+            name="project_title"
             value={dLocal.project_title}
-            onChange={(e) =>
-              setDLocal((s) => ({ ...s, project_title: e.target.value }))
-            }
+            onChange={onLocalChange}
             placeholder="e.g., Kitchen Floor and Wall"
           />
         </div>
 
+        {/* Type & subtype */}
         <div>
           <label className="block text-sm font-medium mb-1">Type</label>
           <select
             className="w-full rounded border px-3 py-2 text-sm"
+            name="project_type"
             value={dLocal.project_type || ""}
-            onChange={(e) =>
-              setDLocal((s) => ({
-                ...s,
-                project_type: e.target.value,
-                project_subtype: "",
-              }))
-            }
+            onChange={(e) => {
+              onLocalChange(e);
+              setDLocal((s) => ({ ...s, project_subtype: "" }));
+            }}
           >
             <option value="">— Select Type —</option>
-            {(Array.isArray(PROJECT_TYPES) ? PROJECT_TYPES : []).map((t) => {
-              const val = t?.value ?? t?.id ?? t;
-              const lbl = t?.label ?? t?.name ?? t?.title ?? t;
-              return (
-                <option key={String(val)} value={String(val)}>
-                  {String(lbl)}
-                </option>
-              );
-            })}
+            {(projectTypeOptions || []).map((t) => (
+              <option key={String(t.value)} value={String(t.value)}>
+                {String(t.label)}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -1247,26 +1271,20 @@ function Step1Details({
           <label className="block text-sm font-medium mb-1">Subtype</label>
           <select
             className="w-full rounded border px-3 py-2 text-sm"
+            name="project_subtype"
             value={dLocal.project_subtype || ""}
-            onChange={(e) =>
-              setDLocal((s) => ({ ...s, project_subtype: e.target.value }))
-            }
+            onChange={onLocalChange}
           >
             <option value="">— Select Subtype —</option>
-            {((SUBTYPES_BY_TYPE || {})[dLocal.project_type] || []).map(
-              (st) => {
-                const val = st?.value ?? st?.id ?? st;
-                const lbl = st?.label ?? st?.name ?? st?.title ?? st;
-                return (
-                  <option key={String(val)} value={String(val)}>
-                    {String(lbl)}
-                  </option>
-                );
-              }
-            )}
+            {(projectSubtypeOptions || []).map((st) => (
+              <option key={String(st.value)} value={String(st.value)}>
+                {String(st.label)}
+              </option>
+            ))}
           </select>
         </div>
 
+        {/* Description */}
         <div className="md:col-span-2">
           <label className="block text-sm font-medium mb-1">
             Description
@@ -1274,135 +1292,94 @@ function Step1Details({
           <textarea
             className="w-full rounded border px-3 py-2 text-sm"
             rows={3}
+            name="description"
             value={dLocal.description}
-            onChange={(e) =>
-              setDLocal((s) => ({ ...s, description: e.target.value }))
-            }
+            onChange={onLocalChange}
             placeholder="Brief project scope…"
           />
         </div>
 
-        {/* Address toggle */}
-        <div className="md:col-span-2">
-          <label className="inline-flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={!!dLocal.addressSame}
-              onChange={(e) =>
-                setDLocal((s) => ({
-                  ...s,
-                  addressSame: !!e.target.checked,
-                }))
-              }
-            />
-            <span className="text-sm">Project is homeowner address</span>
-          </label>
-          <p className="text-xs text-gray-500 mt-1">
-            Uncheck to enter an alternate project address.
-          </p>
+        {/* Project Address — ALWAYS VISIBLE & MANDATORY */}
+        <div className="md:col-span-2 mt-4 border-t pt-4">
+          <h3 className="text-sm font-semibold mb-2">Project Address (Required)</h3>
         </div>
 
-        {/* Conditional address fields */}
-        {!dLocal.addressSame && (
-          <>
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium mb-1">
-                Address Line 1
-              </label>
-              <input
-                className="w-full rounded border px-3 py-2 text-sm"
-                value={dLocal.address_line1}
-                onChange={(e) =>
-                  setDLocal((s) => ({
-                    ...s,
-                    address_line1: e.target.value,
-                  }))
-                }
-                placeholder="Street address"
-              />
-            </div>
+        <div className="md:col-span-2">
+          <label className="block text-sm font-medium mb-1">
+            Address Line 1 <span className="text-red-500">*</span>
+          </label>
+          <input
+            className="w-full rounded border px-3 py-2 text-sm"
+            name="address_line1"
+            value={dLocal.address_line1}
+            onChange={onLocalChange}
+            placeholder="Street address (e.g., 5202 Texana Drive)"
+          />
+        </div>
 
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium mb-1">
-                Address Line 2 (optional)
-              </label>
-              <input
-                className="w-full rounded border px-3 py-2 text-sm"
-                value={dLocal.address_line2}
-                onChange={(e) =>
-                  setDLocal((s) => ({
-                    ...s,
-                    address_line2: e.target.value,
-                  }))
-                }
-                placeholder="Apt, suite, etc."
-              />
-            </div>
+        <div className="md:col-span-2">
+          <label className="block text-sm font-medium mb-1">
+            Address Line 2 (optional)
+          </label>
+          <input
+            className="w-full rounded border px-3 py-2 text-sm"
+            name="address_line2"
+            value={dLocal.address_line2}
+            onChange={onLocalChange}
+            placeholder="Apt, suite, etc. (e.g., Apt 838)"
+          />
+        </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                City
-              </label>
-              <input
-                className="w-full rounded border px-3 py-2 text-sm"
-                value={dLocal.address_city}
-                onChange={(e) =>
-                  setDLocal((s) => ({
-                    ...s,
-                    address_city: e.target.value,
-                  }))
-                }
-                placeholder="City"
-              />
-            </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">
+            City <span className="text-red-500">*</span>
+          </label>
+          <input
+            className="w-full rounded border px-3 py-2 text-sm"
+            name="address_city"
+            value={dLocal.address_city}
+            onChange={onLocalChange}
+            placeholder="City (e.g., San Antonio)"
+          />
+        </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                State
-              </label>
-              <input
-                className="w-full rounded border px-3 py-2 text-sm"
-                value={dLocal.address_state}
-                onChange={(e) =>
-                  setDLocal((s) => ({
-                    ...s,
-                    address_state: e.target.value,
-                  }))
-                }
-                placeholder="State"
-              />
-            </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">
+            State <span className="text-red-500">*</span>
+          </label>
+          <input
+            className="w-full rounded border px-3 py-2 text-sm"
+            name="address_state"
+            value={dLocal.address_state}
+            onChange={onLocalChange}
+            placeholder="State (e.g., TX)"
+          />
+        </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                Postal Code
-              </label>
-              <input
-                className="w-full rounded border px-3 py-2 text-sm"
-                value={dLocal.address_postal_code}
-                onChange={(e) =>
-                  setDLocal((s) => ({
-                    ...s,
-                    address_postal_code: e.target.value,
-                  }))
-                }
-                placeholder="ZIP / Postal code"
-              />
-            </div>
-          </>
-        )}
+        <div>
+          <label className="block text-sm font-medium mb-1">
+            ZIP / Postal Code <span className="text-red-500">*</span>
+          </label>
+          <input
+            className="w-full rounded border px-3 py-2 text-sm"
+            name="address_postal_code"
+            value={dLocal.address_postal_code}
+            onChange={onLocalChange}
+            placeholder="ZIP / Postal code (e.g., 78249)"
+          />
+        </div>
       </div>
 
-      <div className="mt-4 flex gap-2">
+      <div className="mt-6 flex gap-2 justify-end">
         <button
           onClick={() => saveStep1(false)}
-          className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
+          className="rounded bg-white border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
         >
-          Save
+          Save Draft
         </button>
         <button
           onClick={() => saveStep1(true)}
-          className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
+          className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
         >
           Save &amp; Next
         </button>
@@ -1413,17 +1390,21 @@ function Step1Details({
 
 /* ───────── Step 2 ───────── */
 function Step2Milestones({
-  agreement,
+  agreementId,
+  milestones,
   mLocal,
   onLocalChange,
-  onAdd,
-  milestones,
-  onDelete,
-  onEdit,
+  onMLocalChange,
+  saveMilestone,
+  deleteMilestone,
+  editMilestone,
+  setEditMilestone,
+  updateMilestone,
   onBack,
   onNext,
 }) {
   const total = milestones.reduce((s, m) => s + Number(m.amount || 0), 0);
+
   const minStart = useMemo(() => {
     const s = milestones
       .map((m) => toDateOnly(m.start_date || m.start))
@@ -1431,6 +1412,7 @@ function Step2Milestones({
       .sort()[0];
     return s || "";
   }, [milestones]);
+
   const maxEnd = useMemo(() => {
     const e = milestones
       .map((m) =>
@@ -1464,14 +1446,14 @@ function Step2Milestones({
           placeholder="Title"
           name="title"
           value={mLocal.title}
-          onChange={onLocalChange}
+          onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
         />
         <input
           type="date"
           className="md:col-span-3 rounded border px-3 py-2 text-sm"
           name="start"
           value={mLocal.start || ""}
-          onChange={onLocalChange}
+          onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
           aria-label="Start date"
         />
         <input
@@ -1479,7 +1461,7 @@ function Step2Milestones({
           className="md:col-span-3 rounded border px-3 py-2 text-sm"
           name="end"
           value={mLocal.end || ""}
-          onChange={onLocalChange}
+          onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
           aria-label="End date"
         />
         <input
@@ -1490,7 +1472,7 @@ function Step2Milestones({
           placeholder="Amount"
           name="amount"
           value={mLocal.amount}
-          onChange={onLocalChange}
+          onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
         />
         <div className="md:col-span-12">
           <textarea
@@ -1499,13 +1481,14 @@ function Step2Milestones({
             placeholder="Description (details, materials, notes)…"
             name="description"
             value={mLocal.description}
-            onChange={onLocalChange}
+            onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
           />
         </div>
       </div>
+
       <div className="mb-6">
         <button
-          onClick={onAdd}
+          onClick={() => saveMilestone(mLocal)}
           className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
         >
           + Add Milestone
@@ -1556,13 +1539,13 @@ function Step2Milestones({
                   <div className="inline-flex gap-2">
                     <button
                       className="rounded border px-2 py-1"
-                      onClick={() => onEdit?.(m)}
+                      onClick={() => setEditMilestone(m)}
                     >
                       Edit
                     </button>
                     <button
                       className="rounded border px-2 py-1"
-                      onClick={() => onDelete?.(m.id)}
+                      onClick={() => deleteMilestone(m.id)}
                     >
                       Delete
                     </button>
@@ -1604,7 +1587,7 @@ function Step2Milestones({
           onClick={onNext}
           className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
         >
-          Next
+          Save &amp; Next
         </button>
       </div>
     </div>
@@ -1719,7 +1702,6 @@ function Step3WarrantyAttachments({
     }
   };
 
-  // Delete with validateStatus so a 404 doesn't trigger interceptor noise
   const quietDelete = (url) =>
     api.delete(url, {
       validateStatus: (s) => (s >= 200 && s < 300) || s === 404,
@@ -1926,7 +1908,7 @@ function Step3WarrantyAttachments({
                       null;
                     return (
                       <tr
-                        key={a.id || name}
+                        key={a.id || a.name || a.url}
                         className="border-b last:border-b-0"
                       >
                         <td className="py-2 pr-3">

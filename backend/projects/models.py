@@ -1,4 +1,5 @@
 # backend/projects/models.py
+
 from django.conf import settings
 from django.db import models, transaction
 from django.utils import timezone
@@ -22,6 +23,7 @@ class ProjectStatus(models.TextChoices):
     COMPLETED = 'completed', 'Completed'
     CANCELLED = 'cancelled', 'Cancelled'
 
+
 class AgreementProjectType(models.TextChoices):
     REMODEL = 'Remodel', 'Remodel'
     REPAIR = 'Repair', 'Repair'
@@ -32,6 +34,7 @@ class AgreementProjectType(models.TextChoices):
     CUSTOM = 'Custom', 'Custom'
     DIY_HELP = 'DIY Help', 'DIY Help'
 
+
 class InvoiceStatus(models.TextChoices):
     INCOMPLETE = 'incomplete', 'Incomplete'
     PENDING = 'pending', 'Pending Approval'
@@ -39,16 +42,19 @@ class InvoiceStatus(models.TextChoices):
     DISPUTED = 'disputed', 'Disputed'
     PAID = 'paid', 'Paid'
 
+
 class ExpenseStatus(models.TextChoices):
     PENDING = 'pending', 'Pending Approval'
     APPROVED = 'approved', 'Approved'
     DISPUTED = 'disputed', 'Disputed'
     PAID = 'paid', 'Paid'
 
+
 class HomeownerStatus(models.TextChoices):
     ACTIVE = 'active', 'Active'
     PROSPECT = 'prospect', 'Prospect'
     ARCHIVED = 'archived', 'Archived'
+
 
 # --- Define Skill before Contractor ---
 class Skill(models.Model):
@@ -60,6 +66,7 @@ class Skill(models.Model):
 
     def __str__(self):
         return self.name
+
 
 class Contractor(models.Model):
     user = models.OneToOneField(
@@ -125,6 +132,7 @@ class Contractor(models.Model):
     def stripe_action_required(self) -> bool:
         return int(self.requirements_due_count or 0) > 0
 
+
 class Homeowner(models.Model):
     created_by = models.ForeignKey(
         Contractor, on_delete=models.CASCADE, related_name='homeowners', null=True
@@ -149,6 +157,7 @@ class Homeowner(models.Model):
 
     def __str__(self):
         return self.full_name
+
 
 class Project(models.Model):
     number = models.CharField(max_length=30, unique=True, editable=False, db_index=True)
@@ -191,6 +200,7 @@ class Project(models.Model):
         homeowner_name = getattr(self.homeowner, 'full_name', 'N/A')
         return f"[{self.number}] {self.title} ({homeowner_name})"
 
+
 class Agreement(models.Model):
     project = models.OneToOneField(Project, on_delete=models.CASCADE, related_name='agreement')
     contractor = models.ForeignKey(Contractor, on_delete=models.SET_NULL, null=True, blank=True)
@@ -208,6 +218,39 @@ class Agreement(models.Model):
     # Timeline
     start = models.DateField(null=True, blank=True, db_index=True)
     end = models.DateField(null=True, blank=True, db_index=True)
+
+    # 🔹 EXPLICIT PROJECT ADDRESS FIELDS (NEW)
+    # These are the fields your Step 1 form, serializer, and Step 4 use:
+    project_address_line1 = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Project street address (e.g., 5202 Texana Drive).",
+    )
+    project_address_line2 = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        help_text="Project address line 2 (e.g., Apt/Suite).",
+    )
+    project_address_city = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Project city.",
+    )
+    project_address_state = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text="Project state / region.",
+    )
+    project_postal_code = models.CharField(
+        max_length=20,
+        blank=True,
+        null=True,
+        help_text="Project ZIP / postal code.",
+    )
 
     status = models.CharField(
         max_length=20, choices=ProjectStatus.choices,
@@ -276,14 +319,17 @@ class Agreement(models.Model):
         return self.signed_by_contractor and self.signed_by_homeowner
 
     def save(self, *args, **kwargs):
+        # Auto-link contractor from Project if not set
         if not self.contractor and self.project and self.project.contractor_id:
             self.contractor = self.project.contractor
 
+        # Simple status transitions
         if self.escrow_funded:
             self.status = ProjectStatus.FUNDED
         elif self.is_fully_signed and self.status == ProjectStatus.DRAFT:
             self.status = ProjectStatus.SIGNED
 
+        # Normalize warranty_type
         if self.warranty_type:
             self.warranty_type = str(self.warranty_type).strip().lower()
             if self.warranty_type not in ("default", "custom"):
@@ -291,11 +337,13 @@ class Agreement(models.Model):
         else:
             self.warranty_type = "default"
 
+        # Ensure warranty_text_snapshot never blank
         snap = (self.warranty_text_snapshot or "").strip()
         if not snap:
             self.warranty_text_snapshot = DEFAULT_WARRANTY_TEXT
 
         super().save(*args, **kwargs)
+
 
 class Milestone(models.Model):
     agreement = models.ForeignKey(Agreement, on_delete=models.CASCADE, related_name='milestones')
@@ -320,6 +368,7 @@ class Milestone(models.Model):
     def is_late(self):
         return self.completion_date and not self.completed and timezone.now().date() > self.completion_date
 
+
 class MilestoneFile(models.Model):
     milestone = models.ForeignKey(Milestone, on_delete=models.CASCADE, related_name='files')
     uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
@@ -328,6 +377,7 @@ class MilestoneFile(models.Model):
 
     def __str__(self):
         return f"File {self.id} for milestone {self.milestone.title}"
+
 
 class MilestoneComment(models.Model):
     milestone = models.ForeignKey(Milestone, on_delete=models.CASCADE, related_name='comments')
@@ -343,6 +393,7 @@ class MilestoneComment(models.Model):
         if self.author:
             author_name = self.author.get_full_name()
         return f"Comment by {author_name} on {self.created_at.strftime('%Y-%m-%d')}"
+
 
 class Invoice(models.Model):
     agreement = models.ForeignKey(Agreement, on_delete=models.CASCADE, related_name='invoices')
@@ -389,6 +440,7 @@ class Invoice(models.Model):
     def __str__(self):
         return f"Invoice {self.invoice_number} (${self.amount})"
 
+
 class Expense(models.Model):
     agreement = models.ForeignKey(Agreement, on_delete=models.CASCADE, related_name='misc_expenses')
     description = models.CharField(max_length=255)
@@ -408,6 +460,7 @@ class Expense(models.Model):
     def __str__(self):
         return f"{self.description} – ${self.amount}"
 
+
 class AgreementAmendment(models.Model):
     parent = models.ForeignKey("Agreement", on_delete=models.CASCADE, related_name="amendments")
     child = models.OneToOneField("Agreement", on_delete=models.CASCADE, related_name="as_amendment")
@@ -420,6 +473,71 @@ class AgreementAmendment(models.Model):
 
     def __str__(self):
         return f"Amendment #{self.amendment_number} to Agreement #{self.parent_id} (child #{self.child_id})"
+
+
+class ContractorSubAccount(models.Model):
+    """
+    Employee-style sub-account that belongs to a primary Contractor.
+
+    Each sub-account is backed by a regular Django auth user but is linked to a
+    parent Contractor. The Contractor can have many sub-accounts; each sub-account
+    has exactly one user.
+    """
+
+    ROLE_EMPLOYEE_READONLY = "employee_readonly"
+    ROLE_EMPLOYEE_MILESTONES = "employee_milestones"
+
+    ROLE_CHOICES = (
+        (ROLE_EMPLOYEE_READONLY, "Read-only employee"),
+        (ROLE_EMPLOYEE_MILESTONES, "Milestones employee"),
+    )
+
+    parent_contractor = models.ForeignKey(
+        Contractor,
+        related_name="subaccounts",
+        on_delete=models.CASCADE,
+        help_text="The primary Contractor this employee belongs to.",
+    )
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        related_name="contractor_subaccount",
+        on_delete=models.CASCADE,
+        help_text="The Django auth user for this employee.",
+    )
+
+    display_name = models.CharField(
+        max_length=255,
+        help_text="Name to show on the Employee Dashboard (e.g., 'Alex').",
+    )
+
+    role = models.CharField(
+        max_length=32,
+        choices=ROLE_CHOICES,
+        default=ROLE_EMPLOYEE_READONLY,
+        help_text="Controls whether employee can only view or also mark milestones complete.",
+    )
+
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Soft on/off switch for this sub-account.",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    notes = models.TextField(
+        blank=True,
+        help_text="Optional internal notes about this employee.",
+    )
+
+    class Meta:
+        verbose_name = "Contractor Sub-Account"
+        verbose_name_plural = "Contractor Sub-Accounts"
+        ordering = ("-created_at",)
+
+    def __str__(self) -> str:
+        return f"{self.display_name} ({self.get_role_display()}) for {self.parent_contractor}"
+
 
 # ensure AgreementAttachment is registered
 from .models_attachments import AgreementAttachment  # noqa: E402,F401

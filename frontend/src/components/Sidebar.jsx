@@ -1,6 +1,5 @@
-// ~/backend/frontend/src/components/Sidebar.jsx
-// COMPLETE FILE — Sidebar with Stripe status badge (r3)
-// Fix: use "/payments/onboarding/status/" (no extra "/api")
+// src/components/Sidebar.jsx
+// COMPLETE FILE — Sidebar with Stripe status badge + Team nav item
 
 import React, { useCallback, useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
@@ -12,14 +11,14 @@ import api from "../api";
  * - Includes "My Profile"
  * - Adds a footer Logout button (clears JWT and returns to landing)
  * - Shows Stripe onboarding status badge (Connected / Pending)
+ * - Now includes "Team" link for contractor employee management
  */
 export default function Sidebar() {
   const navigate = useNavigate();
 
-  // --- Stripe status state ---
   const [stripeStatus, setStripeStatus] = useState({
     connected: false,
-    status: "", // e.g., "completed", "in_progress", "disabled"
+    status: "",
     loading: true,
     error: "",
   });
@@ -29,7 +28,6 @@ export default function Sidebar() {
       localStorage.removeItem("access");
       localStorage.removeItem("refresh");
     } catch {}
-    // Clear any global auth header if you set one
     try {
       if (api?.defaults?.headers?.common) {
         delete api.defaults.headers.common.Authorization;
@@ -38,15 +36,15 @@ export default function Sidebar() {
     navigate("/", { replace: true });
   }, [navigate]);
 
-  // Fetch Stripe onboarding status on mount
   useEffect(() => {
     let isMounted = true;
     (async () => {
       try {
-        // NOTE: baseURL is "/api", so do NOT prefix with "/api" here.
         const { data } = await api.get("/payments/onboarding/status/");
         const status = String(data?.onboarding_status || "");
-        const connected = Boolean(data?.linked || data?.connected || status === "completed");
+        const connected = Boolean(
+          data?.linked || data?.connected || status === "completed"
+        );
         if (isMounted) {
           setStripeStatus({
             connected,
@@ -58,7 +56,11 @@ export default function Sidebar() {
       } catch (err) {
         console.error(err);
         if (isMounted) {
-          setStripeStatus((s) => ({ ...s, loading: false, error: "Failed to load Stripe status" }));
+          setStripeStatus((s) => ({
+            ...s,
+            loading: false,
+            error: "Failed to load Stripe status",
+          }));
         }
       }
     })();
@@ -67,7 +69,6 @@ export default function Sidebar() {
     };
   }, []);
 
-  // Small pill badge for Stripe state
   const StripeBadge = () => {
     if (stripeStatus.loading) {
       return (
@@ -84,7 +85,8 @@ export default function Sidebar() {
       );
     }
     const label = stripeStatus.status
-      ? stripeStatus.status.charAt(0).toUpperCase() + stripeStatus.status.slice(1)
+      ? stripeStatus.status.charAt(0).toUpperCase() +
+        stripeStatus.status.slice(1)
       : "Pending";
     return (
       <span className="ml-2 inline-flex items-center rounded-full px-2 py-[1px] text-[10px] bg-amber-400 text-black">
@@ -93,7 +95,6 @@ export default function Sidebar() {
     );
   };
 
-  // Nav item — accepts either string or ReactNode for label.
   const Item = ({ to, label, emoji, title }) => (
     <NavLink
       to={to}
@@ -101,13 +102,17 @@ export default function Sidebar() {
         [
           "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition",
           "text-slate-700 hover:bg-white hover:text-slate-900",
-          isActive ? "bg-white text-slate-900 shadow-sm ring-1 ring-black/5" : "bg-white/60",
+          isActive
+            ? "bg-white text-slate-900 shadow-sm ring-1 ring-black/5"
+            : "bg-white/60",
         ].join(" ")
       }
       end={to === "/dashboard"}
       title={title || (typeof label === "string" ? label : undefined)}
     >
-      <span className="text-base" aria-hidden="true">{emoji}</span>
+      <span className="text-base" aria-hidden="true">
+        {emoji}
+      </span>
       <span className="flex items-center">{label}</span>
     </NavLink>
   );
@@ -117,11 +122,10 @@ export default function Sidebar() {
       className="hidden md:flex md:flex-col md:w-60 lg:w-64 border-r border-black/5 bg-white/50 backdrop-blur-md"
       style={{ minHeight: "100vh" }}
     >
-      {/* Brand */}
       <div className="px-4 pt-4 pb-3 border-b border-black/5">
         <div className="flex items-center gap-2">
           <img
-            src={new URL('../assets/myhomebro_logo.png', import.meta.url).href}
+            src={new URL("../assets/myhomebro_logo.png", import.meta.url).href}
             onError={(e) => {
               e.currentTarget.style.display = "none";
             }}
@@ -129,13 +133,14 @@ export default function Sidebar() {
             className="h-8 w-8 rounded-md object-contain"
           />
           <div>
-            <div className="text-base font-extrabold tracking-tight text-slate-900">MyHomeBro</div>
+            <div className="text-base font-extrabold tracking-tight text-slate-900">
+              MyHomeBro
+            </div>
             <div className="text-xs text-slate-500">Contractor Console</div>
           </div>
         </div>
       </div>
 
-      {/* Navigation */}
       <nav className="flex-1 overflow-auto px-3 py-4 space-y-6">
         <div>
           <div className="px-2 text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
@@ -145,12 +150,17 @@ export default function Sidebar() {
             <Item to="/dashboard" label="Dashboard" emoji="🏠" />
             <Item to="/agreements" label="Agreements" emoji="📄" />
             <Item to="/milestones" label="Milestones" emoji="🧩" />
+            <Item to="/team" label="Team" emoji="🧑‍🤝‍🧑" />
             <Item to="/invoices" label="Invoices" emoji="💳" />
             <Item to="/customers" label="Customers" emoji="👥" />
             <Item to="/calendar" label="Calendar" emoji="🗓️" />
             <Item to="/expenses" label="Expenses" emoji="📊" />
             <Item to="/disputes" label="Disputes" emoji="⚖️" />
-            <Item to="/business-analysis" label="Business Dashboard" emoji="📈" />
+            <Item
+              to="/business-analysis"
+              label="Business Dashboard"
+              emoji="📈"
+            />
           </div>
         </div>
 
@@ -175,7 +185,6 @@ export default function Sidebar() {
         </div>
       </nav>
 
-      {/* Footer */}
       <div className="px-4 py-3 border-t border-black/5">
         <button
           type="button"
