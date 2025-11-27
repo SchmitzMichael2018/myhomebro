@@ -1,7 +1,9 @@
 // frontend/src/components/Step4Finalize.jsx
-// v2025-11-24e — Force Project Address from Agreement.project_address_*
-//              - Uses explicit Agreement fields only.
-//              - Debug block shows exactly what React sees for addresses.
+// v2025-11-26 — Project Address from Agreement.project_address_*
+// - Uses explicit Agreement fields only.
+// - Debug block shows exactly what React sees for addresses.
+// - Wider Homeowner Email field on summary row.
+// - Contractor UNSIGN button when homeowner has not signed.
 
 import React, { useEffect, useState } from "react";
 import api from "../api";
@@ -24,9 +26,9 @@ function formatPhone(phoneStr) {
   return phoneStr;
 }
 
-function SummaryCard({ label, value }) {
+function SummaryCard({ label, value, className = "" }) {
   return (
-    <div className="rounded border bg-gray-50 px-3 py-2 h-full">
+    <div className={`rounded border bg-gray-50 px-3 py-2 h-full ${className}`}>
       <div className="text-xs text-gray-500">{label}</div>
       <div className="text-sm font-medium whitespace-pre-wrap text-gray-900 break-words">
         {value}
@@ -160,7 +162,7 @@ export default function Step4Finalize({
   setTypedName,
   canSign,
   signing,
-  signContractor,
+  signContractor, // (currently unused but kept for compatibility)
   submitSign,
   attachments,
   defaultWarrantyText,
@@ -168,6 +170,7 @@ export default function Step4Finalize({
   useDefaultWarranty,
   goBack,
   isEdit,
+  unsignContractor,
 }) {
   const [loadingHomeowner, setLoadingHomeowner] = useState(false);
   const [homeownerObj, setHomeownerObj] = useState(null);
@@ -241,8 +244,6 @@ export default function Step4Finalize({
     0;
 
   const status = agreement?.status || "DRAFT";
-  const isSigned =
-    agreement?.signed_by_homeowner || agreement?.is_fully_signed;
   const displayMilestones = milestones || agreement?.milestones || [];
 
   return (
@@ -252,6 +253,8 @@ export default function Step4Finalize({
         <h3 className="text-lg font-semibold text-gray-900 mb-2">
           Agreement & Homeowner Details
         </h3>
+
+        {/* Project summary row */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <SummaryCard
             label="Project Title"
@@ -274,13 +277,23 @@ export default function Step4Finalize({
             }
           />
           <SummaryCard label="Status" value={status} />
+        </div>
 
-          <SummaryCard label="Homeowner Name" value={homeownerName} />
+        {/* Homeowner contact row — give Email extra width */}
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3">
+          <SummaryCard
+            label="Homeowner Name"
+            value={homeownerName}
+          />
           <SummaryCard
             label="Homeowner Phone"
             value={formatPhone(homeownerPhone)}
           />
-          <SummaryCard label="Homeowner Email" value={homeownerEmail} />
+          <SummaryCard
+            label="Homeowner Email"
+            value={homeownerEmail}
+            className="md:col-span-3"
+          />
         </div>
       </div>
 
@@ -507,13 +520,27 @@ export default function Step4Finalize({
               <div className="text-lg font-semibold text-gray-900 mb-2">
                 Contractor Signature
               </div>
+
               {agreement?.signed_by_contractor ? (
-                <div className="text-sm text-green-700 font-medium p-2 bg-green-50 rounded">
-                  ✓ Already signed by contractor{" "}
-                  {agreement?.contractor_signature_name
-                    ? `(${agreement.contractor_signature_name})`
-                    : ""}
-                  .
+                <div className="space-y-3">
+                  <div className="text-sm text-green-700 font-medium p-2 bg-green-50 rounded">
+                    ✓ Already signed by contractor{" "}
+                    {agreement?.contractor_signature_name
+                      ? `(${agreement.contractor_signature_name})`
+                      : ""}
+                    .
+                  </div>
+
+                  {/* UNSIGN button — only show if homeowner has NOT signed */}
+                  {!agreement?.signed_by_homeowner && (
+                    <button
+                      type="button"
+                      onClick={unsignContractor}
+                      className="w-full inline-flex justify-center rounded-md border border-red-300 shadow-sm px-4 py-2 text-sm font-medium text-red-700 bg-white hover:bg-red-50"
+                    >
+                      Unsign (Remove Contractor Signature)
+                    </button>
+                  )}
                 </div>
               ) : (
                 <>
@@ -543,7 +570,7 @@ export default function Step4Finalize({
                         className="mt-1 h-4 w-4 text-indigo-600 border-gray-300 rounded"
                       />
                       <span className="text-xs text-gray-700">
-                        I agree to the&nbsp;
+                        I agree to the{" "}
                         <a
                           className="text-blue-600 hover:underline"
                           href="/static/legal/terms_of_service.txt"
@@ -551,8 +578,8 @@ export default function Step4Finalize({
                           rel="noreferrer"
                         >
                           Terms of Service
-                        </a>
-                        &nbsp;and&nbsp;
+                        </a>{" "}
+                        and{" "}
                         <a
                           className="text-blue-600 hover:underline"
                           href="/static/legal/privacy_policy.txt"

@@ -62,14 +62,57 @@ def build_legal_notices(project_state: Optional[str] = None) -> List[Clause]:
         "Homeowner. Contractor retains exclusive control over means, methods, personnel, and safety."
     ))
 
-    # 4) Change Orders
+    # 4) Workforce, Sub-Accounts & Delegation of Work (NEW)
+    clauses.append((
+        "Workforce, Sub-Accounts & Delegation of Work",
+        "Contractor may assign or delegate portions of the work to its employees, crew members, subcontractors, or other "
+        "personnel, including individuals who access the MyHomeBro platform through Contractor-managed sub-accounts. Any "
+        "such personnel act solely on behalf of Contractor, and their acts and omissions are deemed the acts and omissions "
+        "of Contractor for purposes of this Agreement.\n\n"
+        "Nothing in this Agreement creates an employment, agency, or joint-venture relationship between (a) Homeowner and "
+        "any employee, crew member, or subcontractor of Contractor, or (b) MyHomeBro and any such person. Homeowner and "
+        "MyHomeBro are not employers of Contractor’s workforce, do not hire, fire, schedule, or supervise such personnel, "
+        "and do not provide wages, benefits, workers’ compensation coverage, or tax withholdings for them.\n\n"
+        "Contractor is solely responsible for selecting, training, and supervising its workforce; ensuring that all "
+        "personnel performing work are properly licensed or qualified as required by law; complying with applicable labor, "
+        "employment, wage-and-hour, tax, safety, and workers’ compensation laws; and ensuring that all work is performed "
+        "in a safe and workmanlike manner consistent with applicable codes and industry standards. Any claims, disputes, "
+        "or obligations arising out of Contractor’s relationship with its personnel (including wages, benefits, safety, "
+        "discipline, termination, and similar issues) are solely between Contractor and those personnel.\n\n"
+        "As between the parties, jobsite safety in connection with the work performed by Contractor’s workforce is "
+        "primarily Contractor’s responsibility, including safety of its employees, crew members, and subcontractors. "
+        "Contractor is responsible for complying with workplace-safety laws and regulations (for example, OSHA-type "
+        "requirements), using appropriate safety practices and equipment, and maintaining commercially reasonable "
+        "insurance for its operations. Homeowner is responsible for providing reasonably safe access to the property, "
+        "disclosing known hazards, and maintaining appropriate property and liability insurance for conditions or hazards "
+        "under Homeowner’s control. To the fullest extent permitted by law, any bodily injury, illness, or accident "
+        "involving Contractor’s personnel that arises out of or relates to performance of the work is the responsibility "
+        "of Contractor, except to the extent caused by Homeowner’s negligence or intentional misconduct.\n\n"
+        "MyHomeBro is a technology platform that facilitates introductions, project documentation, and escrow-style "
+        "payments between independent Contractors and Homeowners. MyHomeBro does not perform or supervise construction or "
+        "repair work; does not control or direct the means, methods, personnel, or safety practices used by Contractor; "
+        "does not provide or verify Contractor’s or its personnel’s training, licensing, background checks, or insurance; "
+        "and does not visit, inspect, or control the jobsite. Accordingly, MyHomeBro is not responsible for jobsite "
+        "conditions, personal injuries, property damage, or code violations arising out of or relating to the work, and "
+        "has no duty to warn about or correct any hazard at the jobsite. To the fullest extent permitted by law, Contractor "
+        "and Homeowner agree that any claims related to the work itself or the conduct of Contractor’s workforce will be "
+        "asserted against the other party to this Agreement (and not against MyHomeBro), except to the limited extent such "
+        "claims are expressly permitted under the platform’s Terms of Service.\n\n"
+        "If Homeowner later chooses to directly hire or engage any of Contractor’s personnel outside of this Agreement or "
+        "outside of the MyHomeBro platform, such engagement is a separate relationship not governed by this Agreement or "
+        "the platform. Homeowner is solely responsible for understanding and complying with any employer- or hirer-related "
+        "obligations that may arise under applicable law, including obligations related to wages, taxes, insurance, and "
+        "safety, and MyHomeBro has no responsibility or liability arising from any such separate engagement."
+    ))
+
+    # 5) Change Orders
     clauses.append((
         "Changes",
         "Any changes to scope, materials, or schedule must be documented in a signed Change Order stating the impact on "
         "price and time. No verbal change is binding."
     ))
 
-    # 5) Permits, Codes, Site Access (with Homeowner verification)
+    # 6) Permits, Codes, Site Access (with Homeowner verification)
     clauses.append((
         "Permits & Compliance",
         "Unless otherwise stated in writing, Contractor is responsible for performing work in accordance with applicable "
@@ -78,21 +121,21 @@ def build_legal_notices(project_state: Optional[str] = None) -> List[Clause]:
         "— in writing — who is responsible for securing specific permits and inspections for this project."
     ))
 
-    # 6) Unforeseen Conditions
+    # 7) Unforeseen Conditions
     clauses.append((
         "Concealed/Unforeseen Conditions",
         "If concealed, hazardous, or unexpected site conditions are discovered, Contractor will notify Homeowner. Price "
         "and schedule will be equitably adjusted via Change Order."
     ))
 
-    # 7) Materials, Title, Risk
+    # 8) Materials, Title, Risk
     clauses.append((
         "Title & Risk",
         "Title to materials passes to Homeowner upon payment for the applicable milestone. Contractor bears risk of loss "
         "for Contractor-owned materials until installation or payment, whichever is later."
     ))
 
-    # 8) Payment & Escrow (72-hour auto-release)
+    # 9) Payment & Escrow (72-hour auto-release)
     clauses.append((
         "Payment & Escrow",
         "Payments are funded to escrow and released per approved milestones. After a milestone is submitted for approval, "
@@ -145,21 +188,21 @@ def build_legal_notices(project_state: Optional[str] = None) -> List[Clause]:
         "opportunity to inspect and cure."
     ))
 
-    # 16) Photo Authorization (optional)
+    # 15) Photo Authorization (optional)
     clauses.append((
         "Photo Authorization (Optional)",
         "Homeowner grants Contractor permission to photograph completed work for portfolio or marketing, excluding any "
         "personally identifiable information. This authorization is optional and may be revoked by written notice prior to publication."
     ))
 
-    # 17) Confidentiality
+    # 16) Confidentiality
     clauses.append((
         "Confidentiality",
         "Each party will keep the other’s non-public information confidential and use it only to perform this Agreement, "
         "except where disclosure is required by law."
     ))
 
-    # 18) Entire Agreement
+    # 17) Entire Agreement
     clauses.append((
         "Entire Agreement",
         "This document, its signed Change Orders, and the incorporated platform terms constitute the entire agreement. "
@@ -167,14 +210,14 @@ def build_legal_notices(project_state: Optional[str] = None) -> List[Clause]:
         "then the platform terms."
     ))
 
-    # 19) Notices
+    # 18) Notices
     clauses.append((
         "Notices",
         "Legal notices shall be sent via the platform message center and to the email addresses on file for each party and "
         "are deemed received when sent."
     ))
 
-    # 20) Cooling-Off / Cancellation (state-aware)
+    # 19) Cooling-Off / Cancellation (state-aware)
     clauses.append(_cooling_off_clause(project_state))
 
     return clauses

@@ -20,6 +20,7 @@ class ContractorSerializer(serializers.ModelSerializer):
             "license_expiration",
             "logo",
             "license_file",
+            "insurance_file",  # 🔹 new: insurance document
 
             # Stripe / Connect
             "stripe_account_id",

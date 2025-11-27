@@ -679,27 +679,77 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     c_img = _signature_path(getattr(ag, "contractor_signature", None))
     h_img = _signature_path(getattr(ag, "homeowner_signature", None))
 
-    def _sig_block(name: str, img_path: Optional[str], signed_at, label: str) -> list:
+    # Helper to format datetime nicely
+    def _fmt_dt(val) -> str:
+        if not val:
+            return ""
+        try:
+            from django.utils.timezone import localtime
+
+            return localtime(val).strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            # Fallback to plain string if something odd comes through
+            return str(val)
+
+    def _sig_block(
+        name: str,
+        img_path: Optional[str],
+        signed_at,
+        ip,
+        label: str,
+    ) -> list:
+        """
+        Build a signature block with optional image + metadata.
+        """
         block: list = []
         simg = _scaled_image(img_path, max_w=200, max_h=80)
         if simg:
             block += [simg, RLSpacer(1, 3)]
+
+        signed_str = _fmt_dt(signed_at)
+
         block += [
             Paragraph(f"<b>{label}:</b> {_s(name) or '—'}", s_body),
-            Paragraph(f"<b>Signed:</b> {_s(signed_at) or '—'}", s_small),
+            Paragraph(f"<b>Signed:</b> {signed_str or '—'}", s_small),
+            Paragraph(f"<b>IP:</b> {_s(ip) or '—'}", s_small),
         ]
         return block
 
+    # Names (typed signatures)
     c_name_sig = _s(getattr(ag, "contractor_signature_name", None))
     h_name_sig = _s(getattr(ag, "homeowner_signature_name", None))
-    c_at = _s(getattr(ag, "contractor_signed_at", None))
-    h_at = _s(getattr(ag, "homeowner_signed_at", None))
+
+    # Timestamps — support both old and new field names
+    c_at_raw = getattr(ag, "signed_at_contractor", None) or getattr(
+        ag, "contractor_signed_at", None
+    )
+    h_at_raw = getattr(ag, "signed_at_homeowner", None) or getattr(
+        ag, "homeowner_signed_at", None
+    )
+
+    # IPs
+    c_ip = getattr(ag, "contractor_signed_ip", None)
+    h_ip = getattr(ag, "homeowner_signed_ip", None)
 
     sig_tbl = RLTable(
-        [[_sig_block(c_name_sig, c_img, c_at, "Contractor"),
-          _sig_block(h_name_sig, h_img, h_at, "Homeowner")]],
-        colWidths=[3.5 * inch, 3.5 * inch]
+        [[
+            _sig_block(c_name_sig, c_img, c_at_raw, c_ip, "Contractor"),
+            _sig_block(h_name_sig, h_img, h_at_raw, h_ip, "Homeowner"),
+        ]],
+        colWidths=[3.5 * inch, 3.5 * inch],
     )
+    sig_tbl.setStyle(RLTableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    story.append(sig_tbl)
+
+    if is_preview:
+        story.append(Spacer(1, 6))
+        story.append(
+            Paragraph(
+                "This is a preview. Final version will include any updated signatures.",
+                s_small,
+            )
+        )
+
     sig_tbl.setStyle(RLTableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
     story.append(sig_tbl)
 

@@ -1,9 +1,10 @@
 // frontend/src/components/AgreementWizard.jsx
-// v2025-11-24i+k — COMPLETE UNTRUNCATED FILE.
+// v2025-11-25 — full file
 // - Project Address is MANDATORY (Step 1).
-// - Fix: saveStep1 sends full address payload (both 'project_address_*' and 'address_*').
-// - Fix: Step 2 inline form is add-only; Edit opens MilestoneEditModal.
-// - Fix: Milestone delete uses /projects/milestones/:id/ flat endpoint.
+// - Step 2 inline form is add-only; Edit opens MilestoneEditModal.
+// - Step 2 delete uses /projects/milestones/:id/ flat endpoint.
+// - Step 4: Preview PDF calls /preview_link/ + /mark_previewed/ and updates hasPreviewed.
+// - Step 4: canSign uses hasPreviewed + checkboxes + typed name and is passed into Step4Finalize.
 
 import React, {
   useCallback,
@@ -240,6 +241,10 @@ export default function AgreementWizard() {
       const { data: ag } = await api.get(`/projects/agreements/${agreementId}/`);
       setAgreement(ag);
 
+      // Initialize hasPreviewed from backend flags, so reopening an agreement
+      // that was already previewed/signed doesn't re-block signing.
+      setHasPreviewed(!!ag.reviewed || !!ag.reviewed_at);
+
       const agHomeownerId =
         typeof ag.homeowner === "object" && ag.homeowner
           ? String(ag.homeowner.id ?? "")
@@ -346,6 +351,7 @@ export default function AgreementWizard() {
       setAgreement(null);
       setMilestones([]);
       setAttachments([]);
+      setHasPreviewed(false);
 
       const loaded = await loadPeople();
       setPeopleLoadedOnce(true);
@@ -857,13 +863,19 @@ export default function AgreementWizard() {
       );
       const url = data?.url;
       if (!url) return toast.error("Preview link unavailable.");
+
+      // Open preview PDF in a new tab
       window.open(url, "_blank", "noopener");
-      setHasPreviewed(true);
+
+      // Mark previewed in backend (best-effort) and flip UI flag
       try {
         await api.post(
           `/projects/agreements/${agreementId}/mark_previewed/`
         );
-      } catch {}
+      } catch (e) {
+        console.warn("mark_previewed failed (non-fatal):", e?.response || e);
+      }
+      setHasPreviewed(true);
     } catch {
       toast.error("Could not open preview.");
     }
@@ -904,6 +916,30 @@ export default function AgreementWizard() {
       );
     } finally {
       setSigning(false);
+    }
+  };
+  const unsignContractor = async () => {
+    if (!agreementId) return toast.error("Agreement ID missing.");
+
+    try {
+      await api.post(`/projects/agreements/${agreementId}/contractor_unsign/`);
+      toast.success("Contractor signature removed.");
+
+      // Reset Step 4 signing state
+      setHasPreviewed(false);   // must re-preview
+      setAckReviewed(false);
+      setAckTos(false);
+      setAckEsign(false);
+      setTypedName("");
+
+      // Reload the updated agreement from backend
+      await loadEdit();
+    } catch (e) {
+      console.error("Unsign error:", e?.response || e);
+      toast.error(
+        e?.response?.data?.detail ||
+        "Could not unsign. Homeowner may have already signed."
+      );
     }
   };
 
@@ -1084,7 +1120,9 @@ export default function AgreementWizard() {
           ackEsign={ackEsign}
           setAckEsign={setAckEsign}
           submitSign={signContractor}
+          unsignContractor={unsignContractor}
           hasPreviewed={hasPreviewed}
+          canSign={canSign}
           attachments={attachments}
           milestones={milestones}
           totals={totals}

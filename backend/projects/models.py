@@ -87,6 +87,8 @@ class Contractor(models.Model):
     license_expiration = models.DateField(null=True, blank=True)
     logo = models.ImageField(upload_to='logos/', null=True, blank=True)
     license_file = models.FileField(upload_to='licenses/', null=True, blank=True)
+    # 🔹 NEW: Insurance document upload
+    insurance_file = models.FileField(upload_to='insurance/', null=True, blank=True)
 
     # --- Stripe / Connect ---
     stripe_account_id = models.CharField(max_length=255, blank=True, db_index=True)

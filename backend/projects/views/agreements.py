@@ -5,7 +5,6 @@ import io
 import os
 import sys
 import traceback
-from datetime import timedelta
 from typing import Set, Optional
 
 from django.conf import settings
@@ -163,8 +162,11 @@ def _is_fully_signed(ag: Agreement) -> bool:
 
 
 def _fully_signed_at(ag: Agreement):
-    ch = getattr(ag, "contractor_signed_at", None)
-    hh = getattr(ag, "homeowner_signed_at", None)
+    """
+    Use model's signed_at_contractor / signed_at_homeowner fields.
+    """
+    ch = getattr(ag, "signed_at_contractor", None)
+    hh = getattr(ag, "signed_at_homeowner", None)
     if ch and hh:
         return ch if ch >= hh else hh
     return ch or hh
@@ -273,7 +275,6 @@ def _sync_project_address_from_agreement(ag: Agreement) -> None:
 
     # ---- 2) Update Agreement snapshots ----
 
-    # Homeowner address snapshot
     if homeowner is not None and (
         hasattr(ag, "homeowner_address_snapshot")
         or hasattr(ag, "homeowner_address_text")
@@ -293,8 +294,6 @@ def _sync_project_address_from_agreement(ag: Agreement) -> None:
         if hasattr(ag, "homeowner_address_text"):
             ag.homeowner_address_text = h_snap
 
-    # Project address snapshot (from Agreement.project_address_*;
-    # if those are blank for some reason, fall back to Project.*)
     if any([p_line1, p_city, p_state, p_postal]):
         snap_line1 = p_line1 or ""
         snap_line2 = p_line2 or ""
@@ -353,7 +352,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
     Adds:
       POST /agreements/<id>/preview_link/     -> {"url": "<signed public URL>"}
       GET  /agreements/preview_signed/?t=...  -> inline PDF (public, HMAC-validated)
-      POST /agreements/<id>/mark_previewed/   -> 204 (no-op hook for UI)
+      POST /agreements/<id>/mark_previewed/   -> marks reviewed for UI
     """
 
     permission_classes = [IsAuthenticated]
@@ -414,20 +413,10 @@ class AgreementViewSet(viewsets.ModelViewSet):
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):
-        """
-        Step 1 Agreement creation:
-        - Resolves the contractor from the logged-in user.
-        - Creates a Project automatically if `project` is not provided.
-        - Normalizes description (no null).
-        - Accepts helper fields: project_title, project_type, project_subtype.
-        - Returns 400 with serializer error messages if invalid.
-        - On unexpected errors, logs full traceback and returns JSON 500.
-        """
         try:
             data = request.data.copy()
             user = request.user
 
-            # Try multiple ways to get the contractor for this user.
             contractor = getattr(user, "contractor", None)
             if contractor is None:
                 contractor = getattr(user, "contractor_profile", None)
@@ -443,14 +432,12 @@ class AgreementViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # Ensure description is not null
             desc = data.get("description")
             if desc is None:
                 data["description"] = ""
             if data.get("description", "") is None:
                 data["description"] = ""
 
-            # Detect if we need to auto-create a Project
             project_id = data.get("project")
             if not project_id:
                 homeowner_id = data.get("homeowner")
@@ -475,7 +462,6 @@ class AgreementViewSet(viewsets.ModelViewSet):
                 )
                 project_description = data.get("description") or ""
 
-                # Create the Project (Project model does NOT have project_type/subtype)
                 project = Project.objects.create(
                     title=project_title,
                     contractor=contractor if contractor is not None else None,
@@ -485,11 +471,8 @@ class AgreementViewSet(viewsets.ModelViewSet):
 
                 data["project"] = project.pk
 
-            # Remove only helper fields that are NOT Agreement fields
-            # project_type and project_subtype stay for AgreementSerializer
             data.pop("project_title", None)
 
-            # Ensure contractor is assigned to Agreement if we have one
             if contractor is not None:
                 data["contractor"] = contractor.pk
 
@@ -502,10 +485,8 @@ class AgreementViewSet(viewsets.ModelViewSet):
                 )
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-            # Instead of serializer.save(), manually create Agreement to strip non-model fields
             self.perform_create(serializer)
 
-            # Sync project + snapshot addresses so PDF has latest project address
             try:
                 _sync_project_address_from_agreement(serializer.instance)
             except Exception as e:
@@ -521,7 +502,6 @@ class AgreementViewSet(viewsets.ModelViewSet):
             )
 
         except Exception as e:
-            # Log full traceback to the error log and return JSON 500
             print(
                 "AgreementViewSet.create() unexpected error:",
                 repr(e),
@@ -536,24 +516,15 @@ class AgreementViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-    # Custom perform_create to strip wizard-only fields before creating Agreement
     def perform_create(self, serializer: AgreementSerializer) -> None:
-        """
-        Create Agreement instance from validated_data, stripping any fields
-        that are not real model fields (wizard-only or write-only helpers).
-        """
         validated = dict(serializer.validated_data)
-
-        # Fields that are present on the serializer but NOT on Agreement model:
         for key in [
             "use_default_warranty",
             "custom_warranty_text",
-            "title",          # project title lives on Project, not Agreement
-            "project_title",  # pure wizard helper
+            "title",
+            "project_title",
         ]:
             validated.pop(key, None)
-
-        # Manually create the Agreement and attach it to the serializer
         instance = Agreement.objects.create(**validated)
         serializer.instance = instance
 
@@ -623,11 +594,6 @@ class AgreementViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"], url_path="preview_pdf")
     def preview_pdf(self, request, pk=None):
-        """
-        GET  /agreements/<id>/preview_pdf/          -> { "url": "<absolute_url_with_stream=1>" }
-        GET  /agreements/<id>/preview_pdf/?stream=1 -> inline full PDF (AUTH required)
-        Kept for legacy XHR callers that include Authorization and open a Blob.
-        """
         stream = request.query_params.get("stream")
         if not stream:
             url = request.build_absolute_uri("?stream=1")
@@ -658,10 +624,6 @@ class AgreementViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def preview_link(self, request, pk=None):
-        """
-        Returns a short-lived signed URL (10 min) that streams the preview publicly.
-        POST /agreements/<id>/preview_link/ -> {url}
-        """
         signer = signing.TimestampSigner(salt=_PREVIEW_SALT)
         token = signer.sign_object({"agreement_id": int(pk), "uid": request.user.id})
         absolute = request.build_absolute_uri(
@@ -673,13 +635,9 @@ class AgreementViewSet(viewsets.ModelViewSet):
         detail=False,
         methods=["get"],
         url_path="preview_signed",
-        permission_classes=[AllowAny],  # public: guarded by HMAC + ttl
+        permission_classes=[AllowAny],
     )
     def preview_signed(self, request):
-        """
-        GET /agreements/preview_signed/?t=<token>
-        Validates HMAC+timestamp and streams the preview PDF.
-        """
         if not build_agreement_pdf_bytes:
             return Response(
                 {"detail": "PDF preview not available."},
@@ -719,6 +677,17 @@ class AgreementViewSet(viewsets.ModelViewSet):
         resp = FileResponse(buf, content_type="application/pdf")
         resp["Content-Disposition"] = f'inline; filename="{filename}"'
         return resp
+
+    # ---------------- NEW: mark_previewed (Step 4 hook) ----------------
+
+    @action(detail=True, methods=["post"], url_path="mark_previewed")
+    def mark_previewed(self, request, pk=None):
+        ag: Agreement = self.get_object()
+        ag.reviewed = True
+        ag.reviewed_at = now()
+        ag.reviewed_by = "contractor"
+        ag.save(update_fields=["reviewed", "reviewed_at", "reviewed_by", "updated_at"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     # ---------------- Finalize (save/version) ----------------
 
@@ -842,7 +811,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
 
         ag.contractor_signature_name = name
         ag.signed_by_contractor = True
-        ag.contractor_signed_at = now()
+        ag.signed_at_contractor = now()
         ip = (
             request.META.get("HTTP_X_FORWARDED_FOR", "")
             .split(",")[0]
@@ -851,17 +820,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
         )
         ag.contractor_signed_ip = ip or None
         ag.status = "draft"
-        ag.save(
-            update_fields=[
-                "contractor_signature",
-                "contractor_signature_name",
-                "signed_by_contractor",
-                "contractor_signed_at",
-                "contractor_signed_ip",
-                "status",
-                "updated_at",
-            ]
-        )
+        ag.save()  # <- NO update_fields, safe
 
         ser = self.get_serializer(ag)
         return Response({"ok": True, "agreement": ser.data}, status=status.HTTP_200_OK)
@@ -882,18 +841,11 @@ class AgreementViewSet(viewsets.ModelViewSet):
             raise ValidationError("Cannot unsign after both parties have signed.")
 
         ag.signed_by_contractor = False
-        ag.contractor_signed_at = None
-        ag.contractor_signature_name = None
+        ag.signed_at_contractor = None
+        ag.contractor_signature_name = ""
+        ag.contractor_signature = None
         ag.status = "draft"
-        ag.save(
-            update_fields=[
-                "signed_by_contractor",
-                "contractor_signed_at",
-                "contractor_signature_name",
-                "status",
-                "updated_at",
-            ]
-        )
+        ag.save()  # <- NO update_fields, safe
 
         ser = self.get_serializer(ag)
         return Response({"ok": True, "agreement": ser.data}, status=status.HTTP_200_OK)

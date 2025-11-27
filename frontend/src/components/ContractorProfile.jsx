@@ -36,6 +36,12 @@ export default function ContractorProfile() {
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
 
+  // 🔹 new: license & insurance upload state
+  const [licenseFile, setLicenseFile] = useState(null);
+  const [licenseUrl, setLicenseUrl] = useState(null);
+  const [insuranceFile, setInsuranceFile] = useState(null);
+  const [insuranceUrl, setInsuranceUrl] = useState(null);
+
   const stateOptions = useMemo(
     () => US_STATES.map((s) => ({ value: s, label: s })),
     []
@@ -59,17 +65,27 @@ export default function ContractorProfile() {
           city: data.city || "",
           state: data.state || "",
           license_number: data.license_number || "",
-          license_expiration_date: (data.license_expiration_date || data.license_expiration || "").slice(0, 10),
+          license_expiration_date:
+            (data.license_expiration_date || data.license_expiration || "").slice(0, 10),
           skills: Array.isArray(data.skills)
-            ? data.skills.map((s) =>
-                typeof s === "string" ? s : (s.name || s.title || "")
-              ).filter(Boolean)
-            : (typeof data.skills === "string"
-                ? data.skills.split(",").map((s) => s.trim()).filter(Boolean)
-                : []),
+            ? data.skills
+                .map((s) =>
+                  typeof s === "string" ? s : (s.name || s.title || "")
+                )
+                .filter(Boolean)
+            : typeof data.skills === "string"
+            ? data.skills
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean)
+            : [],
         });
 
         setLogoPreview(data.logo || data.logo_url || null);
+
+        // 🔹 file URLs from backend
+        setLicenseUrl(data.license_file || data.license_document || null);
+        setInsuranceUrl(data.insurance_file || data.insurance_document || null);
       } catch (e) {
         setError("Failed to load profile.");
       } finally {
@@ -97,6 +113,23 @@ export default function ContractorProfile() {
     if (file) {
       const url = URL.createObjectURL(file);
       setLogoPreview(url);
+    }
+  };
+
+  const onLicense = (e) => {
+    const file = e.target.files?.[0] || null;
+    setLicenseFile(file);
+    if (file) {
+      // clear old URL so we don't show stale link for new upload
+      setLicenseUrl(null);
+    }
+  };
+
+  const onInsurance = (e) => {
+    const file = e.target.files?.[0] || null;
+    setInsuranceFile(file);
+    if (file) {
+      setInsuranceUrl(null);
     }
   };
 
@@ -128,6 +161,8 @@ export default function ContractorProfile() {
       fd.append("skills_json", JSON.stringify(form.skills));
 
       if (logoFile) fd.append("logo", logoFile);
+      if (licenseFile) fd.append("license_file", licenseFile);      // 🔹 new
+      if (insuranceFile) fd.append("insurance_file", insuranceFile); // 🔹 new
 
       // Always PATCH /me/ (backend supports it)
       await api.patch("/projects/contractors/me/", fd, {
@@ -170,7 +205,9 @@ export default function ContractorProfile() {
             {/* Name & Email */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-semibold mb-1">Full Name</label>
+                <label className="block text-sm font-semibold mb-1">
+                  Full Name
+                </label>
                 <input
                   className="w-full h-10 rounded border border-slate-300 px-3"
                   value={form.full_name}
@@ -180,7 +217,9 @@ export default function ContractorProfile() {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold mb-1">Email Address</label>
+                <label className="block text-sm font-semibold mb-1">
+                  Email Address
+                </label>
                 <input
                   className="w-full h-10 rounded border border-slate-300 px-3"
                   value={form.email}
@@ -193,7 +232,9 @@ export default function ContractorProfile() {
             {/* Business, Phone */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
               <div>
-                <label className="block text-sm font-semibold mb-1">Business Name</label>
+                <label className="block text-sm font-semibold mb-1">
+                  Business Name
+                </label>
                 <input
                   className="w-full h-10 rounded border border-slate-300 px-3"
                   value={form.business_name}
@@ -203,7 +244,9 @@ export default function ContractorProfile() {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold mb-1">Phone</label>
+                <label className="block text-sm font-semibold mb-1">
+                  Phone
+                </label>
                 <input
                   className="w-full h-10 rounded border border-slate-300 px-3"
                   value={form.phone}
@@ -215,7 +258,9 @@ export default function ContractorProfile() {
 
             {/* Address */}
             <div className="mt-4">
-              <label className="block text-sm font-semibold mb-1">Address</label>
+              <label className="block text-sm font-semibold mb-1">
+                Address
+              </label>
               <input
                 className="w-full h-10 rounded border border-slate-300 px-3"
                 value={form.address}
@@ -226,7 +271,9 @@ export default function ContractorProfile() {
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
               <div>
-                <label className="block text-sm font-semibold mb-1">City</label>
+                <label className="block text-sm font-semibold mb-1">
+                  City
+                </label>
                 <input
                   className="w-full h-10 rounded border border-slate-300 px-3"
                   value={form.city}
@@ -236,7 +283,9 @@ export default function ContractorProfile() {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold mb-1">State</label>
+                <label className="block text-sm font-semibold mb-1">
+                  State
+                </label>
                 <select
                   className="w-full h-10 rounded border border-slate-300 px-3 bg-white"
                   value={form.state || ""}
@@ -244,19 +293,23 @@ export default function ContractorProfile() {
                 >
                   <option value="">Select…</option>
                   {stateOptions.map((s) => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-sm font-semibold mb-1">Company Logo</label>
+                <label className="block text-sm font-semibold mb-1">
+                  Company Logo
+                </label>
                 <input type="file" accept="image/*" onChange={onLogo} />
                 {logoPreview ? (
                   <img
                     src={logoPreview}
                     alt="Company logo preview"
-                    className="mt-2 h-16 w-auto rounded border"
+                    className="mt-2 h-16 w-auto rounded border object-contain"
                   />
                 ) : null}
               </div>
@@ -269,7 +322,10 @@ export default function ContractorProfile() {
                 {SKILL_OPTIONS.map((name) => {
                   const checked = form.skills.includes(name);
                   return (
-                    <label key={name} className="inline-flex items-center gap-2 text-sm">
+                    <label
+                      key={name}
+                      className="inline-flex items-center gap-2 text-sm"
+                    >
                       <input
                         type="checkbox"
                         checked={checked}
@@ -282,10 +338,12 @@ export default function ContractorProfile() {
               </div>
             </div>
 
-            {/* License */}
+            {/* License fields */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
               <div>
-                <label className="block text-sm font-semibold mb-1">License Number</label>
+                <label className="block text-sm font-semibold mb-1">
+                  License Number
+                </label>
                 <input
                   className="w-full h-10 rounded border border-slate-300 px-3"
                   value={form.license_number}
@@ -294,13 +352,60 @@ export default function ContractorProfile() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-semibold mb-1">License Expiration Date</label>
+                <label className="block text-sm font-semibold mb-1">
+                  License Expiration Date
+                </label>
                 <input
                   type="date"
                   className="w-full h-10 rounded border border-slate-300 px-3"
                   value={form.license_expiration_date || ""}
                   onChange={onChange("license_expiration_date")}
                 />
+              </div>
+            </div>
+
+            {/* 🔹 License & Insurance file uploads */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <div>
+                <label className="block text-sm font-semibold mb-1">
+                  License Document (PDF or image)
+                </label>
+                <input
+                  type="file"
+                  accept=".pdf,image/*"
+                  onChange={onLicense}
+                />
+                {licenseUrl ? (
+                  <a
+                    href={licenseUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 block text-xs text-blue-600 underline"
+                  >
+                    View current license document
+                  </a>
+                ) : null}
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-1">
+                  Insurance Certificate (PDF or image)
+                </label>
+                <input
+                  type="file"
+                  accept=".pdf,image/*"
+                  onChange={onInsurance}
+                />
+                {insuranceUrl ? (
+                  <a
+                    href={insuranceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 block text-xs text-blue-600 underline"
+                  >
+                    View current insurance document
+                  </a>
+                ) : null}
               </div>
             </div>
 

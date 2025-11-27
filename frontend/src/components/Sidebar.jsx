@@ -1,20 +1,25 @@
 // src/components/Sidebar.jsx
 // COMPLETE FILE — Sidebar with Stripe status badge + Team nav item
+// v2025-11-24 — Contractor-only Stripe nav & status
 
 import React, { useCallback, useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import api from "../api";
+import { useWhoAmI } from "../hooks/useWhoAmI.js";
 
 /**
  * Compact, route-aligned sidebar.
  * - Highlights active route via NavLink
  * - Includes "My Profile"
- * - Adds a footer Logout button (clears JWT and returns to landing)
- * - Shows Stripe onboarding status badge (Connected / Pending)
- * - Now includes "Team" link for contractor employee management
+ * - Logout button (clears JWT and returns to landing)
+ * - Shows Stripe onboarding status badge (Connected / Pending) for contractors only
+ * - Includes "Team" link for contractor employee management
  */
 export default function Sidebar() {
   const navigate = useNavigate();
+
+  const { data, loading: whoLoading, error: whoError, isContractor, isEmployee } =
+    useWhoAmI();
 
   const [stripeStatus, setStripeStatus] = useState({
     connected: false,
@@ -36,8 +41,23 @@ export default function Sidebar() {
     navigate("/", { replace: true });
   }, [navigate]);
 
+  // Fetch Stripe status ONLY for contractor accounts
   useEffect(() => {
     let isMounted = true;
+
+    // If we don't know the role yet, or there's an error, skip Stripe.
+    if (whoLoading || whoError || !isContractor) {
+      if (isMounted) {
+        setStripeStatus((s) => ({
+          ...s,
+          loading: false,
+        }));
+      }
+      return () => {
+        isMounted = false;
+      };
+    }
+
     (async () => {
       try {
         const { data } = await api.get("/payments/onboarding/status/");
@@ -64,12 +84,15 @@ export default function Sidebar() {
         }
       }
     })();
+
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [isContractor, whoLoading, whoError]);
 
   const StripeBadge = () => {
+    if (!isContractor) return null;
+
     if (stripeStatus.loading) {
       return (
         <span className="ml-2 inline-flex items-center rounded-full px-2 py-[1px] text-[10px] bg-gray-200 text-gray-700">
@@ -150,7 +173,7 @@ export default function Sidebar() {
             <Item to="/dashboard" label="Dashboard" emoji="🏠" />
             <Item to="/agreements" label="Agreements" emoji="📄" />
             <Item to="/milestones" label="Milestones" emoji="🧩" />
-            <Item to="/team" label="Team" emoji="🧑‍🤝‍🧑" />
+            {isContractor && <Item to="/team" label="Team" emoji="🧑‍🤝‍🧑" />}
             <Item to="/invoices" label="Invoices" emoji="💳" />
             <Item to="/customers" label="Customers" emoji="👥" />
             <Item to="/calendar" label="Calendar" emoji="🗓️" />
@@ -170,17 +193,20 @@ export default function Sidebar() {
           </div>
           <div className="space-y-1">
             <Item to="/profile" label="My Profile" emoji="👤" />
-            <Item
-              to="/onboarding"
-              emoji="🔗"
-              title="Stripe Onboarding"
-              label={
-                <>
-                  <span>Stripe Onboarding</span>
-                  <StripeBadge />
-                </>
-              }
-            />
+            {/* Stripe Onboarding is contractor-only */}
+            {isContractor && (
+              <Item
+                to="/onboarding"
+                emoji="🔗"
+                title="Stripe Onboarding"
+                label={
+                  <>
+                    <span>Stripe Onboarding</span>
+                    <StripeBadge />
+                  </>
+                }
+              />
+            )}
           </div>
         </div>
       </nav>
