@@ -1,12 +1,13 @@
 // frontend/src/components/Step4Finalize.jsx
-// v2025-11-26 — Project Address from Agreement.project_address_*
-// - Uses explicit Agreement fields only.
-// - Debug block shows exactly what React sees for addresses.
-// - Wider Homeowner Email field on summary row.
-// - Contractor UNSIGN button when homeowner has not signed.
+// v2025-12-02e — Homeowner signature uses send_signature_request; Contractor uses SignatureModal + finger pad
+// + UI note: once both parties have signed, MyHomeBro automatically emails the escrow funding link.
+// + Manual backup: after both signatures, contractor can resend escrow funding link from Step 4.
 
 import React, { useEffect, useState } from "react";
 import api from "../api";
+import toast from "react-hot-toast";
+import SignatureModal from "./SignatureModal";
+import SendFundingLinkButton from "./SendFundingLinkButton";
 
 function toDateOnly(v) {
   if (!v) return "";
@@ -14,7 +15,7 @@ function toDateOnly(v) {
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return "";
   const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
+  const dd = String(d.getDate() + 0).padStart(2, "0"); // keep behavior
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
@@ -111,13 +112,6 @@ function getHomeownerAddressFromAgreement(agreement, homeownerObj) {
 
 /**
  * Build project address from Agreement (EXPLICIT project_address_* fields only).
- *
- * This assumes the backend serializer is already returning:
- * - project_address_line1
- * - project_address_line2
- * - project_address_city
- * - project_address_state
- * - project_postal_code
  */
 function getProjectAddressFromAgreement(agreement) {
   if (!agreement) return "—";
@@ -148,7 +142,7 @@ export default function Step4Finalize({
   dLocal, // Step 1 view-model (for debug display only now)
   id,
   previewPdf,
-  goPublic,
+  goPublic, // legacy prop (no longer used)
   milestones,
   totals,
   hasPreviewed,
@@ -162,8 +156,8 @@ export default function Step4Finalize({
   setTypedName,
   canSign,
   signing,
-  signContractor, // (currently unused but kept for compatibility)
-  submitSign,
+  signContractor, // (unused but kept for compatibility)
+  submitSign, // legacy handler (no longer used directly)
   attachments,
   defaultWarrantyText,
   customWarranty,
@@ -174,6 +168,12 @@ export default function Step4Finalize({
 }) {
   const [loadingHomeowner, setLoadingHomeowner] = useState(false);
   const [homeownerObj, setHomeownerObj] = useState(null);
+
+  const [sendingLink, setSendingLink] = useState(false);
+  const [lastSentUrl, setLastSentUrl] = useState(null);
+  const [sendError, setSendError] = useState(null);
+
+  const [showSignatureModal, setShowSignatureModal] = useState(false);
 
   // If agreement.homeowner is just an ID, fetch full homeowner record.
   useEffect(() => {
@@ -246,12 +246,68 @@ export default function Step4Finalize({
   const status = agreement?.status || "DRAFT";
   const displayMilestones = milestones || agreement?.milestones || [];
 
+  const isFullySigned =
+    !!agreement?.signed_by_contractor && !!agreement?.signed_by_homeowner;
+  const escrowFunded = !!agreement?.escrow_funded;
+
+  // ---------------- Contractor signing (open SignatureModal) ----------------
+
+  const handleOpenContractorModal = () => {
+    if (!hasPreviewed) {
+      toast.error("You must preview the PDF before signing.");
+      return;
+    }
+    if (!ackReviewed || !ackTos || !ackEsign) {
+      toast.error(
+        "Please confirm you have reviewed the agreement, agree to the Terms & Privacy Policy, and consent to e-sign."
+      );
+      return;
+    }
+    if (!typedName.trim()) {
+      toast.error("Please type your full legal name.");
+      return;
+    }
+    setShowSignatureModal(true);
+  };
+
+  const handleContractorSigned = () => {
+    setShowSignatureModal(false);
+    // Simple refresh to pull updated signed_by_contractor + signature fields
+    window.location.reload();
+  };
+
+  // ---------------- Homeowner link sender (signing link) ----------------
+
+  const handleSendHomeownerLink = async () => {
+    if (!agreement?.id) return;
+    setSendingLink(true);
+    setSendError(null);
+    try {
+      const { data } = await api.post(
+        `/projects/agreements/${agreement.id}/send_signature_request/`
+      );
+      if (data?.sign_url) {
+        setLastSentUrl(data.sign_url);
+      }
+      toast.success("Homeowner signing link sent.");
+    } catch (err) {
+      console.error("send_signature_request error:", err);
+      const msg =
+        err?.response?.data?.detail ||
+        "Unable to send homeowner signing link.";
+      setSendError(msg);
+      toast.error(msg);
+    } finally {
+      setSendingLink(false);
+    }
+  };
+
   return (
     <div className="mt-4 space-y-6">
       {/* Top Summary Card: Agreement & Homeowner Details */}
       <div className="rounded-lg border bg-white p-4 shadow">
         <h3 className="text-lg font-semibold text-gray-900 mb-2">
-          Agreement & Homeowner Details
+          Agreement &amp; Homeowner Details
         </h3>
 
         {/* Project summary row */}
@@ -281,10 +337,7 @@ export default function Step4Finalize({
 
         {/* Homeowner contact row — give Email extra width */}
         <div className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3">
-          <SummaryCard
-            label="Homeowner Name"
-            value={homeownerName}
-          />
+          <SummaryCard label="Homeowner Name" value={homeownerName} />
           <SummaryCard
             label="Homeowner Phone"
             value={formatPhone(homeownerPhone)}
@@ -318,7 +371,7 @@ export default function Step4Finalize({
           </div>
         </div>
 
-        {/* DEBUG: show the raw values so we can see exactly what React + API have */}
+        {/* DEBUG */}
         <details className="mt-2 text-xs">
           <summary className="cursor-pointer text-gray-500">
             Debug: Step1 dLocal vs Agreement project/homeowner snapshots
@@ -358,7 +411,7 @@ export default function Step4Finalize({
       {/* Project Scope */}
       <section className="rounded-lg border bg-white p-4 shadow">
         <h3 className="text-lg font-semibold text-gray-900 mb-2">
-          Project Scope & Description
+          Project Scope &amp; Description
         </h3>
         <div className="whitespace-pre-wrap text-sm text-gray-700">
           {agreement?.description || "No project description provided."}
@@ -623,7 +676,7 @@ export default function Step4Finalize({
                   <button
                     type="button"
                     disabled={!canSign || signing}
-                    onClick={submitSign}
+                    onClick={handleOpenContractorModal}
                     className={`w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
                       canSign
                         ? "bg-indigo-600 hover:bg-indigo-700"
@@ -643,24 +696,81 @@ export default function Step4Finalize({
               Homeowner Signature
             </div>
             {agreement?.signed_by_homeowner ? (
-              <div className="text-sm text-green-700 font-medium p-2 bg-green-50 rounded">
-                ✓ Already signed by homeowner.
+              <div className="space-y-3">
+                <div className="text-sm text-green-700 font-medium p-2 bg-green-50 rounded">
+                  ✓ Already signed by homeowner.
+                </div>
+                {isFullySigned && (
+                  <div className="space-y-2">
+                    <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-2">
+                      This agreement is fully signed. MyHomeBro automatically
+                      emails the homeowner a secure escrow funding link tied to
+                      this project when both parties sign using the latest
+                      flow.
+                      {escrowFunded && (
+                        <> Escrow is already marked as funded in the system.</>
+                      )}
+                    </div>
+
+                    {/* Manual backup: allow contractor to (re)send funding link */}
+                    {!escrowFunded && agreement?.id && (
+                      <SendFundingLinkButton
+                        agreementId={agreement.id}
+                        isFullySigned={isFullySigned}
+                        amount={totalAmount}
+                        className="mt-1"
+                      />
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <>
                 <div className="text-sm text-gray-600 mb-4 flex-grow">
-                  The homeowner signs via their public link. You can email this
-                  link or open it on a tablet.
+                  The homeowner will receive an email with a secure link to
+                  review and sign this agreement in MyHomeBro. You can also copy
+                  the link after sending if you want to text it manually or open
+                  it on a tablet.
                 </div>
-                <div className="mt-auto">
+                {sendError && (
+                  <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2 mb-2">
+                    {sendError}
+                  </div>
+                )}
+                {lastSentUrl && (
+                  <div className="mb-2">
+                    <div className="text-xs text-gray-600 mb-1">
+                      Last sent link (copy to share manually):
+                    </div>
+                    <input
+                      type="text"
+                      readOnly
+                      className="w-full text-xs border rounded px-2 py-1 bg-gray-50"
+                      value={lastSentUrl}
+                      onFocus={(e) => e.target.select()}
+                    />
+                  </div>
+                )}
+                <div className="mt-auto space-y-2">
                   <button
                     type="button"
-                    onClick={goPublic}
+                    onClick={handleSendHomeownerLink}
+                    disabled={sendingLink}
                     className="w-full inline-flex justify-center items-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-gray-800 text-sm font-medium text-white hover:bg-black focus:outline-none"
-                    title="Open the public signing link"
+                    title="Email a secure signing link to the homeowner"
                   >
-                    Open Public Signing Link
+                    {sendingLink
+                      ? "Sending link…"
+                      : "Send Homeowner Signing Link"}
                   </button>
+
+                  <div className="text-[11px] text-slate-500">
+                    After both you and the homeowner have signed, MyHomeBro will
+                    automatically email the homeowner a secure link to fund
+                    escrow for this project. If needed, you can later use the
+                    funding button that appears here once both signatures are
+                    in.
+                  </div>
                 </div>
               </>
             )}
@@ -690,6 +800,19 @@ export default function Step4Finalize({
           </button>
         </div>
       </div>
+
+      {/* Contractor Signature Modal with finger/mouse pad */}
+      {agreement && (
+        <SignatureModal
+          isOpen={showSignatureModal}
+          onClose={() => setShowSignatureModal(false)}
+          agreement={agreement}
+          signingRole="contractor"
+          defaultName={typedName}
+          compact={true}
+          onSigned={handleContractorSigned}
+        />
+      )}
     </div>
   );
 }

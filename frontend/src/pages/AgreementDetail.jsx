@@ -6,6 +6,7 @@ import api from "../api";
 import SignatureModal from "../components/SignatureModal";
 import EscrowPromptModal from "../components/EscrowPromptModal";
 import AttachmentManager from "../components/AttachmentManager";
+import SendFundingLinkButton from "../components/SendFundingLinkButton";
 import { useAuth } from "../context/AuthContext";
 
 const toMoney = (v) => {
@@ -14,7 +15,8 @@ const toMoney = (v) => {
 };
 
 function normalizeAgreement(raw) {
-  if (!raw || typeof raw !== "object") return { id: null, title: "—", invoices: [], milestones: [] };
+  if (!raw || typeof raw !== "object")
+    return { id: null, title: "—", invoices: [], milestones: [] };
   return {
     id: raw.id ?? null,
     title: raw.title || raw.project_title || raw.project?.title || "—",
@@ -73,7 +75,9 @@ export default function AgreementDetail() {
 
   const startEscrow = async () => {
     try {
-      const { data } = await api.post(`/projects/agreements/${id}/fund_escrow/`);
+      const { data } = await api.post(
+        `/projects/agreements/${id}/fund_escrow/`
+      );
       if (data?.client_secret) {
         setClientSecret(data.client_secret);
         setEscrowOpen(true);
@@ -110,7 +114,10 @@ export default function AgreementDetail() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
-      <button onClick={() => navigate("/agreements")} className="text-blue-600 hover:underline">
+      <button
+        onClick={() => navigate("/agreements")}
+        className="text-blue-600 hover:underline"
+      >
         ← Back
       </button>
 
@@ -120,15 +127,21 @@ export default function AgreementDetail() {
           <strong>Homeowner:</strong> {norm.homeownerName}{" "}
           <span className="text-gray-500">({norm.homeownerEmail})</span>
         </p>
-        <p><strong>Total Cost:</strong> ${norm.totalCost.toFixed(2)}</p>
+        <p>
+          <strong>Total Cost:</strong> ${norm.totalCost.toFixed(2)}
+        </p>
         <p>
           <strong>Status:</strong>{" "}
-          {norm.escrowFunded ? "✅ Escrow Funded" : norm.isSigned ? "❌ Awaiting Funding" : "❌ Not Signed"}
+          {norm.escrowFunded
+            ? "✅ Escrow Funded"
+            : norm.isSigned
+            ? "❌ Awaiting Funding"
+            : "❌ Not Signed"}
         </p>
       </div>
 
       {/* Actions */}
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3 items-start">
         {!norm.isSigned && (
           <button
             onClick={() => setSigOpen(true)}
@@ -137,6 +150,16 @@ export default function AgreementDetail() {
             Open Signature
           </button>
         )}
+
+        {/** Contractor: "Send Funding Link" button */}
+        {isContractor && norm.isSigned && !norm.escrowFunded && (
+          <SendFundingLinkButton
+            agreementId={norm.id}
+            isFullySigned={norm.isSigned}
+            className="mr-2"
+          />
+        )}
+
         {norm.isSigned && !norm.escrowFunded && (
           <button
             onClick={startEscrow}
@@ -145,6 +168,7 @@ export default function AgreementDetail() {
             Fund Escrow
           </button>
         )}
+
         <button
           onClick={downloadPDF}
           className="px-4 py-2 rounded bg-blue-700 text-white hover:bg-blue-800"
@@ -153,7 +177,7 @@ export default function AgreementDetail() {
         </button>
       </div>
 
-      {/* NEW: Attachments & Addenda */}
+      {/* Attachments */}
       <AttachmentManager agreementId={id} canEdit={isContractor} />
 
       {/* Milestones */}

@@ -43,7 +43,8 @@
     "react-spinners": "^0.17.0",
     "react-to-print": "^3.1.1",
     "recharts": "^2.15.3",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "signature_pad": "^5.1.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",

@@ -16,6 +16,7 @@ from projects.services.mailer import email_signed_agreement
 from projects.services.sms import sms_link_to_parties  # safe: no-op if not configured
 import base64
 
+
 class IsAgreementParticipant(permissions.BasePermission):
     """
     Allow contractor assigned to the agreement or homeowner (email match);
@@ -34,6 +35,7 @@ class IsAgreementParticipant(permissions.BasePermission):
         if view.action in ("review", "preview") and request.method in ("GET", "POST"):
             return True  # allow public preview/review
         return False
+
 
 class AgreementSigningViewSet(viewsets.ViewSet):
     """
@@ -129,6 +131,17 @@ class AgreementSigningViewSet(viewsets.ViewSet):
 
     @decorators.action(detail=True, methods=["post"], url_path="sign")
     def sign(self, request, pk=None):
+        """
+        Core signing endpoint used by the React SignatureModal.
+
+        Accepts:
+          - signer_name
+          - signer_role ("contractor" | "homeowner")
+          - signature_text
+          - optional: signature_image (finger or uploaded image)
+
+        Also enforces "preview then review" gate if supported by the model.
+        """
         ag = self._get_agreement(pk)
         if not IsAgreementParticipant().has_object_permission(request, self, ag):
             return response.Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
@@ -145,24 +158,71 @@ class AgreementSigningViewSet(viewsets.ViewSet):
         payload = ser.validated_data
 
         signer_name = payload.get("signer_name")
-        signer_role = payload.get("signer_role")
+        signer_role = (payload.get("signer_role") or "").lower()
         signature_text = payload.get("signature_text", "")
 
+        # Optional file: finger-drawn or uploaded signature image
+        signature_image = request.FILES.get("signature_image")
+
+        # Capture IP and User-Agent for audit purposes
+        ip = request.META.get("HTTP_X_FORWARDED_FOR")
+        if ip:
+            ip = ip.split(",")[0].strip()
+        else:
+            ip = request.META.get("REMOTE_ADDR", "")
+        ua = request.META.get("HTTP_USER_AGENT", "")
+
+        # Persist role-specific signature metadata if the fields exist
+        now = timezone.now()
+        if signer_role == "homeowner":
+            if hasattr(ag, "homeowner_signature_name"):
+                ag.homeowner_signature_name = signer_name
+            if hasattr(ag, "homeowner_signature_text"):
+                ag.homeowner_signature_text = signature_text
+            if hasattr(ag, "homeowner_signed_at"):
+                ag.homeowner_signed_at = now
+            if hasattr(ag, "homeowner_signed_ip"):
+                ag.homeowner_signed_ip = ip
+            if signature_image and hasattr(ag, "homeowner_signature"):
+                # ImageField/FileField: don't save() the model yet; we batch below
+                ag.homeowner_signature.save(
+                    f"homeowner_sig_{ag.id}.png",
+                    signature_image,
+                    save=False,
+                )
+
+        elif signer_role == "contractor":
+            if hasattr(ag, "contractor_signature_name"):
+                ag.contractor_signature_name = signer_name
+            if hasattr(ag, "contractor_signature_text"):
+                ag.contractor_signature_text = signature_text
+            if hasattr(ag, "contractor_signed_at"):
+                ag.contractor_signed_at = now
+            if hasattr(ag, "contractor_signed_ip"):
+                ag.contractor_signed_ip = ip
+            if signature_image and hasattr(ag, "contractor_signature"):
+                ag.contractor_signature.save(
+                    f"contractor_sig_{ag.id}.png",
+                    signature_image,
+                    save=False,
+                )
+
+        # Generic audit fields & PDF version bump
         new_version = (ag.pdf_version or 0) + 1 if hasattr(ag, "pdf_version") else 1
         if hasattr(ag, "pdf_version"):
             ag.pdf_version = new_version
 
         if hasattr(ag, "last_signed_at"):
-            ag.last_signed_at = timezone.now()
+            ag.last_signed_at = now
         if hasattr(ag, "last_signed_by"):
             ag.last_signed_by = signer_role
         if hasattr(ag, "signature_note"):
             ag.signature_note = f"{signer_role} {signer_name} accepted ToS/Privacy; text: {signature_text[:60]}"
 
+        # Save all the above in one shot
         ag.save()
 
-        ip = request.META.get("REMOTE_ADDR", "")
-        ua = request.META.get("HTTP_USER_AGENT", "")
+        # Build the signed PDF version
         version_label = f"v{new_version}"
         pdf_bytes = build_agreement_pdf_bytes(
             ag,
@@ -177,8 +237,10 @@ class AgreementSigningViewSet(viewsets.ViewSet):
         )
         attach_pdf_to_agreement(ag, pdf_bytes, version=new_version)
 
+        # Email the freshly signed agreement
         email_signed_agreement(ag)
 
+        # SMS link (best-effort)
         try:
             base = getattr(settings, "FRONTEND_URL", None) or getattr(settings, "SITE_URL", None) or ""
             link = f"{base.rstrip('/')}/agreements/{ag.id}" if base else f"/agreements/{ag.id}"

@@ -15,7 +15,9 @@ export default function LoginModal() {
   const [loading, setLoading] = useState(false);
 
   const openLogin = useCallback(() => setVisible(true), []);
-  const close = () => { if (!loading) setVisible(false); };
+  const close = () => {
+    if (!loading) setVisible(false);
+  };
 
   // Global opener + event listener
   useEffect(() => {
@@ -38,12 +40,14 @@ export default function LoginModal() {
     };
     window.addEventListener("mhb:open-login", onEvt);
     return () => {
-      try { delete window.mhbOpenLogin; } catch {}
+      try {
+        delete window.mhbOpenLogin;
+      } catch {}
       window.removeEventListener("mhb:open-login", onEvt);
     };
   }, [openLogin]);
 
-  // Auto-open / redirect from URL hints (kept as-is)
+  // Auto-open / URL hints
   useEffect(() => {
     const url = new URL(window.location.href);
     const q = url.searchParams;
@@ -54,7 +58,9 @@ export default function LoginModal() {
 
     if (wantsSignup) {
       if (q.get("signup")) q.delete("signup");
-      const cleaned = `${url.pathname}${q.toString() ? "?" + q.toString() : ""}`;
+      const cleaned = `${url.pathname}${
+        q.toString() ? "?" + q.toString() : ""
+      }`;
       window.history.replaceState({}, "", cleaned);
       if (typeof window.mhbOpenSignup === "function") window.mhbOpenSignup();
       else window.dispatchEvent(new CustomEvent("mhb:open-signup"));
@@ -63,27 +69,37 @@ export default function LoginModal() {
     if (wantsLogin) {
       if (q.get("login")) {
         q.delete("login");
-        const cleaned = `${url.pathname}${q.toString() ? "?" + q.toString() : ""}`;
+        const cleaned = `${url.pathname}${
+          q.toString() ? "?" + q.toString() : ""
+        }`;
         window.history.replaceState({}, "", cleaned);
       }
       openLogin();
     }
   }, [openLogin]);
 
+  const handleForgotPassword = (e) => {
+    e.preventDefault();
+    if (!loading) {
+      setVisible(false);
+      window.location.href = "/forgot-password";
+    }
+  };
+
   const handleSubmit = async (e) => {
     e?.preventDefault?.();
 
-    // hard reset tokens before attempting auth
+    // Reset tokens before login
     try {
-      localStorage.removeItem('access');
-      localStorage.removeItem('refresh');
-      sessionStorage.removeItem('access');
-      sessionStorage.removeItem('refresh');
+      localStorage.removeItem("access");
+      localStorage.removeItem("refresh");
+      sessionStorage.removeItem("access");
+      sessionStorage.removeItem("refresh");
     } catch {}
 
     const payload = {
-      email: String(email || '').trim().toLowerCase(),
-      password: String(password || ''),
+      email: String(email || "").trim().toLowerCase(),
+      password: String(password || ""),
     };
 
     if (!payload.email || !payload.password) {
@@ -93,13 +109,14 @@ export default function LoginModal() {
 
     setLoading(true);
     try {
-      // Correct endpoint
       const { data } = await api.post("/auth/login/", payload);
       const access = data?.access || data?.access_token;
       const refresh = data?.refresh || data?.refresh_token;
       if (!access) throw new Error("Missing tokens");
+
       setTokens(access, refresh);
       toast.success("Signed in!");
+
       setVisible(false);
       window.location.href = "/dashboard";
     } catch (err) {
@@ -119,8 +136,17 @@ export default function LoginModal() {
   return (
     <div className="mhb-modal-overlay" role="dialog" aria-modal="true">
       <div className="mhb-modal-card" style={{ maxWidth: 520 }}>
-        <div className="mhb-modal-header" style={{ justifyContent: "center" }}>
-          <div style={{ display: "grid", placeItems: "center", width: "100%" }}>
+        <div
+          className="mhb-modal-header"
+          style={{ justifyContent: "center" }}
+        >
+          <div
+            style={{
+              display: "grid",
+              placeItems: "center",
+              width: "100%",
+            }}
+          >
             <div
               style={{
                 display: "grid",
@@ -143,20 +169,38 @@ export default function LoginModal() {
                 style={{ maxWidth: 72, maxHeight: 72, display: "block" }}
               />
             </div>
-            <h2 style={{ margin: "10px 0 0", fontSize: 20, fontWeight: 900 }}>
+
+            <h2
+              style={{
+                margin: "10px 0 0",
+                fontSize: 20,
+                fontWeight: 900,
+              }}
+            >
               Sign In
             </h2>
           </div>
 
-          <button className="mhb-modal-close" onClick={close} aria-label="Close">
+          <button
+            className="mhb-modal-close"
+            onClick={close}
+            aria-label="Close"
+          >
             ✕
           </button>
         </div>
 
         <div className="mhb-modal-body">
           <form onSubmit={handleSubmit} style={{ display: "grid", gap: 10 }}>
+            {/* Email */}
             <label>
-              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "#64748b",
+                  marginBottom: 4,
+                }}
+              >
                 Email
               </div>
               <input
@@ -170,39 +214,90 @@ export default function LoginModal() {
                   borderRadius: 10,
                   padding: "10px 12px",
                 }}
-                placeholder="you@company.com"
+                placeholder="you@example.com"
               />
             </label>
 
+            {/* Password + Show toggle + Forgot password */}
             <label>
-              <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "#64748b",
+                  marginBottom: 4,
+                }}
+              >
                 Password
               </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  type={showPw ? "text" : "password"}
-                  required
+
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                }}
+              >
+                <div
                   style={{
-                    width: "100%",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: 10,
-                    padding: "10px 12px",
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
                   }}
-                  placeholder="••••••••"
-                />
-                <label style={{ display: "inline-flex", gap: 6, fontSize: 12 }}>
+                >
                   <input
-                    type="checkbox"
-                    checked={showPw}
-                    onChange={(e) => setShowPw(e.target.checked)}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    type={showPw ? "text" : "password"}
+                    required
+                    style={{
+                      width: "100%",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 10,
+                      padding: "10px 12px",
+                    }}
+                    placeholder="••••••••"
                   />
-                  Show
-                </label>
+
+                  <label
+                    style={{
+                      display: "inline-flex",
+                      gap: 6,
+                      fontSize: 12,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={showPw}
+                      onChange={(e) => setShowPw(e.target.checked)}
+                    />
+                    Show
+                  </label>
+                </div>
+
+                {/* Forgot password link */}
+                <div
+                  style={{
+                    fontSize: 12,
+                    textAlign: "right",
+                    marginTop: 2,
+                  }}
+                >
+                  <a
+                    href="/forgot-password"
+                    onClick={handleForgotPassword}
+                    style={{
+                      color: "#0ea5e9",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Forgot password?
+                  </a>
+                </div>
               </div>
             </label>
 
+            {/* Sign in button */}
             <button
               type="submit"
               className="mhb-btn primary"
@@ -212,6 +307,7 @@ export default function LoginModal() {
               {loading ? "Signing in..." : "Sign In"}
             </button>
 
+            {/* Sign up link */}
             <div
               style={{
                 marginTop: 2,
@@ -226,8 +322,12 @@ export default function LoginModal() {
                 style={{ fontWeight: 800, color: "#0ea5e9" }}
                 onClick={(e) => {
                   e.preventDefault();
-                  if (typeof window.mhbOpenSignup === "function") window.mhbOpenSignup();
-                  else window.dispatchEvent(new CustomEvent("mhb:open-signup"));
+                  if (typeof window.mhbOpenSignup === "function")
+                    window.mhbOpenSignup();
+                  else
+                    window.dispatchEvent(
+                      new CustomEvent("mhb:open-signup")
+                    );
                 }}
               >
                 Sign up

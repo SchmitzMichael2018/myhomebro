@@ -5,12 +5,12 @@ import io
 import os
 import sys
 import traceback
+import logging
 from typing import Set, Optional
 
 from django.conf import settings
 from django.core import signing
 from django.core.files.base import ContentFile
-from django.core.mail import send_mail
 from django.http import FileResponse, Http404
 from django.db import transaction
 from django.shortcuts import get_object_or_404
@@ -24,6 +24,13 @@ from rest_framework.exceptions import ValidationError, PermissionDenied
 
 from projects.models import Agreement, Milestone, Project, Homeowner, Contractor
 from projects.serializers.agreement import AgreementSerializer
+from projects.services.mailer import email_signing_invite
+from projects.services.sms import sms_link_to_parties  # NEW import
+
+from .funding import send_funding_link_for_agreement
+
+logger = logging.getLogger(__name__)
+
 
 # ---------------------------------------------------------------------------------------
 # Resilient PDF loader:
@@ -131,6 +138,10 @@ DRAFT_ONLY_FIELDS: Set[str] = {
 # Signed preview link config
 _PREVIEW_SALT = "agreements.preview.link.v1"
 _PREVIEW_MAX_AGE = 10 * 60  # 10 minutes
+
+# Public/homeowner signing link config
+_PUBLIC_SIGN_SALT = "agreements.public.sign.v1"
+_PUBLIC_SIGN_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
 
 
 # ---------------------------------------------------------------------
@@ -353,6 +364,10 @@ class AgreementViewSet(viewsets.ModelViewSet):
       POST /agreements/<id>/preview_link/     -> {"url": "<signed public URL>"}
       GET  /agreements/preview_signed/?t=...  -> inline PDF (public, HMAC-validated)
       POST /agreements/<id>/mark_previewed/   -> marks reviewed for UI
+      POST /agreements/<id>/finalize_pdf/     -> generate & save final PDF
+      POST /agreements/<id>/send_signature_request/ -> email homeowner signing link
+      POST /agreements/<id>/contractor_sign/  -> contractor e-sign
+      POST /agreements/<id>/contractor_unsign/-> undo contractor signature (when safe)
     """
 
     permission_classes = [IsAuthenticated]
@@ -710,50 +725,61 @@ class AgreementViewSet(viewsets.ModelViewSet):
         pdf_url = getattr(getattr(ag, "pdf_file", None), "url", None)
         return Response({"ok": True, "pdf_url": pdf_url}, status=status.HTTP_200_OK)
 
-    # ---------------- Send for signature (email link) ----------------
+    # ---------------- NEW: Send for homeowner signature (email + SMS link) ----------------
 
     @action(detail=True, methods=["post"])
-    def send_for_signature(self, request, pk=None):
-        ag = self.get_object()
+    def send_signature_request(self, request, pk=None):
+        """
+        Email a secure public signing link to the homeowner using Postmark
+        and also send an SMS link via Twilio (if configured).
+        """
+        ag: Agreement = self.get_object()
         homeowner = getattr(ag, "homeowner", None)
         homeowner_email = getattr(homeowner, "email", None)
-        homeowner_name = getattr(homeowner, "full_name", "") or "Homeowner"
+
         if not homeowner_email:
             return Response(
                 {"detail": "Agreement has no homeowner email."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Build secure token
+        signer = signing.TimestampSigner(salt=_PUBLIC_SIGN_SALT)
+        token_payload = {"agreement_id": ag.id, "ts": float(now().timestamp())}
+        token = signer.sign_object(token_payload)
+
+        # Frontend base origin (for the /public-sign/:token route)
         domain = (
             getattr(settings, "PUBLIC_APP_ORIGIN", None)
-            or getattr(settings, "SITE_ORIGIN", None)
+            or getattr(settings, "SITE_URL", None)
             or "https://www.myhomebro.com"
-        )
-        token = str(getattr(ag, "homeowner_access_token", ""))
-        sign_url = f"{domain}/agreements/access/{token}/sign"
-        pdf_url = f"{domain}/agreements/access/{token}/pdf"
+        ).rstrip("/")
 
-        subject = (
-            f"Agreement for {getattr(getattr(ag, 'project', None), 'title', 'your project')} — Signature Requested"
-        )
-        body = (
-            f"Hello {homeowner_name},\n\n"
-            "Please review and sign your agreement using the secure link below:\n\n"
-            f"Sign: {sign_url}\n"
-            f"PDF:  {pdf_url}\n\n"
-            "If you did not request this, please ignore this message.\n\n"
-            "— MyHomeBro"
-        )
+        sign_url = f"{domain}/public-sign/{token}"
+
+        # Use our HTML mail helper (Postmark-backed)
         try:
-            from_email = getattr(
-                settings, "DEFAULT_FROM_EMAIL", "no-reply@myhomebro.com"
+            email_signing_invite(ag, sign_url=sign_url)
+        except Exception as e:
+            # Log but don't hard-fail the API; return URL so UI can show/copy
+            print("send_signature_request email_signing_invite error:", repr(e), file=sys.stderr)
+
+        # NEW: send SMS link to homeowner + contractor (if phones present)
+        try:
+            sms_sent = sms_link_to_parties(
+                ag,
+                link_url=sign_url,
+                note="Please review and sign your agreement.",
             )
-            send_mail(subject, body, from_email, [homeowner_email], fail_silently=True)
-        except Exception:
-            pass
+            print(f"send_signature_request SMS sent count: {sms_sent}", file=sys.stderr)
+        except Exception as e:
+            print("send_signature_request SMS error:", repr(e), file=sys.stderr)
 
         return Response(
-            {"ok": True, "sign_url": sign_url, "pdf_url": pdf_url},
+            {
+                "ok": True,
+                "sign_url": sign_url,
+            },
             status=status.HTTP_200_OK,
         )
 
@@ -893,4 +919,188 @@ def agreement_pdf(request, agreement_id: int):
             return FileResponse(ag.pdf_file.open("rb"), content_type="application/pdf")
         except Exception:
             raise Http404("PDF not available")
+    raise Http404("PDF not available")
+
+
+# ---------- NEW public homeowner signing endpoints ----------
+
+
+def _unsign_public_token(token: str) -> Agreement:
+    """
+    Decode public signing token and return Agreement or raise 404/410.
+    """
+    signer = signing.TimestampSigner(salt=_PUBLIC_SIGN_SALT)
+    try:
+        data = signer.unsign_object(token, max_age=_PUBLIC_SIGN_MAX_AGE)
+        agreement_id = int(data.get("agreement_id"))
+    except signing.SignatureExpired:
+        raise Http404("Signing link expired.")
+    except Exception:
+        raise Http404("Invalid signing token.")
+
+    return get_object_or_404(Agreement, pk=agreement_id)
+
+
+@api_view(["GET", "POST"])
+@permission_classes([AllowAny])
+def agreement_public_sign(request):
+    """
+    GET  /api/projects/agreements/public_sign/?token=...
+        -> lightweight Agreement info + public PDF URL
+
+    POST /api/projects/agreements/public_sign/
+        body: { token, typed_name, [signature|signature_data_url] }
+        -> records homeowner signature and regenerates PDF.
+    """
+    if request.method == "GET":
+        token = request.query_params.get("token")
+        if not token:
+            return Response({"detail": "Missing token."}, status=400)
+
+        ag = _unsign_public_token(token)
+
+        homeowner = getattr(ag, "homeowner", None)
+        contractor = getattr(ag, "contractor", None)
+
+        pdf_url = request.build_absolute_uri(
+            f"/api/projects/agreements/public_pdf/?token={token}"
+        )
+
+        data = {
+            "id": ag.id,
+            "project_title": getattr(ag, "project_title", None)
+            or getattr(ag, "title", None)
+            or getattr(getattr(ag, "project", None), "title", None)
+            or f"Agreement #{ag.id}",
+            "homeowner_name": getattr(ag, "homeowner_name", None)
+            or getattr(homeowner, "full_name", None)
+            or "",
+            "contractor_name": getattr(contractor, "business_name", None)
+            or getattr(contractor, "full_name", None)
+            or "",
+            "status": getattr(ag, "status", "draft"),
+            "pdf_url": pdf_url,
+        }
+        return Response(data, status=200)
+
+    # POST (sign)
+    token = request.data.get("token")
+    if not token:
+        return Response({"detail": "Missing token."}, status=400)
+
+    ag = _unsign_public_token(token)
+
+    typed_name = (request.data.get("typed_name") or "").strip()
+    if not typed_name:
+        return Response(
+            {"detail": "Typed name (signature) is required."},
+            status=400,
+        )
+
+    # Optional signature image (finger-drawn or uploaded)
+    signature_file = request.FILES.get("signature")
+    data_url = request.data.get("signature_data_url")
+
+    try:
+        if signature_file and hasattr(ag, "homeowner_signature"):
+            # Uploaded image
+            ag.homeowner_signature.save(
+                signature_file.name, signature_file, save=False
+            )
+        elif data_url and hasattr(ag, "homeowner_signature"):
+            # Finger-drawn signature (data URL)
+            header, b64 = data_url.split(",", 1)
+            if ";base64" not in header:
+                return Response(
+                    {"detail": "Invalid signature data URL."},
+                    status=400,
+                )
+            ext = "png"
+            if "image/jpeg" in header or "image/jpg" in header:
+                ext = "jpg"
+            content = ContentFile(
+                base64.b64decode(b64),
+                name=f"homeowner_signature.{ext}",
+            )
+            ag.homeowner_signature.save(content.name, content, save=False)
+    except Exception:
+        return Response(
+            {"detail": "Could not process signature image."},
+            status=400,
+        )
+
+    # Record homeowner signature metadata
+    ag.homeowner_signature_name = typed_name
+    ag.signed_by_homeowner = True
+    ag.signed_at_homeowner = now()
+    ip = (
+        request.META.get("HTTP_X_FORWARDED_FOR", "")
+        .split(",")[0]
+        .strip()
+        or request.META.get("REMOTE_ADDR")
+    )
+    ag.homeowner_signed_ip = ip or None
+
+    ag.save()
+
+    # Regenerate final PDF if supported
+    if generate_full_agreement_pdf:
+        try:
+            generate_full_agreement_pdf(ag)
+        except Exception:
+            pass
+
+    # 🔹 AUTO-SEND FUNDING LINK IF FULLY SIGNED AND NOT YET FUNDED
+    auto_funding = None
+    try:
+        if _is_fully_signed(ag) and not getattr(ag, "escrow_funded", False):
+            auto_funding = send_funding_link_for_agreement(ag, request=request)
+    except ValueError as exc:
+        # Not eligible (missing email/amount/etc) – log & continue
+        logger.info(
+            "Auto funding link skipped for Agreement %s: %s",
+            ag.id,
+            exc,
+        )
+    except Exception:
+        logger.exception(
+            "Auto funding link failed for Agreement %s",
+            ag.id,
+        )
+
+    resp = {"ok": True}
+    if auto_funding:
+        resp["funding_link_sent"] = True
+        resp["funding"] = auto_funding
+
+    return Response(resp, status=200)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def agreement_public_pdf(request):
+    """
+    Public PDF stream for homeowner, protected by the same signing token.
+    """
+    token = request.query_params.get("token")
+    if not token:
+        return Response({"detail": "Missing token."}, status=400)
+
+    ag = _unsign_public_token(token)
+
+    # Ensure PDF exists
+    if (not getattr(ag, "pdf_file", None)) or (not getattr(ag.pdf_file, "name", "")):
+        if generate_full_agreement_pdf:
+            try:
+                generate_full_agreement_pdf(ag)
+                ag.refresh_from_db()
+            except Exception:
+                pass
+
+    if getattr(ag, "pdf_file", None) and getattr(ag.pdf_file, "name", ""):
+        try:
+            return FileResponse(ag.pdf_file.open("rb"), content_type="application/pdf")
+        except Exception:
+            raise Http404("PDF not available")
+
     raise Http404("PDF not available")

@@ -311,8 +311,9 @@ def _project_address(ag: Agreement) -> str:
         return direct
 
     # 2) "Same as Homeowner" check
-    # We check the virtual alias or the DB field name
-    is_same = getattr(ag, "project_is_homeowner_address", False) or getattr(ag, "project_address_same_as_homeowner", False)
+    is_same = getattr(ag, "project_is_homeowner_address", False) or getattr(
+        ag, "project_address_same_as_homeowner", False
+    )
     if is_same:
         return "Same as Homeowner Address"
 
@@ -537,7 +538,6 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
 
     c_name = _s(getattr(contractor, "business_name", None) or getattr(contractor, "full_name", None))
     c_email = _s(getattr(contractor, "email", None))
-    # support both phone and phone_number
     c_phone = _s(getattr(contractor, "phone", None) or getattr(contractor, "phone_number", None))
     c_addr = _fmt_addr_from(contractor)
     c_lic_no = _s(getattr(contractor, "license_number", None))
@@ -684,11 +684,8 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
         if not val:
             return ""
         try:
-            from django.utils.timezone import localtime
-
             return localtime(val).strftime("%Y-%m-%d %H:%M")
         except Exception:
-            # Fallback to plain string if something odd comes through
             return str(val)
 
     def _sig_block(
@@ -750,13 +747,7 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
             )
         )
 
-    sig_tbl.setStyle(RLTableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
-    story.append(sig_tbl)
-
-    if is_preview:
-        story.append(Spacer(1, 6))
-        story.append(Paragraph("This is a preview. Final version will include any updated signatures.", s_small))
-
+    # Build document
     def _first(c, d):
         if is_preview:
             _watermark_preview(c)

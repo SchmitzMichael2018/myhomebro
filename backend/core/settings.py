@@ -44,7 +44,10 @@ else:
 # ──────────────────────────────────────────────────────────────────────────────
 SECRET_KEY = get_env_var("SECRET_KEY", required=True)
 DEBUG = get_bool("DEBUG", default=False)
-ALLOWED_HOSTS = [h.strip() for h in get_env_var("ALLOWED_HOSTS", "localhost,127.0.0.1,myhomebro.com,www.myhomebro.com").split(",") if h.strip()]
+ALLOWED_HOSTS = [h.strip() for h in get_env_var(
+    "ALLOWED_HOSTS",
+    "localhost,127.0.0.1,myhomebro.com,www.myhomebro.com"
+).split(",") if h.strip()]
 
 # Public URLs (used for CSRF/CORS defaults)
 FRONTEND_URL = get_env_var("FRONTEND_URL", "http://localhost:3000").rstrip("/")
@@ -148,7 +151,10 @@ DATABASES = {
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS":    [REPO_DIR / "templates"],  # optional; safe if folder missing
+        "DIRS": [
+            REPO_DIR / "templates",   # ~/backend/templates
+            BASE_DIR / "templates",   # ~/backend/backend/templates (safety net)
+        ],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -245,11 +251,9 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CORS_ALLOW_CREDENTIALS = True
 
-# Allow Authorization and Content-Disposition headers cross-origin if needed
 from corsheaders.defaults import default_headers as _cors_default_headers  # type: ignore
 CORS_ALLOW_HEADERS = list(_cors_default_headers) + ["authorization", "content-disposition"]
 
-# Expose Content-Disposition so the browser can read filenames on PDF/CSV downloads
 CORS_EXPOSE_HEADERS = ["Content-Disposition"]
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -279,22 +283,28 @@ TWILIO_AUTH_TOKEN   = get_env_var("TWILIO_AUTH_TOKEN",   required=False)
 TWILIO_PHONE_NUMBER = get_env_var("TWILIO_PHONE_NUMBER", required=False)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Email (safe defaults for MVP)
+# Email (Postmark SMTP in production, console in DEBUG)
 # ──────────────────────────────────────────────────────────────────────────────
 if DEBUG:
+    # In development, just print emails to the console
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 else:
-    if os.getenv("EMAIL_HOST") and os.getenv("EMAIL_HOST_USER"):
-        EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-    else:
-        EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+    # In production, send real mail via Postmark SMTP
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_HOST = "smtp.postmarkapp.com"
+    EMAIL_PORT = 587
+    EMAIL_USE_TLS = True
 
-EMAIL_HOST          = get_env_var("EMAIL_HOST", required=False)
-EMAIL_PORT          = int(get_env_var("EMAIL_PORT", "587"))
-EMAIL_USE_TLS       = get_bool("EMAIL_USE_TLS", True)
-EMAIL_HOST_USER     = get_env_var("EMAIL_HOST_USER", required=False)
-EMAIL_HOST_PASSWORD = get_env_var("EMAIL_HOST_PASSWORD", required=False)
-DEFAULT_FROM_EMAIL  = get_env_var("DEFAULT_FROM_EMAIL", "MyHomeBro <no-reply@myhomebro.com>")
+    # Use your Postmark server token as SMTP username & password
+    POSTMARK_SERVER_TOKEN = get_env_var("POSTMARK_SERVER_TOKEN", required=True)
+    EMAIL_HOST_USER = POSTMARK_SERVER_TOKEN
+    EMAIL_HOST_PASSWORD = POSTMARK_SERVER_TOKEN
+
+# From address used in all emails (must match a verified sender in Postmark)
+DEFAULT_FROM_EMAIL = get_env_var("DEFAULT_FROM_EMAIL", "MyHomeBro <info@myhomebro.com>")
+
+# Optional: public logo URL for email templates
+PUBLIC_LOGO_URL = get_env_var("PUBLIC_LOGO_URL", "") or None
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Production Security (enable when DEBUG=False)
