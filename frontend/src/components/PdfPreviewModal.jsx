@@ -4,15 +4,17 @@ import React, { useEffect } from "react";
 export default function PdfPreviewModal({ open, onClose, fileUrl, title = "Preview" }) {
   useEffect(() => {
     if (!open) return;
-    const onKey = (e) => { if (e.key === "Escape") onClose?.(); };
+    const onKey = (e) => {
+      if (e.key === "Escape") onClose?.();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
   if (!open) return null;
 
-  // Use the frame-exempt backend route
-  const viewerUrl = `/pdf/viewer/?file=${encodeURIComponent(fileUrl)}#pagemode=none`;
+  // Use the provided fileUrl directly (works with blob: URLs and normal URLs)
+  const viewerUrl = fileUrl;
 
   const handleBackdrop = (e) => {
     if (e.target.dataset?.backdrop === "1") onClose?.();
@@ -31,19 +33,38 @@ export default function PdfPreviewModal({ open, onClose, fileUrl, title = "Previ
         <div className="flex items-center justify-between px-4 py-2 border-b">
           <div className="text-sm font-medium">{title}</div>
           <div className="flex items-center gap-3">
-            <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">
-              Open raw PDF
-            </a>
-            <button onClick={onClose} className="rounded px-2 py-1 text-gray-600 hover:bg-gray-100" aria-label="Close">✕</button>
+            {fileUrl && (
+              <a
+                href={fileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-blue-600 hover:underline"
+              >
+                Open raw PDF
+              </a>
+            )}
+            <button
+              onClick={onClose}
+              className="rounded px-2 py-1 text-gray-600 hover:bg-gray-100"
+              aria-label="Close"
+            >
+              ✕
+            </button>
           </div>
         </div>
-        <iframe
-          title="PDF Preview"
-          src={viewerUrl}
-          className="flex-1 w-full border-0"
-          sandbox="allow-scripts allow-same-origin allow-downloads allow-popups allow-forms allow-top-navigation-by-user-activation"
-          allow="clipboard-read; clipboard-write; fullscreen"
-        />
+
+        {/* Plain iframe, no sandbox — lets the browser PDF viewer render normally */}
+        {viewerUrl ? (
+          <iframe
+            title="PDF Preview"
+            src={viewerUrl}
+            className="flex-1 w-full border-0"
+          />
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-sm text-gray-500">
+            PDF preview is not available.
+          </div>
+        )}
       </div>
     </div>
   );

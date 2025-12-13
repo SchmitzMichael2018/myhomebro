@@ -367,7 +367,7 @@ export default function SignUpModal() {
                 />
               </label>
 
-              {/* Agree row with inline links that always fetch fresh text */}
+              {/* Agree row with inline links that always fetch fresh HTML */}
               <label
                 style={{
                   display: "inline-flex",
@@ -394,12 +394,12 @@ export default function SignUpModal() {
                     tabIndex={0}
                     onClick={(e) => {
                       e.stopPropagation();
-                      openFresh("/static/legal/terms_of_service.txt");
+                      openFresh("/legal/terms-of-service/");
                     }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.stopPropagation();
-                        openFresh("/static/legal/terms_of_service.txt");
+                        openFresh("/legal/terms-of-service/");
                       }
                     }}
                   >
@@ -416,12 +416,12 @@ export default function SignUpModal() {
                     tabIndex={0}
                     onClick={(e) => {
                       e.stopPropagation();
-                      openFresh("/static/legal/privacy_policy.txt");
+                      openFresh("/legal/privacy-policy/");
                     }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
                         e.stopPropagation();
-                        openFresh("/static/legal/privacy_policy.txt");
+                        openFresh("/legal/privacy-policy/");
                       }
                     }}
                   >

@@ -1,5 +1,6 @@
 # backend/projects/models.py
 
+from decimal import Decimal
 from django.conf import settings
 from django.db import models, transaction
 from django.utils import timezone
@@ -324,6 +325,14 @@ class Agreement(models.Model):
     )
     warranty_text_snapshot = models.TextField(blank=True, default="")
 
+    # ✅ NEW: Persisted escrow funded amount (supports amendments / top-ups)
+    escrow_funded_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="Total amount funded into escrow so far.",
+    )
+
     escrow_payment_intent_id = models.CharField(max_length=255, blank=True)
     escrow_funded = models.BooleanField(default=False)
 
@@ -384,12 +393,6 @@ class Agreement(models.Model):
         if not self.contractor and self.project and self.project.contractor_id:
             self.contractor = self.project.contractor
 
-        # Simple status transitions
-        if self.escrow_funded:
-            self.status = ProjectStatus.FUNDED
-        elif self.is_fully_signed and self.status == ProjectStatus.DRAFT:
-            self.status = ProjectStatus.SIGNED
-
         # Normalize warranty_type
         if self.warranty_type:
             self.warranty_type = str(self.warranty_type).strip().lower()
@@ -402,6 +405,23 @@ class Agreement(models.Model):
         snap = (self.warranty_text_snapshot or "").strip()
         if not snap:
             self.warranty_text_snapshot = DEFAULT_WARRANTY_TEXT
+
+        # ✅ Correct funded logic based on AMOUNT (not just boolean)
+        try:
+            funded_amt = Decimal(str(self.escrow_funded_amount or "0"))
+        except Exception:
+            funded_amt = Decimal("0.00")
+
+        try:
+            total_amt = Decimal(str(self.total_cost or "0"))
+        except Exception:
+            total_amt = Decimal("0.00")
+
+        if total_amt > 0 and funded_amt >= total_amt:
+            self.escrow_funded = True
+            self.status = ProjectStatus.FUNDED
+        elif self.is_fully_signed and self.status == ProjectStatus.DRAFT:
+            self.status = ProjectStatus.SIGNED
 
         super().save(*args, **kwargs)
 

@@ -19,7 +19,7 @@ import {
   CalendarDays,
 } from "lucide-react";
 
-console.log("ContractorDashboard.jsx v2025-09-17-invoices-path");
+console.log("ContractorDashboard.jsx v2025-12-03-intro-card");
 
 // Ensure react-modal knows the root
 Modal.setAppElement("#root");
@@ -55,7 +55,12 @@ function ActionButton({ icon: Icon, label, onClick, primary }) {
       onClick={onClick}
       type="button"
       title={label}
-      style={{ padding: "12px 16px", fontSize: 14, display: "flex", alignItems: "center" }}
+      style={{
+        padding: "12px 16px",
+        fontSize: 14,
+        display: "flex",
+        alignItems: "center",
+      }}
     >
       {Icon ? <Icon size={18} /> : null}
       <span style={{ marginLeft: 8, fontWeight: 900 }}>{label}</span>
@@ -74,7 +79,11 @@ function ExpenseRequestsPanel() {
     try {
       setLoading(true);
       const { data } = await api.get("/projects/expenses/");
-      const list = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];
+      const list = Array.isArray(data?.results)
+        ? data.results
+        : Array.isArray(data)
+        ? data
+        : [];
       setRows(list);
     } catch (e) {
       console.error(e);
@@ -92,21 +101,43 @@ function ExpenseRequestsPanel() {
     const base = "px-2 py-0.5 rounded text-xs font-semibold";
     switch (String(s || "").toLowerCase()) {
       case "draft":
-        return <span className={`${base} bg-gray-200 text-gray-800`}>Draft</span>;
+        return (
+          <span className={`${base} bg-gray-200 text-gray-800`}>Draft</span>
+        );
       case "contractor_signed":
-        return <span className={`${base} bg-indigo-100 text-indigo-800`}>Signed</span>;
+        return (
+          <span className={`${base} bg-indigo-100 text-indigo-800`}>
+            Signed
+          </span>
+        );
       case "pending":
-        return <span className={`${base} bg-amber-100 text-amber-800`}>Sent</span>;
+        return (
+          <span className={`${base} bg-amber-100 text-amber-800`}>Sent</span>
+        );
       case "approved":
-        return <span className={`${base} bg-green-100 text-green-800`}>Accepted</span>;
+        return (
+          <span className={`${base} bg-green-100 text-green-800`}>
+            Accepted
+          </span>
+        );
       case "rejected":
-        return <span className={`${base} bg-red-100 text-red-800`}>Rejected</span>;
+        return (
+          <span className={`${base} bg-red-100 text-red-800`}>Rejected</span>
+        );
       case "paid":
-        return <span className={`${base} bg-emerald-200 text-emerald-900`}>Paid</span>;
+        return (
+          <span className={`${base} bg-emerald-200 text-emerald-900`}>
+            Paid
+          </span>
+        );
       case "disputed":
-        return <span className={`${base} bg-red-100 text-red-800`}>Disputed</span>;
+        return (
+          <span className={`${base} bg-red-100 text-red-800`}>Disputed</span>
+        );
       default:
-        return <span className={`${base} bg-gray-100 text-gray-800`}>{s}</span>;
+        return (
+          <span className={`${base} bg-gray-100 text-gray-800`}>{s}</span>
+        );
     }
   };
 
@@ -119,7 +150,9 @@ function ExpenseRequestsPanel() {
     <div className="rounded-xl border bg-white shadow-sm">
       <div className="px-5 py-4 border-b bg-gradient-to-r from-blue-50 to-white rounded-t-xl">
         <h3 className="text-lg font-semibold">Expense Requests</h3>
-        <p className="text-sm text-gray-600 mt-1">Track expenses you’ve sent to homeowners.</p>
+        <p className="text-sm text-gray-600 mt-1">
+          Track expenses you’ve sent to homeowners.
+        </p>
       </div>
 
       <div className="p-5">
@@ -132,27 +165,48 @@ function ExpenseRequestsPanel() {
             <table className="min-w-full text-sm border rounded">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="p-2 text-left border">Created</th>
-                  <th className="p-2 text-left border">Agreement</th>
-                  <th className="p-2 text-left border">Description</th>
-                  <th className="p-2 text-right border">Amount</th>
-                  <th className="p-2 text-left border">Status</th>
-                  <th className="p-2 text-center border">Receipt</th>
+                  <th className="p-2 border text-left text-xs font-semibold text-gray-600">
+                    Created
+                  </th>
+                  <th className="p-2 border text-left text-xs font-semibold text-gray-600">
+                    Agreement
+                  </th>
+                  <th className="p-2 border text-left text-xs font-semibold text-gray-600">
+                    Description
+                  </th>
+                  <th className="p-2 border text-right text-xs font-semibold text-gray-600">
+                    Amount
+                  </th>
+                  <th className="p-2 border text-left text-xs font-semibold text-gray-600">
+                    Status
+                  </th>
+                  <th className="p-2 border text-center text-xs font-semibold text-gray-600">
+                    Receipt
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id} className="odd:bg-white even:bg-gray-50">
                     <td className="p-2 border">
-                      {r.created_at ? new Date(r.created_at).toLocaleString() : "—"}
+                      {r.created_at
+                        ? new Date(r.created_at).toLocaleString()
+                        : "—"}
                     </td>
                     <td className="p-2 border">{r.agreement || "—"}</td>
                     <td className="p-2 border">{r.description}</td>
-                    <td className="p-2 border text-right">{moneyFmt(r.amount)}</td>
+                    <td className="p-2 border text-right">
+                      {moneyFmt(r.amount)}
+                    </td>
                     <td className="p-2 border">{statusBadge(r.status)}</td>
                     <td className="p-2 border text-center">
                       {r.receipt_url ? (
-                        <a className="text-blue-700 underline" href={r.receipt_url} target="_blank" rel="noreferrer">
+                        <a
+                          className="text-blue-700 underline"
+                          href={r.receipt_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
                           Open
                         </a>
                       ) : (
@@ -202,8 +256,10 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
     }
   }, [isOpen, defaultAgreementId]);
 
-  const onChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
-  const onFile = (e) => setForm({ ...form, file: e.target.files?.[0] || null });
+  const onChange = (e) =>
+    setForm({ ...form, [e.target.name]: e.target.value });
+  const onFile = (e) =>
+    setForm({ ...form, file: e.target.files?.[0] || null });
 
   const submit = async (e) => {
     e.preventDefault();
@@ -219,7 +275,8 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
       fd.append("description", form.description.trim());
       fd.append("amount", form.amount);
       if (form.incurred_date) fd.append("incurred_date", form.incurred_date);
-      if (form.notes_to_homeowner) fd.append("notes_to_homeowner", form.notes_to_homeowner);
+      if (form.notes_to_homeowner)
+        fd.append("notes_to_homeowner", form.notes_to_homeowner);
       if (form.file) fd.append("receipt", form.file);
 
       const createRes = await api.post("/projects/expenses/", fd, {
@@ -228,10 +285,14 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
       const created = createRes.data;
 
       // 2) Contractor signs
-      await api.post(`/projects/expenses/${created.id}/contractor_sign/`);
+      await api.post(
+        `/projects/expenses/${created.id}/contractor_sign/`
+      );
 
       // 3) Send to homeowner
-      await api.post(`/projects/expenses/${created.id}/send_to_homeowner/`);
+      await api.post(
+        `/projects/expenses/${created.id}/send_to_homeowner/`
+      );
 
       toast.success("Expense sent to homeowner.");
       onClose(true);
@@ -252,7 +313,10 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
     >
       <div className="flex items-start justify-between mb-4">
         <h2 className="text-xl font-semibold">New Expense</h2>
-        <button onClick={() => onClose(false)} className="px-3 py-1.5 rounded-lg border">
+        <button
+          onClick={() => onClose(false)}
+          className="px-3 py-1.5 rounded-lg border"
+        >
           Close
         </button>
       </div>
@@ -260,7 +324,9 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
       <form onSubmit={submit} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Agreement (optional)</label>
+            <label className="block text-sm text-gray-700 mb-1">
+              Agreement (optional)
+            </label>
             <select
               name="agreement"
               value={form.agreement}
@@ -277,7 +343,9 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Incurred Date</label>
+            <label className="block text-sm text-gray-700 mb-1">
+              Incurred Date
+            </label>
             <input
               type="date"
               name="incurred_date"
@@ -288,18 +356,22 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
           </div>
 
           <div className="md:col-span-2">
-            <label className="block text-sm text-gray-700 mb-1">Description</label>
+            <label className="block text-sm text-gray-700 mb-1">
+              Description
+            </label>
             <input
               name="description"
               value={form.description}
               onChange={onChange}
               className="w-full border rounded-lg px-3 py-2"
-              placeholder="e.g., Dump fee, rental, small materials"
+              placeholder="e.g. Dump fee, rental, small materials"
             />
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Amount</label>
+            <label className="block text-sm text-gray-700 mb-1">
+              Amount
+            </label>
             <input
               type="number"
               step="0.01"
@@ -312,13 +384,22 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Receipt (PDF or Image)</label>
-            <input type="file" accept="image/*,.pdf" onChange={onFile} className="w-full" />
+            <label className="block text-sm text-gray-700 mb-1">
+              Receipt (PDF or Image)
+            </label>
+            <input
+              type="file"
+              accept="image/*,pdf"
+              onChange={onFile}
+              className="w-full"
+            />
           </div>
         </div>
 
         <div>
-          <label className="block text-sm text-gray-700 mb-1">Notes to Homeowner (optional)</label>
+          <label className="block text-sm text-gray-700 mb-1">
+            Notes to Homeowner (optional)
+          </label>
           <textarea
             name="notes_to_homeowner"
             value={form.notes_to_homeowner}
@@ -329,13 +410,19 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
         </div>
 
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={() => onClose(false)} className="px-4 py-2 rounded-lg border">
+          <button
+            type="button"
+            onClick={() => onClose(false)}
+            className="px-4 py-2 rounded-lg border"
+          >
             Cancel
           </button>
           <button
             type="submit"
             disabled={sub}
-            className={`px-4 py-2 rounded-lg text-white font-semibold ${sub ? "bg-gray-500" : "bg-blue-600 hover:bg-blue-700"}`}
+            className={`px-4 py-2 rounded-lg text-white font-semibold ${
+              sub ? "bg-gray-500" : "bg-blue-600 hover:bg-blue-700"
+            }`}
           >
             {sub ? "Sending…" : "Sign & Send to Homeowner"}
           </button>
@@ -357,12 +444,15 @@ export default function ContractorDashboard() {
 
   const navigate = useNavigate();
 
+  // Intro pricing countdown state
+  const [introDaysRemaining, setIntroDaysRemaining] = useState(null);
+  const [introActive, setIntroActive] = useState(false);
+
   /* ----- load data ----- */
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        // ✅ Corrected invoices path: /projects/invoices/
         const [mRes, iRes] = await Promise.allSettled([
           api.get("/projects/milestones/"),
           api.get("/projects/invoices/"),
@@ -395,6 +485,57 @@ export default function ContractorDashboard() {
       }
     })();
     return () => (mounted = false);
+  }, []);
+
+  // Intro pricing countdown effect (60-day intro)
+  useEffect(() => {
+    const fetchIntroCountdown = async () => {
+      try {
+        const { data } = await api.get("/projects/contractors/me/");
+
+        // Try a few possible fields; if none, fall back to standard tier view
+        const createdRaw =
+          data.created_at ||
+          data.contractor_created_at ||
+          data.contractor?.created_at ||
+          data.user_created_at ||
+          data.user?.date_joined;
+
+        if (!createdRaw) {
+          setIntroActive(false);
+          setIntroDaysRemaining(0);
+          return;
+        }
+
+        const createdDate = new Date(createdRaw);
+        if (Number.isNaN(createdDate.getTime())) {
+          setIntroActive(false);
+          setIntroDaysRemaining(0);
+          return;
+        }
+
+        const INTRO_DAYS = 60;
+        const now = new Date();
+        const msPerDay = 1000 * 60 * 60 * 24;
+        const daysActive = Math.floor(
+          (now.getTime() - createdDate.getTime()) / msPerDay
+        );
+        const remaining = INTRO_DAYS - daysActive;
+
+        setIntroActive(remaining > 0);
+        setIntroDaysRemaining(Math.max(0, remaining));
+      } catch (err) {
+        console.error(
+          "Failed to load contractor profile for intro countdown",
+          err
+        );
+        // On error, just show standard tier messaging
+        setIntroActive(false);
+        setIntroDaysRemaining(0);
+      }
+    };
+
+    fetchIntroCountdown();
   }, []);
 
   /* ----- milestone stats ----- */
@@ -445,7 +586,38 @@ export default function ContractorDashboard() {
   };
 
   return (
-    <PageShell title="Dashboard" subtitle="Milestones and invoices at a glance." showLogo>
+    <PageShell
+      title="Dashboard"
+      subtitle="Milestones and invoices at a glance."
+      showLogo
+    >
+      {/* Intro rate stat card */}
+      <div className="mhb-kicker">MyHomeBro Intro Rate</div>
+      <div className="mhb-grid" style={{ marginBottom: 6 }}>
+        <StatCard
+          icon={BadgeDollarSign}
+          title={
+            introDaysRemaining === null
+              ? "Checking your intro rate…"
+              : introActive
+              ? "Intro Rate: 3% + $1"
+              : "Standard Tiered Rates"
+          }
+          subtitle={
+            introDaysRemaining === null
+              ? "Loading your intro period details."
+              : introActive
+              ? `${introDaysRemaining} day${
+                  introDaysRemaining === 1 ? "" : "s"
+                } remaining on your 3% + $1 new-contractor rate. After this, your base rate becomes 4.5% + $1 (before volume discounts).`
+              : "Your 60-day intro period has ended or could not be determined. Your base rate is 4.5% + $1, with lower rates unlocked at higher monthly volume."
+          }
+          count={null}
+          amount={null}
+          onClick={null}
+        />
+      </div>
+
       {/* Row 1 — Milestones */}
       <div className="mhb-kicker">Milestones</div>
       <div className="mhb-grid" style={{ marginBottom: 6 }}>
@@ -512,16 +684,36 @@ export default function ContractorDashboard() {
       </div>
       <div className="mhb-glass" style={{ padding: 12 }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-          <ActionButton icon={FilePlus2} label="+ New Agreement" primary onClick={goNewAgreement} />
-          <ActionButton icon={ListPlus} label="+ New Milestone" onClick={goNewMilestone} />
-          {/* NEW: stand-alone New Expense button */}
-          <ActionButton icon={Receipt} label="+ New Expense" onClick={openNewExpense} />
-          <ActionButton icon={CalendarDays} label="Calendar" onClick={goCalendar} />
-          <ActionButton icon={Receipt} label="Invoices" onClick={goInvoices} />
+          <ActionButton
+            icon={FilePlus2}
+            label="+ New Agreement"
+            primary
+            onClick={goNewAgreement}
+          />
+          <ActionButton
+            icon={ListPlus}
+            label="+ New Milestone"
+            onClick={goNewMilestone}
+          />
+          <ActionButton
+            icon={Receipt}
+            label="+ New Expense"
+            onClick={openNewExpense}
+          />
+          <ActionButton
+            icon={CalendarDays}
+            label="Calendar"
+            onClick={goCalendar}
+          />
+          <ActionButton
+            icon={Receipt}
+            label="Invoices"
+            onClick={goInvoices}
+          />
         </div>
       </div>
 
-      {/* NEW: Expense Requests table (re-mounts when refresh key changes) */}
+      {/* Expense Requests */}
       <div className="mhb-kicker" style={{ marginTop: 18 }}>
         Expense Requests
       </div>
@@ -530,7 +722,10 @@ export default function ContractorDashboard() {
       </div>
 
       {/* Modal: create/sign/send expense */}
-      <ExpenseRequestModal isOpen={showExpenseModal} onClose={onExpenseModalClose} />
+      <ExpenseRequestModal
+        isOpen={showExpenseModal}
+        onClose={onExpenseModalClose}
+      />
     </PageShell>
   );
 }

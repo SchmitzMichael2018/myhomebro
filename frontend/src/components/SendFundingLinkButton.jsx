@@ -1,180 +1,172 @@
-// frontend/src/components/SendFundingLinkButton.jsx
-// v2025-12-02 — Contractor "Send Escrow Funding Link" button
-//
-// Props:
-//   - agreementId: number (required)
-//   - isFullySigned: boolean
-//   - amount: number | string (optional but strongly recommended)
-//   - currency?: string (default "usd")
-//   - className?: string
-//
-// Behavior:
-//   - Disabled unless agreement is fully signed AND amount > 0 AND not loading
-//   - POSTs to /projects/agreements/:id/send_funding_link/ with { amount, currency }
-//   - Shows toast on success/failure
-//   - Displays the funding URL + copy-to-clipboard field so contractor can share it
+// /frontend/src/components/SendFundingLinkButton.jsx
+import React, { useMemo, useState } from "react";
 
-import React, { useState, useMemo } from "react";
-import toast from "react-hot-toast";
-import api from "../api";
-
-function normalizeAmount(rawAmount) {
-  if (rawAmount == null) return 0;
-  const n =
-    typeof rawAmount === "number"
-      ? rawAmount
-      : parseFloat(String(rawAmount).trim());
-  return Number.isFinite(n) ? n : 0;
-}
-
+/**
+ * SendFundingLinkButton
+ *
+ * Sends a funding link to homeowner for a specific dollar amount (typically remaining escrow).
+ *
+ * Default endpoint:
+ *   POST /api/projects/agreements/:id/send_funding_link/
+ *
+ * Important:
+ * - Pass `amount` as the remaining escrow needed (e.g., 25.00 for an amendment top-up)
+ * - Backend should use request.data.amount if present.
+ */
 export default function SendFundingLinkButton({
   agreementId,
-  isFullySigned,
-  amount,
-  currency = "usd",
+  isFullySigned = true,
+  amount = null, // IMPORTANT: pass remaining needed (e.g. 25.00)
+  disabled = false,
+  variant = "brand",
   className = "",
+  endpoint = null,
+  onSuccess,
+  onError,
+  label = "Send Escrow Funding Link",
 }) {
-  const [loading, setLoading] = useState(false);
-  const [lastResult, setLastResult] = useState(null); // { public_fund_url, amount, currency, expires_at }
-  const [copied, setCopied] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [lastError, setLastError] = useState("");
 
-  const normalizedAmount = useMemo(
-    () => normalizeAmount(amount),
-    [amount]
-  );
+  const resolvedEndpoint = useMemo(() => {
+    if (endpoint) return endpoint;
+    if (agreementId === undefined || agreementId === null) return null;
+    return `/api/projects/agreements/${agreementId}/send_funding_link/`;
+  }, [endpoint, agreementId]);
 
-  const disabled =
-    !isFullySigned || !agreementId || loading || normalizedAmount <= 0;
+  const normalizedAmount = useMemo(() => {
+    if (amount === null || amount === undefined || amount === "") return null;
+    const n = Number(amount);
+    if (Number.isNaN(n)) return null;
+    // Round to cents for safety
+    return Math.round(n * 100) / 100;
+  }, [amount]);
 
-  const handleClick = async () => {
-    if (!agreementId) {
-      toast.error("Missing agreement id.");
-      return;
-    }
-    if (!isFullySigned) {
-      toast.error("Agreement must be fully signed before funding.");
-      return;
-    }
-    if (normalizedAmount <= 0) {
-      toast.error("Please ensure the total project amount is greater than zero.");
-      return;
-    }
+  const isDisabled = useMemo(() => {
+    if (disabled) return true;
+    if (isSending) return true;
+    if (!resolvedEndpoint) return true;
+    if (!isFullySigned) return true;
 
-    setLoading(true);
-    setCopied(false);
+    // Must have a positive amount to fund
+    if (normalizedAmount === null) return true;
+    if (normalizedAmount <= 0) return true;
+
+    return false;
+  }, [disabled, isSending, resolvedEndpoint, isFullySigned, normalizedAmount]);
+
+  const baseClass =
+    "inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-semibold transition " +
+    "border shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2";
+
+  const variants = {
+    brand:
+      "bg-gradient-to-r from-indigo-600 to-violet-600 text-white border-indigo-700 " +
+      "hover:from-indigo-700 hover:to-violet-700 focus:ring-violet-500",
+    success:
+      "bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700 focus:ring-emerald-500",
+    secondary:
+      "bg-white text-gray-900 border-gray-300 hover:bg-gray-50 focus:ring-gray-400",
+    danger:
+      "bg-red-600 text-white border-red-700 hover:bg-red-700 focus:ring-red-500",
+  };
+
+  const disabledClass =
+    "opacity-60 cursor-not-allowed shadow-none hover:from-indigo-600 hover:to-violet-600 hover:bg-inherit";
+
+  async function handleSend() {
+    setLastError("");
+    if (isDisabled) return;
 
     try {
+      setIsSending(true);
+
+      const token =
+        localStorage.getItem("access") ||
+        localStorage.getItem("access_token") ||
+        localStorage.getItem("token") ||
+        "";
+
+      // Send amount explicitly
       const payload = {
-        amount: normalizedAmount.toFixed(2),
-        currency,
+        amount: normalizedAmount, // e.g. 25.00
       };
 
-      const { data } = await api.post(
-        `/projects/agreements/${agreementId}/send_funding_link/`,
-        payload
-      );
+      const res = await fetch(resolvedEndpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
 
-      setLastResult(data || null);
-
-      const url = data?.public_fund_url;
-      const amt = data?.amount || payload.amount;
-      const cur = (data?.currency || currency || "usd").toUpperCase();
-
-      if (url) {
-        toast.success(
-          `Funding link sent to homeowner for $${amt} ${cur}.`
-        );
+      let data = null;
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        data = await res.json();
       } else {
-        toast.success("Funding link created.");
+        const text = await res.text();
+        data = { detail: text };
       }
-    } catch (err) {
-      console.error("Error sending funding link:", err);
-      const msg =
-        err?.response?.data?.detail ||
-        "Unable to send escrow funding link right now.";
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  const handleCopy = async () => {
-    if (!lastResult?.public_fund_url) return;
-    try {
-      await navigator.clipboard.writeText(lastResult.public_fund_url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      setCopied(false);
-      toast.error("Unable to copy link to clipboard.");
+      if (!res.ok) {
+        const msg =
+          data?.detail ||
+          data?.error ||
+          data?.message ||
+          `Failed to send funding link (HTTP ${res.status})`;
+        setLastError(msg);
+        if (onError) onError(msg);
+        return;
+      }
+
+      if (onSuccess) onSuccess(data);
+      // eslint-disable-next-line no-alert
+      alert(data?.detail || "Funding link sent to homeowner.");
+    } catch (err) {
+      const msg =
+        err?.message || "Unexpected error while sending funding link.";
+      setLastError(msg);
+      if (onError) onError(msg);
+    } finally {
+      setIsSending(false);
     }
-  };
+  }
 
   return (
-    <div className={`space-y-2 ${className}`}>
+    <div className="inline-flex flex-col gap-2">
       <button
         type="button"
-        onClick={handleClick}
-        disabled={disabled}
-        className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold border ${
-          disabled
-            ? "border-slate-600 bg-slate-700 text-slate-300 cursor-not-allowed"
-            : "border-emerald-400/60 bg-emerald-500/90 text-slate-950 hover:bg-emerald-400"
-        }`}
+        onClick={handleSend}
+        disabled={isDisabled}
+        className={[
+          baseClass,
+          variants[variant] || variants.brand,
+          isDisabled ? disabledClass : "",
+          className,
+        ].join(" ")}
+        title={
+          !isFullySigned
+            ? "Agreement must be fully signed before sending funding link."
+            : normalizedAmount === null || normalizedAmount <= 0
+              ? "Funding amount must be greater than zero."
+              : "Send escrow funding link"
+        }
       >
-        {loading ? "Sending funding link…" : "Send Escrow Funding Link"}
+        {isSending ? (
+          <>
+            <span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+            Sending…
+          </>
+        ) : (
+          label
+        )}
       </button>
 
-      {!isFullySigned && (
-        <p className="text-xs text-slate-400">
-          Agreement must be fully signed by both parties before requesting
-          escrow funding.
-        </p>
-      )}
-
-      {normalizedAmount <= 0 && isFullySigned && (
-        <p className="text-xs text-amber-400">
-          Total amount appears to be $0. Update the agreement total before
-          sending a funding request.
-        </p>
-      )}
-
-      {lastResult?.public_fund_url && (
-        <div className="mt-2 space-y-1 rounded-md border border-emerald-500/40 bg-emerald-900/20 px-3 py-2">
-          <div className="text-xs text-emerald-200 font-semibold">
-            Latest funding link
-          </div>
-          <div className="flex flex-col gap-1">
-            <input
-              type="text"
-              readOnly
-              className="w-full rounded-md border border-emerald-500/40 bg-slate-950 text-xs text-emerald-50 px-2 py-1"
-              value={lastResult.public_fund_url}
-              onFocus={(e) => e.target.select()}
-            />
-            <div className="flex items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="inline-flex items-center gap-1 rounded-md border border-emerald-400/60 bg-emerald-500/90 text-[11px] font-semibold text-slate-950 px-2 py-1 hover:bg-emerald-400"
-              >
-                {copied ? "Copied!" : "Copy link"}
-              </button>
-              <div className="text-[10px] text-emerald-200 text-right">
-                Amount: ${lastResult.amount}{" "}
-                {(lastResult.currency || currency || "usd").toUpperCase()}
-                {lastResult.expires_at && (
-                  <>
-                    {" "}
-                    · Expires:{" "}
-                    {new Date(lastResult.expires_at).toLocaleString()}
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {lastError ? (
+        <div className="text-sm text-red-600">{lastError}</div>
+      ) : null}
     </div>
   );
 }

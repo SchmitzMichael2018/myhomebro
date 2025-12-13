@@ -144,7 +144,19 @@ def build_legal_notices(project_state: Optional[str] = None) -> List[Clause]:
         "platform’s dispute process are not permitted."
     ))
 
-    # 10) Dispute Resolution (generalized, remote-friendly, initiator’s state unless prohibited)
+    # 10) Payment Processing & Platform Fees (NEW)
+    clauses.append((
+        "Payment Processing & Platform Fees",
+        "Payments made under this Agreement may be processed by a third-party payment processor (such as Stripe, Inc. and "
+        "its affiliates) on behalf of MyHomeBro and/or the Contractor. The total project price shown in this Agreement "
+        "represents the amount owed by the Homeowner for the work described. Separate payment processing fees, platform "
+        "service fees, or escrow program fees may be charged by MyHomeBro and/or the payment processor as disclosed on "
+        "the funding, checkout, or invoice screens at the time of payment. These fees do not increase the agreed project "
+        "price but may reduce the net amount received by the Contractor after all applicable processing and platform fees "
+        "are deducted."
+    ))
+
+    # 11) Dispute Resolution (generalized, remote-friendly, initiator’s state unless prohibited)
     clauses.append((
         "Dispute Resolution",
         "Any dispute the parties cannot resolve through the platform will first be submitted to good-faith mediation. If "
@@ -156,7 +168,7 @@ def build_legal_notices(project_state: Optional[str] = None) -> List[Clause]:
         "collective, or representative claims are not permitted."
     ))
 
-    # 11) Limitation of Liability
+    # 12) Limitation of Liability
     clauses.append((
         "Limitation of Liability",
         "Neither party is liable for indirect, incidental, special, or consequential damages. Except for bodily injury or "
@@ -164,7 +176,7 @@ def build_legal_notices(project_state: Optional[str] = None) -> List[Clause]:
         "exceed the amounts paid for the specific portion of work giving rise to the claim."
     ))
 
-    # 12) Insurance (Homeowner requests proof; MHB doesn’t provide or verify)
+    # 13) Insurance (Homeowner requests proof; MHB doesn’t provide or verify)
     clauses.append((
         "Insurance",
         "Contractor represents it maintains commercially reasonable insurance (e.g., general liability) appropriate for "
@@ -172,7 +184,7 @@ def build_legal_notices(project_state: Optional[str] = None) -> List[Clause]:
         "directly from Contractor."
     ))
 
-    # 13) Force Majeure
+    # 14) Force Majeure
     clauses.append((
         "Force Majeure",
         "Neither party is liable for delay or failure caused by events beyond reasonable control, including but not limited "
@@ -180,7 +192,7 @@ def build_legal_notices(project_state: Optional[str] = None) -> List[Clause]:
         "will be extended for the duration of the impact."
     ))
 
-    # 14) Warranty Clarifier
+    # 15) Warranty Clarifier
     clauses.append((
         "Warranty Exclusions & Claims",
         "Warranty excludes normal wear, abuse, improper maintenance, third-party modifications, and acts of God. Warranty "
@@ -188,21 +200,21 @@ def build_legal_notices(project_state: Optional[str] = None) -> List[Clause]:
         "opportunity to inspect and cure."
     ))
 
-    # 15) Photo Authorization (optional)
+    # 16) Photo Authorization (optional)
     clauses.append((
         "Photo Authorization (Optional)",
         "Homeowner grants Contractor permission to photograph completed work for portfolio or marketing, excluding any "
         "personally identifiable information. This authorization is optional and may be revoked by written notice prior to publication."
     ))
 
-    # 16) Confidentiality
+    # 17) Confidentiality
     clauses.append((
         "Confidentiality",
         "Each party will keep the other’s non-public information confidential and use it only to perform this Agreement, "
         "except where disclosure is required by law."
     ))
 
-    # 17) Entire Agreement
+    # 18) Entire Agreement
     clauses.append((
         "Entire Agreement",
         "This document, its signed Change Orders, and the incorporated platform terms constitute the entire agreement. "
@@ -210,14 +222,14 @@ def build_legal_notices(project_state: Optional[str] = None) -> List[Clause]:
         "then the platform terms."
     ))
 
-    # 18) Notices
+    # 19) Notices
     clauses.append((
         "Notices",
         "Legal notices shall be sent via the platform message center and to the email addresses on file for each party and "
         "are deemed received when sent."
     ))
 
-    # 19) Cooling-Off / Cancellation (state-aware)
+    # 20) Cooling-Off / Cancellation (state-aware)
     clauses.append(_cooling_off_clause(project_state))
 
     return clauses

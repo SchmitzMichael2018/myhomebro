@@ -1,14 +1,14 @@
 // src/components/MilestoneEditModal.jsx
 // v2025-11-13 modal-r11 — Info Bar + overlap-aware save + diff-only PATCH +
-// verified upload + Recent Attachments + calendar icons + strict date normalization
+// verified upload + Recent Attachments + strict date normalization
 // NEW in r11: full comments list (load + append on send) using milestone comments API.
+// v2025-12-05 — removed extra calendar button overlay to avoid double-icons
 
 import React, {
   useEffect,
   useMemo,
   useState,
   useCallback,
-  useRef,
 } from "react";
 import toast from "react-hot-toast";
 import api from "../api";
@@ -39,14 +39,24 @@ const isLockedAgreementState = (s) => {
 // Normalize various input forms (Date/string) → "YYYY-MM-DD" or ""
 function toDateOnly(v) {
   if (!v) return "";
-  const str = String(v);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-  const d = new Date(str);
+  const s = String(v).trim();
+
+  // Already plain date (good)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return s;
+  }
+
+  // ISO datetime like "2025-12-04T00:00:00Z" or "2025-12-04T00:00:00-06:00"
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    return s.slice(0, 10); // just YYYY-MM-DD, no timezone math
+  }
+
+  // Fallback: try Date parsing for weird formats
+  const d = new Date(s);
   if (Number.isNaN(d.getTime())) return "";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${dd}`;
+  return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
 function friendlyDate(d) {
@@ -58,36 +68,6 @@ function friendlyDate(d) {
     day: "numeric",
     year: "numeric",
   });
-}
-
-function CalendarBtn({ onClick, title = "Pick a date", disabled }) {
-  return (
-    <button
-      type="button"
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={onClick}
-      aria-label={title}
-      title={title}
-      disabled={disabled}
-      style={{
-        position: "absolute",
-        right: 8,
-        top: "50%",
-        transform: "translateY(-50%)",
-        zIndex: 2147483647,
-        background: "transparent",
-        border: 0,
-        lineHeight: 0,
-        color: "#6B7280",
-        cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.5 : 1,
-      }}
-    >
-      <span role="img" aria-label="calendar">
-        📅
-      </span>
-    </button>
-  );
 }
 
 // choose best download URL
@@ -149,15 +129,6 @@ export default function MilestoneEditModal({
   const [recentAttachments, setRecentAttachments] = useState([]);
   const [loadingAttachments, setLoadingAttachments] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
-
-  const startRef = useRef(null);
-  const endRef = useRef(null);
-
-  const openPicker = (ref) => {
-    if (!ref?.current) return;
-    if (typeof ref.current.showPicker === "function") ref.current.showPicker();
-    else ref.current.focus();
-  };
 
   useEffect(() => {
     if (open)
@@ -575,9 +546,7 @@ export default function MilestoneEditModal({
     milestone?.agreement?.id ||
     null;
   const agreementTotal =
-    meta.agreementTotal ??
-    milestone?.agreement?.total_cost ??
-    null;
+    meta.agreementTotal ?? milestone?.agreement?.total_cost ?? null;
   const links = meta.links || {};
   const agreementDetailUrl =
     links.agreementDetailUrl ||
@@ -709,49 +678,31 @@ export default function MilestoneEditModal({
                 <label className="mb-1 block text-sm font-medium text-gray-700">
                   Start Date
                 </label>
-                <div style={{ position: "relative", overflow: "visible" }}>
-                  <input
-                    ref={startRef}
-                    type="date"
-                    name="start_date"
-                    value={form.start_date || ""}
-                    onChange={onChange}
-                    readOnly={readOnly}
-                    className={`w-full rounded border px-3 py-2 text-sm ${
-                      readOnly ? "bg-gray-50 text-gray-600" : ""
-                    }`}
-                    style={{ paddingRight: "2.5rem" }}
-                  />
-                  <CalendarBtn
-                    title="Open start date"
-                    onClick={() => openPicker(startRef)}
-                    disabled={readOnly}
-                  />
-                </div>
+                <input
+                  type="date"
+                  name="start_date"
+                  value={form.start_date || ""}
+                  onChange={onChange}
+                  readOnly={readOnly}
+                  className={`w-full rounded border px-3 py-2 text-sm ${
+                    readOnly ? "bg-gray-50 text-gray-600" : ""
+                  }`}
+                />
               </div>
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
                   Completion Date
                 </label>
-                <div style={{ position: "relative", overflow: "visible" }}>
-                  <input
-                    ref={endRef}
-                    type="date"
-                    name="end_date"
-                    value={form.end_date || ""}
-                    onChange={onChange}
-                    readOnly={readOnly}
-                    className={`w-full rounded border px-3 py-2 text-sm ${
-                      readOnly ? "bg-gray-50 text-gray-600" : ""
-                    }`}
-                    style={{ paddingRight: "2.5rem" }}
-                  />
-                  <CalendarBtn
-                    title="Open completion date"
-                    onClick={() => openPicker(endRef)}
-                    disabled={readOnly}
-                  />
-                </div>
+                <input
+                  type="date"
+                  name="end_date"
+                  value={form.end_date || ""}
+                  onChange={onChange}
+                  readOnly={readOnly}
+                  className={`w-full rounded border px-3 py-2 text-sm ${
+                    readOnly ? "bg-gray-50 text-gray-600" : ""
+                  }`}
+                />
               </div>
             </div>
 
@@ -821,7 +772,7 @@ export default function MilestoneEditModal({
                 }
                 disabled={uploading}
               />
-              <button
+            <button
                 onClick={uploadFile}
                 disabled={!file || uploading}
                 className="rounded bg-gray-100 px-3 py-1.5 text-sm hover:bg-gray-200 disabled:cursor-not-allowed disabled:bg-gray-100"
@@ -859,6 +810,7 @@ export default function MilestoneEditModal({
                                 a.category
                               ).toUpperCase()}] `
                             : ""}
+
                           {a.title || a.filename || "Attachment"}
                         </span>
                         <span className="ml-3 flex items-center gap-3">
@@ -933,6 +885,7 @@ export default function MilestoneEditModal({
                         {c.created_at
                           ? friendlyDate(c.created_at)
                           : ""}
+
                       </span>
                     </div>
                     <div className="mt-1 whitespace-pre-wrap text-[13px] text-gray-800">

@@ -39,20 +39,20 @@ from .views.magic_invoice import (
 from .views.account import ChangePasswordView
 from .views.contractor_me import ContractorMeView
 
-# Preview (public signed link + contractor/staff tokenless)
 from .views_pdf import preview_signed
 
-# NEW — subaccounts / whoami
 from .views.subaccounts import ContractorSubAccountViewSet, WhoAmIView
 
-# NEW — funding endpoints
 from .views.funding import (
     SendFundingLinkView,
     PublicFundingInfoView,
     CreateFundingPaymentIntentView,
+    AgreementFundingPreviewView,
 )
 
-# Optional debug (guarded)
+# NEW – manual amendment endpoint
+from .views.agreements_amend import create_amendment
+
 try:
     from .views.debug import env_debug
     HAS_DEBUG = True
@@ -61,9 +61,6 @@ except Exception:
 
 app_name = "projects_api"
 
-# -----------------------------------------------------------------------------------
-# Routers with OPTIONAL trailing slash
-# -----------------------------------------------------------------------------------
 router = DefaultRouter(trailing_slash='/?')
 router.register(r"homeowners", HomeownerViewSet, basename="homeowners")
 router.register(r"projects", ProjectViewSet, basename="projects")
@@ -73,14 +70,9 @@ router.register(r"milestones", MilestoneViewSet, basename="milestones")
 router.register(r"milestone-files", MilestoneFileViewSet, basename="milestone-files")
 router.register(r"disputes", DisputeViewSet, basename="disputes")
 router.register(r"expenses", ExpenseViewSet, basename="expenses")
-
-# Flat attachments route (GET/POST works with or without trailing slash)
 router.register(r"attachments", AgreementAttachmentViewSet, basename="attachments")
-
-# NEW — Employees / subaccounts CRUD
 router.register(r"subaccounts", ContractorSubAccountViewSet, basename="subaccounts")
 
-# Nested routers (also optional trailing slash)
 milestone_router = NestedDefaultRouter(
     router, r"milestones", lookup="milestone", trailing_slash='/?'
 )
@@ -98,7 +90,7 @@ agreements_router.register(
 )
 
 urlpatterns = [
-    # ── Function-view endpoints ─────────────────────────────────────────────
+    # Function-view endpoints
     path(
         "agreements/<int:agreement_id>/pdf/",
         agreement_pdf,
@@ -112,11 +104,23 @@ urlpatterns = [
     path("agreements/public_sign/", agreement_public_sign),
     path("agreements/public_pdf/", agreement_public_pdf),
 
-    # ── Funding endpoints ───────────────────────────────────────────────────
+    # NEW – Manual amendment endpoint
+    path(
+        "agreements/<int:pk>/create_amendment/",
+        create_amendment,
+        name="agreement-create-amendment",
+    ),
+
+    # Funding endpoints
     path(
         "agreements/<int:pk>/send_funding_link/",
         SendFundingLinkView.as_view(),
         name="agreement-send-funding-link",
+    ),
+    path(
+        "agreements/<int:pk>/funding_preview/",
+        AgreementFundingPreviewView.as_view(),
+        name="agreement-funding-preview",
     ),
     path(
         "funding/public_fund/",
@@ -129,22 +133,21 @@ urlpatterns = [
         name="funding-create-payment-intent",
     ),
 
-    # ── Core REST routers ──────────────────────────────────────────────────
+    # Routers
     path("", include(router.urls)),
     path("", include(milestone_router.urls)),
     path("", include(agreements_router.urls)),
 
-    # ── Optional debug ─────────────────────────────────────────────────────
+    # Debug
     *(
         [path("debug/env/", env_debug, name="projects-env-debug")]
         if HAS_DEBUG
         else []
     ),
 
-    # ── Notifications / profile / calendars ────────────────────────────────
+    # Notifications / profile / calendars
     path("notifications/", NotificationListView.as_view(), name="notifications"),
     path("contractors/me/", ContractorMeView.as_view(), name="contractor-me"),
-
     path(
         "milestones/calendar/",
         MilestoneCalendarView.as_view(),
@@ -156,17 +159,17 @@ urlpatterns = [
         name="agreements-calendar",
     ),
 
-    # ── PDFs ────────────────────────────────────────────────────────────────
+    # Invoice PDF
     path("invoices/<int:pk>/pdf/", InvoicePDFView.as_view(), name="invoice-pdf"),
 
-    # ── Public contractor profile ──────────────────────────────────────────
+    # Public contractor profile
     path(
         "contractors/<int:pk>/public/",
         ContractorPublicProfileView.as_view(),
         name="contractor-public-profile",
     ),
 
-    # ── Magic links + tools ────────────────────────────────────────────────
+    # Magic invoice links
     path(
         "agreements/merge/",
         MergeAgreementsView.as_view(),
@@ -188,11 +191,10 @@ urlpatterns = [
         name="magic-invoice-dispute",
     ),
 
-    # ── NEW: whoami identity endpoint ──────────────────────────────────────
+    # whoami
     path("whoami/", WhoAmIView.as_view(), name="projects-whoami"),
 ]
 
-# ── Preview PDF explicit route (legacy Blob flow) ─────────────────────────
 urlpatterns += [
     re_path(
         r"^agreements/(?P<pk>\d+)/preview_pdf/?$",

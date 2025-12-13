@@ -1,11 +1,10 @@
 // frontend/src/components/SignatureModal.jsx
-// v2025-12-01-stable-pdf-fix
-// Shared signature component for contractor + homeowner
+// v2025-12-10 — Shared signature modal for contractor + homeowner
 // - Typed name field does NOT lose focus
-// - SignaturePad works (mouse/finger)
-// - Uses static/legal/*.txt for TOS & Privacy
-// - Contractor -> /api/projects/agreements/:id/preview_pdf/
-// - Homeowner  -> /api/projects/agreements/public_pdf/
+// - SignaturePad supports mouse + touch drawing
+// - Uses /legal/* HTML pages for TOS & Privacy
+// - Contractor PDF preview is fetched via axios (JWT) as a blob & shown in iframe
+// - Homeowner/public PDF preview uses token-based public endpoint
 
 import React, { useEffect, useRef, useState } from "react";
 import SignaturePad from "signature_pad";
@@ -27,8 +26,9 @@ function Overlay({ children, onClose, disableClose }) {
   );
 }
 
-const TOS_URL = "/static/legal/terms_of_service.txt";
-const PRIVACY_URL = "/static/legal/privacy_policy.txt";
+// Legal links now point to Django /legal/* routes
+const TOS_URL = "/legal/terms-of-service/";
+const PRIVACY_URL = "/legal/privacy-policy/";
 
 /**
  * Props:
@@ -38,6 +38,7 @@ const PRIVACY_URL = "/static/legal/privacy_policy.txt";
  * - signingRole: "contractor" | "homeowner"
  * - token?: string (required for homeowner/public)
  * - defaultName?: string
+ * - compact?: boolean (optional UI tweak)
  * - onSigned?: (updatedAgreement) => void
  */
 export default function SignatureModal({
@@ -47,6 +48,7 @@ export default function SignatureModal({
   signingRole,
   token = null,
   defaultName = "",
+  compact = false,
   onSigned,
 }) {
   const [typedName, setTypedName] = useState(defaultName || "");
@@ -56,39 +58,24 @@ export default function SignatureModal({
 
   const [sigFile, setSigFile] = useState(null);
   const [sigPreview, setSigPreview] = useState(null);
-
   const [hasDrawn, setHasDrawn] = useState(false);
+
   const canvasRef = useRef(null);
   const sigPadRef = useRef(null);
+  const nameInputRef = useRef(null);
 
   const [submitting, setSubmitting] = useState(false);
 
   const [attachments, setAttachments] = useState([]);
   const [loadingAtts, setLoadingAtts] = useState(false);
 
-  const nameInputRef = useRef(null);
+  const [pdfUrl, setPdfUrl] = useState(null); // blob URL for iframe
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError] = useState("");
 
   const roleLabel = signingRole === "contractor" ? "Contractor" : "Homeowner";
 
-  // 🔹 IMPORTANT: point to API endpoints, not front-end routes
-  const pdfUrl = (() => {
-    if (!agreement) return null;
-    if (agreement.pdf_url) return agreement.pdf_url;
-
-    if (signingRole === "homeowner" && token) {
-      // public PDF via token — API endpoint
-      return `/api/projects/agreements/public_pdf/?token=${encodeURIComponent(
-        token
-      )}&stream=1`;
-    }
-    if (agreement.id) {
-      // authenticated preview PDF — API endpoint
-      return `/api/projects/agreements/${agreement.id}/preview_pdf/?stream=1`;
-    }
-    return null;
-  })();
-
-  // Load attachments once when modal opens (non-blocking)
+  // Load attachments (non-blocking)
   useEffect(() => {
     const loadAttachments = async () => {
       if (!agreement?.id) return;
@@ -112,10 +99,68 @@ export default function SignatureModal({
     }
   }, [isOpen, agreement?.id]);
 
-  // Init state + SignaturePad when modal opens
+  // Fetch PDF preview as blob when modal opens
+  useEffect(() => {
+    let objectUrl = null;
+
+    const fetchPdf = async () => {
+      if (!isOpen) return;
+      if (!agreement?.id) return;
+
+      setPdfLoading(true);
+      setPdfError("");
+      setPdfUrl(null);
+
+      try {
+        let url;
+        let config = {
+          params: { stream: 1 },
+          responseType: "blob",
+        };
+
+        if (signingRole === "homeowner" && token) {
+          // homeowner/public signing — use token-based endpoint
+          url = `/projects/agreements/public_pdf/`;
+          config = {
+            params: { token, stream: 1 },
+            responseType: "blob",
+          };
+        } else {
+          // contractor (authenticated) preview endpoint
+          url = `/projects/agreements/${agreement.id}/preview_pdf/`;
+        }
+
+        const resp = await api.get(url, config);
+        const blob = new Blob([resp.data], { type: "application/pdf" });
+        objectUrl = URL.createObjectURL(blob);
+        setPdfUrl(objectUrl);
+      } catch (err) {
+        console.error("SignatureModal PDF preview error:", err);
+        const status = err?.response?.status;
+        if (status === 401) {
+          setPdfError(
+            "Unable to load PDF preview (authentication required). Please sign in again."
+          );
+        } else {
+          setPdfError("Unable to load PDF preview.");
+        }
+      } finally {
+        setPdfLoading(false);
+      }
+    };
+
+    fetchPdf();
+
+    return () => {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [isOpen, agreement?.id, signingRole, token]);
+
+  // Initialize/reset signature state when modal opens or closes
   useEffect(() => {
     if (!isOpen) {
-      // cleanup when closed
       if (sigPadRef.current) {
         sigPadRef.current.off();
         sigPadRef.current = null;
@@ -123,7 +168,6 @@ export default function SignatureModal({
       return;
     }
 
-    // reset form state
     setTypedName(defaultName || "");
     setConsentEsign(false);
     setAcceptTos(false);
@@ -133,7 +177,6 @@ export default function SignatureModal({
     setHasDrawn(false);
     setSubmitting(false);
 
-    // init signature pad a tiny bit after open so canvas is in DOM
     const timer = setTimeout(() => {
       if (!canvasRef.current) return;
 
@@ -150,19 +193,14 @@ export default function SignatureModal({
       });
 
       pad.onEnd = () => {
-        if (!pad.isEmpty()) {
-          setHasDrawn(true);
-        }
+        if (!pad.isEmpty()) setHasDrawn(true);
       };
 
       sigPadRef.current = pad;
     }, 150);
 
-    // focus the input once after opening (not on every render)
     const focusTimer = setTimeout(() => {
-      if (nameInputRef.current) {
-        nameInputRef.current.focus();
-      }
+      if (nameInputRef.current) nameInputRef.current.focus();
     }, 250);
 
     return () => {
@@ -197,9 +235,7 @@ export default function SignatureModal({
   };
 
   const clearDrawnSignature = () => {
-    if (sigPadRef.current) {
-      sigPadRef.current.clear();
-    }
+    if (sigPadRef.current) sigPadRef.current.clear();
     setHasDrawn(false);
   };
 
@@ -211,6 +247,7 @@ export default function SignatureModal({
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!canSubmit) return;
+
     if (!agreement?.id) {
       toast.error("Agreement is missing.");
       return;
@@ -263,6 +300,8 @@ export default function SignatureModal({
     }
   };
 
+  const layoutClass = compact ? "md:grid-cols-[1.2fr_1fr]" : "md:grid-cols-2";
+
   return (
     <Overlay onClose={onClose} disableClose={submitting}>
       <div className="flex flex-col h-full">
@@ -309,243 +348,250 @@ export default function SignatureModal({
           </div>
         </div>
 
-        {/* Body: PDF left, form right */}
-        <form
-          onSubmit={handleSubmit}
-          className="flex-1 grid grid-cols-1 md:grid-cols-[1.1fr_0.9fr] min-h-[60vh]"
+        {/* Body */}
+        <div
+          className={`flex-1 grid grid-cols-1 ${layoutClass} gap-0 md:gap-4`}
         >
-          {/* PDF preview */}
-          <div className="bg-slate-950 border-b md:border-b-0 md:border-r border-white/10">
-            <div className="w-full h-full">
-              {pdfUrl ? (
+          {/* Left: PDF preview + attachments */}
+          <div className="border-b md:border-b-0 md:border-r border-white/10 bg-slate-950/80">
+            <div className="px-4 py-2 flex items-center justify-between border-b border-white/10">
+              <div className="text-xs font-semibold text-slate-200">
+                Agreement Preview (Read Before Signing)
+              </div>
+              {pdfUrl && (
+                <a
+                  href={pdfUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11px] text-sky-300 hover:text-sky-200"
+                >
+                  Open PDF in new tab
+                </a>
+              )}
+            </div>
+            <div className="h-[260px] sm:h-[320px] md:h-full bg-black/40">
+              {pdfLoading ? (
+                <div className="w-full h-full flex items-center justify-center text-xs text-slate-300">
+                  Loading PDF preview…
+                </div>
+              ) : pdfError ? (
+                <div className="w-full h-full flex items-center justify-center text-xs text-red-300 px-4 text-center">
+                  {pdfError}
+                </div>
+              ) : pdfUrl ? (
                 <iframe
-                  title="Agreement PDF"
+                  title="Agreement PDF Preview"
                   src={pdfUrl}
-                  className="w-full h-full border-none"
+                  className="w-full h-full border-0"
                 />
               ) : (
-                <div className="h-full flex items-center justify-center text-sm text-slate-300">
-                  PDF preview not available.
+                <div className="w-full h-full flex items-center justify-center text-xs text-slate-400">
+                  PDF preview is not available for this Agreement.
                 </div>
+              )}
+            </div>
+
+            <div className="px-4 py-3 border-t border-white/10 text-[11px] text-slate-300">
+              <div className="font-semibold mb-1">Attachments</div>
+              {loadingAtts ? (
+                <div>Loading attachments…</div>
+              ) : attachments?.length ? (
+                <ul className="space-y-1">
+                  {attachments.map((a) => {
+                    const url =
+                      a.file ||
+                      a.url ||
+                      a.file_url ||
+                      a.download_url ||
+                      a.download ||
+                      a.absolute_url ||
+                      null;
+                    return (
+                      <li key={a.id || a.title || a.filename}>
+                        {url ? (
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-sky-300 hover:text-sky-200"
+                          >
+                            {a.title || a.filename || "Attachment"}
+                          </a>
+                        ) : (
+                          <span className="text-slate-400">
+                            {a.title || a.filename || "Attachment"}
+                          </span>
+                        )}
+                        {a.category ? (
+                          <span className="ml-2 text-slate-500">
+                            ({String(a.category).toUpperCase()})
+                          </span>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <div className="text-slate-500">No attachments added.</div>
               )}
             </div>
           </div>
 
-          {/* Sign panel */}
-          <div className="bg-slate-950 overflow-y-auto px-5 py-4 space-y-4">
-            {/* Attachments summary */}
-            <section className="rounded-xl border border-white/10 bg-slate-900/80 p-3">
-              <div className="text-xs font-semibold mb-1">
-                Attachments &amp; Addenda
-              </div>
-              {loadingAtts ? (
-                <div className="text-xs text-slate-300">Loading…</div>
-              ) : attachments.length === 0 ? (
-                <div className="text-xs text-slate-300">None.</div>
-              ) : (
-                <ul className="text-xs text-slate-200 list-disc pl-4 space-y-1">
-                  {attachments.map((a) => (
-                    <li key={a.id}>
-                      <a
-                        href={a.file_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-sky-300 hover:underline"
-                      >
-                        {a.title || a.file_name}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            {/* E-SIGN */}
-            <section className="rounded-xl border border-white/10 bg-slate-900/80 p-3">
-              <div className="text-xs font-semibold mb-1">
-                Electronic Records &amp; Signatures (E-SIGN)
-              </div>
-              <p className="text-[11px] text-slate-300 mb-2">
-                By checking the box below and clicking{" "}
-                <b>Sign Agreement</b>, you consent to use electronic records and
-                signatures. Your typed name has the same legal effect as a
-                handwritten signature.
-              </p>
-              <label className="flex items-start gap-2 text-xs text-slate-100">
-                <input
-                  type="checkbox"
-                  className="mt-[2px]"
-                  checked={consentEsign}
-                  onChange={(e) => setConsentEsign(e.target.checked)}
-                />
-                <span>I consent to use electronic records and signatures.</span>
-              </label>
-            </section>
-
-            {/* Terms & Privacy */}
-            <section className="rounded-xl border border-white/10 bg-slate-900/80 p-3 space-y-2">
-              <label className="flex items-start gap-2 text-xs text-slate-100">
-                <input
-                  type="checkbox"
-                  className="mt-[2px]"
-                  checked={acceptTos}
-                  onChange={(e) => setAcceptTos(e.target.checked)}
-                />
-                <span>
-                  I have reviewed and agree to the{" "}
-                  <a
-                    href={TOS_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sky-300 underline"
-                  >
-                    Terms of Service
-                  </a>
-                  .
-                </span>
-              </label>
-              <label className="flex items-start gap-2 text-xs text-slate-100">
-                <input
-                  type="checkbox"
-                  className="mt-[2px]"
-                  checked={acceptPrivacy}
-                  onChange={(e) => setAcceptPrivacy(e.target.checked)}
-                />
-                <span>
-                  I have reviewed and agree to the{" "}
-                  <a
-                    href={PRIVACY_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-sky-300 underline"
-                  >
-                    Privacy Policy
-                  </a>
-                  .
-                </span>
-              </label>
-            </section>
-
-            {/* Role label */}
-            <section className="rounded-xl border border-white/10 bg-slate-900/80 p-3">
-              <div className="text-xs font-semibold mb-1">I am signing as</div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-sky-400/40 bg-sky-500/10 px-3 py-1 text-xs">
-                <span className="font-semibold text-sky-100">
-                  {roleLabel}
-                </span>
-                <span className="text-slate-300 text-[11px]">
-                  (Role is fixed to prevent accidental mis-signing.)
-                </span>
-              </div>
-            </section>
-
-            {/* Typed name + signature inputs */}
-            <section className="rounded-xl border border-white/10 bg-slate-900/80 p-3 space-y-4">
+          {/* Right: Typed name + signature controls */}
+          <div className="bg-slate-950/90 flex flex-col">
+            <form
+              onSubmit={handleSubmit}
+              className="flex-1 flex flex-col px-4 py-3 gap-3"
+            >
               <div>
-                <div className="text-xs font-semibold mb-1">
-                  Type your full name (electronic signature)
-                </div>
+                <label className="text-[11px] font-semibold text-slate-200">
+                  Type Your Full Legal Name
+                </label>
                 <input
                   ref={nameInputRef}
                   type="text"
-                  className="w-full rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-sky-500"
-                  placeholder="Full legal name"
                   value={typedName}
                   onChange={(e) => setTypedName(e.target.value)}
+                  className="mt-1 w-full rounded-md border border-white/15 bg-slate-900/80 px-2.5 py-1.5 text-sm text-slate-50 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-400"
+                  placeholder="e.g., Jane Contractor"
                   autoComplete="off"
                 />
-                <div className="mt-1 text-[11px] text-slate-400">
-                  Your IP address and timestamp will be recorded.
-                </div>
               </div>
 
-              {/* Finger/mouse signature */}
-              <div>
-                <div className="text-xs font-semibold mb-1">
-                  Optional: Sign with your finger or mouse
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="text-[11px] font-semibold text-slate-200">
+                      Draw Signature
+                    </div>
+                    <button
+                      type="button"
+                      onClick={clearDrawnSignature}
+                      className="text-[11px] text-sky-300 hover:text-sky-200"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  <div className="rounded-md border border-white/20 bg-white">
+                    <canvas
+                      ref={canvasRef}
+                      className="w-full h-32 sm:h-40"
+                    />
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-400">
+                    Use your mouse or finger to sign.
+                  </div>
                 </div>
-                <div className="border border-dashed border-white/25 rounded-lg bg-slate-950 p-2 max-w-xs">
-                  <canvas
-                    ref={canvasRef}
-                    width={420}
-                    height={160}
-                    className="w-full h-auto bg-white rounded-md"
-                  />
-                </div>
-                <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-slate-300">
-                  <span>
-                    Use your finger (mobile) or mouse (desktop) to draw your
-                    signature.
-                  </span>
-                  <button
-                    type="button"
-                    onClick={clearDrawnSignature}
-                    className="text-sky-300 underline"
-                  >
-                    Clear
-                  </button>
-                  {hasDrawn && (
-                    <span className="text-emerald-300">
-                      Signature captured
-                    </span>
+
+                <div>
+                  <div className="text-[11px] font-semibold text-slate-200 mb-1">
+                    Or Upload Signature Image
+                  </div>
+                  <label className="inline-flex items-center text-[11px] text-sky-300 hover:text-sky-200 cursor-pointer mb-1">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                    <span>Choose image (PNG/JPG)</span>
+                  </label>
+                  {sigPreview ? (
+                    <div className="mt-1 rounded-md border border-white/20 bg-slate-900/80 p-1">
+                      <img
+                        src={sigPreview}
+                        alt="Uploaded signature preview"
+                        className="max-h-24 object-contain mx-auto"
+                      />
+                    </div>
+                  ) : (
+                    <div className="mt-1 text-[11px] text-slate-500">
+                      No image uploaded. If you prefer, just draw your signature
+                      on the left.
+                    </div>
                   )}
                 </div>
               </div>
 
-              {/* Upload image */}
-              <div>
-                <div className="text-xs font-semibold mb-1">
-                  Optional: Upload handwritten (wet) signature
-                </div>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileChange}
-                  className="text-[11px]"
-                />
-                {sigPreview && (
-                  <div className="mt-2 border border-dashed border-white/25 rounded-lg bg-slate-950 p-2 max-w-xs">
-                    <img
-                      src={sigPreview}
-                      alt="Signature preview"
-                      className="w-full h-auto bg-white rounded-md"
-                    />
-                  </div>
-                )}
+              <div className="mt-1 space-y-1.5 text-[11px] text-slate-200">
+                <label className="inline-flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={consentEsign}
+                    onChange={(e) => setConsentEsign(e.target.checked)}
+                    className="mt-[2px]"
+                  />
+                  <span>
+                    I consent to sign this Agreement electronically and
+                    understand that my electronic signature is legally binding.
+                  </span>
+                </label>
+                <label className="inline-flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={acceptTos}
+                    onChange={(e) => setAcceptTos(e.target.checked)}
+                    className="mt-[2px]"
+                  />
+                  <span>
+                    I have read and agree to the MyHomeBro{" "}
+                    <a
+                      href={TOS_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sky-300 underline"
+                    >
+                      Terms of Service
+                    </a>
+                    .
+                  </span>
+                </label>
+                <label className="inline-flex items-start gap-2">
+                  <input
+                    type="checkbox"
+                    checked={acceptPrivacy}
+                    onChange={(e) => setAcceptPrivacy(e.target.checked)}
+                    className="mt-[2px]"
+                  />
+                  <span>
+                    I have read and agree to the MyHomeBro{" "}
+                    <a
+                      href={PRIVACY_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sky-300 underline"
+                    >
+                      Privacy Policy
+                    </a>
+                    .
+                  </span>
+                </label>
               </div>
-            </section>
 
-            {/* Footer buttons */}
-            <section className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
-              <p className="text-[11px] text-slate-400 max-w-xs">
-                By clicking <b>Sign Agreement</b>, you agree that your
-                electronic signature has the same legal effect as a handwritten
-                signature.
-              </p>
-              <div className="flex gap-2 justify-end">
+              <div className="mt-3 flex items-center justify-between gap-3">
                 <button
                   type="button"
                   onClick={onClose}
                   disabled={submitting}
-                  className="px-4 py-1.5 rounded-md border border-white/20 text-xs text-slate-200 hover:bg-slate-800"
+                  className="px-3 py-1.5 rounded-md border border-white/20 text-[13px] text-slate-200 hover:bg-slate-800"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={!canSubmit}
-                  className={`px-4 py-1.5 rounded-md text-xs font-semibold ${
+                  className={`px-4 py-1.5 rounded-md text-[13px] font-semibold ${
                     canSubmit
-                      ? "bg-sky-500 hover:bg-sky-400 text-slate-950"
-                      : "bg-slate-600 text-slate-300 cursor-not-allowed"
+                      ? "bg-sky-500 hover:bg-sky-400 text-slate-900"
+                      : "bg-slate-700 text-slate-400 cursor-not-allowed"
                   }`}
                 >
-                  {submitting ? "Saving…" : "Sign Agreement"}
+                  {submitting ? "Saving…" : `Sign as ${roleLabel}`}
                 </button>
               </div>
-            </section>
+            </form>
           </div>
-        </form>
+        </div>
       </div>
     </Overlay>
   );

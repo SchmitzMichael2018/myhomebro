@@ -1,16 +1,17 @@
 // frontend/src/components/AgreementWizard.jsx
-// v2025-11-25 — full file
+// v2025-11-25 — split into separate Step components (Option A)
 // - Project Address is MANDATORY (Step 1).
 // - Step 2 inline form is add-only; Edit opens MilestoneEditModal.
 // - Step 2 delete uses /projects/milestones/:id/ flat endpoint.
 // - Step 4: Preview PDF calls /preview_link/ + /mark_previewed/ and updates hasPreviewed.
 // - Step 4: canSign uses hasPreviewed + checkboxes + typed name and is passed into Step4Finalize.
+// - Step 4 header now shows: "Agreement #ID — Amendment N" when amendment_number > 0.
+// v2025-12-05 — timezone-safe dates + inline overlap handling + removed /projects/customers/ 404.
 
 import React, {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
@@ -19,6 +20,12 @@ import api from "../api";
 import MilestoneEditModal from "./MilestoneEditModal";
 import { PROJECT_TYPES, SUBTYPES_BY_TYPE } from "./options/projectOptions";
 import Step4Finalize from "./Step4Finalize";
+
+// Split step components
+import Step1Details from "./Step1Details";
+import Step2Milestones from "./Step2Milestones";
+import Step3WarrantyAttachments from "./Step3WarrantyAttachments";
+import PdfPreviewModal from "./PdfPreviewModal";
 
 /* ───────── helpers ───────── */
 const TABS = [
@@ -31,10 +38,23 @@ const TABS = [
 const pickArray = (raw) =>
   Array.isArray(raw?.results) ? raw.results : Array.isArray(raw) ? raw : [];
 
+// Normalize various input forms (Date/string) → "YYYY-MM-DD" or ""
 function toDateOnly(v) {
   if (!v) return "";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-  const d = new Date(v);
+  const s = String(v).trim();
+
+  // Already plain date (good)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return s;
+  }
+
+  // ISO datetime like "2025-12-04T00:00:00Z" or "2025-12-04T00:00:00-06:00"
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    return s.slice(0, 10); // just YYYY-MM-DD, no timezone math
+  }
+
+  // Fallback: try Date parsing for weird formats
+  const d = new Date(s);
   if (Number.isNaN(d.getTime())) return "";
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
@@ -47,24 +67,6 @@ function sortPeople(list) {
       b.full_name || b.last_name || b.email || `id:${b.id}`
     )
   );
-}
-
-function normalizeCustomer(rec) {
-  if (!rec || typeof rec !== "object") return null;
-  const id = rec.id ?? rec.pk;
-  if (!id) return null;
-  const full_name = String(rec.full_name ?? rec.name ?? "").trim();
-  const email = String(rec.email ?? "").trim();
-  let first_name = "",
-    last_name = "";
-  if (full_name.includes(" ")) {
-    const parts = full_name.split(/\s+/);
-    first_name = parts.slice(0, -1).join(" ");
-    last_name = parts.slice(-1)[0];
-  } else {
-    first_name = full_name;
-  }
-  return { id, first_name, last_name, full_name, email, _src: "customers" };
 }
 
 function normalizeHomeowner(rec) {
@@ -137,21 +139,6 @@ function friendly(d) {
   });
 }
 
-function PrettyJson({ data }) {
-  if (!data) return null;
-  let text = "";
-  try {
-    text = typeof data === "string" ? data : JSON.stringify(data, null, 2);
-  } catch {
-    text = String(data);
-  }
-  return (
-    <pre className="whitespace-pre-wrap break-words text-xs bg-red-50 border border-red-200 rounded p-2 text-red-800">
-      {text}
-    </pre>
-  );
-}
-
 /* ───────── main ───────── */
 export default function AgreementWizard() {
   const { id: idParam } = useParams();
@@ -214,14 +201,14 @@ export default function AgreementWizard() {
   const [typedName, setTypedName] = useState("");
   const [signing, setSigning] = useState(false);
 
+  // PDF preview state for Step 4
+  const [pdfUrl, setPdfUrl] = useState(null);
+  const [pdfOpen, setPdfOpen] = useState(false);
+
   /* ── people loader ── */
   const loadPeople = useCallback(async () => {
     const cfg = { params: { page: 1, page_size: 1000, ordering: "-created_at" } };
     const pile = [];
-    try {
-      const { data } = await api.get(`/customers/`, cfg);
-      pile.push(...pickArray(data).map(normalizeCustomer).filter(Boolean));
-    } catch {}
     try {
       const { data } = await api.get(`/homeowners/`, cfg);
       pile.push(...pickArray(data).map(normalizeHomeowner).filter(Boolean));
@@ -229,7 +216,6 @@ export default function AgreementWizard() {
     try {
       const { data } = await api.get(`/projects/homeowners/`, cfg);
       pile.push(...pickArray(data).map(normalizeHomeowner).filter(Boolean));
-      pile.push(...pickArray(data).map(normalizeCustomer).filter(Boolean));
     } catch {}
     return dedupePeople(pile);
   }, []);
@@ -791,34 +777,133 @@ export default function AgreementWizard() {
 
   const saveMilestone = async (m) => {
     try {
+      // Front-end validation
+      const title = String(m.title || "").trim();
+      if (!title) {
+        toast.error("Milestone title is required.");
+        return;
+      }
+
+      const amountNum = Number(m.amount);
+      if (!Number.isFinite(amountNum)) {
+        toast.error("Milestone amount must be a valid number.");
+        return;
+      }
+
+      // Map inline fields (start/end) to backend date fields
+      const startIso = toDateOnly(m.start || m.start_date || "");
+      const endIso = toDateOnly(
+        m.end || m.end_date || m.completion_date || m.due_date || ""
+      );
+
+      const basePayload = {
+        title,
+        description: m.description || "",
+        amount: amountNum,
+        agreement: agreementId,
+        start_date: startIso || null,
+        completion_date: endIso || null,
+      };
+
       const url = m.id
         ? `/projects/agreements/${agreementId}/milestones/${m.id}/`
         : `/projects/milestones/`;
       const method = m.id ? api.put : api.post;
-      const { data } = await method(url, { ...m, agreement: agreementId });
 
-      if (m.id) {
-        // Update in-place
-        setMilestones((prev) => prev.map((x) => (x.id === m.id ? data : x)));
-      } else {
-        // Append new
-        setMilestones((prev) => [...prev, data]);
+      const attempt = (payload) => method(url, payload);
+
+      try {
+        const { data } = await attempt(basePayload);
+
+        if (m.id) {
+          setMilestones((prev) => prev.map((x) => (x.id === m.id ? data : x)));
+        } else {
+          setMilestones((prev) => [...prev, data]);
+        }
+
+        setMLocal({
+          title: "",
+          description: "",
+          amount: "",
+          start: "",
+          end: "",
+        });
+        setEditMilestone(null);
+        toast.success(m.id ? "Updated" : "Added");
+      } catch (err1) {
+        const resp = err1?.response;
+        const body = resp?.data;
+
+        const raw =
+          body &&
+          (typeof body === "string" ? body : JSON.stringify(body));
+        const isOverlap =
+          raw && raw.toLowerCase().includes("overlap");
+
+        if (isOverlap) {
+          const ok = window.confirm(
+            "This milestone overlaps an existing milestone in the same agreement.\n\nDo you want to save anyway?"
+          );
+          if (!ok) return;
+
+          const payload2 = { ...basePayload, allow_overlap: true };
+
+          try {
+            const { data } = await attempt(payload2);
+
+            if (m.id) {
+              setMilestones((prev) =>
+                prev.map((x) => (x.id === m.id ? data : x))
+              );
+            } else {
+              setMilestones((prev) => [...prev, data]);
+            }
+
+            setMLocal({
+              title: "",
+              description: "",
+              amount: "",
+              start: "",
+              end: "",
+            });
+            setEditMilestone(null);
+            toast.success(
+              m.id
+                ? "Updated (overlap allowed)"
+                : "Added (overlap allowed)"
+            );
+          } catch (err2) {
+            const r2 = err2?.response;
+            const b2 =
+              (r2?.data &&
+                (typeof r2.data === "string"
+                  ? r2.data
+                  : JSON.stringify(r2.data))) ||
+              r2?.statusText ||
+              err2?.message ||
+              "Failed to save milestone.";
+            toast.error(String(b2));
+          }
+        } else {
+          const detail =
+            (body &&
+              (typeof body === "string"
+                ? body
+                : JSON.stringify(body))) ||
+            resp?.statusText ||
+            err1?.message ||
+            "Failed to save milestone.";
+          toast.error(String(detail));
+        }
       }
-
-      // Always reset the inline form fields after save
-      setMLocal({
-        title: "",
-        description: "",
-        amount: "",
-        start: "",
-        end: "",
-      });
-
-      setEditMilestone(null);
-
-      toast.success(m.id ? "Updated" : "Added");
     } catch (e) {
-      toast.error("Failed to save milestone.");
+      console.error("Failed to save milestone:", e?.response || e);
+      const detail =
+        e?.response?.data?.detail ||
+        e?.response?.data?.non_field_errors?.[0] ||
+        e?.message ||
+        "Failed to save milestone.";
+      toast.error(String(detail));
     }
   };
 
@@ -858,16 +943,20 @@ export default function AgreementWizard() {
   const previewPdf = async () => {
     if (!agreementId) return toast.error("Create and save Agreement first.");
     try {
-      const { data } = await api.post(
-        `/projects/agreements/${agreementId}/preview_link/`
+      const res = await api.get(
+        `/projects/agreements/${agreementId}/preview_pdf/`,
+        {
+          responseType: "blob",
+          params: { stream: 1 },
+        }
       );
-      const url = data?.url;
-      if (!url) return toast.error("Preview link unavailable.");
 
-      // Open preview PDF in a new tab
-      window.open(url, "_blank", "noopener");
+      const blob = new Blob([res.data], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
 
-      // Mark previewed in backend (best-effort) and flip UI flag
+      setPdfUrl(url);
+      setPdfOpen(true);
+
       try {
         await api.post(
           `/projects/agreements/${agreementId}/mark_previewed/`
@@ -876,7 +965,8 @@ export default function AgreementWizard() {
         console.warn("mark_previewed failed (non-fatal):", e?.response || e);
       }
       setHasPreviewed(true);
-    } catch {
+    } catch (err) {
+      console.error("Preview failed:", err);
       toast.error("Could not open preview.");
     }
   };
@@ -918,6 +1008,7 @@ export default function AgreementWizard() {
       setSigning(false);
     }
   };
+
   const unsignContractor = async () => {
     if (!agreementId) return toast.error("Agreement ID missing.");
 
@@ -925,20 +1016,18 @@ export default function AgreementWizard() {
       await api.post(`/projects/agreements/${agreementId}/contractor_unsign/`);
       toast.success("Contractor signature removed.");
 
-      // Reset Step 4 signing state
-      setHasPreviewed(false);   // must re-preview
+      setHasPreviewed(false);
       setAckReviewed(false);
       setAckTos(false);
       setAckEsign(false);
       setTypedName("");
 
-      // Reload the updated agreement from backend
       await loadEdit();
     } catch (e) {
       console.error("Unsign error:", e?.response || e);
       toast.error(
         e?.response?.data?.detail ||
-        "Could not unsign. Homeowner may have already signed."
+          "Could not unsign. Homeowner may have already signed."
       );
     }
   };
@@ -950,6 +1039,17 @@ export default function AgreementWizard() {
     ackTos &&
     ackEsign &&
     typedName.trim().length >= 2;
+
+  const step4Label = useMemo(() => {
+    if (!agreement) return "";
+    const id = agreement.id ?? agreement.pk;
+    const amend = agreement.amendment_number ?? agreement.amendment ?? 0;
+    if (!id) return "";
+    if (amend && amend > 0) {
+      return `Agreement #${id} — Amendment ${amend}`;
+    }
+    return `Agreement #${id}`;
+  }, [agreement]);
 
   /* ── render ── */
   return (
@@ -1016,10 +1116,11 @@ export default function AgreementWizard() {
               };
               let created = null;
               try {
-                const { data } = await api.post(`/customers/`, body);
+                const { data } = await api.post(`/homeowners/`, body);
                 created = data;
               } catch {
-                const { data } = await api.post(`/homeowners/`, body);
+                // fallback: projects/homeowners if needed
+                const { data } = await api.post(`/projects/homeowners/`, body);
                 created = data;
               }
               const newId = created?.id ?? created?.pk;
@@ -1103,929 +1204,59 @@ export default function AgreementWizard() {
       )}
 
       {step === 4 && (
-        <Step4Finalize
-          agreement={agreement}
-          dLocal={dStep4}
-          isEdit={isEdit}
-          goBack={() => navigate(`/agreements/${agreementId}/wizard?step=3`)}
-          previewPdf={previewPdf}
-          goPublic={goPublic}
-          signing={signing}
-          typedName={typedName}
-          setTypedName={setTypedName}
-          ackReviewed={ackReviewed}
-          setAckReviewed={setAckReviewed}
-          ackTos={ackTos}
-          setAckTos={setAckTos}
-          ackEsign={ackEsign}
-          setAckEsign={setAckEsign}
-          submitSign={signContractor}
-          unsignContractor={unsignContractor}
-          hasPreviewed={hasPreviewed}
-          canSign={canSign}
-          attachments={attachments}
-          milestones={milestones}
-          totals={totals}
-          customWarranty={customWarranty}
-          useDefaultWarranty={useDefaultWarranty}
-          defaultWarrantyText={
-            "Standard workmanship warranty: Contractor warrants all labor performed under this Agreement for one (1) year from substantial completion. Materials are covered by the manufacturer’s warranties. This warranty excludes damage caused by misuse, neglect, alteration, improper maintenance, or acts of God."
-          }
-        />
+        <>
+          {step4Label && (
+            <div className="mb-3 text-sm font-medium text-gray-700">
+              {step4Label}
+            </div>
+          )}
+          <Step4Finalize
+            agreement={agreement}
+            dLocal={dStep4}
+            isEdit={isEdit}
+            goBack={() => navigate(`/agreements/${agreementId}/wizard?step=3`)}
+            previewPdf={previewPdf}
+            goPublic={goPublic}
+            signing={signing}
+            typedName={typedName}
+            setTypedName={setTypedName}
+            ackReviewed={ackReviewed}
+            setAckReviewed={setAckReviewed}
+            ackTos={ackTos}
+            setAckTos={setAckTos}
+            ackEsign={ackEsign}
+            setAckEsign={setAckEsign}
+            submitSign={signContractor}
+            unsignContractor={unsignContractor}
+            hasPreviewed={hasPreviewed}
+            canSign={canSign}
+            attachments={attachments}
+            milestones={milestones}
+            totals={totals}
+            customWarranty={customWarranty}
+            useDefaultWarranty={useDefaultWarranty}
+            defaultWarrantyText={
+              "Standard workmanship warranty: Contractor warrants all labor performed under this Agreement for one (1) year from substantial completion. Materials are covered by the manufacturer’s warranties. This warranty excludes damage caused by misuse, neglect, alteration, improper maintenance, or acts of God."
+            }
+          />
+        </>
       )}
+
+      <PdfPreviewModal
+        open={pdfOpen}
+        onClose={() => {
+          setPdfOpen(false);
+          if (pdfUrl) {
+            URL.revokeObjectURL(pdfUrl);
+          }
+        }}
+        fileUrl={pdfUrl}
+        title={step4Label || "Agreement Preview"}
+      />
 
       {loading && (
         <div className="mt-4 text-sm text-gray-500">Loading…</div>
       )}
-    </div>
-  );
-}
-
-/* ───────── Step 1 ───────── */
-function Step1Details({
-  isEdit,
-  agreementId,
-  dLocal,
-  setDLocal,
-  people,
-  peopleLoadedOnce,
-  reloadPeople,
-  showQuickAdd,
-  setShowQuickAdd,
-  qaName,
-  setQaName,
-  qaEmail,
-  setQaEmail,
-  qaBusy,
-  setQaBusy,
-  onQuickAdd,
-  saveStep1,
-  last400,
-  onLocalChange,
-  homeownerOptions,
-  projectTypeOptions,
-  projectSubtypeOptions,
-}) {
-  const empty = (people?.length || 0) === 0;
-
-  return (
-    <div className="rounded-lg border bg-white p-4">
-      <div className="text-sm text-gray-600 mb-2">
-        {isEdit ? <>Agreement #{agreementId}</> : <>New Agreement</>}
-      </div>
-
-      {/* Error panel */}
-      {last400 && (
-        <div className="mb-3">
-          <div className="text-sm font-semibold text-red-700">
-            Server response (400)
-          </div>
-          <PrettyJson data={last400} />
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {/* Homeowner selector */}
-        <div className="md:col-span-2">
-          <label className="block text-sm font-medium mb-1">
-            Homeowner
-          </label>
-          <select
-            className="w-full rounded border px-3 py-2 text-sm"
-            name="homeowner"
-            value={String(dLocal.homeowner || "")}
-            onFocus={() => {
-              if (!peopleLoadedOnce) reloadPeople?.();
-            }}
-            onChange={onLocalChange}
-          >
-            <option value="">
-              {empty ? "— No homeowners yet —" : "— Select Homeowner —"}
-            </option>
-            {(homeownerOptions || []).map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          {empty && (
-            <div className="mt-2 text-xs text-gray-600">
-              No homeowners found.{" "}
-              <button
-                type="button"
-                onClick={() => setShowQuickAdd((v) => !v)}
-                className="text-indigo-600 underline"
-              >
-                Quick add one
-              </button>
-              .
-            </div>
-          )}
-        </div>
-
-        {/* Quick Add Homeowner */}
-        {showQuickAdd && (
-          <div className="md:col-span-2 rounded-md border p-3 bg-indigo-50">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="md:col-span-2">
-                <label className="block text-xs font-medium mb-1">
-                  Full Name
-                </label>
-                <input
-                  className="w-full rounded border px-3 py-2 text-sm"
-                  value={qaName}
-                  onChange={(e) => setQaName(e.target.value)}
-                  placeholder="e.g., Jane Smith"
-                />
-              </div>
-              <div className="md:col-span-1">
-                <label className="block text-xs font-medium mb-1">
-                  Email
-                </label>
-                <input
-                  className="w-full rounded border px-3 py-2 text-sm"
-                  value={qaEmail}
-                  onChange={(e) => setQaEmail(e.target.value)}
-                  placeholder="jane@example.com"
-                />
-              </div>
-            </div>
-            <div className="mt-2 flex gap-2">
-              <button
-                type="button"
-                onClick={onQuickAdd}
-                disabled={qaBusy}
-                className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-60"
-              >
-                {qaBusy ? "Adding…" : "Add Homeowner"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowQuickAdd(false)}
-                className="rounded border px-3 py-2 text-sm"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Project title */}
-        <div className="md:col-span-2">
-          <label className="block text-sm font-medium mb-1">
-            Project Title
-          </label>
-          <input
-            className="w-full rounded border px-3 py-2 text-sm"
-            name="project_title"
-            value={dLocal.project_title}
-            onChange={onLocalChange}
-            placeholder="e.g., Kitchen Floor and Wall"
-          />
-        </div>
-
-        {/* Type & subtype */}
-        <div>
-          <label className="block text-sm font-medium mb-1">Type</label>
-          <select
-            className="w-full rounded border px-3 py-2 text-sm"
-            name="project_type"
-            value={dLocal.project_type || ""}
-            onChange={(e) => {
-              onLocalChange(e);
-              setDLocal((s) => ({ ...s, project_subtype: "" }));
-            }}
-          >
-            <option value="">— Select Type —</option>
-            {(projectTypeOptions || []).map((t) => (
-              <option key={String(t.value)} value={String(t.value)}>
-                {String(t.label)}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-1">Subtype</label>
-          <select
-            className="w-full rounded border px-3 py-2 text-sm"
-            name="project_subtype"
-            value={dLocal.project_subtype || ""}
-            onChange={onLocalChange}
-          >
-            <option value="">— Select Subtype —</option>
-            {(projectSubtypeOptions || []).map((st) => (
-              <option key={String(st.value)} value={String(st.value)}>
-                {String(st.label)}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Description */}
-        <div className="md:col-span-2">
-          <label className="block text-sm font-medium mb-1">
-            Description
-          </label>
-          <textarea
-            className="w-full rounded border px-3 py-2 text-sm"
-            rows={3}
-            name="description"
-            value={dLocal.description}
-            onChange={onLocalChange}
-            placeholder="Brief project scope…"
-          />
-        </div>
-
-        {/* Project Address — ALWAYS VISIBLE & MANDATORY */}
-        <div className="md:col-span-2 mt-4 border-t pt-4">
-          <h3 className="text-sm font-semibold mb-2">Project Address (Required)</h3>
-        </div>
-
-        <div className="md:col-span-2">
-          <label className="block text-sm font-medium mb-1">
-            Address Line 1 <span className="text-red-500">*</span>
-          </label>
-          <input
-            className="w-full rounded border px-3 py-2 text-sm"
-            name="address_line1"
-            value={dLocal.address_line1}
-            onChange={onLocalChange}
-            placeholder="Street address (e.g., 5202 Texana Drive)"
-          />
-        </div>
-
-        <div className="md:col-span-2">
-          <label className="block text-sm font-medium mb-1">
-            Address Line 2 (optional)
-          </label>
-          <input
-            className="w-full rounded border px-3 py-2 text-sm"
-            name="address_line2"
-            value={dLocal.address_line2}
-            onChange={onLocalChange}
-            placeholder="Apt, suite, etc. (e.g., Apt 838)"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-1">
-            City <span className="text-red-500">*</span>
-          </label>
-          <input
-            className="w-full rounded border px-3 py-2 text-sm"
-            name="address_city"
-            value={dLocal.address_city}
-            onChange={onLocalChange}
-            placeholder="City (e.g., San Antonio)"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-1">
-            State <span className="text-red-500">*</span>
-          </label>
-          <input
-            className="w-full rounded border px-3 py-2 text-sm"
-            name="address_state"
-            value={dLocal.address_state}
-            onChange={onLocalChange}
-            placeholder="State (e.g., TX)"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-1">
-            ZIP / Postal Code <span className="text-red-500">*</span>
-          </label>
-          <input
-            className="w-full rounded border px-3 py-2 text-sm"
-            name="address_postal_code"
-            value={dLocal.address_postal_code}
-            onChange={onLocalChange}
-            placeholder="ZIP / Postal code (e.g., 78249)"
-          />
-        </div>
-      </div>
-
-      <div className="mt-6 flex gap-2 justify-end">
-        <button
-          onClick={() => saveStep1(false)}
-          className="rounded bg-white border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-        >
-          Save Draft
-        </button>
-        <button
-          onClick={() => saveStep1(true)}
-          className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
-        >
-          Save &amp; Next
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ───────── Step 2 ───────── */
-function Step2Milestones({
-  agreementId,
-  milestones,
-  mLocal,
-  onLocalChange,
-  onMLocalChange,
-  saveMilestone,
-  deleteMilestone,
-  editMilestone,
-  setEditMilestone,
-  updateMilestone,
-  onBack,
-  onNext,
-}) {
-  const total = milestones.reduce((s, m) => s + Number(m.amount || 0), 0);
-
-  const minStart = useMemo(() => {
-    const s = milestones
-      .map((m) => toDateOnly(m.start_date || m.start))
-      .filter(Boolean)
-      .sort()[0];
-    return s || "";
-  }, [milestones]);
-
-  const maxEnd = useMemo(() => {
-    const e = milestones
-      .map((m) =>
-        toDateOnly(m.completion_date || m.end_date || m.end || m.due_date)
-      )
-      .filter(Boolean)
-      .sort()
-      .slice(-1)[0];
-    return e || "";
-  }, [milestones]);
-
-  return (
-    <div className="rounded-lg border bg-white p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-lg font-semibold">Milestones</h3>
-        <div className="text-sm text-gray-600">
-          Schedule:{" "}
-          {minStart && maxEnd ? (
-            <span className="font-medium">
-              {friendly(minStart)} → {friendly(maxEnd)} (est.)
-            </span>
-          ) : (
-            <span className="text-gray-400">add dates to see range</span>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-3 mb-2">
-        <input
-          className="md:col-span-4 rounded border px-3 py-2 text-sm"
-          placeholder="Title"
-          name="title"
-          value={mLocal.title}
-          onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
-        />
-        <input
-          type="date"
-          className="md:col-span-3 rounded border px-3 py-2 text-sm"
-          name="start"
-          value={mLocal.start || ""}
-          onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
-          aria-label="Start date"
-        />
-        <input
-          type="date"
-          className="md:col-span-3 rounded border px-3 py-2 text-sm"
-          name="end"
-          value={mLocal.end || ""}
-          onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
-          aria-label="End date"
-        />
-        <input
-          type="number"
-          min="0"
-          step="0.01"
-          className="md:col-span-2 rounded border px-3 py-2 text-sm"
-          placeholder="Amount"
-          name="amount"
-          value={mLocal.amount}
-          onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
-        />
-        <div className="md:col-span-12">
-          <textarea
-            className="w-full rounded border px-3 py-2 text-sm resize-y"
-            rows={3}
-            placeholder="Description (details, materials, notes)…"
-            name="description"
-            value={mLocal.description}
-            onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
-          />
-        </div>
-      </div>
-
-      <div className="mb-6">
-        <button
-          onClick={() => saveMilestone(mLocal)}
-          className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
-        >
-          + Add Milestone
-        </button>
-      </div>
-
-      <div className="rounded-2xl border overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr className="[&>*]:px-3 [&>*]:py-2 text-left">
-              <th>#</th>
-              <th>Title</th>
-              <th>Description</th>
-              <th>Start</th>
-              <th>Due</th>
-              <th>Amount</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {milestones.map((m, idx) => (
-              <tr key={m.id || `${m.title}-${idx}`} className="border-t align-top">
-                <td className="[&>*]:px-3 [&>*]:py-2">{idx + 1}</td>
-                <td className="[&>*]:px-3 [&>*]:py-2">{m.title || "—"}</td>
-                <td className="[&>*]:px-3 [&>*]:py-2 whitespace-pre-wrap">
-                  {m.description || "—"}
-                </td>
-                <td className="[&>*]:px-3 [&>*]:py-2">
-                  {friendly(toDateOnly(m.start_date || m.start))}
-                </td>
-                <td className="[&>*]:px-3 [&>*]:py-2">
-                  {friendly(
-                    toDateOnly(
-                      m.completion_date ||
-                        m.end_date ||
-                        m.end ||
-                        m.due_date
-                    )
-                  )}
-                </td>
-                <td className="[&>*]:px-3 [&>*]:py-2">
-                  {Number(m.amount || 0).toLocaleString(undefined, {
-                    style: "currency",
-                    currency: "USD",
-                  })}
-                </td>
-                <td className="[&>*]:px-3 [&>*]:py-2 text-right">
-                  <div className="inline-flex gap-2">
-                    <button
-                      className="rounded border px-2 py-1"
-                      onClick={() => setEditMilestone(m)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="rounded border px-2 py-1"
-                      onClick={() => deleteMilestone(m.id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {!milestones.length && (
-              <tr>
-                <td
-                  colSpan={7}
-                  className="text-center text-gray-400 py-6"
-                >
-                  No milestones yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-          <tfoot>
-            <tr className="bg-gray-50 font-semibold [&>*]:px-3 [&>*]:py-2">
-              <td colSpan={5}>Total</td>
-              <td>
-                {total.toLocaleString(undefined, {
-                  style: "currency",
-                  currency: "USD",
-                })}
-              </td>
-              <td />
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-
-      <div className="mt-4 flex items-center justify-between">
-        <button onClick={onBack} className="rounded border px-3 py-2 text-sm">
-          Back
-        </button>
-        <button
-          onClick={onNext}
-          className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
-        >
-          Save &amp; Next
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ───────── Step 3: Warranty & Attachments ───────── */
-function Step3WarrantyAttachments({
-  agreementId,
-  DEFAULT_WARRANTY,
-  useDefaultWarranty,
-  setUseDefaultWarranty,
-  customWarranty,
-  setCustomWarranty,
-  saveWarranty,
-  attachments,
-  refreshAttachments,
-  onBack,
-  onNext,
-}) {
-  const [file, setFile] = useState(null);
-  const [title, setTitle] = useState("");
-  const [category, setCategory] = useState("WARRANTY");
-  const [visible, setVisible] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const inputRef = useRef(null);
-  const dropRef = useRef(null);
-
-  useEffect(() => {
-    const el = dropRef.current;
-    if (!el) return;
-    const onDragOver = (e) => {
-      e.preventDefault();
-      el.classList.add("ring-2", "ring-indigo-400");
-    };
-    const onDragLeave = (e) => {
-      e.preventDefault();
-      el.classList.remove("ring-2", "ring-indigo-400");
-    };
-    const onDrop = (e) => {
-      e.preventDefault();
-      el.classList.remove("ring-2", "ring-indigo-400");
-      if (e.dataTransfer?.files?.[0]) setFile(e.dataTransfer.files[0]);
-    };
-    el.addEventListener("dragover", onDragOver);
-    el.addEventListener("dragleave", onDragLeave);
-    el.addEventListener("drop", onDrop);
-    return () => {
-      el.removeEventListener("dragover", onDragOver);
-      el.removeEventListener("dragleave", onDragLeave);
-      el.removeEventListener("drop", onDrop);
-    };
-  }, []);
-
-  const tryPostAttachment = async (form) => {
-    const urls = [
-      agreementId
-        ? `/projects/agreements/${agreementId}/attachments/`
-        : null,
-      `/projects/attachments/`,
-    ].filter(Boolean);
-
-    let lastErr;
-    for (const url of urls) {
-      try {
-        const { data } = await api.post(url, form);
-        return data;
-      } catch (e) {
-        lastErr = e;
-      }
-    }
-    throw lastErr;
-  };
-
-  const addAttachment = async () => {
-    if (!agreementId) return toast.error("Create and save Agreement first.");
-    if (!file) return toast.error("Choose a file to upload.");
-
-    try {
-      setUploading(true);
-      const form = new FormData();
-      const resolvedTitle = title || file.name;
-
-      form.set("agreement", String(agreementId));
-      form.set("title", resolvedTitle);
-      form.set("name", resolvedTitle);
-      form.set("category", category);
-      form.set("visible_to_homeowner", visible);
-      form.set("visible", visible);
-      form.set("file", file, file.name);
-      form.set("document", file, file.name);
-
-      await tryPostAttachment(form);
-
-      setTitle("");
-      setCategory("WARRANTY");
-      setVisible(true);
-      setFile(null);
-      if (inputRef.current) inputRef.current.value = "";
-
-      await refreshAttachments?.();
-      toast.success("Attachment uploaded.");
-    } catch (e) {
-      const msg =
-        e?.response?.data?.detail ||
-        e?.response?.statusText ||
-        e?.message ||
-        "Upload failed.";
-      toast.error(msg);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const quietDelete = (url) =>
-    api.delete(url, {
-      validateStatus: (s) => (s >= 200 && s < 300) || s === 404,
-    });
-
-  const deleteAttachment = async (attId) => {
-    if (!agreementId || !attId) return;
-    const nestedUrl = `/projects/agreements/${agreementId}/attachments/${attId}/`;
-    const genericUrl = `/projects/attachments/${attId}/`;
-    try {
-      const res1 = await quietDelete(nestedUrl);
-      if (res1?.status === 200 || res1?.status === 204) {
-        await refreshAttachments?.();
-        toast.success("Attachment deleted.");
-        return;
-      }
-      const res2 = await quietDelete(genericUrl);
-      if (
-        res2?.status === 200 ||
-        res2?.status === 204 ||
-        res2?.status === 404
-      ) {
-        await refreshAttachments?.();
-        toast.success("Attachment deleted.");
-      } else {
-        toast.error("Delete failed.");
-      }
-    } catch (e) {
-      const msg =
-        e?.response?.data?.detail ||
-        e?.response?.statusText ||
-        e?.message ||
-        "Delete failed.";
-      toast.error(msg);
-    }
-  };
-
-  return (
-    <div className="rounded-lg border bg-white p-4 space-y-6">
-      {/* Warranty */}
-      <div>
-        <label className="inline-flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={useDefaultWarranty}
-            onChange={(e) => setUseDefaultWarranty(e.target.checked)}
-          />
-          <span className="text-sm">
-            Use default 12-month workmanship warranty
-          </span>
-        </label>
-
-        {useDefaultWarranty ? (
-          <div className="mt-3 rounded border p-3 bg-gray-50 text-sm whitespace-pre-wrap">
-            {DEFAULT_WARRANTY}
-          </div>
-        ) : (
-          <div className="mt-3">
-            <label className="block text-sm font-medium mb-1">
-              Custom Warranty
-            </label>
-            <textarea
-              className="w-full rounded border px-3 py-2 text-sm min-h-[120px]"
-              placeholder="Enter your custom warranty text…"
-              value={customWarranty}
-              onChange={(e) => setCustomWarranty(e.target.value)}
-            />
-          </div>
-        )}
-
-        <div className="mt-3">
-          <button
-            onClick={saveWarranty}
-            className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
-          >
-            Save Warranty
-          </button>
-        </div>
-      </div>
-
-      {/* Attachments */}
-      <div className="rounded-2xl border">
-        <div className="p-4 border-b">
-          <h3 className="text-base font-semibold">
-            Attachments &amp; Addenda
-          </h3>
-        </div>
-
-        <div className="p-4 space-y-3">
-          {/* Drop zone */}
-          <div
-            ref={dropRef}
-            className="border-2 border-dashed rounded-md p-4 text-sm text-gray-600 flex flex-col gap-2 items-start"
-          >
-            <div className="flex items-center gap-2">
-              <input
-                ref={inputRef}
-                id="wizard-step3-file"
-                type="file"
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
-                className="hidden"
-              />
-            </div>
-            <label
-              htmlFor="wizard-step3-file"
-              className="inline-flex items-center px-3 py-1.5 rounded-md border bg-white hover:bg-gray-50 cursor-pointer"
-            >
-              Choose Files
-            </label>
-            <span className="text-gray-500">
-              {file ? file.name : "No file chosen"}
-            </span>
-            <p className="text-xs text-gray-500">
-              Drag &amp; drop files here, or click.
-            </p>
-          </div>
-
-          {/* Meta */}
-          <div className="grid grid-cols-12 gap-3">
-            <div className="col-span-6">
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="w-full border rounded-md p-2 text-sm"
-                placeholder="Title (e.g., Spec Sheet)"
-              />
-            </div>
-            <div className="col-span-3">
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full border rounded-md p-2 text-sm"
-              >
-                <option value="WARRANTY">WARRANTY</option>
-                <option value="SPEC">SPEC / SCOPE</option>
-                <option value="PERMIT">PERMIT / LICENSE</option>
-                <option value="PHOTO">PHOTO / IMAGE</option>
-                <option value="OTHER">OTHER</option>
-              </select>
-            </div>
-            <div className="col-span-3 flex items-center gap-4">
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4"
-                  checked={visible}
-                  onChange={(e) => setVisible(e.target.checked)}
-                />
-                <span className="text-sm">Visible to homeowner</span>
-              </label>
-            </div>
-          </div>
-
-          <div>
-            <button
-              type="button"
-              onClick={addAttachment}
-              disabled={uploading}
-              className="px-3 py-2 text-sm rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60"
-            >
-              {uploading ? "Uploading..." : "Add Attachment"}
-            </button>
-          </div>
-
-          {/* List */}
-          <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="text-left border-b">
-                  <th className="py-2 pr-3 font-semibold text-gray-700">
-                    Category
-                  </th>
-                  <th className="py-2 pr-3 font-semibold text-gray-700">
-                    Title
-                  </th>
-                  <th className="py-2 pr-3 font-semibold text-gray-700">
-                    Visible
-                  </th>
-                  <th className="py-2 pr-3 font-semibold text-gray-700">
-                    File
-                  </th>
-                  <th className="py-2 pr-3 font-semibold text-gray-700">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {attachments?.length ? (
-                  attachments.map((a) => {
-                    const v =
-                      (a.visible_to_homeowner ?? a.visible) ? true : false;
-                    const name =
-                      a.file_name ||
-                      a.filename ||
-                      a.name ||
-                      a.title ||
-                      "File";
-                    const url =
-                      a.file_url ||
-                      a.url ||
-                      a.download_url ||
-                      a.file ||
-                      null;
-                    return (
-                      <tr
-                        key={a.id || a.name || a.url}
-                        className="border-b last:border-b-0"
-                      >
-                        <td className="py-2 pr-3">
-                          {a.category || "-"}
-                        </td>
-                        <td className="py-2 pr-3">
-                          {a.title || name}
-                        </td>
-                        <td className="py-2 pr-3">
-                          {v ? "Yes" : "No"}
-                        </td>
-                        <td className="py-2 pr-3">
-                          {url ? (
-                            <a
-                              href={url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-indigo-600 hover:underline"
-                            >
-                              {name}
-                            </a>
-                          ) : (
-                            name
-                          )}
-                        </td>
-                        <td className="py-2 pr-3">
-                          <div className="flex gap-2">
-                            {url && (
-                              <a
-                                href={url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="px-2 py-1 rounded border text-xs hover:bg-gray-50"
-                              >
-                                Download
-                              </a>
-                            )}
-                            {a?.id && (
-                              <button
-                                type="button"
-                                onClick={() => deleteAttachment(a.id)}
-                                className="px-2 py-1 rounded border text-xs text-red-600 hover:bg-red-50"
-                              >
-                                Delete
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                ) : (
-                  <tr>
-                    <td
-                      colSpan={5}
-                      className="py-6 text-center text-gray-500"
-                    >
-                      No attachments uploaded.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Footer nav */}
-        <div className="px-4 py-3 border-t flex items-center justify-between">
-          <button onClick={onBack} className="rounded border px-3 py-2 text-sm">
-            Back
-          </button>
-          <button
-            onClick={onNext}
-            className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
-          >
-            Save &amp; Next
-          </button>
-        </div>
-      </div>
     </div>
   );
 }

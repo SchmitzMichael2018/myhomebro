@@ -36,7 +36,6 @@ export default function LandingPage() {
     } catch {}
   };
 
-  // changed: open signup modal instead of navigating away
   const openSignup = () => {
     if (typeof window.mhbOpenSignup === "function") window.mhbOpenSignup();
     else window.dispatchEvent(new CustomEvent("mhb:open-signup"));
@@ -66,7 +65,7 @@ export default function LandingPage() {
 
         <div style={S.badges}>
           <Badge icon={Lock} text="Escrow-secured payments for true peace of mind." />
-          <Badge icon={Zap} text="Quick contractor sign-up—get paid faster." />
+          <Badge icon={Zap} text="Quick contractor sign-up — get paid faster." />
           <Badge icon={MessagesSquare} text="Direct chat between homeowners and contractors." />
           <Badge icon={UsersRound} text="Bring your own clients, or get matched (coming soon)." />
         </div>
@@ -87,7 +86,7 @@ export default function LandingPage() {
           <Tile
             icon={ShieldCheck}
             title="Secure Escrow"
-            text="Funds are held safely until milestones are approved—no more payment risk."
+            text="Funds are held safely until milestones are approved — no more payment risk."
           />
           <Tile
             icon={Handshake}
@@ -102,10 +101,35 @@ export default function LandingPage() {
           <Tile
             icon={Camera}
             title="Photo Evidence"
-            text="Attach progress photos to milestones—build a clear record for approvals."
+            text="Attach progress photos to milestones — build a clear record for approvals."
           />
         </div>
       </section>
+
+      {/* ✅ Added footer with Terms & Privacy links */}
+      <footer style={S.footer}>
+        <span>&copy; {new Date().getFullYear()} MyHomeBro</span>
+
+        <a
+          href="/legal/terms-of-service/"
+          target="_blank"
+          rel="noreferrer"
+          style={S.footerLink}
+        >
+          Terms of Service
+        </a>
+
+        <span style={{ margin: "0 6px" }}>&middot;</span>
+
+        <a
+          href="/legal/privacy-policy/"
+          target="_blank"
+          rel="noreferrer"
+          style={S.footerLink}
+        >
+          Privacy Policy
+        </a>
+      </footer>
     </div>
   );
 }
@@ -145,6 +169,8 @@ const S = {
     overflowX: "hidden",
     WebkitFontSmoothing: "antialiased",
     MozOsxFontSmoothing: "grayscale",
+    display: "flex",
+    flexDirection: "column",
   },
   rail: {
     maxWidth: 1280,
@@ -213,7 +239,6 @@ const S = {
       "linear-gradient(135deg, rgba(255,255,255,.8), rgba(255,255,255,.25))",
     border: "1px solid rgba(255,255,255,.6)",
     color: "#0f172a",
-    flex: "0 0 auto",
   },
   badgeText: { textAlign: "left" },
 
@@ -244,6 +269,7 @@ const S = {
   featuresWrap: {
     width: "100%",
     padding: "0 16px 56px",
+    flex: "1 0 auto",
   },
   featuresGrid: {
     maxWidth: 1280,
@@ -252,6 +278,7 @@ const S = {
     gap: 16,
     gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
   },
+
   tile: {
     background: "rgba(255,255,255,.94)",
     borderRadius: 18,
@@ -261,6 +288,7 @@ const S = {
     display: "grid",
     gridTemplateColumns: "auto 1fr",
     gridTemplateAreas: `"icon title" "icon text"`,
+
     columnGap: 12,
     rowGap: 8,
     alignItems: "start",
@@ -277,6 +305,22 @@ const S = {
   },
   tileTitle: { gridArea: "title", fontSize: 20, fontWeight: 800 },
   tileText: { gridArea: "text", color: "#0f172a", opacity: 0.85 },
+
+  /* Footer added */
+  footer: {
+    marginTop: "40px",
+    padding: "16px 0",
+    borderTop: "1px solid rgba(255,255,255,0.45)",
+    textAlign: "center",
+    color: "rgba(255,255,255,0.85)",
+    fontSize: "13px",
+  },
+  footerLink: {
+    color: "#dbeafe",
+    textDecoration: "underline",
+    marginLeft: "8px",
+    marginRight: "8px",
+  },
 };
 
 function clamp(minPx, maxPx) {

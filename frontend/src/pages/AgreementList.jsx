@@ -1,6 +1,9 @@
-// /home/myhomebro/backend/frontend/src/pages/AgreementList.jsx
-// v2025-10-11-hydrate-homeowner: fills homeowner column even if agreements API
-// does not return homeowner_name or nested homeowner object.
+// frontend/src/pages/AgreementList.jsx
+// v2025-12-12 — add View (row click + button) to reach Step 4 for signed agreements
+// - NO layout/design changes
+// - Row click opens /agreements/:id/wizard?step=4 (view/sign/escrow hub)
+// - Adds View button in Actions
+// - stopPropagation on checkboxes/buttons so row click doesn't trigger
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../api";
@@ -14,9 +17,12 @@ import {
   Pencil,
   Trash2,
   Star,
+  Eye,
 } from "lucide-react";
 
-console.log("AgreementList.jsx v2025-10-11-hydrate-homeowner");
+console.log(
+  "AgreementList.jsx v2025-12-06-disable-edit-when-signed+redirect-on-amend"
+);
 
 const fmtMoney = (n) => {
   if (n === null || n === undefined || n === "") return "—";
@@ -36,20 +42,12 @@ const fmtDate = (s) => {
   }
 };
 
-// Pull reasonable label from a homeowner/customer object
 const labelFromHomeownerObj = (h) => {
   if (!h || typeof h !== "object") return "";
   const first = h.first_name || h.firstName || "";
-  const last  = h.last_name || h.lastName || "";
+  const last = h.last_name || h.lastName || "";
   const fullFromParts = [first, last].filter(Boolean).join(" ").trim();
-  return (
-    h.full_name ||
-    h.name ||
-    fullFromParts ||
-    h.email ||
-    h.username ||
-    ""
-  );
+  return h.full_name || h.name || fullFromParts || h.email || h.username || "";
 };
 
 export default function AgreementList() {
@@ -62,20 +60,18 @@ export default function AgreementList() {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [pageSize, setPageSize] = useState(10);
-  const [busyRow, setBusyRow] = useState(null);
 
-  // homeowner dictionary: id -> { name, email }
+  const [busyDeleteRow, setBusyDeleteRow] = useState(null);
+  const [busyAmendRow, setBusyAmendRow] = useState(null);
+
   const [hmIndex, setHmIndex] = useState({});
-
-  // milestone stats cache { [agreementId]: { total, complete, percent } }
   const [msStats, setMsStats] = useState({});
 
-  // Load agreements + a homeowners index (so we can display a name even if API omits it)
   const load = useCallback(async () => {
     try {
       setLoading(true);
 
-      // 1) Agreements
+      // Agreements
       const { data } = await api.get("/projects/agreements/", {
         params: { page_size: 250, _ts: Date.now() },
         headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
@@ -87,7 +83,7 @@ export default function AgreementList() {
         : [];
       setRows(list);
 
-      // 2) Build homeowner index (try two endpoints; tolerate either)
+      // Homeowner index from /projects/homeowners/
       const index = {};
       const mergeIntoIndex = (arr) => {
         if (!Array.isArray(arr)) return;
@@ -105,18 +101,17 @@ export default function AgreementList() {
       };
 
       try {
-        const { data: h1 } = await api.get("/projects/homeowners/", { params: { page_size: 1000 } });
+        const { data: h1 } = await api.get("/projects/homeowners/", {
+          params: { page_size: 1000 },
+        });
         mergeIntoIndex(h1?.results || h1);
-      } catch (_) { /* ignore */ }
-
-      try {
-        const { data: h2 } = await api.get("/projects/customers/", { params: { page_size: 1000 } });
-        mergeIntoIndex(h2?.results || h2);
-      } catch (_) { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
 
       setHmIndex(index);
 
-      // Prefetch milestone stats for the first page
+      // Prefetch milestone stats for first page
       fetchStatsFor(list.slice(0, pageSize));
     } catch (e) {
       console.error(e);
@@ -126,7 +121,6 @@ export default function AgreementList() {
     }
   }, [pageSize]);
 
-  // Helper: is milestone complete
   const isMsComplete = (m) => {
     const sv = (x) => String(x || "").trim().toLowerCase();
     const yes = (v) => v === true || v === "true" || v === 1 || v === "1";
@@ -142,12 +136,11 @@ export default function AgreementList() {
     );
   };
 
-  // Prefetch milestone stats
   const fetchStatsFor = async (subset) => {
     const ids = subset.map((r) => r.id).filter((id) => !msStats[id]);
     if (ids.length === 0) return;
 
-    const limit = 5; // small concurrency
+    const limit = 5;
     let idx = 0;
 
     const runOne = async () => {
@@ -155,17 +148,31 @@ export default function AgreementList() {
       if (i >= ids.length) return;
       const agreementId = ids[i];
       try {
-        const { data } = await api.get(`/projects/agreements/${agreementId}/milestones/`, {
-          params: { _ts: Date.now() },
-          headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-        });
-        const list = Array.isArray(data) ? data : (Array.isArray(data?.results) ? data.results : []);
+        const { data } = await api.get(
+          `/projects/agreements/${agreementId}/milestones/`,
+          {
+            params: { _ts: Date.now() },
+            headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+          }
+        );
+        const list = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.results)
+          ? data.results
+          : [];
         const total = list.length;
         const complete = list.filter(isMsComplete).length;
         const percent = total > 0 ? Math.round((complete / total) * 100) : 0;
-        setMsStats((prev) => ({ ...prev, [agreementId]: { total, complete, percent } }));
+        setMsStats((prev) => ({
+          ...prev,
+          [agreementId]: { total, complete, percent },
+        }));
       } catch (e) {
-        console.warn("Milestone stats fetch failed for agreement", agreementId, e?.response?.status || e);
+        console.warn(
+          "Milestone stats fetch failed for agreement",
+          agreementId,
+          e?.response?.status || e
+        );
       } finally {
         await runOne();
       }
@@ -192,41 +199,29 @@ export default function AgreementList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, pageSize]);
 
-  // Build homeowner display value with robust fallbacks
-  const homeownerDisplay = useCallback((r) => {
-    // 1) If API already gave us a flat string/email
-    const flat =
-      r.homeowner_name ||
-      r.homeowner_email ||
-      "";
+  const homeownerDisplay = useCallback(
+    (r) => {
+      const flat = r.homeowner_name || r.homeowner_email || "";
+      if (flat) return flat;
 
-    if (flat) return flat;
+      if (r.homeowner && typeof r.homeowner === "object") {
+        const nm = labelFromHomeownerObj(r.homeowner);
+        const em = r.homeowner.email || "";
+        return nm || em || "—";
+      }
 
-    // 2) If nested object exists
-    if (r.homeowner && typeof r.homeowner === "object") {
-      const nm = labelFromHomeownerObj(r.homeowner);
-      const em = r.homeowner.email || "";
-      return nm || em || "—";
-    }
+      const idCandidate = r.homeowner_id ?? r.homeowner ?? null;
+      const hid = idCandidate != null ? String(idCandidate) : "";
 
-    // 3) If only an ID reference exists, hydrate from hmIndex
-    const idCandidate =
-      r.homeowner_id ??
-      r.homeowner ??
-      null;
+      if (hid && hmIndex[hid]) {
+        return hmIndex[hid].name || hmIndex[hid].email || "—";
+      }
 
-    const hid = (idCandidate !== null && idCandidate !== undefined)
-      ? String(idCandidate)
-      : "";
+      return "—";
+    },
+    [hmIndex]
+  );
 
-    if (hid && hmIndex[hid]) {
-      return hmIndex[hid].name || hmIndex[hid].email || "—";
-    }
-
-    return "—";
-  }, [hmIndex]);
-
-  // Filter + search (now also searches hydrated homeowner labels)
   const filtered = useMemo(() => {
     const search = q.trim().toLowerCase();
     return rows
@@ -354,7 +349,11 @@ export default function AgreementList() {
           } catch (e4) {
             const d4 = e4?.response?.data;
             const msg =
-              d4?.detail || d3?.detail || d2?.detail || d1?.detail || "Merge failed.";
+              d4?.detail ||
+              d3?.detail ||
+              d2?.detail ||
+              d1?.detail ||
+              "Merge failed.";
             console.error("Merge errors:", e1, e2, e3, e4);
             toast.error(String(msg));
           }
@@ -365,6 +364,9 @@ export default function AgreementList() {
 
   const goEdit = (id) => (window.location.href = `/agreements/${id}/wizard?step=1`);
 
+  // ✅ View-only/signing/escrow hub path (Step 4)
+  const goView = (id) => (window.location.href = `/agreements/${id}/wizard?step=4`);
+
   const deleteDraft = async (row) => {
     if (String(row.status).toLowerCase() !== "draft") {
       return toast.error("Only draft agreements can be deleted.");
@@ -372,7 +374,7 @@ export default function AgreementList() {
     if (!confirm(`Delete draft Agreement #${row.id}? This cannot be undone.`))
       return;
     try {
-      setBusyRow(row.id);
+      setBusyDeleteRow(row.id);
       await api.delete(`/projects/agreements/${row.id}/`);
       toast.success(`Agreement #${row.id} deleted.`);
       await load();
@@ -383,7 +385,7 @@ export default function AgreementList() {
         "Delete failed. This agreement may have children, escrow funds, or paid invoices.";
       toast.error(String(detail));
     } finally {
-      setBusyRow(null);
+      setBusyDeleteRow(null);
     }
   };
 
@@ -396,6 +398,13 @@ export default function AgreementList() {
     (typeof r.signed_by_homeowner !== "undefined"
       ? r.signed_by_homeowner
       : r.homeowner_signed) || false;
+
+  const isFullySignedAgreement = (r) => {
+    if (typeof r.is_fully_signed !== "undefined") {
+      return !!r.is_fully_signed;
+    }
+    return contractorSigned(r) && homeownerSigned(r);
+  };
 
   const SignatureBadge = ({ ok, who }) =>
     ok ? (
@@ -413,8 +422,8 @@ export default function AgreementList() {
     if (/^agreement\s*#\d+$/i.test(raw)) return "—";
     return raw || "—";
   };
-  const renderType = (r) => (r.project_type || "—");
-  const renderSubtype = (r) => (r.project_subtype || "—");
+  const renderType = (r) => r.project_type || "—";
+  const renderSubtype = (r) => r.project_subtype || "—";
 
   const Progress = ({ percent }) => (
     <div className="w-24">
@@ -426,6 +435,43 @@ export default function AgreementList() {
       </div>
     </div>
   );
+
+  const createAmendment = async (row) => {
+    const id = row.id;
+    if (!id) return;
+
+    if (!isFullySignedAgreement(row)) {
+      toast.error("Agreement is not fully signed. Cannot create amendment.");
+      return;
+    }
+
+    try {
+      setBusyAmendRow(id);
+      const { data } = await api.post(
+        `/projects/agreements/${id}/create_amendment/`
+      );
+      toast.success(`Amendment created for Agreement #${id}.`);
+
+      try {
+        localStorage.setItem("agreements:refresh", "1");
+      } catch {
+        /* ignore */
+      }
+
+      const targetId = data?.id ?? id;
+      window.location.href = `/agreements/${targetId}/wizard?step=4`;
+    } catch (e) {
+      console.error("Create amendment failed:", e?.response || e);
+      const detail =
+        e?.response?.data?.detail ||
+        e?.response?.statusText ||
+        e?.message ||
+        "Could not create amendment.";
+      toast.error(String(detail));
+    } finally {
+      setBusyAmendRow(null);
+    }
+  };
 
   return (
     <div className="p-6 space-y-4">
@@ -503,7 +549,9 @@ export default function AgreementList() {
                 <input
                   type="checkbox"
                   onChange={toggleAll}
-                  checked={page.length > 0 && page.every((r) => selected.has(r.id))}
+                  checked={
+                    page.length > 0 && page.every((r) => selected.has(r.id))
+                  }
                 />
               </th>
               <th className="p-2 text-left border">Primary</th>
@@ -540,21 +588,36 @@ export default function AgreementList() {
               page.map((r) => {
                 const isChecked = selected.has(r.id);
                 const isPrimary = primaryId === r.id;
-                const stat = msStats[r.id] || { total: 0, complete: 0, percent: 0 };
+                const stat =
+                  msStats[r.id] || { total: 0, complete: 0, percent: 0 };
                 const homeowner = homeownerDisplay(r);
+                const fullySigned = isFullySignedAgreement(r);
 
                 return (
-                  <tr key={r.id} className="odd:bg-white even:bg-gray-50">
+                  <tr
+                    key={r.id}
+                    className="odd:bg-white even:bg-gray-50 hover:bg-blue-50 cursor-pointer"
+                    onClick={() => goView(r.id)}
+                    title="Click to view agreement"
+                  >
                     <td className="p-2 border">
                       <input
                         type="checkbox"
                         checked={isChecked}
-                        onChange={() => toggle(r.id)}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          toggle(r.id);
+                        }}
                       />
                     </td>
+
                     <td className="p-2 border">
                       <button
-                        onClick={() => choosePrimary(r.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          choosePrimary(r.id);
+                        }}
                         disabled={!isChecked}
                         className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${
                           isChecked
@@ -577,14 +640,19 @@ export default function AgreementList() {
                         </span>
                       </button>
                     </td>
+
                     <td className="p-2 border">#{r.id}</td>
+
                     <td className="p-2 border">
                       <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-800">
                         {String(r.status || "—")}
                       </span>
                     </td>
 
-                    <td className="p-2 border max-w-[320px] truncate" title={renderProject(r)}>
+                    <td
+                      className="p-2 border max-w-[320px] truncate"
+                      title={renderProject(r)}
+                    >
                       {renderProject(r)}
                     </td>
 
@@ -606,49 +674,94 @@ export default function AgreementList() {
                     <td className="p-2 border text-right">
                       {stat.total ? `${stat.complete} / ${stat.total}` : "—"}
                     </td>
+
                     <td className="p-2 border">
                       <div className="flex items-center gap-2">
-                        <div className="w-24">
-                          <div className="h-2 bg-gray-200 rounded">
-                            <div
-                              className="h-2 bg-blue-600 rounded"
-                              style={{ width: `${Math.max(0, Math.min(100, stat.percent))}%` }}
-                            />
-                          </div>
-                        </div>
+                        <Progress percent={stat.percent} />
                         <span className="w-10 text-xs">{stat.percent}%</span>
                       </div>
                     </td>
 
                     <td className="p-2 border">
                       <div className="flex items-center gap-2">
-                        <span>
-                          <SignatureBadge ok={contractorSigned(r)} who="Contractor" />
-                        </span>
-                        <span>
-                          <SignatureBadge ok={homeownerSigned(r)} who="Homeowner" />
-                        </span>
+                        <SignatureBadge ok={contractorSigned(r)} who="Contractor" />
+                        <SignatureBadge ok={homeownerSigned(r)} who="Homeowner" />
                       </div>
                     </td>
 
                     <td className="p-2 border text-right">
                       {fmtMoney(r.display_total ?? r.total_cost)}
                     </td>
+
                     <td className="p-2 border text-right">
                       {Number(r.invoices_count || 0)}
                     </td>
+
                     <td className="p-2 border">
                       <div className="flex flex-wrap items-center gap-2">
+                        {/* View (always enabled) */}
                         <button
-                          onClick={() => (window.location.href = `/agreements/${r.id}/wizard?step=1`)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            goView(r.id);
+                          }}
                           className="inline-flex items-center gap-1 px-2 py-1 rounded-md border hover:bg-gray-50"
-                          title="Continue Editing"
+                          title="View agreement"
+                        >
+                          <Eye size={14} /> View
+                        </button>
+
+                        {/* Edit (disabled when fully signed) */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            goEdit(r.id);
+                          }}
+                          disabled={fullySigned}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border ${
+                            fullySigned
+                              ? "border-gray-300 text-gray-400 cursor-not-allowed"
+                              : "hover:bg-gray-50"
+                          }`}
+                          title={
+                            fullySigned
+                              ? "Fully signed. Use Amend to modify."
+                              : "Continue Editing"
+                          }
                         >
                           <Pencil size={14} /> Edit
                         </button>
+
+                        {/* Amend (only for fully signed) */}
+                        {fullySigned && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              createAmendment(r);
+                            }}
+                            disabled={busyAmendRow === r.id}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-amber-400 text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+                            title="Create amendment"
+                          >
+                            {busyAmendRow === r.id ? (
+                              <>
+                                <RefreshCw size={14} className="animate-spin" /> Amending…
+                              </>
+                            ) : (
+                              <>
+                                <Layers size={14} /> Amend
+                              </>
+                            )}
+                          </button>
+                        )}
+
+                        {/* Delete (only for draft) */}
                         <button
-                          onClick={() => deleteDraft(r)}
-                          disabled={busyRow === r.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteDraft(r);
+                          }}
+                          disabled={busyDeleteRow === r.id}
                           className={`inline-flex items-center gap-1 px-2 py-1 rounded-md ${
                             String(r.status).toLowerCase() === "draft"
                               ? "border border-red-300 text-red-700 hover:bg-red-50"
@@ -657,7 +770,7 @@ export default function AgreementList() {
                           title="Delete Draft"
                         >
                           <Trash2 size={14} />{" "}
-                          {busyRow === r.id ? "Deleting…" : "Delete"}
+                          {busyDeleteRow === r.id ? "Deleting…" : "Delete"}
                         </button>
                       </div>
                     </td>
@@ -670,8 +783,11 @@ export default function AgreementList() {
       </div>
 
       <div className="text-xs text-gray-500">
-        Showing {Math.min(page.length, filtered.length)} of {filtered.length}. Select 2+ rows, choose a{" "}
-        <b>Primary</b> (star), then click <b>Merge Selected</b>.
+        Showing {Math.min(page.length, filtered.length)} of {filtered.length}.
+        Select 2+ rows, choose a <b>Primary</b> (star), then click{" "}
+        <b>Merge Selected</b>. Fully signed agreements can no longer be edited
+        directly; use the <b>Amend</b> button to create a new Amendment version
+        and re-sign.
       </div>
     </div>
   );

@@ -1,16 +1,8 @@
 # backend/projects/serializers/agreement.py
-# v2025-11-24i — Project Address + Milestone-based Start/End/Total + display_total
-# - Project Address is explicit-only (no "same as homeowner" toggle used).
-# - Robust address aliasing on input (project_address_* <-> address_*).
-# - Milestone rollups:
-#       * sum_amount: sum of milestone.amount
-#       * min_start: earliest milestone.start_date
-#       * max_end:   latest of completion_date/end_date/due_date
-# - TOTAL RULE:
-#       * If total_cost is non-zero, use it.
-#       * If total_cost is 0 / None / "", use sum of milestones.
-# - OUTPUT FIELD:
-#       * display_total = computed total (used by AgreementList.jsx).
+# v2025-12-12 — Adds escrow funding rollups (remaining_to_fund + escrow_total_required)
+# - Keeps existing address + milestone rollups
+# - Uses Agreement.total_cost override else milestone sum
+# - Exposes remaining funding amount so frontend Step4Finalize can be exact
 
 from __future__ import annotations
 
@@ -72,16 +64,23 @@ class AgreementSerializer(serializers.ModelSerializer):
     homeowner_name = serializers.SerializerMethodField()
     homeowner_email = serializers.SerializerMethodField()
     homeowner_address = serializers.SerializerMethodField()
+
     display_milestone_total = serializers.SerializerMethodField()
     total = serializers.SerializerMethodField()
     amount = serializers.SerializerMethodField()
     start = serializers.SerializerMethodField()
     end = serializers.SerializerMethodField()
+
     invoices_count = serializers.SerializerMethodField()
     is_editable = serializers.SerializerMethodField()
     is_locked = serializers.SerializerMethodField()
-    # NEW: value AgreementList uses for the Total column
+
+    # AgreementList Total column
     display_total = serializers.SerializerMethodField()
+
+    # ✅ NEW: escrow rollups
+    escrow_total_required = serializers.SerializerMethodField()
+    remaining_to_fund = serializers.SerializerMethodField()
 
     # ---- WRITE aliases for warranty ----
     use_default_warranty = serializers.BooleanField(
@@ -91,7 +90,6 @@ class AgreementSerializer(serializers.ModelSerializer):
         write_only=True, required=False, allow_blank=True, default=""
     )
 
-    # Accept nulls from frontend; normalize later
     warranty_text_snapshot = serializers.CharField(
         required=False,
         allow_blank=True,
@@ -131,8 +129,6 @@ class AgreementSerializer(serializers.ModelSerializer):
     postal_code = serializers.CharField(
         required=False, allow_blank=True, allow_null=True
     )
-
-    # NOTE: no project_address_same_as_homeowner field anymore.
 
     class Meta:
         model = Agreement
@@ -180,10 +176,6 @@ class AgreementSerializer(serializers.ModelSerializer):
         return getattr(ho, "email", None) if ho else None
 
     def get_homeowner_address(self, obj) -> Optional[str]:
-        """
-        Single-line homeowner address for list views.
-        Prefer Agreement snapshot; otherwise build from Homeowner fields.
-        """
         snap = (
             getattr(obj, "homeowner_address_snapshot", None)
             or getattr(obj, "homeowner_address_text", None)
@@ -239,22 +231,11 @@ class AgreementSerializer(serializers.ModelSerializer):
         return " ".join(parts).strip() or None
 
     def _milestone_rollups(self, obj):
-        """
-        Roll up milestones:
-          - sum_amount: total of milestone.amount
-          - min_start: earliest milestone.start_date
-          - max_end:   latest of completion_date/end_date/due_date
-        """
         if Milestone is None:
-            return {
-                "sum_amount": Decimal("0"),
-                "min_start": None,
-                "max_end": None,
-            }
+            return {"sum_amount": Decimal("0"), "min_start": None, "max_end": None}
 
         qs = list(Milestone.objects.filter(agreement=obj))
 
-        # sum of amount
         total = Decimal("0")
         for m in qs:
             amt = getattr(m, "amount", None)
@@ -266,13 +247,9 @@ class AgreementSerializer(serializers.ModelSerializer):
                 except Exception:
                     pass
 
-        # earliest start_date
-        start_dates = [
-            m.start_date for m in qs if getattr(m, "start_date", None) is not None
-        ]
+        start_dates = [m.start_date for m in qs if getattr(m, "start_date", None) is not None]
         min_start = min(start_dates) if start_dates else None
 
-        # latest of completion_date / end_date / due_date
         end_candidates = []
         for m in qs:
             for name in ("completion_date", "end_date", "due_date"):
@@ -282,24 +259,14 @@ class AgreementSerializer(serializers.ModelSerializer):
                     break
         max_end = max(end_candidates) if end_candidates else None
 
-        return {
-            "sum_amount": total,
-            "min_start": min_start,
-            "max_end": max_end,
-        }
+        return {"sum_amount": total, "min_start": min_start, "max_end": max_end}
 
     def get_display_milestone_total(self, obj):
         return self._milestone_rollups(obj)["sum_amount"]
 
     def get_total(self, obj):
-        """
-        Agreement total:
-          - If total_cost is non-zero, use it as an override.
-          - If total_cost is 0 / None / "", use sum of milestone amounts.
-        """
         total_cost = getattr(obj, "total_cost", None)
 
-        # Normalize to Decimal or None
         if total_cost in ("", None):
             normalized = None
         elif isinstance(total_cost, Decimal):
@@ -310,28 +277,18 @@ class AgreementSerializer(serializers.ModelSerializer):
             except Exception:
                 normalized = None
 
-        # If contractor explicitly set a non-zero total_cost, trust that.
         if normalized not in (None, Decimal("0"), Decimal("0.00")):
             return normalized
 
-        # Otherwise, fall back to sum of milestones.
         return self._milestone_rollups(obj)["sum_amount"]
 
     def get_amount(self, obj):
-        # Kept for backward compatibility; same as total.
         return self.get_total(obj)
 
     def get_start(self, obj):
-        """
-        Overall start date: earliest milestone.start_date.
-        """
         return self._milestone_rollups(obj)["min_start"]
 
     def get_end(self, obj):
-        """
-        Overall end date: latest of completion_date / end_date / due_date
-        across milestones.
-        """
         return self._milestone_rollups(obj)["max_end"]
 
     def get_invoices_count(self, obj):
@@ -340,36 +297,48 @@ class AgreementSerializer(serializers.ModelSerializer):
         return Invoice.objects.filter(agreement=obj).count()
 
     def get_display_total(self, obj):
-        """
-        Value used by AgreementList.jsx's Total column
-        (fmtMoney(r.display_total ?? r.total_cost)).
-        """
         val = self.get_total(obj)
         if isinstance(val, Decimal):
-            # Convert to a plain float/string so JS Number() works nicely
             return float(val)
         try:
             return float(val)
         except Exception:
             return val
 
+    # ✅ NEW: escrow rollups
+    def get_escrow_total_required(self, obj):
+        val = self.get_total(obj)
+        try:
+            return float(val) if isinstance(val, Decimal) else float(Decimal(str(val)))
+        except Exception:
+            return None
+
+    def get_remaining_to_fund(self, obj):
+        total_required = self.get_total(obj)
+        funded = getattr(obj, "escrow_funded_amount", None) or Decimal("0.00")
+
+        try:
+            total_required = total_required if isinstance(total_required, Decimal) else Decimal(str(total_required))
+            funded = funded if isinstance(funded, Decimal) else Decimal(str(funded))
+        except Exception:
+            return None
+
+        remaining = total_required - funded
+        if remaining < Decimal("0.00"):
+            remaining = Decimal("0.00")
+
+        return float(remaining)
+
     # ------------------------------------------------------------------
     # INPUT normalisation
     # ------------------------------------------------------------------
 
     def to_internal_value(self, data: Dict[str, Any]):
-        """
-        Normalize input to ensure addresses save regardless of model field names.
-        Explicit project_address_* fields are the preferred source.
-        """
         data = dict(data)
 
-        # Normalize project type if present
         if "project_type" in data and data["project_type"]:
             data["project_type"] = _normalize_project_type(data["project_type"])
 
-        # Map synonyms: Ensure both `project_address_X` and `address_X` keys exist
-        # if one of them is provided, so we survive model aliasing.
         mappings = [
             ("project_address_line1", "address_line1"),
             ("project_address_line2", "address_line2"),
@@ -386,13 +355,9 @@ class AgreementSerializer(serializers.ModelSerializer):
             elif model_key in data and data[model_key] is not None:
                 data[proj_key] = data[model_key]
 
-        # Strip legacy toggle key if any old client sends it
         data.pop("project_address_same_as_homeowner", None)
-
-        # Don't let inbound "status" override internal logic
         data.pop("status", None)
 
-        # Clean empty strings to None, but keep address fields as-is
         address_keys = {
             "project_address_line1",
             "project_address_line2",
@@ -409,11 +374,9 @@ class AgreementSerializer(serializers.ModelSerializer):
         }
 
         for key, value in list(data.items()):
-            if key not in address_keys and isinstance(value, str):
-                if value.strip() == "":
-                    data[key] = None
+            if key not in address_keys and isinstance(value, str) and value.strip() == "":
+                data[key] = None
 
-        # Warranty mapping
         use_default = data.pop("use_default_warranty", None)
         custom_text = data.pop("custom_warranty_text", None)
         if use_default is not None:
@@ -434,11 +397,6 @@ class AgreementSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         return super().update(instance, validated_data)
 
-    # ------------------------------------------------------------------
-    # OUTPUT normalisation
-    # ------------------------------------------------------------------
-
     def to_representation(self, instance):
         rep = super().to_representation(instance)
-        # We intentionally don't expose project_address_same_as_homeowner anymore.
         return rep
