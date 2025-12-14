@@ -48,6 +48,7 @@ from .views.funding import (
     PublicFundingInfoView,
     CreateFundingPaymentIntentView,
     AgreementFundingPreviewView,
+    FundingReceiptView,
 )
 
 # NEW – manual amendment endpoint
@@ -132,6 +133,13 @@ urlpatterns = [
         CreateFundingPaymentIntentView.as_view(),
         name="funding-create-payment-intent",
     ),
+
+    path(
+        "funding/receipt/",
+        FundingReceiptView.as_view(),
+        name="funding-receipt",
+    ),
+
 
     # Routers
     path("", include(router.urls)),

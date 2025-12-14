@@ -47,3 +47,72 @@ class ConnectedAccount(models.Model):
     def __str__(self) -> str:  # pragma: no cover
         acct = self.stripe_account_id or "unlinked"
         return f"ConnectedAccount(user={self.user_id}, acct={acct})"
+class Payment(models.Model):
+    """
+    Stores the funding payment for an Agreement (escrow deposit).
+    """
+    STATUS_CHOICES = [
+        ("requires_payment_method", "Requires Payment Method"),
+        ("requires_confirmation", "Requires Confirmation"),
+        ("requires_action", "Requires Action"),
+        ("processing", "Processing"),
+        ("succeeded", "Succeeded"),
+        ("canceled", "Canceled"),
+        ("failed", "Failed"),
+    ]
+
+    agreement = models.ForeignKey(
+        "projects.Agreement",
+        on_delete=models.CASCADE,
+        related_name="payments",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    stripe_payment_intent_id = models.CharField(max_length=255, blank=True, null=True, db_index=True)
+    stripe_charge_id = models.CharField(max_length=255, blank=True, null=True, db_index=True)
+
+    amount_cents = models.PositiveIntegerField(default=0)
+    currency = models.CharField(max_length=10, default="usd")
+
+    status = models.CharField(max_length=64, choices=STATUS_CHOICES, default="processing")
+
+    # If payout happened, set this; for your “refund escrow only” case it should be NULL/blank
+    stripe_transfer_id = models.CharField(max_length=255, blank=True, null=True, db_index=True)
+
+    def __str__(self):
+        return f"Payment {self.id} (Agreement {self.agreement_id})"
+
+
+class Refund(models.Model):
+    """
+    Logs Stripe refunds issued against a Payment.
+    """
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("succeeded", "Succeeded"),
+        ("failed", "Failed"),
+    ]
+
+    payment = models.ForeignKey(Payment, on_delete=models.CASCADE, related_name="refunds")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_refunds",
+    )
+
+    amount_cents = models.PositiveIntegerField(default=0)
+    currency = models.CharField(max_length=10, default="usd")
+
+    reason = models.CharField(max_length=255, blank=True, default="")
+    note = models.TextField(blank=True, default="")
+
+    stripe_refund_id = models.CharField(max_length=255, blank=True, null=True, db_index=True)
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default="pending")
+    error_message = models.TextField(blank=True, default="")
+
+    def __str__(self):
+        return f"Refund {self.id} (Payment {self.payment_id})"

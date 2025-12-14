@@ -1,11 +1,12 @@
 // src/components/Sidebar.jsx
 // COMPLETE FILE — Sidebar with Stripe status badge + Team nav item
-// v2025-11-24 — Contractor-only Stripe nav & status
+// + v2025-12-13 — Contextual "Refund Escrow" button on Agreement pages (contractor owner only)
 
-import React, { useCallback, useEffect, useState } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import api from "../api";
 import { useWhoAmI } from "../hooks/useWhoAmI.js";
+import RefundEscrowModal from "./RefundEscrowModal";
 
 /**
  * Compact, route-aligned sidebar.
@@ -14,9 +15,11 @@ import { useWhoAmI } from "../hooks/useWhoAmI.js";
  * - Logout button (clears JWT and returns to landing)
  * - Shows Stripe onboarding status badge (Connected / Pending) for contractors only
  * - Includes "Team" link for contractor employee management
+ * - NEW: Context section with "Refund Escrow" button when viewing an agreement (owner only)
  */
 export default function Sidebar() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const { data, loading: whoLoading, error: whoError, isContractor, isEmployee } =
     useWhoAmI();
@@ -27,6 +30,8 @@ export default function Sidebar() {
     loading: true,
     error: "",
   });
+
+  const [refundOpen, setRefundOpen] = useState(false);
 
   const handleLogout = useCallback(() => {
     try {
@@ -40,6 +45,29 @@ export default function Sidebar() {
     } catch {}
     navigate("/", { replace: true });
   }, [navigate]);
+
+  // Determine if this user is the "parent contractor owner"
+  // (you mentioned whoami shows role: contractor_owner)
+  const isContractorOwner = useMemo(() => {
+    const role = data?.role || data?.type || "";
+    return isContractor && String(role).toLowerCase() === "contractor_owner";
+  }, [data, isContractor]);
+
+  // Extract agreement id from URL if on /agreements/:id or /agreements/:id/wizard...
+  const activeAgreementId = useMemo(() => {
+    const p = location.pathname || "";
+    const m = p.match(/^\/agreements\/(\d+)(\/|$)/);
+    return m ? Number(m[1]) : null;
+  }, [location.pathname]);
+
+  // Optional: show a label if AgreementDetail stored it (nice UX, not required)
+  const activeAgreementLabel = useMemo(() => {
+    try {
+      return localStorage.getItem("activeAgreementTitle") || "";
+    } catch {
+      return "";
+    }
+  }, [location.pathname]);
 
   // Fetch Stripe status ONLY for contractor accounts
   useEffect(() => {
@@ -140,6 +168,8 @@ export default function Sidebar() {
     </NavLink>
   );
 
+  const showRefundContext = Boolean(isContractorOwner && activeAgreementId);
+
   return (
     <aside
       className="hidden md:flex md:flex-col md:w-60 lg:w-64 border-r border-black/5 bg-white/50 backdrop-blur-md"
@@ -165,6 +195,42 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 overflow-auto px-3 py-4 space-y-6">
+        {showRefundContext && (
+          <div>
+            <div className="px-2 text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+              Context
+            </div>
+
+            <div className="rounded-xl bg-white/70 ring-1 ring-black/5 p-3 space-y-2">
+              <div className="text-xs text-slate-600">
+                Agreement{" "}
+                <span className="font-extrabold text-slate-900">
+                  #{activeAgreementId}
+                </span>
+                {activeAgreementLabel ? (
+                  <div className="text-[11px] text-slate-500 truncate" title={activeAgreementLabel}>
+                    {activeAgreementLabel}
+                  </div>
+                ) : null}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setRefundOpen(true)}
+                className="w-full flex items-center justify-center gap-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-sm font-extrabold px-3 py-2 shadow-sm ring-1 ring-black/5"
+                title="Refund escrow for this agreement (unreleased funds only)"
+              >
+                <span aria-hidden="true">↩︎</span>
+                <span>Refund Escrow</span>
+              </button>
+
+              <div className="text-[11px] text-slate-500">
+                Owner-only. Refunds unreleased escrow.
+              </div>
+            </div>
+          </div>
+        )}
+
         <div>
           <div className="px-2 text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
             Main
@@ -179,11 +245,7 @@ export default function Sidebar() {
             <Item to="/calendar" label="Calendar" emoji="🗓️" />
             <Item to="/expenses" label="Expenses" emoji="📊" />
             <Item to="/disputes" label="Disputes" emoji="⚖️" />
-            <Item
-              to="/business-analysis"
-              label="Business Dashboard"
-              emoji="📈"
-            />
+            <Item to="/business-analysis" label="Business Dashboard" emoji="📈" />
           </div>
         </div>
 
@@ -193,7 +255,6 @@ export default function Sidebar() {
           </div>
           <div className="space-y-1">
             <Item to="/profile" label="My Profile" emoji="👤" />
-            {/* Stripe Onboarding is contractor-only */}
             {isContractor && (
               <Item
                 to="/onboarding"
@@ -225,6 +286,13 @@ export default function Sidebar() {
           © {new Date().getFullYear()} MyHomeBro
         </div>
       </div>
+
+      <RefundEscrowModal
+        open={refundOpen}
+        onClose={() => setRefundOpen(false)}
+        agreementId={activeAgreementId}
+        agreementLabel={activeAgreementLabel}
+      />
     </aside>
   );
 }

@@ -19,7 +19,7 @@ import {
   CalendarDays,
 } from "lucide-react";
 
-console.log("ContractorDashboard.jsx v2025-12-03-intro-card");
+console.log("ContractorDashboard.jsx v2025-12-14-dashboard-rate+subtitle+intro-countdown");
 
 // Ensure react-modal knows the root
 Modal.setAppElement("#root");
@@ -45,6 +45,12 @@ const invBucket = (inv) => {
   if (["approved", "ready_to_pay"].includes(s)) return "approved";
   if (["paid", "earned", "released"].includes(s)) return "earned";
   return "pending";
+};
+
+const fmtRate = (rateDecimal) => {
+  const r = Number(rateDecimal);
+  if (!Number.isFinite(r)) return null;
+  return `${(r * 100).toFixed(2)}%`;
 };
 
 /* ---------- quick action button ---------- */
@@ -285,14 +291,10 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
       const created = createRes.data;
 
       // 2) Contractor signs
-      await api.post(
-        `/projects/expenses/${created.id}/contractor_sign/`
-      );
+      await api.post(`/projects/expenses/${created.id}/contractor_sign/`);
 
       // 3) Send to homeowner
-      await api.post(
-        `/projects/expenses/${created.id}/send_to_homeowner/`
-      );
+      await api.post(`/projects/expenses/${created.id}/send_to_homeowner/`);
 
       toast.success("Expense sent to homeowner.");
       onClose(true);
@@ -444,9 +446,19 @@ export default function ContractorDashboard() {
 
   const navigate = useNavigate();
 
-  // Intro pricing countdown state
+  // Intro pricing countdown state (60-day intro)
   const [introDaysRemaining, setIntroDaysRemaining] = useState(null);
   const [introActive, setIntroActive] = useState(false);
+
+  // Pull exact rate/tier from same engine as agreement fee summary (funding_preview)
+  const [pricing, setPricing] = useState({
+    loading: true,
+    rate: null, // decimal like 0.03
+    fixed_fee: 1,
+    is_intro: null,
+    tier_name: null,
+    error: "",
+  });
 
   /* ----- load data ----- */
   useEffect(() => {
@@ -493,7 +505,7 @@ export default function ContractorDashboard() {
       try {
         const { data } = await api.get("/projects/contractors/me/");
 
-        // Try a few possible fields; if none, fall back to standard tier view
+        // Try a few possible fields; if none, intro countdown disabled
         const createdRaw =
           data.created_at ||
           data.contractor_created_at ||
@@ -503,14 +515,14 @@ export default function ContractorDashboard() {
 
         if (!createdRaw) {
           setIntroActive(false);
-          setIntroDaysRemaining(0);
+          setIntroDaysRemaining(null);
           return;
         }
 
         const createdDate = new Date(createdRaw);
         if (Number.isNaN(createdDate.getTime())) {
           setIntroActive(false);
-          setIntroDaysRemaining(0);
+          setIntroDaysRemaining(null);
           return;
         }
 
@@ -529,13 +541,91 @@ export default function ContractorDashboard() {
           "Failed to load contractor profile for intro countdown",
           err
         );
-        // On error, just show standard tier messaging
         setIntroActive(false);
-        setIntroDaysRemaining(0);
+        setIntroDaysRemaining(null);
       }
     };
 
     fetchIntroCountdown();
+  }, []);
+
+  // Authoritative pricing via funding_preview of latest agreement
+  useEffect(() => {
+    let mounted = true;
+
+    const loadPricing = async () => {
+      try {
+        setPricing((p) => ({ ...p, loading: true, error: "" }));
+
+        const { data } = await api.get("/projects/agreements/");
+        const list = Array.isArray(data?.results)
+          ? data.results
+          : Array.isArray(data)
+          ? data
+          : [];
+
+        if (!list.length) {
+          if (!mounted) return;
+          setPricing({
+            loading: false,
+            rate: null,
+            fixed_fee: 1,
+            is_intro: null,
+            tier_name: null,
+            error: "Create an agreement to display your exact rate here.",
+          });
+          return;
+        }
+
+        const latest = [...list].sort((a, b) => (b?.id || 0) - (a?.id || 0))[0];
+        const agreementId = latest?.id;
+
+        if (!agreementId) {
+          if (!mounted) return;
+          setPricing({
+            loading: false,
+            rate: null,
+            fixed_fee: 1,
+            is_intro: null,
+            tier_name: null,
+            error: "Unable to determine your current rate.",
+          });
+          return;
+        }
+
+        const { data: fp } = await api.get(
+          `/projects/agreements/${agreementId}/funding_preview/`
+        );
+
+        if (!mounted) return;
+
+        setPricing({
+          loading: false,
+          rate: fp?.rate ?? null,
+          fixed_fee: fp?.fixed_fee ?? 1,
+          is_intro: fp?.is_intro ?? null,
+          tier_name: fp?.tier_name ?? (fp?.is_intro ? "INTRO" : null),
+          error: "",
+        });
+      } catch (err) {
+        console.error("Failed to load pricing (funding_preview)", err);
+        if (!mounted) return;
+        setPricing({
+          loading: false,
+          rate: null,
+          fixed_fee: 1,
+          is_intro: null,
+          tier_name: null,
+          error: "Unable to load your rate right now.",
+        });
+      }
+    };
+
+    loadPricing();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   /* ----- milestone stats ----- */
@@ -585,33 +675,49 @@ export default function ContractorDashboard() {
     if (didChange) setExpensesRefreshKey((k) => k + 1);
   };
 
+  // Build display text for Pricing card
+  const ratePercent = pricing.rate != null ? fmtRate(pricing.rate) : null;
+  const fixedFeeLabel = `+ $${Number(pricing.fixed_fee || 1).toFixed(0)}`;
+
+  const isIntroTier = pricing.is_intro === true || String(pricing.tier_name || "").toUpperCase() === "INTRO";
+
+  const titleText = pricing.loading
+    ? "Checking your rate…"
+    : ratePercent
+    ? `${isIntroTier ? "Intro Rate" : "Standard Tiered Rate"}: ${ratePercent} ${fixedFeeLabel}`
+    : "MyHomeBro Pricing";
+
+  // EXACT wording requested
+  const baseSubtitle =
+    pricing.loading
+      ? "Loading your pricing details."
+      : pricing.error
+      ? pricing.error
+      : isIntroTier
+      ? "Your current introductory pricing for new agreements."
+      : "Your current pricing for new agreements.";
+
+  // Countdown should ONLY show during active intro period
+  const subtitleText =
+    isIntroTier && introActive && introDaysRemaining !== null
+      ? `${baseSubtitle} ${introDaysRemaining} day${
+          introDaysRemaining === 1 ? "" : "s"
+        } remaining in your intro period.`
+      : baseSubtitle;
+
   return (
     <PageShell
       title="Dashboard"
       subtitle="Milestones and invoices at a glance."
       showLogo
     >
-      {/* Intro rate stat card */}
-      <div className="mhb-kicker">MyHomeBro Intro Rate</div>
+      {/* Pricing / Tier card */}
+      <div className="mhb-kicker">MyHomeBro Pricing</div>
       <div className="mhb-grid" style={{ marginBottom: 6 }}>
         <StatCard
           icon={BadgeDollarSign}
-          title={
-            introDaysRemaining === null
-              ? "Checking your intro rate…"
-              : introActive
-              ? "Intro Rate: 3% + $1"
-              : "Standard Tiered Rates"
-          }
-          subtitle={
-            introDaysRemaining === null
-              ? "Loading your intro period details."
-              : introActive
-              ? `${introDaysRemaining} day${
-                  introDaysRemaining === 1 ? "" : "s"
-                } remaining on your 3% + $1 new-contractor rate. After this, your base rate becomes 4.5% + $1 (before volume discounts).`
-              : "Your 60-day intro period has ended or could not be determined. Your base rate is 4.5% + $1, with lower rates unlocked at higher monthly volume."
-          }
+          title={titleText}
+          subtitle={subtitleText}
           count={null}
           amount={null}
           onClick={null}

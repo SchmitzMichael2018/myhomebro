@@ -1,24 +1,32 @@
-# backend/payments/urls.py
 from django.urls import path
+
 from .views import (
     OnboardingStart,
     OnboardingStatus,
     OnboardingManage,
-    OnboardingLoginLink,  # optional
+    OnboardingLoginLink,
 )
 
-# NOTE: The Stripe webhook is mounted in core/urls.py at /stripe/webhook/
+# NEW: escrow refunds
+from payments.views.escrow_refunds import AgreementEscrowRefundView
 
 app_name = "payments"
 
 urlpatterns = [
-    # Onboarding
+    # ──────────────────────────────────────────────────────────────────
+    # Stripe Connect onboarding
+    # ──────────────────────────────────────────────────────────────────
     path("onboarding/start/", OnboardingStart.as_view(), name="payments-onboarding-start"),
     path("onboarding/status/", OnboardingStatus.as_view(), name="payments-onboarding-status"),
-
-    # NEW: Manage existing Stripe account settings (bank account, tax info, docs)
     path("onboarding/manage/", OnboardingManage.as_view(), name="payments-onboarding-manage"),
-
-    # NEW (optional): One-click login to Stripe Express Dashboard
     path("onboarding/login-link/", OnboardingLoginLink.as_view(), name="payments-onboarding-login"),
+
+    # ──────────────────────────────────────────────────────────────────
+    # Escrow refunds (contractor-owner only)
+    # ──────────────────────────────────────────────────────────────────
+    path(
+        "agreements/<int:agreement_id>/refund_escrow/",
+        AgreementEscrowRefundView.as_view(),
+        name="agreement-escrow-refund",
+    ),
 ]

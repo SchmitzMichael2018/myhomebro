@@ -1,10 +1,11 @@
 // frontend/src/components/Step4Finalize.jsx
-// v2025-12-12a — Amendment top-up escrow fix + remaining-to-fund support
-// - Sends remaining escrow amount (amendment top-up) to backend via SendFundingLinkButton amount prop
-// - Adds escrow summary (Total / Funded / Remaining) in Step 4
+// v2025-12-13c — Funding preview auto-refresh when milestones change + cache bust
+// - Refetches /funding_preview/ when milestones change (add/remove/edit amounts)
+// - Busts cache using _ts query param
+// - Prefers fundingPreview.total_required when present (new backend), falls back safely
 // - Keeps existing UX/layout intact
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import api from "../api";
 import toast from "react-hot-toast";
 import SignatureModal from "./SignatureModal";
@@ -166,6 +167,9 @@ export default function Step4Finalize({
   const [fundingLoading, setFundingLoading] = useState(false);
   const [fundingError, setFundingError] = useState("");
 
+  // ─────────────────────────────────────────────────────────────
+  // Homeowner fetch
+  // ─────────────────────────────────────────────────────────────
   useEffect(() => {
     const fetchHomeowner = async () => {
       if (!agreement) return;
@@ -180,7 +184,8 @@ export default function Step4Finalize({
       }
 
       if (!candidate) return;
-      const idVal = typeof candidate === "number" ? candidate : parseInt(candidate, 10);
+      const idVal =
+        typeof candidate === "number" ? candidate : parseInt(candidate, 10);
       if (!idVal || Number.isNaN(idVal)) return;
 
       setLoadingHomeowner(true);
@@ -197,6 +202,40 @@ export default function Step4Finalize({
     fetchHomeowner();
   }, [agreement]);
 
+  // ─────────────────────────────────────────────────────────────
+  // Totals / milestone key for preview refresh
+  // ─────────────────────────────────────────────────────────────
+  const totalAmount =
+    totals?.totalAmt ??
+    agreement?.display_milestone_total ??
+    agreement?.total_cost ??
+    agreement?.total ??
+    0;
+
+  const milestoneKey = useMemo(() => {
+    const arr = Array.isArray(milestones) ? milestones : [];
+    // Include amount + due + title to refresh fee preview on edits
+    return arr
+      .map((m, idx) => {
+        const idPart = m?.id ?? m?.pk ?? m?.order ?? idx;
+        const amt = m?.amount ?? "";
+        const due = m?.due_date ?? m?.start_date ?? m?.end_date ?? m?.completion_date ?? "";
+        const title = m?.title ?? "";
+        return `${idPart}:${amt}:${due}:${title}`;
+      })
+      .join("|");
+  }, [milestones]);
+
+  const amendmentNumber =
+    agreement?.amendment_number != null
+      ? Number(agreement.amendment_number)
+      : agreement?.amendment != null
+      ? Number(agreement.amendment)
+      : 0;
+
+  // ─────────────────────────────────────────────────────────────
+  // Funding preview fetch (REFRESH when milestones change)
+  // ─────────────────────────────────────────────────────────────
   useEffect(() => {
     const fetchFundingPreview = async () => {
       if (!agreement?.id) {
@@ -207,7 +246,11 @@ export default function Step4Finalize({
       setFundingError("");
       try {
         const { data } = await api.get(
-          `/projects/agreements/${agreement.id}/funding_preview/`
+          `/projects/agreements/${agreement.id}/funding_preview/`,
+          {
+            params: { _ts: Date.now() }, // cache bust
+            headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+          }
         );
         setFundingPreview(data);
       } catch (err) {
@@ -223,9 +266,12 @@ export default function Step4Finalize({
     };
 
     fetchFundingPreview();
-  }, [agreement?.id]);
+  }, [agreement?.id, amendmentNumber, milestoneKey, totalAmount]);
 
-  const homeownerAddressDisplay = getHomeownerAddressFromAgreement(agreement, homeownerObj);
+  const homeownerAddressDisplay = getHomeownerAddressFromAgreement(
+    agreement,
+    homeownerObj
+  );
   const projectAddressDisplay = getProjectAddressFromAgreement(agreement);
 
   const homeownerName =
@@ -244,27 +290,14 @@ export default function Step4Finalize({
     agreement?.homeowner?.phone ||
     "—";
 
-  const totalAmount =
-    totals?.totalAmt ??
-    agreement?.display_milestone_total ??
-    agreement?.total_cost ??
-    agreement?.total ??
-    0;
-
   const status = agreement?.status || "DRAFT";
   const displayMilestones = milestones || agreement?.milestones || [];
-
-  const amendmentNumber =
-    agreement?.amendment_number != null
-      ? Number(agreement.amendment_number)
-      : agreement?.amendment != null
-      ? Number(agreement.amendment)
-      : 0;
 
   const amendmentLabel =
     amendmentNumber > 0 ? `Amendment ${amendmentNumber}` : "Original Agreement";
 
-  const pdfVersion = agreement?.pdf_version != null ? Number(agreement.pdf_version) : null;
+  const pdfVersion =
+    agreement?.pdf_version != null ? Number(agreement.pdf_version) : null;
 
   // Signature truth (robust)
   const backendContractorSigned =
@@ -285,23 +318,25 @@ export default function Step4Finalize({
     agreement?.is_fully_signed === true ||
     String(agreement?.status || "").toLowerCase() === "signed";
 
-  // UI flags
   const signedByContractor = backendContractorSigned;
   const signedByHomeowner = backendHomeownerSigned;
 
   const fullySignedBackend = backendContractorSigned && backendHomeownerSigned;
 
-  // Escrow enablement uses the same fully-signed truth
   const isFullySigned = fullySignedBackend;
-  const escrowFunded = !!agreement?.escrow_funded;
 
-  // Unsign allowed only when contractor has signed AND homeowner has NOT signed
+  // IMPORTANT: Prefer funding preview escrow flag if present
+  const escrowFunded =
+    fundingPreview?.escrow_funded != null
+      ? !!fundingPreview.escrow_funded
+      : !!agreement?.escrow_funded;
+
   const canUnsign = backendContractorSigned && !backendHomeownerSigned;
 
-  // Live status refresh (poll while waiting on homeowner signature or escrow updates)
   const waitingOnHomeowner = signedByContractor && !signedByHomeowner;
   const waitingOnEscrow = isFullySigned && !escrowFunded;
 
+  // Poll while waiting
   useEffect(() => {
     if (!agreement?.id) return;
     if (!waitingOnHomeowner && !waitingOnEscrow) return;
@@ -353,7 +388,7 @@ export default function Step4Finalize({
           return;
         }
       } catch {
-        // ignore and retry
+        // ignore
       }
     };
 
@@ -363,7 +398,13 @@ export default function Step4Finalize({
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, [agreement?.id, waitingOnHomeowner, waitingOnEscrow, escrowFunded, signedByContractor]);
+  }, [
+    agreement?.id,
+    waitingOnHomeowner,
+    waitingOnEscrow,
+    escrowFunded,
+    signedByContractor,
+  ]);
 
   const handleOpenContractorModal = () => {
     if (!hasPreviewed) {
@@ -397,7 +438,9 @@ export default function Step4Finalize({
       toast.success("Homeowner signing link sent.");
     } catch (err) {
       console.error("send_signature_request error:", err);
-      const msg = err?.response?.data?.detail || "Unable to send homeowner signing link.";
+      const msg =
+        err?.response?.data?.detail ||
+        "Unable to send homeowner signing link.";
       setSendError(msg);
       toast.error(msg);
     } finally {
@@ -423,13 +466,24 @@ export default function Step4Finalize({
     }
   }
 
-  const rawProjectAmount = Number(fundingPreview?.project_amount || 0);
-  const projectAmount = rawProjectAmount > 0 ? rawProjectAmount : Number(totalAmount || 0);
+  // Prefer total_required (new backend). Fallback to project_amount/homeowner_escrow.
+  const rawTotalRequired = Number(
+    fundingPreview?.total_required ??
+      fundingPreview?.project_amount ??
+      fundingPreview?.homeowner_escrow ??
+      0
+  );
+
+  // Prefer backend-required if it looks valid; else use current milestone total
+  const projectAmount =
+    rawTotalRequired > 0 ? rawTotalRequired : Number(totalAmount || 0);
 
   let platformFee =
-    fundingPreview && fundingPreview.platform_fee != null ? Number(fundingPreview.platform_fee) : 0;
+    fundingPreview && fundingPreview.platform_fee != null
+      ? Number(fundingPreview.platform_fee)
+      : 0;
 
-  if (!rawProjectAmount && rate != null) {
+  if (!rawTotalRequired && rate != null) {
     platformFee = projectAmount * rate + 1;
   }
 
@@ -438,7 +492,7 @@ export default function Step4Finalize({
       ? Number(fundingPreview.contractor_payout)
       : null;
 
-  if (!rawProjectAmount || contractorPayout == null) {
+  if (!rawTotalRequired || contractorPayout == null) {
     contractorPayout = projectAmount - (platformFee || 0);
   }
 
@@ -447,51 +501,54 @@ export default function Step4Finalize({
       ? Number(fundingPreview.homeowner_escrow)
       : null;
 
-  if (!homeownerEscrow) {
-    homeownerEscrow = projectAmount;
-  }
+  if (!homeownerEscrow) homeownerEscrow = projectAmount;
 
-  // ✅ NEW: funded-to-date + remaining-to-fund (amendment top-up)
-  // Try multiple possible backend field names, default to 0 safely.
-  const escrowFundedAmountRaw =
-    agreement?.escrow_funded_amount ??
-    agreement?.escrow_funded_total ??
-    agreement?.escrow_paid_amount ??
-    agreement?.escrow_amount_funded ??
-    agreement?.funded_amount ??
-    0;
-
-  const escrowFundedAmountNum = Number(escrowFundedAmountRaw || 0);
-  const escrowFundedAmountSafe = Number.isFinite(escrowFundedAmountNum)
-    ? Math.max(0, Math.round(escrowFundedAmountNum * 100) / 100)
-    : 0;
-
-  // Remaining is based on the total escrow required for *current agreement version*
-  // We prefer homeownerEscrow (from funding_preview) then projectAmount.
-  const escrowTotalRequired = Number(homeownerEscrow || projectAmount || 0);
-  const escrowTotalRequiredSafe = Number.isFinite(escrowTotalRequired)
-    ? Math.max(0, Math.round(escrowTotalRequired * 100) / 100)
-    : 0;
-
-  const remainingToFund = Math.max(
-    0,
-    Math.round((escrowTotalRequiredSafe - escrowFundedAmountSafe) * 100) / 100
+  // Prefer backend escrow numbers if present
+  const escrowFundedAmountFromPreview = Number(
+    fundingPreview?.escrow_funded_amount ??
+      fundingPreview?.escrow_funded_so_far ??
+      0
   );
 
+  const escrowFundedAmountFromAgreement = Number(
+    agreement?.escrow_funded_amount ??
+      agreement?.escrow_funded_total ??
+      agreement?.escrow_paid_amount ??
+      agreement?.escrow_amount_funded ??
+      agreement?.funded_amount ??
+      0
+  );
+
+  const escrowFundedAmountSafe = Number.isFinite(escrowFundedAmountFromPreview)
+    ? Math.max(0, Math.round(escrowFundedAmountFromPreview * 100) / 100)
+    : Math.max(0, Math.round(escrowFundedAmountFromAgreement * 100) / 100);
+
+  const escrowTotalRequiredSafe = Number.isFinite(homeownerEscrow)
+    ? Math.max(0, Math.round(homeownerEscrow * 100) / 100)
+    : Math.max(0, Math.round(projectAmount * 100) / 100);
+
+  const remainingToFundFromPreview = Number(
+    fundingPreview?.remaining_to_fund ?? fundingPreview?.remaining ?? NaN
+  );
+
+  const remainingToFund = Number.isFinite(remainingToFundFromPreview)
+    ? Math.max(0, Math.round(remainingToFundFromPreview * 100) / 100)
+    : Math.max(
+        0,
+        Math.round((escrowTotalRequiredSafe - escrowFundedAmountSafe) * 100) / 100
+      );
+
   let previewButtonLabel = "Preview PDF";
-  if (amendmentNumber > 0) {
-    previewButtonLabel += ` — Amendment ${amendmentNumber}`;
-  }
-  if (!signedByContractor) {
-    previewButtonLabel += " (Required)";
-  }
+  if (amendmentNumber > 0) previewButtonLabel += ` — Amendment ${amendmentNumber}`;
+  if (!signedByContractor) previewButtonLabel += " (Required)";
 
   return (
     <div className="mt-4 space-y-6">
-      {/* Amendment Mode banner */}
       {amendmentNumber > 0 && (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          <div className="font-semibold">Amendment Mode — Amendment {amendmentNumber}</div>
+          <div className="font-semibold">
+            Amendment Mode — Amendment {amendmentNumber}
+          </div>
           <div className="text-xs mt-1">
             You are editing an amended version of this agreement. Any changes to milestones,
             schedule, or warranty will be captured in Amendment {amendmentNumber}. After previewing
@@ -562,18 +619,24 @@ export default function Step4Finalize({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <h4 className="font-semibold text-sm text-gray-800 mb-1">Homeowner Address</h4>
-            <div className="text-sm text-gray-800 whitespace-pre-wrap">{homeownerAddressDisplay}</div>
+            <div className="text-sm text-gray-800 whitespace-pre-wrap">
+              {homeownerAddressDisplay}
+            </div>
           </div>
           <div>
             <h4 className="font-semibold text-sm text-gray-800 mb-1">Project Address</h4>
-            <div className="text-sm text-gray-800 whitespace-pre-wrap">{projectAddressDisplay}</div>
+            <div className="text-sm text-gray-800 whitespace-pre-wrap">
+              {projectAddressDisplay}
+            </div>
           </div>
         </div>
       </section>
 
       {/* Project Scope */}
       <section className="rounded-lg border bg-white p-4 shadow">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">Project Scope &amp; Description</h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+          Project Scope &amp; Description
+        </h3>
         <div className="whitespace-pre-wrap text-sm text-gray-700">
           {agreement?.description || "No project description provided."}
         </div>
@@ -587,6 +650,7 @@ export default function Step4Finalize({
         <div className="mb-3 text-sm font-medium text-gray-700">
           Total Project Cost: {formatMoney(totalAmount || 0)}
         </div>
+
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -611,7 +675,9 @@ export default function Step4Finalize({
             <tbody className="bg-white divide-y divide-gray-200">
               {displayMilestones.map((m, i) => (
                 <tr key={m.id || i} className="border-t">
-                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">{i + 1}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
+                    {i + 1}
+                  </td>
                   <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
                     {m.title || "Untitled"}
                   </td>
@@ -619,7 +685,9 @@ export default function Step4Finalize({
                     {toDateOnly(m.due_date || m.completion_date || m.end_date) || "—"}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-right text-sm text-gray-500">
-                    {typeof m.amount === "number" ? `$${m.amount.toFixed(2)}` : m.amount || "—"}
+                    {typeof m.amount === "number"
+                      ? `$${m.amount.toFixed(2)}`
+                      : m.amount || "—"}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap text-center text-sm text-gray-500">
                     {m.status_display || m.status || "Pending"}
@@ -678,77 +746,17 @@ export default function Step4Finalize({
                 />
                 <SummaryCard label="Total Escrow Deposit" value={formatMoney(homeownerEscrow)} />
               </div>
+
               <p className="mt-2 text-[11px] text-gray-500">
-                This summary shows your estimated take-home after the MyHomeBro platform fee. Stripe
-                processing fees (card/ACH) may slightly adjust the final payout. If these numbers
-                don&apos;t look right, update your milestone amounts or total project price before
-                sending for signature.
+                This summary shows your estimated take-home after the MyHomeBro platform fee. Stripe processing
+                fees (card/ACH) may slightly adjust the final payout. If these numbers don't look right,
+                update your milestone amounts or total project price before sending for signature.
               </p>
             </>
           ) : (
             <div className="text-xs text-gray-500">Fee summary not available yet.</div>
           )}
         </div>
-      </section>
-
-      {/* Warranty & Attachments */}
-      <section className="rounded-lg border bg-white p-4 shadow">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">Warranty &amp; Attachments</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-          <SummaryCard
-            label="Warranty Type"
-            value={useDefaultWarranty ? "Default Warranty" : "Custom Warranty"}
-          />
-          <SummaryCard label="Attachments" value={attachments?.length || 0} />
-        </div>
-
-        {(attachments || []).length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 text-left">
-                  <th className="px-3 py-2">Category</th>
-                  <th className="px-3 py-2">Title</th>
-                  <th className="px-3 py-2">File</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(attachments || []).map((a) => {
-                  const url =
-                    a.file ||
-                    a.url ||
-                    a.file_url ||
-                    a.download_url ||
-                    a.download ||
-                    a.absolute_url ||
-                    null;
-                  return (
-                    <tr key={a.id || a.name || a.url} className="border-t">
-                      <td className="px-3 py-2">{(a.category || "").toUpperCase()}</td>
-                      <td className="px-3 py-2">{a.title || a.filename || "Attachment"}</td>
-                      <td className="px-3 py-2">
-                        {url ? (
-                          <a
-                            className="text-blue-600 hover:underline"
-                            href={url}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            Download
-                          </a>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="text-sm text-gray-500">No visible attachments.</div>
-        )}
       </section>
 
       {/* Signatures & Escrow */}
@@ -786,13 +794,13 @@ export default function Step4Finalize({
                 ) : fullySignedBackend ? (
                   <div className="mt-2 text-[11px] text-gray-600 bg-yellow-50 border border-yellow-200 rounded px-3 py-2">
                     This agreement has been signed by both you and the homeowner. To change scope, dates,
-                    or amounts, use the <strong>Amend</strong> button on the Agreement List to create a
-                    new Amendment version, then re-sign.
+                    or amounts, use the <strong>Amend</strong> button on the Agreement List to create a new
+                    Amendment version, then re-sign.
                   </div>
                 ) : (
                   <div className="mt-2 text-[11px] text-gray-600 bg-yellow-50 border border-yellow-200 rounded px-3 py-2">
-                    Contractor signature is locked by backend rules. If changes are required, create a
-                    new Amendment or contact support.
+                    Contractor signature is locked by backend rules. If changes are required, create a new
+                    Amendment or contact support.
                   </div>
                 )}
               </>
@@ -819,10 +827,10 @@ export default function Step4Finalize({
                       onChange={(e) => setAckReviewed(e.target.checked)}
                     />
                     <span>
-                      I have reviewed the agreement and confirm the scope, milestones, and totals (including
-                      any amendments).
+                      I have reviewed the agreement and confirm the scope, milestones, and totals (including any amendments).
                     </span>
                   </label>
+
                   <label className="inline-flex items-start gap-2">
                     <input
                       type="checkbox"
@@ -852,6 +860,7 @@ export default function Step4Finalize({
                       .
                     </span>
                   </label>
+
                   <label className="inline-flex items-center gap-2">
                     <input
                       type="checkbox"
@@ -905,7 +914,9 @@ export default function Step4Finalize({
                   {sendingLink ? "Sending link…" : "Send Homeowner Signing Link"}
                 </button>
 
-                {sendError && <div className="mt-1 text-[11px] text-red-600">{sendError}</div>}
+                {sendError && (
+                  <div className="mt-1 text-[11px] text-red-600">{sendError}</div>
+                )}
               </>
             )}
 
@@ -919,14 +930,17 @@ export default function Step4Finalize({
                     fund escrow. For amendments, this will send only the remaining amount needed to top-up escrow.
                   </div>
 
-                  {/* ✅ NEW: Escrow funding summary (Total / Funded / Remaining) */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <SummaryCard label="Escrow Total Required" value={formatMoney(escrowTotalRequiredSafe)} />
                     <SummaryCard label="Escrow Funded So Far" value={formatMoney(escrowFundedAmountSafe)} />
                     <SummaryCard
                       label="Remaining to Fund"
                       value={formatMoney(remainingToFund)}
-                      className={remainingToFund > 0 ? "border-indigo-200 bg-indigo-50" : "border-green-200 bg-green-50"}
+                      className={
+                        remainingToFund > 0
+                          ? "border-indigo-200 bg-indigo-50"
+                          : "border-green-200 bg-green-50"
+                      }
                     />
                   </div>
 
@@ -934,7 +948,7 @@ export default function Step4Finalize({
                     <SendFundingLinkButton
                       agreementId={agreement?.id}
                       isFullySigned={isFullySigned}
-                      amount={remainingToFund}     // ✅ CRITICAL: send top-up amount (e.g., 25.00)
+                      amount={remainingToFund}
                       disabled={!isFullySigned}
                       variant="success"
                       label={`Send Escrow Funding Link (${formatMoney(remainingToFund)})`}
@@ -972,11 +986,7 @@ export default function Step4Finalize({
             type="button"
             onClick={previewPdf}
             className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 shadow-sm"
-            title={
-              amendmentNumber > 0
-                ? "Open preview PDF for this amendment version"
-                : "Open preview PDF"
-            }
+            title={amendmentNumber > 0 ? "Open preview PDF for this amendment version" : "Open preview PDF"}
           >
             {previewButtonLabel}
           </button>

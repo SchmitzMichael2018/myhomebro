@@ -61,9 +61,7 @@ export default function AgreementDetail() {
 
   const norm = useMemo(() => normalizeAgreement(agreement), [agreement]);
 
-  const isContractor =
-    user?.role === "contractor" || user?.is_contractor;
-
+  const isContractor = user?.role === "contractor" || user?.is_contractor;
   const signingRole = isContractor ? "contractor" : "homeowner";
 
   const ratePercent =
@@ -97,15 +95,23 @@ export default function AgreementDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // Store title for sidebar context (optional)
+  useEffect(() => {
+    if (!norm?.id) return;
+    try {
+      localStorage.setItem("activeAgreementTitle", norm.title || "");
+    } catch {
+      /* ignore */
+    }
+  }, [norm?.id, norm?.title]);
+
   useEffect(() => {
     const fetchFundingPreview = async () => {
       if (!id) return;
       setFundingLoading(true);
       setFundingError("");
       try {
-        const { data } = await api.get(
-          `/projects/agreements/${id}/funding_preview/`
-        );
+        const { data } = await api.get(`/projects/agreements/${id}/funding_preview/`);
         setFundingPreview(data);
       } catch (err) {
         console.error("funding_preview error:", err);
@@ -129,9 +135,7 @@ export default function AgreementDetail() {
 
   const startEscrow = async () => {
     try {
-      const { data } = await api.post(
-        `/projects/agreements/${id}/fund_escrow/`
-      );
+      const { data } = await api.post(`/projects/agreements/${id}/fund_escrow/`);
       if (data?.client_secret) {
         setClientSecret(data.client_secret);
         setEscrowOpen(true);
@@ -184,10 +188,7 @@ export default function AgreementDetail() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
-      <button
-        onClick={() => navigate("/agreements")}
-        className="text-blue-600 hover:underline"
-      >
+      <button onClick={() => navigate("/agreements")} className="text-blue-600 hover:underline">
         ← Back
       </button>
 
@@ -202,11 +203,7 @@ export default function AgreementDetail() {
         </p>
         <p>
           <strong>Status:</strong>{" "}
-          {norm.escrowFunded
-            ? "✅ Escrow Funded"
-            : norm.isSigned
-            ? "❌ Awaiting Funding"
-            : "❌ Not Signed"}
+          {norm.escrowFunded ? "✅ Escrow Funded" : norm.isSigned ? "❌ Awaiting Funding" : "❌ Not Signed"}
         </p>
       </div>
 
@@ -221,7 +218,7 @@ export default function AgreementDetail() {
           </button>
         )}
 
-        {/** Contractor: "Send Funding Link" button */}
+        {/* Contractor: Send Funding Link */}
         {isContractor && norm.isSigned && !norm.escrowFunded && (
           <SendFundingLinkButton
             agreementId={norm.id}
@@ -260,7 +257,7 @@ export default function AgreementDetail() {
       {/* Milestones */}
       <div className="bg-white rounded shadow p-6">
         <h3 className="text-lg font-semibold mb-3">Milestones</h3>
-        {(!norm.milestones || norm.milestones.length === 0) ? (
+        {!norm.milestones || norm.milestones.length === 0 ? (
           <p className="text-gray-500">No milestones found.</p>
         ) : (
           <ul className="space-y-1">
@@ -282,9 +279,7 @@ export default function AgreementDetail() {
           {fundingPreview && (
             <div className="text-[11px] text-gray-500 text-right space-y-0.5">
               {tierLabel && <div>{tierLabel}</div>}
-              {ratePercent && (
-                <div>Current platform rate: {ratePercent}% + $1</div>
-              )}
+              {ratePercent && <div>Current platform rate: {ratePercent}% + $1</div>}
               {fundingPreview.high_risk_applied && (
                 <div className="text-[11px] text-amber-700">
                   High-risk surcharge applied for this project type.
@@ -295,25 +290,18 @@ export default function AgreementDetail() {
         </div>
 
         {fundingLoading ? (
-          <div className="text-xs text-gray-500">
-            Loading fee &amp; escrow summary…
-          </div>
+          <div className="text-xs text-gray-500">Loading fee &amp; escrow summary…</div>
         ) : fundingError ? (
           <div className="text-xs text-red-600">{fundingError}</div>
         ) : fundingPreview ? (
           <>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <SummaryCard
-                label="Project Price (Homeowner Pays)"
-                value={formatMoney(fundingPreview.project_amount)}
-              />
+              <SummaryCard label="Project Price (Homeowner Pays)" value={formatMoney(fundingPreview.project_amount)} />
               <SummaryCard
                 label="MyHomeBro Platform Fee"
                 value={
                   ratePercent
-                    ? `${formatMoney(
-                        fundingPreview.platform_fee
-                      )} @ ${ratePercent}% + $1`
+                    ? `${formatMoney(fundingPreview.platform_fee)} @ ${ratePercent}% + $1`
                     : formatMoney(fundingPreview.platform_fee)
                 }
               />
@@ -321,30 +309,23 @@ export default function AgreementDetail() {
                 label="Your Estimated Take-Home (Before Stripe)"
                 value={formatMoney(fundingPreview.contractor_payout)}
               />
-              <SummaryCard
-                label="Total Escrow Deposit"
-                value={formatMoney(fundingPreview.homeowner_escrow)}
-              />
+              <SummaryCard label="Total Escrow Deposit" value={formatMoney(fundingPreview.homeowner_escrow)} />
             </div>
             <p className="mt-2 text-[11px] text-gray-500">
-              This summary shows your estimated take-home after the MyHomeBro
-              platform fee. Stripe processing fees (card/ACH) may slightly
-              adjust the final payout. If these numbers don&apos;t look
-              right, update your milestone amounts or total project price
-              before sending for signature.
+              This summary shows your estimated take-home after the MyHomeBro platform fee. Stripe processing fees
+              (card/ACH) may slightly adjust the final payout. If these numbers don&apos;t look right, update your
+              milestone amounts or total project price before sending for signature.
             </p>
           </>
         ) : (
-          <div className="text-xs text-gray-500">
-            Fee summary not available yet.
-          </div>
+          <div className="text-xs text-gray-500">Fee summary not available yet.</div>
         )}
       </div>
 
       {/* Invoices */}
       <div className="bg-white rounded shadow p-6">
         <h3 className="text-lg font-semibold mb-3">Invoices</h3>
-        {(!norm.invoices || norm.invoices.length === 0) ? (
+        {!norm.invoices || norm.invoices.length === 0 ? (
           <p className="text-gray-500">No invoices yet.</p>
         ) : (
           <ul className="space-y-1">
@@ -395,9 +376,7 @@ function SummaryCard({ label, value, className = "" }) {
   return (
     <div className={`rounded border bg-gray-50 px-3 py-2 h-full ${className}`}>
       <div className="text-xs text-gray-500">{label}</div>
-      <div className="text-sm font-medium whitespace-pre-wrap text-gray-900 break-words">
-        {value}
-      </div>
+      <div className="text-sm font-medium whitespace-pre-wrap text-gray-900 break-words">{value}</div>
     </div>
   );
 }

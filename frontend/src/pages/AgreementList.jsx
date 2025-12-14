@@ -1,9 +1,10 @@
 // frontend/src/pages/AgreementList.jsx
-// v2025-12-12 — add View (row click + button) to reach Step 4 for signed agreements
-// - NO layout/design changes
+// v2025-12-13 — add Escrow funding indicator column (Not Funded / Partial / Funded ✅)
+// - NO layout/design changes beyond adding a single column + badge
+// - Fully funded shows green check
+// - Partially funded shows amber badge
+// - Falls back to r.status === "funded" or r.escrow_funded when funded amount not present
 // - Row click opens /agreements/:id/wizard?step=4 (view/sign/escrow hub)
-// - Adds View button in Actions
-// - stopPropagation on checkboxes/buttons so row click doesn't trigger
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../api";
@@ -20,9 +21,7 @@ import {
   Eye,
 } from "lucide-react";
 
-console.log(
-  "AgreementList.jsx v2025-12-06-disable-edit-when-signed+redirect-on-amend"
-);
+console.log("AgreementList.jsx v2025-12-13-escrow-column");
 
 const fmtMoney = (n) => {
   if (n === null || n === undefined || n === "") return "—";
@@ -48,6 +47,13 @@ const labelFromHomeownerObj = (h) => {
   const last = h.last_name || h.lastName || "";
   const fullFromParts = [first, last].filter(Boolean).join(" ").trim();
   return h.full_name || h.name || fullFromParts || h.email || h.username || "";
+};
+
+const safeLower = (v) => String(v || "").trim().toLowerCase();
+
+const toNum = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 };
 
 export default function AgreementList() {
@@ -362,10 +368,11 @@ export default function AgreementList() {
     }
   };
 
-  const goEdit = (id) => (window.location.href = `/agreements/${id}/wizard?step=1`);
+  const goEdit = (id) =>
+    (window.location.href = `/agreements/${id}/wizard?step=1`);
 
-  // ✅ View-only/signing/escrow hub path (Step 4)
-  const goView = (id) => (window.location.href = `/agreements/${id}/wizard?step=4`);
+  const goView = (id) =>
+    (window.location.href = `/agreements/${id}/wizard?step=4`);
 
   const deleteDraft = async (row) => {
     if (String(row.status).toLowerCase() !== "draft") {
@@ -473,6 +480,73 @@ export default function AgreementList() {
     }
   };
 
+  // NEW: escrow badge
+  const EscrowBadge = ({ r }) => {
+    // Prefer explicit funding fields if serializer includes them
+    const fundedRaw =
+      r.escrow_funded_amount ??
+      r.escrow_funded_so_far ??
+      r.funded_so_far ??
+      r.funded_total ??
+      null;
+
+    const totalRaw = r.display_total ?? r.total_cost ?? null;
+
+    const funded = toNum(fundedRaw);
+    const total = toNum(totalRaw);
+
+    const fundedFlag =
+      !!r.escrow_funded || safeLower(r.status) === "funded";
+
+    // If we don't have numeric funding data, still show green check when flagged funded
+    if (funded === null || total === null || total <= 0) {
+      if (fundedFlag) {
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+            <CheckCircle2 size={14} /> Funded
+          </span>
+        );
+      }
+      return (
+        <span className="text-xs text-gray-400">—</span>
+      );
+    }
+
+    const isFullyFunded = funded >= total && total > 0;
+    const isPartial = funded > 0 && funded < total;
+
+    if (isFullyFunded) {
+      return (
+        <span
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800"
+          title={`${fmtMoney(funded)} / ${fmtMoney(total)}`}
+        >
+          <CheckCircle2 size={14} /> Funded
+        </span>
+      );
+    }
+
+    if (isPartial) {
+      return (
+        <span
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800"
+          title={`${fmtMoney(funded)} / ${fmtMoney(total)}`}
+        >
+          <RefreshCw size={14} /> Partial
+        </span>
+      );
+    }
+
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-800"
+        title={`${fmtMoney(funded)} / ${fmtMoney(total)}`}
+      >
+        <XCircle size={14} /> Not Funded
+      </span>
+    );
+  };
+
   return (
     <div className="p-6 space-y-4">
       {/* Header */}
@@ -557,6 +631,7 @@ export default function AgreementList() {
               <th className="p-2 text-left border">Primary</th>
               <th className="p-2 text-left border">Agreement ID</th>
               <th className="p-2 text-left border">Status</th>
+              <th className="p-2 text-left border">Escrow</th>
               <th className="p-2 text-left border">Project</th>
               <th className="p-2 text-left border">Type</th>
               <th className="p-2 text-left border">Subtype</th>
@@ -574,13 +649,13 @@ export default function AgreementList() {
           <tbody>
             {loading ? (
               <tr>
-                <td className="p-3 border text-gray-600" colSpan={16}>
+                <td className="p-3 border text-gray-600" colSpan={17}>
                   Loading…
                 </td>
               </tr>
             ) : page.length === 0 ? (
               <tr>
-                <td className="p-3 border text-gray-500" colSpan={16}>
+                <td className="p-3 border text-gray-500" colSpan={17}>
                   No agreements found.
                 </td>
               </tr>
@@ -588,8 +663,7 @@ export default function AgreementList() {
               page.map((r) => {
                 const isChecked = selected.has(r.id);
                 const isPrimary = primaryId === r.id;
-                const stat =
-                  msStats[r.id] || { total: 0, complete: 0, percent: 0 };
+                const stat = msStats[r.id] || { total: 0, complete: 0, percent: 0 };
                 const homeowner = homeownerDisplay(r);
                 const fullySigned = isFullySignedAgreement(r);
 
@@ -649,6 +723,10 @@ export default function AgreementList() {
                       </span>
                     </td>
 
+                    <td className="p-2 border">
+                      <EscrowBadge r={r} />
+                    </td>
+
                     <td
                       className="p-2 border max-w-[320px] truncate"
                       title={renderProject(r)}
@@ -699,7 +777,6 @@ export default function AgreementList() {
 
                     <td className="p-2 border">
                       <div className="flex flex-wrap items-center gap-2">
-                        {/* View (always enabled) */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -711,7 +788,6 @@ export default function AgreementList() {
                           <Eye size={14} /> View
                         </button>
 
-                        {/* Edit (disabled when fully signed) */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -732,7 +808,6 @@ export default function AgreementList() {
                           <Pencil size={14} /> Edit
                         </button>
 
-                        {/* Amend (only for fully signed) */}
                         {fullySigned && (
                           <button
                             onClick={(e) => {
@@ -755,7 +830,6 @@ export default function AgreementList() {
                           </button>
                         )}
 
-                        {/* Delete (only for draft) */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
