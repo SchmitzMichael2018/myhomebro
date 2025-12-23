@@ -1,7 +1,13 @@
 // src/pages/Invoices.jsx
-import React, { useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
+// v2025-12-18-app-invoice-detail-route
+// - Lists invoices from /projects/invoices/ (authoritative for contractor dashboard)
+// - Falls back to /invoices/ if needed
+// - Auto-create from milestone navigates to /app/invoices/:id (protected)
+
+import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import api from "../api";
+import toast from "react-hot-toast";
 import InvoiceList from "../components/InvoiceList";
 
 function useQuery() {
@@ -9,68 +15,132 @@ function useQuery() {
   return React.useMemo(() => new URLSearchParams(search), [search]);
 }
 
-const FILTERS = [
-  { key: "all", label: "All" },
-  { key: "pending_approval", label: "Pending Approval" },
-  { key: "approved", label: "Approved (Ready for Payout)" },
-  { key: "paid", label: "Paid / Earned" },
-  { key: "disputed", label: "Disputed" },
-];
+async function createInvoiceForMilestone({ milestoneId, agreementId }) {
+  const payloads = [
+    { milestone: milestoneId, agreement: agreementId || undefined },
+    { milestone_id: milestoneId, agreement_id: agreementId || undefined },
+    { milestoneId: milestoneId, agreementId: agreementId || undefined },
+  ];
+
+  const endpoints = ["/projects/invoices/", "/invoices/"];
+
+  let lastErr = null;
+
+  for (const endpoint of endpoints) {
+    for (const payload of payloads) {
+      try {
+        const res = await api.post(endpoint, payload);
+        return res.data;
+      } catch (err) {
+        lastErr = err;
+        const status = err?.response?.status;
+        if (status === 404) break;
+        continue;
+      }
+    }
+  }
+
+  throw lastErr || new Error("Invoice creation failed");
+}
 
 export default function Invoices() {
   const query = useQuery();
-  const filterKey = query.get("filter") || "all";
+  const navigate = useNavigate();
+
+  const milestoneId = query.get("milestone");
+  const agreementId = query.get("agreement");
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [autoCreateState, setAutoCreateState] = useState({ running: false, error: "" });
 
-  // Fetch all; server may support ?status= but we also filter client-side
-  useEffect(() => {
+  const fetchInvoices = useCallback(async () => {
     setLoading(true);
-    api.get("/invoices/")
-      .then((res) => setItems(Array.isArray(res.data) ? res.data : []))
-      .finally(() => setLoading(false));
+    try {
+      try {
+        const res = await api.get("/projects/invoices/");
+        setItems(Array.isArray(res.data) ? res.data : []);
+        return;
+      } catch {
+        const res2 = await api.get("/invoices/");
+        setItems(Array.isArray(res2.data) ? res2.data : []);
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load invoices.");
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const filtered = useMemo(() => {
-    if (filterKey === "all") return items;
-    if (filterKey === "pending_approval") {
-      // treat "pending" and "pending_approval" as the same bucket
-      return items.filter((i) => {
-        const s = String(i.status || "").toLowerCase();
-        return s === "pending" || s === "pending_approval";
-      });
-    }
-    return items.filter((i) => String(i.status || "").toLowerCase() === filterKey);
-  }, [items, filterKey]);
+  useEffect(() => {
+    fetchInvoices();
+  }, [fetchInvoices]);
+
+  useEffect(() => {
+    const run = async () => {
+      if (!milestoneId) return;
+
+      setAutoCreateState({ running: true, error: "" });
+
+      try {
+        const created = await createInvoiceForMilestone({ milestoneId, agreementId });
+        const newId = created?.id || created?.invoice_id || created?.pk;
+        if (!newId) throw new Error("Invoice created but no ID returned.");
+
+        toast.success("Invoice created. Opening…");
+
+        // ✅ Contractor invoice detail lives at /app/invoices/:id
+        navigate(`/app/invoices/${newId}`, { replace: true });
+      } catch (err) {
+        console.error(err);
+        const detail =
+          err?.response?.data?.detail ||
+          err?.response?.data?.error ||
+          (typeof err?.response?.data === "string" ? err.response.data : null) ||
+          err?.message ||
+          "Invoice could not be created.";
+
+        setAutoCreateState({ running: false, error: detail });
+        toast.error("Could not auto-create invoice. See banner for details.");
+      } finally {
+        setAutoCreateState((s) => ({ ...s, running: false }));
+      }
+    };
+
+    run();
+  }, [milestoneId, agreementId, navigate]);
+
+  const scopedInvoices = useMemo(() => {
+    if (!milestoneId) return items;
+
+    return items.filter((inv) => {
+      const m = inv.milestone || inv.milestone_id || inv.milestoneId;
+      return String(m || "") === String(milestoneId);
+    });
+  }, [items, milestoneId]);
 
   return (
     <div className="p-0">
-      <div className="flex items-center justify-between gap-4 mb-4">
-        <h1 className="text-2xl font-bold text-slate-800">Invoices</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          {FILTERS.map((f) => {
-            const isActive = filterKey === f.key;
-            const href = `/invoices?filter=${encodeURIComponent(f.key)}`;
-            return (
-              <a
-                key={f.key}
-                href={href}
-                className={`px-3 py-1.5 rounded-full text-sm border transition ${
-                  isActive
-                    ? "bg-slate-900 text-white border-slate-900"
-                    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
-                }`}
-              >
-                {f.label}
-              </a>
-            );
-          })}
+      {milestoneId && (
+        <div className="mb-4 rounded-lg border border-purple-200 bg-purple-50 text-purple-900 p-4">
+          <div className="font-semibold">Invoice creation requested for Milestone #{milestoneId}</div>
+          <div className="text-sm mt-1 opacity-90">
+            {autoCreateState.running
+              ? "Creating invoice…"
+              : autoCreateState.error
+              ? `Auto-create failed: ${autoCreateState.error}`
+              : "If an invoice already exists, it will appear below."}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Your grouped list UI; rows link to /invoices/:id which uses your InvoiceDetail */}
-      <InvoiceList key={filterKey} initialData={filtered} />
+      <InvoiceList
+        initialData={milestoneId ? scopedInvoices : items}
+        loadingOverride={loading}
+        onRefresh={fetchInvoices}
+      />
     </div>
   );
 }

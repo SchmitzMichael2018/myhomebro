@@ -1,13 +1,15 @@
 // src/components/MilestoneDetailModal.jsx
-// v2025-09-25 resizable + draft-only edits + complete→review + tolerant file endpoints (no "Send Invoice")
+// v2025-12-14-submit-lock+notes+evidence
+// - Completion button calls parent onSubmit({id, notes, files})
+// - Keeps draft-only edit/file upload behavior
 
 import React, { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import api from "../api";
 
-const pick = (...vals) => vals.find(v => v !== undefined && v !== null && v !== "") ?? "";
+const pick = (...vals) => vals.find((v) => v !== undefined && v !== null && v !== "") ?? "";
 
-/* -------- Agreement helpers (pulled via milestone.agreement or separate fetch if needed) -------- */
+/* Agreement helpers */
 const getAgreementFrom = (m) => m.agreement || m._ag || null;
 const getAgreementStatus = (a) => (pick(a?.status, a?.agreement_status, a?.signature_status) || "").toLowerCase();
 const isAgreementDraft = (a) => getAgreementStatus(a) === "draft";
@@ -18,27 +20,25 @@ const toISO = (v) => {
   if (!v) return "";
   const s = String(v).trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  try { const d = new Date(s); if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10); } catch {}
+  try {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  } catch {}
   return s;
 };
 
 export default function MilestoneDetailModal({
-  visible,
+  open,
+  visible, // legacy support
   milestone,
   onClose,
-  // optional overrides if you already store the parent agreement separately
   agreement: agreementProp,
-  // optional callbacks to refresh parent lists
   onSaved,
   onCompleted,
-  // allow overriding routes if needed
-  apiRoutes = {
-    patch: (id) => `/projects/milestones/${id}/`,
-    complete: (id) => `/projects/milestones/${id}/complete/`,
-    evidence: (id) => `/projects/milestones/${id}/evidence/`,
-    submit: (id) => `/projects/milestones/${id}/submit/`,
-  },
+  onSubmit,
 }) {
+  const isOpen = typeof open === "boolean" ? open : !!visible;
+
   const [form, setForm] = useState({
     title: "",
     amount: "",
@@ -46,8 +46,13 @@ export default function MilestoneDetailModal({
     end_date: "",
     description: "",
   });
+
   const [files, setFiles] = useState([]);
   const [comments, setComments] = useState([]);
+
+  const [evidenceFiles, setEvidenceFiles] = useState([]);
+  const [completeNotes, setCompleteNotes] = useState("");
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -58,7 +63,7 @@ export default function MilestoneDetailModal({
   const canEdit = useMemo(() => isAgreementDraft(agreement), [agreement]);
   const canComplete = useMemo(() => isAgreementSigned(agreement) && isEscrowFunded(agreement), [agreement]);
 
-  /* -------- Load ancillary (files/comments) with tolerant endpoints to avoid 404/500 loops -------- */
+  /* -------- Tolerant endpoints for files/comments -------- */
   const tolerantGetFiles = async (id) => {
     const candidates = [
       `/projects/milestone-files/?milestone=${id}`,
@@ -70,15 +75,15 @@ export default function MilestoneDetailModal({
         const { data } = await api.get(url);
         const arr = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];
         if (Array.isArray(arr)) return arr;
-      } catch {/* try next */}
+      } catch {}
     }
     return [];
   };
 
   const tolerantPostFile = async (id, file) => {
-    const form = new FormData();
-    form.append("file", file);
-    form.append("milestone", id);
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("milestone", id);
     const candidates = [
       `/projects/milestone-files/`,
       `/milestone-files/`,
@@ -86,9 +91,9 @@ export default function MilestoneDetailModal({
     ];
     for (const url of candidates) {
       try {
-        const { data } = await api.post(url, form, { headers: { "Content-Type": "multipart/form-data" } });
+        const { data } = await api.post(url, formData, { headers: { "Content-Type": "multipart/form-data" } });
         return data;
-      } catch {/* try next */}
+      } catch {}
     }
     throw new Error("Upload failed");
   };
@@ -99,7 +104,10 @@ export default function MilestoneDetailModal({
       `/milestone-files/${fileId}/`,
     ];
     for (const url of candidates) {
-      try { await api.delete(url); return; } catch {/* try next */}
+      try {
+        await api.delete(url);
+        return;
+      } catch {}
     }
     throw new Error("Delete failed");
   };
@@ -134,7 +142,8 @@ export default function MilestoneDetailModal({
   };
 
   useEffect(() => {
-    if (!visible || !milestoneId) return;
+    if (!isOpen || !milestoneId) return;
+
     (async () => {
       setLoading(true);
       try {
@@ -145,10 +154,11 @@ export default function MilestoneDetailModal({
           end_date: toISO(milestone?.end_date || milestone?.completion_date),
           description: milestone?.description || "",
         });
-        const [f, c] = await Promise.all([
-          tolerantGetFiles(milestoneId),
-          tolerantGetComments(milestoneId),
-        ]);
+
+        setEvidenceFiles([]);
+        setCompleteNotes("");
+
+        const [f, c] = await Promise.all([tolerantGetFiles(milestoneId), tolerantGetComments(milestoneId)]);
         setFiles(f);
         setComments(c);
       } catch (e) {
@@ -157,7 +167,7 @@ export default function MilestoneDetailModal({
         setLoading(false);
       }
     })();
-  }, [visible, milestoneId, milestone]);
+  }, [isOpen, milestoneId, milestone]);
 
   const handleFileInput = async (e) => {
     const file = e.target.files?.[0];
@@ -169,7 +179,9 @@ export default function MilestoneDetailModal({
     } catch {
       toast.error("Upload failed.");
     } finally {
-      try { e.target.value = ""; } catch {}
+      try {
+        e.target.value = "";
+      } catch {}
     }
   };
 
@@ -212,7 +224,7 @@ export default function MilestoneDetailModal({
         start_date: form.start_date || null,
         completion_date: form.end_date || null,
       };
-      await api.patch(apiRoutes.patch(milestoneId), payload);
+      await api.patch(`/projects/milestones/${milestoneId}/`, payload);
       toast.success("Milestone saved.");
       onSaved?.();
       if (closeAfter) onClose?.();
@@ -224,38 +236,33 @@ export default function MilestoneDetailModal({
     }
   };
 
-  const submitComplete = async (notes) => {
+  const handleEvidencePick = (e) => {
+    const picked = Array.from(e.target.files || []);
+    if (!picked.length) return;
+    setEvidenceFiles((prev) => [...prev, ...picked]);
+    try {
+      e.target.value = "";
+    } catch {}
+  };
+
+  const removeEvidence = (idx) => {
+    setEvidenceFiles((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const submitComplete = async () => {
     if (!canComplete) {
-      if (isAgreementDraft(agreement)) toast("Agreement must be signed first.");
-      else if (!isEscrowFunded(agreement)) toast("Escrow must be funded first.");
-      else toast("Cannot complete this milestone yet.");
+      toast("Cannot complete this milestone yet.");
       return;
     }
     if (!milestoneId) return;
+    if (typeof onSubmit !== "function") {
+      toast.error("Completion is not wired (missing onSubmit).");
+      return;
+    }
+
     setSubmitting(true);
     try {
-      // Prefer /complete/; fall back to evidence + submit
-      try {
-        const formData = new FormData();
-        formData.append("notes", notes || "");
-        files.forEach((f, i) => {
-          if (f?.file && typeof f.file !== "string") formData.append("files", f.file, f.file.name || `evidence_${i}`);
-        });
-        await api.post(apiRoutes.complete(milestoneId), formData, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
-      } catch {
-        const formData = new FormData();
-        formData.append("notes", notes || "");
-        files.forEach((f, i) => {
-          if (f?.file && typeof f.file !== "string") formData.append("files", f.file, f.file.name || `evidence_${i}`);
-        });
-        await api.post(apiRoutes.evidence(milestoneId), formData, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
-        await api.post(apiRoutes.submit(milestoneId), {});
-      }
-      toast.success("Submitted for review.");
+      await onSubmit({ id: milestoneId, notes: completeNotes || "", files: evidenceFiles });
       onCompleted?.();
       onClose?.();
     } catch (e) {
@@ -266,176 +273,207 @@ export default function MilestoneDetailModal({
     }
   };
 
-  if (!visible) return null;
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
-      {/* Resizable container */}
       <div
         className="bg-white rounded-lg shadow-xl border w-[900px] max-w-[95vw] max-h-[90vh] p-4 overflow-auto"
-        style={{ resize: "both", minWidth: 680, minHeight: 400 }}
+        style={{ resize: "both", minWidth: 680, minHeight: 420 }}
       >
-        {/* Header */}
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-semibold">
-            Milestone: <span className="font-normal">{milestone?.title || "Untitled"}</span>
+            Milestone Details: <span className="font-normal">{milestone?.title || "Untitled"}</span>
           </h3>
-          <button
-            onClick={onClose}
-            className="px-2 py-1 rounded border hover:bg-gray-50"
-            aria-label="Close"
-          >
+          <button onClick={onClose} className="px-2 py-1 rounded border hover:bg-gray-50" aria-label="Close">
             ✕
           </button>
         </div>
 
-        {/* Form */}
-        <div className="space-y-4">
-          {!canEdit && (
-            <div className="p-2 rounded bg-blue-50 border border-blue-200 text-blue-700 text-sm">
-              Agreement is not in Draft — fields are read-only.
-            </div>
-          )}
+        {loading ? (
+          <div className="px-2 py-6 text-gray-600">Loading…</div>
+        ) : (
+          <div className="space-y-4">
+            {!canEdit && (
+              <div className="p-2 rounded bg-blue-50 border border-blue-200 text-blue-700 text-sm">
+                Agreement is not in Draft — fields are read-only.
+              </div>
+            )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="sm:col-span-2">
-              <label className="block text-sm text-gray-600 mb-1">Title</label>
-              <input
-                disabled={!canEdit}
-                value={form.title}
-                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                className="w-full border rounded px-3 py-2"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="sm:col-span-2">
+                <label className="block text-sm text-gray-600 mb-1">Title</label>
+                <input
+                  disabled={!canEdit}
+                  value={form.title}
+                  onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                  className="w-full border rounded px-3 py-2"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Amount ($)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  disabled={!canEdit}
+                  value={form.amount}
+                  onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                  className="w-full border rounded px-3 py-2"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Start Date</label>
+                <input
+                  type="date"
+                  disabled={!canEdit}
+                  value={form.start_date}
+                  onChange={(e) => setForm((f) => ({ ...f, start_date: toISO(e.target.value) }))}
+                  className="w-full border rounded px-3 py-2"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Completion Date</label>
+                <input
+                  type="date"
+                  disabled={!canEdit}
+                  value={form.end_date}
+                  onChange={(e) => setForm((f) => ({ ...f, end_date: toISO(e.target.value) }))}
+                  className="w-full border rounded px-3 py-2"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-sm text-gray-600 mb-1">Description</label>
+                <textarea
+                  disabled={!canEdit}
+                  value={form.description}
+                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                  rows={4}
+                  className="w-full border rounded px-3 py-2"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">Amount ($)</label>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                disabled={!canEdit}
-                value={form.amount}
-                onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
-                className="w-full border rounded px-3 py-2"
-              />
+            <div className="flex items-center justify-between">
+              <div className="text-xs text-gray-500">
+                Agreement: <b>{getAgreementStatus(agreement) || "—"}</b> • Escrow funded:{" "}
+                <b>{isEscrowFunded(agreement) ? "Yes" : "No"}</b>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => saveChanges({ closeAfter: false })}
+                  disabled={!canEdit || saving}
+                  className={`px-3 py-2 rounded text-white ${!canEdit || saving ? "bg-gray-400" : "bg-green-600 hover:bg-green-700"}`}
+                >
+                  {saving ? "Saving…" : "Save Changes"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => saveChanges({ closeAfter: true })}
+                  disabled={!canEdit || saving}
+                  className={`px-3 py-2 rounded text-white ${!canEdit || saving ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"}`}
+                >
+                  {saving ? "Saving…" : "Save & Close"}
+                </button>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">Start Date</label>
-              <input
-                type="date"
-                disabled={!canEdit}
-                value={form.start_date}
-                onChange={(e) => setForm((f) => ({ ...f, start_date: toISO(e.target.value) }))}
-                className="w-full border rounded px-3 py-2"
-              />
+            <div className="border-t pt-3">
+              <h4 className="font-semibold mb-2">Files</h4>
+              <div className="flex items-center gap-3 flex-wrap">
+                <input type="file" onChange={handleFileInput} disabled={!canEdit} />
+                {!canEdit && <span className="text-xs text-gray-500">(Upload locked — Draft only)</span>}
+              </div>
+
+              <ul className="mt-2 text-sm space-y-1">
+                {files.map((f) => (
+                  <li key={f.id} className="flex items-center justify-between gap-3">
+                    <a href={f.file} target="_blank" rel="noreferrer" className="text-blue-600 underline break-all">
+                      {String(f.file || "").split("/").pop()}
+                    </a>
+                    {canEdit && (
+                      <button onClick={() => removeFile(f.id)} className="text-red-600 hover:underline">
+                        Delete
+                      </button>
+                    )}
+                  </li>
+                ))}
+                {files.length === 0 && <li className="text-gray-500">No files.</li>}
+              </ul>
             </div>
 
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">Completion Date</label>
-              <input
-                type="date"
-                disabled={!canEdit}
-                value={form.end_date}
-                onChange={(e) => setForm((f) => ({ ...f, end_date: toISO(e.target.value) }))}
-                className="w-full border rounded px-3 py-2"
-              />
-            </div>
+            <div className="border-t pt-3">
+              <h4 className="font-semibold mb-2">Completion Notes & Evidence</h4>
 
-            <div className="sm:col-span-2">
-              <label className="block text-sm text-gray-600 mb-1">Description</label>
+              <label className="block text-sm text-gray-600 mb-1">Notes (optional)</label>
               <textarea
-                disabled={!canEdit}
-                value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                rows={4}
+                value={completeNotes}
+                onChange={(e) => setCompleteNotes(e.target.value)}
+                rows={3}
                 className="w-full border rounded px-3 py-2"
+                placeholder="Add notes for the homeowner / approval record…"
               />
-            </div>
-          </div>
 
-          {/* Actions */}
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-gray-500">
-              Agreement: <b>{getAgreementStatus(agreement) || "—"}</b> • Escrow funded:{" "}
-              <b>{isEscrowFunded(agreement) ? "Yes" : "No"}</b>
+              <div className="mt-2 flex items-center gap-3 flex-wrap">
+                <input type="file" multiple onChange={handleEvidencePick} />
+                <span className="text-xs text-gray-500">(These files attach when you click “Complete → Review”)</span>
+              </div>
+
+              {evidenceFiles.length > 0 && (
+                <ul className="mt-2 text-sm space-y-1">
+                  {evidenceFiles.map((f, idx) => (
+                    <li key={`${f.name}-${idx}`} className="flex items-center justify-between gap-3">
+                      <span className="break-all">{f.name}</span>
+                      <button type="button" onClick={() => removeEvidence(idx)} className="text-rose-600 hover:underline">
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
-            <div className="flex gap-2">
+            <div className="border-t pt-3">
+              <h4 className="font-semibold mb-2">Comments</h4>
+              <form onSubmit={addComment} className="flex gap-2">
+                <input name="comment" placeholder="Add a comment…" className="flex-1 border p-2 rounded" />
+                <button className="bg-blue-600 text-white px-4 py-2 rounded" type="submit">
+                  Send
+                </button>
+              </form>
+
+              <ul className="mt-2 text-sm space-y-1 max-h-40 overflow-auto pr-1">
+                {comments.map((c) => (
+                  <li key={c.id} className="break-words">
+                    <strong>{c.author_name || "User"}</strong>: {c.content}
+                  </li>
+                ))}
+                {comments.length === 0 && <li className="text-gray-500">No comments.</li>}
+              </ul>
+            </div>
+
+            <div className="border-t pt-3 flex items-center justify-between">
+              <div className="text-sm text-gray-600">
+                Mark Complete to submit for <b>review</b>. Invoicing happens after approval.
+              </div>
+
               <button
                 type="button"
-                onClick={() => saveChanges({ closeAfter: false })}
-                disabled={!canEdit || saving}
-                className={`px-3 py-2 rounded text-white ${!canEdit || saving ? "bg-gray-400" : "bg-green-600 hover:bg-green-700"}`}
+                onClick={submitComplete}
+                disabled={!canComplete || submitting}
+                className={`px-3 py-2 rounded text-white ${!canComplete || submitting ? "bg-gray-400" : "bg-emerald-600 hover:bg-emerald-700"}`}
               >
-                {saving ? "Saving…" : "Save Changes"}
-              </button>
-              <button
-                type="button"
-                onClick={() => saveChanges({ closeAfter: true })}
-                disabled={!canEdit || saving}
-                className={`px-3 py-2 rounded text-white ${!canEdit || saving ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"}`}
-              >
-                {saving ? "Saving…" : "Save & Close"}
+                {submitting ? "Submitting…" : "✓ Complete → Review"}
               </button>
             </div>
           </div>
-
-          {/* Files */}
-          <div className="border-t pt-3">
-            <h4 className="font-semibold mb-2">Files</h4>
-            <input type="file" onChange={handleFileInput} disabled={!canEdit} />
-            <ul className="mt-2 text-sm space-y-1">
-              {files.map((f) => (
-                <li key={f.id} className="flex items-center justify-between">
-                  <a href={f.file} target="_blank" rel="noreferrer" className="text-blue-600 underline break-all">
-                    {String(f.file || "").split("/").pop()}
-                  </a>
-                  {canEdit && (
-                    <button onClick={() => removeFile(f.id)} className="text-red-600 hover:underline">
-                      Delete
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Comments */}
-          <div className="border-t pt-3">
-            <h4 className="font-semibold mb-2">Comments</h4>
-            <form onSubmit={addComment} className="flex gap-2">
-              <input name="comment" placeholder="Add a comment…" className="flex-1 border p-2 rounded" />
-              <button className="bg-blue-600 text-white px-4 py-2 rounded" type="submit">
-                Send
-              </button>
-            </form>
-            <ul className="mt-2 text-sm space-y-1 max-h-40 overflow-auto pr-1">
-              {comments.map((c) => (
-                <li key={c.id} className="break-words">
-                  <strong>{c.author_name || "User"}</strong>: {c.content}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Complete → Review (no Send Invoice here) */}
-          <div className="border-t pt-3 flex items-center justify-between">
-            <div className="text-sm text-gray-600">
-              Mark Complete to submit for <b>review</b>. Invoicing happens after approval.
-            </div>
-            <button
-              type="button"
-              onClick={() => submitComplete("")}
-              disabled={!canComplete || submitting}
-              className={`px-3 py-2 rounded text-white ${!canComplete || submitting ? "bg-gray-400" : "bg-emerald-600 hover:bg-emerald-700"}`}
-              title={canComplete ? "Submit for review" : "Requires signed agreement and funded escrow"}
-            >
-              {submitting ? "Submitting…" : "✓ Complete → Review"}
-            </button>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

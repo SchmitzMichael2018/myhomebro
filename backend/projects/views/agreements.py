@@ -10,6 +10,7 @@ from typing import Set, Optional
 
 from django.conf import settings
 from django.core import signing
+from django.core.cache import cache  # ✅ final-email idempotency guard
 from django.core.files.base import ContentFile
 from django.http import FileResponse, Http404
 from django.db import transaction
@@ -24,7 +25,7 @@ from rest_framework.exceptions import ValidationError, PermissionDenied
 
 from projects.models import Agreement, Milestone, Project, Homeowner, Contractor
 from projects.serializers.agreement import AgreementSerializer
-from projects.services.mailer import email_signing_invite
+from projects.services.mailer import email_signing_invite, email_final_agreement_copy
 from projects.services.sms import sms_link_to_parties  # NEW import
 
 from .funding import send_funding_link_for_agreement
@@ -35,7 +36,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------------------
 # Resilient PDF loader:
 #  - Prefer projects.services.pdf (build_agreement_pdf_bytes + generate_full_agreement_pdf)
-#  - Fallback to projects.utils.pdf.generate_full_agreement_pdf(...) with adapters:
+#  - Fallback to projects.utils.pdf.generate_full_agreement_pdf(.) with adapters:
 #       build_agreement_pdf_bytes(agreement, is_preview=True) -> bytes
 #       generate_full_agreement_pdf(agreement) -> saves FileField + bumps pdf_version
 # ---------------------------------------------------------------------------------------
@@ -134,6 +135,29 @@ _PREVIEW_MAX_AGE = 10 * 60  # 10 minutes
 
 _PUBLIC_SIGN_SALT = "agreements.public.sign.v1"
 _PUBLIC_SIGN_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
+
+
+# -----------------------------------------------------------------------------
+# ✅ "Send final email only once per pdf_version" guard (cache-based, no migrations)
+# -----------------------------------------------------------------------------
+_FINAL_EMAIL_GUARD_TTL_SECONDS = 60 * 60 * 24 * 365  # 365 days
+
+def _final_email_cache_key(agreement: Agreement) -> str:
+  pdf_v = int(getattr(agreement, "pdf_version", 0) or 0)
+  return f"mhb:final_email_sent:agreement:{agreement.id}:pdfv:{pdf_v}"
+
+def _final_email_already_sent_for_version(agreement: Agreement) -> bool:
+  try:
+    return bool(cache.get(_final_email_cache_key(agreement)))
+  except Exception:
+    # If cache is not configured, fail open (do not block sending)
+    return False
+
+def _mark_final_email_sent_for_version(agreement: Agreement) -> None:
+  try:
+    cache.set(_final_email_cache_key(agreement), True, timeout=_FINAL_EMAIL_GUARD_TTL_SECONDS)
+  except Exception:
+    pass
 
 
 def _changed_fields(instance: Agreement, data: dict) -> Set[str]:
@@ -315,6 +339,57 @@ def _sync_project_address_from_agreement(ag: Agreement) -> None:
         repr(e),
         file=sys.stderr,
       )
+
+
+def _send_final_link_for_agreement(ag: Agreement, *, force_send: bool = False) -> dict:
+  """Shared implementation: send a fresh public VIEW link for the FINAL signed agreement.
+
+  Guard:
+    - If force_send=False, email sends only once per pdf_version (cache guard).
+    - If force_send=True, always sends (manual resend).
+  """
+  if not _is_fully_signed(ag):
+    raise ValueError("Agreement must be fully signed before sending a final copy link.")
+
+  homeowner = getattr(ag, "homeowner", None)
+  homeowner_email = getattr(homeowner, "email", None)
+  if not homeowner_email:
+    raise ValueError("Agreement has no homeowner email.")
+
+  signer = signing.TimestampSigner(salt=_PUBLIC_SIGN_SALT)
+  token_payload = {"agreement_id": ag.id, "ts": float(now().timestamp())}
+  token = signer.sign_object(token_payload)
+
+  domain = (
+    getattr(settings, "PUBLIC_APP_ORIGIN", None)
+    or getattr(settings, "SITE_URL", None)
+    or "https://www.myhomebro.com"
+  ).rstrip("/")
+
+  view_url = f"{domain}/public-sign/{token}?mode=final"
+
+  should_send_email = force_send or (not _final_email_already_sent_for_version(ag))
+
+  if should_send_email:
+    try:
+      # ✅ final-copy email + attach PDF by default
+      email_final_agreement_copy(ag, view_url=view_url, attach_pdf=True)
+      _mark_final_email_sent_for_version(ag)
+    except Exception as e:
+      print("_send_final_link_for_agreement email error:", repr(e), file=sys.stderr)
+
+  # SMS can still be sent; it’s okay if this is called manually multiple times
+  try:
+    sms_sent = sms_link_to_parties(
+      ag,
+      link_url=view_url,
+      note="Here is a copy of your final signed MyHomeBro agreement.",
+    )
+    print(f"_send_final_link_for_agreement SMS sent count: {sms_sent}", file=sys.stderr)
+  except Exception as e:
+    print("_send_final_link_for_agreement SMS error:", repr(e), file=sys.stderr)
+
+  return {"ok": True, "view_url": view_url, "email_sent": bool(should_send_email)}
 
 
 class AgreementViewSet(viewsets.ModelViewSet):
@@ -568,74 +643,62 @@ class AgreementViewSet(viewsets.ModelViewSet):
 
   @action(detail=True, methods=["get"], url_path="preview_pdf")
   def preview_pdf(self, request, pk=None):
+    """
+    ✅ FIXED BEHAVIOR (AUTO):
+      - If agreement is fully signed AND preview is not explicitly forced,
+        serve FINAL PDF (no watermark + includes handwritten signatures).
+      - Otherwise serve PREVIEW bytes (watermark).
+    Optional query:
+      - ?preview=1 forces preview even if fully signed.
+      - ?stream=1 streams pdf directly (existing behavior).
+    """
     stream = request.query_params.get("stream")
     if not stream:
       url = request.build_absolute_uri("?stream=1")
       return Response({"url": url}, status=status.HTTP_200_OK)
 
-    if not build_agreement_pdf_bytes:
-      return Response(
-        {"detail": "PDF preview not available."},
-        status=status.HTTP_503_SERVICE_UNAVAILABLE,
-      )
-
     ag: Agreement = self.get_object()
-    try:
-      pdf_bytes = build_agreement_pdf_bytes(ag, is_preview=True)
-    except Exception as e:
-      return Response(
-        {"detail": f"Could not generate preview: {e}"},
-        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-      )
+    force_preview = (request.query_params.get("preview") or "").strip() == "1"
 
-    buf = io.BytesIO(pdf_bytes)
-    filename = f"agreement_{ag.pk}_preview.pdf"
-    resp = FileResponse(buf, content_type="application/pdf")
-    resp["Content-Disposition"] = f'inline; filename="{filename}"'
-    return resp
+    def _serve_final_pdf_file(agreement: Agreement):
+      if generate_full_agreement_pdf:
+        try:
+          generate_full_agreement_pdf(agreement)
+          agreement.refresh_from_db()
+        except Exception as e:
+          return Response(
+            {"detail": f"Could not generate final PDF: {e}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+          )
 
-  @action(detail=True, methods=["post"])
-  def preview_link(self, request, pk=None):
-    signer = signing.TimestampSigner(salt=_PREVIEW_SALT)
-    token = signer.sign_object({"agreement_id": int(pk), "uid": request.user.id})
-    absolute = request.build_absolute_uri(
-      f"/api/projects/agreements/preview_signed/?t={token}"
-    )
-    return Response({"url": absolute}, status=status.HTTP_200_OK)
+      if getattr(agreement, "pdf_file", None) and getattr(agreement.pdf_file, "name", ""):
+        try:
+          return FileResponse(agreement.pdf_file.open("rb"), content_type="application/pdf")
+        except Exception:
+          raise Http404("Final PDF not available")
 
-  @action(
-    detail=False,
-    methods=["get"],
-    url_path="preview_signed",
-    permission_classes=[AllowAny],
-  )
-  def preview_signed(self, request):
+      if build_agreement_pdf_bytes:
+        try:
+          pdf_bytes = build_agreement_pdf_bytes(agreement, is_preview=False)
+          buf = io.BytesIO(pdf_bytes)
+          filename = f"agreement_{agreement.pk}_final.pdf"
+          resp = FileResponse(buf, content_type="application/pdf")
+          resp["Content-Disposition"] = f'inline; filename="{filename}"'
+          return resp
+        except Exception:
+          pass
+
+      raise Http404("Final PDF not available")
+
+    if _is_fully_signed(ag) and not force_preview:
+      return _serve_final_pdf_file(ag)
+
     if not build_agreement_pdf_bytes:
       return Response(
         {"detail": "PDF preview not available."},
         status=status.HTTP_503_SERVICE_UNAVAILABLE,
       )
 
-    token = request.query_params.get("t")
-    if not token:
-      return Response(
-        {"detail": "Missing token."}, status=status.HTTP_400_BAD_REQUEST
-      )
-
-    signer = signing.TimestampSigner(salt=_PREVIEW_SALT)
-    try:
-      data = signer.unsign_object(token, max_age=_PREVIEW_MAX_AGE)
-      agreement_id = int(data.get("agreement_id"))
-    except signing.SignatureExpired:
-      return Response(
-        {"detail": "Preview link expired."}, status=status.HTTP_410_GONE
-      )
-    except Exception:
-      return Response(
-        {"detail": "Invalid preview token."}, status=status.HTTP_400_BAD_REQUEST
-      )
-
-    ag = get_object_or_404(Agreement, pk=agreement_id)
     try:
       pdf_bytes = build_agreement_pdf_bytes(ag, is_preview=True)
     except Exception as e:
@@ -724,6 +787,23 @@ class AgreementViewSet(viewsets.ModelViewSet):
       },
       status=status.HTTP_200_OK,
     )
+
+  @action(detail=True, methods=["post"], url_path="send_final_agreement_link")
+  def send_final_agreement_link(self, request, pk=None):
+    """
+    Manual resend: ALWAYS send (force_send=True), even if already sent for this pdf_version.
+    """
+    ag: Agreement = self.get_object()
+    try:
+      payload = _send_final_link_for_agreement(ag, force_send=True)
+      return Response(payload, status=status.HTTP_200_OK)
+    except ValueError as e:
+      return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+      return Response(
+        {"detail": f"Unexpected error: {type(e).__name__}: {e}"},
+        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+      )
 
   @action(detail=True, methods=["post"])
   def contractor_sign(self, request, pk=None):
@@ -817,6 +897,23 @@ class AgreementViewSet(viewsets.ModelViewSet):
     return Response({"ok": True, "agreement": ser.data}, status=status.HTTP_200_OK)
 
 
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def send_final_agreement_link_view(request, agreement_id: int):
+  """Fallback endpoint not dependent on DRF router actions. Manual resend ALWAYS sends."""
+  ag = get_object_or_404(Agreement, pk=agreement_id)
+  try:
+    payload = _send_final_link_for_agreement(ag, force_send=True)
+    return Response(payload, status=status.HTTP_200_OK)
+  except ValueError as e:
+    return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+  except Exception as e:
+    return Response(
+      {"detail": f"Unexpected error: {type(e).__name__}: {e}"},
+      status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    )
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def agreement_milestones(request, pk: int):
@@ -885,8 +982,6 @@ def agreement_public_sign(request):
     homeowner = getattr(ag, "homeowner", None)
     contractor = getattr(ag, "contractor", None)
 
-    # ✅ IMPORTANT:
-    # Always show the CURRENT preview version (not stale stored pdf_file)
     pdf_url = request.build_absolute_uri(
       f"/api/projects/agreements/public_pdf/?token={token}&stream=1&preview=1"
     )
@@ -905,6 +1000,7 @@ def agreement_public_sign(request):
       or "",
       "status": getattr(ag, "status", "draft"),
       "pdf_url": pdf_url,
+      "is_fully_signed": _is_fully_signed(ag),
     }
     return Response(data, status=200)
 
@@ -913,6 +1009,8 @@ def agreement_public_sign(request):
     return Response({"detail": "Missing token."}, status=400)
 
   ag = _unsign_public_token(token)
+
+  was_homeowner_signed = bool(getattr(ag, "signed_by_homeowner", False))
 
   typed_name = (request.data.get("typed_name") or "").strip()
   if not typed_name:
@@ -970,6 +1068,13 @@ def agreement_public_sign(request):
     except Exception:
       pass
 
+  # ✅ Auto-send final email once per pdf_version (guarded)
+  try:
+    if _is_fully_signed(ag) and not was_homeowner_signed:
+      _send_final_link_for_agreement(ag, force_send=False)
+  except Exception as e:
+    print("agreement_public_sign auto final email error:", repr(e), file=sys.stderr)
+
   auto_funding = None
   try:
     if _is_fully_signed(ag) and not getattr(ag, "escrow_funded", False):
@@ -1006,7 +1111,6 @@ def agreement_public_pdf(request):
 
   preview_flag = (request.query_params.get("preview") or "").strip() == "1"
 
-  # If preview is requested OR not fully signed -> stream preview bytes
   if preview_flag or not _is_fully_signed(ag):
     if not build_agreement_pdf_bytes:
       return Response(
@@ -1020,13 +1124,13 @@ def agreement_public_pdf(request):
         {"detail": f"Could not generate preview: {e}"},
         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
       )
+
     buf = io.BytesIO(pdf_bytes)
     filename = f"agreement_{ag.pk}_preview.pdf"
     resp = FileResponse(buf, content_type="application/pdf")
     resp["Content-Disposition"] = f'inline; filename="{filename}"'
     return resp
 
-  # Otherwise serve final stored PDF file (fully signed)
   if (not getattr(ag, "pdf_file", None)) or (not getattr(ag.pdf_file, "name", "")):
     if generate_full_agreement_pdf:
       try:

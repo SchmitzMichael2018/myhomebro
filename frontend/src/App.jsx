@@ -1,6 +1,7 @@
-// src/App.jsx (fixed)
-// Adds: <Route path="/public-sign/:token" element={<PublicSign />} />
-//       <Route path="/public-fund/:token" element={<PublicFund />} />
+// src/App.jsx
+// v2025-12-14 — cleaned invoice routing + no duplicate invoice pages
+// Adds: public invoice magic-link page route
+// Keeps all existing routes intact
 
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
@@ -17,7 +18,10 @@ import ForgotPassword from "./components/ForgotPassword";
 import ResetPassword from "./components/ResetPassword";
 
 import PublicSign from "./components/PublicSign";
-import PublicFund from "./components/PublicFund";   // ← NEW
+import PublicFund from "./components/PublicFund";
+
+// ✅ PUBLIC INVOICE MAGIC LINK PAGE (KEEP IN PAGES)
+import InvoicePage from "./pages/InvoicePage.jsx";
 
 import "./styles/ui.css";
 import "./styles/modal.css";
@@ -27,7 +31,7 @@ import DashboardRouter from "./components/DashboardRouter.jsx";
 import TeamPage from "./pages/TeamPage.jsx";
 
 console.log(
-  "App.jsx v2025-11-24 — Stripe onboarding page + contractor profile onboarding + /app dashboard router + /team route"
+  "App.jsx v2025-12-14 — added public invoice page route; cleaned duplicates"
 );
 
 export default function App() {
@@ -39,37 +43,34 @@ export default function App() {
           <Route path="/" element={<LandingPage />} />
 
           <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password/:uid/:token" element={<ResetPassword />} />
 
-          <Route
-            path="/reset-password/:uid/:token"
-            element={<ResetPassword />}
-          />
-
-          {/* PUBLIC SIGNING ROUTE — homeowner signs here */}
+          {/* PUBLIC SIGNING ROUTE — homeowner signs agreement */}
           <Route path="/public-sign/:token" element={<PublicSign />} />
 
-          {/* PUBLIC FUNDING ROUTE — homeowner sees escrow funding details here */}
+          {/* PUBLIC FUNDING ROUTE — homeowner funds escrow */}
           <Route path="/public-fund/:token" element={<PublicFund />} />
+
+          {/* PUBLIC INVOICE (magic link) */}
+          <Route path="/invoice/:id" element={<InvoicePage />} />
 
           {/* Public agreement preview (legacy / read-only) */}
           <Route path="/agreements/:id" element={<AgreementReview />} />
 
-          {/* Stripe Connect onboarding (status + start/continue + back to /app) */}
+          {/* Stripe Connect onboarding */}
           <Route path="/onboarding" element={<StripeOnboarding />} />
-
-          {/* Contractor profile onboarding form (business details + skills, etc.) */}
           <Route
             path="/onboarding/profile"
             element={<ContractorOnboardingForm />}
           />
 
-          {/* New unified dashboard route (contractor / employee) */}
+          {/* Contractor dashboard */}
           <Route path="/app" element={<DashboardRouter />} />
 
-          {/* Contractor team management (Team page) */}
+          {/* Contractor team management */}
           <Route path="/team" element={<TeamPage />} />
 
-          {/* Existing auth-protected app sections (contractor console) */}
+          {/* Auth-protected routes */}
           {protectedRoutes()}
 
           {/* Fallback */}
@@ -80,7 +81,7 @@ export default function App() {
         <LoginModal />
         <SignUpModal />
 
-        {/* Global UI */}
+        {/* Toasts */}
         <Toaster position="top-right" />
       </BrowserRouter>
     </AuthProvider>

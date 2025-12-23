@@ -8,7 +8,8 @@ from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied
 
 from ..models import Invoice, InvoiceStatus
-from ..serializers import InvoiceSerializer
+from ..serializers.invoices import InvoiceSerializer
+
 
 logger = logging.getLogger(__name__)
 

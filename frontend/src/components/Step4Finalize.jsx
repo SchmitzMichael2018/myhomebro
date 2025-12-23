@@ -161,6 +161,10 @@ export default function Step4Finalize({
   const [sendingLink, setSendingLink] = useState(false);
   const [sendError, setSendError] = useState(null);
 
+  // Resend final signed agreement link (view-only)
+  const [resendingFinal, setResendingFinal] = useState(false);
+  const [resendFinalError, setResendFinalError] = useState(null);
+
   const [showSignatureModal, setShowSignatureModal] = useState(false);
 
   const [fundingPreview, setFundingPreview] = useState(null);
@@ -219,7 +223,12 @@ export default function Step4Finalize({
       .map((m, idx) => {
         const idPart = m?.id ?? m?.pk ?? m?.order ?? idx;
         const amt = m?.amount ?? "";
-        const due = m?.due_date ?? m?.start_date ?? m?.end_date ?? m?.completion_date ?? "";
+        const due =
+          m?.due_date ??
+          m?.start_date ??
+          m?.end_date ??
+          m?.completion_date ??
+          "";
         const title = m?.title ?? "";
         return `${idPart}:${amt}:${due}:${title}`;
       })
@@ -448,6 +457,56 @@ export default function Step4Finalize({
     }
   };
 
+  const handleResendFinalLink = async () => {
+    if (!agreement?.id) return;
+
+    setResendingFinal(true);
+    setResendFinalError(null);
+
+    // Try with and without trailing slash to match backend router settings
+    const base = `/projects/agreements/${agreement.id}/send_final_agreement_link`;
+    const candidates = [`${base}/`, `${base}`];
+
+    try {
+      for (const url of candidates) {
+        try {
+          const { data } = await api.post(url);
+          toast.success("Final agreement link sent to homeowner.");
+
+          if (data?.view_url) {
+            try {
+              await navigator.clipboard.writeText(data.view_url);
+              toast.success("Link copied to clipboard.");
+            } catch {
+              // ignore clipboard errors
+            }
+          }
+
+          setResendingFinal(false);
+          return;
+        } catch (err) {
+          if (err?.response?.status === 404) continue;
+          throw err;
+        }
+      }
+
+      const msg =
+        "Endpoint not found (404). The backend route may not be deployed or the app may need a reload.";
+      setResendFinalError(msg);
+      toast.error(msg);
+    } catch (err) {
+      console.error("send_final_agreement_link error:", err);
+      const msg =
+        err?.response?.data?.detail ||
+        err?.message ||
+        "Unable to send final agreement link.";
+      setResendFinalError(msg);
+      toast.error(msg);
+    } finally {
+      setResendingFinal(false);
+    }
+  };
+
   const formatMoney = (v) =>
     `$${Number(v || 0).toLocaleString(undefined, {
       minimumFractionDigits: 2,
@@ -538,7 +597,7 @@ export default function Step4Finalize({
         Math.round((escrowTotalRequiredSafe - escrowFundedAmountSafe) * 100) / 100
       );
 
-  let previewButtonLabel = "Preview PDF";
+  let previewButtonLabel = isFullySigned ? "View Signed Agreement" : "Preview PDF";
   if (amendmentNumber > 0) previewButtonLabel += ` — Amendment ${amendmentNumber}`;
   if (!signedByContractor) previewButtonLabel += " (Required)";
 
@@ -815,7 +874,7 @@ export default function Step4Finalize({
                     className="w-full rounded border px-3 py-2 text-sm"
                     value={typedName}
                     onChange={(e) => setTypedName(e.target.value)}
-                    placeholder="e.g., Jane Contractor"
+                    placeholder="e.g. Jane Contractor"
                   />
                 </div>
 
@@ -982,14 +1041,40 @@ export default function Step4Finalize({
         </button>
 
         <div className="flex gap-3">
+          {isFullySigned && (
+            <button
+              type="button"
+              onClick={handleResendFinalLink}
+              disabled={resendingFinal}
+              className="rounded bg-white border border-emerald-300 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+              title="Send the homeowner a fresh link to view/download the final signed agreement"
+            >
+              {resendingFinal ? "Sending…" : "Resend Final Agreement Link"}
+            </button>
+          )}
+
           <button
             type="button"
             onClick={previewPdf}
             className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 shadow-sm"
-            title={amendmentNumber > 0 ? "Open preview PDF for this amendment version" : "Open preview PDF"}
+            title={
+              isFullySigned
+                ? amendmentNumber > 0
+                  ? "Open the signed agreement PDF (this amendment version)"
+                  : "Open the signed agreement PDF"
+                : amendmentNumber > 0
+                ? "Open preview PDF for this amendment version"
+                : "Open preview PDF"
+            }
           >
             {previewButtonLabel}
           </button>
+
+          {resendFinalError && (
+            <div className="w-full text-right text-[11px] text-red-600">
+              {resendFinalError}
+            </div>
+          )}
         </div>
       </div>
 

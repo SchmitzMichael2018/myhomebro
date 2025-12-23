@@ -25,6 +25,11 @@ log "Building frontend with Vite (no installs)…"
 cd "$FRONTEND_DIR"
 npx vite build
 
+# 2.5) Publish index.html
+log "Publishing index.html …"
+rsync -av "$FRONTEND_DIR/dist/index.html" "$STATIC_ROOT/index.html"
+
+
 # 3) Publish assets (hashed -> stable)
 log "Publishing assets to $ASSETS_DIR …"
 mkdir -p "$ASSETS_DIR"

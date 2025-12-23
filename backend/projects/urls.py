@@ -11,6 +11,7 @@ from .views.agreements import (
     agreement_milestones,
     agreement_public_sign,
     agreement_public_pdf,
+    send_final_agreement_link_view,  # ✅ NEW: fallback endpoint
 )
 from .views.invoice import InvoiceViewSet, InvoicePDFView
 from .views.milestone import (
@@ -105,6 +106,13 @@ urlpatterns = [
     path("agreements/public_sign/", agreement_public_sign),
     path("agreements/public_pdf/", agreement_public_pdf),
 
+    # ✅ NEW – Fallback: resend final agreement link (not dependent on router actions)
+    path(
+        "agreements/<int:agreement_id>/send_final_agreement_link/",
+        send_final_agreement_link_view,
+        name="agreement-send-final-agreement-link",
+    ),
+
     # NEW – Manual amendment endpoint
     path(
         "agreements/<int:pk>/create_amendment/",
@@ -139,7 +147,6 @@ urlpatterns = [
         FundingReceiptView.as_view(),
         name="funding-receipt",
     ),
-
 
     # Routers
     path("", include(router.urls)),

@@ -1,20 +1,17 @@
 // src/components/MilestoneList.jsx
-// v2025-09-25-a (edit wiring fixed; style unchanged)
-// - Edit now opens the shared MilestoneEditModal and saves correctly
-// - We enrich the modal's milestone with agreement_state/number/escrow
-// - Complete flow remains as-is (photos + notes → Review)
+// v2025-12-15 — Wire Invoice button to milestone create-invoice endpoint (idempotent)
+// v2025-12-18 — FIX: After invoice creation, navigate to /app/invoices/:invoiceId (protected)
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../api";
 import toast from "react-hot-toast";
+import { useNavigate } from "react-router-dom";
 
-// Use the SAME editor as Agreement Edit/List
 import MilestoneEditModal from "./MilestoneEditModal";
-// Keep the completion flow modal (files + comments → review)
 import MilestoneDetailModal from "./MilestoneDetailModal";
 
 /* ---------------- Utilities ---------------- */
-const pick = (...vals) => vals.find(v => v !== undefined && v !== null && v !== "") ?? "";
+const pick = (...vals) => vals.find((v) => v !== undefined && v !== null && v !== "") ?? "";
 
 const money = (n) => {
   if (n === null || n === undefined || n === "") return "—";
@@ -24,40 +21,94 @@ const money = (n) => {
     : String(n);
 };
 
+const todayYYYYMMDD = () => {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const toDateOnly = (v) => {
+  if (!v) return null;
+  const s = String(v).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y, m, d] = s.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
+
+const startOfToday = () => {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+};
+
 const getAgreementId = (m) => m.agreement_id || m.agreement || (m.agreement && m.agreement.id);
-const getAgreementStatus = (a) => (pick(a?.status, a?.agreement_status, a?.signature_status, a?.state) || "").toLowerCase();
+const getAgreementStatus = (a) =>
+  (pick(a?.status, a?.agreement_status, a?.signature_status, a?.state) || "").toLowerCase();
 const isAgreementDraft = (a) => getAgreementStatus(a) === "draft";
 const isAgreementSigned = (a) => ["signed", "executed", "active", "approved"].includes(getAgreementStatus(a));
 const isEscrowFunded = (a) => !!pick(a?.escrow_funded, a?.escrowFunded);
 
 const getAgreementNumber = (m) => pick(m.agreement_number, m.agreement_no, m.agreement_id, m.agreement);
-const getProjectTitle  = (m,a) => pick(m.project_title, a?.project_title);
-const getHomeownerName = (m,a) => pick(m.homeowner_name, a?.homeowner_name);
-const getDueDate       = (m)   => pick(m.due_date, m.scheduled_for, m.date_due, m.date, m.end_date, m.completion_date);
-const getStatus        = (m)   => (pick(m.status_label, m.status, m.state, m.phase) || "").toLowerCase();
-const getIsLate        = (m)   => !!pick(m.is_late, m.late, m.overdue);
+const getProjectTitle = (m, a) => pick(m.project_title, a?.project_title);
+const getHomeownerName = (m, a) => pick(m.homeowner_name, a?.homeowner_name);
 
-const deriveRowStatus = (m,a) => {
-  const ms = getStatus(m);
-  if (ms === "approved" || ms === "completed") return "Complete";
-  if (isAgreementDraft(a)) return "Draft";
-  if (!isEscrowFunded(a)) return "Awaiting Funding";
-  if (getIsLate(m)) return "Late";
-  return "Scheduled/On-time";
+const getDueDateRaw = (m) =>
+  pick(m.due_date, m.scheduled_for, m.date_due, m.date, m.end_date, m.completion_date);
+
+const computeIsLate = (m) => {
+  if (m.completed === true) return false;
+  const due = toDateOnly(getDueDateRaw(m));
+  if (!due) return false;
+  return due < startOfToday();
 };
 
-/* ---------------- API endpoints (adjust if needed) ---------------- */
+const deriveMilestonePhaseLabel = (m) => {
+  const completed = m.completed === true;
+  const invoiced = m.is_invoiced === true;
+
+  if (!completed) return "Incomplete";
+  if (completed && !invoiced) return "Completed (Not Invoiced)";
+  return "Invoiced";
+};
+
+/* ---------------- API base ---------------- */
 const API = {
-  listMilestones: "/projects/milestones/",                         // GET
-  listAgreements: "/projects/agreements/",                         // GET
-  patchMilestone: (id) => `/projects/milestones/${id}/`,           // PATCH
-  deleteMilestone: (id) => `/projects/milestones/${id}/`,          // DELETE
-  completeAction: (id) => `/projects/milestones/${id}/complete/`,  // POST (multipart)
-  uploadEvidence: (id) => `/projects/milestones/${id}/evidence/`,  // POST (multipart)
-  toPendingApproval: (id) => `/projects/milestones/${id}/submit/`, // POST
+  listMilestones: "/projects/milestones/",
+  listAgreements: "/projects/agreements/",
+  patchMilestone: (id) => `/projects/milestones/${id}/`,
+  deleteMilestone: (id) => `/projects/milestones/${id}/`,
+  milestoneFiles: "/projects/milestone-files/",
+  milestoneComments: (id) => `/projects/milestones/${id}/comments/`,
+  createInvoice: (id) => `/projects/milestones/${id}/create-invoice/`,
 };
+
+const COMPLETE_PATCH_PAYLOADS = [
+  { completed: true, completion_date: todayYYYYMMDD(), is_invoiced: false },
+  { completed: true, completion_date: todayYYYYMMDD() },
+  { completed: true },
+];
+
+async function patchWithFallback(url, payloads) {
+  let lastErr = null;
+  for (const payload of payloads) {
+    try {
+      const res = await api.patch(url, payload);
+      return res?.data ?? null;
+    } catch (err) {
+      lastErr = err;
+      continue;
+    }
+  }
+  throw lastErr || new Error("PATCH failed for all payloads");
+}
 
 export default function MilestoneList() {
+  const navigate = useNavigate();
+
   const [rows, setRows] = useState([]);
   const [agreementsMap, setAgreementsMap] = useState({});
   const [loading, setLoading] = useState(true);
@@ -67,19 +118,21 @@ export default function MilestoneList() {
 
   const [busy, setBusy] = useState(new Set());
 
-  // EDIT (Agreement-style) modal
   const [editOpen, setEditOpen] = useState(false);
   const [editItem, setEditItem] = useState(null);
 
-  // COMPLETE modal (photos + notes → review)
-  const [completeOpen, setCompleteOpen] = useState(false);
-  const [completeItem, setCompleteItem] = useState(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailItem, setDetailItem] = useState(null);
 
   const markBusy = (id, on = true) =>
-    setBusy(prev => { const n = new Set(prev); on ? n.add(id) : n.delete(id); return n; });
+    setBusy((prev) => {
+      const n = new Set(prev);
+      on ? n.add(id) : n.delete(id);
+      return n;
+    });
 
   const updateLocal = (id, patch) =>
-    setRows(list => list.map(m => (m.id === id ? { ...m, ...patch } : m)));
+    setRows((list) => list.map((m) => (m.id === id ? { ...m, ...patch } : m)));
 
   /* ---------------- Load ---------------- */
   const reload = useCallback(async () => {
@@ -89,13 +142,24 @@ export default function MilestoneList() {
         api.get(API.listMilestones, { params: { page_size: 500, _ts: Date.now() } }),
         api.get(API.listAgreements, { params: { page_size: 500, _ts: Date.now() } }),
       ]);
-      const mList = Array.isArray(mRes.data?.results) ? mRes.data.results : Array.isArray(mRes.data) ? mRes.data : [];
-      const aList = Array.isArray(aRes.data?.results) ? aRes.data.results : Array.isArray(aRes.data) ? aRes.data : [];
+
+      const mList = Array.isArray(mRes.data?.results)
+        ? mRes.data.results
+        : Array.isArray(mRes.data)
+        ? mRes.data
+        : [];
+      const aList = Array.isArray(aRes.data?.results)
+        ? aRes.data.results
+        : Array.isArray(aRes.data)
+        ? aRes.data
+        : [];
+
       const map = {};
       for (const a of aList) {
         const id = a.id || a.agreement_id;
         if (id) map[id] = a;
       }
+
       setRows(mList);
       setAgreementsMap(map);
     } catch (e) {
@@ -105,92 +169,113 @@ export default function MilestoneList() {
       setLoading(false);
     }
   }, []);
-  useEffect(() => { reload(); }, [reload]);
 
-  /* ---------------- Filtering ---------------- */
-  const tabs = [
-    { key: "all", label: "All" },
-    { key: "late", label: "Late" },
-    { key: "incomplete", label: "Incomplete" },
-    { key: "complete_not_invoiced", label: "Completed (Not Invoiced)" },
-    { key: "invoiced", label: "Invoiced" },
-    { key: "pending_approval", label: "Pending Approval" },
-    { key: "approved", label: "Approved" },
-    { key: "disputed", label: "Disputed" },
-  ];
+  useEffect(() => {
+    reload();
+  }, [reload]);
 
-  const enriched = useMemo(() => rows.map(m => {
-    const ag = agreementsMap[getAgreementId(m)] || {};
-    return {
-      ...m,
-      _ag: ag,
-      _escrowFunded: isEscrowFunded(ag),
-      _agStatus: getAgreementStatus(ag),
-      _derived: deriveRowStatus(m, ag),
-      _agreementNumber: getAgreementNumber(m),
-      _projectTitle: getProjectTitle(m, ag),
-      _homeownerName: getHomeownerName(m, ag),
-    };
-  }), [rows, agreementsMap]);
+  /* ---------------- Enrich + Filter ---------------- */
+  const enriched = useMemo(() => {
+    return rows.map((m) => {
+      const ag = agreementsMap[getAgreementId(m)] || {};
+      const late = computeIsLate(m);
+      const phaseLabel = deriveMilestonePhaseLabel(m);
+
+      return {
+        ...m,
+        _ag: ag,
+        _escrowFunded: isEscrowFunded(ag),
+        _agStatus: getAgreementStatus(ag),
+        _agreementNumber: getAgreementNumber(m),
+        _projectTitle: getProjectTitle(m, ag),
+        _homeownerName: getHomeownerName(m, ag),
+        _dueRaw: getDueDateRaw(m),
+        _late: late,
+        _phaseLabel: phaseLabel,
+      };
+    });
+  }, [rows, agreementsMap]);
 
   const filtered = useMemo(() => {
     let r = enriched;
+
     switch (tab) {
-      case "late":               r = r.filter(m => getIsLate(m)); break;
-      case "incomplete":         r = r.filter(m => getStatus(m) === "incomplete"); break;
-      case "complete_not_invoiced": r = r.filter(m => getStatus(m) === "completed" && !m.invoiced); break;
-      case "invoiced":           r = r.filter(m => !!m.invoiced); break;
-      case "pending_approval":   r = r.filter(m => getStatus(m) === "pending_approval"); break;
-      case "approved":           r = r.filter(m => getStatus(m) === "approved"); break;
-      case "disputed":           r = r.filter(m => getStatus(m) === "disputed"); break;
-      default: break;
+      case "late":
+        r = r.filter((m) => m._late);
+        break;
+      case "incomplete":
+        r = r.filter((m) => m._phaseLabel === "Incomplete");
+        break;
+      case "complete_not_invoiced":
+        r = r.filter((m) => m._phaseLabel === "Completed (Not Invoiced)");
+        break;
+      case "invoiced":
+        r = r.filter((m) => m._phaseLabel === "Invoiced");
+        break;
+      default:
+        break;
     }
+
     const s = q.trim().toLowerCase();
     if (s) {
-      r = r.filter(m =>
+      r = r.filter((m) =>
         [m.title, m._projectTitle, m._homeownerName, String(m._agreementNumber)]
-          .filter(Boolean).join(" ").toLowerCase().includes(s)
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(s)
       );
     }
+
     return r;
   }, [enriched, tab, q]);
 
   /* ---------------- Rules ---------------- */
   const canEditDelete = (m) => isAgreementDraft(m._ag);
-  const canComplete   = (m) => isAgreementSigned(m._ag) && m._escrowFunded === true;
 
-  /* ---------------- Actions: EDIT (agreement-style modal) ---------------- */
+  const canComplete = (m) => {
+    if (!(isAgreementSigned(m._ag) && m._escrowFunded === true)) return false;
+    if (m.completed === true) return false;
+    if (m.is_invoiced === true) return false;
+    return true;
+  };
+
+  const isCompletedNotInvoiced = (m) => m.completed === true && m.is_invoiced !== true;
+
+  /* ---------------- Actions ---------------- */
+  const openView = (m) => {
+    setDetailItem(m);
+    setDetailOpen(true);
+  };
+
   const openEdit = (m) => {
-    if (!canEditDelete(m)) { toast("Editing is only available while the agreement is in Draft."); return; }
-    // Enrich with fields the shared modal expects for read-only banner + header
-    const modalItem = {
-      ...m,
-      agreement_state: (m._ag?.state || m._ag?.status || "").toString(), // modal normalizes case internally
-      agreement_status: (m._ag?.status || m._ag?.state || "").toString(),
-      agreement_number: m._agreementNumber || m.agreement_number || m.agreement_id || m.agreement,
-      escrow_funded: !!m._escrowFunded,
-      escrowFunded: !!m._escrowFunded,
-    };
-    setEditItem(modalItem);
+    if (!canEditDelete(m)) {
+      toast("Editing is only available while the agreement is in Draft.");
+      return;
+    }
+    setEditItem(m);
     setEditOpen(true);
   };
 
-  // When the modal finishes saving on its side, reflect the change here
   const handleModalSaved = async (updated) => {
     if (updated?.id) updateLocal(updated.id, updated);
-    await reload(); // ensure fresh derived flags/status
+    await reload();
     setEditOpen(false);
     setEditItem(null);
     toast.success("Milestone updated.");
   };
 
-  /* ---------------- Actions: DELETE ---------------- */
   const removeItem = async (m) => {
-    if (!canEditDelete(m)) { toast("Delete is only available while the agreement is in Draft."); return; }
+    if (!canEditDelete(m)) {
+      toast("Delete is only available while the agreement is in Draft.");
+      return;
+    }
     if (!window.confirm(`Delete milestone "${m.title}" (Agreement #${m._agreementNumber || "?"})?`)) return;
+
     markBusy(m.id, true);
     const snapshot = rows;
-    setRows(list => list.filter(x => x.id !== m.id)); // optimistic
+    setRows((list) => list.filter((x) => x.id !== m.id));
+
     try {
       await api.delete(API.deleteMilestone(m.id));
       toast.success("Milestone deleted.");
@@ -203,54 +288,97 @@ export default function MilestoneList() {
     }
   };
 
-  /* ---------------- Actions: COMPLETE → open detail modal ---------------- */
   const openComplete = (m) => {
     if (!canComplete(m)) {
-      if (isAgreementDraft(m._ag))      toast("You can’t complete a milestone until the agreement is signed.");
-      else if (!m._escrowFunded)        toast("You can’t complete a milestone until escrow is funded.");
-      else                               toast("Milestone cannot be completed right now.");
+      toast("This milestone is not eligible to complete right now.");
       return;
     }
-    setCompleteItem(m);
-    setCompleteOpen(true);
+    setDetailItem(m);
+    setDetailOpen(true);
+  };
+
+  const uploadEvidenceFiles = async (milestoneId, files) => {
+    if (!files?.length) return;
+
+    for (const f of files) {
+      const fd = new FormData();
+      fd.append("milestone", milestoneId);
+      fd.append("file", f, f.name);
+
+      await api.post(API.milestoneFiles, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+    }
   };
 
   const submitComplete = async ({ id, notes, files }) => {
+    if (!id) return;
+
     markBusy(id, true);
-    const prev = rows.find(r => r.id === id);
-    updateLocal(id, { status: "completed" }); // optimistic
+
     try {
-      // Prefer the dedicated action; fallback to evidence + submit
-      try {
-        const fd = new FormData();
-        fd.append("notes", notes || "");
-        (files || []).forEach((f, i) => fd.append("files", f, f.name || `evidence_${i}`));
-        await api.post(API.completeAction(id), fd, { headers: { "Content-Type": "multipart/form-data" } });
-      } catch {
-        const fd = new FormData();
-        fd.append("notes", notes || "");
-        (files || []).forEach((f, i) => fd.append("files", f, f.name || `evidence_${i}`));
-        await api.post(API.uploadEvidence(id), fd, { headers: { "Content-Type": "multipart/form-data" } });
-        await api.post(API.toPendingApproval(id), {});
+      await uploadEvidenceFiles(id, files || []);
+
+      if (notes && String(notes).trim()) {
+        await api.post(API.milestoneComments(id), { content: String(notes).trim() });
       }
-      updateLocal(id, { status: "pending_approval" });
-      toast.success("Submitted for review.");
-      setCompleteOpen(false);
-      setCompleteItem(null);
+
+      const patched = await patchWithFallback(API.patchMilestone(id), COMPLETE_PATCH_PAYLOADS);
+      if (patched && patched.id) updateLocal(patched.id, patched);
+
+      toast.success("Milestone completed.");
+      setDetailOpen(false);
+      setDetailItem(null);
+
       await reload();
     } catch (err) {
       console.error(err);
-      if (prev) updateLocal(id, { status: prev.status });
-      toast.error("Could not submit completion.");
+      toast.error("Could not submit completion. Check console.");
+      await reload();
     } finally {
       markBusy(id, false);
+    }
+  };
+
+  // ✅ create invoice first (idempotent), then navigate to the PROTECTED invoice detail
+  const createInvoiceAndGo = async (m) => {
+    const milestoneId = m?.id;
+    if (!milestoneId) return;
+
+    markBusy(milestoneId, true);
+    try {
+      const { data } = await api.post(API.createInvoice(milestoneId));
+
+      const invoiceId =
+        data?.id ||
+        data?.invoice_id ||
+        data?.pk ||
+        m?.invoice ||
+        m?.invoice_id ||
+        null;
+
+      toast.success("Invoice created.");
+      await reload();
+
+      // ✅ IMPORTANT: go directly to protected contractor invoice detail
+      if (invoiceId) {
+        navigate(`/app/invoices/${invoiceId}`);
+      } else {
+        toast.error("Invoice created but no invoice id returned.");
+        navigate(`/app/invoices`);
+      }
+    } catch (e) {
+      console.error(e);
+      const msg = e?.response?.data?.detail || "Unable to create invoice for this milestone.";
+      toast.error(msg);
+    } finally {
+      markBusy(milestoneId, false);
     }
   };
 
   /* ---------------- UI ---------------- */
   return (
     <div className="p-4 md:p-6">
-      {/* Tabs + Search */}
       <div className="flex items-center justify-between mb-3 gap-3">
         <div className="flex flex-wrap gap-2">
           {[
@@ -259,28 +387,27 @@ export default function MilestoneList() {
             { key: "incomplete", label: "Incomplete" },
             { key: "complete_not_invoiced", label: "Completed (Not Invoiced)" },
             { key: "invoiced", label: "Invoiced" },
-            { key: "pending_approval", label: "Pending Approval" },
-            { key: "approved", label: "Approved" },
-            { key: "disputed", label: "Disputed" },
-          ].map(t => (
+          ].map((t) => (
             <button
               key={t.key}
               type="button"
               onClick={() => setTab(t.key)}
               className={`px-3 py-1 rounded text-sm border ${
-                tab === t.key ? "bg-white/80 text-gray-900 border-white/60 shadow"
-                               : "bg-white/10 text-white/90 border-white/20 hover:bg-white/20"
+                tab === t.key
+                  ? "bg-white/80 text-gray-900 border-white/60 shadow"
+                  : "bg-white/10 text-white/90 border-white/20 hover:bg-white/20"
               }`}
             >
               {t.label}
             </button>
           ))}
         </div>
+
         <div className="flex items-center gap-2">
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search title, project, customer..."
+            placeholder="Search title, project, customer."
             className="px-3 py-2 rounded border border-white/30 bg-white/90 text-gray-900 w-72"
           />
           <button
@@ -293,7 +420,6 @@ export default function MilestoneList() {
         </div>
       </div>
 
-      {/* Table */}
       <div className="rounded-lg overflow-hidden shadow border border-white/20 bg-white/70">
         <table className="min-w-full text-sm">
           <thead className="bg-white/60">
@@ -308,80 +434,155 @@ export default function MilestoneList() {
               <th className="text-left px-4 py-3">Actions</th>
             </tr>
           </thead>
+
           <tbody>
             {loading ? (
-              <tr><td className="px-4 py-6 text-center text-gray-600" colSpan={8}>Loading milestones…</td></tr>
+              <tr>
+                <td className="px-4 py-6 text-center text-gray-600" colSpan={8}>
+                  Loading milestones…
+                </td>
+              </tr>
             ) : filtered.length === 0 ? (
-              <tr><td className="px-4 py-6 text-center text-gray-600" colSpan={8}>No milestones found.</td></tr>
+              <tr>
+                <td className="px-4 py-6 text-center text-gray-600" colSpan={8}>
+                  No milestones found.
+                </td>
+              </tr>
             ) : (
-              filtered.map(m => {
-                const label = m._derived;
-                const raw   = getStatus(m);
+              filtered.map((m) => {
                 const allowED = canEditDelete(m);
                 const allowComplete = canComplete(m);
+                const isRowBusy = busy.has(m.id);
+
+                const statusPill = m._late ? "Late" : m._phaseLabel;
 
                 return (
-                  <tr key={m.id} className="odd:bg-white/50 even:bg-white/30 hover:bg-white">
+                  <tr
+                    key={m.id}
+                    className={`odd:bg-white/50 even:bg-white/30 hover:bg-white cursor-pointer ${
+                      isRowBusy ? "opacity-70" : ""
+                    }`}
+                    title="Click to view milestone details"
+                    onClick={() => openView(m)}
+                  >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{m.title}</span>
-                        {getIsLate(m) && <span className="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">late</span>}
+                        {m._late && (
+                          <span className="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">late</span>
+                        )}
                       </div>
                     </td>
+
                     <td className="px-4 py-3">#{m._agreementNumber || "-"}</td>
                     <td className="px-4 py-3">{m._projectTitle || "—"}</td>
                     <td className="px-4 py-3">{m._homeownerName || "—"}</td>
-                    <td className="px-4 py-3">{getDueDate(m) || "—"}</td>
+                    <td className="px-4 py-3">{m._dueRaw || "—"}</td>
                     <td className="px-4 py-3 text-right">{money(m.amount)}</td>
+
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded text-xs ${
-                        label==="Complete" ? "bg-green-100 text-green-700" :
-                        label==="Awaiting Funding" ? "bg-yellow-100 text-yellow-700" :
-                        label==="Draft" ? "bg-blue-100 text-blue-700" :
-                        label==="Late" ? "bg-red-100 text-red-700" :
-                        "bg-gray-100 text-gray-700"
-                      }`}>{label}</span>
-                      <span className="text-[11px] text-gray-500 ml-2">/ {raw || "—"}</span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-xs ${
+                          statusPill === "Late"
+                            ? "bg-red-100 text-red-700"
+                            : statusPill === "Completed (Not Invoiced)"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : statusPill === "Invoiced"
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {statusPill}
+                      </span>
                     </td>
+
                     <td className="px-4 py-3">
-                      <div className="flex gap-2">
-                        {/* COMPLETE */}
+                      <div className="flex gap-2 flex-wrap">
                         <button
                           type="button"
-                          disabled={!allowComplete}
-                          onClick={() => openComplete(m)}
-                          className={`px-2 py-1 text-xs rounded-md border ${allowComplete ? "hover:bg-gray-100" : "opacity-50 cursor-not-allowed"}`}
-                          title={allowComplete ? "Complete → Review" : "Requires signed agreement and funded escrow"}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openView(m);
+                          }}
+                          className="px-3 py-2 text-xs rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold"
                         >
-                          ✓ Complete
+                          View
                         </button>
 
-                        {/* EDIT — Agreement-style modal */}
+                        {allowComplete ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openComplete(m);
+                            }}
+                            className="px-3 py-2 text-xs rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold"
+                            title="Complete → Review"
+                          >
+                            ✓ Complete
+                          </button>
+                        ) : isCompletedNotInvoiced(m) ? (
+                          <>
+                            <button
+                              type="button"
+                              disabled
+                              className="px-3 py-2 text-xs rounded-md border border-gray-200 bg-gray-100 text-gray-500 font-semibold cursor-default"
+                              title="Already completed"
+                            >
+                              ✓ Completed
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                createInvoiceAndGo(m);
+                              }}
+                              className="px-3 py-2 text-xs rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-semibold"
+                              title="Create invoice for this completed milestone"
+                            >
+                              Invoice
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled
+                            className="px-3 py-2 text-xs rounded-md border border-gray-200 bg-gray-100 text-gray-400 font-semibold cursor-not-allowed"
+                            title="Not eligible to complete"
+                          >
+                            ✓ Complete
+                          </button>
+                        )}
+
                         {allowED ? (
                           <button
                             type="button"
-                            onClick={() => openEdit(m)}
-                            className="px-2 py-1 text-xs rounded-md border hover:bg-gray-100"
-                            title="Edit (Draft only)"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEdit(m);
+                            }}
+                            className="px-3 py-2 text-xs rounded-md border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 font-semibold"
                           >
                             Edit
                           </button>
                         ) : (
-                          <span className="text-xs text-gray-400">Edit (locked)</span>
+                          <span className="text-xs text-gray-400 self-center">Edit (locked)</span>
                         )}
 
-                        {/* DELETE */}
                         {allowED ? (
                           <button
                             type="button"
-                            onClick={() => removeItem(m)}
-                            className="px-2 py-1 text-xs rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
-                            title="Delete (Draft only)"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeItem(m);
+                            }}
+                            className="px-3 py-2 text-xs rounded-md border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 font-semibold"
                           >
                             Delete
                           </button>
                         ) : (
-                          <span className="text-xs text-gray-400">Delete (locked)</span>
+                          <span className="text-xs text-gray-400 self-center">Delete (locked)</span>
                         )}
                       </div>
                     </td>
@@ -393,26 +594,28 @@ export default function MilestoneList() {
         </table>
       </div>
 
-      {/* EDIT — SAME modal used by Agreement Edit/List */}
       {editOpen && editItem && (
         <MilestoneEditModal
           open={editOpen}
-          onClose={() => { setEditOpen(false); setEditItem(null); }}
+          onClose={() => {
+            setEditOpen(false);
+            setEditItem(null);
+          }}
           milestone={editItem}
-          // IMPORTANT: the shared modal calls `onSaved` (not `onSave`)
           onSaved={handleModalSaved}
-          // optional: allow modal's "✓ Complete → Review" button to no-op here
           onMarkComplete={async () => {}}
         />
       )}
 
-      {/* COMPLETE — photos + notes → review (no invoice here) */}
-      {completeOpen && completeItem && (
+      {detailOpen && detailItem && (
         <MilestoneDetailModal
-          open={completeOpen}
-          milestone={completeItem}
-          agreement={completeItem._ag}
-          onClose={() => { setCompleteOpen(false); setCompleteItem(null); }}
+          open={detailOpen}
+          milestone={detailItem}
+          agreement={detailItem._ag}
+          onClose={() => {
+            setDetailOpen(false);
+            setDetailItem(null);
+          }}
           onSubmit={({ id, notes, files }) => submitComplete({ id, notes, files })}
         />
       )}

@@ -3,6 +3,8 @@
 from decimal import Decimal
 from django.conf import settings
 from django.db import models, transaction
+from django.db.models import Q
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 from .models_dispute import Dispute, DisputeAttachment
 import uuid
@@ -389,11 +391,9 @@ class Agreement(models.Model):
         return self.signed_by_contractor and self.signed_by_homeowner
 
     def save(self, *args, **kwargs):
-        # Auto-link contractor from Project if not set
         if not self.contractor and self.project and self.project.contractor_id:
             self.contractor = self.project.contractor
 
-        # Normalize warranty_type
         if self.warranty_type:
             self.warranty_type = str(self.warranty_type).strip().lower()
             if self.warranty_type not in ("default", "custom"):
@@ -401,12 +401,10 @@ class Agreement(models.Model):
         else:
             self.warranty_type = "default"
 
-        # Ensure warranty_text_snapshot never blank
         snap = (self.warranty_text_snapshot or "").strip()
         if not snap:
             self.warranty_text_snapshot = DEFAULT_WARRANTY_TEXT
 
-        # ✅ Correct funded logic based on AMOUNT (not just boolean)
         try:
             funded_amt = Decimal(str(self.escrow_funded_amount or "0"))
         except Exception:
@@ -426,10 +424,7 @@ class Agreement(models.Model):
         super().save(*args, **kwargs)
 
 
-# 🔹 NEW: Escrow funding link model
 class AgreementFundingLink(models.Model):
-    """A short-lived token that lets a homeowner fund escrow for an agreement."""
-
     agreement = models.ForeignKey(
         "projects.Agreement",
         on_delete=models.CASCADE,
@@ -456,50 +451,33 @@ class AgreementFundingLink(models.Model):
     expires_at = models.DateTimeField()
     used_at = models.DateTimeField(null=True, blank=True)
 
-    is_active = models.BooleanField(
-        default=True,
-        help_text="If False, token is considered invalid even if not expired.",
-    )
-
-    payment_intent_id = models.CharField(
-        max_length=255,
-        blank=True,
-        default="",
-        help_text="Stripe PaymentIntent id once we create it.",
-    )
+    is_active = models.BooleanField(default=True)
+    payment_intent_id = models.CharField(max_length=255, blank=True, default="")
 
     class Meta:
         ordering = ["-created_at"]
 
     def __str__(self) -> str:
-        return (
-            f"FundingLink({self.agreement_id}, "
-            f"{self.amount} {self.currency}, active={self.is_active})"
-        )
+        return f"FundingLink({self.agreement_id}, {self.amount} {self.currency}, active={self.is_active})"
 
     @classmethod
     def generate_token(cls) -> str:
-        """Generate a random URL-safe token."""
         return secrets.token_urlsafe(32)
 
     @classmethod
     def default_expiry(cls) -> timezone.datetime:
-        """Default expiry: 7 days from now."""
         return timezone.now() + timedelta(days=7)
 
     @property
     def is_expired(self) -> bool:
-        now = timezone.now()
-        return now >= self.expires_at
+        return timezone.now() >= self.expires_at
 
     def mark_used(self):
-        """Mark this link as used/consumed (after successful payment)."""
         self.used_at = timezone.now()
         self.is_active = False
         self.save(update_fields=["used_at", "is_active"])
 
     def is_valid(self) -> bool:
-        """Simple helper for 'valid for funding' checks."""
         if not self.is_active:
             return False
         if self.is_expired:
@@ -510,7 +488,6 @@ class AgreementFundingLink(models.Model):
 
     @classmethod
     def create_for_agreement(cls, agreement, amount, currency="usd"):
-        """Factory to create a fresh funding link for an agreement."""
         token = cls.generate_token()
         link = cls.objects.create(
             agreement=agreement,
@@ -537,12 +514,41 @@ class Milestone(models.Model):
         blank=True,
         help_text="Estimated time to complete the milestone.",
     )
+
+    # Canonical lifecycle flags
     is_invoiced = models.BooleanField(default=False)
     completed = models.BooleanField(default=False)
+
+    # ✅ NEW: idempotent linkage (one invoice per milestone)
+    invoice = models.OneToOneField(
+        "projects.Invoice",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="source_milestone",
+        help_text="Invoice created from this milestone (idempotent link).",
+    )
 
     class Meta:
         ordering = ["order"]
         unique_together = [("agreement", "order")]
+
+        constraints = [
+            models.CheckConstraint(
+                name="milestone_invoiced_requires_completed",
+                check=Q(is_invoiced=False) | Q(completed=True),
+            ),
+            models.CheckConstraint(
+                name="milestone_invoice_requires_completed_and_flag",
+                check=Q(invoice__isnull=True) | (Q(completed=True) & Q(is_invoiced=True)),
+            ),
+        ]
+
+    def clean(self):
+        if self.is_invoiced and not self.completed:
+            raise ValidationError("Milestone cannot be invoiced unless it is completed.")
+        if self.invoice_id and (not self.completed or not self.is_invoiced):
+            raise ValidationError("Milestone invoice link requires completed=True and is_invoiced=True.")
 
     def __str__(self):
         return f"{self.order}. {self.title} (${self.amount})"
@@ -606,9 +612,14 @@ class Invoice(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     approved_at = models.DateTimeField(null=True, blank=True)
+
+    # ✅ PDF storage for invoices (views already expect invoice.pdf_file)
+    pdf_file = models.FileField(upload_to="invoices/pdf/", null=True, blank=True)
+
     escrow_released = models.BooleanField(default=False)
     escrow_released_at = models.DateTimeField(null=True, blank=True)
     stripe_transfer_id = models.CharField(max_length=255, blank=True)
+
     disputed = models.BooleanField(default=False)
     dispute_reason = models.TextField(blank=True)
     dispute_by = models.CharField(
@@ -618,6 +629,24 @@ class Invoice(models.Model):
     )
     disputed_at = models.DateTimeField(null=True, blank=True)
     marked_complete_at = models.DateTimeField(null=True, blank=True)
+
+    # ✅ Email delivery tracking (Postmark invoice notifications)
+    email_sent_at = models.DateTimeField(null=True, blank=True)
+    email_message_id = models.CharField(max_length=255, blank=True)
+    last_email_error = models.TextField(blank=True)
+
+    # ------------------------------------------------------------------
+    # ✅ NEW: Milestone snapshot fields (frozen at invoicing time)
+    # ------------------------------------------------------------------
+    milestone_id_snapshot = models.IntegerField(null=True, blank=True, db_index=True)
+    milestone_title_snapshot = models.CharField(max_length=255, blank=True)
+    milestone_description_snapshot = models.TextField(blank=True)
+
+    # Completion notes snapshot (typically derived from milestone comments)
+    milestone_completion_notes = models.TextField(blank=True)
+
+    # Attachments snapshot (list of dicts with name/url/metadata)
+    milestone_attachments_snapshot = models.JSONField(default=list, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -698,14 +727,6 @@ class AgreementAmendment(models.Model):
 
 
 class ContractorSubAccount(models.Model):
-    """
-    Employee-style sub-account that belongs to a primary Contractor.
-
-    Each sub-account is backed by a regular Django auth user but is linked to a
-    parent Contractor. The Contractor can have many sub-accounts; each sub-account
-    has exactly one user.
-    """
-
     ROLE_EMPLOYEE_READONLY = "employee_readonly"
     ROLE_EMPLOYEE_MILESTONES = "employee_milestones"
 
@@ -718,39 +739,25 @@ class ContractorSubAccount(models.Model):
         Contractor,
         related_name="subaccounts",
         on_delete=models.CASCADE,
-        help_text="The primary Contractor this employee belongs to.",
     )
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         related_name="contractor_subaccount",
         on_delete=models.CASCADE,
-        help_text="The Django auth user for this employee.",
     )
 
-    display_name = models.CharField(
-        max_length=255,
-        help_text="Name to show on the Employee Dashboard (e.g., 'Alex').",
-    )
-
+    display_name = models.CharField(max_length=255)
     role = models.CharField(
         max_length=32,
         choices=ROLE_CHOICES,
         default=ROLE_EMPLOYEE_READONLY,
-        help_text="Controls whether employee can only view or also mark milestones complete.",
     )
 
-    is_active = models.BooleanField(
-        default=True,
-        help_text="Soft on/off switch for this sub-account.",
-    )
-
+    is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    notes = models.TextField(
-        blank=True,
-        help_text="Optional internal notes about this employee.",
-    )
+    notes = models.TextField(blank=True)
 
     class Meta:
         verbose_name = "Contractor Sub-Account"

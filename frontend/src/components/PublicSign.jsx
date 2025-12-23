@@ -1,26 +1,31 @@
 // frontend/src/components/PublicSign.jsx
-// v2025-12-01-stable-pdf-autorefresh
-// Public homeowner signing page
+// v2025-12-22 — View-only mode for signed agreements
 // - Route: /public-sign/:token
-// - Fetches agreement via /api/projects/agreements/public_sign/?token=...
-// - Shows PDF + "Open Signing Panel" button
-// - Uses SignatureModal with signingRole="homeowner"
-// - After signature, bumps pdfVersion so the PDF iframe reloads with the signed version.
+// - View-only if agreement already signed OR ?mode=final
+// - Otherwise preserves existing signing flow exactly
 
 import React, { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useLocation } from "react-router-dom";
 import api from "../api";
 import SignatureModal from "./SignatureModal";
 
+function useQuery() {
+  return new URLSearchParams(useLocation().search);
+}
+
 export default function PublicSign() {
-  const { token } = useParams(); // expect path /public-sign/:token
+  const { token } = useParams(); // /public-sign/:token
+  const query = useQuery();
+
   const [loading, setLoading] = useState(true);
   const [agreement, setAgreement] = useState(null);
   const [error, setError] = useState("");
   const [isSignOpen, setIsSignOpen] = useState(false);
 
-  // 👇 Used to force the PDF iframe to reload after signing
+  // Used to force iframe reload when PDF changes
   const [pdfVersion, setPdfVersion] = useState(0);
+
+  const modeFinal = (query.get("mode") || "").toLowerCase() === "final";
 
   useEffect(() => {
     const fetchAgreement = async () => {
@@ -31,7 +36,6 @@ export default function PublicSign() {
       }
       try {
         setLoading(true);
-        // NOTE: api.js baseURL is /api, so this hits /api/projects/agreements/public_sign/
         const { data } = await api.get(
           `/projects/agreements/public_sign/?token=${encodeURIComponent(
             token
@@ -53,42 +57,41 @@ export default function PublicSign() {
     fetchAgreement();
   }, [token]);
 
-  // 🔹 IMPORTANT: point the iframe at the API endpoint, and include pdfVersion
-  const pdfUrl = (() => {
-    if (!token) return null;
-    // /api/projects/agreements/public_pdf/?token=...&stream=1&v=<pdfVersion>
-    return `/api/projects/agreements/public_pdf/?token=${encodeURIComponent(
-      token
-    )}&stream=1&v=${pdfVersion}`;
-  })();
+  const isFullySigned =
+    agreement?.is_fully_signed === true ||
+    String(agreement?.status || "").toLowerCase() === "signed";
+
+  const viewOnly = isFullySigned || modeFinal;
+
+  const pdfUrl = token
+    ? `/api/projects/agreements/public_pdf/?token=${encodeURIComponent(
+        token
+      )}&stream=1&v=${pdfVersion}`
+    : null;
 
   const handleSigned = (updated) => {
-    // Update agreement state with the server response
     setAgreement(updated);
-    // Bump version so the iframe URL changes and browser reloads the PDF
-    setPdfVersion((prev) => prev + 1);
+    setPdfVersion((v) => v + 1);
+    setIsSignOpen(false);
   };
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-50 flex flex-col">
-      <header className="px-5 py-3 border-b border-white/10 flex items-center justify-between bg-slate-950">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-400 via-blue-500 to-indigo-600" />
-          <div>
-            <div className="text-xs uppercase tracking-wide text-slate-400">
-              MyHomeBro — Homeowner Signature
-            </div>
-            <div className="text-sm font-semibold truncate max-w-xs">
-              {agreement?.project_title ||
-                agreement?.title ||
-                (loading ? "Loading agreement…" : "Sign Agreement")}
-            </div>
+      <header className="px-5 py-3 border-b border-white/10 flex items-center bg-slate-950">
+        <div>
+          <div className="text-xs uppercase tracking-wide text-slate-400">
+            MyHomeBro
+          </div>
+          <div className="text-sm font-semibold truncate max-w-xs">
+            {agreement?.project_title ||
+              agreement?.title ||
+              (loading ? "Loading…" : "Agreement")}
           </div>
         </div>
       </header>
 
       <main className="flex-1 grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr]">
-        {/* Left: PDF preview / status */}
+        {/* PDF */}
         <section className="border-b lg:border-b-0 lg:border-r border-white/10 bg-slate-950">
           {loading ? (
             <div className="h-full flex items-center justify-center text-sm text-slate-300">
@@ -100,23 +103,23 @@ export default function PublicSign() {
             </div>
           ) : pdfUrl ? (
             <iframe
-              key={pdfUrl} // ensure React remounts iframe when URL changes
+              key={pdfUrl}
               title="Agreement PDF"
               src={pdfUrl}
               className="w-full h-full border-none"
             />
           ) : (
             <div className="h-full flex items-center justify-center text-sm text-slate-300">
-              PDF preview not available.
+              PDF not available.
             </div>
           )}
         </section>
 
-        {/* Right: instructions + sign button */}
+        {/* Side panel */}
         <section className="bg-slate-900 px-6 py-5 flex flex-col gap-4">
           {loading ? (
             <div className="text-sm text-slate-300">
-              Please wait while we prepare your agreement…
+              Preparing agreement…
             </div>
           ) : error ? (
             <div className="text-sm text-red-200">{error}</div>
@@ -128,12 +131,12 @@ export default function PublicSign() {
             <>
               <div>
                 <h1 className="text-lg font-semibold mb-1">
-                  Review &amp; Sign Agreement
+                  {viewOnly ? "Signed Agreement" : "Review & Sign Agreement"}
                 </h1>
                 <p className="text-sm text-slate-300">
-                  Please review the agreement on the left. When you are ready,
-                  click <b>Open Signing Panel</b> to type your name and
-                  optionally sign with your finger or mouse.
+                  {viewOnly
+                    ? "This agreement has already been signed. You may view or download the final PDF for your records."
+                    : "Please review the agreement on the left. When ready, click Open Signing Panel to sign."}
                 </p>
               </div>
 
@@ -163,60 +166,44 @@ export default function PublicSign() {
                 </div>
               </div>
 
-              {agreement.is_fully_signed ? (
-                <div className="mt-2 text-sm text-emerald-300">
-                  This agreement is already fully signed. You may download the
-                  PDF from the preview panel on the left.
+              {viewOnly ? (
+                <div className="mt-3 text-sm text-emerald-300">
+                  No further action is required.
                 </div>
               ) : (
-                <>
-                  <div className="mt-2 text-xs text-slate-300">
-                    You will be able to:
-                    <ul className="list-disc list-inside mt-1 space-y-1">
-                      <li>Consent to electronic records &amp; signatures.</li>
-                      <li>
-                        Review the Terms of Service and Privacy Policy before
-                        signing.
-                      </li>
-                      <li>
-                        Type your full name and optionally draw or upload a
-                        signature image.
-                      </li>
-                    </ul>
-                  </div>
-
-                  <div className="mt-auto pt-2 flex items-center justify-start gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setIsSignOpen(true)}
-                      className="px-4 py-2 rounded-md bg-sky-500 hover:bg-sky-400 text-slate-950 text-sm font-semibold"
-                    >
-                      Open Signing Panel
-                    </button>
-                  </div>
-                </>
+                <div className="mt-auto pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsSignOpen(true)}
+                    className="px-4 py-2 rounded-md bg-sky-500 hover:bg-sky-400 text-slate-950 text-sm font-semibold"
+                  >
+                    Open Signing Panel
+                  </button>
+                </div>
               )}
             </>
           )}
         </section>
       </main>
 
-      {/* Shared Signature Modal */}
-      <SignatureModal
-        isOpen={isSignOpen}
-        onClose={() => setIsSignOpen(false)}
-        agreement={
-          agreement || {
-            id: null,
-            title: "Agreement",
-            project_title: "Agreement",
+      {/* Signature modal (disabled in view-only mode) */}
+      {!viewOnly && (
+        <SignatureModal
+          isOpen={isSignOpen}
+          onClose={() => setIsSignOpen(false)}
+          agreement={
+            agreement || {
+              id: null,
+              title: "Agreement",
+              project_title: "Agreement",
+            }
           }
-        }
-        signingRole="homeowner"
-        token={token}
-        defaultName={agreement?.homeowner_name || ""}
-        onSigned={handleSigned}
-      />
+          signingRole="homeowner"
+          token={token}
+          defaultName={agreement?.homeowner_name || ""}
+          onSigned={handleSigned}
+        />
+      )}
     </div>
   );
 }

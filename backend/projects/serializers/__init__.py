@@ -11,6 +11,8 @@ Hardened version:
 
 from django.apps import apps
 from rest_framework import serializers
+from .invoices import InvoiceSerializer
+
 
 
 def _model(app_label: str, name: str):
@@ -78,10 +80,7 @@ except Exception:
 
 
 # ---------------- Invoices / Expenses --------------------- #
-try:
-    from .invoice import InvoiceSerializer  # type: ignore
-except Exception:
-    InvoiceSerializer = _mk_model_or_plain_serializer("InvoiceSerializer", Invoice)
+
 
 try:
     from .expense import ExpenseSerializer  # type: ignore

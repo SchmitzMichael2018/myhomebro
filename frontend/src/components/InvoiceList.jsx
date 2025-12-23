@@ -1,177 +1,418 @@
-// src/components/InvoiceList.jsx
-
-import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { Link } from "react-router-dom";
-import api from "../api";
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { FaChevronDown, FaChevronUp } from 'react-icons/fa';
-import { HiOutlineDownload } from 'react-icons/hi';
+import api from "../api";
+import { useAuth } from "../context/AuthContext";
 
-const InvoiceRow = ({ invoice, statusStyles }) => {
-  const amount = parseFloat(invoice.amount || 0).toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-  });
+// InvoiceList.jsx
+// v2025-12-18-send-button-failsafe
+// - Show Send/Resend if user is contractor OR token exists (backend still enforces permissions)
+// - View goes to /app/invoices/:id
 
-  const status = invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1);
+const money = (amount) =>
+  Number(amount || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-  const handlePDFDownload = async (e) => {
-    e.stopPropagation(); // prevent row navigation
-    try {
-      const response = await api.get(`/invoices/${invoice.id}/pdf/`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `invoice_${invoice.invoice_number}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    } catch {
-      toast.error("Failed to download invoice PDF.");
-    }
+function statusLabel(status) {
+  const s = String(status || "");
+  if (!s) return "—";
+  return s.replaceAll("_", " ").replace(/^\w/, (c) => c.toUpperCase());
+}
+
+function statusPillClasses(status) {
+  const s = String(status || "").toLowerCase();
+  if (s.includes("paid") || s.includes("released")) return "bg-green-100 text-green-800";
+  if (s.includes("approved")) return "bg-blue-100 text-blue-800";
+  if (s.includes("dispute")) return "bg-red-100 text-red-800";
+  if (s.includes("pending")) return "bg-yellow-100 text-yellow-800";
+  return "bg-gray-100 text-gray-800";
+}
+
+function getUserType(user) {
+  const t =
+    user?.type ??
+    user?.role ??
+    user?.user?.type ??
+    user?.user?.role ??
+    user?.profile?.type ??
+    user?.profile?.role ??
+    "";
+  return String(t || "").toLowerCase();
+}
+
+function tokenPresent() {
+  try {
+    // support common names
+    const t =
+      localStorage.getItem("access") ||
+      localStorage.getItem("access_token") ||
+      localStorage.getItem("token") ||
+      "";
+    return Boolean(t);
+  } catch {
+    return false;
+  }
+}
+
+function normalizeInvoice(inv) {
+  const agreementId =
+    inv?.agreement?.id ??
+    inv?.agreement_id ??
+    inv?.agreementId ??
+    (typeof inv?.agreement === "number" ? inv.agreement : null) ??
+    null;
+
+  const agreementNumber =
+    inv?.agreement?.agreement_number ??
+    inv?.agreement?.number ??
+    inv?.agreement_number ??
+    inv?.agreementNumber ??
+    (agreementId != null ? String(agreementId) : "—");
+
+  const agreementTitle =
+    inv?.agreement?.project_title ??
+    inv?.agreement?.title ??
+    inv?.agreement_title ??
+    inv?.project_title ??
+    inv?.projectTitle ??
+    "Untitled Agreement";
+
+  const homeownerName =
+    inv?.homeowner_name ??
+    inv?.homeowner?.name ??
+    inv?.customer_name ??
+    inv?.customer?.name ??
+    inv?.agreement?.homeowner_name ??
+    inv?.agreement?.homeowner?.name ??
+    "Unknown Customer";
+
+  const id = inv?.id ?? inv?.pk ?? inv?.invoice_id ?? null;
+  const invoiceNumber = inv?.invoice_number ?? inv?.number ?? (id != null ? `INV-${id}` : "INV-—");
+  const amount = Number(inv?.amount ?? inv?.amount_due ?? inv?.total ?? inv?.total_amount ?? 0) || 0;
+  const status = inv?.status_label ?? inv?.status ?? "pending";
+
+  const milestoneId =
+    inv?.milestone_id ??
+    inv?.milestone?.id ??
+    inv?.milestoneId ??
+    (typeof inv?.milestone === "number" ? inv.milestone : null) ??
+    null;
+
+  const milestoneName =
+    inv?.milestone_title ??
+    inv?.milestone?.title ??
+    inv?.milestone?.name ??
+    inv?.milestoneName ??
+    inv?.title ??
+    "Milestone";
+
+  const milestoneDescription =
+    inv?.milestone_description ??
+    inv?.milestone?.description ??
+    inv?.milestone?.notes ??
+    inv?.notes ??
+    inv?.description ??
+    "";
+
+  const emailSentAt = inv?.email_sent_at ?? inv?.emailed_at ?? inv?.sent_at ?? inv?.last_sent_at ?? null;
+
+  return {
+    raw: inv,
+    id,
+    invoiceNumber,
+    amount,
+    status,
+    agreementId,
+    agreementNumber,
+    agreementTitle,
+    homeownerName,
+    milestoneId,
+    milestoneName,
+    milestoneDescription,
+    emailSentAt,
   };
+}
 
-  return (
-    <div className="bg-white shadow-sm rounded-lg p-4 flex justify-between items-center hover:bg-gray-50 transition-colors">
-      <Link
-        to={`/invoices/${invoice.id}`}
-        aria-label={`Invoice ${invoice.invoice_number} for ${invoice.homeowner_name}`}
-        className="flex-1"
-      >
-        <div>
-          <div className="font-semibold text-gray-800">{invoice.invoice_number}</div>
-          <div className="text-sm text-gray-600">For Homeowner: {invoice.homeowner_name}</div>
-        </div>
-      </Link>
-      <div className="text-right flex items-center space-x-3">
-        <div className="font-semibold text-lg text-gray-900">{amount}</div>
-        <span className={`px-3 py-1 text-xs font-medium rounded-full ${statusStyles[invoice.status] || "bg-gray-200 text-gray-800"}`}>
-          {status}
-        </span>
-        <button
-          onClick={handlePDFDownload}
-          title="Download PDF"
-          className="text-blue-600 hover:text-blue-800"
-        >
-          <HiOutlineDownload size={18} />
-        </button>
-      </div>
-    </div>
-  );
-};
+export default function InvoiceList({ initialData = [], loadingOverride = false, onRefresh = null }) {
+  const navigate = useNavigate();
+  const { user } = useAuth();
 
-export default function InvoiceList() {
-  const [invoices, setInvoices] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
+  const [query, setQuery] = useState("");
   const [openGroups, setOpenGroups] = useState({});
+  const [sendingIds, setSendingIds] = useState({});
 
-  const fetchInvoices = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data } = await api.get("/invoices/");
-      setInvoices(data);
-      const initialOpenState = data.reduce((acc, inv) => {
-        acc[inv.agreement] = true;
-        return acc;
-      }, {});
-      setOpenGroups(initialOpenState);
-    } catch (err) {
-      setError("Failed to load invoices.");
-      toast.error("Could not load invoices.");
-    } finally {
-      setLoading(false);
+  const uType = useMemo(() => getUserType(user), [user]);
+  const hasToken = useMemo(() => tokenPresent(), []);
+  const canSend = useMemo(() => uType.includes("contractor") || hasToken, [uType, hasToken]);
+
+  const normalized = useMemo(() => {
+    const list = Array.isArray(initialData) ? initialData : [];
+    return list.map(normalizeInvoice).filter((x) => x.id != null);
+  }, [initialData]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return normalized;
+    return normalized.filter((x) => {
+      return (
+        String(x.invoiceNumber).toLowerCase().includes(q) ||
+        String(x.agreementTitle).toLowerCase().includes(q) ||
+        String(x.agreementNumber).toLowerCase().includes(q) ||
+        String(x.homeownerName).toLowerCase().includes(q) ||
+        String(x.milestoneId ?? "").toLowerCase().includes(q) ||
+        String(x.milestoneName).toLowerCase().includes(q) ||
+        String(x.milestoneDescription || "").toLowerCase().includes(q) ||
+        String(x.status || "").toLowerCase().includes(q)
+      );
+    });
+  }, [normalized, query]);
+
+  const groups = useMemo(() => {
+    const map = new Map();
+
+    for (const item of filtered) {
+      const key =
+        item.agreementId != null
+          ? `agreement:${item.agreementId}`
+          : `agreement:${item.agreementNumber}:${item.agreementTitle}`;
+
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          agreementId: item.agreementId,
+          agreementNumber: item.agreementNumber,
+          agreementTitle: item.agreementTitle,
+          homeownerName: item.homeownerName,
+          totalAmount: 0,
+          items: [],
+        });
+      }
+
+      const g = map.get(key);
+      g.items.push(item);
+      g.totalAmount += item.amount;
     }
-  }, []);
+
+    const arr = Array.from(map.values());
+    arr.sort((a, b) => {
+      const aId = Number(a.agreementId);
+      const bId = Number(b.agreementId);
+      if (!Number.isNaN(aId) && !Number.isNaN(bId)) return bId - aId;
+      return `${a.homeownerName} ${a.agreementTitle}`.localeCompare(`${b.homeownerName} ${b.agreementTitle}`);
+    });
+
+    for (const g of arr) {
+      g.items.sort((a, b) => String(a.invoiceNumber).localeCompare(String(b.invoiceNumber)));
+    }
+
+    return arr;
+  }, [filtered]);
 
   useEffect(() => {
-    fetchInvoices();
-  }, [fetchInvoices]);
+    if (groups.length === 1) setOpenGroups((prev) => ({ ...prev, [groups[0].key]: true }));
+  }, [groups]);
 
-  const filteredInvoices = useMemo(() => {
-    if (!searchTerm) return invoices;
-    const term = searchTerm.trim().toLowerCase();
-    return invoices.filter(inv =>
-      (inv.project_title || "").toLowerCase().includes(term) ||
-      (inv.homeowner_name || "").toLowerCase().includes(term) ||
-      (inv.invoice_number || "").toLowerCase().includes(term)
-    );
-  }, [invoices, searchTerm]);
+  function toggleGroup(key) {
+    setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
 
-  const groupedInvoices = useMemo(() => {
-    return filteredInvoices.reduce((acc, inv) => {
-      const key = inv.agreement;
-      if (!acc[key]) {
-        acc[key] = { agreementId: key, projectTitle: inv.project_title, items: [] };
-      }
-      acc[key].items.push(inv);
-      return acc;
-    }, {});
-  }, [filteredInvoices]);
+  async function handleRefresh() {
+    if (!onRefresh) {
+      toast("Refresh isn’t wired on this page yet.");
+      return;
+    }
+    try {
+      await onRefresh();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to refresh invoices.");
+    }
+  }
 
-  const statusStyles = {
-    pending: "bg-yellow-100 text-yellow-800",
-    approved: "bg-blue-100 text-blue-800",
-    disputed: "bg-red-100 text-red-800",
-    paid: "bg-green-100 text-green-800",
-    incomplete: "bg-gray-100 text-gray-800",
-  };
+  function handleView(invoiceId) {
+    navigate(`/app/invoices/${invoiceId}`);
+  }
 
-  const toggleGroup = (agreementId) => {
-    setOpenGroups(prev => ({ ...prev, [agreementId]: !prev[agreementId] }));
-  };
+  function handleViewMilestone(milestoneId) {
+    navigate(`/milestones/${milestoneId}`);
+  }
 
-  if (loading) {
-    return <div className="p-6 text-center text-gray-500">Loading invoices...</div>;
+  async function handleSendOrResend(item) {
+    const invoiceId = item.id;
+    const isResend = Boolean(item.emailSentAt);
+
+    setSendingIds((prev) => ({ ...prev, [invoiceId]: true }));
+    try {
+      const endpoint = isResend
+        ? `/projects/invoices/${invoiceId}/resend/`
+        : `/projects/invoices/${invoiceId}/submit/`;
+
+      await api.post(endpoint);
+      toast.success(isResend ? "Invoice email resent." : "Invoice email sent.");
+      if (onRefresh) await onRefresh();
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || err?.response?.data?.error || "Failed to send invoice email.");
+    } finally {
+      setSendingIds((prev) => ({ ...prev, [invoiceId]: false }));
+    }
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Invoices</h1>
-        <div className="flex items-center gap-2">
+    <div className="w-full p-4">
+      {/* small debug line (remove later) */}
+      <div className="mb-2 text-xs text-white/80">
+        InvoiceList debug — userType: <b>{uType || "(empty)"}</b> • tokenPresent:{" "}
+        <b>{String(hasToken)}</b> • canSend: <b>{String(canSend)}</b>
+      </div>
+
+      <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="text-2xl font-extrabold text-slate-900">Invoices</div>
+          <div className="text-sm text-slate-600">
+            {loadingOverride ? "Loading…" : `${filtered.length} invoice${filtered.length === 1 ? "" : "s"}`}
+            {query ? " (filtered)" : ""}
+          </div>
+        </div>
+
+        <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
           <input
-            type="text"
-            placeholder="Search by project, customer, or invoice #"
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="border px-4 py-2 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by customer, agreement, milestone, invoice…"
+            className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-slate-300 md:w-[420px]"
           />
           <button
-            onClick={fetchInvoices}
-            className="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded"
+            onClick={handleRefresh}
+            disabled={loadingOverride}
+            className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
           >
             Refresh
           </button>
         </div>
       </div>
 
-      {error && <p className="text-red-500 mb-4 text-center">{error}</p>}
-      {Object.keys(groupedInvoices).length === 0 && !error && (
-        <p className="text-gray-500 text-center py-10">No invoices found.</p>
-      )}
+      {groups.length === 0 ? (
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
+          {loadingOverride ? "Loading invoices…" : "No invoices found."}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {groups.map((g) => {
+            const open = !!openGroups[g.key];
+            return (
+              <div key={g.key} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(g.key)}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                      <div className="text-base font-extrabold text-slate-900">{g.agreementTitle}</div>
+                      <div className="text-xs font-bold text-slate-500">Agreement #{g.agreementNumber}</div>
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
+                      <div>
+                        <span className="font-semibold">Customer:</span> {g.homeownerName}
+                      </div>
+                      <div>
+                        <span className="font-semibold">Total:</span> {money(g.totalAmount)}
+                      </div>
+                      <div>
+                        <span className="font-semibold">Count:</span> {g.items.length}
+                      </div>
+                    </div>
+                  </div>
 
-      <div className="space-y-6">
-        {Object.values(groupedInvoices).map(group => (
-          <div key={group.agreementId} className="bg-gray-50 rounded-lg p-4">
-            <button
-              onClick={() => toggleGroup(group.agreementId)}
-              className="w-full flex justify-between items-center text-left text-xl font-semibold mb-2"
-            >
-              <span>{group.projectTitle}</span>
-              {openGroups[group.agreementId] ? <FaChevronUp /> : <FaChevronDown />}
-            </button>
-            {openGroups[group.agreementId] && (
-              <div className="space-y-3 pl-2 border-l-2 border-blue-200 ml-1">
-                {group.items.map(invoice => (
-                  <InvoiceRow key={invoice.id} invoice={invoice} statusStyles={statusStyles} />
-                ))}
+                  <div className="text-lg font-black text-slate-500">{open ? "▾" : "▸"}</div>
+                </button>
+
+                {open && (
+                  <div className="border-t border-slate-200">
+                    <div className="hidden grid-cols-12 gap-3 bg-slate-50 px-4 py-2 text-xs font-extrabold text-slate-600 md:grid">
+                      <div className="col-span-3">Invoice</div>
+                      <div className="col-span-5">Milestone</div>
+                      <div className="col-span-2">Amount</div>
+                      <div className="col-span-2 text-right">Actions</div>
+                    </div>
+
+                    <div className="divide-y divide-slate-200">
+                      {g.items.map((item) => {
+                        const sending = !!sendingIds[item.id];
+                        const sendLabel = item.emailSentAt ? "Resend" : "Send";
+
+                        return (
+                          <div key={item.id} className="grid grid-cols-1 gap-2 px-4 py-3 md:grid-cols-12 md:gap-3">
+                            <div className="md:col-span-3">
+                              <div className="font-extrabold text-slate-900">{item.invoiceNumber}</div>
+                              <div className="mt-1 text-xs text-slate-600">For Homeowner: {item.homeownerName}</div>
+                              <div className="mt-2 inline-flex rounded-full px-3 py-1 text-xs font-bold">
+                                <span className={`rounded-full px-3 py-1 ${statusPillClasses(item.status)}`}>
+                                  {statusLabel(item.status)}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="min-w-0 md:col-span-5">
+                              <div className="flex items-baseline gap-2">
+                                <span className="text-xs font-extrabold text-slate-500">
+                                  {item.milestoneId != null ? `#${item.milestoneId}` : "#—"}
+                                </span>
+                                <span className="truncate text-sm font-extrabold text-slate-900">
+                                  {item.milestoneName}
+                                </span>
+                                {item.milestoneId != null && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleViewMilestone(item.milestoneId)}
+                                    className="ml-2 text-xs font-extrabold text-blue-700 hover:underline"
+                                  >
+                                    View milestone
+                                  </button>
+                                )}
+                              </div>
+                              <div className="mt-1 line-clamp-2 text-xs text-slate-600">
+                                {item.milestoneDescription || "—"}
+                              </div>
+                            </div>
+
+                            <div className="md:col-span-2">
+                              <div className="text-sm font-extrabold text-slate-900">{money(item.amount)}</div>
+                            </div>
+
+                            <div className="flex items-center gap-2 md:col-span-2 md:justify-end">
+                              <button
+                                type="button"
+                                onClick={() => handleView(item.id)}
+                                className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm font-extrabold text-slate-800 hover:bg-slate-50"
+                              >
+                                View
+                              </button>
+
+                              {/* ✅ Send/Resend visible if canSend */}
+                              {canSend && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleSendOrResend(item)}
+                                  disabled={sending}
+                                  className="h-9 rounded-xl border border-slate-200 bg-slate-900 px-3 text-sm font-extrabold text-white hover:bg-slate-800 disabled:opacity-60"
+                                >
+                                  {sending ? "Sending…" : sendLabel}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        ))}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
