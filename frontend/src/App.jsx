@@ -1,7 +1,9 @@
 // src/App.jsx
-// v2025-12-14 — cleaned invoice routing + no duplicate invoice pages
-// Adds: public invoice magic-link page route
-// Keeps all existing routes intact
+// v2025-12-23 — public invoice magic link routing fixed
+// Key fixes:
+// - /invoice/:token (public)
+// - /invoices/magic/:token (public)
+// - prevents homeowner invoice email links from falling into contractor dashboard routes
 
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
@@ -11,28 +13,26 @@ import { AuthProvider } from "./context/AuthContext";
 import LandingPage from "./components/LandingPage.jsx";
 import LoginModal from "./components/LoginModal.jsx";
 import SignUpModal from "./components/SignUpModal.jsx";
+
 import AgreementReview from "./pages/AgreementReview.jsx";
 import ContractorOnboardingForm from "./components/ContractorOnboardingForm.jsx";
 import StripeOnboarding from "./components/Stripe/StripeOnboarding.jsx";
+
 import ForgotPassword from "./components/ForgotPassword";
 import ResetPassword from "./components/ResetPassword";
 
 import PublicSign from "./components/PublicSign";
 import PublicFund from "./components/PublicFund";
 
-// ✅ PUBLIC INVOICE MAGIC LINK PAGE (KEEP IN PAGES)
 import InvoicePage from "./pages/InvoicePage.jsx";
+import MagicInvoice from "./pages/MagicInvoice.jsx";
+
+import DashboardRouter from "./components/DashboardRouter.jsx";
+import TeamPage from "./pages/TeamPage.jsx";
+import { protectedRoutes } from "./routes/ProtectedRoutes.jsx";
 
 import "./styles/ui.css";
 import "./styles/modal.css";
-
-import { protectedRoutes } from "./routes/ProtectedRoutes.jsx";
-import DashboardRouter from "./components/DashboardRouter.jsx";
-import TeamPage from "./pages/TeamPage.jsx";
-
-console.log(
-  "App.jsx v2025-12-14 — added public invoice page route; cleaned duplicates"
-);
 
 export default function App() {
   return (
@@ -51,18 +51,18 @@ export default function App() {
           {/* PUBLIC FUNDING ROUTE — homeowner funds escrow */}
           <Route path="/public-fund/:token" element={<PublicFund />} />
 
-          {/* PUBLIC INVOICE (magic link) */}
-          <Route path="/invoice/:id" element={<InvoicePage />} />
+          {/* ✅ PUBLIC INVOICE MAGIC LINK ENTRY */}
+          <Route path="/invoice/:token" element={<InvoicePage />} />
+
+          {/* ✅ PUBLIC MAGIC INVOICE PAGE */}
+          <Route path="/invoices/magic/:token" element={<MagicInvoice />} />
 
           {/* Public agreement preview (legacy / read-only) */}
           <Route path="/agreements/:id" element={<AgreementReview />} />
 
           {/* Stripe Connect onboarding */}
           <Route path="/onboarding" element={<StripeOnboarding />} />
-          <Route
-            path="/onboarding/profile"
-            element={<ContractorOnboardingForm />}
-          />
+          <Route path="/onboarding/profile" element={<ContractorOnboardingForm />} />
 
           {/* Contractor dashboard */}
           <Route path="/app" element={<DashboardRouter />} />

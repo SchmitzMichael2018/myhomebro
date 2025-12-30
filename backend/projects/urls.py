@@ -11,7 +11,7 @@ from .views.agreements import (
     agreement_milestones,
     agreement_public_sign,
     agreement_public_pdf,
-    send_final_agreement_link_view,  # ✅ NEW: fallback endpoint
+    send_final_agreement_link_view,
 )
 from .views.invoice import InvoiceViewSet, InvoicePDFView
 from .views.milestone import (
@@ -32,16 +32,16 @@ from .views.agreements_merge import MergeAgreementsView
 from .views.calendar import MilestoneCalendarView, AgreementCalendarView
 from .views.contractors.public import ContractorPublicProfileView
 from .views.notifications import NotificationListView
+
+# ✅ Magic invoice endpoints (public)
 from .views.magic_invoice import (
     MagicInvoiceView,
     MagicInvoiceApproveView,
     MagicInvoiceDisputeView,
 )
-from .views.account import ChangePasswordView
+from .views.magic_invoice_pdf import MagicInvoicePDFView  # ✅ NEW public PDF view
+
 from .views.contractor_me import ContractorMeView
-
-from .views_pdf import preview_signed
-
 from .views.subaccounts import ContractorSubAccountViewSet, WhoAmIView
 
 from .views.funding import (
@@ -52,7 +52,6 @@ from .views.funding import (
     FundingReceiptView,
 )
 
-# NEW – manual amendment endpoint
 from .views.agreements_amend import create_amendment
 
 try:
@@ -63,7 +62,7 @@ except Exception:
 
 app_name = "projects_api"
 
-router = DefaultRouter(trailing_slash='/?')
+router = DefaultRouter(trailing_slash="/?")
 router.register(r"homeowners", HomeownerViewSet, basename="homeowners")
 router.register(r"projects", ProjectViewSet, basename="projects")
 router.register(r"agreements", AgreementViewSet, basename="agreements")
@@ -76,14 +75,14 @@ router.register(r"attachments", AgreementAttachmentViewSet, basename="attachment
 router.register(r"subaccounts", ContractorSubAccountViewSet, basename="subaccounts")
 
 milestone_router = NestedDefaultRouter(
-    router, r"milestones", lookup="milestone", trailing_slash='/?'
+    router, r"milestones", lookup="milestone", trailing_slash="/?"
 )
 milestone_router.register(
     r"comments", MilestoneCommentViewSet, basename="milestone-comments"
 )
 
 agreements_router = NestedDefaultRouter(
-    router, r"agreements", lookup="agreement", trailing_slash='/?'
+    router, r"agreements", lookup="agreement", trailing_slash="/?"
 )
 agreements_router.register(
     r"attachments",
@@ -92,35 +91,31 @@ agreements_router.register(
 )
 
 urlpatterns = [
+    # -----------------------------
     # Function-view endpoints
-    path(
-        "agreements/<int:agreement_id>/pdf/",
-        agreement_pdf,
-        name="agreement-pdf",
-    ),
-    path(
-        "agreements/<int:pk>/milestones/",
-        agreement_milestones,
-        name="agreement-milestones",
-    ),
+    # -----------------------------
+    path("agreements/<int:agreement_id>/pdf/", agreement_pdf, name="agreement-pdf"),
+    path("agreements/<int:pk>/milestones/", agreement_milestones, name="agreement-milestones"),
     path("agreements/public_sign/", agreement_public_sign),
     path("agreements/public_pdf/", agreement_public_pdf),
 
-    # ✅ NEW – Fallback: resend final agreement link (not dependent on router actions)
+    # Fallback: resend final agreement link (not dependent on router actions)
     path(
         "agreements/<int:agreement_id>/send_final_agreement_link/",
         send_final_agreement_link_view,
         name="agreement-send-final-agreement-link",
     ),
 
-    # NEW – Manual amendment endpoint
+    # Manual amendment endpoint
     path(
         "agreements/<int:pk>/create_amendment/",
         create_amendment,
         name="agreement-create-amendment",
     ),
 
+    # -----------------------------
     # Funding endpoints
+    # -----------------------------
     path(
         "agreements/<int:pk>/send_funding_link/",
         SendFundingLinkView.as_view(),
@@ -141,40 +136,40 @@ urlpatterns = [
         CreateFundingPaymentIntentView.as_view(),
         name="funding-create-payment-intent",
     ),
-
     path(
         "funding/receipt/",
         FundingReceiptView.as_view(),
         name="funding-receipt",
     ),
 
+    # -----------------------------
     # Routers
+    # -----------------------------
     path("", include(router.urls)),
     path("", include(milestone_router.urls)),
     path("", include(agreements_router.urls)),
 
+    # -----------------------------
     # Debug
+    # -----------------------------
     *(
         [path("debug/env/", env_debug, name="projects-env-debug")]
         if HAS_DEBUG
         else []
     ),
 
+    # -----------------------------
     # Notifications / profile / calendars
+    # -----------------------------
     path("notifications/", NotificationListView.as_view(), name="notifications"),
     path("contractors/me/", ContractorMeView.as_view(), name="contractor-me"),
-    path(
-        "milestones/calendar/",
-        MilestoneCalendarView.as_view(),
-        name="milestones-calendar",
-    ),
-    path(
-        "agreements/calendar/",
-        AgreementCalendarView.as_view(),
-        name="agreements-calendar",
-    ),
 
-    # Invoice PDF
+    path("milestones/calendar/", MilestoneCalendarView.as_view(), name="milestones-calendar"),
+    path("agreements/calendar/", AgreementCalendarView.as_view(), name="agreements-calendar"),
+
+    # -----------------------------
+    # Invoice PDF (contractor/authenticated legacy)
+    # -----------------------------
     path("invoices/<int:pk>/pdf/", InvoicePDFView.as_view(), name="invoice-pdf"),
 
     # Public contractor profile
@@ -184,26 +179,31 @@ urlpatterns = [
         name="contractor-public-profile",
     ),
 
-    # Magic invoice links
+    # Agreements merge
+    path("agreements/merge/", MergeAgreementsView.as_view(), name="agreements-merge"),
+
+    # -----------------------------
+    # ✅ Magic invoice links (PUBLIC, token-in-path, UUID)
+    # -----------------------------
     path(
-        "agreements/merge/",
-        MergeAgreementsView.as_view(),
-        name="agreements-merge",
-    ),
-    path(
-        "invoices/magic/<int:pk>/",
+        "invoices/magic/<uuid:token>/",
         MagicInvoiceView.as_view(),
         name="magic-invoice-detail",
     ),
     path(
-        "invoices/magic/<int:pk>/approve/",
+        "invoices/magic/<uuid:token>/approve/",
         MagicInvoiceApproveView.as_view(),
         name="magic-invoice-approve",
     ),
     path(
-        "invoices/magic/<int:pk>/dispute/",
+        "invoices/magic/<uuid:token>/dispute/",
         MagicInvoiceDisputeView.as_view(),
         name="magic-invoice-dispute",
+    ),
+    path(
+        "invoices/magic/<uuid:token>/pdf/",
+        MagicInvoicePDFView.as_view(),
+        name="magic-invoice-pdf",
     ),
 
     # whoami

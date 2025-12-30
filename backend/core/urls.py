@@ -115,7 +115,6 @@ urlpatterns = [
     path("api/payments/",  include(("payments.urls", "payments"), namespace="payments")),
 
     # Stripe
-    path("stripe/webhook/", stripe_webhook, name="stripe-webhook"),
     path("stripe/return/",  stripe_return,  name="stripe-return"),
     path("stripe/ok",       stripe_ok,      name="stripe-ok"),
 

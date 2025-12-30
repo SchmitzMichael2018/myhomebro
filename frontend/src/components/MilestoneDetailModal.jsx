@@ -1,7 +1,8 @@
 // src/components/MilestoneDetailModal.jsx
-// v2025-12-14-submit-lock+notes+evidence
-// - Completion button calls parent onSubmit({id, notes, files})
+// v2025-12-29 — Enable Complete → Review for FUNDED agreements
+// - Treats agreement status "funded" (and "in_progress") as eligible completion states
 // - Keeps draft-only edit/file upload behavior
+// - Completion button calls parent onSubmit({id, notes, files})
 
 import React, { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
@@ -11,9 +12,13 @@ const pick = (...vals) => vals.find((v) => v !== undefined && v !== null && v !=
 
 /* Agreement helpers */
 const getAgreementFrom = (m) => m.agreement || m._ag || null;
-const getAgreementStatus = (a) => (pick(a?.status, a?.agreement_status, a?.signature_status) || "").toLowerCase();
+const getAgreementStatus = (a) => (pick(a?.status, a?.agreement_status, a?.signature_status, a?.state) || "").toLowerCase();
 const isAgreementDraft = (a) => getAgreementStatus(a) === "draft";
-const isAgreementSigned = (a) => ["signed", "executed", "active", "approved"].includes(getAgreementStatus(a));
+
+// ✅ FIX: include funded/in_progress as post-sign states eligible for completion
+const isAgreementSigned = (a) =>
+  ["signed", "executed", "active", "approved", "funded", "in_progress"].includes(getAgreementStatus(a));
+
 const isEscrowFunded = (a) => !!pick(a?.escrow_funded, a?.escrowFunded);
 
 const toISO = (v) => {

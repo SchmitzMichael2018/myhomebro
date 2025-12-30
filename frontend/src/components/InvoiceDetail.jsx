@@ -60,7 +60,9 @@ export default function InvoiceDetail() {
     fetchInvoice();
   }, [fetchInvoice]);
 
-  const status = String(invoice?.status || "").toLowerCase();
+  // ✅ FIX: use display_status if provided; fallback to status
+  const rawStatus = String(invoice?.display_status || invoice?.status || "");
+  const statusKey = rawStatus.toLowerCase();
 
   const agreementId =
     invoice?.agreement_id ??
@@ -168,10 +170,10 @@ export default function InvoiceDetail() {
               <h3 className="font-semibold text-gray-600">Status</h3>
               <span
                 className={`inline-block rounded-full px-3 py-1 text-sm font-medium ${
-                  statusStyles[status] || "bg-gray-100 text-gray-700"
+                  statusStyles[statusKey] || "bg-gray-100 text-gray-700"
                 }`}
               >
-                {status.replace("_", " ").replace(/^\w/, (c) => c.toUpperCase())}
+                {rawStatus || "—"}
               </span>
             </div>
           </div>
@@ -215,8 +217,6 @@ export default function InvoiceDetail() {
             <SendInvoiceButton
               invoice={invoice}
               onUpdated={(updated) => setInvoice(updated)}
-              // Keep default pending-only behavior; set forceEnable if you want resend anytime:
-              // forceEnable={true}
             />
           </div>
         </div>

@@ -1,4 +1,6 @@
 // src/routes/ProtectedRoutes.jsx
+// v2025-12-23 — protected routes only; public invoice links must never land here
+
 import React from "react";
 import { Route, Navigate } from "react-router-dom";
 
@@ -37,6 +39,8 @@ import Disputes from "../pages/DisputesPages.jsx";
 
 /**
  * Protected application routes (requires auth)
+ * NOTE: Public magic links like /invoice/:token and /invoices/magic/:token
+ * must be defined in PublicRoutes/App.jsx and must NOT be routed through RequireAuth.
  */
 export function protectedRoutes() {
   return (
@@ -59,9 +63,9 @@ export function protectedRoutes() {
         <Route path="/milestones" element={<MilestoneList />} />
         <Route path="/milestones/:id" element={<MilestoneDetail />} />
 
-        {/* Contractor list */}
+        {/* Contractor invoice list */}
         <Route path="/invoices" element={<Invoices />} />
-        {/* ✅ Contractor detail lives under /app/invoices/:id to avoid collision with public /invoices/:id */}
+        {/* Contractor invoice detail lives under /app/invoices/:id to avoid collision with public /invoices/magic/:token */}
         <Route path="/app/invoices/:id" element={<InvoiceDetail />} />
 
         <Route path="/customers" element={<Customers />} />
@@ -76,6 +80,7 @@ export function protectedRoutes() {
         <Route path="/profile" element={<ContractorProfile />} />
         <Route path="/onboarding" element={<StripeOnboarding />} />
 
+        {/* Catch-all inside protected area */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>
     </>

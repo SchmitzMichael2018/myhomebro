@@ -1,8 +1,8 @@
 # backend/projects/views/invoice.py
+# v2025-12-24 — email buttons: Approve/Dispute + PDF only (no "View Invoice Details")
 
 import logging
 import os
-from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse, FileResponse
 from django.conf import settings
@@ -10,7 +10,7 @@ from django.utils import timezone
 
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.exceptions import PermissionDenied
@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 def _frontend_base() -> str:
     return getattr(settings, "FRONTEND_BASE_URL", "https://www.myhomebro.com").rstrip("/")
+
+
+def _api_base() -> str:
+    return getattr(settings, "API_BASE_URL", _frontend_base()).rstrip("/")
 
 
 def _get_homeowner(invoice: Invoice):
@@ -51,16 +55,27 @@ def _get_homeowner_name(invoice: Invoice) -> str:
     return getattr(invoice, "homeowner_name", None) or "Homeowner"
 
 
-def _build_magic_invoice_url(invoice: Invoice, action: str | None = None) -> str:
+def _magic_token(invoice: Invoice) -> str:
+    return str(getattr(invoice, "public_token", "") or "")
+
+
+def _build_magic_invoice_action_url(invoice: Invoice, action: str) -> str:
     """
-    Homeowner-facing invoice page (public + token).
+    Points to the FRONTEND /invoice/<token>?action=approve|dispute
+    This is public and should be handled by InvoicePage.jsx → MagicInvoice.jsx.
     """
     base = _frontend_base()
-    token = str(getattr(getattr(invoice, "agreement", None), "homeowner_access_token", "") or "")
-    url = f"{base}/invoices/magic/{invoice.id}?token={token}"
-    if action:
-        url += f"&action={action}"
-    return url
+    tok = _magic_token(invoice)
+    return f"{base}/invoice/{tok}?action={action}"
+
+
+def _build_magic_invoice_pdf_url(invoice: Invoice) -> str:
+    """
+    Public PDF endpoint (no auth).
+    """
+    base = _api_base()
+    tok = _magic_token(invoice)
+    return f"{base}/api/projects/invoices/magic/{tok}/pdf/"
 
 
 def _safe_text(value: str) -> str:
@@ -100,10 +115,6 @@ def _render_attachments_html(attachments) -> str:
 
 
 def _fallback_notes_and_attachments(invoice: Invoice) -> tuple[str, list[dict]]:
-    """
-    Fallback for older invoices: pull from linked milestone if available:
-      invoice.source_milestone (Milestone.invoice related_name="source_milestone")
-    """
     m = getattr(invoice, "source_milestone", None)
     if not m:
         return "", []
@@ -140,13 +151,11 @@ def _fallback_notes_and_attachments(invoice: Invoice) -> tuple[str, list[dict]]:
 
 
 def _invoice_notes_and_attachments(invoice: Invoice) -> tuple[str, list[dict]]:
-    # Snapshot-first
     notes = (getattr(invoice, "milestone_completion_notes", "") or "").strip()
     atts = getattr(invoice, "milestone_attachments_snapshot", None)
     if not isinstance(atts, list):
         atts = []
 
-    # Fallback if missing
     if not notes or not atts:
         fb_notes, fb_atts = _fallback_notes_and_attachments(invoice)
         if not notes and fb_notes:
@@ -158,9 +167,6 @@ def _invoice_notes_and_attachments(invoice: Invoice) -> tuple[str, list[dict]]:
 
 
 def _send_invoice_email_postmark(invoice: Invoice) -> dict:
-    """
-    Sends homeowner invoice email with completion notes + attachments, and real approve/dispute intent links.
-    """
     token = getattr(settings, "POSTMARK_SERVER_TOKEN", None)
     if not token:
         raise RuntimeError("POSTMARK_SERVER_TOKEN is missing from settings/environment.")
@@ -185,9 +191,9 @@ def _send_invoice_email_postmark(invoice: Invoice) -> dict:
 
     notes, atts = _invoice_notes_and_attachments(invoice)
 
-    view_url = _build_magic_invoice_url(invoice)
-    approve_url = _build_magic_invoice_url(invoice, action="approve")
-    dispute_url = _build_magic_invoice_url(invoice, action="dispute")
+    approve_url = _build_magic_invoice_action_url(invoice, action="approve")
+    dispute_url = _build_magic_invoice_action_url(invoice, action="dispute")
+    pdf_url = _build_magic_invoice_pdf_url(invoice)
 
     subject = f"MyHomeBro Invoice #{inv_number} – {project_title}"
     milestone_line = f"#{ms_id} — {ms_title}" if ms_id else ms_title
@@ -232,9 +238,9 @@ def _send_invoice_email_postmark(invoice: Invoice) -> dict:
       </div>
 
       <div style="margin:0 0 14px;">
-        <a href="{view_url}"
-           style="display:inline-block;padding:10px 14px;border-radius:12px;text-decoration:none;background:#1D4ED8;color:#fff;font-weight:800;">
-          View Invoice Details
+        <a href="{pdf_url}"
+           style="display:inline-block;padding:10px 14px;border-radius:12px;text-decoration:none;background:#111827;color:#fff;font-weight:800;">
+          View Invoice PDF
         </a>
       </div>
 
@@ -364,69 +370,3 @@ class InvoicePDFView(APIView):
             return Response({"detail": "File not found."}, status=status.HTTP_404_NOT_FOUND)
 
         return FileResponse(open(file_path, "rb"), as_attachment=True, filename=os.path.basename(file_path))
-
-
-class MagicInvoiceView(APIView):
-    permission_classes = [AllowAny]
-
-    def get(self, request, pk=None):
-        token = request.query_params.get("token")
-        if not token:
-            return Response({"detail": "An access token is required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        invoice = get_object_or_404(Invoice, pk=pk)
-        if str(invoice.agreement.homeowner_access_token) != token:
-            raise PermissionDenied("Invalid or expired access token.")
-        return Response(InvoiceSerializer(invoice, context={"request": request}).data)
-
-
-class MagicInvoiceApproveView(APIView):
-    permission_classes = [AllowAny]
-
-    def patch(self, request, pk=None):
-        token = request.query_params.get("token")
-        invoice = get_object_or_404(Invoice, pk=pk)
-
-        if str(invoice.agreement.homeowner_access_token) != token:
-            raise PermissionDenied("Invalid or expired access token.")
-
-        if invoice.status != InvoiceStatus.PENDING:
-            return Response({"detail": f"Only invoices with status '{InvoiceStatus.PENDING.label}' can be approved."}, status=status.HTTP_400_BAD_REQUEST)
-
-        with transaction.atomic():
-            invoice.status = InvoiceStatus.APPROVED
-            invoice.approved_at = timezone.now()
-            invoice.save(update_fields=["status", "approved_at"])
-
-        return Response(InvoiceSerializer(invoice, context={"request": request}).data)
-
-
-class MagicInvoiceDisputeView(APIView):
-    authentication_classes = []
-    permission_classes = []
-
-    def patch(self, request, pk=None):
-        token = request.query_params.get("token")
-        if not token:
-            return Response({"detail": "An access token is required in the query parameters."}, status=status.HTTP_400_BAD_REQUEST)
-
-        invoice = get_object_or_404(Invoice, pk=pk)
-
-        if str(invoice.agreement.homeowner_access_token) != token:
-            raise PermissionDenied("Invalid or expired access token.")
-
-        if invoice.status != InvoiceStatus.PENDING:
-            return Response({"detail": f"Only invoices with status '{InvoiceStatus.PENDING.label}' can be disputed."}, status=status.HTTP_400_BAD_REQUEST)
-
-        dispute_reason = request.data.get("reason", "No reason provided.")
-        description = request.data.get("description", "")
-        full_reason = dispute_reason if not description else f"{dispute_reason}\n\n{description}"
-
-        with transaction.atomic():
-            invoice.status = InvoiceStatus.DISPUTED
-            invoice.disputed_at = timezone.now()
-            invoice.dispute_by = "homeowner"
-            invoice.dispute_reason = full_reason
-            invoice.save(update_fields=["status", "disputed_at", "dispute_by", "dispute_reason"])
-
-        return Response(InvoiceSerializer(invoice, context={"request": request}).data)

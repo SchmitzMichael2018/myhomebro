@@ -8,6 +8,7 @@ import { useAuth } from "../context/AuthContext";
 // v2025-12-18-send-button-failsafe
 // - Show Send/Resend if user is contractor OR token exists (backend still enforces permissions)
 // - View goes to /app/invoices/:id
+// v2025-12-30 — FIX: prefer display_status over status so escrow-paid invoices show Paid
 
 const money = (amount) =>
   Number(amount || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -41,7 +42,6 @@ function getUserType(user) {
 
 function tokenPresent() {
   try {
-    // support common names
     const t =
       localStorage.getItem("access") ||
       localStorage.getItem("access_token") ||
@@ -88,7 +88,9 @@ function normalizeInvoice(inv) {
   const id = inv?.id ?? inv?.pk ?? inv?.invoice_id ?? null;
   const invoiceNumber = inv?.invoice_number ?? inv?.number ?? (id != null ? `INV-${id}` : "INV-—");
   const amount = Number(inv?.amount ?? inv?.amount_due ?? inv?.total ?? inv?.total_amount ?? 0) || 0;
-  const status = inv?.status_label ?? inv?.status ?? "pending";
+
+  // ✅ FIX: prefer display_status for escrow-paid invoices
+  const status = inv?.display_status ?? inv?.status_label ?? inv?.status ?? "pending";
 
   const milestoneId =
     inv?.milestone_id ??
@@ -259,7 +261,6 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
 
   return (
     <div className="w-full p-4">
-      {/* small debug line (remove later) */}
       <div className="mb-2 text-xs text-white/80">
         InvoiceList debug — userType: <b>{uType || "(empty)"}</b> • tokenPresent:{" "}
         <b>{String(hasToken)}</b> • canSend: <b>{String(canSend)}</b>
@@ -389,7 +390,6 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
                                 View
                               </button>
 
-                              {/* ✅ Send/Resend visible if canSend */}
                               {canSend && (
                                 <button
                                   type="button"

@@ -1,4 +1,17 @@
-# ~/backend/backend/payments/views.py
+# backend/backend/payments/views/onboarding.py
+# v2025-12-30d — Stripe onboarding: keep ConnectedAccount + Contractor in sync
+#
+# Fixes:
+# - Restores OnboardingLoginLink (imports expected by payments/views/__init__.py)
+# - Ensures Contractor.stripe_account_id is saved/updated from ConnectedAccount
+# - Syncs charges_enabled/payouts_enabled/details_submitted to Contractor flags
+#
+# Endpoints typically wired in payments/urls.py:
+#   GET  /api/payments/onboarding/status/
+#   POST /api/payments/onboarding/start/
+#   POST /api/payments/onboarding/manage/
+#   POST /api/payments/onboarding/login_link/   (or similar)  <-- restored
+
 from __future__ import annotations
 
 from typing import Optional, Tuple
@@ -21,10 +34,7 @@ except Exception:  # pragma: no cover
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 def _stripe_enabled() -> bool:
-    return bool(
-        getattr(settings, "STRIPE_ENABLED", False)
-        and getattr(settings, "STRIPE_SECRET_KEY", None)
-    )
+    return bool(getattr(settings, "STRIPE_ENABLED", False) and getattr(settings, "STRIPE_SECRET_KEY", None))
 
 
 def _maybe_init_stripe() -> None:
@@ -39,7 +49,6 @@ def _get_site_urls() -> Tuple[str, str]:
 
 
 def _get_user_and_profile(request) -> tuple:
-    """Return (user, ConnectedAccount) — create profile if missing."""
     user = request.user
     profile, _ = ConnectedAccount.objects.get_or_create(user=user)
     return user, profile
@@ -52,6 +61,48 @@ def _sync_flags_from_stripe(profile: ConnectedAccount, acct: Optional[dict]) -> 
     payouts = bool(acct.get("payouts_enabled"))
     submitted = bool(acct.get("details_submitted"))
     profile.set_flags(charges=charges, payouts=payouts, submitted=submitted)
+
+
+def _sync_contractor_from_connected_account(user, acct_id: Optional[str], acct: Optional[dict]) -> None:
+    """
+    Keep projects.Contractor aligned with payments.ConnectedAccount.
+    Required for escrow releases because payouts use Contractor.stripe_account_id.
+    """
+    if not acct_id:
+        return
+
+    try:
+        from projects.models import Contractor  # type: ignore
+    except Exception:
+        return
+
+    try:
+        contractor = Contractor.objects.get(user=user)
+    except Exception:
+        return
+
+    dirty = []
+
+    if getattr(contractor, "stripe_account_id", "") != acct_id:
+        contractor.stripe_account_id = acct_id
+        dirty.append("stripe_account_id")
+
+    if acct:
+        charges = bool(acct.get("charges_enabled"))
+        payouts = bool(acct.get("payouts_enabled"))
+        submitted = bool(acct.get("details_submitted"))
+
+        for field, val in [
+            ("charges_enabled", charges),
+            ("payouts_enabled", payouts),
+            ("details_submitted", submitted),
+        ]:
+            if hasattr(contractor, field) and getattr(contractor, field) != val:
+                setattr(contractor, field, val)
+                dirty.append(field)
+
+    if dirty:
+        contractor.save(update_fields=dirty)
 
 
 def _create_or_get_connect_account_id(profile: ConnectedAccount, user) -> str:
@@ -67,17 +118,22 @@ def _create_or_get_connect_account_id(profile: ConnectedAccount, user) -> str:
         type="express",
         country=acct_country,
         email=(user.email or None),
-        business_type="individual",  # change to "company" if you require business flows
+        business_type="individual",
         capabilities={"card_payments": {"requested": True}, "transfers": {"requested": True}},
         metadata={"user_id": str(getattr(user, "id", ""))},
     )
     acct_id = acct["id"]
-    profile.link(acct_id)               # ← persist acct id
+
+    profile.link(acct_id)
     _sync_flags_from_stripe(profile, acct)
+
+    # ✅ Sync to Contractor immediately
+    _sync_contractor_from_connected_account(user, acct_id, acct)
+
     return acct_id
 
 
-def _status_payload(acct: Optional[dict], profile: ConnectedAccount) -> dict:
+def _status_payload(acct: Optional[dict], profile: ConnectedAccount, user) -> dict:
     if acct:
         charges = bool(acct.get("charges_enabled"))
         payouts = bool(acct.get("payouts_enabled"))
@@ -89,6 +145,9 @@ def _status_payload(acct: Optional[dict], profile: ConnectedAccount) -> dict:
         status_str = "not_started"
         charges = payouts = submitted = False
         acct_id = profile.stripe_account_id
+
+    # ✅ Keep Contractor aligned too
+    _sync_contractor_from_connected_account(user, acct_id, acct)
 
     return {
         "onboarding_status": status_str,
@@ -106,18 +165,11 @@ def _status_payload(acct: Optional[dict], profile: ConnectedAccount) -> dict:
 # Views
 # ──────────────────────────────────────────────────────────────────────────────
 class OnboardingStatus(APIView):
-    """
-    GET /api/payments/onboarding/status/
-    Self-heals by creating/linking a Connect account if missing.
-    """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         if not _stripe_enabled():
-            return Response(
-                {"detail": "Stripe disabled", "onboarding_status": "disabled"},
-                status=status.HTTP_200_OK,
-            )
+            return Response({"detail": "Stripe disabled", "onboarding_status": "disabled"}, status=status.HTTP_200_OK)
 
         _maybe_init_stripe()
         if not stripe:
@@ -130,7 +182,6 @@ class OnboardingStatus(APIView):
             try:
                 _create_or_get_connect_account_id(profile, user)
             except Exception:
-                # Keep graceful not_started if Stripe create fails transiently
                 pass
 
         acct_obj = None
@@ -140,16 +191,11 @@ class OnboardingStatus(APIView):
             except Exception:
                 acct_obj = None
 
-        payload = _status_payload(acct_obj, profile)
+        payload = _status_payload(acct_obj, profile, user)
         return Response(payload, status=status.HTTP_200_OK)
 
 
 class OnboardingStart(APIView):
-    """
-    POST /api/payments/onboarding/start/
-    Creates the onboarding link and persists acct id.
-    Returns: {"url","onboarding_url","account_id"}
-    """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
@@ -171,22 +217,12 @@ class OnboardingStart(APIView):
                 return_url=f"{frontend_url}/onboarding",
                 type="account_onboarding",
             )
-            return Response(
-                {"url": link["url"], "onboarding_url": link["url"], "account_id": acct_id},
-                status=status.HTTP_200_OK,
-            )
+            return Response({"url": link["url"], "onboarding_url": link["url"], "account_id": acct_id}, status=200)
         except Exception as exc:
             return Response({"detail": f"Stripe error: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
 
 
 class OnboardingManage(APIView):
-    """
-    POST /api/payments/onboarding/manage/
-    Smart:
-      - If not completed → return account_onboarding link (resume)
-      - If completed     → return account_update link; fallback login link
-    Returns: {"manage_url": "..."}
-    """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
@@ -201,7 +237,6 @@ class OnboardingManage(APIView):
         acct_id = _create_or_get_connect_account_id(profile, user)
         frontend_url, _ = _get_site_urls()
 
-        # Retrieve account to decide best link
         try:
             acct = stripe.Account.retrieve(acct_id)
         except Exception as exc:
@@ -209,10 +244,14 @@ class OnboardingManage(APIView):
 
         charges_enabled = bool(acct.get("charges_enabled"))
         payouts_enabled = bool(acct.get("payouts_enabled"))
+        submitted = bool(acct.get("details_submitted"))
+
+        profile.set_flags(charges=charges_enabled, payouts=payouts_enabled, submitted=submitted)
+        _sync_contractor_from_connected_account(user, acct_id, acct)
+
         is_completed = charges_enabled or payouts_enabled
 
         if not is_completed:
-            # Resume onboarding
             try:
                 link = stripe.AccountLink.create(
                     account=acct_id,
@@ -220,13 +259,10 @@ class OnboardingManage(APIView):
                     return_url=f"{frontend_url}/onboarding",
                     type="account_onboarding",
                 )
-                return Response({"manage_url": link["url"]}, status=status.HTTP_200_OK)
+                return Response({"manage_url": link["url"], "account_id": acct_id}, status=200)
             except Exception as exc:
-                last_err = exc
-        else:
-            last_err = None
+                return Response({"detail": f"Stripe error: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
 
-        # Completed → account_update
         try:
             link = stripe.AccountLink.create(
                 account=acct_id,
@@ -234,24 +270,20 @@ class OnboardingManage(APIView):
                 return_url=f"{frontend_url}/onboarding",
                 type="account_update",
             )
-            return Response({"manage_url": link["url"]}, status=status.HTTP_200_OK)
-        except Exception as exc:
-            last_err = exc
-
-        # Fallback → dashboard login link
-        try:
-            login = stripe.Account.create_login_link(acct_id)
-            return Response({"manage_url": login["url"]}, status=status.HTTP_200_OK)
-        except Exception as exc:
-            msg = f"Stripe errors: primary={last_err}; fallback={exc}" if last_err else f"Stripe error: {exc}"
-            return Response({"detail": msg}, status=status.HTTP_502_BAD_GATEWAY)
+            return Response({"manage_url": link["url"], "account_id": acct_id}, status=200)
+        except Exception:
+            try:
+                login = stripe.Account.create_login_link(acct_id)
+                return Response({"manage_url": login["url"], "account_id": acct_id}, status=200)
+            except Exception as exc:
+                return Response({"detail": f"Stripe error: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
 
 
 class OnboardingLoginLink(APIView):
     """
-    POST /api/payments/onboarding/login-link/
-    Always attempt to create an Express dashboard login link.
-    Returns: {"login_url": "..."}
+    POST /api/payments/onboarding/login_link/
+    Returns a Stripe Express Dashboard login link (requires completed-ish account).
+    This is required because your payments.views.__init__ imports it.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -267,7 +299,17 @@ class OnboardingLoginLink(APIView):
         acct_id = _create_or_get_connect_account_id(profile, user)
 
         try:
+            acct = stripe.Account.retrieve(acct_id)
+        except Exception as exc:
+            return Response({"detail": f"Stripe error retrieving account: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+
+        # Sync flags to both models
+        _sync_flags_from_stripe(profile, acct)
+        _sync_contractor_from_connected_account(user, acct_id, acct)
+
+        # Stripe will fail login links if account not ready; still try.
+        try:
             login = stripe.Account.create_login_link(acct_id)
-            return Response({"login_url": login["url"]}, status=status.HTTP_200_OK)
+            return Response({"login_url": login["url"], "url": login["url"], "account_id": acct_id}, status=200)
         except Exception as exc:
             return Response({"detail": f"Stripe error: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)

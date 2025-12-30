@@ -32,18 +32,38 @@ const norm = (s) => (s || "").toString().toLowerCase();
 const isIncomplete = (m) =>
   norm(m.status || (m.completed ? "completed" : "incomplete")) === "incomplete";
 const isCompleted = (m) =>
-  ["completed", "complete"].includes(
-    norm(m.status || (m.completed ? "completed" : ""))
-  );
+  ["completed", "complete"].includes(norm(m.status || (m.completed ? "completed" : "")));
 
+/**
+ * ✅ Invoice bucketing rules (escrow-aware)
+ *
+ * IMPORTANT: In your system, invoice.status may remain "approved" even after payout.
+ * The true payout signal is escrow_released=true (and display_status="Paid" from serializer).
+ *
+ * Therefore:
+ * - Earned: escrow_released OR display_status==="Paid" OR status includes paid/earned/released
+ * - Approved: approved/ready_to_pay AND NOT earned
+ * - Pending: pending/sent/awaiting approval
+ */
 const invBucket = (inv) => {
   const s = norm(inv.status);
-  if (
-    ["pending", "pending_approval", "sent", "awaiting_approval"].includes(s)
-  )
+  const display = norm(inv.display_status);
+
+  const escrowReleased =
+    inv?.escrow_released === true ||
+    inv?.escrow_released === 1 ||
+    inv?.escrow_released === "true";
+
+  // ✅ If escrow was released, it is earned regardless of status enum
+  if (escrowReleased || display === "paid") return "earned";
+
+  if (["pending", "pending_approval", "sent", "awaiting_approval"].includes(s))
     return "pending";
-  if (["approved", "ready_to_pay"].includes(s)) return "approved";
+
   if (["paid", "earned", "released"].includes(s)) return "earned";
+
+  if (["approved", "ready_to_pay"].includes(s)) return "approved";
+
   return "pending";
 };
 
@@ -275,7 +295,6 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
     }
     try {
       setSub(true);
-      // 1) Create expense (multipart for optional receipt)
       const fd = new FormData();
       if (form.agreement) fd.append("agreement", form.agreement);
       fd.append("description", form.description.trim());
@@ -290,10 +309,7 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
       });
       const created = createRes.data;
 
-      // 2) Contractor signs
       await api.post(`/projects/expenses/${created.id}/contractor_sign/`);
-
-      // 3) Send to homeowner
       await api.post(`/projects/expenses/${created.id}/send_to_homeowner/`);
 
       toast.success("Expense sent to homeowner.");
@@ -505,7 +521,6 @@ export default function ContractorDashboard() {
       try {
         const { data } = await api.get("/projects/contractors/me/");
 
-        // Try a few possible fields; if none, intro countdown disabled
         const createdRaw =
           data.created_at ||
           data.contractor_created_at ||
@@ -679,7 +694,9 @@ export default function ContractorDashboard() {
   const ratePercent = pricing.rate != null ? fmtRate(pricing.rate) : null;
   const fixedFeeLabel = `+ $${Number(pricing.fixed_fee || 1).toFixed(0)}`;
 
-  const isIntroTier = pricing.is_intro === true || String(pricing.tier_name || "").toUpperCase() === "INTRO";
+  const isIntroTier =
+    pricing.is_intro === true ||
+    String(pricing.tier_name || "").toUpperCase() === "INTRO";
 
   const titleText = pricing.loading
     ? "Checking your rate…"
@@ -687,7 +704,6 @@ export default function ContractorDashboard() {
     ? `${isIntroTier ? "Intro Rate" : "Standard Tiered Rate"}: ${ratePercent} ${fixedFeeLabel}`
     : "MyHomeBro Pricing";
 
-  // EXACT wording requested
   const baseSubtitle =
     pricing.loading
       ? "Loading your pricing details."
@@ -697,7 +713,6 @@ export default function ContractorDashboard() {
       ? "Your current introductory pricing for new agreements."
       : "Your current pricing for new agreements.";
 
-  // Countdown should ONLY show during active intro period
   const subtitleText =
     isIntroTier && introActive && introDaysRemaining !== null
       ? `${baseSubtitle} ${introDaysRemaining} day${
@@ -711,7 +726,6 @@ export default function ContractorDashboard() {
       subtitle="Milestones and invoices at a glance."
       showLogo
     >
-      {/* Pricing / Tier card */}
       <div className="mhb-kicker">MyHomeBro Pricing</div>
       <div className="mhb-grid" style={{ marginBottom: 6 }}>
         <StatCard
@@ -724,7 +738,6 @@ export default function ContractorDashboard() {
         />
       </div>
 
-      {/* Row 1 — Milestones */}
       <div className="mhb-kicker">Milestones</div>
       <div className="mhb-grid" style={{ marginBottom: 6 }}>
         <StatCard
@@ -753,7 +766,6 @@ export default function ContractorDashboard() {
         />
       </div>
 
-      {/* Row 2 — Invoices */}
       <div className="mhb-kicker" style={{ marginTop: 14 }}>
         Invoices
       </div>
@@ -784,7 +796,6 @@ export default function ContractorDashboard() {
         />
       </div>
 
-      {/* Quick Actions */}
       <div className="mhb-kicker" style={{ marginTop: 18 }}>
         Quick Actions
       </div>
@@ -804,7 +815,7 @@ export default function ContractorDashboard() {
           <ActionButton
             icon={Receipt}
             label="+ New Expense"
-            onClick={openNewExpense}
+            onClick={() => setShowExpenseModal(true)}
           />
           <ActionButton
             icon={CalendarDays}
@@ -819,7 +830,6 @@ export default function ContractorDashboard() {
         </div>
       </div>
 
-      {/* Expense Requests */}
       <div className="mhb-kicker" style={{ marginTop: 18 }}>
         Expense Requests
       </div>
@@ -827,7 +837,6 @@ export default function ContractorDashboard() {
         <ExpenseRequestsPanel />
       </div>
 
-      {/* Modal: create/sign/send expense */}
       <ExpenseRequestModal
         isOpen={showExpenseModal}
         onClose={onExpenseModalClose}

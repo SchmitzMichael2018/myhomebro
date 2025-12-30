@@ -1,96 +1,76 @@
 # backend/backend/payments/fees.py
-# v2025-12-03 — Central fee engine for MyHomeBro
+# v2025-12-29 — Central fee engine for MyHomeBro (compat + agreement-level cap)
 #
-# This module ONLY handles MyHomeBro platform fees:
-# - 60-day intro rate for new contractors
-# - Tiered rates by monthly volume
-# - Optional high-risk surcharge
-# - $1 flat fee
-# - Maximum fee cap per project
-# - Who pays the fee (contractor / homeowner / split)
+# Supports BOTH:
+# - Legacy callers: compute_fee_summary(...)  (used by projects/views/funding.py)
+# - Magic invoice callers:
+#       compute_fee_summary_for_invoice_payment(...)
+#       calculate_platform_fee_cents_for_invoice(...)
 #
-# Stripe processing fees (2.9% + $0.30 etc.) are handled
-# separately in your Stripe views when you build the PaymentIntent.
+# Business rules:
+# - 60-day intro: 3% + $1
+# - After intro: tiered by MONTHLY volume:
+#       < $10k      -> 4.5% + $1
+#       $10k-$24,999-> 4.0% + $1
+#       $25k+       -> 3.5% + $1
+# - Optional high-risk surcharge (+1.5%)
+# - Cap: $750 PER AGREEMENT (across all milestone payments), when agreement_id is provided
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Literal, Optional
+from typing import Literal, Optional, Tuple
 
+from django.utils import timezone
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
 
 FeePayer = Literal["contractor", "homeowner", "split"]
 
-# 60-day intro window
 INTRO_DAYS = 60
-INTRO_RATE = Decimal("0.03")     # 3%
+INTRO_RATE = Decimal("0.03")
 
-# Tiered rates AFTER intro window, based on monthly volume
-TIER1_RATE = Decimal("0.045")    # 4.5%   for $0–$9,999
-TIER2_RATE = Decimal("0.040")    # 4.0%   for $10k–$24,999
-TIER3_RATE = Decimal("0.035")    # 3.5%   for $25k+
+TIER1_RATE = Decimal("0.045")
+TIER2_RATE = Decimal("0.040")
+TIER3_RATE = Decimal("0.035")
 
-# Optional surcharge for high-risk categories (roofing, plumbing, etc.)
-HIGH_RISK_SURCHARGE = Decimal("0.015")  # +1.5%
+HIGH_RISK_SURCHARGE = Decimal("0.015")
 
-# Flat fee added to every project
-FLAT_FEE = Decimal("1.00")       # $1 per transaction
+FLAT_FEE = Decimal("1.00")
 
-# Maximum platform fee per project (cap)
 MAX_PLATFORM_FEE = Decimal("750.00")
 
 
-# ---------------------------------------------------------------------------
-# Dataclasses for structured results
-# ---------------------------------------------------------------------------
-
 @dataclass
 class FeeRateInfo:
-    """
-    Describes which percentage rate we applied and why.
-    """
-    rate: Decimal                 # e.g. 0.045
-    flat_fee: Decimal             # usually $1.00
-    is_intro: bool                # True if in 60-day intro period
-    tier_name: str                # "intro", "tier1", "tier2", "tier3"
-    high_risk_applied: bool       # True if HIGH_RISK_SURCHARGE added
+    rate: Decimal
+    flat_fee: Decimal
+    is_intro: bool
+    tier_name: str
+    high_risk_applied: bool
 
 
 @dataclass
 class PlatformFeeResult:
-    """
-    Platform fee for a single project (before deciding who pays it).
-    """
-    project_amount: Decimal       # contractor's price (rounded)
+    project_amount: Decimal
     rate_info: FeeRateInfo
-    variable_fee: Decimal         # project_amount * rate
-    total_fee: Decimal            # variable_fee + flat_fee (capped)
+    variable_fee: Decimal
+    total_fee: Decimal
 
 
 @dataclass
 class SplitResult:
-    """
-    How the platform fee is distributed between contractor & homeowner.
-    (Stripe fees are NOT included here.)
-    """
     project_amount: Decimal
     platform_fee: Decimal
-    contractor_payout: Decimal    # what contractor actually receives
-    homeowner_escrow: Decimal     # what homeowner deposits into escrow
-    contractor_fee_share: Decimal # portion of platform_fee they cover
-    homeowner_fee_share: Decimal  # portion of platform_fee they cover
+    contractor_payout: Decimal
+    homeowner_escrow: Decimal
+    contractor_fee_share: Decimal
+    homeowner_fee_share: Decimal
 
 
 @dataclass
 class FeeSummary:
-    """
-    High-level summary used by views/serializers.
-    """
     project_amount: Decimal
     rate_info: FeeRateInfo
     platform_fee: Decimal
@@ -100,14 +80,26 @@ class FeeSummary:
     homeowner_fee_share: Decimal
 
 
+@dataclass
+class AgreementCapInfo:
+    cap_total: Decimal
+    already_collected: Decimal
+    remaining_cap: Decimal
+
+
+@dataclass
+class InvoicePaymentFeeSummary:
+    project_amount: Decimal
+    rate_info: FeeRateInfo
+    platform_fee: Decimal
+    agreement_cap: AgreementCapInfo
+
+
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Helpers
 # ---------------------------------------------------------------------------
 
 def _to_date(value) -> date:
-    """
-    Normalize contractor_created_at, which might be a date OR datetime.
-    """
     if isinstance(value, date) and not isinstance(value, datetime):
         return value
     if isinstance(value, datetime):
@@ -116,14 +108,19 @@ def _to_date(value) -> date:
 
 
 def _round_money(value: Decimal) -> Decimal:
-    """
-    Round to 2 decimal places using bankers-friendly HALF_UP.
-    """
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+def _money_from_cents(cents: int) -> Decimal:
+    return _round_money(Decimal(cents) / Decimal("100"))
+
+
+def _cents_from_money(amount: Decimal) -> int:
+    return int((_round_money(amount) * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
 # ---------------------------------------------------------------------------
-# Core fee logic
+# Core tier logic (same as your original)
 # ---------------------------------------------------------------------------
 
 def get_fee_rate_for_contractor(
@@ -133,30 +130,16 @@ def get_fee_rate_for_contractor(
     is_high_risk: bool = False,
     today: Optional[date] = None,
 ) -> FeeRateInfo:
-    """
-    Decide which percentage rate applies to this contractor for THIS project.
-
-    Order:
-      1) 60-day intro rate (3%) overrides everything.
-      2) After intro, tier by monthly_volume:
-           - < 10,000      -> 4.5%  (tier1)
-           - 10,000–24,999 -> 4.0%  (tier2)
-           - 25,000+       -> 3.5%  (tier3)
-      3) If high-risk, add HIGH_RISK_SURCHARGE (+1.5%).
-    """
     today = today or date.today()
     cdate = _to_date(contractor_created_at)
     days_active = (today - cdate).days
 
-    # 1) Intro period
     if days_active <= INTRO_DAYS:
         base_rate = INTRO_RATE
         tier_name = "intro"
         is_intro = True
     else:
         is_intro = False
-
-        # 2) Volume-based tiers
         if monthly_volume < Decimal("10000"):
             base_rate = TIER1_RATE
             tier_name = "tier1"
@@ -167,7 +150,6 @@ def get_fee_rate_for_contractor(
             base_rate = TIER3_RATE
             tier_name = "tier3"
 
-    # 3) Optional high-risk surcharge
     high_risk_applied = False
     if is_high_risk:
         base_rate = base_rate + HIGH_RISK_SURCHARGE
@@ -187,23 +169,11 @@ def calculate_platform_fee(
     project_amount: Decimal,
     rate_info: FeeRateInfo,
 ) -> PlatformFeeResult:
-    """
-    Compute the MyHomeBro platform fee for a single Agreement.
-
-    Applies:
-      - percentage from rate_info.rate
-      - FLAT_FEE
-      - MAX_PLATFORM_FEE cap
-    """
     project_amount = _round_money(project_amount)
-
     variable_fee = _round_money(project_amount * rate_info.rate)
-    uncapped_total = variable_fee + rate_info.flat_fee
-
-    total_fee = _round_money(uncapped_total)
-    if total_fee > MAX_PLATFORM_FEE:
-        total_fee = MAX_PLATFORM_FEE
-
+    total_fee = _round_money(variable_fee + rate_info.flat_fee)
+    # NOTE: we do NOT apply MAX_PLATFORM_FEE here when using agreement-level cap.
+    # This keeps the logic flexible.
     return PlatformFeeResult(
         project_amount=project_amount,
         rate_info=rate_info,
@@ -218,20 +188,6 @@ def split_fee_between_parties(
     platform_fee: Decimal,
     fee_payer: FeePayer,
 ) -> SplitResult:
-    """
-    Decide who effectively covers the platform fee.
-
-      fee_payer == "contractor":
-          - Homeowner escrow: project_amount
-          - Contractor payout: project_amount - platform_fee
-
-      fee_payer == "homeowner":
-          - Homeowner escrow: project_amount + platform_fee
-          - Contractor payout: project_amount
-
-      fee_payer == "split":
-          - Each covers ~50% of the fee.
-    """
     project_amount = _round_money(project_amount)
     platform_fee = _round_money(platform_fee)
 
@@ -250,7 +206,7 @@ def split_fee_between_parties(
     elif fee_payer == "split":
         half = _round_money(platform_fee / 2)
         contractor_fee_share = half
-        homeowner_fee_share = platform_fee - half  # keep cents consistent
+        homeowner_fee_share = platform_fee - half
         contractor_payout = project_amount - contractor_fee_share
         homeowner_escrow = project_amount + homeowner_fee_share
 
@@ -267,6 +223,89 @@ def split_fee_between_parties(
     )
 
 
+# ---------------------------------------------------------------------------
+# Agreement-level cap support
+# ---------------------------------------------------------------------------
+
+def get_collected_platform_fees_for_agreement(agreement_id: Optional[int]) -> Decimal:
+    """
+    Best-effort:
+      - Prefer Receipt.platform_fee_cents / platform_fee_amount if present
+      - Else fall back to Invoice.platform_fee_cents (paid-like statuses)
+    """
+    if not agreement_id:
+        return Decimal("0.00")
+
+    # Prefer receipts
+    try:
+        from receipts.models import Receipt  # type: ignore
+
+        qs = Receipt.objects.filter(agreement_id=agreement_id)
+        if hasattr(Receipt, "platform_fee_cents"):
+            total_cents = 0
+            for r in qs.only("platform_fee_cents"):
+                total_cents += int(getattr(r, "platform_fee_cents") or 0)
+            return _money_from_cents(total_cents)
+
+        if hasattr(Receipt, "platform_fee_amount"):
+            total = Decimal("0.00")
+            for r in qs.only("platform_fee_amount"):
+                v = getattr(r, "platform_fee_amount")
+                if v is not None:
+                    total += _round_money(Decimal(str(v)))
+            return _round_money(total)
+    except Exception:
+        pass
+
+    # Fallback to invoices
+    try:
+        from projects.models import Invoice  # type: ignore
+    except Exception:
+        return Decimal("0.00")
+
+    paid_like = ("paid", "released", "completed")
+    try:
+        qs = Invoice.objects.filter(agreement_id=agreement_id)
+        if hasattr(Invoice, "platform_fee_cents"):
+            total_cents = 0
+            for inv in qs.only("platform_fee_cents", "status"):
+                s = str(getattr(inv, "status", "")).lower()
+                if not any(k in s for k in paid_like):
+                    continue
+                total_cents += int(getattr(inv, "platform_fee_cents") or 0)
+            return _money_from_cents(total_cents)
+    except Exception:
+        pass
+
+    return Decimal("0.00")
+
+
+def apply_agreement_cap(
+    *,
+    agreement_id: Optional[int],
+    uncapped_fee: Decimal,
+) -> Tuple[Decimal, AgreementCapInfo]:
+    cap_total = _round_money(MAX_PLATFORM_FEE)
+    already = _round_money(get_collected_platform_fees_for_agreement(agreement_id))
+    remaining = _round_money(cap_total - already)
+    if remaining < Decimal("0.00"):
+        remaining = Decimal("0.00")
+
+    applied = _round_money(uncapped_fee)
+    if applied > remaining:
+        applied = remaining
+
+    return applied, AgreementCapInfo(
+        cap_total=cap_total,
+        already_collected=already,
+        remaining_cap=remaining,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Legacy API (USED BY funding.py) — this stops your WSGI crash
+# ---------------------------------------------------------------------------
+
 def compute_fee_summary(
     *,
     project_amount: Decimal,
@@ -277,35 +316,29 @@ def compute_fee_summary(
     today: Optional[date] = None,
 ) -> FeeSummary:
     """
-    Convenience wrapper used by views/serializers.
-
-    IMPORTANT:
-      - This only computes MyHomeBro platform fees.
-      - Stripe processing fees must be added separately in your Stripe code.
-
-    Returns a FeeSummary with:
-      - project_amount (rounded)
-      - rate_info (intro/tier/high-risk metadata)
-      - platform_fee (total fee MyHomeBro earns)
-      - contractor_payout (before Stripe)
-      - homeowner_escrow (before Stripe)
-      - contractor_fee_share / homeowner_fee_share
+    Backward compatible fee summary used by older code paths.
+    NOTE: This uses PER-CALL cap (historical behavior) by applying MAX_PLATFORM_FEE here.
     """
     rate_info = get_fee_rate_for_contractor(
         contractor_created_at=contractor_created_at,
-        monthly_volume=monthly_volume,
+        monthly_volume=_round_money(monthly_volume),
         is_high_risk=is_high_risk,
         today=today,
     )
 
     platform = calculate_platform_fee(
-        project_amount=project_amount,
+        project_amount=_round_money(Decimal(str(project_amount))),
         rate_info=rate_info,
     )
 
+    # Historical behavior: cap per calculation
+    platform_fee = platform.total_fee
+    if platform_fee > MAX_PLATFORM_FEE:
+        platform_fee = MAX_PLATFORM_FEE
+
     split = split_fee_between_parties(
         project_amount=platform.project_amount,
-        platform_fee=platform.total_fee,
+        platform_fee=platform_fee,
         fee_payer=fee_payer,
     )
 
@@ -318,3 +351,97 @@ def compute_fee_summary(
         contractor_fee_share=split.contractor_fee_share,
         homeowner_fee_share=split.homeowner_fee_share,
     )
+
+
+# ---------------------------------------------------------------------------
+# New API used by magic_invoice.py
+# ---------------------------------------------------------------------------
+
+def compute_fee_summary_for_invoice_payment(
+    *,
+    amount_cents: int,
+    contractor,
+    agreement_id: Optional[int],
+    is_high_risk: bool = False,
+) -> InvoicePaymentFeeSummary:
+    """
+    Computes the platform fee for a MILESTONE payment and applies $750 cap PER AGREEMENT.
+    """
+    # Determine contractor_created_at + monthly_volume using best-effort fields.
+    contractor_created_at = (
+        getattr(contractor, "created_at", None)
+        or getattr(contractor, "created", None)
+        or getattr(getattr(contractor, "user", None), "date_joined", None)
+        or timezone.now()
+    )
+
+    # monthly volume: use a best-effort helper if you have one elsewhere; else default 0
+    monthly_volume = Decimal("0.00")
+    try:
+        from projects.models import Invoice  # type: ignore
+
+        # best-effort: sum this contractor's paid-ish invoices this month
+        now = timezone.now()
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        paid_like = ("paid", "released", "completed")
+
+        qs = Invoice.objects.filter(agreement__contractor=contractor)
+        if hasattr(Invoice, "paid_at"):
+            qs = qs.filter(paid_at__gte=month_start)
+        elif hasattr(Invoice, "updated_at"):
+            qs = qs.filter(updated_at__gte=month_start)
+
+        total = Decimal("0.00")
+        for inv in qs.only("amount", "status"):
+            s = str(getattr(inv, "status", "")).lower()
+            if not any(k in s for k in paid_like):
+                continue
+            amt = getattr(inv, "amount", None)
+            if amt is not None:
+                total += _round_money(Decimal(str(amt)))
+        monthly_volume = _round_money(total)
+    except Exception:
+        monthly_volume = Decimal("0.00")
+
+    rate_info = get_fee_rate_for_contractor(
+        contractor_created_at=contractor_created_at,
+        monthly_volume=monthly_volume,
+        is_high_risk=is_high_risk,
+        today=date.today(),
+    )
+
+    amount = _money_from_cents(int(amount_cents))
+    platform_uncapped = calculate_platform_fee(project_amount=amount, rate_info=rate_info).total_fee
+
+    # Apply agreement-level cap (new behavior)
+    applied_fee, cap_info = apply_agreement_cap(
+        agreement_id=agreement_id,
+        uncapped_fee=platform_uncapped,
+    )
+
+    return InvoicePaymentFeeSummary(
+        project_amount=amount,
+        rate_info=rate_info,
+        platform_fee=applied_fee,
+        agreement_cap=cap_info,
+    )
+
+
+def calculate_platform_fee_cents_for_invoice(
+    *,
+    amount_cents: int,
+    contractor,
+    agreement_id: Optional[int],
+    is_high_risk: bool = False,
+) -> int:
+    """
+    Returns the final platform fee in cents for this milestone payment,
+    after applying $750 cap PER AGREEMENT.
+    """
+    summary = compute_fee_summary_for_invoice_payment(
+        amount_cents=amount_cents,
+        contractor=contractor,
+        agreement_id=agreement_id,
+        is_high_risk=is_high_risk,
+    )
+    return _cents_from_money(summary.platform_fee)

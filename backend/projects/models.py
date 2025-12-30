@@ -613,12 +613,25 @@ class Invoice(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     approved_at = models.DateTimeField(null=True, blank=True)
 
+    # ✅ NEW: Public magic token for homeowner invoice access
+    public_token = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+        db_index=True,
+        help_text="Public magic token for homeowner invoice access",
+    )
+
     # ✅ PDF storage for invoices (views already expect invoice.pdf_file)
     pdf_file = models.FileField(upload_to="invoices/pdf/", null=True, blank=True)
 
     escrow_released = models.BooleanField(default=False)
     escrow_released_at = models.DateTimeField(null=True, blank=True)
     stripe_transfer_id = models.CharField(max_length=255, blank=True)
+
+    # ✅ NEW: Contractor audit trail (tax reporting)
+    platform_fee_cents = models.PositiveIntegerField(default=0)
+    payout_cents = models.PositiveIntegerField(default=0)
 
     disputed = models.BooleanField(default=False)
     dispute_reason = models.TextField(blank=True)

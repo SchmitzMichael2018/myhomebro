@@ -1,3 +1,5 @@
+# backend/payments/urls.py
+
 from django.urls import path
 
 from .views import (
@@ -7,12 +9,19 @@ from .views import (
     OnboardingLoginLink,
 )
 
-# NEW: escrow refunds
 from payments.views.escrow_refunds import AgreementEscrowRefundView
+
+# ✅ ADD THIS IMPORT
+from payments.webhooks import stripe_webhook
 
 app_name = "payments"
 
 urlpatterns = [
+    # ──────────────────────────────────────────────────────────────────
+    # Stripe webhook (REQUIRED)
+    # ──────────────────────────────────────────────────────────────────
+    path("webhooks/stripe/", stripe_webhook, name="stripe-webhook"),
+
     # ──────────────────────────────────────────────────────────────────
     # Stripe Connect onboarding
     # ──────────────────────────────────────────────────────────────────

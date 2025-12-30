@@ -101,6 +101,7 @@ INSTALLED_APPS = [
     "accounts",
     "projects",
     "payments",
+    "receipts.apps.ReceiptsConfig",
 ]
 
 MIDDLEWARE = [

@@ -1,6 +1,9 @@
 // src/components/MilestoneList.jsx
-// v2025-12-15 — Wire Invoice button to milestone create-invoice endpoint (idempotent)
-// v2025-12-18 — FIX: After invoice creation, navigate to /app/invoices/:invoiceId (protected)
+// v2025-12-29b — Enable Complete → Review when Agreement status is FUNDED
+// - Fixes eligibility logic: funded/in_progress agreements should allow completion
+// - Uses POST /projects/milestones/:id/complete-to-review/
+// - Keeps evidence upload behavior
+// - Keeps invoice creation flow
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../api";
@@ -19,14 +22,6 @@ const money = (n) => {
   return Number.isFinite(v)
     ? `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : String(n);
-};
-
-const todayYYYYMMDD = () => {
-  const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
 };
 
 const toDateOnly = (v) => {
@@ -49,7 +44,11 @@ const getAgreementId = (m) => m.agreement_id || m.agreement || (m.agreement && m
 const getAgreementStatus = (a) =>
   (pick(a?.status, a?.agreement_status, a?.signature_status, a?.state) || "").toLowerCase();
 const isAgreementDraft = (a) => getAgreementStatus(a) === "draft";
-const isAgreementSigned = (a) => ["signed", "executed", "active", "approved"].includes(getAgreementStatus(a));
+
+// ✅ FIX: include funded (and common post-sign states) as eligible for completion
+const isAgreementSigned = (a) =>
+  ["signed", "executed", "active", "approved", "funded", "in_progress"].includes(getAgreementStatus(a));
+
 const isEscrowFunded = (a) => !!pick(a?.escrow_funded, a?.escrowFunded);
 
 const getAgreementNumber = (m) => pick(m.agreement_number, m.agreement_no, m.agreement_id, m.agreement);
@@ -79,32 +78,12 @@ const deriveMilestonePhaseLabel = (m) => {
 const API = {
   listMilestones: "/projects/milestones/",
   listAgreements: "/projects/agreements/",
-  patchMilestone: (id) => `/projects/milestones/${id}/`,
   deleteMilestone: (id) => `/projects/milestones/${id}/`,
   milestoneFiles: "/projects/milestone-files/",
   milestoneComments: (id) => `/projects/milestones/${id}/comments/`,
   createInvoice: (id) => `/projects/milestones/${id}/create-invoice/`,
+  completeToReview: (id) => `/projects/milestones/${id}/complete-to-review/`,
 };
-
-const COMPLETE_PATCH_PAYLOADS = [
-  { completed: true, completion_date: todayYYYYMMDD(), is_invoiced: false },
-  { completed: true, completion_date: todayYYYYMMDD() },
-  { completed: true },
-];
-
-async function patchWithFallback(url, payloads) {
-  let lastErr = null;
-  for (const payload of payloads) {
-    try {
-      const res = await api.patch(url, payload);
-      return res?.data ?? null;
-    } catch (err) {
-      lastErr = err;
-      continue;
-    }
-  }
-  throw lastErr || new Error("PATCH failed for all payloads");
-}
 
 export default function MilestoneList() {
   const navigate = useNavigate();
@@ -234,6 +213,7 @@ export default function MilestoneList() {
   const canEditDelete = (m) => isAgreementDraft(m._ag);
 
   const canComplete = (m) => {
+    // ✅ Now funded agreements are eligible
     if (!(isAgreementSigned(m._ag) && m._escrowFunded === true)) return false;
     if (m.completed === true) return false;
     if (m.is_invoiced === true) return false;
@@ -319,28 +299,26 @@ export default function MilestoneList() {
     try {
       await uploadEvidenceFiles(id, files || []);
 
-      if (notes && String(notes).trim()) {
-        await api.post(API.milestoneComments(id), { content: String(notes).trim() });
-      }
+      await api.post(API.completeToReview(id), {
+        completion_notes: notes || "",
+      });
 
-      const patched = await patchWithFallback(API.patchMilestone(id), COMPLETE_PATCH_PAYLOADS);
-      if (patched && patched.id) updateLocal(patched.id, patched);
+      toast.success("Milestone submitted for review.");
 
-      toast.success("Milestone completed.");
       setDetailOpen(false);
       setDetailItem(null);
 
       await reload();
     } catch (err) {
       console.error(err);
-      toast.error("Could not submit completion. Check console.");
+      const msg = err?.response?.data?.detail || "Could not submit milestone for review.";
+      toast.error(msg);
       await reload();
     } finally {
       markBusy(id, false);
     }
   };
 
-  // ✅ create invoice first (idempotent), then navigate to the PROTECTED invoice detail
   const createInvoiceAndGo = async (m) => {
     const milestoneId = m?.id;
     if (!milestoneId) return;
@@ -360,7 +338,6 @@ export default function MilestoneList() {
       toast.success("Invoice created.");
       await reload();
 
-      // ✅ IMPORTANT: go directly to protected contractor invoice detail
       if (invoiceId) {
         navigate(`/app/invoices/${invoiceId}`);
       } else {
@@ -603,7 +580,7 @@ export default function MilestoneList() {
           }}
           milestone={editItem}
           onSaved={handleModalSaved}
-          onMarkComplete={async () => {}}
+          onMarkComplete={async (milestoneId) => submitComplete({ id: milestoneId, notes: "", files: [] })}
         />
       )}
 

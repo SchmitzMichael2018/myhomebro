@@ -1,55 +1,128 @@
+from __future__ import annotations
+
+from decimal import Decimal, ROUND_HALF_UP
 from rest_framework import serializers
 from ..models import Invoice, MilestoneComment, MilestoneFile
 
 
+def cents_to_dollars(cents: int) -> str:
+    try:
+        d = (Decimal(int(cents)) / Decimal("100")).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        return f"{d:.2f}"
+    except Exception:
+        return "0.00"
+
+
 class InvoiceSerializer(serializers.ModelSerializer):
-    # Context helpers
+    # ─────────────────────────────
+    # Context helpers (existing)
+    # ─────────────────────────────
     homeowner_name = serializers.SerializerMethodField()
     homeowner_email = serializers.SerializerMethodField()
     project_title = serializers.SerializerMethodField()
     agreement_id = serializers.SerializerMethodField()
 
-    # ✅ Required by your UI
+    # ─────────────────────────────
+    # Milestone context (existing)
+    # ─────────────────────────────
     milestone_id = serializers.SerializerMethodField()
     milestone_title = serializers.SerializerMethodField()
     milestone_description = serializers.SerializerMethodField()
-
-    # ✅ Extra: used for "wire up properly"
     milestone_completion_notes = serializers.SerializerMethodField()
     milestone_attachments = serializers.SerializerMethodField()
+
+    # ─────────────────────────────
+    # ✅ NEW: escrow / payout audit
+    # ─────────────────────────────
+    escrow_released = serializers.BooleanField(read_only=True)
+    escrow_released_at = serializers.DateTimeField(read_only=True)
+    stripe_transfer_id = serializers.CharField(read_only=True)
+
+    platform_fee_cents = serializers.IntegerField(read_only=True, required=False)
+    payout_cents = serializers.IntegerField(read_only=True, required=False)
+
+    platform_fee = serializers.SerializerMethodField()
+    payout_amount = serializers.SerializerMethodField()
+
+    # ✅ NEW: UI-friendly status
+    display_status = serializers.SerializerMethodField()
 
     class Meta:
         model = Invoice
         fields = [
+            # identity
             "id",
             "invoice_number",
+
+            # status
             "status",
+            "display_status",
+
+            # money
             "amount",
+            "platform_fee_cents",
+            "payout_cents",
+            "platform_fee",
+            "payout_amount",
+
+            # timestamps
             "created_at",
             "approved_at",
+            "escrow_released",
+            "escrow_released_at",
 
-            # Relations
+            # relations
             "agreement",
-
-            # Computed context
             "agreement_id",
+
+            # stripe / payout
+            "stripe_transfer_id",
+
+            # computed context
             "homeowner_name",
             "homeowner_email",
             "project_title",
 
-            # ✅ milestone snapshot/context
+            # milestone snapshot/context
             "milestone_id",
             "milestone_title",
             "milestone_description",
             "milestone_completion_notes",
             "milestone_attachments",
 
-            # Email tracking
+            # email tracking
             "email_sent_at",
             "email_message_id",
             "last_email_error",
         ]
 
+    # ─────────────────────────────
+    # Status logic
+    # ─────────────────────────────
+    def get_display_status(self, obj: Invoice) -> str:
+        # Escrow released = paid, regardless of enum value
+        if getattr(obj, "escrow_released", False):
+            return "Paid"
+
+        raw = str(getattr(obj, "status", "") or "")
+        return raw.replace("_", " ").strip().title() if raw else "—"
+
+    # ─────────────────────────────
+    # Fee helpers
+    # ─────────────────────────────
+    def get_platform_fee(self, obj: Invoice) -> str:
+        cents = getattr(obj, "platform_fee_cents", 0) or 0
+        return cents_to_dollars(cents)
+
+    def get_payout_amount(self, obj: Invoice) -> str:
+        cents = getattr(obj, "payout_cents", 0) or 0
+        return cents_to_dollars(cents)
+
+    # ─────────────────────────────
+    # Existing helper methods
+    # ─────────────────────────────
     def get_agreement_id(self, obj):
         return getattr(obj.agreement, "id", None)
 
@@ -58,16 +131,18 @@ class InvoiceSerializer(serializers.ModelSerializer):
         project = getattr(agreement, "project", None)
         homeowner = getattr(project, "homeowner", None) if project else None
         if homeowner:
-            return getattr(homeowner, "full_name", None) or getattr(homeowner, "name", None) or "Homeowner"
+            return (
+                getattr(homeowner, "full_name", None)
+                or getattr(homeowner, "name", None)
+                or "Homeowner"
+            )
         return None
 
     def get_homeowner_email(self, obj):
         agreement = obj.agreement
         project = getattr(agreement, "project", None)
         homeowner = getattr(project, "homeowner", None) if project else None
-        if homeowner:
-            return getattr(homeowner, "email", None)
-        return None
+        return getattr(homeowner, "email", None) if homeowner else None
 
     def get_project_title(self, obj):
         agreement = obj.agreement
@@ -75,11 +150,9 @@ class InvoiceSerializer(serializers.ModelSerializer):
         return getattr(project, "title", None) if project else None
 
     # -----------------------------
-    # ✅ Milestone wiring (snapshot-first)
+    # Milestone wiring (snapshot-first)
     # -----------------------------
-
     def _source_milestone(self, obj):
-        # reverse link from Milestone.invoice -> related_name="source_milestone"
         return getattr(obj, "source_milestone", None)
 
     def get_milestone_id(self, obj):
@@ -110,7 +183,6 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if snap:
             return snap
 
-        # fallback: build from comments (if linked)
         m = self._source_milestone(obj)
         if not m:
             return ""
@@ -127,7 +199,6 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if isinstance(snap, list) and snap:
             return snap
 
-        # fallback: build from milestone files if linked
         m = self._source_milestone(obj)
         if not m:
             return []
@@ -145,6 +216,8 @@ class InvoiceSerializer(serializers.ModelSerializer):
                 "id": f.id,
                 "name": getattr(f.file, "name", "") or f"file_{f.id}",
                 "url": url,
-                "uploaded_at": getattr(f, "uploaded_at", None).isoformat() if getattr(f, "uploaded_at", None) else None,
+                "uploaded_at": (
+                    f.uploaded_at.isoformat() if getattr(f, "uploaded_at", None) else None
+                ),
             })
         return out
