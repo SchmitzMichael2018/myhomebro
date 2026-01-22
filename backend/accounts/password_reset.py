@@ -1,12 +1,14 @@
 # backend/accounts/password_reset.py
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
@@ -20,10 +22,15 @@ from .serializers import (
     PasswordResetConfirmSerializer,
 )
 
+logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
 def _frontend_url() -> str:
+    """
+    Base URL for building frontend links.
+    Uses settings.FRONTEND_BASE_URL when present, else defaults to production.
+    """
     return getattr(
         settings,
         "FRONTEND_BASE_URL",
@@ -32,6 +39,10 @@ def _frontend_url() -> str:
 
 
 def _build_reset_link(user: User) -> str:
+    """
+    Produces:
+      https://www.myhomebro.com/reset-password/<uid>/<token>/
+    """
     uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = default_token_generator.make_token(user)
     return f"{_frontend_url()}/reset-password/{uid}/{token}/"
@@ -50,112 +61,35 @@ def _build_plaintext_body(user: User, reset_url: str) -> str:
     )
 
 
-def _build_html_body(user: User, reset_url: str) -> str:
-    first_name = (getattr(user, "first_name", "") or "").strip()
-    year = datetime.utcnow().year
-
-    html = f"""\
-<!DOCTYPE html>
-<html lang="en" style="margin:0; padding:0;">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Reset Your MyHomeBro Password</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  </head>
-  <body style="margin:0; padding:0; background-color:#f3f4f6; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f3f4f6; padding:24px 0;">
-      <tr>
-        <td align="center">
-          <table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px; background-color:#ffffff; border-radius:16px; overflow:hidden; box-shadow:0 10px 25px rgba(15,23,42,0.12);">
-            <tr>
-              <td style="padding:24px 24px 16px 24px; background:linear-gradient(135deg,#0f172a,#1d4ed8); color:#e5e7eb;">
-                <table width="100%" cellpadding="0" cellspacing="0">
-                  <tr>
-                    <td align="left" style="font-size:18px; font-weight:700;">
-                      MyHomeBro
-                    </td>
-                    <td align="right" style="font-size:12px; opacity:0.8;">
-                      Password Reset
-                    </td>
-                  </tr>
-                </table>
-                <h1 style="margin:16px 0 0; font-size:20px; font-weight:800; color:#f9fafb;">
-                  Reset your password
-                </h1>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:24px;">
-                <p style="margin:0 0 12px; font-size:15px; color:#111827;">
-                  Hi {first_name or "there"},
-                </p>
-                <p style="margin:0 0 12px; font-size:14px; color:#374151; line-height:1.5;">
-                  We received a request to reset the password for your MyHomeBro account.
-                  If you made this request, tap the button below to choose a new password.
-                </p>
-                <table cellpadding="0" cellspacing="0" style="margin:20px 0;">
-                  <tr>
-                    <td>
-                      <a href="{reset_url}" style="
-                        display:inline-block;
-                        padding:12px 24px;
-                        background-color:#2563eb;
-                        border-radius:9999px;
-                        color:#ffffff;
-                        text-decoration:none;
-                        font-size:14px;
-                        font-weight:600;
-                        letter-spacing:0.02em;
-                      ">
-                        Reset password
-                      </a>
-                    </td>
-                  </tr>
-                </table>
-                <p style="margin:0 0 12px; font-size:12px; color:#6b7280; line-height:1.5;">
-                  If the button doesn't work, you can copy and paste this link into your browser:
-                </p>
-                <p style="margin:0 0 16px; font-size:12px; color:#2563eb; word-break:break-all;">
-                  {reset_url}
-                </p>
-                <p style="margin:0 0 8px; font-size:12px; color:#6b7280; line-height:1.5;">
-                  If you did not request a password reset, you can safely ignore this email and your password will remain the same.
-                </p>
-                <p style="margin:16px 0 0; font-size:12px; color:#6b7280;">
-                  Thank you,<br />
-                  <span style="font-weight:600; color:#111827;">The MyHomeBro Team</span>
-                </p>
-              </td>
-            </tr>
-            <tr>
-              <td style="padding:16px 24px; background-color:#f9fafb; border-top:1px solid #e5e7eb;">
-                <p style="margin:0; font-size:11px; color:#9ca3af;">
-                  You’re receiving this email because a password reset was requested for your MyHomeBro account.
-                  If this wasn’t you, you can safely ignore this email.
-                </p>
-              </td>
-            </tr>
-          </table>
-          <p style="margin:12px 0 0; font-size:11px; color:#9ca3af;">
-            &copy; {year} MyHomeBro. All rights reserved.
-          </p>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>
-"""
-    return html
-
-
 def send_reset_email(user: User) -> None:
+    """
+    Sends a password reset email (plaintext + HTML).
+    HTML is rendered from templates/emails/password_reset.html
+
+    NOTE: While validating email delivery, we do NOT fail silently so problems surface.
+    You can make this environment-based later if you want.
+    """
     reset_url = _build_reset_link(user)
     subject = "Reset Your MyHomeBro Password"
     from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@myhomebro.com")
     to = [user.email]
 
     text_body = _build_plaintext_body(user, reset_url)
-    html_body = _build_html_body(user, reset_url)
+
+    # Template context matches the uploaded password_reset.html:
+    # {{ first_name }}, {{ reset_url }}, {{ year }}
+    ctx = {
+        "first_name": (getattr(user, "first_name", "") or "").strip(),
+        "reset_url": reset_url,
+        "year": datetime.utcnow().year,
+    }
+
+    try:
+        html_body = render_to_string("emails/password_reset.html", ctx)
+    except Exception:
+        # If template missing/misplaced, log and still send plaintext.
+        logger.exception("Password reset HTML template render failed. Sending plaintext only.")
+        html_body = None
 
     msg = EmailMultiAlternatives(
         subject=subject,
@@ -163,22 +97,28 @@ def send_reset_email(user: User) -> None:
         from_email=from_email,
         to=to,
     )
-    msg.attach_alternative(html_body, "text/html")
+
+    if html_body:
+        msg.attach_alternative(html_body, "text/html")
+
+    # IMPORTANT FOR DEBUGGING: do NOT hide delivery failures
     try:
-        msg.send(fail_silently=True)
+        msg.send(fail_silently=False)
     except Exception:
-        # Optional: log email failures
-        pass
+        logger.exception("Password reset email failed to send to %s", user.email)
+        # We do not raise, because the endpoint should remain enumeration-safe
 
 
 class PasswordResetRequestView(APIView):
     """
     POST /accounts/auth/password-reset/request/
+    Body: { "email": "..." }
     """
     permission_classes = [AllowAny]
 
     def post(self, request):
         serializer = PasswordResetRequestSerializer(data=request.data)
+        # Keep enumeration-safe behavior: do not raise validation errors outward
         serializer.is_valid(raise_exception=False)
 
         email = (serializer.validated_data.get("email") or "").strip().lower()

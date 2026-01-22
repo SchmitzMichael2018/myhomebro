@@ -1,29 +1,28 @@
 # backend/projects/views/milestone.py
-# v2025-12-29 — Restore MilestoneFileViewSet import compatibility + add Complete → Review endpoint
+# v2026-01-01 — Unify milestone refund behavior with agreement refund endpoints
 #
-# Fixes:
-# - Adds missing MilestoneFileViewSet / MilestoneCommentViewSet so projects/urls.py imports succeed.
-# - Adds POST /projects/milestones/<id>/complete/ and /complete-to-review/
-# - Allows completing ahead of scheduled completion_date (no future-date block)
-# - Keeps existing create-invoice flow (requires milestone.completed + escrow_funded)
-#
-# NOTE:
-# - This file is written defensively: if some models/serializers differ slightly in your repo,
-#   the API will still fail loudly with clear errors instead of silent breakage.
+# v2026-01-05 — Employee milestone visibility fix (robust)
+# - If user resolves to a contractor -> contractor-scoped milestones (unchanged)
+# - If not -> treat as subaccount and show ONLY milestones assigned to that user
+# - Adds /my-assigned/ debug endpoint for quick verification
 
 from __future__ import annotations
 
 import logging
 import os
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.db.models import Max, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
+
+import stripe
 
 from projects.models import (
     Milestone,
@@ -42,43 +41,272 @@ from projects.utils.accounts import get_contractor_for_user
 logger = logging.getLogger(__name__)
 
 
+def _money_to_cents(value) -> int:
+    if value is None:
+        return 0
+    try:
+        return int(round(float(value) * 100))
+    except Exception:
+        return 0
+
+
+def _stripe_init_or_raise():
+    key = getattr(settings, "STRIPE_SECRET_KEY", None)
+    if not key:
+        raise RuntimeError("STRIPE_SECRET_KEY is not configured.")
+    stripe.api_key = key
+
+
+def _stripe_remaining_refundable_cents(payment_intent_id: str) -> int:
+    _stripe_init_or_raise()
+    pi = stripe.PaymentIntent.retrieve(payment_intent_id)
+    received = int(pi.get("amount_received") or 0)
+    refunded = int(pi.get("amount_refunded") or 0)
+    return max(0, received - refunded)
+
+
+def _get_invoice_queryset_for_agreement(agreement):
+    try:
+        if hasattr(agreement, "invoices"):
+            return agreement.invoices.all()
+        if hasattr(agreement, "invoice_set"):
+            return agreement.invoice_set.all()
+    except Exception:
+        pass
+    return Invoice.objects.filter(agreement=agreement)
+
+
+def _released_total_cents_for_agreement(agreement) -> int:
+    """
+    Released = invoices with escrow_released True OR stripe_transfer_id present.
+    Sum invoice.amount for released invoices.
+    """
+    qs = _get_invoice_queryset_for_agreement(agreement)
+
+    released_ids = set()
+    try:
+        released_ids |= set(qs.filter(escrow_released=True).values_list("id", flat=True))
+    except Exception:
+        pass
+
+    try:
+        released_ids |= set(
+            qs.exclude(stripe_transfer_id="").exclude(stripe_transfer_id__isnull=True).values_list("id", flat=True)
+        )
+    except Exception:
+        pass
+
+    total = 0
+    if released_ids:
+        for inv in qs.filter(id__in=list(released_ids)):
+            total += _money_to_cents(getattr(inv, "amount", 0))
+    return total
+
+
+def _funded_total_cents_for_agreement(agreement) -> int:
+    """
+    Funded total = Agreement.escrow_funded_amount (your canonical field).
+    """
+    if hasattr(agreement, "escrow_funded_amount"):
+        return _money_to_cents(getattr(agreement, "escrow_funded_amount", 0))
+    return 0
+
+
+def _unreleased_total_cents_for_agreement(agreement) -> int:
+    funded = _funded_total_cents_for_agreement(agreement)
+    released = _released_total_cents_for_agreement(agreement)
+    return max(0, funded - released)
+
+
+def _milestone_looks_started(m: Milestone) -> bool:
+    """
+    'Started' for refund safety = completed OR invoiced OR invoice linked.
+    """
+    if getattr(m, "completed", False):
+        return True
+    if getattr(m, "is_invoiced", False):
+        return True
+    if getattr(m, "invoice_id", None):
+        return True
+    return False
+
+
+def _milestone_is_refunded(m: Milestone) -> bool:
+    if hasattr(m, "descope_status"):
+        return str(getattr(m, "descope_status", "") or "").lower() == "refunded"
+    return False
+
+
+def _ensure_descope_fields_exist(m: Milestone) -> bool:
+    needed = ["descope_status", "descope_requested_at", "descope_reason", "descope_decision_at", "descope_decision_note"]
+    missing = [f for f in needed if not hasattr(m, f)]
+    if missing:
+        raise RuntimeError(
+            f"Milestone is missing descope fields: {missing}. "
+            "Run migrations that add descope_status/descope_* fields."
+        )
+    return True
+
+
+def _refund_single_milestone_via_agreement_engine(*, request_user, milestone: Milestone, reason: str) -> dict:
+    """
+    Unified refund engine:
+    - Only refunds THIS milestone
+    - Caps by DB unreleased escrow remaining
+    - Caps by Stripe remaining refundable
+    - Uses PaymentIntent refund (platform-controlled)
+    - Marks milestone descope_status='refunded' (if fields exist)
+    """
+    agreement = milestone.agreement
+
+    if not getattr(agreement, "escrow_funded", False):
+        raise ValueError("Agreement escrow is not funded.")
+
+    if _milestone_looks_started(milestone):
+        raise ValueError("Milestone appears started/invoiced. Use dispute flow.")
+
+    if _milestone_is_refunded(milestone):
+        return {"ok": True, "already_refunded": True, "refund_cents": 0, "stripe_refund_id": None}
+
+    pi_id = getattr(agreement, "escrow_payment_intent_id", "") or ""
+    if not pi_id:
+        raise ValueError("Agreement has no escrow_payment_intent_id.")
+
+    refund_cents = _money_to_cents(getattr(milestone, "amount", 0))
+    if refund_cents <= 0:
+        raise ValueError("Milestone amount is invalid for refund.")
+
+    unreleased = _unreleased_total_cents_for_agreement(agreement)
+    if refund_cents > unreleased:
+        raise ValueError(
+            f"Not enough unreleased escrow remaining. Requested {refund_cents} cents; unreleased {unreleased} cents."
+        )
+
+    stripe_remaining = _stripe_remaining_refundable_cents(pi_id)
+    if refund_cents > stripe_remaining:
+        raise ValueError(
+            f"Not enough refundable balance remaining on Stripe. Requested {refund_cents} cents; remaining {stripe_remaining} cents."
+        )
+
+    idem_key = f"mhb_agreement_refund_like_descope_ag{agreement.id}_ms{milestone.id}"
+
+    with transaction.atomic():
+        locked = Milestone.objects.select_for_update().get(pk=milestone.pk)
+        _ensure_descope_fields_exist(locked)
+
+        if str(getattr(locked, "descope_status", "") or "").lower() == "refunded":
+            return {"ok": True, "already_refunded": True, "refund_cents": 0, "stripe_refund_id": None}
+
+        stripe_refund = stripe.Refund.create(
+            payment_intent=pi_id,
+            amount=int(refund_cents),
+            reason="requested_by_customer",
+            idempotency_key=idem_key,
+            metadata={
+                "agreement_id": str(agreement.id),
+                "milestone_id": str(locked.id),
+                "type": "milestone_descope_refund_via_agreement_engine",
+                "initiated_by_user_id": str(getattr(request_user, "id", "")),
+                "initiated_by_email": getattr(request_user, "email", "") or "",
+            },
+        )
+
+        locked.descope_status = "refunded"
+        locked.descope_requested_at = locked.descope_requested_at or timezone.now()
+        locked.descope_reason = locked.descope_reason or (reason or "")
+        locked.descope_decision_at = timezone.now()
+        locked.descope_decision_note = (reason or "").strip()
+        locked.save(
+            update_fields=[
+                "descope_status",
+                "descope_requested_at",
+                "descope_reason",
+                "descope_decision_at",
+                "descope_decision_note",
+            ]
+        )
+
+        try:
+            MilestoneComment.objects.create(
+                milestone=locked,
+                author=request_user,
+                content=(
+                    "[System] Milestone refund issued (agreement-engine).\n"
+                    f"Refund: {refund_cents} cents\n"
+                    f"Stripe refund id: {getattr(stripe_refund, 'id', None) or stripe_refund.get('id')}\n\n"
+                    f"Reason: {reason or ''}"
+                ).strip(),
+            )
+        except Exception:
+            pass
+
+    rid = getattr(stripe_refund, "id", None)
+    if rid is None and isinstance(stripe_refund, dict):
+        rid = stripe_refund.get("id")
+
+    return {"ok": True, "refund_cents": int(refund_cents), "stripe_refund_id": rid}
+
+
 class MilestoneViewSet(viewsets.ModelViewSet):
-    """
-    Milestone CRUD + workflow endpoints.
-
-    Existing in your app:
-      - POST /projects/milestones/<id>/create-invoice/   (requires completed + escrow funded)
-      - /projects/milestones/<id>/files/
-      - /projects/milestones/<id>/comments/
-      - POST /projects/milestones/check-overlap/
-
-    New:
-      - POST /projects/milestones/<id>/complete/
-      - POST /projects/milestones/<id>/complete-to-review/ (alias)
-        Marks completed=True even if scheduled completion_date is in the future.
-    """
-
     permission_classes = [IsAuthenticated, IsContractorOrSubAccount, CanEditMilestones]
     serializer_class = MilestoneSerializer
     queryset = Milestone.objects.select_related("agreement").all()
 
-    def get_queryset(self):
-        contractor = get_contractor_for_user(self.request.user)
-        if contractor is None:
-            return Milestone.objects.none()
+    def _assigned_queryset_for_user(self, user):
+        """
+        Build a safe assignment filter without assuming your exact schema.
+        Supports:
+          - assigned_to (User)
+          - assigned_user (User)
+          - assigned_employee.user (EmployeeProfile -> User)
+        """
+        assignment_filter = Q(assigned_to=user) | Q(assigned_user=user) | Q(assigned_employee__user=user)
 
-        # Only milestones belonging to this contractor’s projects
         return (
             Milestone.objects.select_related("agreement", "agreement__project")
-            .filter(agreement__project__contractor=contractor)
-            .order_by("order", "id")
+            .filter(assignment_filter)
+            .distinct()
+            .order_by("due_date", "order", "id")
+        )
+
+    def get_queryset(self):
+        user = self.request.user
+
+        contractor = get_contractor_for_user(user)
+        if contractor is not None:
+            # Contractor/owner scope (unchanged)
+            return (
+                Milestone.objects.select_related("agreement", "agreement__project")
+                .filter(agreement__project__contractor=contractor)
+                .order_by("order", "id")
+            )
+
+        # Subaccount / employee scope: ONLY assigned milestones
+        return self._assigned_queryset_for_user(user)
+
+    @action(detail=False, methods=["get"], url_path="my-assigned")
+    def my_assigned(self, request):
+        """
+        Debug-friendly endpoint:
+        GET /api/projects/milestones/my-assigned/
+
+        Returns count + list using the same logic as employee scope.
+        """
+        user = request.user
+        qs = self._assigned_queryset_for_user(user)
+        ser = MilestoneSerializer(qs, many=True, context={"request": request})
+        return Response(
+            {
+                "user_id": getattr(user, "id", None),
+                "email": getattr(user, "email", None),
+                "assigned_count": qs.count(),
+                "results": ser.data,
+            },
+            status=status.HTTP_200_OK,
         )
 
     @transaction.atomic
     def create(self, request, *args, **kwargs):
-        """
-        Auto-assign `order` if not provided.
-        """
         data = request.data.copy()
 
         agreement_id = data.get("agreement") or data.get("agreement_id")
@@ -103,31 +331,13 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
-    # ---------------------------------------------------------------------
-    # ✅ NEW: Complete -> Review (allows early completion)
-    # ---------------------------------------------------------------------
     @action(detail=True, methods=["post"], url_path="complete")
     def complete(self, request, pk=None):
-        """
-        Mark milestone complete (ahead of schedule allowed).
-        Does NOT require changing completion_date (which may be locked post-signature).
-
-        Body (optional):
-          - completion_notes: str
-        Multipart (optional):
-          - files: multiple evidence files (key "files")
-          - file: single evidence file (key "file")
-        """
         milestone: Milestone = self.get_object()
 
-        # Idempotent: already completed
         if getattr(milestone, "completed", False) is True:
-            return Response(
-                MilestoneSerializer(milestone, context={"request": request}).data,
-                status=status.HTTP_200_OK,
-            )
+            return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=status.HTTP_200_OK)
 
-        # Don’t allow completing if already invoiced
         if getattr(milestone, "is_invoiced", False) or getattr(milestone, "invoice_id", None):
             return Response(
                 {"detail": "This milestone has already been invoiced and cannot be marked complete again."},
@@ -140,40 +350,26 @@ class MilestoneViewSet(viewsets.ModelViewSet):
             with transaction.atomic():
                 milestone = Milestone.objects.select_for_update().get(pk=milestone.pk)
 
-                # Re-check inside lock
                 if getattr(milestone, "completed", False) is True:
-                    return Response(
-                        MilestoneSerializer(milestone, context={"request": request}).data,
-                        status=status.HTTP_200_OK,
-                    )
+                    return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=status.HTTP_200_OK)
 
-                # ✅ Allow early completion: DO NOT block based on scheduled completion_date.
                 milestone.completed = True
-
                 update_fields = ["completed"]
 
-                # If milestone model has completion_notes, store it
                 if hasattr(milestone, "completion_notes") and completion_notes:
                     setattr(milestone, "completion_notes", completion_notes)
                     update_fields.append("completion_notes")
 
                 milestone.save(update_fields=update_fields)
 
-                # Record actual completion time in a system comment (audit-friendly)
                 stamp = timezone.now().strftime("%Y-%m-%d %H:%M:%S %Z")
                 base_line = f"[System] Milestone marked complete at {stamp}."
                 content = f"{base_line}\n\n{completion_notes}" if completion_notes else base_line
                 try:
-                    MilestoneComment.objects.create(
-                        milestone=milestone,
-                        author=request.user,
-                        content=content,
-                    )
+                    MilestoneComment.objects.create(milestone=milestone, author=request.user, content=content)
                 except Exception:
-                    # comments should not block completion
                     pass
 
-                # Optional evidence uploads
                 uploaded_files = []
                 if hasattr(request, "FILES"):
                     if "file" in request.FILES:
@@ -182,36 +378,20 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                         uploaded_files.extend(request.FILES.getlist("files"))
 
                 for up in uploaded_files:
-                    MilestoneFile.objects.create(
-                        milestone=milestone,
-                        uploaded_by=request.user,
-                        file=up,
-                    )
+                    MilestoneFile.objects.create(milestone=milestone, uploaded_by=request.user, file=up)
 
                 milestone.refresh_from_db()
 
         except Exception as exc:
             logger.exception("Failed to mark milestone %s complete: %s", getattr(milestone, "id", None), exc)
-            return Response(
-                {"detail": "Unable to mark milestone complete."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+            return Response({"detail": "Unable to mark milestone complete."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        return Response(
-            MilestoneSerializer(milestone, context={"request": request}).data,
-            status=status.HTTP_200_OK,
-        )
+        return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="complete-to-review")
     def complete_to_review(self, request, pk=None):
-        """
-        Alias endpoint for frontend.
-        """
         return self.complete(request, pk=pk)
 
-    # ---------------------------------------------------------------------
-    # overlap check
-    # ---------------------------------------------------------------------
     @action(detail=False, methods=["post"], url_path="check-overlap")
     def check_overlap(self, request):
         agreement = request.data.get("agreement")
@@ -230,26 +410,19 @@ class MilestoneViewSet(viewsets.ModelViewSet):
             qs = qs.exclude(pk=milestone_id)
 
         conflicts = list(
-            qs.filter(
-                Q(start_date__lte=end)
-                & (Q(completion_date__gte=start) | Q(due_date__gte=start))
-            ).values("id", "title", "start_date", "completion_date", "due_date")
+            qs.filter(Q(start_date__lte=end) & (Q(completion_date__gte=start) | Q(due_date__gte=start))).values(
+                "id", "title", "start_date", "completion_date", "due_date"
+            )
         )
         return Response({"overlaps": bool(conflicts), "conflicts": conflicts}, status=200)
 
-    # ---------------------------------------------------------------------
-    # create invoice (idempotent)
-    # ---------------------------------------------------------------------
     @action(detail=True, methods=["post"], url_path="create-invoice")
     def create_invoice(self, request, pk=None):
         milestone: Milestone = self.get_object()
         agreement = milestone.agreement
 
         if not getattr(milestone, "completed", False):
-            return Response(
-                {"detail": "Milestone must be completed before invoicing."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response({"detail": "Milestone must be completed before invoicing."}, status=status.HTTP_400_BAD_REQUEST)
 
         if not getattr(agreement, "escrow_funded", False):
             return Response(
@@ -257,7 +430,6 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Idempotent: if already linked, return existing invoice
         if getattr(milestone, "invoice_id", None):
             inv = Invoice.objects.filter(pk=milestone.invoice_id).first()
             if inv:
@@ -272,7 +444,6 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                     if inv:
                         return Response(InvoiceSerializer(inv, context={"request": request}).data, status=status.HTTP_200_OK)
 
-                # Completion notes: prefer milestone.completion_notes if present, else derive from comments
                 completion_notes = ""
                 if hasattr(milestone, "completion_notes"):
                     completion_notes = (getattr(milestone, "completion_notes") or "").strip()
@@ -289,7 +460,6 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                     except Exception:
                         completion_notes = ""
 
-                # Snapshot attachments
                 attachments = []
                 try:
                     files_qs = MilestoneFile.objects.filter(milestone=milestone).order_by("-uploaded_at")
@@ -328,10 +498,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                 milestone.invoice = invoice
                 milestone.save(update_fields=["is_invoiced", "invoice"])
 
-                return Response(
-                    InvoiceSerializer(invoice, context={"request": request}).data,
-                    status=status.HTTP_201_CREATED,
-                )
+                return Response(InvoiceSerializer(invoice, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
         except IntegrityError as exc:
             logger.error("IntegrityError creating invoice for milestone %s: %s", milestone.id, exc)
@@ -341,14 +508,8 @@ class MilestoneViewSet(viewsets.ModelViewSet):
             )
         except Exception as exc:
             logger.exception("Unexpected error creating invoice for milestone %s: %s", milestone.id, exc)
-            return Response(
-                {"detail": "Unexpected error creating invoice."},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+            return Response({"detail": "Unexpected error creating invoice."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    # ---------------------------------------------------------------------
-    # files endpoint (nested)
-    # ---------------------------------------------------------------------
     @action(detail=True, methods=["get", "post"], url_path="files")
     def files(self, request, pk=None):
         milestone: Milestone = self.get_object()
@@ -362,18 +523,12 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         if not uploaded:
             return Response({"detail": "file is required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        serializer = MilestoneFileSerializer(
-            data={"milestone": milestone.pk, "file": uploaded},
-            context={"request": request},
-        )
+        serializer = MilestoneFileSerializer(data={"milestone": milestone.pk, "file": uploaded}, context={"request": request})
         serializer.is_valid(raise_exception=True)
         instance = serializer.save(uploaded_by=request.user)
         out = MilestoneFileSerializer(instance, context={"request": request}).data
         return Response(out, status=status.HTTP_201_CREATED)
 
-    # ---------------------------------------------------------------------
-    # comments endpoint (nested)
-    # ---------------------------------------------------------------------
     @action(detail=True, methods=["get", "post"], url_path="comments")
     def comments(self, request, pk=None):
         milestone: Milestone = self.get_object()
@@ -393,18 +548,126 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         out = MilestoneCommentSerializer(instance).data
         return Response(out, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=["post"], url_path="public-request-descope", permission_classes=[AllowAny])
+    def public_request_descope(self, request, pk=None):
+        milestone = get_object_or_404(Milestone.objects.select_related("agreement"), pk=pk)
+        agreement = milestone.agreement
 
-# -----------------------------------------------------------------------------
-# ✅ Compatibility viewsets (your projects/urls.py imports these)
-# -----------------------------------------------------------------------------
+        _ensure_descope_fields_exist(milestone)
+
+        agreement_token = str((request.data or {}).get("agreement_token") or "").strip()
+        if not agreement_token:
+            return Response({"detail": "agreement_token is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if str(getattr(agreement, "homeowner_access_token", "")).strip() != agreement_token:
+            return Response({"detail": "Invalid agreement_token."}, status=status.HTTP_403_FORBIDDEN)
+
+        if not getattr(agreement, "escrow_funded", False):
+            return Response({"detail": "Escrow is not funded for this agreement."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if _milestone_looks_started(milestone):
+            return Response(
+                {"detail": "This milestone appears started/invoiced. Please open a dispute for changes/refunds."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if milestone.descope_status in ("requested", "approved", "refunded"):
+            return Response({"detail": f"Descope already in progress (status={milestone.descope_status})."}, status=status.HTTP_200_OK)
+
+        reason = str((request.data or {}).get("reason") or "").strip()
+
+        with transaction.atomic():
+            milestone = Milestone.objects.select_for_update().get(pk=milestone.pk)
+            milestone.descope_status = "requested"
+            milestone.descope_requested_at = timezone.now()
+            milestone.descope_reason = reason
+            milestone.save(update_fields=["descope_status", "descope_requested_at", "descope_reason"])
+
+        return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="approve-descope")
+    def approve_descope(self, request, pk=None):
+        milestone: Milestone = self.get_object()
+        _ensure_descope_fields_exist(milestone)
+
+        if milestone.descope_status != "requested":
+            return Response({"detail": "No active descope request for this milestone."}, status=status.HTTP_400_BAD_REQUEST)
+
+        decision_note = str((request.data or {}).get("decision_note") or "").strip()
+
+        try:
+            result = _refund_single_milestone_via_agreement_engine(
+                request_user=request.user,
+                milestone=milestone,
+                reason=decision_note,
+            )
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.exception("approve_descope failed: %s", e)
+            return Response({"detail": "Unable to approve descope/refund."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response(
+            {
+                "ok": True,
+                "milestone": MilestoneSerializer(milestone, context={"request": request}).data,
+                "refund_cents": result.get("refund_cents"),
+                "stripe_refund_id": result.get("stripe_refund_id"),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="reject-descope")
+    def reject_descope(self, request, pk=None):
+        milestone: Milestone = self.get_object()
+        _ensure_descope_fields_exist(milestone)
+
+        if milestone.descope_status != "requested":
+            return Response({"detail": "No active descope request to reject."}, status=status.HTTP_400_BAD_REQUEST)
+
+        note = str((request.data or {}).get("decision_note") or "").strip()
+
+        with transaction.atomic():
+            milestone = Milestone.objects.select_for_update().get(pk=milestone.pk)
+            milestone.descope_status = "rejected"
+            milestone.descope_decision_at = timezone.now()
+            milestone.descope_decision_note = note
+            milestone.save(update_fields=["descope_status", "descope_decision_at", "descope_decision_note"])
+
+        return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="descope-refund")
+    def descope_refund(self, request, pk=None):
+        milestone: Milestone = self.get_object()
+        _ensure_descope_fields_exist(milestone)
+
+        reason = str((request.data or {}).get("reason") or "").strip()
+
+        try:
+            result = _refund_single_milestone_via_agreement_engine(
+                request_user=request.user,
+                milestone=milestone,
+                reason=reason,
+            )
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.exception("descope_refund failed: %s", e)
+            return Response({"detail": "Unable to process descope refund."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response(
+            {
+                "ok": True,
+                "milestone": MilestoneSerializer(milestone, context={"request": request}).data,
+                "refund_cents": result.get("refund_cents"),
+                "stripe_refund_id": result.get("stripe_refund_id"),
+                "already_refunded": bool(result.get("already_refunded")),
+            },
+            status=status.HTTP_200_OK,
+        )
+
 
 class MilestoneFileViewSet(viewsets.ModelViewSet):
-    """
-    Provides /projects/milestone-files/ endpoints (list/create/retrieve/delete),
-    used by your frontend evidence upload path.
-
-    This is required because projects/urls.py imports MilestoneFileViewSet.
-    """
     permission_classes = [IsAuthenticated, IsContractorOrSubAccount]
     serializer_class = MilestoneFileSerializer
     queryset = MilestoneFile.objects.select_related("milestone").all()
@@ -425,13 +688,6 @@ class MilestoneFileViewSet(viewsets.ModelViewSet):
 
 
 class MilestoneCommentViewSet(viewsets.ModelViewSet):
-    """
-    Provides /projects/milestone-comments/ endpoints if you route it,
-    and also ensures older imports don’t break if present.
-
-    Some builds only use the nested /milestones/<id>/comments/ action, but
-    keeping this avoids import breakage if your urls.py references it.
-    """
     permission_classes = [IsAuthenticated, IsContractorOrSubAccount]
     serializer_class = MilestoneCommentSerializer
     queryset = MilestoneComment.objects.select_related("milestone").all()

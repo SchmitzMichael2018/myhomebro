@@ -1,5 +1,7 @@
 # backend/projects/serializers/subaccounts.py
-# v2025-11-16 — Serializers for ContractorSubAccount
+# v2026-01-04-FIX — View owns User creation; serializer creates ONLY ContractorSubAccount
+# Compatible with custom User model (NO username field)
+# PATCH-safe: do NOT require password/email on update
 
 from __future__ import annotations
 
@@ -12,10 +14,6 @@ User = get_user_model()
 
 
 class ContractorSubAccountSerializer(serializers.ModelSerializer):
-    """
-    Read-only serializer for listing / retrieving sub-accounts.
-    """
-
     email = serializers.EmailField(source="user.email", read_only=True)
 
     class Meta:
@@ -26,6 +24,7 @@ class ContractorSubAccountSerializer(serializers.ModelSerializer):
             "email",
             "role",
             "is_active",
+            "notes",
             "created_at",
             "updated_at",
         ]
@@ -34,11 +33,24 @@ class ContractorSubAccountSerializer(serializers.ModelSerializer):
 
 class ContractorSubAccountCreateSerializer(serializers.ModelSerializer):
     """
-    Used for creating/updating employee sub-accounts from the Contractor UI.
+    CREATE (POST):
+      - requires: email + (password OR temporary_password)
+      - DOES NOT create the auth User (the View does)
+      - View will inject: user + parent_contractor
+
+    UPDATE (PUT/PATCH):
+      - does NOT require email/password
+      - updates only: display_name, role, is_active, notes
+      - does NOT change auth user email/password here
     """
 
-    email = serializers.EmailField(write_only=True)
-    password = serializers.CharField(write_only=True, min_length=8, allow_blank=False)
+    email = serializers.EmailField(write_only=True, required=False)
+    password = serializers.CharField(
+        write_only=True, min_length=8, required=False, allow_blank=False
+    )
+    temporary_password = serializers.CharField(
+        write_only=True, min_length=8, required=False, allow_blank=False
+    )
 
     class Meta:
         model = ContractorSubAccount
@@ -50,32 +62,62 @@ class ContractorSubAccountCreateSerializer(serializers.ModelSerializer):
             "notes",
             "email",
             "password",
+            "temporary_password",
         ]
         read_only_fields = ["id"]
 
-    def validate_email(self, value: str) -> str:
-        value = (value or "").strip().lower()
-        if not value:
-            raise serializers.ValidationError("Email is required.")
-        if User.objects.filter(email__iexact=value).exists():
-            raise serializers.ValidationError("A user with this email already exists.")
-        return value
+    def validate(self, attrs):
+        """
+        On CREATE: require email + password (or temporary_password)
+        On UPDATE/PATCH: allow partial updates without password/email
+        """
+        is_create = self.instance is None
+
+        if not is_create:
+            # Update/PATCH path — do not require password/email
+            # Also, if frontend accidentally sends these on PATCH, ignore them
+            attrs.pop("password", None)
+            attrs.pop("temporary_password", None)
+            attrs.pop("email", None)
+            return attrs
+
+        # CREATE path
+        email = (attrs.get("email") or "").strip().lower()
+        if not email:
+            raise serializers.ValidationError({"email": "Email is required."})
+
+        pwd = attrs.get("password")
+        tmp = attrs.get("temporary_password")
+
+        if not pwd and not tmp:
+            raise serializers.ValidationError(
+                {"password": "Password or temporary_password is required."}
+            )
+
+        # Normalize alias: temporary_password -> password
+        if not pwd and tmp:
+            attrs["password"] = tmp
+            attrs.pop("temporary_password", None)
+
+        # If both provided, prefer password
+        if pwd and tmp:
+            attrs.pop("temporary_password", None)
+
+        attrs["email"] = email
+        return attrs
 
     def create(self, validated_data):
-        email = validated_data.pop("email")
-        password = validated_data.pop("password")
+        """
+        IMPORTANT: View injects user + parent_contractor.
+        This serializer must NOT create User objects.
+        """
+        # Remove request-only fields; these are handled by the View
+        validated_data.pop("email", None)
+        validated_data.pop("password", None)
+        validated_data.pop("temporary_password", None)
 
-        # Parent contractor will be provided via serializer.save(parent_contractor=...)
-        parent_contractor = validated_data.get("parent_contractor")
-        if parent_contractor is None:
-            raise serializers.ValidationError("parent_contractor is required.")
-
-        user = User.objects.create_user(
-            username=email,  # simple: username == email
-            email=email,
-            password=password,
-            is_active=True,
-        )
+        user = validated_data.pop("user")
+        parent_contractor = validated_data.pop("parent_contractor")
 
         sub = ContractorSubAccount.objects.create(
             parent_contractor=parent_contractor,
@@ -84,13 +126,17 @@ class ContractorSubAccountCreateSerializer(serializers.ModelSerializer):
         )
         return sub
 
-    def update(self, instance: ContractorSubAccount, validated_data):
-        """
-        Allow updating display_name, role, is_active, notes.
-        Email/password are intentionally not updated via this serializer for now.
-        """
+    def update(self, instance, validated_data):
+        # Do not update email/password via this serializer
         for field in ["display_name", "role", "is_active", "notes"]:
             if field in validated_data:
                 setattr(instance, field, validated_data[field])
-        instance.save(update_fields=["display_name", "role", "is_active", "notes", "updated_at"])
+
+        # Be explicit and safe about update_fields
+        update_fields = ["updated_at"]
+        for f in ["display_name", "role", "is_active", "notes"]:
+            if f in validated_data:
+                update_fields.append(f)
+
+        instance.save(update_fields=update_fields)
         return instance

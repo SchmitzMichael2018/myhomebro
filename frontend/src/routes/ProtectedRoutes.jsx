@@ -1,14 +1,21 @@
 // src/routes/ProtectedRoutes.jsx
-// v2025-12-23 — protected routes only; public invoice links must never land here
-
 import React from "react";
-import { Route, Navigate } from "react-router-dom";
+import { Route, Navigate, Outlet } from "react-router-dom";
 
 import RequireAuth from "./RequireAuth.jsx";
 import AuthenticatedLayout from "../layouts/AuthenticatedLayout.jsx";
 
-/* Dashboard */
 import ContractorDashboard from "../components/ContractorDashboard.jsx";
+
+/* ✅ Admin */
+import AdminDashboard from "../pages/AdminDashboard.jsx";
+
+/* Employee pages */
+import EmployeeDashboard from "../pages/EmployeeDashboard.jsx";
+import EmployeeMilestones from "../pages/EmployeeMilestones.jsx";
+import EmployeeCalendar from "../pages/EmployeeCalendar.jsx";
+import EmployeeProfile from "../pages/EmployeeProfile.jsx";
+import EmployeeAgreements from "../pages/EmployeeAgreements.jsx";
 
 /* Agreements */
 import AgreementWizard from "../components/AgreementWizard.jsx";
@@ -19,6 +26,9 @@ import AgreementList from "../pages/AgreementList.jsx";
 /* Milestones */
 import MilestoneList from "../components/MilestoneList.jsx";
 import MilestoneDetail from "../pages/MilestoneDetail.jsx";
+
+/* Assignments */
+import AssignmentsPage from "../pages/AssignmentsPage.jsx";
 
 /* Invoices */
 import Invoices from "../pages/Invoices.jsx";
@@ -36,53 +46,120 @@ import BusinessDashboard from "../components/BusinessDashboard.jsx";
 import Calendar from "../components/Calendar.jsx";
 import Expenses from "../pages/ExpensesPage.jsx";
 import Disputes from "../pages/DisputesPages.jsx";
+import TeamSchedule from "../pages/TeamSchedule.jsx";
+import TeamPage from "../pages/TeamPage.jsx";
 
-/**
- * Protected application routes (requires auth)
- * NOTE: Public magic links like /invoice/:token and /invoices/magic/:token
- * must be defined in PublicRoutes/App.jsx and must NOT be routed through RequireAuth.
- */
+import { useWhoAmI } from "../hooks/useWhoAmI";
+
+function AppHomeRedirect() {
+  const { data: identity, loading } = useWhoAmI();
+  if (loading) return null;
+
+  const role = identity?.type || identity?.role || "none";
+  const r = String(role).toLowerCase();
+
+  if (r === "admin") return <Navigate to="/app/admin" replace />;
+  if (r === "subaccount") return <Navigate to="/app/employee/dashboard" replace />;
+  if (r === "contractor") return <Navigate to="/app/dashboard" replace />;
+
+  // Fallback if something unexpected happens
+  return <Navigate to="/" replace />;
+}
+
+function RoleGate({ allow }) {
+  const { data: identity, loading } = useWhoAmI();
+  if (loading) return null;
+
+  const role = identity?.type || identity?.role || "none";
+  const r = String(role).toLowerCase();
+
+  // Normalize allow list comparisons
+  const allowNorm = allow.map((x) => String(x).toLowerCase());
+
+  if (!identity || !allowNorm.includes(r)) {
+    // ✅ Smart redirects based on actual identity
+    if (r === "admin") return <Navigate to="/app/admin" replace />;
+    if (r === "subaccount") return <Navigate to="/app/employee/dashboard" replace />;
+    return <Navigate to="/app/dashboard" replace />;
+  }
+
+  return <Outlet />;
+}
+
 export function protectedRoutes() {
   return (
     <>
       <Route
+        path="/app"
         element={
           <RequireAuth>
             <AuthenticatedLayout />
           </RequireAuth>
         }
       >
-        <Route path="/dashboard" element={<ContractorDashboard />} />
+        {/* ✅ Default landing inside /app based on whoami */}
+        <Route index element={<AppHomeRedirect />} />
 
-        <Route path="/agreements" element={<AgreementList />} />
-        <Route path="/agreements/new" element={<AgreementWizard />} />
-        <Route path="/agreements/:id" element={<AgreementDetail />} />
-        <Route path="/agreements/:id/edit" element={<AgreementEdit />} />
-        <Route path="/agreements/:id/wizard" element={<AgreementWizard />} />
+        {/* ---------------- ADMIN ---------------- */}
+        <Route element={<RoleGate allow={["admin"]} />}>
+          <Route path="admin" element={<AdminDashboard />} />
 
-        <Route path="/milestones" element={<MilestoneList />} />
-        <Route path="/milestones/:id" element={<MilestoneDetail />} />
+          {/* ✅ NEW: Dedicated admin disputes page (uses same DisputesPages.jsx) */}
+          <Route path="admin/disputes" element={<Disputes />} />
+        </Route>
 
-        {/* Contractor invoice list */}
-        <Route path="/invoices" element={<Invoices />} />
-        {/* Contractor invoice detail lives under /app/invoices/:id to avoid collision with public /invoices/magic/:token */}
-        <Route path="/app/invoices/:id" element={<InvoiceDetail />} />
+        {/* ---------------- CONTRACTOR ---------------- */}
+        <Route element={<RoleGate allow={["contractor"]} />}>
+          <Route path="dashboard" element={<ContractorDashboard />} />
 
-        <Route path="/customers" element={<Customers />} />
-        <Route path="/customers/new" element={<CustomerForm />} />
-        <Route path="/customers/:id/edit" element={<CustomerEdit />} />
+          <Route path="business" element={<BusinessDashboard />} />
+          <Route path="business-analysis" element={<Navigate to="/app/business" replace />} />
 
-        <Route path="/calendar" element={<Calendar />} />
-        <Route path="/expenses" element={<Expenses />} />
-        <Route path="/disputes" element={<Disputes />} />
-        <Route path="/business-analysis" element={<BusinessDashboard />} />
+          <Route path="team-schedule" element={<TeamSchedule />} />
+          <Route path="team" element={<TeamPage />} />
 
-        <Route path="/profile" element={<ContractorProfile />} />
-        <Route path="/onboarding" element={<StripeOnboarding />} />
+          <Route path="agreements" element={<AgreementList />} />
+          <Route path="agreements/new" element={<AgreementWizard />} />
+          <Route path="agreements/:id" element={<AgreementDetail />} />
+          <Route path="agreements/:id/edit" element={<AgreementEdit />} />
+          <Route path="agreements/:id/wizard" element={<AgreementWizard />} />
 
-        {/* Catch-all inside protected area */}
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="milestones" element={<MilestoneList />} />
+          <Route path="milestones/:id" element={<MilestoneDetail />} />
+
+          <Route path="assignments" element={<AssignmentsPage />} />
+
+          <Route path="invoices" element={<Invoices />} />
+          <Route path="invoices/:id" element={<InvoiceDetail />} />
+
+          <Route path="customers" element={<Customers />} />
+          <Route path="customers/new" element={<CustomerForm />} />
+          <Route path="customers/:id/edit" element={<CustomerEdit />} />
+
+          <Route path="calendar" element={<Calendar />} />
+          <Route path="expenses" element={<Expenses />} />
+          <Route path="disputes" element={<Disputes />} />
+
+          <Route path="profile" element={<ContractorProfile />} />
+          <Route path="onboarding" element={<StripeOnboarding />} />
+        </Route>
+
+        {/* ---------------- EMPLOYEE ---------------- */}
+        <Route element={<RoleGate allow={["subaccount"]} />}>
+          <Route path="employee/dashboard" element={<EmployeeDashboard />} />
+          <Route path="employee/agreements" element={<EmployeeAgreements />} />
+          <Route path="employee/milestones" element={<EmployeeMilestones />} />
+          <Route path="employee/calendar" element={<EmployeeCalendar />} />
+          <Route path="employee/profile" element={<EmployeeProfile />} />
+        </Route>
+
+        {/* ✅ Catch-all inside /app: send to the right home */}
+        <Route path="*" element={<AppHomeRedirect />} />
       </Route>
+
+      {/* Legacy redirects */}
+      <Route path="/dashboard" element={<Navigate to="/app/dashboard" replace />} />
+      <Route path="/employee" element={<Navigate to="/app/employee/dashboard" replace />} />
     </>
   );
 }

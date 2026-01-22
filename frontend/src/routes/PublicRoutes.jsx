@@ -1,5 +1,6 @@
 // src/routes/PublicRoutes.jsx
-// v2025-12-23 — public routes aligned to token-in-path for magic invoice links
+// v2026-01-15 — adds decision route: /disputes/:id/decision
+// Keeps your thread route: /disputes/:id
 
 import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
@@ -10,13 +11,19 @@ import SignUpForm from "../components/SignUpForm.jsx";
 import ForgotPassword from "../components/ForgotPassword.jsx";
 
 // Public pages
-import HomeownerSign from "../pages/HomeownerSign.jsx";   // /agreements/sign/:id?token=...
-import MagicInvoice from "../pages/MagicInvoice.jsx";     // /invoices/magic/:token
+import HomeownerSign from "../pages/HomeownerSign.jsx"; // /agreements/sign/:id?token=...
+import MagicInvoice from "../pages/MagicInvoice.jsx"; // /invoices/magic/:token
 import MagicAgreement from "../pages/MagicAgreement.jsx"; // /agreements/magic/:token (recommended)
-import PublicProfile from "../pages/PublicProfile.jsx";   // /contractors/:id public view
+import PublicProfile from "../pages/PublicProfile.jsx"; // /contractors/:id public view
 
-// Optional: your /invoice/:token router page (if you use PublicRoutes as the main router)
-import InvoicePage from "../pages/InvoicePage.jsx";       // /invoice/:token → redirects to /invoices/magic/:token
+// Optional: your /invoice/:token router page
+import InvoicePage from "../pages/InvoicePage.jsx"; // /invoice/:token → redirects to /invoices/magic/:token
+
+// ✅ Public dispute thread view (existing)
+import PublicDisputeView from "../pages/PublicDisputeView.jsx"; // /disputes/:id?token=...
+
+// ✅ NEW: public dispute decision view
+import PublicDisputeDecision from "../pages/PublicDisputeDecision.jsx"; // /disputes/:id/decision?token=...
 
 export default function PublicRoutes() {
   return (
@@ -33,16 +40,22 @@ export default function PublicRoutes() {
       {/* ✅ Public invoice entry (optional but recommended) */}
       <Route path="/invoice/:token" element={<InvoicePage />} />
 
-      {/* ✅ Public magic invoice (token in path, no querystring token) */}
+      {/* ✅ Public magic invoice */}
       <Route path="/invoices/magic/:token" element={<MagicInvoice />} />
 
-      {/* ✅ Recommended: magic agreement token in path (if you move that flow too) */}
+      {/* ✅ Magic agreement */}
       <Route path="/agreements/magic/:token" element={<MagicAgreement />} />
+
+      {/* ✅ Public dispute thread (existing) */}
+      <Route path="/disputes/:id" element={<PublicDisputeView />} />
+
+      {/* ✅ NEW: Public dispute decision */}
+      <Route path="/disputes/:id/decision" element={<PublicDisputeDecision />} />
 
       {/* Public contractor profile */}
       <Route path="/contractors/:id" element={<PublicProfile />} />
 
-      {/* catch-all for unauthenticated users */}
+      {/* catch-all */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

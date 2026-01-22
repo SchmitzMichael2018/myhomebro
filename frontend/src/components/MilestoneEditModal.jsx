@@ -3,13 +3,10 @@
 // verified upload + Recent Attachments + strict date normalization
 // NEW in r11: full comments list (load + append on send) using milestone comments API.
 // v2025-12-05 — removed extra calendar button overlay to avoid double-icons
+// v2026-01-07 — View Agreement routes to /app/agreements/:id/wizard?step=4 (Finalize & Review)
 
-import React, {
-  useEffect,
-  useMemo,
-  useState,
-  useCallback,
-} from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../api";
 
@@ -31,9 +28,7 @@ const fmtMoney = (n) => {
 const isLockedAgreementState = (s) => {
   if (!s) return false;
   const up = String(s).trim().toUpperCase();
-  return ["SIGNED", "EXECUTED", "ACTIVE", "APPROVED", "ARCHIVED"].includes(
-    up
-  );
+  return ["SIGNED", "EXECUTED", "ACTIVE", "APPROVED", "ARCHIVED"].includes(up);
 };
 
 // Normalize various input forms (Date/string) → "YYYY-MM-DD" or ""
@@ -105,6 +100,8 @@ export default function MilestoneEditModal({
   onSaved,
   onMarkComplete,
 }) {
+  const navigate = useNavigate();
+
   const [form, setForm] = useState({
     title: "",
     start_date: "",
@@ -170,8 +167,7 @@ export default function MilestoneEditModal({
             milestone.due_date ||
             ""
         ),
-        amount:
-          milestone.amount == null ? "" : String(milestone.amount),
+        amount: milestone.amount == null ? "" : String(milestone.amount),
         description: milestone.description || "",
         status: milestone.status || "Incomplete",
       };
@@ -189,9 +185,7 @@ export default function MilestoneEditModal({
   const reloadAttachments = async (agId) => {
     setLoadingAttachments(true);
     try {
-      const { data } = await api.get(
-        `/projects/agreements/${agId}/attachments/`
-      );
+      const { data } = await api.get(`/projects/agreements/${agId}/attachments/`);
       const list = Array.isArray(data) ? data : [];
       list.sort((a, b) => (b.id || 0) - (a.id || 0));
       setRecentAttachments(list.slice(0, 10));
@@ -205,10 +199,9 @@ export default function MilestoneEditModal({
   const reloadComments = async (milestoneId) => {
     setLoadingComments(true);
     try {
-      const { data } = await api.get(
-        `/projects/milestones/${milestoneId}/comments/`,
-        { validateStatus: (s) => s >= 200 && s < 300 }
-      );
+      const { data } = await api.get(`/projects/milestones/${milestoneId}/comments/`, {
+        validateStatus: (s) => s >= 200 && s < 300,
+      });
       setComments(Array.isArray(data) ? data : []);
     } catch (e) {
       console.warn("Failed to load milestone comments", e);
@@ -239,38 +232,26 @@ export default function MilestoneEditModal({
     };
 
     // title/description (trim title)
-    addIfChanged("title", (v) =>
-      v?.trim() ? v.trim() : undefined
-    );
-    addIfChanged("description", (v) =>
-      v !== undefined ? v : undefined
-    );
+    addIfChanged("title", (v) => (v?.trim() ? v.trim() : undefined));
+    addIfChanged("description", (v) => (v !== undefined ? v : undefined));
 
     // amount -> number; skip if blank
-    addIfChanged("amount", (v) =>
-      v === "" ? undefined : Number(v)
-    );
+    addIfChanged("amount", (v) => (v === "" ? undefined : Number(v)));
 
     // dates (YYYY-MM-DD); when end_date changes, also send completion_date mirror
-    const normDate = (v) =>
-      v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined;
+    const normDate = (v) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
     const endBefore = original ? original.end_date : undefined;
     const endAfter = form.end_date;
 
-    addIfChanged("start_date", (v) =>
-      normDate(toDateOnly(v))
-    );
-    addIfChanged("end_date", (v) =>
-      normDate(toDateOnly(v))
-    );
+    addIfChanged("start_date", (v) => normDate(toDateOnly(v)));
+    addIfChanged("end_date", (v) => normDate(toDateOnly(v)));
     if (endAfter !== endBefore && normDate(toDateOnly(endAfter))) {
       payload["completion_date"] = normDate(toDateOnly(endAfter));
     }
 
     // status only if allowed & changed
     if (form.status && ALLOWED_STATUS.has(form.status)) {
-      if (!original || original.status !== form.status)
-        payload.status = form.status;
+      if (!original || original.status !== form.status) payload.status = form.status;
     }
 
     if (allowOverlap) payload.allow_overlap = true;
@@ -282,11 +263,9 @@ export default function MilestoneEditModal({
     if (!milestone?.id) return;
     setSaving(true);
 
-    const attempt = async (payload) =>
-      api.patch(`/projects/milestones/${milestone.id}/`, payload);
+    const attempt = async (payload) => api.patch(`/projects/milestones/${milestone.id}/`, payload);
 
     try {
-      // Attempt 1 — normal diff-only
       const payload1 = buildDiffPayload(false);
       if (Object.keys(payload1).length === 0) {
         toast("No changes to save.");
@@ -310,9 +289,7 @@ export default function MilestoneEditModal({
         body &&
         typeof body === "object" &&
         Array.isArray(body.non_field_errors) &&
-        body.non_field_errors.some((t) =>
-          String(t).toLowerCase().includes("overlap")
-        );
+        body.non_field_errors.some((t) => String(t).toLowerCase().includes("overlap"));
 
       if (isOverlap) {
         const ok = window.confirm(
@@ -323,7 +300,7 @@ export default function MilestoneEditModal({
           return;
         }
         try {
-          const payload2 = buildDiffPayload(true); // allow_overlap: true
+          const payload2 = buildDiffPayload(true);
           await attempt(payload2);
           toast.success("Milestone saved (overlap allowed)");
           onSaved && onSaved({ id: milestone.id });
@@ -332,9 +309,7 @@ export default function MilestoneEditModal({
           const r2 = err2?.response;
           const b2 =
             (r2?.data &&
-              (typeof r2.data === "string"
-                ? r2.data
-                : JSON.stringify(r2.data))) ||
+              (typeof r2.data === "string" ? r2.data : JSON.stringify(r2.data))) ||
             r2?.statusText ||
             err2?.message ||
             "Save failed";
@@ -363,7 +338,6 @@ export default function MilestoneEditModal({
       );
       toast.success("Comment added");
       setComment("");
-      // prepend new comment to list
       setComments((prev) => [data, ...(prev || [])]);
     } catch (err) {
       console.error(err);
@@ -376,16 +350,13 @@ export default function MilestoneEditModal({
   /* ---------- attachments ---------- */
   const fetchAgreementAttachments = async (agId) => {
     try {
-      const { data } = await api.get(
-        `/projects/agreements/${agId}/attachments/`
-      );
+      const { data } = await api.get(`/projects/agreements/${agId}/attachments/`);
       return Array.isArray(data) ? data : [];
     } catch {
       return [];
     }
   };
 
-  // verified upload (nested → flat), only success after GET confirms
   const uploadFile = useCallback(async () => {
     if (!file) return;
     if (!agreementId) {
@@ -396,13 +367,9 @@ export default function MilestoneEditModal({
     setUploading(true);
     setUploadError("");
 
-    const title = `${form.title || milestone.title || "Milestone"} — ${
-      file.name
-    }`;
+    const title = `${form.title || milestone.title || "Milestone"} — ${file.name}`;
     const postFD = (url, fd) =>
-      api.post(url, fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      api.post(url, fd, { headers: { "Content-Type": "multipart/form-data" } });
 
     const verify = async () => {
       const list = await fetchAgreementAttachments(agreementId);
@@ -414,17 +381,13 @@ export default function MilestoneEditModal({
       );
     };
 
-    // nested
     try {
       const fd = new FormData();
       fd.append("file", file);
-      fd.append("agreement", String(agreementId)); // safe even when nested
+      fd.append("agreement", String(agreementId));
       fd.append("title", title);
       fd.append("category", "OTHER");
-      await postFD(
-        `/projects/agreements/${agreementId}/attachments/`,
-        fd
-      );
+      await postFD(`/projects/agreements/${agreementId}/attachments/`, fd);
       const found = await verify();
       if (found) {
         toast.success("File uploaded");
@@ -432,11 +395,8 @@ export default function MilestoneEditModal({
         setUploading(false);
         return;
       }
-    } catch {
-      /* try flat next */
-    }
+    } catch {}
 
-    // flat
     try {
       const fd = new FormData();
       fd.append("file", file);
@@ -467,15 +427,11 @@ export default function MilestoneEditModal({
       return;
     }
 
-    // accepted but not visible
     setUploadError("Upload accepted but attachment not visible yet.");
-    toast.error(
-      "Server accepted upload, but attachment not visible yet."
-    );
+    toast.error("Server accepted upload, but attachment not visible yet.");
     setUploading(false);
   }, [file, agreementId, form.title, milestone.title]);
 
-  // DELETE attachment: try several paths, then refresh
   const deleteAttachment = useCallback(
     async (attachmentId) => {
       if (!agreementId) return;
@@ -527,44 +483,28 @@ export default function MilestoneEditModal({
 
   if (!open) return null;
 
-  /* ---------- meta (from Calendar extendedProps) ---------- */
   const meta = milestone?._meta || {};
-  const homeowner =
-    meta.homeownerName ||
-    milestone?.homeowner_name ||
-    milestone?.homeowner?.name ||
-    "";
-  const address =
-    meta.projectAddress ||
-    milestone?.project_address ||
-    milestone?.project?.address ||
-    "";
+  const homeowner = meta.homeownerName || milestone?.homeowner_name || milestone?.homeowner?.name || "";
+  const address = meta.projectAddress || milestone?.project_address || milestone?.project?.address || "";
   const agreementNumber =
     meta.agreementNumber ||
     milestone?.agreement_number ||
     milestone?.agreement_id ||
     milestone?.agreement?.id ||
     null;
-  const agreementTotal =
-    meta.agreementTotal ?? milestone?.agreement?.total_cost ?? null;
+  const agreementTotal = meta.agreementTotal ?? milestone?.agreement?.total_cost ?? null;
   const links = meta.links || {};
-  const agreementDetailUrl =
-    links.agreementDetailUrl ||
-    (agreementNumber ? `/agreements/${agreementNumber}` : null);
   const previewSignedUrl = links.previewSignedUrl || null;
 
-  /* ---------- render ---------- */
+  const wizardStep4Url =
+    agreementNumber ? `/app/agreements/${agreementNumber}/wizard?step=4` : null;
+
   return (
     <div className="fixed inset-0 z-[9999] flex items-start justify-center bg-black/40 p-6 overflow-y-auto">
       <div className="w-full max-w-3xl rounded-xl bg-white shadow-2xl">
-        {/* Header */}
         <div className="flex items-center justify-between border-b px-5 py-3">
           <div className="text-sm text-gray-500">
-            {agreementNumber
-              ? `Agreement #${agreementNumber}`
-              : milestone?.agreement_id
-              ? `Agreement ID ${milestone.agreement_id}`
-              : null}
+            {agreementNumber ? `Agreement #${agreementNumber}` : null}
           </div>
           <button
             onClick={onClose}
@@ -576,49 +516,38 @@ export default function MilestoneEditModal({
           </button>
         </div>
 
-        {/* Body */}
         <div className="px-5 pb-5 pt-3">
-          {/* Info Bar */}
           <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
               <div>
-                <span className="font-semibold">Homeowner</span>:{" "}
-                {homeowner || "—"}
+                <span className="font-semibold">Homeowner</span>: {homeowner || "—"}
               </div>
               {address ? (
                 <div className="truncate max-w-[420px]">
                   <span className="font-semibold">Address</span>: {address}
                 </div>
               ) : null}
-              {agreementTotal !== null &&
-              agreementTotal !== undefined ? (
+              {agreementTotal !== null && agreementTotal !== undefined ? (
                 <div>
-                  <span className="font-semibold">Agreement Total</span>:{" "}
-                  {fmtMoney(agreementTotal)}
+                  <span className="font-semibold">Agreement Total</span>: {fmtMoney(agreementTotal)}
                 </div>
               ) : null}
+
               <div className="ml-auto flex gap-2">
-                {agreementDetailUrl ? (
+                {wizardStep4Url ? (
                   <button
                     type="button"
-                    onClick={() =>
-                      window.location.assign(agreementDetailUrl)
-                    }
+                    onClick={() => navigate(wizardStep4Url)}
                     className="px-3 py-1 rounded-md bg-gray-900 text-white hover:opacity-90"
                   >
                     View Agreement
                   </button>
                 ) : null}
+
                 {previewSignedUrl ? (
                   <button
                     type="button"
-                    onClick={() =>
-                      window.open(
-                        previewSignedUrl,
-                        "_blank",
-                        "noopener,noreferrer"
-                      )
-                    }
+                    onClick={() => window.open(previewSignedUrl, "_blank", "noopener,noreferrer")}
                     className="px-3 py-1 rounded-md bg-indigo-600 text-white hover:opacity-90"
                   >
                     Preview PDF
@@ -628,104 +557,75 @@ export default function MilestoneEditModal({
             </div>
           </div>
 
+          {/* (rest of your modal remains unchanged) */}
+          {/* Title / Amount / Dates / Description */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {/* Title */}
             <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                Title
-              </label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Title</label>
               <input
                 type="text"
                 name="title"
                 value={form.title}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, title: e.target.value }))
-                }
+                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
                 readOnly={readOnly}
-                className={`w-full rounded border px-3 py-2 text-sm ${
-                  readOnly ? "bg-gray-50 text-gray-600" : ""
-                }`}
+                className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
                 placeholder="e.g., Install Sink and Mirror"
               />
             </div>
 
-            {/* Amount */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                Amount ($)
-              </label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Amount ($)</label>
               <input
                 type="number"
                 step="0.01"
                 name="amount"
                 value={form.amount}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, amount: e.target.value }))
-                }
+                onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
                 readOnly={readOnly}
-                className={`w-full rounded border px-3 py-2 text-sm text-right ${
-                  readOnly ? "bg-gray-50 text-gray-600" : ""
-                }`}
+                className={`w-full rounded border px-3 py-2 text-sm text-right ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
               />
-              <div className="mt-1 text-xs text-gray-400">
-                Preview: ${dollar(form.amount)}
-              </div>
+              <div className="mt-1 text-xs text-gray-400">Preview: ${dollar(form.amount)}</div>
             </div>
 
-            {/* Dates */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Start Date
-                </label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Start Date</label>
                 <input
                   type="date"
                   name="start_date"
                   value={form.start_date || ""}
                   onChange={onChange}
                   readOnly={readOnly}
-                  className={`w-full rounded border px-3 py-2 text-sm ${
-                    readOnly ? "bg-gray-50 text-gray-600" : ""
-                  }`}
+                  className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  Completion Date
-                </label>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Completion Date</label>
                 <input
                   type="date"
                   name="end_date"
                   value={form.end_date || ""}
                   onChange={onChange}
                   readOnly={readOnly}
-                  className={`w-full rounded border px-3 py-2 text-sm ${
-                    readOnly ? "bg-gray-50 text-gray-600" : ""
-                  }`}
+                  className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
                 />
               </div>
             </div>
 
-            {/* Description */}
             <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                Description
-              </label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
               <textarea
                 name="description"
                 value={form.description}
                 onChange={onChange}
                 readOnly={readOnly}
                 rows={4}
-                className={`w-full rounded border px-3 py-2 text-sm ${
-                  readOnly ? "bg-gray-50 text-gray-600" : ""
-                }`}
+                className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
                 placeholder="Work description…"
               />
             </div>
           </div>
 
-          {/* Controls */}
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               onClick={save}
@@ -761,18 +661,15 @@ export default function MilestoneEditModal({
             </button>
           </div>
 
+          {/* Attachments + Comments (unchanged from your file) */}
+          {/* ... kept exactly as before ... */}
+
           {/* Files + Recent Attachments */}
           <div className="mt-6">
             <div className="text-sm font-medium text-gray-700">Files</div>
             <div className="mt-2 flex items-center gap-2">
-              <input
-                type="file"
-                onChange={(e) =>
-                  setFile(e.target.files?.[0] || null)
-                }
-                disabled={uploading}
-              />
-            <button
+              <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} disabled={uploading} />
+              <button
                 onClick={uploadFile}
                 disabled={!file || uploading}
                 className="rounded bg-gray-100 px-3 py-1.5 text-sm hover:bg-gray-200 disabled:cursor-not-allowed disabled:bg-gray-100"
@@ -780,16 +677,10 @@ export default function MilestoneEditModal({
                 {uploading ? "Uploading…" : "Upload"}
               </button>
             </div>
-            {!!uploadError && (
-              <div className="mt-2 text-xs text-red-600">
-                Server response: {uploadError}
-              </div>
-            )}
+            {!!uploadError && <div className="mt-2 text-xs text-red-600">Server response: {uploadError}</div>}
 
             <div className="mt-4">
-              <div className="text-sm font-medium text-gray-700 mb-2">
-                Recent Attachments
-              </div>
+              <div className="text-sm font-medium text-gray-700 mb-2">Recent Attachments</div>
               {loadingAttachments ? (
                 <div className="text-xs text-gray-500">Loading…</div>
               ) : recentAttachments.length ? (
@@ -797,36 +688,18 @@ export default function MilestoneEditModal({
                   {recentAttachments.map((a) => {
                     const url = urlFor(a);
                     return (
-                      <li
-                        key={
-                          a.id ||
-                          `${a.title}-${a.filename}-${Math.random()}`
-                        }
-                        className="flex items-center justify-between"
-                      >
+                      <li key={a.id || `${a.title}-${a.filename}-${Math.random()}`} className="flex items-center justify-between">
                         <span className="truncate">
-                          {a.category
-                            ? `[${String(
-                                a.category
-                              ).toUpperCase()}] `
-                            : ""}
-
+                          {a.category ? `[${String(a.category).toUpperCase()}] ` : ""}
                           {a.title || a.filename || "Attachment"}
                         </span>
                         <span className="ml-3 flex items-center gap-3">
                           {url ? (
-                            <a
-                              className="text-blue-600 hover:underline"
-                              href={url}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
+                            <a className="text-blue-600 hover:underline" href={url} target="_blank" rel="noreferrer">
                               Download
                             </a>
                           ) : (
-                            <span className="text-gray-400">
-                              No link
-                            </span>
+                            <span className="text-gray-400">No link</span>
                           )}
                           <button
                             onClick={() => deleteAttachment(a.id)}
@@ -834,9 +707,7 @@ export default function MilestoneEditModal({
                             className="text-red-600 hover:text-red-700 disabled:text-red-300"
                             title="Delete attachment"
                           >
-                            {deletingId === a.id
-                              ? "Deleting…"
-                              : "Delete"}
+                            {deletingId === a.id ? "Deleting…" : "Delete"}
                           </button>
                         </span>
                       </li>
@@ -844,15 +715,11 @@ export default function MilestoneEditModal({
                   })}
                 </ul>
               ) : (
-                <div className="text-xs text-gray-500">
-                  No attachments yet.
-                </div>
+                <div className="text-xs text-gray-500">No attachments yet.</div>
               )}
               <div className="mt-2">
                 <button
-                  onClick={() =>
-                    agreementId && reloadAttachments(agreementId)
-                  }
+                  onClick={() => agreementId && reloadAttachments(agreementId)}
                   className="rounded bg-gray-100 px-2 py-1 text-xs hover:bg-gray-200"
                 >
                   Refresh
@@ -863,44 +730,26 @@ export default function MilestoneEditModal({
 
           {/* Comments */}
           <div className="mt-6">
-            <div className="text-sm font-medium text-gray-700">
-              Comments
-            </div>
+            <div className="text-sm font-medium text-gray-700">Comments</div>
 
-            {/* existing comments */}
             <div className="mt-2 max-h-40 overflow-y-auto rounded border bg-gray-50 p-2 text-xs">
               {loadingComments ? (
                 <div className="text-gray-500">Loading comments…</div>
               ) : comments && comments.length > 0 ? (
                 comments.map((c) => (
-                  <div
-                    key={c.id}
-                    className="mb-2 rounded bg-white px-2 py-1 shadow-sm last:mb-0"
-                  >
+                  <div key={c.id} className="mb-2 rounded bg-white px-2 py-1 shadow-sm last:mb-0">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold">
-                        {c.author_name || "User"}
-                      </span>
-                      <span className="text-[11px] text-gray-500">
-                        {c.created_at
-                          ? friendlyDate(c.created_at)
-                          : ""}
-
-                      </span>
+                      <span className="font-semibold">{c.author_name || "User"}</span>
+                      <span className="text-[11px] text-gray-500">{c.created_at ? friendlyDate(c.created_at) : ""}</span>
                     </div>
-                    <div className="mt-1 whitespace-pre-wrap text-[13px] text-gray-800">
-                      {c.content}
-                    </div>
+                    <div className="mt-1 whitespace-pre-wrap text-[13px] text-gray-800">{c.content}</div>
                   </div>
                 ))
               ) : (
-                <div className="text-gray-500">
-                  No comments yet. Be the first to add one.
-                </div>
+                <div className="text-gray-500">No comments yet. Be the first to add one.</div>
               )}
             </div>
 
-            {/* new comment input */}
             <div className="mt-2 flex items-center gap-2">
               <input
                 type="text"
@@ -925,8 +774,7 @@ export default function MilestoneEditModal({
             </div>
 
             <div className="mt-2 text-xs text-gray-500">
-              Mark <strong>Complete</strong> to submit for review. Invoicing
-              happens after approval.
+              Mark <strong>Complete</strong> to submit for review. Invoicing happens after approval.
             </div>
           </div>
         </div>

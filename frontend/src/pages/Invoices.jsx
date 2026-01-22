@@ -3,6 +3,7 @@
 // - Lists invoices from /projects/invoices/ (authoritative for contractor dashboard)
 // - Falls back to /invoices/ if needed
 // - Auto-create from milestone navigates to /app/invoices/:id (protected)
+// v2026-01-19 — NEW: supports ?filter=disputed to show ONLY disputed invoices
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -43,12 +44,20 @@ async function createInvoiceForMilestone({ milestoneId, agreementId }) {
   throw lastErr || new Error("Invoice creation failed");
 }
 
+function isDisputedInvoice(inv) {
+  const s = String(inv?.display_status ?? inv?.status_label ?? inv?.status ?? "").toLowerCase();
+  return s.includes("dispute");
+}
+
 export default function Invoices() {
   const query = useQuery();
   const navigate = useNavigate();
 
   const milestoneId = query.get("milestone");
   const agreementId = query.get("agreement");
+
+  // ✅ NEW: filter=disputed support
+  const filterKey = query.get("filter") || "";
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -112,6 +121,7 @@ export default function Invoices() {
     run();
   }, [milestoneId, agreementId, navigate]);
 
+  // Existing milestone scope
   const scopedInvoices = useMemo(() => {
     if (!milestoneId) return items;
 
@@ -120,6 +130,18 @@ export default function Invoices() {
       return String(m || "") === String(milestoneId);
     });
   }, [items, milestoneId]);
+
+  // ✅ NEW: disputed scope (applies when filter=disputed and no milestone auto-scope)
+  const finalInvoices = useMemo(() => {
+    // If milestone scope is active, keep that behavior exactly.
+    if (milestoneId) return scopedInvoices;
+
+    if (String(filterKey).toLowerCase() === "disputed") {
+      return items.filter(isDisputedInvoice);
+    }
+
+    return items;
+  }, [items, filterKey, milestoneId, scopedInvoices]);
 
   return (
     <div className="p-0">
@@ -136,11 +158,7 @@ export default function Invoices() {
         </div>
       )}
 
-      <InvoiceList
-        initialData={milestoneId ? scopedInvoices : items}
-        loadingOverride={loading}
-        onRefresh={fetchInvoices}
-      />
+      <InvoiceList initialData={finalInvoices} loadingOverride={loading} onRefresh={fetchInvoices} />
     </div>
   );
 }

@@ -1,16 +1,11 @@
 // src/pages/MagicInvoice.jsx
-// v2025-12-30c — Escrow-aware magic invoice (based on your current 400+ line file)
+// v2026-01-14a — Magic invoice dispute now redirects to public dispute thread when dispute_id returned.
+// Based on your v2025-12-30c file.
 //
-// IMPORTANT:
-// - If invoice GET includes escrow_funded=true or agreement_status="funded",
-//   we hide Stripe card entry and show "Approve & Release Escrow".
-// - If escrow is NOT funded, we keep your existing card flow.
-//
-// Backend expectations:
-// - GET /api/projects/invoices/magic/<token>/ returns:
-//     escrow_funded, agreement_status (added server-side)
-// - PATCH approve returns:
-//     mode:"escrow_release" OR stripe_client_secret for card pay
+// Backend expectation (recommended):
+// PATCH /api/projects/invoices/magic/<token>/dispute/
+// returns: { dispute_id: number, public_token?: string }
+// If dispute_id not present, we fall back to refreshing the invoice and staying on page.
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
@@ -114,7 +109,7 @@ function DisputeForm({ open, submitting, onCancel, onSubmit }) {
 }
 
 /* ─────────────────────────────────────────────
-   ✅ NEW: Escrow Release Panel
+   ✅ Escrow Release Panel
    ───────────────────────────────────────────── */
 function EscrowReleasePanel({ token, invoice, actionLoading, setActionLoading, onReleased }) {
   const approveRelease = async () => {
@@ -124,14 +119,12 @@ function EscrowReleasePanel({ token, invoice, actionLoading, setActionLoading, o
     try {
       const { data } = await api.patch(`/projects/invoices/magic/${encodeURIComponent(token)}/approve/`, {});
 
-      // Expect escrow mode
       if (data?.mode && String(data.mode).toLowerCase() === "escrow_release") {
         toast.success("Approved. Escrow funds released.");
         await onReleased?.();
         return;
       }
 
-      // If backend returns client secret, that's a misconfiguration for funded escrow
       if (data?.stripe_client_secret) {
         toast.error("This invoice started a card payment flow, but escrow is already funded.");
         await onReleased?.();
@@ -194,7 +187,6 @@ function StripePaymentPanel({ token, invoice, actionLoading, setActionLoading, o
     try {
       const { data } = await api.patch(`/projects/invoices/magic/${encodeURIComponent(token)}/approve/`, {});
 
-      // If backend decided this is escrow release, stop and refresh
       if (data?.mode && String(data.mode).toLowerCase() === "escrow_release") {
         toast.success("Approved. Escrow funds released.");
         await onPaid?.();
@@ -282,9 +274,7 @@ function InnerMagicInvoice() {
       const { data } = await api.get(`/projects/invoices/magic/${encodeURIComponent(token)}/`);
       setInvoice(data);
     } catch (err) {
-      const msg =
-        err.response?.data?.detail ||
-        "Unable to load invoice. The link may be invalid or expired.";
+      const msg = err.response?.data?.detail || "Unable to load invoice. The link may be invalid or expired.";
       setError(msg);
       toast.error(msg);
     } finally {
@@ -300,6 +290,7 @@ function InnerMagicInvoice() {
     if (action === "dispute") setShowDispute(true);
   }, [action]);
 
+  // ✅ UPDATED: after dispute submission, redirect to public dispute thread if dispute_id returned
   const handleDispute = async ({ reason, description }) => {
     setActionLoading(true);
 
@@ -308,9 +299,24 @@ function InnerMagicInvoice() {
         reason,
         description,
       });
-      setInvoice(data);
-      toast.success("Dispute submitted.");
+
+      toast.success("Dispute opened.");
+
+      // Recommended backend response:
+      // { dispute_id: 123, public_token: "xyz" }
+      const disputeId = data?.dispute_id || data?.id?.dispute_id || null;
+      const publicToken = data?.public_token || data?.token || null;
+
+      if (disputeId) {
+        const qs = publicToken ? `?token=${encodeURIComponent(publicToken)}` : "";
+        navigate(`/disputes/${disputeId}${qs}`);
+        return;
+      }
+
+      // Fallback: keep current behavior
+      setInvoice(data?.invoice || data);
       setShowDispute(false);
+      await fetchInvoice();
     } catch (err) {
       toast.error(err.response?.data?.detail || "Failed to submit dispute.");
     } finally {
@@ -337,9 +343,9 @@ function InnerMagicInvoice() {
     return Array.isArray(arr) ? arr : [];
   }, [invoice]);
 
-  // ✅ escrow-funded detection from public payload
   const agreementStatus = String(invoice?.agreement_status || invoice?.agreement_state || "").toLowerCase();
-  const escrowFundedFlag = invoice?.escrow_funded === true || invoice?.escrow_funded === 1 || agreementStatus === "funded";
+  const escrowFundedFlag =
+    invoice?.escrow_funded === true || invoice?.escrow_funded === 1 || agreementStatus === "funded";
 
   if (loading) return <div className="p-8 text-center text-gray-600">Loading Invoice…</div>;
 
@@ -379,7 +385,9 @@ function InnerMagicInvoice() {
             <div className="text-sm font-bold text-slate-500">Amount</div>
             <div className="text-3xl font-extrabold text-slate-900">{amount}</div>
             <div className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-extrabold ${statusPill(status)}`}>
-              {String(invoice.status || "").replaceAll("_", " ").replace(/^\w/, (c) => c.toUpperCase())}
+              {String(invoice.status || "")
+                .replaceAll("_", " ")
+                .replace(/^\w/, (c) => c.toUpperCase())}
             </div>
             <div className="mt-2 text-xs text-slate-500">
               Issued: {invoice.created_at ? new Date(invoice.created_at).toLocaleDateString() : "—"}
@@ -419,7 +427,9 @@ function InnerMagicInvoice() {
                   >
                     <div className="min-w-0">
                       <div className="truncate text-sm font-bold text-slate-900">{name}</div>
-                      {a?.uploaded_at ? <div className="text-xs text-slate-500">Uploaded: {fmt(a.uploaded_at)}</div> : null}
+                      {a?.uploaded_at ? (
+                        <div className="text-xs text-slate-500">Uploaded: {fmt(a.uploaded_at)}</div>
+                      ) : null}
                     </div>
                     {url ? (
                       <a
@@ -441,7 +451,10 @@ function InnerMagicInvoice() {
         </div>
 
         <div className="mt-8 flex flex-wrap gap-3">
-          <button onClick={downloadPDF} className="rounded-xl bg-slate-800 px-5 py-2 font-extrabold text-white hover:bg-slate-900">
+          <button
+            onClick={downloadPDF}
+            className="rounded-xl bg-slate-800 px-5 py-2 font-extrabold text-white hover:bg-slate-900"
+          >
             View / Download PDF
           </button>
 

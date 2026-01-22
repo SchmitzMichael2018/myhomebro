@@ -518,6 +518,16 @@ class Milestone(models.Model):
     # Canonical lifecycle flags
     is_invoiced = models.BooleanField(default=False)
     completed = models.BooleanField(default=False)
+    completed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    # ✅ NEW: Link a rework milestone back to the original disputed milestone
+    # This is set automatically when a dispute is resolved (rework accepted).
+    rework_origin_milestone_id = models.IntegerField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Original milestone id that this rework milestone corrects (the milestone referenced by the dispute).",
+    )
 
     # ✅ NEW: idempotent linkage (one invoice per milestone)
     invoice = models.OneToOneField(
@@ -742,10 +752,12 @@ class AgreementAmendment(models.Model):
 class ContractorSubAccount(models.Model):
     ROLE_EMPLOYEE_READONLY = "employee_readonly"
     ROLE_EMPLOYEE_MILESTONES = "employee_milestones"
+    ROLE_EMPLOYEE_SUPERVISOR = "employee_supervisor"  # ✅ NEW
 
     ROLE_CHOICES = (
         (ROLE_EMPLOYEE_READONLY, "Read-only employee"),
         (ROLE_EMPLOYEE_MILESTONES, "Milestones employee"),
+        (ROLE_EMPLOYEE_SUPERVISOR, "Supervisor / Foreman"),  # ✅ NEW
     )
 
     parent_contractor = models.ForeignKey(
@@ -781,5 +793,118 @@ class ContractorSubAccount(models.Model):
         return f"{self.display_name} ({self.get_role_display()}) for {self.parent_contractor}"
 
 
+# ------------------------------------------------------------------
+# ✅ NEW: Real Employee Profile (DB fields)
+# ------------------------------------------------------------------
+
+def employee_profile_upload_to(instance, filename: str) -> str:
+    sid = getattr(instance, "subaccount_id", "unknown")
+    ts = timezone.now().strftime("%Y%m%d-%H%M%S")
+    return f"employee_profiles/{sid}/{ts}_{filename}"
+
+
+class EmployeeProfile(models.Model):
+    subaccount = models.OneToOneField(
+        ContractorSubAccount,
+        on_delete=models.CASCADE,
+        related_name="employee_profile",
+    )
+
+    # Basic identity
+    first_name = models.CharField(max_length=80, blank=True, default="")
+    last_name = models.CharField(max_length=80, blank=True, default="")
+    phone_number = models.CharField(max_length=40, blank=True, default="")
+
+    # Home address
+    home_address_line1 = models.CharField(max_length=200, blank=True, default="")
+    home_address_line2 = models.CharField(max_length=200, blank=True, default="")
+    home_city = models.CharField(max_length=120, blank=True, default="")
+    home_state = models.CharField(max_length=60, blank=True, default="")
+    home_postal_code = models.CharField(max_length=30, blank=True, default="")
+
+    # IDs / licenses
+    drivers_license_number = models.CharField(max_length=80, blank=True, default="")
+    drivers_license_state = models.CharField(max_length=40, blank=True, default="")
+    drivers_license_expiration = models.DateField(null=True, blank=True)
+    drivers_license_file = models.FileField(upload_to=employee_profile_upload_to, null=True, blank=True)
+
+    professional_license_type = models.CharField(max_length=120, blank=True, default="")
+    professional_license_number = models.CharField(max_length=120, blank=True, default="")
+    professional_license_expiration = models.DateField(null=True, blank=True)
+    professional_license_file = models.FileField(upload_to=employee_profile_upload_to, null=True, blank=True)
+
+    # Photo (requires Pillow)
+    photo = models.ImageField(upload_to=employee_profile_upload_to, null=True, blank=True)
+
+    # Work schedule & time off
+    assigned_work_schedule = models.TextField(blank=True, default="")
+    day_off_requests = models.TextField(blank=True, default="")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-id"]
+
+    def __str__(self) -> str:
+        return f"EmployeeProfile(subaccount_id={self.subaccount_id})"
+
+
+# ------------------------------------------------------------------
+# ✅ NEW: Assignment models (Owner assigns work to subaccounts)
+# ------------------------------------------------------------------
+class AgreementAssignment(models.Model):
+    """
+    Assign an entire Agreement to a ContractorSubAccount.
+    Meaning: all milestones under the agreement are visible to the subaccount,
+    unless a milestone has an explicit MilestoneAssignment to another subaccount.
+    """
+    agreement = models.ForeignKey(
+        "projects.Agreement",
+        on_delete=models.CASCADE,
+        related_name="subaccount_assignments",
+    )
+    subaccount = models.ForeignKey(
+        "projects.ContractorSubAccount",
+        on_delete=models.CASCADE,
+        related_name="agreement_assignments",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("agreement", "subaccount")
+
+    def __str__(self):
+        return f"AgreementAssignment(agreement={self.agreement_id}, subaccount={self.subaccount_id})"
+
+
+class MilestoneAssignment(models.Model):
+    """
+    Explicitly assign ONE milestone to ONE ContractorSubAccount.
+    Overrides agreement-level assignments.
+    """
+    milestone = models.OneToOneField(
+        "projects.Milestone",
+        on_delete=models.CASCADE,
+        related_name="subaccount_assignment",
+    )
+    subaccount = models.ForeignKey(
+        "projects.ContractorSubAccount",
+        on_delete=models.CASCADE,
+        related_name="milestone_assignments",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"MilestoneAssignment(milestone={self.milestone_id}, subaccount={self.subaccount_id})"
+
+
 # ensure AgreementAttachment is registered
 from .models_attachments import AgreementAttachment  # noqa: E402,F401
+from .models_schedule import EmployeeWorkSchedule, EmployeeScheduleException  # noqa: E402,F401
+
+# ✅ ensure DisputeAIArtifact is registered (Step 3 persistence)
+from .models_ai_artifacts import DisputeAIArtifact  # noqa: E402,F401
+
+from .models_ai_entitlements import ContractorAIEntitlement  # noqa: E402,F401
+

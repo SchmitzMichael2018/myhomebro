@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from django.contrib import admin, messages
+from django.utils import timezone
 
 # ─────────────────────────────────────────────────────────────
 # Safe model imports (admin must not block migrations)
@@ -38,9 +39,20 @@ try:
 except Exception:  # pragma: no cover
     AgreementAttachment = None  # type: ignore
 
+# ✅ NEW: AI models (guarded)
+try:
+    from .models_ai_entitlements import ContractorAIEntitlement  # type: ignore
+except Exception:  # pragma: no cover
+    ContractorAIEntitlement = None  # type: ignore
+
+try:
+    from .models_ai_artifacts import DisputeAIArtifact  # type: ignore
+except Exception:  # pragma: no cover
+    DisputeAIArtifact = None  # type: ignore
+
 # Optional services used by admin actions (guarded)
 try:
-    from projects.services.mailer import email_signed_agreement  # type: no cover
+    from projects.services.mailer import email_signed_agreement  # type: ignore  # pragma: no cover
 except Exception:  # pragma: no cover
     def email_signed_agreement(*_a, **_k):
         return False
@@ -188,12 +200,14 @@ if Milestone is not None:
         search_fields = ("title", "agreement__project__title", "agreement__project__number")
         list_filter = ("completed", "is_invoiced")
 
+
 if MilestoneFile is not None:
     @admin.register(MilestoneFile)
     class MilestoneFileAdmin(admin.ModelAdmin):
         list_display = ("id", "milestone", "uploaded_by", "uploaded_at", "file")
         search_fields = ("milestone__title", "uploaded_by__email")
         list_filter = ("uploaded_at",)
+
 
 if MilestoneComment is not None:
     @admin.register(MilestoneComment)
@@ -259,6 +273,7 @@ if Disappear := Dispute is not None:  # keep linter quiet about unused name
         def obj_str(self, obj):
             return str(obj)
 
+
 if DisputeAttachment is not None:
     @admin.register(DisputeAttachment)  # type: ignore[misc]
     class DisputeAttachmentAdmin(admin.ModelAdmin):
@@ -285,3 +300,205 @@ if AgreementAttachment is not None:
         list_filter = ("category", "visible_to_homeowner", "ack_required", "uploaded_at")
         search_fields = ("title", "file", "agreement__project__title", "agreement__project__number")
         readonly_fields = ("uploaded_at",)
+
+
+# ─────────────────────────────────────────────────────────────
+# ✅ AI: Admin Controls (Entitlements + Artifacts)
+# ─────────────────────────────────────────────────────────────
+
+# ---- Entitlement actions (only registered if model import works) ----
+if ContractorAIEntitlement is not None:
+
+    @admin.action(description="Grant +1 free AI recommendation")
+    def grant_one_free_recommendation(modeladmin, request, queryset):
+        for ent in queryset:
+            ent.free_recommendations_remaining = int(ent.free_recommendations_remaining or 0) + 1
+            ent.save(update_fields=["free_recommendations_remaining", "updated_at"])
+
+    @admin.action(description="Grant +5 free AI recommendations")
+    def grant_five_free_recommendations(modeladmin, request, queryset):
+        for ent in queryset:
+            ent.free_recommendations_remaining = int(ent.free_recommendations_remaining or 0) + 5
+            ent.save(update_fields=["free_recommendations_remaining", "updated_at"])
+
+    @admin.action(description="Reset monthly quota usage (sets used=0; sets period to next 30 days)")
+    def reset_monthly_quota(modeladmin, request, queryset):
+        now = timezone.now()
+        for ent in queryset:
+            ent.monthly_recommendations_used = 0
+            ent.quota_period_start = now
+            ent.quota_period_end = now + timezone.timedelta(days=30)
+            ent.save(
+                update_fields=[
+                    "monthly_recommendations_used",
+                    "quota_period_start",
+                    "quota_period_end",
+                    "updated_at",
+                ]
+            )
+
+    @admin.action(description="Set tier: FREE")
+    def set_tier_free(modeladmin, request, queryset):
+        queryset.update(tier=ContractorAIEntitlement.TIER_FREE, updated_at=timezone.now())
+
+    @admin.action(description="Set tier: STARTER")
+    def set_tier_starter(modeladmin, request, queryset):
+        queryset.update(tier=ContractorAIEntitlement.TIER_STARTER, updated_at=timezone.now())
+
+    @admin.action(description="Set tier: PRO")
+    def set_tier_pro(modeladmin, request, queryset):
+        queryset.update(tier=ContractorAIEntitlement.TIER_PRO, updated_at=timezone.now())
+
+    @admin.action(description="Set tier: BUSINESS")
+    def set_tier_business(modeladmin, request, queryset):
+        queryset.update(tier=ContractorAIEntitlement.TIER_BUSINESS, updated_at=timezone.now())
+
+    @admin.action(description="Mark subscription: ACTIVE")
+    def set_subscription_active(modeladmin, request, queryset):
+        queryset.update(subscription_active=True, updated_at=timezone.now())
+
+    @admin.action(description="Mark subscription: INACTIVE")
+    def set_subscription_inactive(modeladmin, request, queryset):
+        queryset.update(subscription_active=False, updated_at=timezone.now())
+
+    @admin.register(ContractorAIEntitlement)
+    class ContractorAIEntitlementAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "contractor_id",
+            "contractor_email",
+            "tier",
+            "subscription_active",
+            "free_recommendations_remaining",
+            "monthly_recommendations_included",
+            "monthly_recommendations_used",
+            "quota_period_start",
+            "quota_period_end",
+            "allow_ai_summaries",
+            "allow_ai_recommendations",
+            "allow_scope_assistant",
+            "allow_resolution_agreement",
+            "allow_business_insights",
+            "updated_at",
+        )
+        list_filter = (
+            "tier",
+            "subscription_active",
+            "allow_ai_summaries",
+            "allow_ai_recommendations",
+            "allow_scope_assistant",
+            "allow_resolution_agreement",
+            "allow_business_insights",
+            "updated_at",
+        )
+        search_fields = (
+            "contractor__id",
+            "contractor__user__email",
+            "contractor__business_name",
+            "stripe_customer_id",
+            "stripe_subscription_id",
+        )
+        readonly_fields = ("created_at", "updated_at")
+        ordering = ("-updated_at", "-id")
+        actions = (
+            grant_one_free_recommendation,
+            grant_five_free_recommendations,
+            reset_monthly_quota,
+            set_tier_free,
+            set_tier_starter,
+            set_tier_pro,
+            set_tier_business,
+            set_subscription_active,
+            set_subscription_inactive,
+        )
+
+        fieldsets = (
+            ("Contractor", {"fields": ("contractor",)}),
+            (
+                "Tier & Subscription",
+                {
+                    "fields": (
+                        "tier",
+                        "subscription_active",
+                        "stripe_customer_id",
+                        "stripe_subscription_id",
+                        "current_period_end",
+                    )
+                },
+            ),
+            (
+                "Free / Quota",
+                {
+                    "fields": (
+                        "free_recommendations_remaining",
+                        "monthly_recommendations_included",
+                        "monthly_recommendations_used",
+                        "quota_period_start",
+                        "quota_period_end",
+                    )
+                },
+            ),
+            (
+                "Feature Toggles",
+                {
+                    "fields": (
+                        "allow_ai_summaries",
+                        "allow_ai_recommendations",
+                        "allow_scope_assistant",
+                        "allow_resolution_agreement",
+                        "allow_business_insights",
+                    )
+                },
+            ),
+            ("Timestamps", {"fields": ("created_at", "updated_at")}),
+        )
+
+        @admin.display(description="Contractor Email")
+        def contractor_email(self, obj):
+            try:
+                return obj.contractor.user.email
+            except Exception:
+                return ""
+
+
+# ---- Artifact audit admin (only registered if model import works) ----
+if DisputeAIArtifact is not None:
+
+    @admin.register(DisputeAIArtifact)
+    class DisputeAIArtifactAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "dispute_id",
+            "artifact_type",
+            "version",
+            "model_name",
+            "paid",
+            "price_cents",
+            "created_by_id",
+            "created_at",
+            "input_digest_short",
+        )
+        list_filter = ("artifact_type", "paid", "model_name", "created_at")
+        search_fields = (
+            "dispute__id",
+            "artifact_type",
+            "model_name",
+            "input_digest",
+            "stripe_payment_intent_id",
+            "created_by__email",
+        )
+        readonly_fields = ("created_at",)
+        ordering = ("-created_at", "-id")
+
+        fieldsets = (
+            ("Identity", {"fields": ("dispute", "artifact_type", "version", "input_digest")}),
+            ("Model", {"fields": ("model_name",)}),
+            ("Output", {"fields": ("payload",)}),
+            ("Monetization", {"fields": ("paid", "price_cents", "stripe_payment_intent_id")}),
+            ("Audit", {"fields": ("created_by", "created_at")}),
+        )
+
+        @admin.display(description="Digest")
+        def input_digest_short(self, obj):
+            d = getattr(obj, "input_digest", "") or ""
+            return d[:10] + ("…" if len(d) > 10 else "")

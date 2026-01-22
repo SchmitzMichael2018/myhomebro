@@ -1,484 +1,783 @@
-// src/components/MilestoneDetailModal.jsx
-// v2025-12-29 — Enable Complete → Review for FUNDED agreements
-// - Treats agreement status "funded" (and "in_progress") as eligible completion states
-// - Keeps draft-only edit/file upload behavior
-// - Completion button calls parent onSubmit({id, notes, files})
+// src/components/MilestoneEditModal.jsx
+// v2025-11-13 modal-r11 — Info Bar + overlap-aware save + diff-only PATCH +
+// verified upload + Recent Attachments + strict date normalization
+// NEW in r11: full comments list (load + append on send) using milestone comments API.
+// v2025-12-05 — removed extra calendar button overlay to avoid double-icons
+// v2026-01-07 — View Agreement routes to /app/agreements/:id/wizard?step=4 (Finalize & Review)
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../api";
 
-const pick = (...vals) => vals.find((v) => v !== undefined && v !== null && v !== "") ?? "";
+/* ---------------- helpers ---------------- */
 
-/* Agreement helpers */
-const getAgreementFrom = (m) => m.agreement || m._ag || null;
-const getAgreementStatus = (a) => (pick(a?.status, a?.agreement_status, a?.signature_status, a?.state) || "").toLowerCase();
-const isAgreementDraft = (a) => getAgreementStatus(a) === "draft";
-
-// ✅ FIX: include funded/in_progress as post-sign states eligible for completion
-const isAgreementSigned = (a) =>
-  ["signed", "executed", "active", "approved", "funded", "in_progress"].includes(getAgreementStatus(a));
-
-const isEscrowFunded = (a) => !!pick(a?.escrow_funded, a?.escrowFunded);
-
-const toISO = (v) => {
-  if (!v) return "";
-  const s = String(v).trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  try {
-    const d = new Date(s);
-    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-  } catch {}
-  return s;
+const dollar = (v) => {
+  if (v === "" || v === null || v === undefined) return "";
+  const n = Number(v);
+  return Number.isNaN(n) ? v : n.toFixed(2);
 };
 
-export default function MilestoneDetailModal({
+const fmtMoney = (n) => {
+  if (n === null || n === undefined || n === "") return "";
+  const num = typeof n === "number" ? n : parseFloat(n);
+  if (Number.isNaN(num)) return "";
+  return num.toLocaleString(undefined, { style: "currency", currency: "USD" });
+};
+
+const isLockedAgreementState = (s) => {
+  if (!s) return false;
+  const up = String(s).trim().toUpperCase();
+  return ["SIGNED", "EXECUTED", "ACTIVE", "APPROVED", "ARCHIVED"].includes(up);
+};
+
+// Normalize various input forms (Date/string) → "YYYY-MM-DD" or ""
+function toDateOnly(v) {
+  if (!v) return "";
+  const s = String(v).trim();
+
+  // Already plain date (good)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return s;
+  }
+
+  // ISO datetime like "2025-12-04T00:00:00Z" or "2025-12-04T00:00:00-06:00"
+  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+    return s.slice(0, 10); // just YYYY-MM-DD, no timezone math
+  }
+
+  // Fallback: try Date parsing for weird formats
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return "";
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+function friendlyDate(d) {
+  if (!d) return "";
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return d;
+  return dt.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+// choose best download URL
+const urlFor = (a) =>
+  a?.file ||
+  a?.url ||
+  a?.file_url ||
+  a?.download_url ||
+  a?.download ||
+  a?.absolute_url ||
+  null;
+
+// allowed statuses if backend validates
+const ALLOWED_STATUS = new Set([
+  "Incomplete",
+  "Complete",
+  "Pending",
+  "Approved",
+  "Disputed",
+  "Scheduled",
+  "INCOMPLETE",
+  "COMPLETE",
+  "PENDING",
+  "APPROVED",
+  "DISPUTED",
+  "SCHEDULED",
+]);
+
+/* ---------------- component ---------------- */
+
+export default function MilestoneEditModal({
   open,
-  visible, // legacy support
-  milestone,
   onClose,
-  agreement: agreementProp,
+  milestone,
   onSaved,
-  onCompleted,
-  onSubmit,
+  onMarkComplete,
 }) {
-  const isOpen = typeof open === "boolean" ? open : !!visible;
+  const navigate = useNavigate();
 
   const [form, setForm] = useState({
     title: "",
-    amount: "",
     start_date: "",
     end_date: "",
+    amount: "",
     description: "",
+    status: "Incomplete",
   });
-
-  const [files, setFiles] = useState([]);
-  const [comments, setComments] = useState([]);
-
-  const [evidenceFiles, setEvidenceFiles] = useState([]);
-  const [completeNotes, setCompleteNotes] = useState("");
-
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
 
-  const milestoneId = milestone?.id;
-  const agreement = useMemo(() => agreementProp || getAgreementFrom(milestone) || {}, [agreementProp, milestone]);
+  // comment box
+  const [comment, setComment] = useState("");
+  const [sendingComment, setSendingComment] = useState(false);
+  const [comments, setComments] = useState([]);
+  const [loadingComments, setLoadingComments] = useState(false);
 
-  const canEdit = useMemo(() => isAgreementDraft(agreement), [agreement]);
-  const canComplete = useMemo(() => isAgreementSigned(agreement) && isEscrowFunded(agreement), [agreement]);
+  // files / attachments (agreement-level, like before)
+  const [file, setFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
 
-  /* -------- Tolerant endpoints for files/comments -------- */
-  const tolerantGetFiles = async (id) => {
-    const candidates = [
-      `/projects/milestone-files/?milestone=${id}`,
-      `/milestone-files/?milestone=${id}`,
-      `/projects/milestones/${id}/files/`,
-    ];
-    for (const url of candidates) {
-      try {
-        const { data } = await api.get(url);
-        const arr = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];
-        if (Array.isArray(arr)) return arr;
-      } catch {}
-    }
-    return [];
-  };
-
-  const tolerantPostFile = async (id, file) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("milestone", id);
-    const candidates = [
-      `/projects/milestone-files/`,
-      `/milestone-files/`,
-      `/projects/milestones/${id}/files/`,
-    ];
-    for (const url of candidates) {
-      try {
-        const { data } = await api.post(url, formData, { headers: { "Content-Type": "multipart/form-data" } });
-        return data;
-      } catch {}
-    }
-    throw new Error("Upload failed");
-  };
-
-  const tolerantDeleteFile = async (fileId) => {
-    const candidates = [
-      `/projects/milestone-files/${fileId}/`,
-      `/milestone-files/${fileId}/`,
-    ];
-    for (const url of candidates) {
-      try {
-        await api.delete(url);
-        return;
-      } catch {}
-    }
-    throw new Error("Delete failed");
-  };
-
-  const tolerantGetComments = async (id) => {
-    const candidates = [
-      `/projects/milestones/${id}/comments/`,
-      `/milestones/${id}/comments/`,
-    ];
-    for (const url of candidates) {
-      try {
-        const { data } = await api.get(url);
-        const arr = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];
-        if (Array.isArray(arr)) return arr;
-      } catch {}
-    }
-    return [];
-  };
-
-  const tolerantPostComment = async (id, content) => {
-    const candidates = [
-      `/projects/milestones/${id}/comments/`,
-      `/milestones/${id}/comments/`,
-    ];
-    for (const url of candidates) {
-      try {
-        const { data } = await api.post(url, { content });
-        return data;
-      } catch {}
-    }
-    throw new Error("Comment failed");
-  };
+  const [recentAttachments, setRecentAttachments] = useState([]);
+  const [loadingAttachments, setLoadingAttachments] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => {
-    if (!isOpen || !milestoneId) return;
+    if (open)
+      console.log("MilestoneEditModal build:", "v2025-11-13-modal-r11");
+  }, [open]);
 
-    (async () => {
-      setLoading(true);
-      try {
-        setForm({
-          title: milestone?.title || "",
-          amount: milestone?.amount ?? "",
-          start_date: toISO(milestone?.start_date || milestone?.scheduled_for),
-          end_date: toISO(milestone?.end_date || milestone?.completion_date),
-          description: milestone?.description || "",
-        });
+  const readOnly = useMemo(() => {
+    const s =
+      milestone?.agreement_state ||
+      milestone?.agreement_status ||
+      milestone?.agreementState ||
+      milestone?.agreementStatus ||
+      milestone?.agreement?.state ||
+      milestone?.agreement?.status ||
+      "";
+    return isLockedAgreementState(s);
+  }, [milestone]);
 
-        setEvidenceFiles([]);
-        setCompleteNotes("");
+  const agreementId =
+    milestone?.agreement ??
+    milestone?.agreement_id ??
+    milestone?.agreement_number ??
+    milestone?.agreement?.id ??
+    null;
 
-        const [f, c] = await Promise.all([tolerantGetFiles(milestoneId), tolerantGetComments(milestoneId)]);
-        setFiles(f);
-        setComments(c);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [isOpen, milestoneId, milestone]);
+  // keep an original snapshot for diffing
+  const [original, setOriginal] = useState(null);
 
-  const handleFileInput = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !milestoneId) return;
-    try {
-      const saved = await tolerantPostFile(milestoneId, file);
-      setFiles((list) => [saved, ...list]);
-      toast.success("File uploaded.");
-    } catch {
-      toast.error("Upload failed.");
-    } finally {
-      try {
-        e.target.value = "";
-      } catch {}
-    }
-  };
-
-  const removeFile = async (fileId) => {
-    if (!window.confirm("Delete this file?")) return;
-    try {
-      await tolerantDeleteFile(fileId);
-      setFiles((list) => list.filter((f) => f.id !== fileId));
-      toast.success("File deleted.");
-    } catch {
-      toast.error("Failed to delete file.");
-    }
-  };
-
-  const addComment = async (e) => {
-    e.preventDefault();
-    const content = e.currentTarget.elements.comment?.value?.trim();
-    if (!content) return;
-    try {
-      const saved = await tolerantPostComment(milestoneId, content);
-      setComments((list) => [saved, ...list]);
-      e.currentTarget.reset();
-    } catch {
-      toast.error("Could not post comment.");
-    }
-  };
-
-  const saveChanges = async ({ closeAfter = false } = {}) => {
-    if (!canEdit) {
-      toast("Editing is locked (agreement not in Draft).");
-      return;
-    }
-    if (!milestoneId) return;
-    setSaving(true);
-    try {
-      const payload = {
-        title: form.title,
-        amount: form.amount === "" ? 0 : Number(form.amount),
-        description: form.description || "",
-        start_date: form.start_date || null,
-        completion_date: form.end_date || null,
+  /* ---------- load / reset form ---------- */
+  useEffect(() => {
+    if (open && milestone) {
+      const snapshot = {
+        title: milestone.title || "",
+        start_date: toDateOnly(milestone.start_date || milestone.start || ""),
+        end_date: toDateOnly(
+          milestone.end_date ||
+            milestone.completion_date ||
+            milestone.end ||
+            milestone.due_date ||
+            ""
+        ),
+        amount: milestone.amount == null ? "" : String(milestone.amount),
+        description: milestone.description || "",
+        status: milestone.status || "Incomplete",
       };
-      await api.patch(`/projects/milestones/${milestoneId}/`, payload);
-      toast.success("Milestone saved.");
-      onSaved?.();
-      if (closeAfter) onClose?.();
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to save milestone.");
+      setOriginal(snapshot);
+      setForm(snapshot);
+      setComment("");
+      setFile(null);
+      setUploadError("");
+      if (agreementId) reloadAttachments(agreementId);
+      if (milestone.id) reloadComments(milestone.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, milestone]);
+
+  const reloadAttachments = async (agId) => {
+    setLoadingAttachments(true);
+    try {
+      const { data } = await api.get(`/projects/agreements/${agId}/attachments/`);
+      const list = Array.isArray(data) ? data : [];
+      list.sort((a, b) => (b.id || 0) - (a.id || 0));
+      setRecentAttachments(list.slice(0, 10));
+    } catch {
+      setRecentAttachments([]);
     } finally {
-      setSaving(false);
+      setLoadingAttachments(false);
     }
   };
 
-  const handleEvidencePick = (e) => {
-    const picked = Array.from(e.target.files || []);
-    if (!picked.length) return;
-    setEvidenceFiles((prev) => [...prev, ...picked]);
+  const reloadComments = async (milestoneId) => {
+    setLoadingComments(true);
     try {
-      e.target.value = "";
+      const { data } = await api.get(`/projects/milestones/${milestoneId}/comments/`, {
+        validateStatus: (s) => s >= 200 && s < 300,
+      });
+      setComments(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.warn("Failed to load milestone comments", e);
+      setComments([]);
+    } finally {
+      setLoadingComments(false);
+    }
+  };
+
+  const onChange = (e) => {
+    const { name, value } = e.target;
+    // Hard-normalize date fields to YYYY-MM-DD on change
+    if (name === "start_date" || name === "end_date") {
+      setForm((f) => ({ ...f, [name]: toDateOnly(value) }));
+    } else {
+      setForm((f) => ({ ...f, [name]: value }));
+    }
+  };
+
+  /* ---------- diff-only payload with normalization ---------- */
+  const buildDiffPayload = (allowOverlap = false) => {
+    const payload = {};
+    const addIfChanged = (key, transform = (x) => x) => {
+      const cur = form[key];
+      const prev = original ? original[key] : undefined;
+      const val = transform(cur);
+      if (prev !== cur && val !== undefined) payload[key] = val;
+    };
+
+    // title/description (trim title)
+    addIfChanged("title", (v) => (v?.trim() ? v.trim() : undefined));
+    addIfChanged("description", (v) => (v !== undefined ? v : undefined));
+
+    // amount -> number; skip if blank
+    addIfChanged("amount", (v) => (v === "" ? undefined : Number(v)));
+
+    // dates (YYYY-MM-DD); when end_date changes, also send completion_date mirror
+    const normDate = (v) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
+    const endBefore = original ? original.end_date : undefined;
+    const endAfter = form.end_date;
+
+    addIfChanged("start_date", (v) => normDate(toDateOnly(v)));
+    addIfChanged("end_date", (v) => normDate(toDateOnly(v)));
+    if (endAfter !== endBefore && normDate(toDateOnly(endAfter))) {
+      payload["completion_date"] = normDate(toDateOnly(endAfter));
+    }
+
+    // status only if allowed & changed
+    if (form.status && ALLOWED_STATUS.has(form.status)) {
+      if (!original || original.status !== form.status) payload.status = form.status;
+    }
+
+    if (allowOverlap) payload.allow_overlap = true;
+    return payload;
+  };
+
+  /* ---------- save (overlap-aware) ---------- */
+  const save = useCallback(async () => {
+    if (!milestone?.id) return;
+    setSaving(true);
+
+    const attempt = async (payload) => api.patch(`/projects/milestones/${milestone.id}/`, payload);
+
+    try {
+      const payload1 = buildDiffPayload(false);
+      if (Object.keys(payload1).length === 0) {
+        toast("No changes to save.");
+        setSaving(false);
+        return;
+      }
+      await attempt(payload1);
+      toast.success("Milestone saved");
+      onSaved && onSaved({ id: milestone.id });
+      onClose && onClose();
+    } catch (err1) {
+      const resp = err1?.response;
+      const body = resp?.data;
+      const bodyStr =
+        (typeof body === "string" ? body : JSON.stringify(body)) ||
+        resp?.statusText ||
+        err1?.message ||
+        "";
+
+      const isOverlap =
+        body &&
+        typeof body === "object" &&
+        Array.isArray(body.non_field_errors) &&
+        body.non_field_errors.some((t) => String(t).toLowerCase().includes("overlap"));
+
+      if (isOverlap) {
+        const ok = window.confirm(
+          "This milestone overlaps another milestone in the same agreement.\n\nDo you want to save anyway?"
+        );
+        if (!ok) {
+          setSaving(false);
+          return;
+        }
+        try {
+          const payload2 = buildDiffPayload(true);
+          await attempt(payload2);
+          toast.success("Milestone saved (overlap allowed)");
+          onSaved && onSaved({ id: milestone.id });
+          onClose && onClose();
+        } catch (err2) {
+          const r2 = err2?.response;
+          const b2 =
+            (r2?.data &&
+              (typeof r2.data === "string" ? r2.data : JSON.stringify(r2.data))) ||
+            r2?.statusText ||
+            err2?.message ||
+            "Save failed";
+          toast.error(`Save failed: ${b2}`);
+          console.error("PATCH error payload:", r2?.data ?? b2);
+        } finally {
+          setSaving(false);
+        }
+      } else {
+        toast.error(`Save failed: ${bodyStr || "Unknown error"}`);
+        console.error("PATCH error payload:", body ?? bodyStr);
+        setSaving(false);
+      }
+    }
+  }, [milestone, form, original, onSaved, onClose]);
+
+  /* ---------- comments ---------- */
+  const sendComment = useCallback(async () => {
+    if (!milestone?.id || !comment.trim()) return;
+    setSendingComment(true);
+    try {
+      const { data } = await api.post(
+        `/projects/milestones/${milestone.id}/comments/`,
+        { content: comment.trim() },
+        { headers: { "Content-Type": "application/json" } }
+      );
+      toast.success("Comment added");
+      setComment("");
+      setComments((prev) => [data, ...(prev || [])]);
+    } catch (err) {
+      console.error(err);
+      toast.error("Comment failed");
+    } finally {
+      setSendingComment(false);
+    }
+  }, [milestone, comment]);
+
+  /* ---------- attachments ---------- */
+  const fetchAgreementAttachments = async (agId) => {
+    try {
+      const { data } = await api.get(`/projects/agreements/${agId}/attachments/`);
+      return Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const uploadFile = useCallback(async () => {
+    if (!file) return;
+    if (!agreementId) {
+      toast.error("Missing agreement id for upload.");
+      return;
+    }
+
+    setUploading(true);
+    setUploadError("");
+
+    const title = `${form.title || milestone.title || "Milestone"} — ${file.name}`;
+    const postFD = (url, fd) =>
+      api.post(url, fd, { headers: { "Content-Type": "multipart/form-data" } });
+
+    const verify = async () => {
+      const list = await fetchAgreementAttachments(agreementId);
+      setRecentAttachments(list.slice(0, 10));
+      return list.find(
+        (a) =>
+          (a.title && a.title.includes(file.name)) ||
+          (a.filename && a.filename === file.name)
+      );
+    };
+
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("agreement", String(agreementId));
+      fd.append("title", title);
+      fd.append("category", "OTHER");
+      await postFD(`/projects/agreements/${agreementId}/attachments/`, fd);
+      const found = await verify();
+      if (found) {
+        toast.success("File uploaded");
+        setFile(null);
+        setUploading(false);
+        return;
+      }
     } catch {}
-  };
 
-  const removeEvidence = (idx) => {
-    setEvidenceFiles((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  const submitComplete = async () => {
-    if (!canComplete) {
-      toast("Cannot complete this milestone yet.");
-      return;
-    }
-    if (!milestoneId) return;
-    if (typeof onSubmit !== "function") {
-      toast.error("Completion is not wired (missing onSubmit).");
-      return;
-    }
-
-    setSubmitting(true);
     try {
-      await onSubmit({ id: milestoneId, notes: completeNotes || "", files: evidenceFiles });
-      onCompleted?.();
-      onClose?.();
-    } catch (e) {
-      console.error(e);
-      toast.error("Could not submit completion.");
-    } finally {
-      setSubmitting(false);
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("agreement", String(agreementId));
+      fd.append("title", title);
+      fd.append("category", "OTHER");
+      await postFD(`/projects/attachments/`, fd);
+      const found = await verify();
+      if (found) {
+        toast.success("File uploaded");
+        setFile(null);
+        setUploading(false);
+        return;
+      }
+    } catch (e2) {
+      const resp = e2?.response;
+      const body =
+        (resp?.data &&
+          (typeof resp.data === "string"
+            ? resp.data
+            : JSON.stringify(resp.data))) ||
+        resp?.statusText ||
+        e2?.message ||
+        "Upload failed";
+      setUploadError(`HTTP ${resp?.status || 400}: ${body}`);
+      toast.error(`Upload failed: ${body}`);
+      setUploading(false);
+      return;
     }
-  };
 
-  if (!isOpen) return null;
+    setUploadError("Upload accepted but attachment not visible yet.");
+    toast.error("Server accepted upload, but attachment not visible yet.");
+    setUploading(false);
+  }, [file, agreementId, form.title, milestone.title]);
+
+  const deleteAttachment = useCallback(
+    async (attachmentId) => {
+      if (!agreementId) return;
+      setDeletingId(attachmentId);
+
+      const tryDelete = async (url) => api.delete(url);
+
+      const paths = [
+        `/projects/agreements/${agreementId}/attachments/${attachmentId}/`,
+        `/projects/agreements/${agreementId}/attachments/${attachmentId}`,
+        `/projects/attachments/${attachmentId}/`,
+        `/projects/attachments/${attachmentId}`,
+      ];
+
+      let ok = false;
+      let lastErr = null;
+
+      for (const p of paths) {
+        try {
+          await tryDelete(p);
+          ok = true;
+          break;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+
+      if (!ok) {
+        const resp = lastErr?.response;
+        const body =
+          (resp?.data &&
+            (typeof resp.data === "string"
+              ? resp.data
+              : JSON.stringify(resp.data))) ||
+          resp?.statusText ||
+          lastErr?.message ||
+          "Delete failed";
+        toast.error(`Delete failed: ${body}`);
+        setDeletingId(null);
+        return;
+      }
+
+      await reloadAttachments(agreementId);
+      toast.success("Attachment deleted");
+      setDeletingId(null);
+    },
+    [agreementId]
+  );
+
+  if (!open) return null;
+
+  const meta = milestone?._meta || {};
+  const homeowner = meta.homeownerName || milestone?.homeowner_name || milestone?.homeowner?.name || "";
+  const address = meta.projectAddress || milestone?.project_address || milestone?.project?.address || "";
+  const agreementNumber =
+    meta.agreementNumber ||
+    milestone?.agreement_number ||
+    milestone?.agreement_id ||
+    milestone?.agreement?.id ||
+    null;
+  const agreementTotal = meta.agreementTotal ?? milestone?.agreement?.total_cost ?? null;
+  const links = meta.links || {};
+  const previewSignedUrl = links.previewSignedUrl || null;
+
+  const wizardStep4Url =
+    agreementNumber ? `/app/agreements/${agreementNumber}/wizard?step=4` : null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
-      <div
-        className="bg-white rounded-lg shadow-xl border w-[900px] max-w-[95vw] max-h-[90vh] p-4 overflow-auto"
-        style={{ resize: "both", minWidth: 680, minHeight: 420 }}
-      >
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-semibold">
-            Milestone Details: <span className="font-normal">{milestone?.title || "Untitled"}</span>
-          </h3>
-          <button onClick={onClose} className="px-2 py-1 rounded border hover:bg-gray-50" aria-label="Close">
+    <div className="fixed inset-0 z-[9999] flex items-start justify-center bg-black/40 p-6 overflow-y-auto">
+      <div className="w-full max-w-3xl rounded-xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b px-5 py-3">
+          <div className="text-sm text-gray-500">
+            {agreementNumber ? `Agreement #${agreementNumber}` : null}
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded px-2 py-1 text-gray-500 hover:bg-gray-100"
+            aria-label="Close"
+            title="Close"
+          >
             ✕
           </button>
         </div>
 
-        {loading ? (
-          <div className="px-2 py-6 text-gray-600">Loading…</div>
-        ) : (
-          <div className="space-y-4">
-            {!canEdit && (
-              <div className="p-2 rounded bg-blue-50 border border-blue-200 text-blue-700 text-sm">
-                Agreement is not in Draft — fields are read-only.
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="sm:col-span-2">
-                <label className="block text-sm text-gray-600 mb-1">Title</label>
-                <input
-                  disabled={!canEdit}
-                  value={form.title}
-                  onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                  className="w-full border rounded px-3 py-2"
-                />
-              </div>
-
+        <div className="px-5 pb-5 pt-3">
+          <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
               <div>
-                <label className="block text-sm text-gray-600 mb-1">Amount ($)</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  disabled={!canEdit}
-                  value={form.amount}
-                  onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
-                  className="w-full border rounded px-3 py-2"
-                />
+                <span className="font-semibold">Homeowner</span>: {homeowner || "—"}
               </div>
+              {address ? (
+                <div className="truncate max-w-[420px]">
+                  <span className="font-semibold">Address</span>: {address}
+                </div>
+              ) : null}
+              {agreementTotal !== null && agreementTotal !== undefined ? (
+                <div>
+                  <span className="font-semibold">Agreement Total</span>: {fmtMoney(agreementTotal)}
+                </div>
+              ) : null}
 
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">Start Date</label>
-                <input
-                  type="date"
-                  disabled={!canEdit}
-                  value={form.start_date}
-                  onChange={(e) => setForm((f) => ({ ...f, start_date: toISO(e.target.value) }))}
-                  className="w-full border rounded px-3 py-2"
-                />
-              </div>
+              <div className="ml-auto flex gap-2">
+                {wizardStep4Url ? (
+                  <button
+                    type="button"
+                    onClick={() => navigate(wizardStep4Url)}
+                    className="px-3 py-1 rounded-md bg-gray-900 text-white hover:opacity-90"
+                  >
+                    View Agreement
+                  </button>
+                ) : null}
 
-              <div>
-                <label className="block text-sm text-gray-600 mb-1">Completion Date</label>
-                <input
-                  type="date"
-                  disabled={!canEdit}
-                  value={form.end_date}
-                  onChange={(e) => setForm((f) => ({ ...f, end_date: toISO(e.target.value) }))}
-                  className="w-full border rounded px-3 py-2"
-                />
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className="block text-sm text-gray-600 mb-1">Description</label>
-                <textarea
-                  disabled={!canEdit}
-                  value={form.description}
-                  onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                  rows={4}
-                  className="w-full border rounded px-3 py-2"
-                />
+                {previewSignedUrl ? (
+                  <button
+                    type="button"
+                    onClick={() => window.open(previewSignedUrl, "_blank", "noopener,noreferrer")}
+                    className="px-3 py-1 rounded-md bg-indigo-600 text-white hover:opacity-90"
+                  >
+                    Preview PDF
+                  </button>
+                ) : null}
               </div>
             </div>
+          </div>
 
-            <div className="flex items-center justify-between">
-              <div className="text-xs text-gray-500">
-                Agreement: <b>{getAgreementStatus(agreement) || "—"}</b> • Escrow funded:{" "}
-                <b>{isEscrowFunded(agreement) ? "Yes" : "No"}</b>
-              </div>
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => saveChanges({ closeAfter: false })}
-                  disabled={!canEdit || saving}
-                  className={`px-3 py-2 rounded text-white ${!canEdit || saving ? "bg-gray-400" : "bg-green-600 hover:bg-green-700"}`}
-                >
-                  {saving ? "Saving…" : "Save Changes"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => saveChanges({ closeAfter: true })}
-                  disabled={!canEdit || saving}
-                  className={`px-3 py-2 rounded text-white ${!canEdit || saving ? "bg-gray-400" : "bg-blue-600 hover:bg-blue-700"}`}
-                >
-                  {saving ? "Saving…" : "Save & Close"}
-                </button>
-              </div>
-            </div>
-
-            <div className="border-t pt-3">
-              <h4 className="font-semibold mb-2">Files</h4>
-              <div className="flex items-center gap-3 flex-wrap">
-                <input type="file" onChange={handleFileInput} disabled={!canEdit} />
-                {!canEdit && <span className="text-xs text-gray-500">(Upload locked — Draft only)</span>}
-              </div>
-
-              <ul className="mt-2 text-sm space-y-1">
-                {files.map((f) => (
-                  <li key={f.id} className="flex items-center justify-between gap-3">
-                    <a href={f.file} target="_blank" rel="noreferrer" className="text-blue-600 underline break-all">
-                      {String(f.file || "").split("/").pop()}
-                    </a>
-                    {canEdit && (
-                      <button onClick={() => removeFile(f.id)} className="text-red-600 hover:underline">
-                        Delete
-                      </button>
-                    )}
-                  </li>
-                ))}
-                {files.length === 0 && <li className="text-gray-500">No files.</li>}
-              </ul>
-            </div>
-
-            <div className="border-t pt-3">
-              <h4 className="font-semibold mb-2">Completion Notes & Evidence</h4>
-
-              <label className="block text-sm text-gray-600 mb-1">Notes (optional)</label>
-              <textarea
-                value={completeNotes}
-                onChange={(e) => setCompleteNotes(e.target.value)}
-                rows={3}
-                className="w-full border rounded px-3 py-2"
-                placeholder="Add notes for the homeowner / approval record…"
+          {/* (rest of your modal remains unchanged) */}
+          {/* Title / Amount / Dates / Description */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <label className="mb-1 block text-sm font-medium text-gray-700">Title</label>
+              <input
+                type="text"
+                name="title"
+                value={form.title}
+                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                readOnly={readOnly}
+                className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
+                placeholder="e.g., Install Sink and Mirror"
               />
+            </div>
 
-              <div className="mt-2 flex items-center gap-3 flex-wrap">
-                <input type="file" multiple onChange={handleEvidencePick} />
-                <span className="text-xs text-gray-500">(These files attach when you click “Complete → Review”)</span>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Amount ($)</label>
+              <input
+                type="number"
+                step="0.01"
+                name="amount"
+                value={form.amount}
+                onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                readOnly={readOnly}
+                className={`w-full rounded border px-3 py-2 text-sm text-right ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
+              />
+              <div className="mt-1 text-xs text-gray-400">Preview: ${dollar(form.amount)}</div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Start Date</label>
+                <input
+                  type="date"
+                  name="start_date"
+                  value={form.start_date || ""}
+                  onChange={onChange}
+                  readOnly={readOnly}
+                  className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
+                />
               </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Completion Date</label>
+                <input
+                  type="date"
+                  name="end_date"
+                  value={form.end_date || ""}
+                  onChange={onChange}
+                  readOnly={readOnly}
+                  className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
+                />
+              </div>
+            </div>
 
-              {evidenceFiles.length > 0 && (
-                <ul className="mt-2 text-sm space-y-1">
-                  {evidenceFiles.map((f, idx) => (
-                    <li key={`${f.name}-${idx}`} className="flex items-center justify-between gap-3">
-                      <span className="break-all">{f.name}</span>
-                      <button type="button" onClick={() => removeEvidence(idx)} className="text-rose-600 hover:underline">
-                        Remove
-                      </button>
-                    </li>
-                  ))}
+            <div className="md:col-span-2">
+              <label className="mb-1 block text-sm font-medium text-gray-700">Description</label>
+              <textarea
+                name="description"
+                value={form.description}
+                onChange={onChange}
+                readOnly={readOnly}
+                rows={4}
+                className={`w-full rounded border px-3 py-2 text-sm ${readOnly ? "bg-gray-50 text-gray-600" : ""}`}
+                placeholder="Work description…"
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              onClick={save}
+              disabled={saving || readOnly}
+              className="rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              {saving ? "Saving…" : "Save Changes"}
+            </button>
+            <button
+              onClick={() => {
+                save();
+                onClose && onClose();
+              }}
+              disabled={saving || readOnly}
+              className="rounded bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-black disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              {saving ? "Saving…" : "Save & Close"}
+            </button>
+            <div className="flex-1" />
+            <button
+              onClick={async () => {
+                try {
+                  await onMarkComplete?.(milestone.id);
+                } catch (e) {
+                  console.error(e);
+                  toast.error("Could not mark complete");
+                }
+              }}
+              className="rounded bg-gray-100 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200"
+              title="Mark Complete to submit for review. Invoicing happens after approval."
+            >
+              ✓ Complete → Review
+            </button>
+          </div>
+
+          {/* Attachments + Comments (unchanged from your file) */}
+          {/* ... kept exactly as before ... */}
+
+          {/* Files + Recent Attachments */}
+          <div className="mt-6">
+            <div className="text-sm font-medium text-gray-700">Files</div>
+            <div className="mt-2 flex items-center gap-2">
+              <input type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} disabled={uploading} />
+              <button
+                onClick={uploadFile}
+                disabled={!file || uploading}
+                className="rounded bg-gray-100 px-3 py-1.5 text-sm hover:bg-gray-200 disabled:cursor-not-allowed disabled:bg-gray-100"
+              >
+                {uploading ? "Uploading…" : "Upload"}
+              </button>
+            </div>
+            {!!uploadError && <div className="mt-2 text-xs text-red-600">Server response: {uploadError}</div>}
+
+            <div className="mt-4">
+              <div className="text-sm font-medium text-gray-700 mb-2">Recent Attachments</div>
+              {loadingAttachments ? (
+                <div className="text-xs text-gray-500">Loading…</div>
+              ) : recentAttachments.length ? (
+                <ul className="space-y-1 text-sm">
+                  {recentAttachments.map((a) => {
+                    const url = urlFor(a);
+                    return (
+                      <li key={a.id || `${a.title}-${a.filename}-${Math.random()}`} className="flex items-center justify-between">
+                        <span className="truncate">
+                          {a.category ? `[${String(a.category).toUpperCase()}] ` : ""}
+                          {a.title || a.filename || "Attachment"}
+                        </span>
+                        <span className="ml-3 flex items-center gap-3">
+                          {url ? (
+                            <a className="text-blue-600 hover:underline" href={url} target="_blank" rel="noreferrer">
+                              Download
+                            </a>
+                          ) : (
+                            <span className="text-gray-400">No link</span>
+                          )}
+                          <button
+                            onClick={() => deleteAttachment(a.id)}
+                            disabled={deletingId === a.id}
+                            className="text-red-600 hover:text-red-700 disabled:text-red-300"
+                            title="Delete attachment"
+                          >
+                            {deletingId === a.id ? "Deleting…" : "Delete"}
+                          </button>
+                        </span>
+                      </li>
+                    );
+                  })}
                 </ul>
+              ) : (
+                <div className="text-xs text-gray-500">No attachments yet.</div>
+              )}
+              <div className="mt-2">
+                <button
+                  onClick={() => agreementId && reloadAttachments(agreementId)}
+                  className="rounded bg-gray-100 px-2 py-1 text-xs hover:bg-gray-200"
+                >
+                  Refresh
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Comments */}
+          <div className="mt-6">
+            <div className="text-sm font-medium text-gray-700">Comments</div>
+
+            <div className="mt-2 max-h-40 overflow-y-auto rounded border bg-gray-50 p-2 text-xs">
+              {loadingComments ? (
+                <div className="text-gray-500">Loading comments…</div>
+              ) : comments && comments.length > 0 ? (
+                comments.map((c) => (
+                  <div key={c.id} className="mb-2 rounded bg-white px-2 py-1 shadow-sm last:mb-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold">{c.author_name || "User"}</span>
+                      <span className="text-[11px] text-gray-500">{c.created_at ? friendlyDate(c.created_at) : ""}</span>
+                    </div>
+                    <div className="mt-1 whitespace-pre-wrap text-[13px] text-gray-800">{c.content}</div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-gray-500">No comments yet. Be the first to add one.</div>
               )}
             </div>
 
-            <div className="border-t pt-3">
-              <h4 className="font-semibold mb-2">Comments</h4>
-              <form onSubmit={addComment} className="flex gap-2">
-                <input name="comment" placeholder="Add a comment…" className="flex-1 border p-2 rounded" />
-                <button className="bg-blue-600 text-white px-4 py-2 rounded" type="submit">
-                  Send
-                </button>
-              </form>
-
-              <ul className="mt-2 text-sm space-y-1 max-h-40 overflow-auto pr-1">
-                {comments.map((c) => (
-                  <li key={c.id} className="break-words">
-                    <strong>{c.author_name || "User"}</strong>: {c.content}
-                  </li>
-                ))}
-                {comments.length === 0 && <li className="text-gray-500">No comments.</li>}
-              </ul>
-            </div>
-
-            <div className="border-t pt-3 flex items-center justify-between">
-              <div className="text-sm text-gray-600">
-                Mark Complete to submit for <b>review</b>. Invoicing happens after approval.
-              </div>
-
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                type="text"
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="Add a comment…"
+                className="flex-1 rounded border px-3 py-2 text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    if (!sendingComment) sendComment();
+                  }
+                }}
+              />
               <button
-                type="button"
-                onClick={submitComplete}
-                disabled={!canComplete || submitting}
-                className={`px-3 py-2 rounded text-white ${!canComplete || submitting ? "bg-gray-400" : "bg-emerald-600 hover:bg-emerald-700"}`}
+                onClick={sendComment}
+                disabled={!comment.trim() || sendingComment}
+                className="rounded bg-indigo-50 px-3 py-1.5 text-sm text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400"
               >
-                {submitting ? "Submitting…" : "✓ Complete → Review"}
+                {sendingComment ? "Sending…" : "Send"}
               </button>
             </div>
+
+            <div className="mt-2 text-xs text-gray-500">
+              Mark <strong>Complete</strong> to submit for review. Invoicing happens after approval.
+            </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

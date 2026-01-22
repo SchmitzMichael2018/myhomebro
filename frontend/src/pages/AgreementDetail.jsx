@@ -9,6 +9,18 @@ import AttachmentManager from "../components/AttachmentManager";
 import SendFundingLinkButton from "../components/SendFundingLinkButton";
 import { useAuth } from "../context/AuthContext";
 import PdfPreviewModal from "../components/PdfPreviewModal";
+import RefundEscrowModal from "../components/RefundEscrowModal";
+
+// ✅ Assignment UI
+import AssignEmployeeInline from "../components/AssignEmployeeInline";
+import {
+  assignAgreementToSubaccount,
+  unassignAgreementFromSubaccount,
+  assignMilestoneToSubaccount,
+  unassignMilestone,
+} from "../api/assignments";
+
+const pick = (...vals) => vals.find((v) => v !== undefined && v !== null && v !== "") ?? "";
 
 const toMoney = (v) => {
   const n = typeof v === "number" ? v : parseFloat(String(v ?? 0));
@@ -20,6 +32,23 @@ const formatMoney = (v) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+
+const RefundedBadge = () => (
+  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border border-emerald-200 bg-emerald-50 text-emerald-800">
+    ✅ Refunded
+  </span>
+);
+
+const milestoneStatusLabel = (m) => {
+  const raw = String(pick(m?.status, m?.state) || "").trim();
+  if (raw) return raw;
+  if (m?.is_invoiced) return "Invoiced";
+  if (m?.completed) return "Completed";
+  return "Incomplete";
+};
+
+const isRefundedMilestone = (m) =>
+  String(pick(m?.descope_status, m?.descopeStatus) || "").toLowerCase() === "refunded";
 
 function normalizeAgreement(raw) {
   if (!raw || typeof raw !== "object")
@@ -59,6 +88,9 @@ export default function AgreementDetail() {
   const [pdfUrl, setPdfUrl] = useState(null);
   const [pdfOpen, setPdfOpen] = useState(false);
 
+  // Refund modal state
+  const [refundOpen, setRefundOpen] = useState(false);
+
   const norm = useMemo(() => normalizeAgreement(agreement), [agreement]);
 
   const isContractor = user?.role === "contractor" || user?.is_contractor;
@@ -95,7 +127,6 @@ export default function AgreementDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // Store title for sidebar context (optional)
   useEffect(() => {
     if (!norm?.id) return;
     try {
@@ -183,6 +214,27 @@ export default function AgreementDetail() {
     }
   };
 
+  // ✅ Assignment handlers
+  const assignAgreement = async (subId) => {
+    await assignAgreementToSubaccount(norm.id, subId);
+    toast.success("Agreement assigned.");
+  };
+
+  const unassignAgreement = async (subId) => {
+    await unassignAgreementFromSubaccount(norm.id, subId);
+    toast.success("Agreement unassigned.");
+  };
+
+  const assignMilestone = async (milestoneId, subId) => {
+    await assignMilestoneToSubaccount(milestoneId, subId);
+    toast.success("Milestone assigned.");
+  };
+
+  const unassignMilestoneLocal = async (milestoneId) => {
+    await unassignMilestone(milestoneId);
+    toast.success("Milestone unassigned.");
+  };
+
   if (loading) return <div className="p-6">Loading…</div>;
   if (!norm.id) return <div className="p-6">Agreement not found.</div>;
 
@@ -207,6 +259,16 @@ export default function AgreementDetail() {
         </p>
       </div>
 
+      {/* ✅ NEW: Agreement assignment selector */}
+      {isContractor && (
+        <AssignEmployeeInline
+          label="Assign Entire Agreement"
+          help="Assigning an agreement makes all milestones visible to that employee unless a milestone is explicitly assigned to someone else."
+          onAssign={(subId) => assignAgreement(subId)}
+          onUnassign={(subId) => unassignAgreement(subId)}
+        />
+      )}
+
       {/* Actions */}
       <div className="flex flex-wrap gap-3 items-start">
         {!norm.isSigned && (
@@ -218,35 +280,31 @@ export default function AgreementDetail() {
           </button>
         )}
 
-        {/* Contractor: Send Funding Link */}
         {isContractor && norm.isSigned && !norm.escrowFunded && (
-          <SendFundingLinkButton
-            agreementId={norm.id}
-            isFullySigned={norm.isSigned}
-            className="mr-2"
-          />
+          <SendFundingLinkButton agreementId={norm.id} isFullySigned={norm.isSigned} className="mr-2" />
         )}
 
         {norm.isSigned && !norm.escrowFunded && (
-          <button
-            onClick={startEscrow}
-            className="px-4 py-2 rounded bg-yellow-500 text-white hover:bg-yellow-600"
-          >
+          <button onClick={startEscrow} className="px-4 py-2 rounded bg-yellow-500 text-white hover:bg-yellow-600">
             Fund Escrow
           </button>
         )}
 
-        <button
-          onClick={previewPdf}
-          className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700"
-        >
+        {norm.escrowFunded && (
+          <button
+            onClick={() => setRefundOpen(true)}
+            className="px-4 py-2 rounded bg-rose-600 text-white hover:bg-rose-700"
+            title="Refund Control Center (unreleased escrow only)."
+          >
+            Refund Escrow
+          </button>
+        )}
+
+        <button onClick={previewPdf} className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">
           Preview PDF
         </button>
 
-        <button
-          onClick={downloadPDF}
-          className="px-4 py-2 rounded bg-blue-700 text-white hover:bg-blue-800"
-        >
+        <button onClick={downloadPDF} className="px-4 py-2 rounded bg-blue-700 text-white hover:bg-blue-800">
           Download PDF
         </button>
       </div>
@@ -255,35 +313,58 @@ export default function AgreementDetail() {
       <AttachmentManager agreementId={id} canEdit={isContractor} />
 
       {/* Milestones */}
-      <div className="bg-white rounded shadow p-6">
-        <h3 className="text-lg font-semibold mb-3">Milestones</h3>
+      <div className="bg-white rounded shadow p-6 space-y-3">
+        <div className="flex items-end justify-between gap-3 flex-wrap">
+          <h3 className="text-lg font-semibold">Milestones</h3>
+          <div className="text-xs text-gray-500">
+            Assign individual milestones to override agreement assignment.
+          </div>
+        </div>
+
         {!norm.milestones || norm.milestones.length === 0 ? (
           <p className="text-gray-500">No milestones found.</p>
         ) : (
-          <ul className="space-y-1">
-            {norm.milestones.map((m) => (
-              <li key={m.id} className="text-sm">
-                • {m.title} — ${toMoney(m.amount).toFixed(2)} ({m.status})
-              </li>
-            ))}
-          </ul>
+          <div className="space-y-3">
+            {norm.milestones.map((m) => {
+              const refunded = isRefundedMilestone(m);
+              const label = milestoneStatusLabel(m);
+
+              return (
+                <div key={m.id} className="border rounded-lg p-3 bg-gray-50">
+                  <div className="text-sm">
+                    <span className="font-semibold">{m.title}</span> — ${toMoney(m.amount).toFixed(2)}
+                    {refunded ? <RefundedBadge /> : null}
+                    <span className="text-gray-500"> ({label})</span>
+                  </div>
+
+                  {/* ✅ NEW: Per-milestone override assignment selector */}
+                  {isContractor && (
+                    <div className="mt-3">
+                      <AssignEmployeeInline
+                        label="Assign This Milestone (Override)"
+                        help="Overrides agreement assignment. Only the selected employee will see this milestone."
+                        onAssign={(subId) => assignMilestone(m.id, subId)}
+                        onUnassign={() => unassignMilestoneLocal(m.id)}
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 
       {/* Project Totals & Fee Summary (Contractor View) */}
       <div className="bg-white rounded shadow p-6 border border-dashed border-gray-300 bg-gray-50">
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-base font-semibold text-gray-900">
-            Project Totals &amp; Fee Summary (Contractor View)
-          </h3>
+          <h3 className="text-base font-semibold text-gray-900">Project Totals &amp; Fee Summary (Contractor View)</h3>
           {fundingPreview && (
             <div className="text-[11px] text-gray-500 text-right space-y-0.5">
               {tierLabel && <div>{tierLabel}</div>}
               {ratePercent && <div>Current platform rate: {ratePercent}% + $1</div>}
               {fundingPreview.high_risk_applied && (
-                <div className="text-[11px] text-amber-700">
-                  High-risk surcharge applied for this project type.
-                </div>
+                <div className="text-[11px] text-amber-700">High-risk surcharge applied for this project type.</div>
               )}
             </div>
           )}
@@ -338,7 +419,6 @@ export default function AgreementDetail() {
         )}
       </div>
 
-      {/* Signature Modal */}
       <SignatureModal
         isOpen={sigOpen}
         onClose={() => setSigOpen(false)}
@@ -361,12 +441,20 @@ export default function AgreementDetail() {
         open={pdfOpen}
         onClose={() => {
           setPdfOpen(false);
-          if (pdfUrl) {
-            URL.revokeObjectURL(pdfUrl);
-          }
+          if (pdfUrl) URL.revokeObjectURL(pdfUrl);
         }}
         fileUrl={pdfUrl}
         title={`Agreement #${id} — Preview`}
+      />
+
+      <RefundEscrowModal
+        open={refundOpen}
+        onClose={() => setRefundOpen(false)}
+        agreementId={norm.id}
+        agreementLabel={norm.title}
+        onRefunded={() => {
+          fetchAgreement();
+        }}
       />
     </div>
   );

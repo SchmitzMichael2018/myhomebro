@@ -1,12 +1,11 @@
 // frontend/src/pages/AgreementList.jsx
-// v2025-12-13 — add Escrow funding indicator column (Not Funded / Partial / Funded ✅)
-// - NO layout/design changes beyond adding a single column + badge
-// - Fully funded shows green check
-// - Partially funded shows amber badge
-// - Falls back to r.status === "funded" or r.escrow_funded when funded amount not present
-// - Row click opens /agreements/:id/wizard?step=4 (view/sign/escrow hub)
+// v2026-01-06 — add Escrow funding indicator column (Not Funded / Partial / Funded ✅)
+// FIX (2026-01-06): Row click + View/Edit/Amend navigations now use React Router
+// - prevents hard reloads + accidental landing-page redirects
+// - routes are BASED under /app/* (or /app/employee/*)
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
 import {
@@ -21,7 +20,7 @@ import {
   Eye,
 } from "lucide-react";
 
-console.log("AgreementList.jsx v2025-12-13-escrow-column");
+console.log("AgreementList.jsx v2026-01-06 — fixed /app/* navigation");
 
 const fmtMoney = (n) => {
   if (n === null || n === undefined || n === "") return "—";
@@ -57,6 +56,15 @@ const toNum = (v) => {
 };
 
 export default function AgreementList() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // ✅ Base route for contractor vs employee console
+  const BASE = useMemo(() => {
+    const p = location.pathname || "";
+    return p.startsWith("/app/employee") ? "/app/employee" : "/app";
+  }, [location.pathname]);
+
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -368,11 +376,9 @@ export default function AgreementList() {
     }
   };
 
-  const goEdit = (id) =>
-    (window.location.href = `/agreements/${id}/wizard?step=1`);
-
-  const goView = (id) =>
-    (window.location.href = `/agreements/${id}/wizard?step=4`);
+  // ✅ FIX: SPA navigation under /app/*
+  const goEdit = (id) => navigate(`${BASE}/agreements/${id}/wizard?step=1`);
+  const goView = (id) => navigate(`${BASE}/agreements/${id}/wizard?step=4`);
 
   const deleteDraft = async (row) => {
     if (String(row.status).toLowerCase() !== "draft") {
@@ -466,7 +472,7 @@ export default function AgreementList() {
       }
 
       const targetId = data?.id ?? id;
-      window.location.href = `/agreements/${targetId}/wizard?step=4`;
+      navigate(`${BASE}/agreements/${targetId}/wizard?step=4`); // ✅ FIX
     } catch (e) {
       console.error("Create amendment failed:", e?.response || e);
       const detail =
@@ -480,9 +486,8 @@ export default function AgreementList() {
     }
   };
 
-  // NEW: escrow badge
+  // Escrow badge
   const EscrowBadge = ({ r }) => {
-    // Prefer explicit funding fields if serializer includes them
     const fundedRaw =
       r.escrow_funded_amount ??
       r.escrow_funded_so_far ??
@@ -495,10 +500,8 @@ export default function AgreementList() {
     const funded = toNum(fundedRaw);
     const total = toNum(totalRaw);
 
-    const fundedFlag =
-      !!r.escrow_funded || safeLower(r.status) === "funded";
+    const fundedFlag = !!r.escrow_funded || safeLower(r.status) === "funded";
 
-    // If we don't have numeric funding data, still show green check when flagged funded
     if (funded === null || total === null || total <= 0) {
       if (fundedFlag) {
         return (
@@ -507,9 +510,7 @@ export default function AgreementList() {
           </span>
         );
       }
-      return (
-        <span className="text-xs text-gray-400">—</span>
-      );
+      return <span className="text-xs text-gray-400">—</span>;
     }
 
     const isFullyFunded = funded >= total && total > 0;
@@ -595,7 +596,7 @@ export default function AgreementList() {
         <button
           className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
           title="New Agreement"
-          onClick={() => (window.location.href = "/agreements/new")}
+          onClick={() => navigate(`${BASE}/agreements/new`)} // ✅ FIX
         >
           <Plus size={16} /> New Agreement
         </button>
@@ -663,7 +664,11 @@ export default function AgreementList() {
               page.map((r) => {
                 const isChecked = selected.has(r.id);
                 const isPrimary = primaryId === r.id;
-                const stat = msStats[r.id] || { total: 0, complete: 0, percent: 0 };
+                const stat = msStats[r.id] || {
+                  total: 0,
+                  complete: 0,
+                  percent: 0,
+                };
                 const homeowner = homeownerDisplay(r);
                 const fullySigned = isFullySignedAgreement(r);
 
@@ -671,7 +676,7 @@ export default function AgreementList() {
                   <tr
                     key={r.id}
                     className="odd:bg-white even:bg-gray-50 hover:bg-blue-50 cursor-pointer"
-                    onClick={() => goView(r.id)}
+                    onClick={() => goView(r.id)} // ✅ FIX
                     title="Click to view agreement"
                   >
                     <td className="p-2 border">
@@ -780,7 +785,7 @@ export default function AgreementList() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            goView(r.id);
+                            goView(r.id); // ✅ FIX
                           }}
                           className="inline-flex items-center gap-1 px-2 py-1 rounded-md border hover:bg-gray-50"
                           title="View agreement"
@@ -791,7 +796,7 @@ export default function AgreementList() {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            goEdit(r.id);
+                            goEdit(r.id); // ✅ FIX
                           }}
                           disabled={fullySigned}
                           className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border ${
@@ -820,7 +825,8 @@ export default function AgreementList() {
                           >
                             {busyAmendRow === r.id ? (
                               <>
-                                <RefreshCw size={14} className="animate-spin" /> Amending…
+                                <RefreshCw size={14} className="animate-spin" />{" "}
+                                Amending…
                               </>
                             ) : (
                               <>

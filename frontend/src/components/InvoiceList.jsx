@@ -1,14 +1,17 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../api";
 import { useAuth } from "../context/AuthContext";
 
 // InvoiceList.jsx
-// v2025-12-18-send-button-failsafe
-// - Show Send/Resend if user is contractor OR token exists (backend still enforces permissions)
-// - View goes to /app/invoices/:id
-// v2025-12-30 — FIX: prefer display_status over status so escrow-paid invoices show Paid
+// v2026-01-20 — Flat invoice list + Quick Filter Chips
+// - Flat list scales well (no accordion)
+// - Filters: Agreement + Status + Search
+// - Quick chips row: All, Unpaid, Disputed, Paid (1-click)
+// - Sort: Unpaid first, then newest
+// - Keeps View (/app/invoices/:id), View milestone (/milestones/:id), Send/Resend
+// - Prefers display_status for escrow-paid invoices
 
 const money = (amount) =>
   Number(amount || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -26,6 +29,12 @@ function statusPillClasses(status) {
   if (s.includes("dispute")) return "bg-red-100 text-red-800";
   if (s.includes("pending")) return "bg-yellow-100 text-yellow-800";
   return "bg-gray-100 text-gray-800";
+}
+
+function chipClasses(active) {
+  return active
+    ? "bg-slate-900 text-white border-slate-900"
+    : "bg-white text-slate-800 border-slate-200 hover:bg-slate-50";
 }
 
 function getUserType(user) {
@@ -51,6 +60,24 @@ function tokenPresent() {
   } catch {
     return false;
   }
+}
+
+function pickDateValue(inv) {
+  const v =
+    inv?.updated_at ??
+    inv?.created_at ??
+    inv?.issued_at ??
+    inv?.date ??
+    inv?.sent_at ??
+    inv?.email_sent_at ??
+    inv?.last_sent_at ??
+    inv?.paid_at ??
+    inv?.released_at ??
+    null;
+
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
 function normalizeInvoice(inv) {
@@ -89,7 +116,7 @@ function normalizeInvoice(inv) {
   const invoiceNumber = inv?.invoice_number ?? inv?.number ?? (id != null ? `INV-${id}` : "INV-—");
   const amount = Number(inv?.amount ?? inv?.amount_due ?? inv?.total ?? inv?.total_amount ?? 0) || 0;
 
-  // ✅ FIX: prefer display_status for escrow-paid invoices
+  // ✅ prefer display_status so escrow-paid invoices show Paid
   const status = inv?.display_status ?? inv?.status_label ?? inv?.status ?? "pending";
 
   const milestoneId =
@@ -117,6 +144,8 @@ function normalizeInvoice(inv) {
 
   const emailSentAt = inv?.email_sent_at ?? inv?.emailed_at ?? inv?.sent_at ?? inv?.last_sent_at ?? null;
 
+  const isoDate = pickDateValue(inv);
+
   return {
     raw: inv,
     id,
@@ -131,7 +160,31 @@ function normalizeInvoice(inv) {
     milestoneName,
     milestoneDescription,
     emailSentAt,
+    isoDate,
   };
+}
+
+function isPaidLike(status) {
+  const s = String(status || "").toLowerCase();
+  return s.includes("paid") || s.includes("released");
+}
+
+function statusBucket(status) {
+  const s = String(status || "").toLowerCase();
+  if (!s) return "other";
+  if (s.includes("dispute")) return "disputed";
+  if (isPaidLike(s)) return "paid";
+  if (s.includes("approved")) return "approved";
+  if (s.includes("pending")) return "pending";
+  if (s.includes("unpaid")) return "pending";
+  return "other";
+}
+
+function prettyDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "2-digit" });
 }
 
 export default function InvoiceList({ initialData = [], loadingOverride = false, onRefresh = null }) {
@@ -139,7 +192,8 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
   const { user } = useAuth();
 
   const [query, setQuery] = useState("");
-  const [openGroups, setOpenGroups] = useState({});
+  const [agreementFilter, setAgreementFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [sendingIds, setSendingIds] = useState({});
 
   const uType = useMemo(() => getUserType(user), [user]);
@@ -151,10 +205,55 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
     return list.map(normalizeInvoice).filter((x) => x.id != null);
   }, [initialData]);
 
+  const agreements = useMemo(() => {
+    const map = new Map();
+    for (const inv of normalized) {
+      const key = inv.agreementId != null ? `id:${inv.agreementId}` : `num:${inv.agreementNumber}:${inv.agreementTitle}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          agreementId: inv.agreementId,
+          agreementNumber: inv.agreementNumber,
+          agreementTitle: inv.agreementTitle,
+          homeownerName: inv.homeownerName,
+        });
+      }
+    }
+
+    const arr = Array.from(map.values());
+    arr.sort((a, b) => {
+      const aId = Number(a.agreementId);
+      const bId = Number(b.agreementId);
+      if (!Number.isNaN(aId) && !Number.isNaN(bId)) return bId - aId;
+      return `${a.homeownerName} ${a.agreementTitle}`.localeCompare(`${b.homeownerName} ${b.agreementTitle}`);
+    });
+    return arr;
+  }, [normalized]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return normalized;
+
     return normalized.filter((x) => {
+      // Agreement filter
+      if (agreementFilter !== "all") {
+        if (x.agreementId != null) {
+          const matchKey = `id:${x.agreementId}`;
+          if (matchKey !== agreementFilter) return false;
+        } else {
+          const matchKey = `num:${x.agreementNumber}:${x.agreementTitle}`;
+          if (matchKey !== agreementFilter) return false;
+        }
+      }
+
+      // Status filter
+      if (statusFilter !== "all") {
+        const b = statusBucket(x.status);
+        if (b !== statusFilter) return false;
+      }
+
+      // Search
+      if (!q) return true;
+
       return (
         String(x.invoiceNumber).toLowerCase().includes(q) ||
         String(x.agreementTitle).toLowerCase().includes(q) ||
@@ -166,56 +265,36 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
         String(x.status || "").toLowerCase().includes(q)
       );
     });
-  }, [normalized, query]);
+  }, [normalized, query, agreementFilter, statusFilter]);
 
-  const groups = useMemo(() => {
-    const map = new Map();
+  const sorted = useMemo(() => {
+    const copy = [...filtered];
+    copy.sort((a, b) => {
+      const aPaid = isPaidLike(a.status);
+      const bPaid = isPaidLike(b.status);
+      if (aPaid !== bPaid) return aPaid ? 1 : -1;
 
-    for (const item of filtered) {
-      const key =
-        item.agreementId != null
-          ? `agreement:${item.agreementId}`
-          : `agreement:${item.agreementNumber}:${item.agreementTitle}`;
+      const aT = a.isoDate ? new Date(a.isoDate).getTime() : NaN;
+      const bT = b.isoDate ? new Date(b.isoDate).getTime() : NaN;
+      const aHas = !Number.isNaN(aT);
+      const bHas = !Number.isNaN(bT);
 
-      if (!map.has(key)) {
-        map.set(key, {
-          key,
-          agreementId: item.agreementId,
-          agreementNumber: item.agreementNumber,
-          agreementTitle: item.agreementTitle,
-          homeownerName: item.homeownerName,
-          totalAmount: 0,
-          items: [],
-        });
-      }
+      if (aHas && bHas && aT !== bT) return bT - aT;
+      if (aHas !== bHas) return aHas ? -1 : 1;
 
-      const g = map.get(key);
-      g.items.push(item);
-      g.totalAmount += item.amount;
-    }
-
-    const arr = Array.from(map.values());
-    arr.sort((a, b) => {
-      const aId = Number(a.agreementId);
-      const bId = Number(b.agreementId);
-      if (!Number.isNaN(aId) && !Number.isNaN(bId)) return bId - aId;
-      return `${a.homeownerName} ${a.agreementTitle}`.localeCompare(`${b.homeownerName} ${b.agreementTitle}`);
+      return Number(b.id) - Number(a.id);
     });
-
-    for (const g of arr) {
-      g.items.sort((a, b) => String(a.invoiceNumber).localeCompare(String(b.invoiceNumber)));
-    }
-
-    return arr;
+    return copy;
   }, [filtered]);
 
-  useEffect(() => {
-    if (groups.length === 1) setOpenGroups((prev) => ({ ...prev, [groups[0].key]: true }));
-  }, [groups]);
-
-  function toggleGroup(key) {
-    setOpenGroups((prev) => ({ ...prev, [key]: !prev[key] }));
-  }
+  const totals = useMemo(() => {
+    const count = sorted.length;
+    const total = sorted.reduce((sum, x) => sum + (Number(x.amount) || 0), 0);
+    const unpaidCount = sorted.filter((x) => !isPaidLike(x.status)).length;
+    const disputedCount = sorted.filter((x) => statusBucket(x.status) === "disputed").length;
+    const paidCount = sorted.filter((x) => isPaidLike(x.status)).length;
+    return { count, total, unpaidCount, disputedCount, paidCount };
+  }, [sorted]);
 
   async function handleRefresh() {
     if (!onRefresh) {
@@ -234,6 +313,12 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
     navigate(`/app/invoices/${invoiceId}`);
   }
 
+  function handleViewAgreement(agreementId, agreementNumber) {
+    const id = agreementId ?? agreementNumber;
+    if (!id) return;
+    navigate(`/app/agreements/${id}/wizard?step=4`);
+  }
+
   function handleViewMilestone(milestoneId) {
     navigate(`/milestones/${milestoneId}`);
   }
@@ -244,9 +329,7 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
 
     setSendingIds((prev) => ({ ...prev, [invoiceId]: true }));
     try {
-      const endpoint = isResend
-        ? `/projects/invoices/${invoiceId}/resend/`
-        : `/projects/invoices/${invoiceId}/submit/`;
+      const endpoint = isResend ? `/projects/invoices/${invoiceId}/resend/` : `/projects/invoices/${invoiceId}/submit/`;
 
       await api.post(endpoint);
       toast.success(isResend ? "Invoice email resent." : "Invoice email sent.");
@@ -259,19 +342,113 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
     }
   }
 
+  function resetAllFilters() {
+    setQuery("");
+    setAgreementFilter("all");
+    setStatusFilter("all");
+  }
+
+  function setQuickFilter(kind) {
+    // Keep agreement filter; quick chips mostly control status + search
+    if (kind === "all") {
+      setStatusFilter("all");
+      return;
+    }
+    setStatusFilter(kind);
+  }
+
+  const activeChip =
+    statusFilter === "all"
+      ? "all"
+      : statusFilter === "pending"
+      ? "pending"
+      : statusFilter === "disputed"
+      ? "disputed"
+      : statusFilter === "paid"
+      ? "paid"
+      : "other";
+
+  const anyFiltersActive = query.trim() || agreementFilter !== "all" || statusFilter !== "all";
+
   return (
     <div className="w-full p-4">
       <div className="mb-2 text-xs text-white/80">
-        InvoiceList debug — userType: <b>{uType || "(empty)"}</b> • tokenPresent:{" "}
-        <b>{String(hasToken)}</b> • canSend: <b>{String(canSend)}</b>
+        InvoiceList debug — userType: <b>{uType || "(empty)"}</b> • tokenPresent: <b>{String(hasToken)}</b> • canSend:{" "}
+        <b>{String(canSend)}</b>
       </div>
 
       <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="text-2xl font-extrabold text-slate-900">Invoices</div>
           <div className="text-sm text-slate-600">
-            {loadingOverride ? "Loading…" : `${filtered.length} invoice${filtered.length === 1 ? "" : "s"}`}
-            {query ? " (filtered)" : ""}
+            {loadingOverride ? (
+              "Loading…"
+            ) : (
+              <>
+                <b>{totals.count}</b> invoice{totals.count === 1 ? "" : "s"} •{" "}
+                <b>{totals.unpaidCount}</b> unpaid • <b>{money(totals.total)}</b> total
+                {anyFiltersActive ? " (filtered)" : ""}
+              </>
+            )}
+          </div>
+
+          {/* Quick filter chips */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setQuickFilter("all")}
+              className={`h-9 rounded-full border px-4 text-sm font-extrabold ${chipClasses(activeChip === "all")}`}
+              title="Show all invoices"
+            >
+              All <span className={`ml-2 text-xs ${activeChip === "all" ? "text-white/80" : "text-slate-500"}`}>{totals.count}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setQuickFilter("pending")}
+              className={`h-9 rounded-full border px-4 text-sm font-extrabold ${chipClasses(activeChip === "pending")}`}
+              title="Show unpaid/pending invoices"
+            >
+              Unpaid{" "}
+              <span className={`ml-2 text-xs ${activeChip === "pending" ? "text-white/80" : "text-slate-500"}`}>
+                {totals.unpaidCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setQuickFilter("disputed")}
+              className={`h-9 rounded-full border px-4 text-sm font-extrabold ${chipClasses(activeChip === "disputed")}`}
+              title="Show disputed invoices"
+            >
+              Disputed{" "}
+              <span className={`ml-2 text-xs ${activeChip === "disputed" ? "text-white/80" : "text-slate-500"}`}>
+                {totals.disputedCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setQuickFilter("paid")}
+              className={`h-9 rounded-full border px-4 text-sm font-extrabold ${chipClasses(activeChip === "paid")}`}
+              title="Show paid invoices"
+            >
+              Paid{" "}
+              <span className={`ml-2 text-xs ${activeChip === "paid" ? "text-white/80" : "text-slate-500"}`}>
+                {totals.paidCount}
+              </span>
+            </button>
+
+            {anyFiltersActive && (
+              <button
+                type="button"
+                onClick={resetAllFilters}
+                className="h-9 rounded-full border border-slate-200 bg-white px-4 text-sm font-extrabold text-slate-800 hover:bg-slate-50"
+                title="Clear filters"
+              >
+                Clear
+              </button>
+            )}
           </div>
         </div>
 
@@ -280,8 +457,37 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by customer, agreement, milestone, invoice…"
-            className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-slate-300 md:w-[420px]"
+            className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-slate-300 md:w-[360px]"
           />
+
+          <select
+            value={agreementFilter}
+            onChange={(e) => setAgreementFilter(e.target.value)}
+            className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-slate-300 md:w-[240px]"
+            title="Filter by agreement"
+          >
+            <option value="all">All Agreements</option>
+            {agreements.map((a) => (
+              <option key={a.key} value={a.key}>
+                {a.agreementTitle} • #{a.agreementNumber}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-slate-300 md:w-[170px]"
+            title="Filter by status"
+          >
+            <option value="all">All Statuses</option>
+            <option value="pending">Pending / Unpaid</option>
+            <option value="approved">Approved</option>
+            <option value="disputed">Disputed</option>
+            <option value="paid">Paid / Released</option>
+            <option value="other">Other</option>
+          </select>
+
           <button
             onClick={handleRefresh}
             disabled={loadingOverride}
@@ -292,125 +498,129 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
         </div>
       </div>
 
-      {groups.length === 0 ? (
+      {sorted.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
           {loadingOverride ? "Loading invoices…" : "No invoices found."}
         </div>
       ) : (
-        <div className="space-y-3">
-          {groups.map((g) => {
-            const open = !!openGroups[g.key];
-            return (
-              <div key={g.key} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(g.key)}
-                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50"
-                >
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                      <div className="text-base font-extrabold text-slate-900">{g.agreementTitle}</div>
-                      <div className="text-xs font-bold text-slate-500">Agreement #{g.agreementNumber}</div>
-                    </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
-                      <div>
-                        <span className="font-semibold">Customer:</span> {g.homeownerName}
-                      </div>
-                      <div>
-                        <span className="font-semibold">Total:</span> {money(g.totalAmount)}
-                      </div>
-                      <div>
-                        <span className="font-semibold">Count:</span> {g.items.length}
-                      </div>
-                    </div>
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+          {/* Desktop header */}
+          <div className="hidden grid-cols-12 gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-extrabold text-slate-600 md:grid">
+            <div className="col-span-2">Invoice</div>
+            <div className="col-span-2">Agreement</div>
+            <div className="col-span-3">Milestone</div>
+            <div className="col-span-2">Customer</div>
+            <div className="col-span-1">Amount</div>
+            <div className="col-span-1">Status</div>
+            <div className="col-span-1 text-right">Actions</div>
+          </div>
+
+          <div className="divide-y divide-slate-200">
+            {sorted.map((item) => {
+              const sending = !!sendingIds[item.id];
+              const sendLabel = item.emailSentAt ? "Resend" : "Send";
+
+              return (
+                <div key={item.id} className="grid grid-cols-1 gap-2 px-4 py-3 md:grid-cols-12 md:gap-3">
+                  {/* Invoice */}
+                  <div className="md:col-span-2">
+                    <div className="font-extrabold text-slate-900">{item.invoiceNumber}</div>
+                    <div className="mt-1 text-xs text-slate-500">{prettyDate(item.isoDate)}</div>
                   </div>
 
-                  <div className="text-lg font-black text-slate-500">{open ? "▾" : "▸"}</div>
-                </button>
-
-                {open && (
-                  <div className="border-t border-slate-200">
-                    <div className="hidden grid-cols-12 gap-3 bg-slate-50 px-4 py-2 text-xs font-extrabold text-slate-600 md:grid">
-                      <div className="col-span-3">Invoice</div>
-                      <div className="col-span-5">Milestone</div>
-                      <div className="col-span-2">Amount</div>
-                      <div className="col-span-2 text-right">Actions</div>
-                    </div>
-
-                    <div className="divide-y divide-slate-200">
-                      {g.items.map((item) => {
-                        const sending = !!sendingIds[item.id];
-                        const sendLabel = item.emailSentAt ? "Resend" : "Send";
-
-                        return (
-                          <div key={item.id} className="grid grid-cols-1 gap-2 px-4 py-3 md:grid-cols-12 md:gap-3">
-                            <div className="md:col-span-3">
-                              <div className="font-extrabold text-slate-900">{item.invoiceNumber}</div>
-                              <div className="mt-1 text-xs text-slate-600">For Homeowner: {item.homeownerName}</div>
-                              <div className="mt-2 inline-flex rounded-full px-3 py-1 text-xs font-bold">
-                                <span className={`rounded-full px-3 py-1 ${statusPillClasses(item.status)}`}>
-                                  {statusLabel(item.status)}
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="min-w-0 md:col-span-5">
-                              <div className="flex items-baseline gap-2">
-                                <span className="text-xs font-extrabold text-slate-500">
-                                  {item.milestoneId != null ? `#${item.milestoneId}` : "#—"}
-                                </span>
-                                <span className="truncate text-sm font-extrabold text-slate-900">
-                                  {item.milestoneName}
-                                </span>
-                                {item.milestoneId != null && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleViewMilestone(item.milestoneId)}
-                                    className="ml-2 text-xs font-extrabold text-blue-700 hover:underline"
-                                  >
-                                    View milestone
-                                  </button>
-                                )}
-                              </div>
-                              <div className="mt-1 line-clamp-2 text-xs text-slate-600">
-                                {item.milestoneDescription || "—"}
-                              </div>
-                            </div>
-
-                            <div className="md:col-span-2">
-                              <div className="text-sm font-extrabold text-slate-900">{money(item.amount)}</div>
-                            </div>
-
-                            <div className="flex items-center gap-2 md:col-span-2 md:justify-end">
-                              <button
-                                type="button"
-                                onClick={() => handleView(item.id)}
-                                className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm font-extrabold text-slate-800 hover:bg-slate-50"
-                              >
-                                View
-                              </button>
-
-                              {canSend && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleSendOrResend(item)}
-                                  disabled={sending}
-                                  className="h-9 rounded-xl border border-slate-200 bg-slate-900 px-3 text-sm font-extrabold text-white hover:bg-slate-800 disabled:opacity-60"
-                                >
-                                  {sending ? "Sending…" : sendLabel}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
+                  {/* Agreement */}
+                  <div className="min-w-0 md:col-span-2">
+                    <button
+                      type="button"
+                      onClick={() => handleViewAgreement(item.agreementId, item.agreementNumber)}
+                      className="block w-full text-left"
+                      title="Open agreement"
+                    >
+                      <div className="truncate text-sm font-extrabold text-slate-900 hover:underline">
+                        {item.agreementTitle}
+                      </div>
+                      <div className="mt-1 text-xs font-bold text-slate-500">#{item.agreementNumber}</div>
+                    </button>
                   </div>
-                )}
-              </div>
-            );
-          })}
+
+                  {/* Milestone */}
+                  <div className="min-w-0 md:col-span-3">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-xs font-extrabold text-slate-500">
+                        {item.milestoneId != null ? `#${item.milestoneId}` : "#—"}
+                      </span>
+                      <span className="truncate text-sm font-extrabold text-slate-900">{item.milestoneName}</span>
+                      {item.milestoneId != null && (
+                        <button
+                          type="button"
+                          onClick={() => handleViewMilestone(item.milestoneId)}
+                          className="ml-2 text-xs font-extrabold text-blue-700 hover:underline"
+                        >
+                          View
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-1 line-clamp-2 text-xs text-slate-600">{item.milestoneDescription || "—"}</div>
+                  </div>
+
+                  {/* Customer */}
+                  <div className="md:col-span-2">
+                    <div className="text-sm font-extrabold text-slate-900">{item.homeownerName}</div>
+                  </div>
+
+                  {/* Amount */}
+                  <div className="md:col-span-1">
+                    <div className="text-sm font-extrabold text-slate-900">{money(item.amount)}</div>
+                  </div>
+
+                  {/* Status */}
+                  <div className="md:col-span-1">
+                    <span
+                      className={`inline-flex rounded-full px-3 py-1 text-xs font-extrabold ${statusPillClasses(item.status)}`}
+                    >
+                      {statusLabel(item.status)}
+                    </span>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 md:col-span-1 md:justify-end">
+                    <button
+                      type="button"
+                      onClick={() => handleView(item.id)}
+                      className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm font-extrabold text-slate-800 hover:bg-slate-50"
+                    >
+                      View
+                    </button>
+
+                    {canSend && (
+                      <button
+                        type="button"
+                        onClick={() => handleSendOrResend(item)}
+                        disabled={sending}
+                        className="h-9 rounded-xl border border-slate-200 bg-slate-900 px-3 text-sm font-extrabold text-white hover:bg-slate-800 disabled:opacity-60"
+                      >
+                        {sending ? "Sending…" : sendLabel}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Mobile-only compact summary row */}
+                  <div className="md:hidden">
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                      <span className="font-bold text-slate-500">Agreement:</span>
+                      <button
+                        type="button"
+                        onClick={() => handleViewAgreement(item.agreementId, item.agreementNumber)}
+                        className="font-extrabold text-slate-900 hover:underline"
+                      >
+                        {item.agreementTitle} #{item.agreementNumber}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

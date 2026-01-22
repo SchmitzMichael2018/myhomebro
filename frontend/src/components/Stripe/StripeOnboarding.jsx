@@ -12,7 +12,7 @@ export default function StripeOnboarding() {
 
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
-  const [linked, setLinked] = useState(false);
+  const [linked, setLinked] = useState(false); // now means "connected"
   const [error, setError] = useState("");
 
   // ──────────────────────────────────────────────
@@ -24,14 +24,10 @@ export default function StripeOnboarding() {
     try {
       const { data } = await api.get("/payments/onboarding/status/");
       const s = String(data?.onboarding_status || "");
-      const isLinked =
-        Boolean(data?.linked) ||
-        Boolean(data?.connected) ||
-        Boolean(data?.charges_enabled) ||
-        Boolean(data?.payouts_enabled);
+      const isConnected = Boolean(data?.connected); // ✅ authoritative
 
       setStatus(s);
-      setLinked(isLinked);
+      setLinked(isConnected);
     } catch (err) {
       console.error("Stripe onboarding status error", err?.response || err);
       setError("Failed to fetch Stripe onboarding status.");
@@ -98,12 +94,11 @@ export default function StripeOnboarding() {
     ? status.charAt(0).toUpperCase() + status.slice(1)
     : "Not started";
 
-  const badgeClass =
-    linked || status === "completed"
-      ? "bg-green-100 text-green-700 border-green-300"
-      : status
-      ? "bg-yellow-100 text-yellow-800 border-yellow-300"
-      : "bg-gray-100 text-gray-600 border-gray-300";
+  const badgeClass = linked
+    ? "bg-green-100 text-green-700 border-green-300"
+    : status && status !== "not_started"
+    ? "bg-yellow-100 text-yellow-800 border-yellow-300"
+    : "bg-gray-100 text-gray-600 border-gray-300";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-600 via-blue-500 to-yellow-400 flex items-center justify-center px-4">
@@ -134,7 +129,7 @@ export default function StripeOnboarding() {
           <span
             className={`inline-flex items-center rounded-full border px-2 py-0.5 ${badgeClass}`}
           >
-            {linked ? "Charges Enabled" : "Charges Disabled"}
+            {linked ? "Connected" : "Not Connected"}
           </span>
           <span
             className={`inline-flex items-center rounded-full border px-2 py-0.5 ${badgeClass}`}

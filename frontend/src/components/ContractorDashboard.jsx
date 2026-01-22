@@ -17,11 +17,15 @@ import {
   ListPlus,
   Receipt,
   CalendarDays,
+  AlertTriangle,
+  Wrench,
 } from "lucide-react";
 
-console.log("ContractorDashboard.jsx v2025-12-14-dashboard-rate+subtitle+intro-countdown");
+console.log(
+  "ContractorDashboard.jsx v2026-01-19 — invoice disputed + milestone rework workorders"
+);
 
-// Ensure react-modal knows the root
+/* Ensure react-modal knows the root */
 Modal.setAppElement("#root");
 
 /* ---------- small helpers ---------- */
@@ -29,32 +33,80 @@ const money = (n) => Number(n || 0);
 const sum = (arr, key = "amount") => arr.reduce((a, x) => a + money(x[key]), 0);
 
 const norm = (s) => (s || "").toString().toLowerCase();
+
 const isIncomplete = (m) =>
   norm(m.status || (m.completed ? "completed" : "incomplete")) === "incomplete";
+
 const isCompleted = (m) =>
-  ["completed", "complete"].includes(norm(m.status || (m.completed ? "completed" : "")));
+  ["completed", "complete"].includes(
+    norm(m.status || (m.completed ? "completed" : ""))
+  );
+
+// ✅ Rework milestone detection (best-effort)
+const isReworkMilestone = (m) => {
+  if (!m) return false;
+
+  if (m.is_rework === true || m.rework === true) return true;
+  if (m.rework_of_dispute || m.rework_of_dispute_id) return true;
+  if (m.dispute_id && norm(m.title).includes("rework")) return true;
+
+  const t = norm(m.title);
+  if (!t) return false;
+  if (t.startsWith("rework")) return true;
+  if (t.includes("rework — dispute") || t.includes("rework - dispute")) return true;
+  if (t.includes("rework") && t.includes("dispute")) return true;
+
+  return false;
+};
+
+// ✅ Invoice disputed detection (best-effort, tries to ignore resolved/closed disputes)
+const isDisputedInvoice = (inv) => {
+  const s = norm(inv?.status);
+  const display = norm(inv?.display_status);
+
+  const disputeStatus = norm(
+    inv?.dispute_status ||
+      inv?.dispute_state ||
+      inv?.latest_dispute_status ||
+      inv?.open_dispute_status ||
+      inv?.dispute?.status ||
+      inv?.dispute?.state ||
+      ""
+  );
+
+  const openFlag =
+    inv?.dispute_is_open ??
+    inv?.has_open_dispute ??
+    inv?.dispute_open ??
+    null;
+
+  if (openFlag === false) return false;
+
+  if (
+    disputeStatus.includes("resolved") ||
+    disputeStatus.includes("closed") ||
+    disputeStatus.includes("dismiss")
+  ) {
+    return false;
+  }
+
+  return s.includes("dispute") || display.includes("dispute");
+};
 
 /**
- * ✅ Invoice bucketing rules (escrow-aware)
- *
- * IMPORTANT: In your system, invoice.status may remain "approved" even after payout.
- * The true payout signal is escrow_released=true (and display_status="Paid" from serializer).
- *
- * Therefore:
- * - Earned: escrow_released OR display_status==="Paid" OR status includes paid/earned/released
- * - Approved: approved/ready_to_pay AND NOT earned
- * - Pending: pending/sent/awaiting approval
+ * ✅ Invoice bucketing rules (escrow-aware + disputed)
  */
 const invBucket = (inv) => {
-  const s = norm(inv.status);
-  const display = norm(inv.display_status);
+  if (isDisputedInvoice(inv)) return "disputed";
+
+  const s = norm(inv?.status);
+  const display = norm(inv?.display_status);
 
   const escrowReleased =
     inv?.escrow_released === true ||
     inv?.escrow_released === 1 ||
     inv?.escrow_released === "true";
 
-  // ✅ If escrow was released, it is earned regardless of status enum
   if (escrowReleased || display === "paid") return "earned";
 
   if (["pending", "pending_approval", "sent", "awaiting_approval"].includes(s))
@@ -127,43 +179,29 @@ function ExpenseRequestsPanel() {
     const base = "px-2 py-0.5 rounded text-xs font-semibold";
     switch (String(s || "").toLowerCase()) {
       case "draft":
-        return (
-          <span className={`${base} bg-gray-200 text-gray-800`}>Draft</span>
-        );
+        return <span className={`${base} bg-gray-200 text-gray-800`}>Draft</span>;
       case "contractor_signed":
         return (
-          <span className={`${base} bg-indigo-100 text-indigo-800`}>
-            Signed
-          </span>
+          <span className={`${base} bg-indigo-100 text-indigo-800`}>Signed</span>
         );
       case "pending":
-        return (
-          <span className={`${base} bg-amber-100 text-amber-800`}>Sent</span>
-        );
+        return <span className={`${base} bg-amber-100 text-amber-800`}>Sent</span>;
       case "approved":
         return (
-          <span className={`${base} bg-green-100 text-green-800`}>
-            Accepted
-          </span>
+          <span className={`${base} bg-green-100 text-green-800`}>Accepted</span>
         );
       case "rejected":
-        return (
-          <span className={`${base} bg-red-100 text-red-800`}>Rejected</span>
-        );
+        return <span className={`${base} bg-red-100 text-red-800`}>Rejected</span>;
       case "paid":
         return (
-          <span className={`${base} bg-emerald-200 text-emerald-900`}>
-            Paid
-          </span>
+          <span className={`${base} bg-emerald-200 text-emerald-900`}>Paid</span>
         );
       case "disputed":
         return (
           <span className={`${base} bg-red-100 text-red-800`}>Disputed</span>
         );
       default:
-        return (
-          <span className={`${base} bg-gray-100 text-gray-800`}>{s}</span>
-        );
+        return <span className={`${base} bg-gray-100 text-gray-800`}>{s}</span>;
     }
   };
 
@@ -215,15 +253,11 @@ function ExpenseRequestsPanel() {
                 {rows.map((r) => (
                   <tr key={r.id} className="odd:bg-white even:bg-gray-50">
                     <td className="p-2 border">
-                      {r.created_at
-                        ? new Date(r.created_at).toLocaleString()
-                        : "—"}
+                      {r.created_at ? new Date(r.created_at).toLocaleString() : "—"}
                     </td>
                     <td className="p-2 border">{r.agreement || "—"}</td>
                     <td className="p-2 border">{r.description}</td>
-                    <td className="p-2 border text-right">
-                      {moneyFmt(r.amount)}
-                    </td>
+                    <td className="p-2 border text-right">{moneyFmt(r.amount)}</td>
                     <td className="p-2 border">{statusBadge(r.status)}</td>
                     <td className="p-2 border text-center">
                       {r.receipt_url ? (
@@ -282,10 +316,8 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
     }
   }, [isOpen, defaultAgreementId]);
 
-  const onChange = (e) =>
-    setForm({ ...form, [e.target.name]: e.target.value });
-  const onFile = (e) =>
-    setForm({ ...form, file: e.target.files?.[0] || null });
+  const onChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+  const onFile = (e) => setForm({ ...form, file: e.target.files?.[0] || null });
 
   const submit = async (e) => {
     e.preventDefault();
@@ -334,6 +366,7 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
         <button
           onClick={() => onClose(false)}
           className="px-3 py-1.5 rounded-lg border"
+          type="button"
         >
           Close
         </button>
@@ -374,9 +407,7 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
           </div>
 
           <div className="md:col-span-2">
-            <label className="block text-sm text-gray-700 mb-1">
-              Description
-            </label>
+            <label className="block text-sm text-gray-700 mb-1">Description</label>
             <input
               name="description"
               value={form.description}
@@ -387,9 +418,7 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700 mb-1">
-              Amount
-            </label>
+            <label className="block text-sm text-gray-700 mb-1">Amount</label>
             <input
               type="number"
               step="0.01"
@@ -454,6 +483,8 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
 /* =============================== MAIN VIEW ================================= */
 /* ========================================================================== */
 export default function ContractorDashboard() {
+  const [who, setWho] = useState(null);
+
   const [milestones, setMilestones] = useState([]);
   const [invoices, setInvoices] = useState([]);
 
@@ -462,25 +493,67 @@ export default function ContractorDashboard() {
 
   const navigate = useNavigate();
 
-  // Intro pricing countdown state (60-day intro)
+  // Intro pricing countdown state (60-day intro) — contractor only
   const [introDaysRemaining, setIntroDaysRemaining] = useState(null);
   const [introActive, setIntroActive] = useState(false);
 
-  // Pull exact rate/tier from same engine as agreement fee summary (funding_preview)
+  // Pricing card — contractor only
   const [pricing, setPricing] = useState({
     loading: true,
-    rate: null, // decimal like 0.03
+    rate: null,
     fixed_fee: 1,
     is_intro: null,
     tier_name: null,
     error: "",
   });
 
-  /* ----- load data ----- */
+  const role = who?.role || "";
+  const isEmployee = role && String(role).startsWith("employee_");
+
+  // ✅ Route bases
+  const APP_BASE = "/app";
+  const EMP_BASE = "/app/employee";
+  const BASE = isEmployee ? EMP_BASE : APP_BASE;
+
+  /* ----- load whoami first ----- */
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
+        const { data } = await api.get("/projects/whoami/");
+        if (!mounted) return;
+        setWho(data || null);
+      } catch (e) {
+        console.error(e);
+        if (!mounted) return;
+        setWho(null);
+      }
+    })();
+    return () => (mounted = false);
+  }, []);
+
+  /* ----- load dashboard data (role-aware) ----- */
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      if (!who) return;
+
+      try {
+        // EMPLOYEE
+        if (isEmployee) {
+          const mRes = await api.get("/projects/employee/milestones/");
+          if (!mounted) return;
+
+          const list = Array.isArray(mRes.data?.milestones)
+            ? mRes.data.milestones
+            : [];
+          setMilestones(list);
+          setInvoices([]);
+          return;
+        }
+
+        // CONTRACTOR
         const [mRes, iRes] = await Promise.allSettled([
           api.get("/projects/milestones/"),
           api.get("/projects/invoices/"),
@@ -512,12 +585,15 @@ export default function ContractorDashboard() {
         toast.error("Failed to load dashboard data.");
       }
     })();
-    return () => (mounted = false);
-  }, []);
 
-  // Intro pricing countdown effect (60-day intro)
+    return () => (mounted = false);
+  }, [who, isEmployee]);
+
+  // Intro pricing countdown (contractor-only)
   useEffect(() => {
     const fetchIntroCountdown = async () => {
+      if (isEmployee) return;
+
       try {
         const { data } = await api.get("/projects/contractors/me/");
 
@@ -552,23 +628,32 @@ export default function ContractorDashboard() {
         setIntroActive(remaining > 0);
         setIntroDaysRemaining(Math.max(0, remaining));
       } catch (err) {
-        console.error(
-          "Failed to load contractor profile for intro countdown",
-          err
-        );
+        console.error("Failed to load contractor profile for intro countdown", err);
         setIntroActive(false);
         setIntroDaysRemaining(null);
       }
     };
 
     fetchIntroCountdown();
-  }, []);
+  }, [isEmployee]);
 
-  // Authoritative pricing via funding_preview of latest agreement
+  // Pricing via funding_preview (contractor-only)
   useEffect(() => {
     let mounted = true;
 
     const loadPricing = async () => {
+      if (isEmployee) {
+        setPricing({
+          loading: false,
+          rate: null,
+          fixed_fee: 1,
+          is_intro: null,
+          tier_name: null,
+          error: "",
+        });
+        return;
+      }
+
       try {
         setPricing((p) => ({ ...p, loading: true, error: "" }));
 
@@ -637,20 +722,25 @@ export default function ContractorDashboard() {
     };
 
     loadPricing();
-
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [isEmployee]);
 
   /* ----- milestone stats ----- */
   const mStats = useMemo(() => {
     const all = milestones;
     const allAmt = sum(all);
+
     const incomp = all.filter(isIncomplete);
     const incompAmt = sum(incomp);
+
     const comp = all.filter(isCompleted);
     const compAmt = sum(comp);
+
+    // ✅ Rework Work Orders (milestones created from disputes)
+    const rework = all.filter(isReworkMilestone);
+    const reworkAmt = sum(rework);
 
     return {
       totalCount: all.length,
@@ -659,30 +749,39 @@ export default function ContractorDashboard() {
       incompleteAmount: incompAmt,
       completedCount: comp.length,
       completedAmount: compAmt,
+      reworkCount: rework.length,
+      reworkAmount: reworkAmt,
     };
   }, [milestones]);
 
-  /* ----- invoice stats ----- */
+  /* ----- invoice stats (contractor only) ----- */
   const iStats = useMemo(() => {
-    const buckets = { pending: [], approved: [], earned: [] };
+    const buckets = { pending: [], approved: [], earned: [], disputed: [] };
     for (const inv of invoices) {
-      buckets[invBucket(inv)].push(inv);
+      const b = invBucket(inv);
+      if (!buckets[b]) buckets[b] = [];
+      buckets[b].push(inv);
     }
     return {
       pendingCount: buckets.pending.length,
       pendingAmount: sum(buckets.pending),
       approvedCount: buckets.approved.length,
       approvedAmount: sum(buckets.approved),
+      disputedCount: buckets.disputed.length,
+      disputedAmount: sum(buckets.disputed),
       earnedCount: buckets.earned.length,
       earnedAmount: sum(buckets.earned),
     };
   }, [invoices]);
 
-  /* ----- quick action handlers ----- */
-  const goNewAgreement = () => navigate("/agreements");
-  const goNewMilestone = () => navigate("/milestones?new=1");
-  const goInvoices = () => navigate("/invoices");
-  const goCalendar = () => navigate("/calendar");
+  /* ----- navigation handlers ----- */
+  const goNewAgreement = () => navigate(`${BASE}/agreements`);
+  const goNewMilestone = () => navigate(`${BASE}/milestones?new=1`);
+  const goInvoices = () => navigate(`${BASE}/invoices`);
+  const goInvoicesDisputed = () => navigate(`${BASE}/invoices?filter=disputed`);
+  const goCalendar = () => navigate(`${BASE}/calendar`);
+  const goDisputes = () => navigate(`${BASE}/disputes`); // keep sidebar disputes as case management
+  const goReworkMilestones = () => navigate(`${BASE}/milestones?filter=rework`);
 
   const openNewExpense = () => setShowExpenseModal(true);
   const onExpenseModalClose = (didChange) => {
@@ -720,33 +819,43 @@ export default function ContractorDashboard() {
         } remaining in your intro period.`
       : baseSubtitle;
 
+  // Employee header
+  const headerSubtitle = isEmployee
+    ? "Here are the milestones assigned to you."
+    : "Milestones and invoices at a glance.";
+
   return (
-    <PageShell
-      title="Dashboard"
-      subtitle="Milestones and invoices at a glance."
-      showLogo
-    >
-      <div className="mhb-kicker">MyHomeBro Pricing</div>
-      <div className="mhb-grid" style={{ marginBottom: 6 }}>
-        <StatCard
-          icon={BadgeDollarSign}
-          title={titleText}
-          subtitle={subtitleText}
-          count={null}
-          amount={null}
-          onClick={null}
-        />
-      </div>
+    <PageShell title="Dashboard" subtitle={headerSubtitle} showLogo>
+      {/* CONTRACTOR: pricing card only */}
+      {!isEmployee ? (
+        <>
+          <div className="mhb-kicker">MyHomeBro Pricing</div>
+          <div className="mhb-grid" style={{ marginBottom: 6 }}>
+            <StatCard
+              icon={BadgeDollarSign}
+              title={titleText}
+              subtitle={subtitleText}
+              count={null}
+              amount={null}
+              onClick={null}
+            />
+          </div>
+        </>
+      ) : null}
 
       <div className="mhb-kicker">Milestones</div>
       <div className="mhb-grid" style={{ marginBottom: 6 }}>
         <StatCard
           icon={Target}
-          title="All Milestones"
-          subtitle="Across your active agreements."
+          title={isEmployee ? "My Assigned Milestones" : "All Milestones"}
+          subtitle={
+            isEmployee
+              ? "Only milestones assigned to you."
+              : "Across your active agreements."
+          }
           count={mStats.totalCount}
           amount={mStats.totalAmount}
-          onClick={() => navigate("/milestones")}
+          onClick={() => navigate(`${BASE}/milestones`)}
         />
         <StatCard
           icon={ListTodo}
@@ -754,93 +863,127 @@ export default function ContractorDashboard() {
           subtitle="Not yet completed."
           count={mStats.incompleteCount}
           amount={mStats.incompleteAmount}
-          onClick={() => navigate("/milestones?filter=incomplete")}
+          onClick={() => navigate(`${BASE}/milestones?filter=incomplete`)}
         />
         <StatCard
           icon={CheckCircle2}
-          title="Completed (Not Invoiced)"
-          subtitle="May be awaiting invoicing."
+          title="Completed"
+          subtitle={isEmployee ? "Completed by you." : "Completed (Not Invoiced)"}
           count={mStats.completedCount}
           amount={mStats.completedAmount}
-          onClick={() => navigate("/milestones?filter=completed")}
+          onClick={() => navigate(`${BASE}/milestones?filter=completed`)}
+        />
+
+        {/* ✅ NEW: Rework Work Orders (instead of Milestone Disputed) */}
+        <StatCard
+          icon={Wrench}
+          title="Rework Work Orders"
+          subtitle="Milestones created from disputes."
+          count={mStats.reworkCount}
+          amount={mStats.reworkAmount}
+          onClick={goReworkMilestones}
         />
       </div>
 
-      <div className="mhb-kicker" style={{ marginTop: 14 }}>
-        Invoices
-      </div>
-      <div className="mhb-grid">
-        <StatCard
-          icon={BadgeDollarSign}
-          title="Pending Approval"
-          subtitle="Sent to homeowner — awaiting approval."
-          count={iStats.pendingCount}
-          amount={iStats.pendingAmount}
-          onClick={() => navigate("/invoices")}
-        />
-        <StatCard
-          icon={BadgeCheck}
-          title="Approved"
-          subtitle="Approved — ready for payout."
-          count={iStats.approvedCount}
-          amount={iStats.approvedAmount}
-          onClick={() => navigate("/invoices")}
-        />
-        <StatCard
-          icon={WalletMinimal}
-          title="Earned"
-          subtitle="Paid/released to your account."
-          count={iStats.earnedCount}
-          amount={iStats.earnedAmount}
-          onClick={() => navigate("/invoices")}
-        />
-      </div>
+      {/* CONTRACTOR: invoices section only */}
+      {!isEmployee ? (
+        <>
+          <div className="mhb-kicker" style={{ marginTop: 14 }}>
+            Invoices
+          </div>
+          <div className="mhb-grid">
+            <StatCard
+              icon={BadgeDollarSign}
+              title="Pending Approval"
+              subtitle="Sent to homeowner — awaiting approval."
+              count={iStats.pendingCount}
+              amount={iStats.pendingAmount}
+              onClick={() => navigate(`${BASE}/invoices`)}
+            />
+            <StatCard
+              icon={BadgeCheck}
+              title="Approved"
+              subtitle="Approved — ready for payout."
+              count={iStats.approvedCount}
+              amount={iStats.approvedAmount}
+              onClick={() => navigate(`${BASE}/invoices`)}
+            />
+
+            {/* ✅ Keep disputed ONLY under invoices, and route to invoices list */}
+            <StatCard
+              icon={AlertTriangle}
+              title="Disputed"
+              subtitle="Frozen until resolved."
+              count={iStats.disputedCount}
+              amount={iStats.disputedAmount}
+              onClick={goInvoicesDisputed}
+            />
+
+            <StatCard
+              icon={WalletMinimal}
+              title="Earned"
+              subtitle="Paid/released to your account."
+              count={iStats.earnedCount}
+              amount={iStats.earnedAmount}
+              onClick={() => navigate(`${BASE}/invoices`)}
+            />
+          </div>
+        </>
+      ) : null}
 
       <div className="mhb-kicker" style={{ marginTop: 18 }}>
         Quick Actions
       </div>
       <div className="mhb-glass" style={{ padding: 12 }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-          <ActionButton
-            icon={FilePlus2}
-            label="+ New Agreement"
-            primary
-            onClick={goNewAgreement}
-          />
-          <ActionButton
-            icon={ListPlus}
-            label="+ New Milestone"
-            onClick={goNewMilestone}
-          />
-          <ActionButton
-            icon={Receipt}
-            label="+ New Expense"
-            onClick={() => setShowExpenseModal(true)}
-          />
-          <ActionButton
-            icon={CalendarDays}
-            label="Calendar"
-            onClick={goCalendar}
-          />
-          <ActionButton
-            icon={Receipt}
-            label="Invoices"
-            onClick={goInvoices}
-          />
+          {!isEmployee ? (
+            <>
+              <ActionButton
+                icon={FilePlus2}
+                label="+ New Agreement"
+                primary
+                onClick={goNewAgreement}
+              />
+              <ActionButton
+                icon={ListPlus}
+                label="+ New Milestone"
+                onClick={goNewMilestone}
+              />
+              <ActionButton
+                icon={Receipt}
+                label="+ New Expense"
+                onClick={openNewExpense}
+              />
+              <ActionButton icon={Receipt} label="Invoices" onClick={goInvoices} />
+              {/* Disputes stays as case management */}
+              <ActionButton
+                icon={AlertTriangle}
+                label="Disputes"
+                onClick={goDisputes}
+              />
+            </>
+          ) : null}
+
+          <ActionButton icon={CalendarDays} label="Calendar" onClick={goCalendar} />
         </div>
       </div>
 
-      <div className="mhb-kicker" style={{ marginTop: 18 }}>
-        Expense Requests
-      </div>
-      <div key={expensesRefreshKey}>
-        <ExpenseRequestsPanel />
-      </div>
+      {/* CONTRACTOR: expenses section only */}
+      {!isEmployee ? (
+        <>
+          <div className="mhb-kicker" style={{ marginTop: 18 }}>
+            Expense Requests
+          </div>
+          <div key={expensesRefreshKey}>
+            <ExpenseRequestsPanel />
+          </div>
 
-      <ExpenseRequestModal
-        isOpen={showExpenseModal}
-        onClose={onExpenseModalClose}
-      />
+          <ExpenseRequestModal
+            isOpen={showExpenseModal}
+            onClose={onExpenseModalClose}
+          />
+        </>
+      ) : null}
     </PageShell>
   );
 }

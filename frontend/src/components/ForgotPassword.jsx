@@ -1,36 +1,39 @@
-import { useState, useEffect, useRef } from 'react';
-import api from '../api';
-import { Link } from 'react-router-dom';
+// frontend/src/components/ForgotPassword.jsx
+// v2025-12-31 — Fix invalid regex pattern + request reset link
+
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import api from "../api";
 
 export default function ForgotPassword() {
-  const [email, setEmail] = useState('');
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
+  const navigate = useNavigate();
+
+  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
-  const emailRef = useRef();
+  const [successMsg, setSuccessMsg] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
 
-  useEffect(() => {
-    emailRef.current?.focus();
-  }, []);
-
-  const handleReset = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setMessage('');
-    setError('');
-    setLoading(true);
+    setSuccessMsg("");
+    setErrorMsg("");
 
+    const trimmed = (email || "").trim().toLowerCase();
+    if (!trimmed) {
+      setErrorMsg("⚠️ Please enter your email.");
+      return;
+    }
+
+    setLoading(true);
     try {
-      // Adjust endpoint to your backend URL structure as needed
-      const response = await api.post('/accounts/auth/password-reset/request/', { email });
-      // Always display success message for privacy/security
-      setMessage('✅ If your email is registered, you will receive a reset link shortly.');
+      await api.post("/accounts/auth/password-reset/request/", { email: trimmed });
+      setSuccessMsg("✅ If this email is registered, a reset link has been sent.");
+      setTimeout(() => navigate("/?login=1"), 1500);
     } catch (err) {
-      // For network errors, show an error; otherwise, always show the success message for privacy
-      if (err.response && err.response.status >= 400 && err.response.status < 500) {
-        setMessage('✅ If your email is registered, you will receive a reset link shortly.');
-      } else {
-        setError('⚠️ Network error. Please try again later.');
-      }
+      const msg =
+        err?.response?.data?.detail ||
+        "⚠️ Could not request a reset link. Please try again.";
+      setErrorMsg(msg);
     } finally {
       setLoading(false);
     }
@@ -41,68 +44,53 @@ export default function ForgotPassword() {
       <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md text-center">
         <h2 className="text-2xl font-bold text-blue-700 mb-6">Forgot Password</h2>
 
-        <form className="space-y-4" onSubmit={handleReset}>
+        <form className="space-y-4" onSubmit={handleSubmit}>
           <input
-            ref={emailRef}
             type="email"
-            id="emailInput"
-            placeholder="Enter your registered email"
+            placeholder="Email address"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            pattern="[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$"
+            // ✅ IMPORTANT: no pattern attribute (prevents the invalid regex crash)
             className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-            aria-label="Email Input"
           />
 
           <button
             type="submit"
-            disabled={loading || !email.trim()}
+            disabled={loading}
             className={`w-full py-2 flex items-center justify-center ${
-              loading ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+              loading ? "bg-blue-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
             } text-white rounded-lg transition duration-300`}
-            aria-label="Send Reset Link"
           >
-            {loading ? (
-              <svg className="animate-spin h-5 w-5 mr-2 text-white" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8h8a8 8 0 01-8 8z"></path>
-              </svg>
-            ) : (
-              "Send Reset Link"
-            )}
+            {loading ? "Sending…" : "Send Reset Link"}
           </button>
         </form>
 
-        {/* Dynamic Messages */}
-        {message && (
-          <div aria-live="polite" className="mt-4 text-green-600 flex items-center gap-2 transition-all duration-300">
+        {successMsg && (
+          <div className="mt-4 text-green-600 flex items-center gap-2 justify-center">
             <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
             </svg>
-            <p>{message}</p>
+            <p>{successMsg}</p>
           </div>
         )}
 
-        {error && (
-          <div aria-live="polite" className="mt-4 text-red-600 flex items-center gap-2 transition-all duration-300">
+        {errorMsg && (
+          <div className="mt-4 text-red-600 flex items-center gap-2 justify-center">
             <svg className="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
             </svg>
-            <p>{error}</p>
+            <p>{errorMsg}</p>
           </div>
         )}
 
-        <div className="mt-4">
-          <Link to="/signin" className="text-blue-600 hover:underline">
-            Back to Login
-          </Link>
-        </div>
+        <button
+          className="mt-6 text-sm text-blue-700 hover:underline"
+          onClick={() => navigate("/?login=1")}
+        >
+          Back to Login
+        </button>
       </div>
     </div>
   );
 }
-
-
-
-

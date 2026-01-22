@@ -1,51 +1,147 @@
 // frontend/src/components/Calendar.jsx
-// v2025-10-15 calendar label/tooltip cleanup (no address) + meta passed to modal
-console.log("Calendar.jsx v2025-10-15-noAddress (components/Calendar.jsx)");
+// v2026-01-07 — Calendar
+// ✅ Click milestone assignments (gray) to open milestone modal
+console.log("Calendar.jsx v2026-01-07 (click assignment milestone_override)");
 
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
+import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import api from "../api";
 import toast from "react-hot-toast";
 import MilestoneEditModal from "./MilestoneEditModal";
 
-/* Ensure FullCalendar CSS is bundled */
 import "../styles/fullcalendar-core.css";
 import "../styles/fullcalendar-daygrid.css";
 import "../styles/fullcalendar-timegrid.css";
 
-/* Status colors (match legend) */
 const STATUS_COLORS = {
-  draft: "#9AA0A6",
   scheduled: "#1A73E8",
-  complete: "#34A853",
   overdue: "#EA4335",
+  invoiced: "#F9AB00",
   pending_approval: "#F9AB00",
+  complete: "#34A853",
+  paid: "#188038",
+  disputed: "#F59E0B",
 };
 
-function getLastName(name) {
-  if (!name) return "";
-  const parts = String(name).trim().split(/\s+/);
-  return parts.length ? parts[parts.length - 1] : "";
-}
+const ASSIGNMENT_ROLE_COLORS = {
+  employee_supervisor: "#F59E0B",
+  employee_milestones: "#6B7280",
+  employee_readonly: "#9CA3AF",
+  default: "#6B7280",
+};
 
 function formatCurrency(n) {
-  if (n === null || n === undefined || n === "") return "$0.00";
   const num = typeof n === "number" ? n : parseFloat(n);
-  if (Number.isNaN(num)) return "$0.00";
-  return num.toLocaleString(undefined, { style: "currency", currency: "USD" });
+  return Number.isNaN(num)
+    ? "$0.00"
+    : num.toLocaleString(undefined, { style: "currency", currency: "USD" });
 }
 
-function dayDiffInclusive(startISO, endISO) {
-  try {
-    const s = new Date(startISO);
-    const e = new Date(endISO || startISO);
-    const days = Math.max(1, Math.round((e - s) / (24 * 3600 * 1000)) + 1);
-    return days;
-  } catch {
-    return "N/A";
+function roleLabel(role) {
+  const r = String(role || "").toLowerCase();
+  if (r === "employee_supervisor") return "Supervisor";
+  if (r === "employee_milestones") return "Worker";
+  if (r === "employee_readonly") return "Read-only";
+  return role || "Assignment";
+}
+
+function assignmentColorForRole(role) {
+  const r = String(role || "").toLowerCase();
+  return ASSIGNMENT_ROLE_COLORS[r] || ASSIGNMENT_ROLE_COLORS.default;
+}
+
+function escrowLabel(m) {
+  if (m.escrow_released) return "Released";
+  if (m.escrow_funded) return "Funded";
+  return "Not Funded";
+}
+
+function stripAgreementPrefix(text, agreementNo) {
+  const t = String(text || "").trim();
+  if (!t) return "";
+  const no = String(agreementNo || "").trim();
+  const patterns = [
+    /^agreement\s*#?\s*\d+\s*[-–:]\s*/i,
+    /^agreement\s*#?\s*[a-z0-9-]+\s*[-–:]\s*/i,
+  ];
+  if (no) patterns.unshift(new RegExp(`^agreement\\s*#?\\s*${no}\\s*[-–:]\\s*`, "i"));
+  for (const re of patterns) {
+    if (re.test(t)) return t.replace(re, "").trim();
   }
+  return t;
+}
+
+function isLateFromDates(statusKey, startISO, endISO) {
+  const s = String(statusKey || "").toLowerCase();
+  if (s === "paid" || s === "complete") return false;
+  if (s === "overdue") return true;
+
+  try {
+    const today = new Date();
+    const end = endISO ? new Date(endISO) : startISO ? new Date(startISO) : null;
+    if (!end) return false;
+    const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+    const nowDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    return endDay < nowDay;
+  } catch {
+    return false;
+  }
+}
+
+function buildMilestoneChipLines({ viewType, agreementNo, milestoneNo, title, assignedTo, late }) {
+  const cleanTitle = String(title || "Milestone").trim();
+  const showAssignee = assignedTo && assignedTo !== "Unassigned";
+
+  if (viewType === "dayGridMonth") {
+    return [
+      `A#${agreementNo} • M${milestoneNo}`,
+      cleanTitle,
+      late ? "LATE" : showAssignee ? assignedTo : "",
+    ].filter(Boolean);
+  }
+
+  return [
+    `Agreement #${agreementNo} • Milestone ${milestoneNo}`,
+    cleanTitle,
+    showAssignee ? assignedTo : "",
+  ].filter(Boolean);
+}
+
+function buildAssignmentChipLines({ viewType, xp, fallbackTitle }) {
+  const type = xp?.type || "assignment";
+  const role = xp?.employee_role || "";
+  const emp = xp?.employee_name ? `${xp.employee_name} (${roleLabel(role)})` : "";
+
+  if (type === "milestone_override") {
+    const agreementNo = xp?.agreement_number || xp?.agreement_id || "—";
+    const mNo =
+      xp?.milestone_order != null && xp.milestone_order !== ""
+        ? String(xp.milestone_order)
+        : "?";
+
+    const mTitle = xp?.milestone_title || fallbackTitle || "Milestone";
+
+    if (viewType === "dayGridMonth") {
+      return [`A#${agreementNo} • M${mNo}`, String(mTitle), emp || null].filter(Boolean);
+    }
+
+    return [
+      `Agreement #${agreementNo} • Milestone ${mNo}`,
+      String(mTitle),
+      emp || null,
+    ].filter(Boolean);
+  }
+
+  // agreement_assignment
+  const agreementNo = xp?.agreement_number || xp?.agreement_id || "—";
+  const proj = xp?.project_title || fallbackTitle || "Assignment";
+  if (viewType === "dayGridMonth") {
+    return [`A#${agreementNo}`, String(proj), emp || null].filter(Boolean);
+  }
+  return [`Agreement #${agreementNo}`, String(proj), emp || null].filter(Boolean);
 }
 
 export default function Calendar() {
@@ -53,232 +149,216 @@ export default function Calendar() {
   const [activeMilestone, setActiveMilestone] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
 
+  const [employeeOptions, setEmployeeOptions] = useState([]);
+  const [employeeFilter, setEmployeeFilter] = useState("");
+  const [activeViewType, setActiveViewType] = useState("dayGridMonth");
+
+  const loadEmployees = useCallback(async () => {
+    try {
+      const res = await api.get("/projects/subaccounts/");
+      const list = Array.isArray(res.data) ? res.data : res.data?.results || [];
+      setEmployeeOptions(list);
+    } catch {
+      setEmployeeOptions([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadEmployees();
+  }, [loadEmployees]);
+
   const loadEvents = useCallback(async () => {
     try {
-      const { data } = await api.get("/projects/milestones/", {
-        params: { page_size: 500 },
-      });
-      const list = Array.isArray(data?.results)
-        ? data.results
-        : Array.isArray(data)
-        ? data
-        : [];
+      const res = await api.get("/projects/milestones/calendar/");
+      const milestones = Array.isArray(res.data) ? res.data : res.data?.results || [];
 
-      const evts = list.map((m) => {
-        const start =
-          m.start_date || m.scheduled_for || m.date || m.due_date || m.completion_date;
-        const end = m.completion_date || m.due_date || start;
+      // Assignment feed
+      let assignmentEvents = [];
+      let assigneeByMilestoneId = {};
+      try {
+        const params = employeeFilter ? { subaccount_id: employeeFilter } : {};
+        const aRes = await api.get("/projects/assignments/calendar/", { params });
+        const evs = aRes.data?.events || [];
 
-        const statusKey = (String(m.status || "").toLowerCase() || "scheduled").replace(
-          /\s+/g,
-          "_"
-        );
+        assignmentEvents = evs.map((e) => {
+          const role = e.extendedProps?.employee_role || "";
+          const color = assignmentColorForRole(role);
+          return { ...e, backgroundColor: color, borderColor: color, textColor: "#fff" };
+        });
+
+        const map = {};
+        for (const ev of evs) {
+          const xp = ev.extendedProps || {};
+          if (xp.type === "milestone_override" && xp.milestone_id) {
+            const label = xp.employee_name
+              ? `${xp.employee_name} (${roleLabel(xp.employee_role)})`
+              : "Assigned";
+            map[String(xp.milestone_id)] = label;
+          }
+        }
+        assigneeByMilestoneId = map;
+      } catch {}
+
+      const milestoneEvents = milestones.map((m) => {
+        const statusKey = String(m.calendar_status || "scheduled").toLowerCase();
         const color = STATUS_COLORS[statusKey] || STATUS_COLORS.scheduled;
 
-        const homeownerName =
-          m.homeowner_name || m.homeowner?.name || m.customer_name || m.customer?.name || "";
-        const homeownerLast = getLastName(homeownerName);
+        const assignedTo = assigneeByMilestoneId[String(m.id)] || "Unassigned";
+        const late = isLateFromDates(statusKey, m.start, m.end);
 
-        // agreement id/number across possible shapes
-        const agreementNumber =
-          m.agreement_number ||
-          m.agreement_no ||
-          m.agreement?.number ||
-          m.agreement_id ||
-          m.agreement?.id ||
-          m.agreement ||
-          "";
+        const agreementNo = m.agreement_number || m.agreement_id || "—";
+        const milestoneNoNum = m.order != null ? m.order : "";
+        const milestoneNo = milestoneNoNum !== "" ? String(milestoneNoNum) : "?";
 
-        const milestoneTitle = (m.title || "Milestone").trim();
-        const amount = Number(m.amount || m.price || m.total || 0);
-        const description = (m.description || "").trim();
-        const projectAddress = m.project_address || m.address || m.project?.address || "";
+        const cleanMilestoneTitle = stripAgreementPrefix(m.title || "Milestone", agreementNo);
 
-        // Escrow + agreement totals from multiple possible shapes
-        const escrowFunded =
-          !!(m.escrow_funded ?? m.escrowFunded ?? m.agreement?.escrow_funded);
-        const agreementTotalRaw =
-          m.agreement_total ??
-          m.agreement?.total_cost ??
-          m.agreement?.amount ??
-          m.agreement?.total ??
-          m.total_agreement ??
-          null;
-
-        // Visible label inside the day cell (short)
-        const cellTitle = `Agreement #${agreementNumber || "—"} – ${milestoneTitle}`;
-
-        // Hover tooltip (concise — no address here)
         const tooltipLines = [
-          `Homeowner: ${homeownerName || "N/A"}`,
-          `Milestone: ${milestoneTitle || "N/A"}`,
-          `Amount: ${formatCurrency(amount)}`,
-          `Duration: ${dayDiffInclusive(start, end)} day(s)`,
-          `Status: ${(statusKey || "scheduled").replace(/_/g, " ")}`,
-          `Escrow: ${escrowFunded ? "Funded" : "Not Funded"}`,
-        ];
-        if (agreementTotalRaw !== null && agreementTotalRaw !== undefined) {
-          tooltipLines.push(`Agreement Total: ${formatCurrency(agreementTotalRaw)}`);
-        }
-        const tooltip = tooltipLines.join("\n");
-
-        // helpful links for the modal (best-effort)
-        const agreementDetailUrl =
-          agreementNumber ? `/agreements/${agreementNumber}` : null;
-        const previewLink =
-          m.preview_link || m.agreement?.preview_link || m.agreement?.preview_signed_link || null;
+          `Homeowner: ${m.homeowner_name || "N/A"}`,
+          `Milestone: ${cleanMilestoneTitle || "N/A"}`,
+          `Amount: ${formatCurrency(m.amount)}`,
+          `Status: ${statusKey.replaceAll("_", " ")}`,
+          `Assigned: ${assignedTo}`,
+          `Escrow: ${escrowLabel(m)}`,
+          m.invoice_status ? `Invoice: ${m.invoice_status}` : null,
+        ].filter(Boolean);
 
         return {
-          id: String(m.id),
-          title: cellTitle,
-          start,
-          end,
+          id: `M-${m.id}`,
+          title: cleanMilestoneTitle,
+          start: m.start,
+          end: m.end,
           allDay: true,
           backgroundColor: color,
           borderColor: color,
           textColor: "#fff",
           extendedProps: {
+            type: "milestone",
             milestone: m,
             statusKey,
-            color,
-            homeownerName,
-            homeownerLast,
-            agreementNumber,
-            milestoneTitle,
-            description,
-            amount,
-            projectAddress,
-            escrowFunded,
-            agreementTotal: agreementTotalRaw,
-            tooltip,
-            links: {
-              agreementDetailUrl,
-              previewSignedUrl: previewLink, // only if backend provides it
-            },
+            agreementNo,
+            milestoneNo,
+            cleanMilestoneTitle,
+            assignedTo,
+            late,
+            tooltip: tooltipLines.join("\n"),
           },
         };
       });
 
-      setEvents(evts);
-    } catch (e) {
-      console.error(e);
+      setEvents([...milestoneEvents, ...assignmentEvents]);
+    } catch (err) {
+      console.error(err);
       toast.error("Failed to load calendar.");
     }
-  }, []);
+  }, [employeeFilter]);
 
   useEffect(() => {
     loadEvents();
   }, [loadEvents]);
 
-  const handleEventClick = (info) => {
+  // ✅ UPDATED: allow clicking milestone_override assignment to open the milestone modal
+  const handleEventClick = async (info) => {
     const xp = info?.event?.extendedProps || {};
-    const m = xp?.milestone;
-    if (!m) return;
 
-    // enrich + pass through extra meta for the modal header
-    const enriched = {
-      ...m,
-      agreement_state:
-        m.agreement_state ?? m.agreement_status ?? m.agreement?.state ?? m.agreement?.status,
-      agreement_status:
-        m.agreement_status ?? m.agreement_state ?? m.agreement?.status ?? m.agreement?.state,
-      agreement_number: m.agreement_number || m.agreement_no || m.agreement_id || m.agreement,
-      escrow_funded: !!(m.escrow_funded ?? m.escrowFunded ?? m.agreement?.escrow_funded),
-      escrowFunded: !!(m.escrow_funded ?? m.escrowFunded ?? m.agreement?.escrow_funded),
+    // Green milestone event
+    if (xp.type === "milestone" && xp.milestone?.id) {
+      try {
+        const res = await api.get(`/projects/milestones/${xp.milestone.id}/`);
+        setActiveMilestone(res.data);
+        setModalOpen(true);
+      } catch {
+        toast.error("Could not load milestone details.");
+      }
+      return;
+    }
 
-      // meta for header
-      _meta: {
-        homeownerName: xp.homeownerName,
-        projectAddress: xp.projectAddress,
-        agreementNumber: xp.agreementNumber,
-        agreementTotal: xp.agreementTotal,
-        links: xp.links || {},
-      },
-    };
+    // Gray assignment event that points to a milestone
+    if (xp.type === "milestone_override" && xp.milestone_id) {
+      try {
+        const res = await api.get(`/projects/milestones/${xp.milestone_id}/`);
+        setActiveMilestone(res.data);
+        setModalOpen(true);
+      } catch {
+        toast.error("Could not load milestone details.");
+      }
+      return;
+    }
 
-    setActiveMilestone(enriched);
-    setModalOpen(true);
+    // agreement_assignment: optional future behavior (open agreement detail)
+    // if (xp.type === "agreement_assignment" && xp.agreement_id) { ... }
   };
 
-  const eventDidMount = (arg) => {
-    try {
-      arg.el.style.cursor = "pointer";
-      arg.el.style.color = "#fff";
-    } catch {}
-    const xp = arg.event.extendedProps || {};
-    arg.el.title = xp.tooltip || "";
-  };
+  const renderEventContent = useCallback(
+    (arg) => {
+      const bg = arg.event.backgroundColor || "#1A73E8";
+      const xp = arg.event.extendedProps || {};
+      const isMilestone = xp.type === "milestone";
+      const late = !!xp.late;
 
-  const renderEventContent = useCallback((arg) => {
-    const bg = arg.event.backgroundColor || "rgba(0,0,0,.4)";
-    const html = `
-      <div style="
-        display:inline-block;
-        max-width:100%;
-        background:${bg};
-        color:#fff;
-        border-radius:6px;
-        padding:2px 6px;
-        line-height:1.15;
-        font-size:.82rem;
-        white-space:normal;
-        word-break:break-word;
-      ">
-        ${arg.event.title}
-      </div>
-    `;
-    return { html };
-  }, []);
+      const lines = isMilestone
+        ? buildMilestoneChipLines({
+            viewType: activeViewType,
+            agreementNo: xp.agreementNo || "—",
+            milestoneNo: xp.milestoneNo || "?",
+            title: xp.cleanMilestoneTitle || arg.event.title,
+            assignedTo: xp.assignedTo || "Unassigned",
+            late,
+          })
+        : buildAssignmentChipLines({
+            viewType: activeViewType,
+            xp,
+            fallbackTitle: arg.event.title,
+          });
 
-  const closeAndRefresh = async () => {
-    setModalOpen(false);
-    setActiveMilestone(null);
-    await loadEvents();
-  };
+      const html = `
+        <div style="
+          display:inline-block;
+          max-width:100%;
+          background:${bg};
+          color:#fff;
+          border-radius:8px;
+          padding:4px 7px;
+          line-height:1.15;
+          font-size:.82rem;
+          font-weight:700;
+          white-space:normal;
+          word-break:break-word;
+          box-shadow:0 1px 2px rgba(0,0,0,.18);
+          border:1px solid rgba(255,255,255,.18);
+        ">
+          ${lines.map((l) => `<div>${l}</div>`).join("")}
+        </div>
+      `;
+      return { html };
+    },
+    [activeViewType]
+  );
 
   const headerToolbar = useMemo(
     () => ({
       left: "prev,next today",
       center: "title",
-      right: "dayGridMonth,dayGridWeek,dayGridDay",
+      right: "dayGridMonth,timeGridWeek,timeGridDay",
     }),
     []
   );
 
   return (
     <div className="p-4 md:p-6">
-      {/* Prevent cut-offs */}
-      <style>{`
-        .fc-daygrid-event {
-          white-space: normal !important;
-          overflow: visible !important;
-          height: auto !important;
-          padding: 0 !important;
-          border: none !important;
-          background: transparent !important;
-        }
-        .fc-daygrid-day-frame,
-        .fc-daygrid-day-events,
-        .fc-scroller-harness,
-        .fc-scroller {
-          overflow: visible !important;
-        }
-        .fc .fc-daygrid-day-number { z-index: 1; }
-      `}</style>
-
-      <div className="flex items-center justify-between mb-3">
-        <h1 className="text-xl font-semibold">Calendar</h1>
-        <Legend />
-      </div>
-
       <FullCalendar
-        plugins={[dayGridPlugin, interactionPlugin]}
+        plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
         initialView="dayGridMonth"
         headerToolbar={headerToolbar}
         events={events}
         eventContent={renderEventContent}
         eventClick={handleEventClick}
-        eventDidMount={eventDidMount}
+        eventDidMount={(arg) => {
+          arg.el.title = arg.event.extendedProps?.tooltip || "";
+          try {
+            arg.el.style.cursor = "pointer";
+          } catch {}
+        }}
+        datesSet={(arg) => setActiveViewType(arg.view.type)}
         eventDisplay="block"
         dayMaxEventRows={3}
         height="auto"
@@ -288,31 +368,10 @@ export default function Calendar() {
         <MilestoneEditModal
           open={modalOpen}
           milestone={activeMilestone}
-          onClose={closeAndRefresh}
-          onSaved={closeAndRefresh}
+          onClose={() => setModalOpen(false)}
+          onSaved={loadEvents}
         />
       )}
-    </div>
-  );
-}
-
-function Legend() {
-  return (
-    <div className="flex gap-3 text-sm">
-      {Object.entries(STATUS_COLORS).map(([k, v]) => (
-        <div key={k} className="flex items-center gap-1">
-          <span
-            style={{
-              background: v,
-              width: 12,
-              height: 12,
-              display: "inline-block",
-              borderRadius: 2,
-            }}
-          />
-          <span className="capitalize">{k.replace("_", " ")}</span>
-        </div>
-      ))}
     </div>
   );
 }

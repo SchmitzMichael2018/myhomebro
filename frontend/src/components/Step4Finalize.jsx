@@ -1,11 +1,11 @@
 // frontend/src/components/Step4Finalize.jsx
-// v2025-12-13c — Funding preview auto-refresh when milestones change + cache bust
-// - Refetches /funding_preview/ when milestones change (add/remove/edit amounts)
-// - Busts cache using _ts query param
-// - Prefers fundingPreview.total_required when present (new backend), falls back safely
+// v2026-01-18 — Rework milestone banner + Dispute status summary (robust, non-breaking)
+// - Shows “✅ Rework milestone created — View” if a Rework milestone exists on this agreement
+// - Adds a Dispute summary card (best-effort detection via agreement fields or milestone statuses)
 // - Keeps existing UX/layout intact
 
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
 import SignatureModal from "./SignatureModal";
@@ -126,6 +126,96 @@ function getProjectAddressFromAgreement(agreement) {
   return parts.join("\n").trim();
 }
 
+const norm = (s) => (s || "").toString().toLowerCase();
+
+function looksLikeReworkMilestone(m) {
+  if (!m) return false;
+  if (m.is_rework === true || m.rework === true) return true;
+  if (m.rework_of_dispute || m.rework_of_dispute_id) return true;
+  if (m.dispute_id && norm(m.title).includes("rework")) return true;
+
+  const t = norm(m.title);
+  if (!t) return false;
+  if (t.startsWith("rework")) return true;
+  if (t.includes("rework — dispute") || t.includes("rework - dispute"))
+    return true;
+  if (t.includes("rework") && t.includes("dispute")) return true;
+
+  return false;
+}
+
+function formatDisputeSummary(agreement, displayMilestones) {
+  const a = agreement || {};
+  const arr = Array.isArray(displayMilestones) ? displayMilestones : [];
+
+  const disputeId =
+    a.dispute_id ||
+    a.latest_dispute_id ||
+    a.open_dispute_id ||
+    a.dispute?.id ||
+    a.latest_dispute?.id ||
+    null;
+
+  const rawStatus =
+    a.dispute_status ||
+    a.dispute_state ||
+    a.latest_dispute_status ||
+    a.open_dispute_status ||
+    a.dispute?.status ||
+    a.dispute?.state ||
+    a.latest_dispute?.status ||
+    a.latest_dispute?.state ||
+    a.dispute?.display_status ||
+    a.latest_dispute?.display_status ||
+    "";
+
+  const rawDisplay =
+    a.dispute_status_display ||
+    a.dispute_display_status ||
+    a.dispute?.status_display ||
+    a.dispute?.display_status ||
+    a.latest_dispute?.status_display ||
+    a.latest_dispute?.display_status ||
+    "";
+
+  const hasFlag =
+    a.has_open_dispute === true ||
+    a.has_dispute === true ||
+    a.open_disputes_count > 0 ||
+    a.disputes_open_count > 0 ||
+    false;
+
+  const milestoneSignals = arr.some((m) => {
+    const s = norm(m.status || m.status_display);
+    return s.includes("dispute") || s.includes("under_review");
+  });
+
+  const derivedOpen =
+    hasFlag ||
+    norm(rawStatus).includes("open") ||
+    norm(rawStatus).includes("review") ||
+    norm(rawStatus).includes("pending") ||
+    milestoneSignals;
+
+  const derivedClosed =
+    norm(rawStatus).includes("resolved") ||
+    norm(rawStatus).includes("closed") ||
+    norm(rawStatus).includes("dismissed") ||
+    norm(rawStatus).includes("completed");
+
+  if (!disputeId && !rawStatus && !rawDisplay && !hasFlag && !milestoneSignals) {
+    return "None";
+  }
+
+  const pieces = [];
+  if (disputeId) pieces.push(`Dispute #${disputeId}`);
+  const statusText = (rawDisplay || rawStatus || "").toString().trim();
+  if (statusText) pieces.push(statusText);
+  else pieces.push(derivedOpen ? "Open" : derivedClosed ? "Closed" : "Unknown");
+
+  return pieces.join(" — ");
+}
+
 export default function Step4Finalize({
   agreement,
   dLocal,
@@ -155,6 +245,8 @@ export default function Step4Finalize({
   isEdit,
   unsignContractor,
 }) {
+  const navigate = useNavigate();
+
   const [loadingHomeowner, setLoadingHomeowner] = useState(false);
   const [homeownerObj, setHomeownerObj] = useState(null);
 
@@ -443,7 +535,9 @@ export default function Step4Finalize({
     setSendingLink(true);
     setSendError(null);
     try {
-      await api.post(`/projects/agreements/${agreement.id}/send_signature_request/`);
+      await api.post(
+        `/projects/agreements/${agreement.id}/send_signature_request/`
+      );
       toast.success("Homeowner signing link sent.");
     } catch (err) {
       console.error("send_signature_request error:", err);
@@ -594,15 +688,76 @@ export default function Step4Finalize({
     ? Math.max(0, Math.round(remainingToFundFromPreview * 100) / 100)
     : Math.max(
         0,
-        Math.round((escrowTotalRequiredSafe - escrowFundedAmountSafe) * 100) / 100
+        Math.round((escrowTotalRequiredSafe - escrowFundedAmountSafe) * 100) /
+          100
       );
 
   let previewButtonLabel = isFullySigned ? "View Signed Agreement" : "Preview PDF";
   if (amendmentNumber > 0) previewButtonLabel += ` — Amendment ${amendmentNumber}`;
   if (!signedByContractor) previewButtonLabel += " (Required)";
 
+  // ✅ Rework milestone detection (best effort)
+  const reworkMilestones = useMemo(() => {
+    const arr = Array.isArray(displayMilestones) ? displayMilestones : [];
+    const list = arr.filter(looksLikeReworkMilestone);
+    // prefer newest by created_at/updated_at, else highest id
+    return list.sort((a, b) => {
+      const da = new Date(a?.created_at || a?.updated_at || 0).getTime();
+      const db = new Date(b?.created_at || b?.updated_at || 0).getTime();
+      if (db !== da) return db - da;
+      return (b?.id || 0) - (a?.id || 0);
+    });
+  }, [displayMilestones]);
+
+  const latestRework = reworkMilestones[0] || null;
+
+  const handleViewRework = () => {
+    if (!latestRework?.id) return;
+    // We route to milestone list with focus hint (safe even if detail route doesn’t exist)
+    navigate(`/app/milestones?focus=${latestRework.id}`);
+  };
+
+  const disputeSummary = useMemo(
+    () => formatDisputeSummary(agreement, displayMilestones),
+    [agreement, displayMilestones]
+  );
+
   return (
     <div className="mt-4 space-y-6">
+      {/* ✅ Rework milestone banner */}
+      {latestRework?.id ? (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+          <div className="leading-snug">
+            <span className="font-semibold">✅ Rework milestone created:</span>{" "}
+            <span className="font-semibold">
+              Milestone #{latestRework.id}
+            </span>
+            {latestRework?.title ? (
+              <>
+                {" "}
+                — <span>{latestRework.title}</span>
+              </>
+            ) : null}
+            {latestRework?.due_date ? (
+              <>
+                {" "}
+                <span className="text-emerald-800">
+                  (due {toDateOnly(latestRework.due_date)})
+                </span>
+              </>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={handleViewRework}
+            className="rounded bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800"
+            title="View the rework milestone"
+          >
+            View
+          </button>
+        </div>
+      ) : null}
+
       {amendmentNumber > 0 && (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           <div className="font-semibold">
@@ -655,10 +810,25 @@ export default function Step4Finalize({
           <SummaryCard label="Fully Signed?" value={isFullySigned ? "Yes" : "No"} />
         </div>
 
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3">
+        {/* ✅ Dispute summary row */}
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-4">
+          <SummaryCard
+            label="Dispute Status"
+            value={disputeSummary}
+            className={
+              norm(disputeSummary).includes("open") ||
+              norm(disputeSummary).includes("review") ||
+              norm(disputeSummary).includes("dispute")
+                ? "border-amber-200 bg-amber-50"
+                : ""
+            }
+          />
           <SummaryCard label="Homeowner Name" value={homeownerName} />
           <SummaryCard label="Homeowner Email" value={homeownerEmail} />
           <SummaryCard label="Homeowner Phone" value={formatPhone(homeownerPhone)} />
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3">
           <SummaryCard
             label="Agreement Version Note"
             value={
@@ -706,6 +876,9 @@ export default function Step4Finalize({
         <div className="text-lg font-semibold mb-2">
           Milestones &amp; Total ({displayMilestones.length})
         </div>
+        <div className="text-[12px] text-gray-500 mb-1">
+          Milestone statuses begin updating after the agreement is signed and escrow is funded.
+        </div>
         <div className="mb-3 text-sm font-medium text-gray-700">
           Total Project Cost: {formatMoney(totalAmount || 0)}
         </div>
@@ -732,27 +905,46 @@ export default function Step4Finalize({
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {displayMilestones.map((m, i) => (
-                <tr key={m.id || i} className="border-t">
-                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
-                    {i + 1}
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
-                    {m.title || "Untitled"}
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
-                    {toDateOnly(m.due_date || m.completion_date || m.end_date) || "—"}
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap text-right text-sm text-gray-500">
-                    {typeof m.amount === "number"
-                      ? `$${m.amount.toFixed(2)}`
-                      : m.amount || "—"}
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap text-center text-sm text-gray-500">
-                    {m.status_display || m.status || "Pending"}
-                  </td>
-                </tr>
-              ))}
+              {displayMilestones.map((m, i) => {
+                const isRework = looksLikeReworkMilestone(m);
+                const s = norm(m.status_display || m.status);
+                const isDisputeLike =
+                  s.includes("dispute") || s.includes("under_review");
+
+                return (
+                  <tr key={m.id || i} className="border-t">
+                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
+                      {i + 1}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
+                      <div className="flex items-center gap-2">
+                        <span>{m.title || "Untitled"}</span>
+                        {isRework ? (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 border border-emerald-200">
+                            REWORK
+                          </span>
+                        ) : null}
+                        {isDisputeLike ? (
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200">
+                            DISPUTE
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
+                      {toDateOnly(m.due_date || m.completion_date || m.end_date) || "—"}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-right text-sm text-gray-500">
+                      {typeof m.amount === "number"
+                        ? `$${m.amount.toFixed(2)}`
+                        : m.amount || "—"}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-center text-sm text-gray-500">
+                      {m.status_display || m.status || "Pending"}
+                    </td>
+                  </tr>
+                );
+              })}
               {!displayMilestones.length && (
                 <tr>
                   <td colSpan={5} className="px-3 py-6 text-center text-gray-500">

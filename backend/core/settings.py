@@ -102,6 +102,8 @@ INSTALLED_APPS = [
     "projects",
     "payments",
     "receipts.apps.ReceiptsConfig",
+    "adminpanel",
+
 ]
 
 MIDDLEWARE = [
@@ -342,3 +344,29 @@ LOGGING = {
         "payments": {"handlers": ["console"], "level": "INFO", "propagate": True},
     },
 }
+
+# ============================================================================
+# AI FEATURE FLAGS (MyHomeBro)
+# ----------------------------------------------------------------------------
+# These flags control ALL AI behavior across the platform.
+# AI must remain read-only, advisory, and non-financial.
+# ----------------------------------------------------------------------------
+# IMPORTANT:
+# - Do NOT enable these in production until fully tested
+# - AI must never trigger refunds, releases, or DB mutations
+# ============================================================================
+
+AI_ENABLED = True
+AI_DISPUTE_RECOMMENDATIONS_ENABLED = True
+
+# Dispute-related AI (summaries, evidence-based recommendations)
+AI_DISPUTES_ENABLED = True
+
+# Business / market intelligence AI (pricing, timing, job mix, scope quality)
+AI_INSIGHTS_ENABLED = False
+
+# Optional: scope-writing assistant (milestones & project descriptions)
+AI_SCOPE_ASSIST_ENABLED = False
+
+# optional
+OPENAI_DISPUTE_SUMMARY_MODEL = "gpt-4o-mini"

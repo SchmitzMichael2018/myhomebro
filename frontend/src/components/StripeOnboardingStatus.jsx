@@ -1,46 +1,55 @@
-// ~/backend/frontend/src/components/StripeOnboardingStatus.jsx
-// v2025-10-17 — tiny badge showing current onboarding status
+// frontend/src/components/StripeOnboardingStatus.jsx
+// v2026-01-06 — authoritative sidebar badge for Stripe Connect onboarding
+// ✅ Green ONLY when backend says connected:true (or legacy onboarding_status==="completed")
 
 import React, { useEffect, useState } from "react";
 import api from "../api";
 
 export default function StripeOnboardingStatus({ className = "" }) {
-  const [status, setStatus] = useState(null);
+  const [data, setData] = useState(null);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const { data } = await api.get("/payments/onboarding/status/");
-        if (mounted) setStatus(data || null);
+        const res = await api.get("/payments/onboarding/status/");
+        if (mounted) setData(res.data || null);
       } catch (e) {
-        if (mounted) setStatus({ onboarding_status: "unknown" });
+        if (mounted) setData({ onboarding_status: "unknown", connected: false });
       }
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  const s = status?.onboarding_status;
-  const label =
-    s === "completed" || status?.linked ? "Onboarded" :
-    s === "in_progress" ? "Onboarding…" :
-    s === "disabled" ? "Payments Disabled" :
-    "Not Onboarded";
+  const s = String(data?.onboarding_status || "");
+  const connected = Boolean(data?.connected) || s === "completed";
 
-  const tone =
-    s === "completed" || status?.linked ? "green" :
-    s === "in_progress" ? "yellow" :
-    s === "disabled" ? "gray" :
-    "red";
+  // account exists?
+  const hasAccount = Boolean(data?.account_id) || Boolean(data?.linked);
 
-  const cls =
-    tone === "green" ? "bg-green-100 text-green-800" :
-    tone === "yellow" ? "bg-yellow-100 text-yellow-800" :
-    tone === "gray" ? "bg-gray-100 text-gray-800" :
-    "bg-red-100 text-red-800";
+  const label = connected
+    ? "Connected"
+    : hasAccount
+    ? "Pending"
+    : "Not Started";
+
+  const cls = connected
+    ? "bg-green-500 text-white"
+    : hasAccount
+    ? "bg-amber-400 text-black"
+    : "bg-gray-200 text-gray-800";
 
   return (
-    <span className={`inline-flex items-center rounded px-2 py-0.5 text-xs ${cls} ${className}`}>
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-[1px] text-[10px] ${cls} ${className}`}
+      title={
+        data
+          ? `status=${s} connected=${String(Boolean(data.connected))} account_id=${data.account_id || ""}`
+          : "Stripe status"
+      }
+    >
       {label}
     </span>
   );

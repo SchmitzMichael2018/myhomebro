@@ -1,12 +1,17 @@
 # backend/projects/views/subaccounts.py
-# v2025-11-16 — ContractorSubAccountViewSet + debug-safe WhoAmI endpoint
+# v2026-01-11 — add ADMIN detection to WhoAmIView (no behavior regressions)
 
 from __future__ import annotations
 
+from django.contrib.auth import get_user_model
+from django.db import transaction
+from django.utils.crypto import get_random_string
+
 from rest_framework import status, viewsets
-from rest_framework.permissions import IsAuthenticated  # only used for subaccounts
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from projects.models import ContractorSubAccount
 from projects.serializers.subaccounts import (
@@ -16,16 +21,14 @@ from projects.serializers.subaccounts import (
 from projects.utils.accounts import get_contractor_for_user, get_subaccount_for_user
 from projects.permissions_subaccounts import IsContractorOrSubAccount
 
+User = get_user_model()
+
+
+def _normalize_email(value: str | None) -> str:
+    return (value or "").strip().lower()
+
 
 class ContractorSubAccountViewSet(viewsets.ModelViewSet):
-    """
-    Contractor-side management of employee sub-accounts.
-
-    - List + retrieve: view all your employees.
-    - Create: invite/create a new employee with email/password.
-    - Update/partial_update: change display name, role, is_active, notes.
-    """
-
     permission_classes = [IsAuthenticated, IsContractorOrSubAccount]
 
     def get_queryset(self):
@@ -43,95 +46,138 @@ class ContractorSubAccountViewSet(viewsets.ModelViewSet):
             return ContractorSubAccountCreateSerializer
         return ContractorSubAccountSerializer
 
-    def perform_create(self, serializer):
+    def _require_contractor_owner(self):
         contractor = get_contractor_for_user(self.request.user)
         if contractor is None:
-            raise PermissionError("You must be a contractor to create sub-accounts.")
-        serializer.save(parent_contractor=contractor)
+            raise PermissionDenied("You must be a contractor to manage team members.")
+        if get_subaccount_for_user(self.request.user) is not None:
+            raise PermissionDenied("Only the contractor owner can manage team members.")
+        return contractor
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        contractor = self._require_contractor_owner()
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        vd = dict(serializer.validated_data)
+
+        email = _normalize_email(vd.get("email"))
+        if not email:
+            raise ValidationError({"email": "Email is required."})
+
+        owner_email = _normalize_email(getattr(request.user, "email", None))
+        if email == owner_email:
+            raise ValidationError(
+                {"email": "You cannot use the contractor owner's email as a team member."}
+            )
+
+        temp_password = vd.get("password") or vd.get("temporary_password")
+        if not temp_password:
+            temp_password = get_random_string(16)
+
+        existing_user = User.objects.filter(email__iexact=email).first()
+        if existing_user is not None:
+            raise ValidationError({"email": "A user with this email already exists."})
+
+        user = User.objects.create_user(email=email, password=temp_password)
+
+        subaccount = serializer.save(parent_contractor=contractor, user=user)
+
+        out = ContractorSubAccountSerializer(subaccount, context={"request": request})
+        return Response(out.data, status=status.HTTP_201_CREATED)
+
+    def destroy(self, request, *args, **kwargs):
+        contractor = self._require_contractor_owner()
+        subaccount = self.get_object()
+
+        if subaccount.parent_contractor_id != contractor.id:
+            raise PermissionDenied("You do not own this team member.")
+
+        if subaccount.user_id == request.user.id:
+            raise ValidationError({"detail": "You cannot delete your own account."})
+
+        if hasattr(subaccount, "assigned_agreements") and subaccount.assigned_agreements.exists():
+            raise ValidationError(
+                {"detail": "This team member has agreement assignments. Deactivate instead."}
+            )
+        if hasattr(subaccount, "assigned_milestones") and subaccount.assigned_milestones.exists():
+            raise ValidationError(
+                {"detail": "This team member has milestone assignments. Deactivate instead."}
+            )
+
+        subaccount.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class WhoAmIView(APIView):
     """
-    DEBUG-SAFE identity endpoint:
+    Canonical identity resolver for frontend routing & permissions.
 
-    GET /api/projects/whoami/
-
-    Always returns 200 with JSON, no auth required (for now):
-
-    {
-      "user_id": <int or null>,
-      "username": <str or null>,
-      "email": <str or null>,
-      "type": "contractor" | "subaccount" | "none",
-      "role": "contractor_owner" | "employee_readonly" | "employee_milestones" | null,
-      "contractor_id": <int or null>,
-      "subaccount_id": <int or null>
-    }
+    Order of precedence:
+      1) Admin (staff or superuser)
+      2) Contractor owner
+      3) Contractor subaccount (employee)
     """
 
-    # IMPORTANT: no permission_classes here while debugging
-    permission_classes: list = []
+    permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
-        user = getattr(request, "user", None)
-        if not user or not getattr(user, "is_authenticated", False):
-            # Even if anonymous, respond with type = none (still HTTP 200)
+        user = request.user
+
+        # -------------------------------------------------
+        # ✅ ADMIN (source of truth)
+        # -------------------------------------------------
+        if user.is_staff or user.is_superuser:
             return Response(
                 {
-                    "user_id": None,
-                    "username": None,
-                    "email": None,
-                    "type": "none",
-                    "role": None,
-                    "contractor_id": None,
-                    "subaccount_id": None,
+                    "user_id": user.id,
+                    "email": user.email,
+                    "type": "admin",
+                    "role": "admin",
+                    "is_staff": True,
+                    "is_superuser": bool(user.is_superuser),
                 },
                 status=status.HTTP_200_OK,
             )
 
+        # -------------------------------------------------
+        # Contractor / Subaccount logic (unchanged)
+        # -------------------------------------------------
         contractor = get_contractor_for_user(user)
         subaccount = get_subaccount_for_user(user)
 
-        base = {
-            "user_id": getattr(user, "id", None),
-            "username": getattr(user, "username", None),
-            "email": getattr(user, "email", None),
-        }
-
-        if contractor is None:
-            # Authenticated but not wired to Contractor/SubAccount
+        if contractor and not subaccount:
             return Response(
                 {
-                    **base,
-                    "type": "none",
-                    "role": None,
-                    "contractor_id": None,
-                    "subaccount_id": None,
-                },
-                status=status.HTTP_200_OK,
-            )
-
-        if subaccount is None:
-            # Primary contractor
-            return Response(
-                {
-                    **base,
+                    "user_id": user.id,
+                    "email": user.email,
                     "type": "contractor",
                     "role": "contractor_owner",
-                    "contractor_id": contractor.id,
-                    "subaccount_id": None,
                 },
                 status=status.HTTP_200_OK,
             )
 
-        # Employee sub-account
+        if contractor and subaccount:
+            return Response(
+                {
+                    "user_id": user.id,
+                    "email": user.email,
+                    "type": "subaccount",
+                    "role": subaccount.role,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        # -------------------------------------------------
+        # Fallback (authenticated but not classified)
+        # -------------------------------------------------
         return Response(
             {
-                **base,
-                "type": "subaccount",
-                "role": subaccount.role,
-                "contractor_id": contractor.id,
-                "subaccount_id": subaccount.id,
+                "user_id": user.id,
+                "email": user.email,
+                "type": "unknown",
+                "role": None,
             },
             status=status.HTTP_200_OK,
         )

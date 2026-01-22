@@ -8,8 +8,11 @@ import { toast } from "react-hot-toast";
  * - Step 1: pick Agreement (+ optional Milestone)
  * - Step 2: reason/description
  * - Step 3: confirm fee & pay (freezes escrow)
- * - Step 4: upload evidence (agreements, milestone docs, photos, receipts)
+ * - Step 4: upload evidence
  */
+const money = (n) =>
+  Number(n || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
+
 export default function DisputesCreateModal({ open, onClose }) {
   const [step, setStep] = useState(1);
   const [agreements, setAgreements] = useState([]);
@@ -23,8 +26,13 @@ export default function DisputesCreateModal({ open, onClose }) {
 
   useEffect(() => {
     if (!open) return;
-    setStep(1); setAgreementId(""); setMilestoneId("");
-    setReason(""); setDescription(""); setCreated(null);
+
+    setStep(1);
+    setAgreementId("");
+    setMilestoneId("");
+    setReason("");
+    setDescription("");
+    setCreated(null);
 
     (async () => {
       try {
@@ -39,7 +47,10 @@ export default function DisputesCreateModal({ open, onClose }) {
 
   const loadMilestones = async (agId) => {
     try {
-      if (!agId) { setMilestones([]); return; }
+      if (!agId) {
+        setMilestones([]);
+        return;
+      }
       const { data } = await api.get(`/projects/milestones/?agreement=${agId}`);
       const list = Array.isArray(data) ? data : data?.results || [];
       setMilestones(list);
@@ -77,7 +88,8 @@ export default function DisputesCreateModal({ open, onClose }) {
     if (!created?.id) return;
     setBusy(true);
     try {
-      await api.post(`/projects/disputes/${created.id}/pay_fee/`);
+      // ✅ BACKEND ROUTE IS pay-fee (hyphen) per views/dispute.py
+      await api.post(`/projects/disputes/${created.id}/pay-fee/`);
       toast.success("Fee paid — escrow frozen.");
       setStep(4);
     } catch (e) {
@@ -93,6 +105,7 @@ export default function DisputesCreateModal({ open, onClose }) {
     form.append("file", file);
     form.append("kind", kind);
     try {
+      // ✅ BACKEND ROUTE is /attachments (correct)
       await api.post(`/projects/disputes/${created.id}/attachments/`, form);
       toast.success("Uploaded.");
     } catch {
@@ -112,7 +125,9 @@ export default function DisputesCreateModal({ open, onClose }) {
             {step === 3 && "Dispute Fee"}
             {step === 4 && "Upload Evidence"}
           </h2>
-          <button className="mhb-modal-close" onClick={onClose}>✕</button>
+          <button className="mhb-modal-close" onClick={onClose}>
+            ✕
+          </button>
         </div>
 
         <div className="mhb-modal-body" style={{ display: "grid", gap: 12 }}>
@@ -123,7 +138,10 @@ export default function DisputesCreateModal({ open, onClose }) {
                 <select
                   className="w-full border rounded px-3 py-2"
                   value={agreementId}
-                  onChange={(e) => { setAgreementId(e.target.value); loadMilestones(e.target.value); }}
+                  onChange={(e) => {
+                    setAgreementId(e.target.value);
+                    loadMilestones(e.target.value);
+                  }}
                 >
                   <option value="">Select an agreement…</option>
                   {agreements.map((a) => (
@@ -181,7 +199,9 @@ export default function DisputesCreateModal({ open, onClose }) {
                 />
               </div>
               <div className="flex justify-between">
-                <button className="mhb-btn" onClick={() => setStep(1)}>Back</button>
+                <button className="mhb-btn" onClick={() => setStep(1)}>
+                  Back
+                </button>
                 <button className="mhb-btn primary" disabled={!reason.trim() || busy} onClick={createDispute}>
                   {busy ? "Submitting…" : "Submit Dispute"}
                 </button>
@@ -206,7 +226,8 @@ export default function DisputesCreateModal({ open, onClose }) {
           {step === 4 && created && (
             <>
               <div className="text-slate-700">
-                Escrow is now <strong>frozen</strong>. Upload supporting evidence (agreements, milestone docs, photos, receipts).
+                Escrow is now <strong>frozen</strong>. Upload supporting evidence (agreements, milestone docs, photos,
+                receipts).
               </div>
               <div className="grid md:grid-cols-2 gap-8">
                 {["agreement", "milestone", "photo", "receipt"].map((k) => (
@@ -217,8 +238,12 @@ export default function DisputesCreateModal({ open, onClose }) {
                 ))}
               </div>
               <div className="flex justify-between mt-2">
-                <button className="mhb-btn" onClick={() => setStep(2)}>Back</button>
-                <button className="mhb-btn primary" onClick={onClose}>Done</button>
+                <button className="mhb-btn" onClick={() => setStep(2)}>
+                  Back
+                </button>
+                <button className="mhb-btn primary" onClick={onClose}>
+                  Done
+                </button>
               </div>
             </>
           )}

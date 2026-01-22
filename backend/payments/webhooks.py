@@ -1,12 +1,10 @@
 # backend/payments/webhooks.py
-# Unified Stripe webhook (Connect + escrow funding with amendment support + invoice payment support)
+# Unified Stripe webhook (Connect + escrow funding with amendment support + invoice payment support + refund sync)
 #
-# v2025-12-26b:
+# v2026-01-02b:
+# - escrow branch: create/update payments.Payment row on funding success so refunds can locate PI
+# - refund sync: handle refund.updated and charge.refunded to update payments.Refund status to match Stripe
 # - invoice branch: robust card brand/last4 capture
-#   - If webhook PI payload lacks expanded charges/payment_method_details:
-#     -> retrieve PaymentIntent with expand=["charges.data.payment_method_details"]
-#     -> backfill stripe_charge_id, card_brand, card_last4 before creating Receipt
-# - keeps existing escrow funding logic intact (agreement_id path)
 # - never returns 500 to Stripe to avoid retry storms
 
 from __future__ import annotations
@@ -108,12 +106,8 @@ def _compute_total_required_for_agreement(Agreement, Milestone, ag) -> Decimal:
     except Exception:
         pass
 
-    # Fallback: sum milestones
     try:
-        total = (
-            Milestone.objects.filter(agreement=ag).aggregate(total=Sum("amount")).get("total")
-            or Decimal("0.00")
-        )
+        total = (Milestone.objects.filter(agreement=ag).aggregate(total=Sum("amount")).get("total") or Decimal("0.00"))
         return Decimal(str(total)).quantize(Decimal("0.01"))
     except Exception:
         return Decimal("0.00")
@@ -127,15 +121,10 @@ def _safe_int(value, default: int = 0) -> int:
 
 
 def _receipt_number(prefix: str, obj_id: int) -> str:
-    # Example: RCT-20251225-000123
     return f"{prefix}-{now().strftime('%Y%m%d')}-{int(obj_id):06d}"
 
 
 def _extract_charge_card_details(intent: dict):
-    """
-    Best-effort extraction of charge id + card details from PI payload.
-    Not guaranteed unless charges are expanded.
-    """
     stripe_charge_id = None
     card_brand = None
     card_last4 = None
@@ -146,7 +135,7 @@ def _extract_charge_card_details(intent: dict):
             ch = charges[0] or {}
             stripe_charge_id = ch.get("id")
             pm = ch.get("payment_method_details") or {}
-            card = pm.get("card") or {}
+            card = (pm.get("card") or {}) if isinstance(pm, dict) else {}
             card_brand = card.get("brand")
             card_last4 = card.get("last4")
     except Exception:
@@ -156,10 +145,6 @@ def _extract_charge_card_details(intent: dict):
 
 
 def _fetch_pi_with_expanded_charges(pi_id: str):
-    """
-    Retrieve PaymentIntent from Stripe with expanded charge/payment_method_details.
-    Only used as fallback when webhook payload lacks card/charge details.
-    """
     try:
         import stripe  # type: ignore
 
@@ -167,26 +152,17 @@ def _fetch_pi_with_expanded_charges(pi_id: str):
         if api_key:
             stripe.api_key = api_key
 
-        # Expand charge payment method details so we can get card brand/last4
-        return stripe.PaymentIntent.retrieve(
-            pi_id,
-            expand=["charges.data.payment_method_details"],
-        )
+        return stripe.PaymentIntent.retrieve(pi_id, expand=["charges.data.payment_method_details"])
     except Exception:
         return None
 
 
 def _backfill_card_details_from_stripe(pi_id: str):
-    """
-    Fallback: if webhook payload is missing card details, fetch PI with expand and extract.
-    Returns (stripe_charge_id, card_brand, card_last4) or (None, None, None).
-    """
     pi = _fetch_pi_with_expanded_charges(pi_id)
     if not pi:
         return None, None, None
 
     try:
-        # Stripe objects behave like dicts for .get(), but be defensive
         intent = pi if isinstance(pi, dict) else dict(pi)
     except Exception:
         try:
@@ -198,15 +174,10 @@ def _backfill_card_details_from_stripe(pi_id: str):
 
 
 def _mark_invoice_paid(inv, pi_id: str, stripe_charge_id: str | None):
-    """
-    Mark invoice as PAID in a defensive way (works even if enums differ).
-    """
-    # Idempotency: if already paid/released, do nothing
     current_status = str(getattr(inv, "status", "") or "").lower()
     if "paid" in current_status or "released" in current_status:
         return False
 
-    # Try to set a proper enum if available; fallback to string.
     try:
         from projects.models import InvoiceStatus  # type: ignore
         if hasattr(InvoiceStatus, "PAID"):
@@ -233,7 +204,6 @@ def _mark_invoice_paid(inv, pi_id: str, stripe_charge_id: str | None):
     try:
         inv.save(update_fields=update_fields)
     except Exception:
-        # best-effort fallback
         inv.save()
 
     return True
@@ -241,8 +211,7 @@ def _mark_invoice_paid(inv, pi_id: str, stripe_charge_id: str | None):
 
 def _handle_invoice_payment_succeeded(intent: dict) -> None:
     """
-    For invoice payments: mark invoice paid + (optional) create receipt, PDF, email.
-
+    For invoice payments: mark invoice paid + create receipt, PDF, email.
     Requires PI metadata.invoice_id to be present.
     """
     metadata = intent.get("metadata") or {}
@@ -270,20 +239,15 @@ def _handle_invoice_payment_succeeded(intent: dict) -> None:
         log.warning("Invoice payment handler skipped: amount_received_cents<=0 for pi=%s invoice_id=%s", pi_id, invoice_id)
         return
 
-    # First attempt from webhook payload
     stripe_charge_id, card_brand, card_last4 = _extract_charge_card_details(intent)
-
-    # Fallback: retrieve PI with expanded charges if missing
     if not stripe_charge_id or not card_brand or not card_last4:
         f_charge_id, f_brand, f_last4 = _backfill_card_details_from_stripe(pi_id)
         stripe_charge_id = stripe_charge_id or f_charge_id
         card_brand = card_brand or f_brand
         card_last4 = card_last4 or f_last4
 
-    # Receipts app is optional
     Receipt = _get_model("receipts", "Receipt")
 
-    # Optional helpers (best-effort)
     generate_receipt_pdf = None
     send_receipt_email = None
     try:
@@ -298,45 +262,92 @@ def _handle_invoice_payment_succeeded(intent: dict) -> None:
     except Exception:
         send_receipt_email = None
 
+    # legacy fallback (will be overridden by computed fee if we can compute)
     platform_fee_cents = _safe_int(metadata.get("platform_fee_cents"), default=0)
 
     with transaction.atomic():
-        # Lock invoice
         try:
             inv = Invoice.objects.select_for_update().get(id=invoice_id_int)
         except Exception:
             log.warning("Invoice payment handler skipped: invoice not found id=%s (pi=%s)", invoice_id, pi_id)
             return
 
-        # Mark invoice paid (idempotent)
         changed = _mark_invoice_paid(inv, pi_id=pi_id, stripe_charge_id=stripe_charge_id)
 
-        # Backfill platform_fee_cents if not present in metadata
-        if platform_fee_cents <= 0 and hasattr(inv, "platform_fee_cents"):
+        # ─────────────────────────────────────────────
+        # NEW: compute + persist fee snapshot on Receipt
+        # ─────────────────────────────────────────────
+        fee_snapshot = {}
+        computed_fee_cents = 0
+
+        try:
+            agreement = getattr(inv, "agreement", None)
+            contractor = getattr(agreement, "contractor", None) if agreement else None
+            agreement_id = getattr(inv, "agreement_id", None)
+
+            if contractor is not None:
+                from payments.fees import (
+                    compute_fee_summary_for_invoice_payment,
+                    build_invoice_payment_fee_snapshot,
+                    _cents_from_money,  # internal helper, OK to use inside your app
+                )
+
+                summary = compute_fee_summary_for_invoice_payment(
+                    amount_cents=amount_received_cents,
+                    contractor=contractor,
+                    agreement_id=agreement_id,
+                    is_high_risk=False,  # wire this if you have a per-invoice flag later
+                )
+
+                fee_snapshot = build_invoice_payment_fee_snapshot(summary)
+                computed_fee_cents = _cents_from_money(summary.platform_fee)
+        except Exception:
+            log.exception("Fee snapshot build failed (invoice=%s, pi=%s).", getattr(inv, "id", None), pi_id)
+            fee_snapshot = {}
+            computed_fee_cents = 0
+
+        if computed_fee_cents > 0:
+            platform_fee_cents = computed_fee_cents
+        elif platform_fee_cents <= 0 and hasattr(inv, "platform_fee_cents"):
             try:
                 platform_fee_cents = int(getattr(inv, "platform_fee_cents") or 0)
             except Exception:
                 platform_fee_cents = 0
 
-        # Receipt creation is optional
         if Receipt is not None:
             try:
                 existing = Receipt.objects.filter(invoice_id=inv.id).first()
                 if existing:
                     log.info("Receipt already exists for invoice=%s (pi=%s). Skipping receipt create.", inv.id, pi_id)
                 else:
-                    receipt = Receipt.objects.create(
+                    create_kwargs = dict(
                         invoice=inv,
                         receipt_number=_receipt_number("RCT", inv.id),
                         stripe_payment_intent_id=pi_id,
                         stripe_charge_id=stripe_charge_id,
                         amount_paid_cents=amount_received_cents,
-                        platform_fee_cents=max(platform_fee_cents, 0),
+                        platform_fee_cents=max(int(platform_fee_cents), 0),
                         card_brand=card_brand,
                         card_last4=card_last4,
                     )
 
-                    # PDF + Email (best-effort)
+                    # If Receipt has agreement FK, populate it (optional but recommended)
+                    try:
+                        if hasattr(Receipt, "agreement") and getattr(inv, "agreement_id", None):
+                            create_kwargs["agreement_id"] = inv.agreement_id
+                    except Exception:
+                        pass
+
+                    # Persist snapshot fields (only set keys that exist on the model)
+                    for k, v in (fee_snapshot or {}).items():
+                        try:
+                            if hasattr(Receipt, k):
+                                create_kwargs[k] = v
+                        except Exception:
+                            pass
+
+                    receipt = Receipt.objects.create(**create_kwargs)
+
                     try:
                         if generate_receipt_pdf:
                             generate_receipt_pdf(receipt)
@@ -370,6 +381,135 @@ def _handle_invoice_payment_succeeded(intent: dict) -> None:
             log.info("Invoice already paid/released invoice=%s pi=%s", inv.id, pi_id)
 
 
+def _upsert_payment_for_escrow_funding(ag, pi_id: str, paid: Decimal, currency: str) -> None:
+    Payment = _get_model("payments", "Payment")
+    if Payment is None:
+        return
+
+    paid_cents = int((paid.quantize(Decimal("0.01")) * Decimal("100")).to_integral_value())
+    currency_lc = (currency or "USD").lower()
+
+    payment = Payment.objects.select_for_update().filter(stripe_payment_intent_id=pi_id).first()
+    if payment is None:
+        Payment.objects.create(
+            agreement=ag,
+            stripe_payment_intent_id=pi_id,
+            amount_cents=paid_cents,
+            currency=currency_lc,
+            status="succeeded",
+        )
+        return
+
+    update_fields = []
+    if getattr(payment, "status", None) != "succeeded":
+        payment.status = "succeeded"
+        update_fields.append("status")
+
+    try:
+        if int(getattr(payment, "amount_cents", 0) or 0) < paid_cents:
+            payment.amount_cents = paid_cents
+            update_fields.append("amount_cents")
+    except Exception:
+        payment.amount_cents = paid_cents
+        update_fields.append("amount_cents")
+
+    if (getattr(payment, "currency", "") or "").lower() != currency_lc:
+        payment.currency = currency_lc
+        update_fields.append("currency")
+
+    if update_fields:
+        payment.save(update_fields=update_fields)
+
+
+def _sync_refund_from_stripe(refund_obj: dict) -> None:
+    Refund = _get_model("payments", "Refund")
+    Payment = _get_model("payments", "Payment")
+
+    if Refund is None:
+        return
+
+    stripe_refund_id = refund_obj.get("id") or ""
+    if not stripe_refund_id:
+        return
+
+    status_val = (refund_obj.get("status") or "").lower() or "pending"
+    amount_cents = _to_int_cents(refund_obj.get("amount"))
+    currency = (refund_obj.get("currency") or "usd").lower()
+    failure_reason = refund_obj.get("failure_reason") or refund_obj.get("failure_message") or ""
+
+    charge_id = refund_obj.get("charge") or ""
+    pi_id = refund_obj.get("payment_intent") or ""
+
+    with transaction.atomic():
+        r = Refund.objects.select_for_update().filter(stripe_refund_id=stripe_refund_id).first()
+
+        if r is None and Payment is not None:
+            p = None
+            if pi_id:
+                p = Payment.objects.filter(stripe_payment_intent_id=pi_id).order_by("-id").first()
+            if p is None and charge_id:
+                p = Payment.objects.filter(stripe_charge_id=charge_id).order_by("-id").first()
+
+            if p is not None:
+                try:
+                    r = Refund.objects.create(
+                        payment=p,
+                        created_by=None,
+                        amount_cents=amount_cents,
+                        currency=currency,
+                        reason="",
+                        note="(created by webhook sync)",
+                        status=status_val,
+                        stripe_refund_id=stripe_refund_id,
+                        error_message=failure_reason or "",
+                    )
+                except Exception:
+                    log.exception("Refund sync: failed creating Refund row for stripe_refund_id=%s", stripe_refund_id)
+                    return
+            else:
+                return
+
+        if r is None:
+            return
+
+        update_fields = []
+
+        if hasattr(r, "status") and (getattr(r, "status", "") or "").lower() != status_val:
+            r.status = status_val
+            update_fields.append("status")
+
+        if hasattr(r, "amount_cents") and amount_cents and int(getattr(r, "amount_cents", 0) or 0) != amount_cents:
+            r.amount_cents = amount_cents
+            update_fields.append("amount_cents")
+
+        if hasattr(r, "currency") and currency and (getattr(r, "currency", "") or "").lower() != currency:
+            r.currency = currency
+            update_fields.append("currency")
+
+        if hasattr(r, "error_message"):
+            new_err = (failure_reason or "").strip()
+            if status_val in ("failed", "canceled") and new_err and (getattr(r, "error_message", "") or "") != new_err:
+                r.error_message = new_err
+                update_fields.append("error_message")
+            if status_val == "succeeded" and (getattr(r, "error_message", "") or ""):
+                r.error_message = ""
+                update_fields.append("error_message")
+
+        if update_fields:
+            try:
+                r.save(update_fields=update_fields)
+            except Exception:
+                r.save()
+
+        log.info(
+            "Refund sync: stripe_refund_id=%s status=%s amount_cents=%s currency=%s",
+            stripe_refund_id,
+            status_val,
+            amount_cents,
+            currency,
+        )
+
+
 @csrf_exempt
 def stripe_webhook(request):
     """
@@ -381,6 +521,8 @@ def stripe_webhook(request):
     - payment_intent.succeeded
       - If metadata.invoice_id exists: mark invoice paid + generate receipt (optional)
       - Else if metadata.agreement_id exists: escrow funding (supports amendments / top-ups)
+    - refund.updated / charge.refunded
+      - Sync payments.Refund status to match Stripe
 
     Never returns 500 to Stripe to avoid retry storms.
     """
@@ -406,11 +548,7 @@ def stripe_webhook(request):
         sig_header = request.META.get("HTTP_STRIPE_SIGNATURE", "")
 
         try:
-            event = stripe.Webhook.construct_event(
-                payload=payload,
-                sig_header=sig_header,
-                secret=secret,
-            )
+            event = stripe.Webhook.construct_event(payload=payload, sig_header=sig_header, secret=secret)
         except Exception as exc:
             log.warning("Stripe webhook signature verification failed: %s", exc)
             return HttpResponseBadRequest("Invalid signature")
@@ -418,9 +556,6 @@ def stripe_webhook(request):
         event_type = event.get("type")
         data_obj = (event.get("data") or {}).get("object") or {}
 
-        # ─────────────────────────────────────────────
-        # Connect account events
-        # ─────────────────────────────────────────────
         if event_type == "account.updated":
             _update_contractor_from_account_obj(data_obj)
 
@@ -435,14 +570,28 @@ def stripe_webhook(request):
                         stripe_status_updated_at=now(),
                     )
 
-        # ─────────────────────────────────────────────
-        # Payments
-        # ─────────────────────────────────────────────
+        elif event_type == "refund.updated":
+            try:
+                _sync_refund_from_stripe(data_obj)
+            except Exception:
+                log.exception("Refund sync failed for refund.updated id=%s", data_obj.get("id"))
+            return HttpResponse(status=200)
+
+        elif event_type == "charge.refunded":
+            try:
+                refunds = (data_obj.get("refunds") or {}).get("data") or []
+                for r in refunds:
+                    if isinstance(r, dict):
+                        _sync_refund_from_stripe(r)
+            except Exception:
+                log.exception("Refund sync failed for charge.refunded charge=%s", data_obj.get("id"))
+            return HttpResponse(status=200)
+
         elif event_type == "payment_intent.succeeded":
             intent = data_obj
             metadata = intent.get("metadata") or {}
 
-            # ✅ Invoice payments (magic invoice)
+            # ✅ Invoice payments
             if metadata.get("invoice_id"):
                 try:
                     _handle_invoice_payment_succeeded(intent)
@@ -450,9 +599,7 @@ def stripe_webhook(request):
                     log.exception("Invoice payment handler failed (pi=%s).", intent.get("id"))
                 return HttpResponse(status=200)
 
-            # ─────────────────────────────────────────────
-            # Existing escrow funding (agreement_id) logic
-            # ─────────────────────────────────────────────
+            # Escrow funding (agreement_id) — keep your existing logic
             Agreement = _get_model("projects", "Agreement")
             Milestone = _get_model("projects", "Milestone")
             AgreementFundingLink = _get_model("projects", "AgreementFundingLink")
@@ -462,7 +609,7 @@ def stripe_webhook(request):
                 return HttpResponse(status=200)
 
             agreement_id = metadata.get("agreement_id")
-            funding_link_id = metadata.get("funding_link_id")  # from CreateFundingPaymentIntentView
+            funding_link_id = metadata.get("funding_link_id")
 
             if not agreement_id:
                 log.warning("payment_intent.succeeded without agreement_id metadata")
@@ -472,30 +619,19 @@ def stripe_webhook(request):
             paid = _to_decimal_cents(intent.get("amount_received", 0))
             currency = (intent.get("currency") or "usd").upper()
 
-            # If we cannot read a PI id or payment amount, bail safely
             if not pi_id or paid <= 0:
-                log.warning(
-                    "payment_intent.succeeded missing pi_id or paid amount (pi_id=%s paid=%s)",
-                    pi_id,
-                    paid,
-                )
+                log.warning("payment_intent.succeeded missing pi_id or paid amount (pi_id=%s paid=%s)", pi_id, paid)
                 return HttpResponse(status=200)
 
             with transaction.atomic():
-                # Idempotency should prefer the funding link record if present:
                 link = None
                 if funding_link_id and AgreementFundingLink is not None:
                     try:
                         link = AgreementFundingLink.objects.select_for_update().get(id=funding_link_id)
-                        # If this link was already marked used, do NOT add funds again.
                         if getattr(link, "used_at", None):
-                            log.info(
-                                "payment_intent.succeeded already processed via funding link id=%s (pi=%s)",
-                                funding_link_id,
-                                pi_id,
-                            )
+                            log.info("payment_intent.succeeded already processed via funding link id=%s (pi=%s)", funding_link_id, pi_id)
                             return HttpResponse(status=200)
-                        # If the link has a different PI recorded, treat as suspicious but avoid double-add.
+
                         existing_pi = getattr(link, "payment_intent_id", "") or ""
                         if existing_pi and existing_pi != pi_id:
                             log.warning(
@@ -504,7 +640,6 @@ def stripe_webhook(request):
                                 existing_pi,
                                 pi_id,
                             )
-                            # We still mark link inactive to prevent reuse
                             try:
                                 link.is_active = False
                                 link.save(update_fields=["is_active"])
@@ -518,7 +653,6 @@ def stripe_webhook(request):
                     ag = Agreement.objects.select_for_update().get(id=agreement_id)
                 except Agreement.DoesNotExist:
                     log.warning("Agreement %s not found for payment_intent %s", agreement_id, pi_id)
-                    # If link exists, deactivate so it can't be reused
                     if link is not None:
                         try:
                             link.is_active = False
@@ -528,12 +662,10 @@ def stripe_webhook(request):
                             pass
                     return HttpResponse(status=200)
 
-                # Backfill/repair missing totals at the time of funding.
                 total_required = Decimal("0.00")
                 if Milestone is not None:
                     total_required = _compute_total_required_for_agreement(Agreement, Milestone, ag)
 
-                # If agreement.total_cost is missing/zero but milestone sum exists, persist it.
                 try:
                     tc = getattr(ag, "total_cost", None)
                     tc_d = Decimal(str(tc or "0.00")).quantize(Decimal("0.01"))
@@ -542,7 +674,6 @@ def stripe_webhook(request):
                 except Exception:
                     pass
 
-                # Ensure escrow_funded_amount exists
                 try:
                     efa = getattr(ag, "escrow_funded_amount", None)
                     if efa is None:
@@ -550,7 +681,6 @@ def stripe_webhook(request):
                 except Exception:
                     pass
 
-                # Add payment amount
                 try:
                     ag.escrow_funded_amount = (Decimal(str(ag.escrow_funded_amount)) + paid).quantize(Decimal("0.01"))
                 except Exception:
@@ -559,17 +689,13 @@ def stripe_webhook(request):
                     except Exception:
                         pass
 
-                # Persist PI id + funded_at as last-success record (useful for debugging)
                 if hasattr(ag, "stripe_payment_intent_id"):
                     ag.stripe_payment_intent_id = pi_id
                 if hasattr(ag, "escrow_funded_at"):
                     ag.escrow_funded_at = now()
 
-                # Determine if fully funded
                 try:
-                    required = Decimal(
-                        str(getattr(ag, "total_cost", None) or total_required or "0.00")
-                    ).quantize(Decimal("0.01"))
+                    required = Decimal(str(getattr(ag, "total_cost", None) or total_required or "0.00")).quantize(Decimal("0.01"))
                 except Exception:
                     required = total_required
 
@@ -577,7 +703,6 @@ def stripe_webhook(request):
                     if hasattr(ag, "escrow_funded"):
                         ag.escrow_funded = True
 
-                # Save agreement fields
                 update_fields = []
                 for f in ("total_cost", "escrow_funded_amount", "escrow_funded", "escrow_funded_at", "stripe_payment_intent_id"):
                     if hasattr(ag, f):
@@ -585,7 +710,11 @@ def stripe_webhook(request):
                 if update_fields:
                     ag.save(update_fields=update_fields)
 
-                # Mark funding link used/inactive
+                try:
+                    _upsert_payment_for_escrow_funding(ag=ag, pi_id=pi_id, paid=paid, currency=currency)
+                except Exception:
+                    log.exception("Upsert Payment failed for agreement=%s pi=%s", agreement_id, pi_id)
+
                 if link is not None:
                     try:
                         link.used_at = now()

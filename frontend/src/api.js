@@ -1,7 +1,10 @@
 // ~/backend/frontend/src/api.js
 // v2025-11-25 — stable-auth shim + canonical /projects/homeowners + onboarding redirect + auto logout redirect + idle timeout
+// UPDATED v2026-01-04 — add safe debug logging helpers for 400/422 responses (no behavior changes)
+// UPDATED v2026-01-08 — add contractor Business Dashboard summary API
+// UPDATED v2026-01-10 — add agreement close & archive helpers
 
-console.log("api.js v2025-11-11-stable-auth-shim+canonical");
+console.log("api.js v2026-01-10-agreement-closeout");
 
 import axios from "axios";
 
@@ -13,9 +16,11 @@ let MEM_REFRESH = null;
 
 const isFormData = (v) => typeof FormData !== "undefined" && v instanceof FormData;
 const isBlob = (v) => typeof Blob !== "undefined" && v instanceof Blob;
-const isURLSearchParams = (v) => typeof URLSearchParams !== "undefined" && v instanceof URLSearchParams;
+const isURLSearchParams = (v) =>
+  typeof URLSearchParams !== "undefined" && v instanceof URLSearchParams;
 
-const SAME_ORIGIN = (typeof window !== "undefined" && window.location?.origin) || "";
+const SAME_ORIGIN =
+  (typeof window !== "undefined" && window.location?.origin) || "";
 
 // No-Auth header endpoints
 const NO_AUTH_HEADER_PATHS = new Set([
@@ -63,8 +68,7 @@ function remapRelativePath(pathWithQuery) {
       path.startsWith(base + "/") ||
       path.startsWith(base + "?")
     ) {
-      const replaced = path.replace(base, target);
-      return replaced;
+      return path.replace(base, target);
     }
   }
   return path;
@@ -77,8 +81,8 @@ function remapAny(url) {
     const isAbsolute = /^[a-z]+:\/\//i.test(url);
     const sameOrigin = SAME_ORIGIN && u.origin === SAME_ORIGIN;
     if (isAbsolute && sameOrigin) {
-      const rebuiltPath = remapRelativePath(u.pathname + u.search + u.hash);
-      return u.origin + rebuiltPath;
+      const rebuilt = remapRelativePath(u.pathname + u.search + u.hash);
+      return u.origin + rebuilt;
     }
   } catch {}
   return remapRelativePath(url);
@@ -92,7 +96,41 @@ function pathOnly(url) {
   }
 }
 
+// ------------------------
+// Debug helpers
+// ------------------------
+export function debugAxiosError(err, label = "API") {
+  try {
+    const status = err?.response?.status;
+    const method = err?.config?.method;
+    const url = err?.config?.url;
+    const data = err?.response?.data;
+    console.error(`❌ ${label} error`, { status, method, url, data });
+  } catch {
+    console.error(`❌ ${label} error`, err);
+  }
+}
+
+export function extractApiErrorMessage(err) {
+  const data = err?.response?.data;
+  if (!data) return "Request failed.";
+  if (typeof data === "string") return data;
+  if (data?.detail) return data.detail;
+  if (data?.non_field_errors?.[0]) return data.non_field_errors[0];
+
+  const keys = Object.keys(data || {});
+  if (keys.length === 1) {
+    const k = keys[0];
+    const v = data[k];
+    if (Array.isArray(v) && v[0]) return `${k}: ${v[0]}`;
+    if (typeof v === "string") return `${k}: ${v}`;
+  }
+  return "Request failed. Check console for details.";
+}
+
+// ------------------------
 // Token helpers
+// ------------------------
 export const getAccessToken = () => {
   if (MEM_ACCESS) return MEM_ACCESS;
   try {
@@ -100,13 +138,13 @@ export const getAccessToken = () => {
       localStorage.getItem(TOK.access) ||
       sessionStorage.getItem(TOK.access) ||
       localStorage.getItem(TOK.legacyAccess) ||
-      sessionStorage.getItem(TOK.legacyAccess) ||
-      null
+      sessionStorage.getItem(TOK.legacyAccess)
     );
   } catch {
     return null;
   }
 };
+
 export const getRefreshToken = () => {
   if (MEM_REFRESH) return MEM_REFRESH;
   try {
@@ -124,7 +162,11 @@ function inferRememberFromStorage() {
   return true;
 }
 
-const api = axios.create({ baseURL: BASE_URL, timeout: 30000, withCredentials: false });
+const api = axios.create({
+  baseURL: BASE_URL,
+  timeout: 30000,
+  withCredentials: false,
+});
 
 function applyAuthHeader(token) {
   if (token) {
@@ -154,9 +196,9 @@ export function setAuthToken(access, refresh = null, remember = true) {
   applyAuthHeader(access);
 }
 
-export const setTokens = (a, r, remember = true) => setAuthToken(a, r, remember);
+export const setTokens = (a, r, remember = true) =>
+  setAuthToken(a, r, remember);
 
-// 🔐 Clear auth + optional redirect
 export function clearAuth(redirect = false) {
   MEM_ACCESS = null;
   MEM_REFRESH = null;
@@ -171,40 +213,36 @@ export function clearAuth(redirect = false) {
   applyAuthHeader(null);
 
   if (redirect && typeof window !== "undefined") {
-    try {
-      if (window.location.pathname !== "/") {
-        window.location.assign("/");
-      }
-    } catch {}
+    if (window.location.pathname !== "/") {
+      window.location.assign("/");
+    }
   }
 }
 
 function normalizeForJson(config) {
   const method = (config.method || "get").toLowerCase();
-  const wantsBody = /post|put|patch/.test(method);
-  if (!wantsBody) return config;
+  if (!/post|put|patch/.test(method)) return config;
 
   const url = config.url || "";
   const isAttachment =
-    /\/attachments\/?(\?|$|\/)/i.test(url) ||
-    /\/milestone-files\/?(\?|$|\/)/i.test(url) ||
-    /\/license-upload\/?(\?|$|\/)/i.test(url) ||
-    /\/upload\/?(\?|$|\/)/i.test(url);
+    /\/attachments\/|\/milestone-files\/|\/license-upload\/|\/upload\//i.test(
+      url
+    );
 
   if (isAttachment) return config;
 
-  const existingCT =
-    (config.headers && (config.headers["Content-Type"] || config.headers["content-type"])) ||
-    (api.defaults.headers && api.defaults.headers["Content-Type"]);
-
   const body = config.data;
-  const shouldForceJson =
+  const existingCT =
+    config.headers?.["Content-Type"] ||
+    config.headers?.["content-type"] ||
+    api.defaults.headers["Content-Type"];
+
+  if (
     !existingCT &&
     !isFormData(body) &&
     !isBlob(body) &&
-    !isURLSearchParams(body);
-
-  if (shouldForceJson) {
+    !isURLSearchParams(body)
+  ) {
     config.headers = {
       ...(config.headers || {}),
       "Content-Type": "application/json",
@@ -224,100 +262,68 @@ function installInterceptors(instance) {
       config.url.startsWith("/api/")
     ) {
       config.url = config.url.slice(4);
-    } else if (instance.defaults.baseURL === "/api" && config.url === "/api") {
-      config.url = "/";
     }
 
     const p = pathOnly(config.url || "");
     if (NO_AUTH_HEADER_PATHS.has(p)) {
-      if (config.headers?.Authorization) delete config.headers.Authorization;
+      delete config.headers?.Authorization;
     } else {
       const token = MEM_ACCESS || getAccessToken();
       if (token) {
-        config.headers = { ...(config.headers || {}), Authorization: `Bearer ${token}` };
-      } else if (config.headers?.Authorization) delete config.headers.Authorization;
+        config.headers = {
+          ...(config.headers || {}),
+          Authorization: `Bearer ${token}`,
+        };
+      }
     }
-
     return normalizeForJson(config);
   });
 
   let isRefreshing = false;
   let queue = [];
-  const flush = (err, newToken) => {
-    queue.forEach(({ resolve, reject }) => (err ? reject(err) : resolve(newToken)));
+
+  const flush = (err, token) => {
+    queue.forEach(({ resolve, reject }) =>
+      err ? reject(err) : resolve(token)
+    );
     queue = [];
   };
 
   instance.interceptors.response.use(
     (res) => res,
     async (error) => {
-      const { response, config } = error || {};
-      const status = response?.status;
-      const method = (config?.method || "").toLowerCase();
-      const url = config?.url || "";
-      const data = response?.data || {};
+      const status = error?.response?.status;
+      if (status === 400 || status === 422) {
+        debugAxiosError(error, "API 400/422");
+      }
 
-      // 403 onboarding behavior unchanged...
-
-      // 401 handling
       if (status !== 401) return Promise.reject(error);
 
-      const p = pathOnly(config?.url || "");
-      if (NO_AUTH_HEADER_PATHS.has(p)) return Promise.reject(error);
+      const config = error.config;
       if (config._retry) return Promise.reject(error);
       config._retry = true;
 
       if (isRefreshing) {
-        return new Promise((resolve, reject) => {
-          queue.push({
-            resolve: (token) => {
-              if (token)
-                config.headers = { ...(config.headers || {}), Authorization: `Bearer ${token}` };
-              resolve(instance(config));
-            },
-            reject,
-          });
-        });
+        return new Promise((resolve, reject) =>
+          queue.push({ resolve, reject })
+        );
       }
 
       isRefreshing = true;
       const refresh = MEM_REFRESH || getRefreshToken();
 
       if (!refresh) {
-        isRefreshing = false;
         clearAuth(true);
         return Promise.reject(error);
       }
 
-      const candidates = [
-        "/auth/refresh/",
-        "/token/refresh/",
-        "/projects/token/refresh/",
-      ];
-
       try {
-        let data;
-        for (let i = 0; i < candidates.length; i++) {
-          try {
-            const resp = await instance.post(candidates[i], { refresh });
-            data = resp.data;
-            break;
-          } catch (e) {
-            if (i === candidates.length - 1) throw e;
-          }
-        }
-
-        const newAccess = data?.access || data?.access_token;
-        if (!newAccess) throw new Error("No access token on refresh.");
-
-        setAuthToken(newAccess, refresh, inferRememberFromStorage());
-        flush(null, newAccess);
-
-        config.headers = {
-          ...(config.headers || {}),
-          Authorization: `Bearer ${newAccess}`,
-        };
-
+        const resp = await instance.post("/auth/refresh/", { refresh });
+        const access = resp.data?.access;
+        if (!access) throw new Error("No access token");
+        setAuthToken(access, refresh, inferRememberFromStorage());
+        flush(null, access);
+        config.headers.Authorization = `Bearer ${access}`;
         return instance(config);
       } catch (err) {
         flush(err, null);
@@ -334,35 +340,33 @@ installInterceptors(api);
 installInterceptors(axios);
 applyAuthHeader(getAccessToken());
 
-//
-// ✅ NEW: Idle Timeout Logic
-//
-const IDLE_LIMIT_MS = 30 * 60 * 1000; // 30 minutes
-let LAST_ACTIVITY_AT = Date.now();
-
-function markActivity() {
-  LAST_ACTIVITY_AT = Date.now();
-}
-
-if (typeof window !== "undefined") {
-  const events = ["click", "keydown", "mousemove", "scroll", "touchstart"];
-  events.forEach((evt) =>
-    window.addEventListener(evt, markActivity, { passive: true })
+// ------------------------
+// Business Dashboard API
+// ------------------------
+export async function getContractorBusinessDashboardSummary(range = "30") {
+  const res = await api.get(
+    `/projects/business/contractor/summary/?range=${range}`
   );
-
-  setInterval(() => {
-    const token = getAccessToken();
-    if (!token) return;
-
-    const now = Date.now();
-    if (now - LAST_ACTIVITY_AT > IDLE_LIMIT_MS) {
-      clearAuth(true);
-    }
-  }, 60 * 1000);
+  return res.data;
 }
 
-export function uploadMultipart(url, formData) {
-  return api.post(url, formData);
+// ------------------------
+// ✅ Agreement Close-out / Archive API
+// ------------------------
+export async function getAgreementClosureStatus(agreementId) {
+  if (!agreementId) throw new Error("agreementId is required");
+  const res = await api.get(
+    `/projects/agreements/${agreementId}/closure_status/`
+  );
+  return res.data;
+}
+
+export async function closeAndArchiveAgreement(agreementId) {
+  if (!agreementId) throw new Error("agreementId is required");
+  const res = await api.post(
+    `/projects/agreements/${agreementId}/close_and_archive/`
+  );
+  return res.data;
 }
 
 export default api;

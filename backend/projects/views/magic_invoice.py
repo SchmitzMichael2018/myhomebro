@@ -1,5 +1,5 @@
 # backend/projects/views/magic_invoice.py
-# v2025-12-30c — Escrow-aware magic invoice + GET returns escrow flags for public UI
+# v2026-01-10 — Dispute hard-lock: NO approve / release if agreement has active dispute
 #
 # Endpoints:
 #   GET    /api/projects/invoices/magic/<token>/
@@ -9,12 +9,15 @@
 # Behavior:
 # - GET includes: agreement_id, agreement_status, escrow_funded
 # - approve:
-#     * if agreement escrow is funded (agreement.status == "funded" or agreement.escrow_funded true):
+#     * if agreement escrow is funded:
 #         - release escrow via Stripe Transfer (net of platform fee)
-#         - returns mode="escrow_release"
+#         - ALWAYS set invoice.status = PAID when escrow released
 #     * else:
 #         - fallback card PaymentIntent (legacy)
 #         - returns stripe_client_secret + mode="card_payment"
+#
+# NEW (v2026-01-10):
+# - If agreement has ANY active dispute (initiated/open/under_review), approve is blocked.
 
 import logging
 from decimal import Decimal, ROUND_HALF_UP
@@ -60,6 +63,20 @@ def _agreement_status(agreement) -> str:
         return ""
 
 
+def _agreement_has_active_dispute(agreement) -> bool:
+    """
+    HARD LOCK:
+    If ANY dispute exists on the agreement with status initiated/open/under_review,
+    we block approve/release/card-fallback.
+    """
+    if not agreement:
+        return False
+    try:
+        return agreement.disputes.filter(status__in=("initiated", "open", "under_review")).exists()
+    except Exception:
+        return False
+
+
 class MagicInvoiceView(APIView):
     permission_classes = []  # AllowAny
 
@@ -73,10 +90,13 @@ class MagicInvoiceView(APIView):
             ag_status = _agreement_status(agreement)
             escrow_funded = _truthy(getattr(agreement, "escrow_funded", False)) or ag_status == "funded"
 
-            # ✅ these are REQUIRED so the public UI can hide card payment fields
+            # ✅ required so the public UI can hide card payment fields
             data["agreement_id"] = getattr(agreement, "id", None)
             data["agreement_status"] = ag_status
             data["escrow_funded"] = escrow_funded
+
+            # ✅ NEW: let public UI show "Dispute active" guardrail messaging
+            data["dispute_active"] = _agreement_has_active_dispute(agreement)
 
         return Response(data)
 
@@ -87,22 +107,55 @@ class MagicInvoiceApproveView(APIView):
     def patch(self, request, token=None):
         invoice = get_object_or_404(Invoice, public_token=token)
 
+        agreement = getattr(invoice, "agreement", None)
+        if not agreement:
+            return Response({"detail": "Invoice is missing agreement."}, status=400)
+
+        # 🔒 NEW: HARD STOP if any active dispute exists
+        if _agreement_has_active_dispute(agreement):
+            return Response(
+                {
+                    "detail": "This invoice cannot be approved while a dispute is active on the agreement.",
+                    "code": "DISPUTE_ACTIVE",
+                },
+                status=400,
+            )
+
         status_lower = str(invoice.status or "").lower()
         if "dispute" in status_lower:
             return Response({"detail": "This invoice is disputed."}, status=400)
 
+        # If escrow already released, treat as paid and return idempotently.
         if getattr(invoice, "escrow_released", False):
-            return Response({"detail": "Escrow already released."}, status=400)
+            # 🔒 Enforce invariant: escrow released => paid
+            with transaction.atomic():
+                invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
+                update_fields = []
+
+                if invoice.status != InvoiceStatus.PAID:
+                    invoice.status = InvoiceStatus.PAID
+                    update_fields.append("status")
+
+                if not getattr(invoice, "escrow_released_at", None):
+                    invoice.escrow_released_at = timezone.now()
+                    update_fields.append("escrow_released_at")
+
+                if update_fields:
+                    invoice.save(update_fields=update_fields)
+
+            return Response(
+                {
+                    "detail": "Escrow already released.",
+                    "invoice": InvoiceSerializer(invoice, context={"request": request}).data,
+                },
+                status=200,
+            )
 
         if "paid" in status_lower or "released" in status_lower:
             return Response({"detail": "This invoice has already been paid/released."}, status=400)
 
         if invoice.status not in (InvoiceStatus.PENDING, InvoiceStatus.APPROVED):
             return Response({"detail": "This invoice cannot be approved in its current status."}, status=400)
-
-        agreement = getattr(invoice, "agreement", None)
-        if not agreement:
-            return Response({"detail": "Invoice is missing agreement."}, status=400)
 
         contractor = getattr(agreement, "contractor", None)
         if not contractor:
@@ -155,19 +208,21 @@ class MagicInvoiceApproveView(APIView):
         # ✅ ESCROW FUNDED → RELEASE FUNDS (NO CARD)
         # ==========================================================
         if escrow_funded:
+            payout_cents = amount_cents - platform_fee_cents
+
+            # Idempotent transfer path: transfer already exists
             if getattr(invoice, "stripe_transfer_id", None):
-                # idempotent: make sure flags are set
                 with transaction.atomic():
-                    if invoice.status == InvoiceStatus.PENDING:
-                        invoice.status = InvoiceStatus.APPROVED
-                        invoice.approved_at = timezone.now()
+                    invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
+
+                    # 🔒 Enforce invariant: escrow release => PAID
+                    invoice.status = InvoiceStatus.PAID
                     invoice.escrow_released = True
                     invoice.escrow_released_at = invoice.escrow_released_at or timezone.now()
 
-                    # ✅ NEW: if audit fields exist, ensure they are populated even in idempotent path
-                    payout_cents = amount_cents - platform_fee_cents
-                    update_fields = ["status", "approved_at", "escrow_released", "escrow_released_at"]
+                    update_fields = ["status", "escrow_released", "escrow_released_at"]
 
+                    # optional audit fields
                     if hasattr(invoice, "platform_fee_cents"):
                         try:
                             invoice.platform_fee_cents = int(platform_fee_cents)
@@ -194,8 +249,7 @@ class MagicInvoiceApproveView(APIView):
                     status=200,
                 )
 
-            payout_cents = amount_cents - platform_fee_cents
-
+            # Create Stripe Transfer
             try:
                 transfer = stripe.Transfer.create(
                     amount=int(payout_cents),
@@ -216,16 +270,18 @@ class MagicInvoiceApproveView(APIView):
                 logger.exception("Stripe Transfer failed for invoice %s: %s", invoice.id, exc)
                 return Response({"detail": "Unable to release escrow. Please try again."}, status=500)
 
+            # Persist release state
             with transaction.atomic():
-                if invoice.status == InvoiceStatus.PENDING:
-                    invoice.status = InvoiceStatus.APPROVED
-                    invoice.approved_at = timezone.now()
+                invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
 
                 invoice.stripe_transfer_id = transfer.id
                 invoice.escrow_released = True
                 invoice.escrow_released_at = timezone.now()
 
-                # ✅ NEW: persist both fee and payout audit trail if fields exist
+                # 🔒 Enforce invariant: escrow release => PAID
+                invoice.status = InvoiceStatus.PAID
+                invoice.approved_at = invoice.approved_at or timezone.now()
+
                 update_fields = [
                     "status",
                     "approved_at",
@@ -267,6 +323,8 @@ class MagicInvoiceApproveView(APIView):
         # ==========================================================
         try:
             with transaction.atomic():
+                invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
+
                 if invoice.status == InvoiceStatus.PENDING:
                     invoice.status = InvoiceStatus.APPROVED
                     invoice.approved_at = timezone.now()
@@ -323,6 +381,7 @@ class MagicInvoiceDisputeView(APIView):
         full_reason = dispute_reason if not description else f"{dispute_reason}\n\n{description}"
 
         with transaction.atomic():
+            invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
             invoice.status = InvoiceStatus.DISPUTED
             invoice.disputed = True
             invoice.disputed_at = timezone.now()

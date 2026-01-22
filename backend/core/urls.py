@@ -14,7 +14,7 @@ from rest_framework_simplejwt.views import (
     TokenVerifyView,
 )
 
-from payments.webhooks import stripe_webhook
+from payments.webhooks import stripe_webhook  # noqa: F401  (imported elsewhere historically)
 
 from .views_legal import TermsOfServiceView, PrivacyPolicyView
 
@@ -50,7 +50,7 @@ except Exception:
 
 
 def health(_request):
-  return HttpResponse("ok", content_type="text/plain")
+    return HttpResponse("ok", content_type="text/plain")
 
 
 def spa_index(_request):
@@ -102,7 +102,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("healthz", health),
 
-    # Auth (JWT)
+    # Auth (JWT) — legacy aliases kept
     path("api/auth/login/",   TokenObtainPairView.as_view(), name="auth-login"),
     path("api/auth/refresh/", TokenRefreshView.as_view(),    name="auth-refresh"),
     path("api/auth/verify/",  TokenVerifyView.as_view(),     name="auth-verify"),
@@ -111,12 +111,22 @@ urlpatterns = [
 
     # Primary APIs
     path("api/projects/", include(("projects.urls", "projects"), namespace="projects")),
-    path("api/",           include(("accounts.urls", "accounts"), namespace="accounts")),
-    path("api/payments/",  include(("payments.urls", "payments"), namespace="payments")),
+
+    # ✅ FIX: mount accounts under /api/accounts/ (matches frontend calls)
+    path("api/accounts/", include(("accounts.urls", "accounts"), namespace="accounts")),
+
+    # ✅ Back-compat: if anything old still calls /api/auth/... keep it working
+    path(
+        "api/auth/",
+        RedirectView.as_view(url="/api/accounts/auth/", permanent=False),
+        name="accounts-auth-redirect",
+    ),
+
+    path("api/payments/", include(("payments.urls", "payments"), namespace="payments")),
 
     # Stripe
-    path("stripe/return/",  stripe_return,  name="stripe-return"),
-    path("stripe/ok",       stripe_ok,      name="stripe-ok"),
+    path("stripe/return/", stripe_return, name="stripe-return"),
+    path("stripe/ok", stripe_ok, name="stripe-ok"),
 
     # Calendar aliases
     path(
@@ -164,9 +174,9 @@ urlpatterns = [
     # Favicon
     path("favicon.ico", favicon, name="favicon"),
 
-    # Legal pages (Django TemplateView)
+    # Legal pages
     path("legal/terms-of-service/", TermsOfServiceView.as_view(), name="terms-of-service"),
-    path("legal/privacy-policy/",  PrivacyPolicyView.as_view(),  name="privacy-policy"),
+    path("legal/privacy-policy/", PrivacyPolicyView.as_view(), name="privacy-policy"),
 
     # SPA shell & fallback
     path("", spa_index, name="spa_index"),

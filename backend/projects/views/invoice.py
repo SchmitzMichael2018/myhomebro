@@ -1,5 +1,6 @@
 # backend/projects/views/invoice.py
-# v2025-12-24 — email buttons: Approve/Dispute + PDF only (no "View Invoice Details")
+# v2026-01-10 — Dispute hard-lock: prevent submit/resend while dispute active
+# Keeps all existing behavior otherwise.
 
 import logging
 import os
@@ -60,19 +61,12 @@ def _magic_token(invoice: Invoice) -> str:
 
 
 def _build_magic_invoice_action_url(invoice: Invoice, action: str) -> str:
-    """
-    Points to the FRONTEND /invoice/<token>?action=approve|dispute
-    This is public and should be handled by InvoicePage.jsx → MagicInvoice.jsx.
-    """
     base = _frontend_base()
     tok = _magic_token(invoice)
     return f"{base}/invoice/{tok}?action={action}"
 
 
 def _build_magic_invoice_pdf_url(invoice: Invoice) -> str:
-    """
-    Public PDF endpoint (no auth).
-    """
     base = _api_base()
     tok = _magic_token(invoice)
     return f"{base}/api/projects/invoices/magic/{tok}/pdf/"
@@ -260,6 +254,19 @@ def _send_invoice_email_postmark(invoice: Invoice) -> dict:
     )
 
 
+def _agreement_has_active_dispute(agreement) -> bool:
+    """
+    HARD LOCK:
+    Block submit/resend while any active dispute exists on the agreement.
+    """
+    if not agreement:
+        return False
+    try:
+        return agreement.disputes.filter(status__in=("initiated", "open", "under_review")).exists()
+    except Exception:
+        return False
+
+
 class InvoiceViewSet(viewsets.ModelViewSet):
     serializer_class = InvoiceSerializer
     permission_classes = [IsAuthenticated]
@@ -292,6 +299,14 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         if request.user != invoice.agreement.project.contractor.user:
             raise PermissionDenied("Only the contractor can submit invoice notifications.")
 
+        # 🔒 NEW: block submit while dispute active
+        if _agreement_has_active_dispute(getattr(invoice, "agreement", None)):
+            return Response({"detail": "This agreement has an active dispute. Invoice submission is paused."}, status=400)
+
+        # ✅ Safety: never downgrade released/paid invoices to pending
+        if getattr(invoice, "escrow_released", False) or str(invoice.status or "").lower() == "paid":
+            return Response({"detail": "This invoice is already paid/released and cannot be re-submitted."}, status=400)
+
         if invoice.status != InvoiceStatus.PENDING:
             invoice.status = InvoiceStatus.PENDING
 
@@ -322,6 +337,14 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         invoice = self.get_object()
         if request.user != invoice.agreement.project.contractor.user:
             raise PermissionDenied("Only the contractor can resend invoice notifications.")
+
+        # 🔒 NEW: block resend while dispute active
+        if _agreement_has_active_dispute(getattr(invoice, "agreement", None)):
+            return Response({"detail": "This agreement has an active dispute. Invoice resend is paused."}, status=400)
+
+        # ✅ Safety: never resend/alter state for released/paid invoices
+        if getattr(invoice, "escrow_released", False) or str(invoice.status or "").lower() == "paid":
+            return Response({"detail": "This invoice is already paid/released and cannot be resent."}, status=400)
 
         invoice.last_email_error = ""
         invoice.save(update_fields=["last_email_error"])

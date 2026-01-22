@@ -28,6 +28,8 @@ from django.utils import timezone
 
 FeePayer = Literal["contractor", "homeowner", "split"]
 
+FEE_ENGINE_VERSION = "v2025-12-29"
+
 INTRO_DAYS = 60
 INTRO_RATE = Decimal("0.03")
 
@@ -94,6 +96,10 @@ class InvoicePaymentFeeSummary:
     platform_fee: Decimal
     agreement_cap: AgreementCapInfo
 
+    # For audit/debug
+    monthly_volume_used: Decimal
+    platform_fee_uncapped: Decimal
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -120,7 +126,7 @@ def _cents_from_money(amount: Decimal) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Core tier logic (same as your original)
+# Core tier logic
 # ---------------------------------------------------------------------------
 
 def get_fee_rate_for_contractor(
@@ -172,8 +178,6 @@ def calculate_platform_fee(
     project_amount = _round_money(project_amount)
     variable_fee = _round_money(project_amount * rate_info.rate)
     total_fee = _round_money(variable_fee + rate_info.flat_fee)
-    # NOTE: we do NOT apply MAX_PLATFORM_FEE here when using agreement-level cap.
-    # This keeps the logic flexible.
     return PlatformFeeResult(
         project_amount=project_amount,
         rate_info=rate_info,
@@ -303,7 +307,7 @@ def apply_agreement_cap(
 
 
 # ---------------------------------------------------------------------------
-# Legacy API (USED BY funding.py) — this stops your WSGI crash
+# Legacy API
 # ---------------------------------------------------------------------------
 
 def compute_fee_summary(
@@ -331,7 +335,6 @@ def compute_fee_summary(
         rate_info=rate_info,
     )
 
-    # Historical behavior: cap per calculation
     platform_fee = platform.total_fee
     if platform_fee > MAX_PLATFORM_FEE:
         platform_fee = MAX_PLATFORM_FEE
@@ -354,7 +357,7 @@ def compute_fee_summary(
 
 
 # ---------------------------------------------------------------------------
-# New API used by magic_invoice.py
+# New API used by invoice payments
 # ---------------------------------------------------------------------------
 
 def compute_fee_summary_for_invoice_payment(
@@ -367,7 +370,6 @@ def compute_fee_summary_for_invoice_payment(
     """
     Computes the platform fee for a MILESTONE payment and applies $750 cap PER AGREEMENT.
     """
-    # Determine contractor_created_at + monthly_volume using best-effort fields.
     contractor_created_at = (
         getattr(contractor, "created_at", None)
         or getattr(contractor, "created", None)
@@ -375,14 +377,12 @@ def compute_fee_summary_for_invoice_payment(
         or timezone.now()
     )
 
-    # monthly volume: use a best-effort helper if you have one elsewhere; else default 0
     monthly_volume = Decimal("0.00")
     try:
         from projects.models import Invoice  # type: ignore
 
-        # best-effort: sum this contractor's paid-ish invoices this month
-        now = timezone.now()
-        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        now_dt = timezone.now()
+        month_start = now_dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         paid_like = ("paid", "released", "completed")
 
         qs = Invoice.objects.filter(agreement__contractor=contractor)
@@ -411,12 +411,11 @@ def compute_fee_summary_for_invoice_payment(
     )
 
     amount = _money_from_cents(int(amount_cents))
-    platform_uncapped = calculate_platform_fee(project_amount=amount, rate_info=rate_info).total_fee
+    uncapped = calculate_platform_fee(project_amount=amount, rate_info=rate_info).total_fee
 
-    # Apply agreement-level cap (new behavior)
     applied_fee, cap_info = apply_agreement_cap(
         agreement_id=agreement_id,
-        uncapped_fee=platform_uncapped,
+        uncapped_fee=uncapped,
     )
 
     return InvoicePaymentFeeSummary(
@@ -424,6 +423,8 @@ def compute_fee_summary_for_invoice_payment(
         rate_info=rate_info,
         platform_fee=applied_fee,
         agreement_cap=cap_info,
+        monthly_volume_used=monthly_volume,
+        platform_fee_uncapped=uncapped,
     )
 
 
@@ -434,10 +435,6 @@ def calculate_platform_fee_cents_for_invoice(
     agreement_id: Optional[int],
     is_high_risk: bool = False,
 ) -> int:
-    """
-    Returns the final platform fee in cents for this milestone payment,
-    after applying $750 cap PER AGREEMENT.
-    """
     summary = compute_fee_summary_for_invoice_payment(
         amount_cents=amount_cents,
         contractor=contractor,
@@ -445,3 +442,29 @@ def calculate_platform_fee_cents_for_invoice(
         is_high_risk=is_high_risk,
     )
     return _cents_from_money(summary.platform_fee)
+
+
+def build_invoice_payment_fee_snapshot(summary: InvoicePaymentFeeSummary) -> dict:
+    """
+    Returns a dict you can persist on Receipt for auditability.
+    """
+    ri = summary.rate_info
+    cap = summary.agreement_cap
+
+    fee_plan_code = ri.tier_name + ("+risk" if ri.high_risk_applied else "")
+
+    return {
+        "fee_engine_version": FEE_ENGINE_VERSION,
+        "fee_plan_code": fee_plan_code,
+        "fee_rate": ri.rate,
+        "flat_fee": ri.flat_fee,
+        "monthly_volume_used": summary.monthly_volume_used,
+        "platform_fee_uncapped_cents": _cents_from_money(summary.platform_fee_uncapped),
+        "cap_total_cents": _cents_from_money(cap.cap_total),
+        "cap_already_collected_cents": _cents_from_money(cap.already_collected),
+        "cap_remaining_cents": _cents_from_money(cap.remaining_cap),
+        "is_intro": ri.is_intro,
+        "high_risk_applied": ri.high_risk_applied,
+        "tier_name": ri.tier_name,
+        # NOTE: platform_fee_cents itself is stored separately on Receipt as "platform_fee_cents"
+    }
