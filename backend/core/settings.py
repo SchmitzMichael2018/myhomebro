@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 from datetime import timedelta
+from urllib.parse import urlparse
 
 from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv, find_dotenv
@@ -20,13 +21,54 @@ def get_bool(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:
         return default
-    return raw.lower() in ("1", "true", "t", "yes", "y")
+    return raw.lower() in ("1", "true", "t", "yes", "y", "on")
+
+def _derive_redis_db(url: str, db_index: int) -> str:
+    """
+    If url ends with /0, produce /<db_index>. If url has no explicit db path,
+    append /<db_index>. Preserves querystring if present.
+    """
+    if not url:
+        return url
+
+    # Split querystring
+    if "?" in url:
+        base, qs = url.split("?", 1)
+        qs = "?" + qs
+    else:
+        base, qs = url, ""
+
+    # If base already ends with /<num>, swap it.
+    parsed = urlparse(base)
+    path = parsed.path or ""
+
+    # If path is '/', treat as empty db.
+    if path in ("", "/"):
+        new_base = base.rstrip("/") + f"/{db_index}"
+        return new_base + qs
+
+    # If path is '/0' or '/1' etc, replace last segment if numeric
+    parts = path.split("/")
+    last = parts[-1] if parts else ""
+    if last.isdigit():
+        parts[-1] = str(db_index)
+        new_path = "/".join(parts)
+        new_base = base[: len(base) - len(path)] + new_path
+        return new_base + qs
+
+    # Otherwise append /<db_index>
+    new_base = base.rstrip("/") + f"/{db_index}"
+    return new_base + qs
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Paths & .env
 # ──────────────────────────────────────────────────────────────────────────────
-BASE_DIR = Path(__file__).resolve().parent.parent       # ~/backend/backend
-REPO_DIR = BASE_DIR.parent                               # ~/backend
+# This file lives at: ~/backend/backend/core/settings.py
+# So:
+#   BASE_DIR = ~/backend/backend
+#   REPO_DIR = ~/backend
+BASE_DIR = Path(__file__).resolve().parent.parent
+REPO_DIR = BASE_DIR.parent
 FRONTEND_DIR = REPO_DIR / "frontend"
 FRONTEND_DIST_DIR = FRONTEND_DIR / "dist"
 
@@ -44,10 +86,15 @@ else:
 # ──────────────────────────────────────────────────────────────────────────────
 SECRET_KEY = get_env_var("SECRET_KEY", required=True)
 DEBUG = get_bool("DEBUG", default=False)
-ALLOWED_HOSTS = [h.strip() for h in get_env_var(
-    "ALLOWED_HOSTS",
-    "localhost,127.0.0.1,myhomebro.com,www.myhomebro.com"
-).split(",") if h.strip()]
+
+ALLOWED_HOSTS = [
+    h.strip()
+    for h in get_env_var(
+        "ALLOWED_HOSTS",
+        "localhost,127.0.0.1,myhomebro.com,www.myhomebro.com"
+    ).split(",")
+    if h.strip()
+]
 
 # Public URLs (used for CSRF/CORS defaults)
 FRONTEND_URL = get_env_var("FRONTEND_URL", "http://localhost:3000").rstrip("/")
@@ -55,14 +102,25 @@ SITE_URL     = get_env_var("SITE_URL",     "http://127.0.0.1:8000").rstrip("/")
 
 # CSRF requires scheme+host
 CSRF_TRUSTED_ORIGINS = [
-    SITE_URL,
-    FRONTEND_URL,
-] + [
-    u.strip() for u in get_env_var(
-        "CSRF_TRUSTED_ORIGINS",
-        "https://myhomebro.com,https://www.myhomebro.com"
-    ).split(",") if u.strip().startswith("http")
+    u.strip()
+    for u in (
+        [SITE_URL, FRONTEND_URL] +
+        [
+            u.strip()
+            for u in get_env_var(
+                "CSRF_TRUSTED_ORIGINS",
+                "https://myhomebro.com,https://www.myhomebro.com"
+            ).split(",")
+        ]
+    )
+    if u.strip().startswith("http")
 ]
+
+# Production safety net: ALWAYS trust your canonical HTTPS domains
+if not DEBUG:
+    for u in ("https://myhomebro.com", "https://www.myhomebro.com"):
+        if u not in CSRF_TRUSTED_ORIGINS:
+            CSRF_TRUSTED_ORIGINS.append(u)
 
 # Allow our in-app PDF viewer to render in an iframe
 X_FRAME_OPTIONS = "SAMEORIGIN"
@@ -71,7 +129,7 @@ X_FRAME_OPTIONS = "SAMEORIGIN"
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Installed Apps & Middleware  (Channels & chat removed)
+# Installed Apps & Middleware (Channels & chat removed)
 # ──────────────────────────────────────────────────────────────────────────────
 INSTALLED_APPS = [
     # Django core
@@ -103,7 +161,6 @@ INSTALLED_APPS = [
     "payments",
     "receipts.apps.ReceiptsConfig",
     "adminpanel",
-
 ]
 
 MIDDLEWARE = [
@@ -155,8 +212,8 @@ TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
         "DIRS": [
-            REPO_DIR / "templates",   # ~/backend/templates
-            BASE_DIR / "templates",   # ~/backend/backend/templates (safety net)
+            REPO_DIR / "templates",  # ~/backend/templates
+            BASE_DIR / "templates",  # ~/backend/backend/templates (safety net)
         ],
         "APP_DIRS": True,
         "OPTIONS": {
@@ -181,10 +238,16 @@ AUTHENTICATION_BACKENDS = [
 STATIC_URL = "/static/"
 STATIC_ROOT = REPO_DIR / "staticfiles"  # ~/backend/staticfiles
 
-STATICFILES_DIRS = [
-    FRONTEND_DIST_DIR,                    # ~/backend/frontend/dist
-    BASE_DIR / "static",                  # app-level static (optional)
-]
+STATICFILES_DIRS = []
+
+# Only include frontend/dist if it exists (prevents collectstatic crash)
+if FRONTEND_DIST_DIR.exists():
+    STATICFILES_DIRS.append(FRONTEND_DIST_DIR)
+
+# Optional app-level static
+_app_static = BASE_DIR / "static"
+if _app_static.exists():
+    STATICFILES_DIRS.append(_app_static)
 
 STORAGES = {
     "staticfiles": {
@@ -214,11 +277,6 @@ if STRIPE_ENABLED and STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Channels — REMOVED
-# ──────────────────────────────────────────────────────────────────────────────
-# No CHANNEL_LAYERS; no "channels" or "chat" in INSTALLED_APPS.
-
-# ──────────────────────────────────────────────────────────────────────────────
 # DRF / JWT
 # ──────────────────────────────────────────────────────────────────────────────
 REST_FRAMEWORK = {
@@ -233,30 +291,43 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME":  timedelta(minutes=int(get_env_var("ACCESS_TOKEN_LIFETIME", "60"))),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=int(get_env_var("ACCESS_TOKEN_LIFETIME", "60"))),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=int(get_env_var("REFRESH_TOKEN_LIFETIME", "7"))),
-    "ROTATE_REFRESH_TOKENS":  True,
+    "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
-    "ALGORITHM":              "HS256",
-    "SIGNING_KEY":            SECRET_KEY,
-    "USER_ID_FIELD":          "id",
-    "USER_ID_CLAIM":          "user_id",
-    "AUTH_HEADER_TYPES":      ("Bearer",),  # allows Authorization: Bearer <token>
-    "UPDATE_LAST_LOGIN":      False,
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": SECRET_KEY,
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "user_id",
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "UPDATE_LAST_LOGIN": False,
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
 # CORS
 # ──────────────────────────────────────────────────────────────────────────────
-_default_cors = f"{FRONTEND_URL},http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:5173,http://localhost:5173"
+_default_cors = (
+    f"{FRONTEND_URL},"
+    "http://127.0.0.1:3000,http://localhost:3000,"
+    "http://127.0.0.1:5173,http://localhost:5173"
+)
+
 CORS_ALLOWED_ORIGINS = [
-    *[o.strip() for o in get_env_var("CORS_ALLOWED_ORIGINS", _default_cors).split(",") if o.strip()]
+    o.strip()
+    for o in get_env_var("CORS_ALLOWED_ORIGINS", _default_cors).split(",")
+    if o.strip()
 ]
+
+# Production safety net: allow canonical HTTPS origins for the app
+if not DEBUG:
+    for u in ("https://myhomebro.com", "https://www.myhomebro.com"):
+        if u not in CORS_ALLOWED_ORIGINS:
+            CORS_ALLOWED_ORIGINS.append(u)
+
 CORS_ALLOW_CREDENTIALS = True
 
 from corsheaders.defaults import default_headers as _cors_default_headers  # type: ignore
 CORS_ALLOW_HEADERS = list(_cors_default_headers) + ["authorization", "content-disposition"]
-
 CORS_EXPOSE_HEADERS = ["Content-Disposition"]
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -268,15 +339,45 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = int(get_env_var("FILE_UPLOAD_MAX_MEMORY_SIZE", str
 # ──────────────────────────────────────────────────────────────────────────────
 # Celery
 # ──────────────────────────────────────────────────────────────────────────────
-from celery.schedules import crontab
-CELERY_BROKER_URL     = get_env_var("REDIS_URL", "") or "redis://localhost:6379/0"
-CELERY_RESULT_BACKEND = CELERY_BROKER_URL
-CELERY_BEAT_SCHEDULE  = {
-    "auto-release-undisputed-invoices-daily": {
-        "task":    "projects.tasks.auto_release_undisputed_invoices",
-        "schedule": crontab(hour=0, minute=0),
-    },
-}
+# Preferred (your pattern): set REDIS_URL to enable Celery (broker+backend).
+# Back-compat: allow CELERY_BROKER_URL / CELERY_RESULT_BACKEND too.
+#
+# For Aiven Valkey, REDIS_URL should look like:
+#   rediss://default:<PASSWORD>@host:port/0
+#
+# If you only provide /0, we auto-derive results backend to /1.
+REDIS_URL = get_env_var("REDIS_URL", "").strip()
+
+CELERY_BROKER_URL = (
+    get_env_var("CELERY_BROKER_URL", "").strip()
+    or REDIS_URL
+).strip()
+
+# If result backend explicitly set, use it; else if broker is redis-like, derive /1.
+_explicit_result = get_env_var("CELERY_RESULT_BACKEND", "").strip()
+if _explicit_result:
+    CELERY_RESULT_BACKEND = _explicit_result
+elif CELERY_BROKER_URL.startswith(("redis://", "rediss://")):
+    CELERY_RESULT_BACKEND = _derive_redis_db(CELERY_BROKER_URL, 1)
+else:
+    CELERY_RESULT_BACKEND = None
+
+# Good defaults (safe)
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = get_env_var("CELERY_TIMEZONE", "America/Chicago")
+
+# Beat schedule only if broker exists
+CELERY_BEAT_SCHEDULE = {}
+if CELERY_BROKER_URL:
+    from celery.schedules import crontab
+    CELERY_BEAT_SCHEDULE = {
+        "auto-release-undisputed-invoices-daily": {
+            "task": "projects.tasks.auto_release_undisputed_invoices",
+            "schedule": crontab(hour=0, minute=0),
+        },
+    }
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Twilio (optional)
@@ -289,24 +390,18 @@ TWILIO_PHONE_NUMBER = get_env_var("TWILIO_PHONE_NUMBER", required=False)
 # Email (Postmark SMTP in production, console in DEBUG)
 # ──────────────────────────────────────────────────────────────────────────────
 if DEBUG:
-    # In development, just print emails to the console
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 else:
-    # In production, send real mail via Postmark SMTP
     EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
     EMAIL_HOST = "smtp.postmarkapp.com"
     EMAIL_PORT = 587
     EMAIL_USE_TLS = True
 
-    # Use your Postmark server token as SMTP username & password
     POSTMARK_SERVER_TOKEN = get_env_var("POSTMARK_SERVER_TOKEN", required=True)
     EMAIL_HOST_USER = POSTMARK_SERVER_TOKEN
     EMAIL_HOST_PASSWORD = POSTMARK_SERVER_TOKEN
 
-# From address used in all emails (must match a verified sender in Postmark)
 DEFAULT_FROM_EMAIL = get_env_var("DEFAULT_FROM_EMAIL", "MyHomeBro <info@myhomebro.com>")
-
-# Optional: public logo URL for email templates
 PUBLIC_LOGO_URL = get_env_var("PUBLIC_LOGO_URL", "") or None
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -325,7 +420,7 @@ if not DEBUG:
     # SECURE_HSTS_PRELOAD = True
 
 # Require email verification before login?
-ACCOUNTS_REQUIRE_EMAIL_VERIFICATION = False
+ACCOUNTS_REQUIRE_EMAIL_VERIFICATION = get_bool("ACCOUNTS_REQUIRE_EMAIL_VERIFICATION", default=False)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Logging
@@ -333,9 +428,7 @@ ACCOUNTS_REQUIRE_EMAIL_VERIFICATION = False
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "handlers": {
-        "console": {"class": "logging.StreamHandler"},
-    },
+    "handlers": {"console": {"class": "logging.StreamHandler"}},
     "root": {"handlers": ["console"], "level": "INFO"},
     "loggers": {
         "django": {"handlers": ["console"], "level": "INFO", "propagate": True},
@@ -356,17 +449,17 @@ LOGGING = {
 # - AI must never trigger refunds, releases, or DB mutations
 # ============================================================================
 
-AI_ENABLED = True
-AI_DISPUTE_RECOMMENDATIONS_ENABLED = True
+AI_ENABLED = get_bool("AI_ENABLED", default=False)
+AI_DISPUTE_RECOMMENDATIONS_ENABLED = get_bool("AI_DISPUTE_RECOMMENDATIONS_ENABLED", default=False)
+AI_DISPUTES_ENABLED = get_bool("AI_DISPUTES_ENABLED", default=False)
+AI_INSIGHTS_ENABLED = get_bool("AI_INSIGHTS_ENABLED", default=False)
+AI_SCOPE_ASSIST_ENABLED = get_bool("AI_SCOPE_ASSIST_ENABLED", default=False)
 
-# Dispute-related AI (summaries, evidence-based recommendations)
-AI_DISPUTES_ENABLED = True
+OPENAI_DISPUTE_SUMMARY_MODEL = get_env_var("OPENAI_DISPUTE_SUMMARY_MODEL", "gpt-4o-mini")
 
-# Business / market intelligence AI (pricing, timing, job mix, scope quality)
-AI_INSIGHTS_ENABLED = False
+# ✅ Add OpenAI key into settings so AI modules can read it consistently.
+# This does NOT force AI on; it simply makes the value available if present.
+OPENAI_API_KEY = get_env_var("OPENAI_API_KEY", required=False)
 
-# Optional: scope-writing assistant (milestones & project descriptions)
-AI_SCOPE_ASSIST_ENABLED = False
-
-# optional
-OPENAI_DISPUTE_SUMMARY_MODEL = "gpt-4o-mini"
+# Backward-compatible alias (some modules may check this name)
+AI_OPENAI_API_KEY = get_env_var("AI_OPENAI_API_KEY", default=OPENAI_API_KEY, required=False)

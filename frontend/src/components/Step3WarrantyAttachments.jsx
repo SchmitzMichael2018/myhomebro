@@ -184,7 +184,7 @@ export default function Step3WarrantyAttachments({
         )}
 
         <div className="mt-3">
-          <button
+          <button type="button"
             onClick={saveWarranty}
             className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
           >
@@ -388,10 +388,10 @@ export default function Step3WarrantyAttachments({
 
         {/* Footer nav */}
         <div className="px-4 py-3 border-t flex items-center justify-between">
-          <button onClick={onBack} className="rounded border px-3 py-2 text-sm">
+          <button type="button" onClick={onBack} className="rounded border px-3 py-2 text-sm">
             Back
           </button>
-          <button
+          <button type="button"
             onClick={onNext}
             className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
           >

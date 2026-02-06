@@ -1,14 +1,26 @@
-// /home/myhomebro/backend/frontend/src/components/ai/DisputeAIRecommendationPanel.jsx
-// v2026-01-22 — AI Recommendation Panel (Stage G) + Load Latest Stored
+// frontend/src/components/ai/DisputeAIRecommendationPanel.jsx
+// v2026-01-22 — Step B: Stripe Checkout unlock for AI recommendation
 
 import React, { useEffect, useMemo, useState } from "react";
-import api from "../../api"; // ✅ src/api.js
+import api from "../../api";
+
+function getQueryParam(name) {
+  try {
+    const u = new URL(window.location.href);
+    return u.searchParams.get(name);
+  } catch {
+    return null;
+  }
+}
 
 export default function DisputeAIRecommendationPanel({ disputeId }) {
   const [loading, setLoading] = useState(false);
   const [loadingLatest, setLoadingLatest] = useState(false);
+  const [loadingPay, setLoadingPay] = useState(false);
   const [err, setErr] = useState("");
   const [result, setResult] = useState(null);
+
+  const [payInfo, setPayInfo] = useState(null); // { suggested_price_cents, ... }
 
   const hasPayload = !!result?.payload;
 
@@ -32,11 +44,8 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
       const item = res?.data?.items?.[0] || null;
       if (!item) {
         setResult(null);
-        setErr("No stored recommendation found yet. Click Generate to create one.");
         return;
       }
-
-      // normalize into the same shape as POST returns so the UI renders identically
       setResult({
         artifact_type: item.artifact_type,
         cached: true,
@@ -47,12 +56,7 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
         created_at: item.created_at,
       });
     } catch (e) {
-      const msg =
-        e?.response?.data?.detail ||
-        e?.response?.data?.error ||
-        e?.message ||
-        "Failed to load latest stored recommendation.";
-      setErr(msg);
+      // don't hard error on loadLatest
     } finally {
       setLoadingLatest(false);
     }
@@ -61,30 +65,93 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
   async function generate(force = false) {
     if (!disputeId) return;
     setErr("");
+    setPayInfo(null);
     setLoading(true);
     try {
-      const res = await api.post(
-        `/projects/disputes/${disputeId}/ai/recommendation/`,
-        { force }
-      );
+      const res = await api.post(`/projects/disputes/${disputeId}/ai/recommendation/`, { force });
       setResult(res.data);
+    } catch (e) {
+      const status = e?.response?.status;
+      const data = e?.response?.data;
+
+      if (status === 402 && data?.code === "ai_quota_exceeded") {
+        setPayInfo(data);
+        setErr(data?.detail || "Payment required to generate.");
+      } else {
+        const msg =
+          data?.detail ||
+          data?.error ||
+          e?.message ||
+          "Failed to generate AI recommendation.";
+        setErr(msg);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function startCheckout() {
+    if (!disputeId) return;
+    setLoadingPay(true);
+    setErr("");
+    try {
+      const res = await api.post(`/projects/ai/checkout/recommendation/`, { dispute_id: disputeId });
+      if (res.data?.already_paid) {
+        // If already paid for this digest, just generate again (force=false is fine; digest-matched may exist)
+        await generate(true);
+        return;
+      }
+      const url = res.data?.checkout_url;
+      if (!url) throw new Error("No checkout_url returned.");
+      window.location.assign(url);
     } catch (e) {
       const msg =
         e?.response?.data?.detail ||
-        e?.response?.data?.error ||
         e?.message ||
-        "Failed to generate AI recommendation.";
+        "Failed to start checkout.";
+      setErr(msg);
+    } finally {
+      setLoadingPay(false);
+    }
+  }
+
+  async function verifyCheckoutAndGenerate() {
+    const sessionId = getQueryParam("session_id");
+    const aiCheckout = getQueryParam("ai_checkout");
+    if (!sessionId || aiCheckout !== "success") return;
+
+    setErr("");
+    setLoading(true);
+    try {
+      const res = await api.get(`/projects/ai/checkout/status/?session_id=${encodeURIComponent(sessionId)}`);
+      if (res.data?.paid) {
+        // Paid — generate a fresh recommendation now (force true => new version)
+        await generate(true);
+      } else {
+        setErr("Payment not completed yet. If you just paid, refresh once.");
+      }
+    } catch (e) {
+      const msg =
+        e?.response?.data?.detail ||
+        e?.message ||
+        "Failed to verify checkout status.";
       setErr(msg);
     } finally {
       setLoading(false);
     }
   }
 
-  // Auto-load latest on mount / dispute change
   useEffect(() => {
     if (disputeId) loadLatest();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disputeId]);
+
+  useEffect(() => {
+    verifyCheckoutAndGenerate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const payDollars = payInfo?.suggested_price_cents ? (payInfo.suggested_price_cents / 100).toFixed(2) : "29.00";
 
   return (
     <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, marginTop: 16 }}>
@@ -97,53 +164,44 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
         </div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <button
-            onClick={() => loadLatest()}
-            disabled={loadingLatest}
-            style={btnStyle}
-            title="Load most recent saved recommendation (no AI call)"
-          >
+          <button onClick={loadLatest} disabled={loadingLatest} style={btnStyle}>
             {loadingLatest ? "Loading…" : "Load Latest"}
           </button>
-
-          <button
-            onClick={() => generate(false)}
-            disabled={loading}
-            style={btnStyle}
-          >
+          <button onClick={() => generate(false)} disabled={loading} style={btnStyle}>
             {loading ? "Generating…" : "Generate"}
           </button>
-
-          <button
-            onClick={() => generate(true)}
-            disabled={loading}
-            style={btnStyle}
-            title="Force refresh (bypass digest match + create new version)"
-          >
+          <button onClick={() => generate(true)} disabled={loading} style={btnStyle} title="Force new version">
             Refresh
           </button>
         </div>
       </div>
 
       {err ? (
-        <div style={{ marginTop: 12, color: "#b91c1c", fontWeight: 600 }}>
+        <div style={{ marginTop: 12, color: "#b91c1c", fontWeight: 700 }}>
           {err}
-          <div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.9 }}>
-            If this says “disabled”, flip flags in settings.py and reload the web app.
-          </div>
+
+          {payInfo ? (
+            <div style={{ marginTop: 10, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <button onClick={startCheckout} disabled={loadingPay} style={btnStyle}>
+                {loadingPay ? "Opening Checkout…" : `Pay $${payDollars} to Generate`}
+              </button>
+              <div style={{ fontSize: 12, fontWeight: 500, opacity: 0.85 }}>
+                (Or upgrade to Pro later for unlimited AI)
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
       {!hasPayload ? (
         <div style={{ marginTop: 12, fontSize: 13, opacity: 0.8 }}>
           Click <b>Generate</b> to produce 3 settlement options (Quick / Balanced / Strict), a recommended path,
-          and a neutral draft resolution agreement. Or click <b>Load Latest</b> to view the most recent saved result.
+          and a neutral draft resolution agreement.
         </div>
       ) : null}
 
       {hasPayload ? (
         <div style={{ marginTop: 16, display: "grid", gap: 14 }}>
-          {/* Meta */}
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 12, opacity: 0.85 }}>
             <div><b>Model:</b> {result?.model || result?.payload?._model || "—"}</div>
             <div><b>Cached:</b> {String(!!result?.cached)}</div>
@@ -152,7 +210,6 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
             <div><b>Created:</b> {result?.created_at ? new Date(result.created_at).toLocaleString() : "—"}</div>
           </div>
 
-          {/* Overview */}
           {overview ? (
             <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 14 }}>
               <div style={{ fontWeight: 800, marginBottom: 8 }}>Overview</div>
@@ -168,32 +225,9 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
                   </ul>
                 </div>
               ) : null}
-
-              {!!overview.missing_info?.length ? (
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ fontWeight: 700, marginBottom: 6 }}>Missing info</div>
-                  <ul style={{ margin: 0, paddingLeft: 18 }}>
-                    {overview.missing_info.map((x, idx) => (
-                      <li key={idx} style={{ fontSize: 13, lineHeight: 1.45 }}>{x}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-
-              {!!overview.risk_flags?.length ? (
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ fontWeight: 700, marginBottom: 6 }}>Risk flags</div>
-                  <ul style={{ margin: 0, paddingLeft: 18 }}>
-                    {overview.risk_flags.map((x, idx) => (
-                      <li key={idx} style={{ fontSize: 13, lineHeight: 1.45 }}>{x}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
             </div>
           ) : null}
 
-          {/* Recommendation */}
           {recommendation ? (
             <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 14 }}>
               <div style={{ fontWeight: 800, marginBottom: 8 }}>Recommendation</div>
@@ -209,7 +243,6 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
             </div>
           ) : null}
 
-          {/* Options */}
           {options.length ? (
             <div style={{ display: "grid", gap: 12 }}>
               {options.map((opt) => (
@@ -221,50 +254,15 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
                     </div>
                     <div style={{ fontSize: 12, opacity: 0.75 }}>{opt.outcome}</div>
                   </div>
-
-                  {opt.proposed_financials ? (
-                    <div style={{ marginTop: 10, fontSize: 13, lineHeight: 1.45 }}>
-                      <div><b>Refund to homeowner:</b> ${Number(opt.proposed_financials.refund_to_homeowner || 0).toFixed(2)}</div>
-                      <div><b>Payout to contractor:</b> ${Number(opt.proposed_financials.payout_to_contractor || 0).toFixed(2)}</div>
-                      <div><b>Hold in escrow:</b> ${Number(opt.proposed_financials.hold_in_escrow || 0).toFixed(2)}</div>
-                      <div style={{ marginTop: 6, opacity: 0.9 }}>{opt.proposed_financials.explanation}</div>
-                    </div>
-                  ) : null}
-
-                  {!!opt.action_plan?.length ? (
-                    <div style={{ marginTop: 10 }}>
-                      <div style={{ fontWeight: 700, marginBottom: 6 }}>Action plan</div>
-                      <ul style={{ margin: 0, paddingLeft: 18 }}>
-                        {opt.action_plan.map((x, idx) => (
-                          <li key={idx} style={{ fontSize: 13, lineHeight: 1.45 }}>{x}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-
-                  {!!opt.evidence_citations?.length ? (
-                    <div style={{ marginTop: 10 }}>
-                      <div style={{ fontWeight: 700, marginBottom: 6 }}>Evidence citations</div>
-                      <ul style={{ margin: 0, paddingLeft: 18 }}>
-                        {opt.evidence_citations.map((c, idx) => (
-                          <li key={idx} style={{ fontSize: 13, lineHeight: 1.45 }}>
-                            <b>{c.source}</b> — {c.id}: {c.why_it_matters}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
                 </div>
               ))}
             </div>
           ) : null}
 
-          {/* Draft resolution agreement */}
           {draft ? (
             <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 14 }}>
               <div style={{ fontWeight: 900, marginBottom: 8 }}>Draft Resolution Agreement</div>
               <div style={{ fontWeight: 800, marginBottom: 8 }}>{draft.title}</div>
-
               {!!draft.terms?.length ? (
                 <ol style={{ margin: 0, paddingLeft: 18 }}>
                   {draft.terms.map((t, idx) => (
@@ -272,10 +270,7 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
                   ))}
                 </ol>
               ) : null}
-
-              {draft.signature_block ? (
-                <pre style={preStyle}>{draft.signature_block}</pre>
-              ) : null}
+              {draft.signature_block ? <pre style={preStyle}>{draft.signature_block}</pre> : null}
             </div>
           ) : null}
         </div>

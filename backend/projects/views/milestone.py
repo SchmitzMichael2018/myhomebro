@@ -5,11 +5,19 @@
 # - If user resolves to a contractor -> contractor-scoped milestones (unchanged)
 # - If not -> treat as subaccount and show ONLY milestones assigned to that user
 # - Adds /my-assigned/ debug endpoint for quick verification
+#
+# v2026-01-25 — Bulk AI milestone creation + auto-spread amounts
+# - POST /api/projects/milestones/bulk-ai-create/
+# - Single request to create suggested milestones
+# - Optional spread_total across milestones with rounding safety
+# - Mode replace/append
 
 from __future__ import annotations
 
 import logging
 import os
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from typing import List, Dict, Any, Optional
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -30,6 +38,7 @@ from projects.models import (
     MilestoneComment,
     Invoice,
     InvoiceStatus,
+    Agreement,
 )
 from projects.serializers.milestone import MilestoneSerializer
 from projects.serializers.milestone_file import MilestoneFileSerializer
@@ -41,6 +50,7 @@ from projects.utils.accounts import get_contractor_for_user
 logger = logging.getLogger(__name__)
 
 
+# ----------------------------- helpers ----------------------------- #
 def _money_to_cents(value) -> int:
     if value is None:
         return 0
@@ -48,6 +58,53 @@ def _money_to_cents(value) -> int:
         return int(round(float(value) * 100))
     except Exception:
         return 0
+
+
+def _to_decimal_amount(value) -> Decimal:
+    """
+    Parse amount into Decimal dollars (Milestone.amount is DecimalField).
+    Accepts: 0, 0.0, "0", "0.00", "$0.00", "1,234.56"
+    """
+    if value is None or value == "":
+        return Decimal("0.00")
+    if isinstance(value, Decimal):
+        return value
+    if isinstance(value, (int, float)):
+        return Decimal(str(value))
+    if isinstance(value, str):
+        s = value.strip().replace(",", "")
+        if s.startswith("$"):
+            s = s[1:].strip()
+        if s == "":
+            return Decimal("0.00")
+        try:
+            return Decimal(s)
+        except (InvalidOperation, ValueError):
+            return Decimal("0.00")
+    return Decimal("0.00")
+
+
+def _quantize_money(d: Decimal) -> Decimal:
+    return d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _spread_total_equal(total: Decimal, n: int) -> List[Decimal]:
+    """
+    Split total into n amounts with exact cent rounding where final sum == total.
+    """
+    if n <= 0:
+        return []
+    total = _quantize_money(total)
+    if total < 0:
+        total = Decimal("0.00")
+
+    # Work in cents to guarantee exactness
+    total_cents = int((total * 100).to_integral_value(rounding=ROUND_HALF_UP))
+    base = total_cents // n
+    rem = total_cents % n
+
+    cents = [base + (1 if i < rem else 0) for i in range(n)]
+    return [Decimal(c) / Decimal(100) for c in cents]
 
 
 def _stripe_init_or_raise():
@@ -247,6 +304,7 @@ def _refund_single_milestone_via_agreement_engine(*, request_user, milestone: Mi
     return {"ok": True, "refund_cents": int(refund_cents), "stripe_refund_id": rid}
 
 
+# ----------------------------- viewsets ----------------------------- #
 class MilestoneViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsContractorOrSubAccount, CanEditMilestones]
     serializer_class = MilestoneSerializer
@@ -266,7 +324,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
             Milestone.objects.select_related("agreement", "agreement__project")
             .filter(assignment_filter)
             .distinct()
-            .order_by("due_date", "order", "id")
+            .order_by("completion_date", "order", "id")
         )
 
     def get_queryset(self):
@@ -274,24 +332,29 @@ class MilestoneViewSet(viewsets.ModelViewSet):
 
         contractor = get_contractor_for_user(user)
         if contractor is not None:
-            # Contractor/owner scope (unchanged)
-            return (
-                Milestone.objects.select_related("agreement", "agreement__project")
+            qs = (
+                Milestone.objects
+                .select_related("agreement", "agreement__project")
                 .filter(agreement__project__contractor=contractor)
                 .order_by("order", "id")
             )
 
-        # Subaccount / employee scope: ONLY assigned milestones
+            agreement = (
+                self.request.query_params.get("agreement")
+                or self.request.query_params.get("agreement_id")
+            )
+            if agreement:
+                try:
+                    qs = qs.filter(agreement_id=int(agreement))
+                except (TypeError, ValueError):
+                    qs = qs.none()
+
+            return qs
+
         return self._assigned_queryset_for_user(user)
 
     @action(detail=False, methods=["get"], url_path="my-assigned")
     def my_assigned(self, request):
-        """
-        Debug-friendly endpoint:
-        GET /api/projects/milestones/my-assigned/
-
-        Returns count + list using the same logic as employee scope.
-        """
         user = request.user
         qs = self._assigned_queryset_for_user(user)
         ser = MilestoneSerializer(qs, many=True, context={"request": request})
@@ -326,11 +389,179 @@ class MilestoneViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
+
+        try:
+            self.perform_create(serializer)
+        except IntegrityError as exc:
+            logger.exception("IntegrityError creating milestone: %s", exc)
+            return Response(
+                {"detail": "Unable to create milestone due to a database constraint. Please refresh and try again."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
+    # ---------------- NEW: bulk AI creation ---------------- #
+    @action(detail=False, methods=["post"], url_path="bulk-ai-create")
+    def bulk_ai_create(self, request):
+        """
+        POST /api/projects/milestones/bulk-ai-create/
+
+        Body:
+        {
+          "agreement_id": 3,
+          "mode": "replace" | "append",
+          "spread_total": "1250.00",         // optional; if set and strategy == "equal" then spread across milestones
+          "spread_strategy": "equal" | "keep_existing_amounts",
+          "auto_schedule": false,            // optional; if true and Agreement.start/end set, sequential dates are applied
+          "milestones": [
+            {"title":"...", "description":"...", "start_date": null, "completion_date": null, "amount": 0},
+            ...
+          ]
+        }
+
+        Recommended behavior (MyHomeBro):
+        - AI bulk create should NOT be blocked by overlap validation.
+        - By default, AI milestones are scope/pricing drafts (dates may be null).
+        - If auto_schedule=true and agreement.start/end exist, we will assign sequential non-overlapping dates.
+        """
+        payload = request.data or {}
+        agreement_id = payload.get("agreement_id") or payload.get("agreement")
+        mode = (payload.get("mode") or "append").strip().lower()
+        spread_strategy = (payload.get("spread_strategy") or "equal").strip().lower()
+        milestones_in = payload.get("milestones") or []
+        auto_schedule = bool(payload.get("auto_schedule", False))
+
+        if not agreement_id:
+            return Response({"detail": "agreement_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if mode not in ("replace", "append"):
+            return Response({"detail": "mode must be 'replace' or 'append'."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not isinstance(milestones_in, list) or not milestones_in:
+            return Response({"detail": "milestones must be a non-empty list."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            ag_id = int(agreement_id)
+        except Exception:
+            return Response({"detail": "agreement_id must be an integer."}, status=status.HTTP_400_BAD_REQUEST)
+
+        agreement = get_object_or_404(Agreement.objects.select_related("project"), pk=ag_id)
+
+        # Ensure contractor scope (owner) matches agreement.project.contractor
+        contractor = get_contractor_for_user(request.user)
+        if contractor is None:
+            return Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
+
+        if getattr(agreement, "project", None) is None or getattr(agreement.project, "contractor_id", None) != contractor.id:
+            return Response({"detail": "Not authorized for this agreement."}, status=status.HTTP_403_FORBIDDEN)
+
+        # Parse spread_total if provided
+        spread_total_raw = payload.get("spread_total", None)
+        spread_total: Optional[Decimal] = None
+        if spread_total_raw not in (None, "", []):
+            try:
+                spread_total = _to_decimal_amount(spread_total_raw)
+            except Exception:
+                spread_total = None
+
+        # Determine ordering start point
+        existing_max = (
+            Milestone.objects.filter(agreement_id=ag_id)
+            .aggregate(Max("order"))["order__max"]
+            or 0
+        )
+        next_order = 1 if mode == "replace" else (existing_max + 1)
+
+        # If replace, delete existing milestones (ONLY if they have NOT been invoiced/started)
+        with transaction.atomic():
+            if mode == "replace":
+                existing = list(Milestone.objects.select_for_update().filter(agreement_id=ag_id))
+                started = [m.id for m in existing if _milestone_looks_started(m)]
+                if started:
+                    return Response(
+                        {"detail": f"Cannot replace milestones because some milestones are started/invoiced: {started}"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                Milestone.objects.filter(agreement_id=ag_id).delete()
+                next_order = 1
+
+            # Prepare amounts
+            n = len(milestones_in)
+            if spread_total is not None and spread_strategy == "equal":
+                amounts = _spread_total_equal(spread_total, n)
+            else:
+                amounts = [_quantize_money(_to_decimal_amount((m or {}).get("amount"))) for m in milestones_in]
+
+            # Auto-schedule (optional): sequential, non-overlapping date slices from Agreement.start to Agreement.end
+            ag_start = getattr(agreement, "start", None)
+            ag_end = getattr(agreement, "end", None)
+
+            schedule_pairs: List[tuple[Optional[date], Optional[date]]] = [(None, None)] * n
+            if auto_schedule and ag_start and ag_end and isinstance(ag_start, date) and isinstance(ag_end, date) and ag_end >= ag_start and n > 0:
+                total_days = (ag_end - ag_start).days
+                # Ensure at least 1 day window when possible
+                step = max(1, (total_days + 1) // n)  # inclusive-ish
+                cur = ag_start
+                pairs = []
+                for i in range(n):
+                    start_i = cur
+                    # last milestone ends at ag_end
+                    if i == n - 1:
+                        end_i = ag_end
+                    else:
+                        end_i = min(ag_end, cur + timedelta(days=step - 1))
+                    pairs.append((start_i, end_i))
+                    cur = min(ag_end, end_i + timedelta(days=1))
+                schedule_pairs = pairs
+
+            created_objs = []
+            for idx, m in enumerate(milestones_in):
+                if not isinstance(m, dict):
+                    return Response({"detail": "Each milestone must be an object."}, status=status.HTTP_400_BAD_REQUEST)
+
+                title = str(m.get("title") or "").strip() or f"Milestone {idx + 1}"
+                desc = str(m.get("description") or "").strip()
+
+                # Respect explicit dates from client ONLY if auto_schedule is False.
+                # If auto_schedule is True, we compute sequential dates.
+                start_date = None
+                completion_date = None
+
+                if auto_schedule:
+                    start_date, completion_date = schedule_pairs[idx]
+                else:
+                    start_date = m.get("start_date", None)
+                    completion_date = m.get("completion_date", None)
+                    if start_date == "":
+                        start_date = None
+                    if completion_date == "":
+                        completion_date = None
+                    # IMPORTANT: Do NOT auto-fill from agreement dates (prevents overlap blocking at Step 2)
+
+                data = {
+                    "agreement": ag_id,
+                    "order": next_order + idx,
+                    "title": title,
+                    "description": desc,
+                    "amount": str(amounts[idx]),
+                    "start_date": start_date,
+                    "completion_date": completion_date,
+
+                    # ✅ Critical: AI bulk create should never be blocked by overlap validation.
+                    "allow_overlap": True,
+                }
+
+                ser = MilestoneSerializer(data=data, context={"request": request})
+                ser.is_valid(raise_exception=True)
+                obj = ser.save()
+                created_objs.append(obj)
+
+        out = MilestoneSerializer(created_objs, many=True, context={"request": request}).data
+        return Response({"created": out, "count": len(created_objs)}, status=status.HTTP_201_CREATED)
+
+    # ---------------- existing actions ---------------- #
     @action(detail=True, methods=["post"], url_path="complete")
     def complete(self, request, pk=None):
         milestone: Milestone = self.get_object()
@@ -359,6 +590,11 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                 if hasattr(milestone, "completion_notes") and completion_notes:
                     setattr(milestone, "completion_notes", completion_notes)
                     update_fields.append("completion_notes")
+
+                # Track timestamp if your model uses completed_at
+                if hasattr(milestone, "completed_at"):
+                    milestone.completed_at = timezone.now()
+                    update_fields.append("completed_at")
 
                 milestone.save(update_fields=update_fields)
 
@@ -410,8 +646,8 @@ class MilestoneViewSet(viewsets.ModelViewSet):
             qs = qs.exclude(pk=milestone_id)
 
         conflicts = list(
-            qs.filter(Q(start_date__lte=end) & (Q(completion_date__gte=start) | Q(due_date__gte=start))).values(
-                "id", "title", "start_date", "completion_date", "due_date"
+            qs.filter(Q(start_date__lte=end) & (Q(completion_date__gte=start) | Q(completion_date__isnull=True))).values(
+                "id", "title", "start_date", "completion_date"
             )
         )
         return Response({"overlaps": bool(conflicts), "conflicts": conflicts}, status=200)
@@ -571,7 +807,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if milestone.descope_status in ("requested", "approved", "refunded"):
+        if getattr(milestone, "descope_status", "") in ("requested", "approved", "refunded"):
             return Response({"detail": f"Descope already in progress (status={milestone.descope_status})."}, status=status.HTTP_200_OK)
 
         reason = str((request.data or {}).get("reason") or "").strip()

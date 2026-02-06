@@ -1,9 +1,4 @@
 # backend/projects/serializers/agreement.py
-# v2025-12-12 — Adds escrow funding rollups (remaining_to_fund + escrow_total_required)
-# - Keeps existing address + milestone rollups
-# - Uses Agreement.total_cost override else milestone sum
-# - Exposes remaining funding amount so frontend Step4Finalize can be exact
-
 from __future__ import annotations
 
 from decimal import Decimal
@@ -12,6 +7,7 @@ from typing import Any, Dict, Optional, List
 from rest_framework import serializers
 
 from projects.models import Agreement, Homeowner
+from projects.models_ai_scope import AgreementAIScope  # ✅ persisted AI scope Q/A
 
 try:
     from projects.models import Milestone, Invoice  # type: ignore
@@ -52,6 +48,42 @@ def _normalize_project_type(value: Optional[str]) -> Optional[str]:
     return _NORMALIZE_PROJECT_TYPE.get(key, value)
 
 
+# ------------------------------------------------------------
+# ✅ NEW: Writable nested serializer for ai_scope PATCH support
+# ------------------------------------------------------------
+class AgreementAIScopeWriteSerializer(serializers.Serializer):
+    """
+    Allows PATCH payloads like:
+      {
+        "ai_scope": {
+          "questions": [...],
+          "answers": {...},
+          "scope_text": "..."
+        }
+      }
+
+    This DOES NOT replace your existing read-only get_ai_scope output.
+    It's only used to accept input and persist into AgreementAIScope.
+    """
+    questions = serializers.ListField(required=False)
+    answers = serializers.JSONField(required=False)
+    scope_text = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+
+def _safe_dict(v: Any) -> Dict[str, Any]:
+    return v if isinstance(v, dict) else {}
+
+
+def _safe_list(v: Any) -> list:
+    return v if isinstance(v, list) else []
+
+
+def _merge_dict(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(a or {})
+    out.update(b or {})
+    return out
+
+
 class AgreementSerializer(serializers.ModelSerializer):
     """
     Agreement serializer with robust project address handling and
@@ -81,6 +113,16 @@ class AgreementSerializer(serializers.ModelSerializer):
     # ✅ NEW: escrow rollups
     escrow_total_required = serializers.SerializerMethodField()
     remaining_to_fund = serializers.SerializerMethodField()
+
+    # ✅ AI scope clarifications
+    # Keep your existing READ behavior:
+    ai_scope = serializers.SerializerMethodField()
+    # ✅ NEW: Accept WRITE payloads without breaking read behavior
+    ai_scope_input = AgreementAIScopeWriteSerializer(write_only=True, required=False)
+
+    # ✅ OPTIONAL: allow "scope_clarifications" as a write alias for ai_scope.answers
+    # (Useful if your frontend/PDF calls it that.)
+    scope_clarifications = serializers.JSONField(write_only=True, required=False)
 
     # ---- WRITE aliases for warranty ----
     use_default_warranty = serializers.BooleanField(
@@ -236,18 +278,20 @@ class AgreementSerializer(serializers.ModelSerializer):
 
         qs = list(Milestone.objects.filter(agreement=obj))
 
-        total = Decimal("0")
+        total_amt = Decimal("0")
         for m in qs:
             amt = getattr(m, "amount", None)
             if isinstance(amt, Decimal):
-                total += amt
+                total_amt += amt
             elif amt not in (None, ""):
                 try:
-                    total += Decimal(str(amt))
+                    total_amt += Decimal(str(amt))
                 except Exception:
                     pass
 
-        start_dates = [m.start_date for m in qs if getattr(m, "start_date", None) is not None]
+        start_dates = [
+            m.start_date for m in qs if getattr(m, "start_date", None) is not None
+        ]
         min_start = min(start_dates) if start_dates else None
 
         end_candidates = []
@@ -259,7 +303,7 @@ class AgreementSerializer(serializers.ModelSerializer):
                     break
         max_end = max(end_candidates) if end_candidates else None
 
-        return {"sum_amount": total, "min_start": min_start, "max_end": max_end}
+        return {"sum_amount": total_amt, "min_start": min_start, "max_end": max_end}
 
     def get_display_milestone_total(self, obj):
         return self._milestone_rollups(obj)["sum_amount"]
@@ -305,7 +349,7 @@ class AgreementSerializer(serializers.ModelSerializer):
         except Exception:
             return val
 
-    # ✅ NEW: escrow rollups
+    # ✅ escrow rollups
     def get_escrow_total_required(self, obj):
         val = self.get_total(obj)
         try:
@@ -318,7 +362,11 @@ class AgreementSerializer(serializers.ModelSerializer):
         funded = getattr(obj, "escrow_funded_amount", None) or Decimal("0.00")
 
         try:
-            total_required = total_required if isinstance(total_required, Decimal) else Decimal(str(total_required))
+            total_required = (
+                total_required
+                if isinstance(total_required, Decimal)
+                else Decimal(str(total_required))
+            )
             funded = funded if isinstance(funded, Decimal) else Decimal(str(funded))
         except Exception:
             return None
@@ -328,6 +376,21 @@ class AgreementSerializer(serializers.ModelSerializer):
             remaining = Decimal("0.00")
 
         return float(remaining)
+
+    # ✅ AI scope clarifications (READ)
+    def get_ai_scope(self, obj):
+        try:
+            scope = getattr(obj, "ai_scope", None)
+            if not scope:
+                return None
+            return {
+                "questions": scope.questions or [],
+                "answers": scope.answers or {},
+                "scope_text": getattr(scope, "scope_text", "") or "",
+                "updated_at": scope.updated_at.isoformat() if scope.updated_at else None,
+            }
+        except Exception:
+            return None
 
     # ------------------------------------------------------------------
     # INPUT normalisation
@@ -355,14 +418,26 @@ class AgreementSerializer(serializers.ModelSerializer):
             elif model_key in data and data[model_key] is not None:
                 data[proj_key] = data[model_key]
 
+        # UI-only / client-only keys
         data.pop("project_address_same_as_homeowner", None)
+
+        # If frontend sends status, ignore it (server authoritative)
         data.pop("status", None)
+
+        # ✅ NEW: accept frontend "ai_scope" key by remapping it into our writable ai_scope_input
+        if "ai_scope" in data and data["ai_scope"] is not None and "ai_scope_input" not in data:
+            data["ai_scope_input"] = data.pop("ai_scope")
+
+        # ✅ NEW: accept frontend "scope_clarifications" key (write-only alias)
+        # We keep it separate and apply in update()
+        # (nothing else to do here)
 
         address_keys = {
             "project_address_line1",
             "project_address_line2",
             "project_address_city",
             "project_address_state",
+            "project_address_line1",
             "project_postal_code",
             "address_line1",
             "address_line2",
@@ -373,10 +448,12 @@ class AgreementSerializer(serializers.ModelSerializer):
             "zip_code",
         }
 
+        # Normalize empty strings -> None, but keep empty strings for address keys
         for key, value in list(data.items()):
             if key not in address_keys and isinstance(value, str) and value.strip() == "":
                 data[key] = None
 
+        # Warranty write-alias behavior
         use_default = data.pop("use_default_warranty", None)
         custom_text = data.pop("custom_warranty_text", None)
         if use_default is not None:
@@ -394,9 +471,91 @@ class AgreementSerializer(serializers.ModelSerializer):
 
         return super().to_internal_value(data)
 
+    # ------------------------------------------------------------------
+    # SAVE overrides (CRITICAL FIX)
+    # ------------------------------------------------------------------
+
+    def _pop_non_model_fields(self, data: dict) -> dict:
+        NON_MODEL_FIELDS = {
+            "address_line1",
+            "address_line2",
+            "city",
+            "state",
+            "postal_code",
+            "zip",
+            "zip_code",
+            "use_default_warranty",
+            "custom_warranty_text",
+        }
+        for key in NON_MODEL_FIELDS:
+            data.pop(key, None)
+        return data
+
+    def _persist_ai_scope(self, agreement: Agreement, ai_scope_payload: Optional[dict], scope_clarifications_payload: Optional[dict]) -> None:
+        """
+        Persist ai_scope updates into AgreementAIScope (OneToOne).
+        Merge answers; replace questions only when provided.
+        """
+        if ai_scope_payload is None and not isinstance(scope_clarifications_payload, dict):
+            return
+
+        # Treat scope_clarifications as answers alias if provided
+        if ai_scope_payload is None:
+            ai_scope_payload = {}
+        if isinstance(scope_clarifications_payload, dict) and scope_clarifications_payload:
+            ai_scope_payload = dict(ai_scope_payload)
+            ai_scope_payload["answers"] = _merge_dict(
+                _safe_dict(ai_scope_payload.get("answers")),
+                scope_clarifications_payload,
+            )
+
+        if not isinstance(ai_scope_payload, dict):
+            return
+
+        incoming_questions = _safe_list(ai_scope_payload.get("questions"))
+        incoming_answers = _safe_dict(ai_scope_payload.get("answers"))
+        incoming_scope_text = ai_scope_payload.get("scope_text", None)
+
+        scope_obj = getattr(agreement, "ai_scope", None)
+        if not scope_obj:
+            scope_obj = AgreementAIScope.objects.create(agreement=agreement)
+
+        if incoming_questions:
+            scope_obj.questions = incoming_questions
+
+        if incoming_answers:
+            scope_obj.answers = _merge_dict(_safe_dict(scope_obj.answers), incoming_answers)
+
+        if incoming_scope_text is not None:
+            scope_obj.scope_text = str(incoming_scope_text or "")
+
+        scope_obj.save()
+
+    def create(self, validated_data):
+        # ✅ pull ai scope inputs before popping fields
+        ai_scope_payload = validated_data.pop("ai_scope_input", None)
+        scope_clarifications_payload = validated_data.pop("scope_clarifications", None)
+
+        validated_data = self._pop_non_model_fields(validated_data)
+        agreement = Agreement.objects.create(**validated_data)
+
+        # ✅ persist ai scope after creating agreement
+        self._persist_ai_scope(agreement, ai_scope_payload, scope_clarifications_payload)
+
+        return agreement
+
     def update(self, instance, validated_data):
-        return super().update(instance, validated_data)
+        # ✅ pull ai scope inputs before popping fields
+        ai_scope_payload = validated_data.pop("ai_scope_input", None)
+        scope_clarifications_payload = validated_data.pop("scope_clarifications", None)
+
+        validated_data = self._pop_non_model_fields(validated_data)
+        instance = super().update(instance, validated_data)
+
+        # ✅ persist ai scope after updating agreement fields
+        self._persist_ai_scope(instance, ai_scope_payload, scope_clarifications_payload)
+
+        return instance
 
     def to_representation(self, instance):
-        rep = super().to_representation(instance)
-        return rep
+        return super().to_representation(instance)

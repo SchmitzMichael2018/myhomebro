@@ -1,5 +1,6 @@
 // /frontend/src/components/SendFundingLinkButton.jsx
 import React, { useMemo, useState } from "react";
+import { getAccessToken } from "../api";
 
 /**
  * SendFundingLinkButton
@@ -38,7 +39,6 @@ export default function SendFundingLinkButton({
     if (amount === null || amount === undefined || amount === "") return null;
     const n = Number(amount);
     if (Number.isNaN(n)) return null;
-    // Round to cents for safety
     return Math.round(n * 100) / 100;
   }, [amount]);
 
@@ -47,11 +47,8 @@ export default function SendFundingLinkButton({
     if (isSending) return true;
     if (!resolvedEndpoint) return true;
     if (!isFullySigned) return true;
-
-    // Must have a positive amount to fund
     if (normalizedAmount === null) return true;
     if (normalizedAmount <= 0) return true;
-
     return false;
   }, [disabled, isSending, resolvedEndpoint, isFullySigned, normalizedAmount]);
 
@@ -63,12 +60,9 @@ export default function SendFundingLinkButton({
     brand:
       "bg-gradient-to-r from-indigo-600 to-violet-600 text-white border-indigo-700 " +
       "hover:from-indigo-700 hover:to-violet-700 focus:ring-violet-500",
-    success:
-      "bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700 focus:ring-emerald-500",
-    secondary:
-      "bg-white text-gray-900 border-gray-300 hover:bg-gray-50 focus:ring-gray-400",
-    danger:
-      "bg-red-600 text-white border-red-700 hover:bg-red-700 focus:ring-red-500",
+    success: "bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700 focus:ring-emerald-500",
+    secondary: "bg-white text-gray-900 border-gray-300 hover:bg-gray-50 focus:ring-gray-400",
+    danger: "bg-red-600 text-white border-red-700 hover:bg-red-700 focus:ring-red-500",
   };
 
   const disabledClass =
@@ -81,16 +75,9 @@ export default function SendFundingLinkButton({
     try {
       setIsSending(true);
 
-      const token =
-        localStorage.getItem("access") ||
-        localStorage.getItem("access_token") ||
-        localStorage.getItem("token") ||
-        "";
+      const token = getAccessToken() || "";
 
-      // Send amount explicitly
-      const payload = {
-        amount: normalizedAmount, // e.g. 25.00
-      };
+      const payload = { amount: normalizedAmount };
 
       const res = await fetch(resolvedEndpoint, {
         method: "POST",
@@ -125,8 +112,7 @@ export default function SendFundingLinkButton({
       // eslint-disable-next-line no-alert
       alert(data?.detail || "Funding link sent to homeowner.");
     } catch (err) {
-      const msg =
-        err?.message || "Unexpected error while sending funding link.";
+      const msg = err?.message || "Unexpected error while sending funding link.";
       setLastError(msg);
       if (onError) onError(msg);
     } finally {
@@ -140,12 +126,7 @@ export default function SendFundingLinkButton({
         type="button"
         onClick={handleSend}
         disabled={isDisabled}
-        className={[
-          baseClass,
-          variants[variant] || variants.brand,
-          isDisabled ? disabledClass : "",
-          className,
-        ].join(" ")}
+        className={[baseClass, variants[variant] || variants.brand, isDisabled ? disabledClass : "", className].join(" ")}
         title={
           !isFullySigned
             ? "Agreement must be fully signed before sending funding link."
@@ -164,9 +145,7 @@ export default function SendFundingLinkButton({
         )}
       </button>
 
-      {lastError ? (
-        <div className="text-sm text-red-600">{lastError}</div>
-      ) : null}
+      {lastError ? <div className="text-sm text-red-600">{lastError}</div> : null}
     </div>
   );
 }

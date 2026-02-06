@@ -1,31 +1,55 @@
 # core/celery_app.py
 
-from celery import Celery
 import os
-from django.conf import settings
+import sys
+from pathlib import Path
 
-# Set the default Django settings module for Celery
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
+from celery import Celery
 
-app = Celery('core')
+# -----------------------------------------------------------------------------
+# Ensure the repo is on sys.path (helps when Celery is launched outside manage.py)
+# -----------------------------------------------------------------------------
+REPO_ROOT = Path("/home/myhomebro/backend")
+DJANGO_ROOT = REPO_ROOT / "backend"
 
-# Load task modules from all registered Django app configs
-app.config_from_object('django.conf:settings', namespace='CELERY')
+for p in (str(REPO_ROOT), str(DJANGO_ROOT)):
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
-# Redis Broker URL (Make sure Redis is running)
-app.conf.broker_url = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+# -----------------------------------------------------------------------------
+# Load .env for worker processes (Celery does NOT automatically load it)
+# -----------------------------------------------------------------------------
+ENV_PATH = REPO_ROOT / ".env"
+try:
+    if ENV_PATH.exists():
+        from dotenv import load_dotenv
+        load_dotenv(dotenv_path=str(ENV_PATH), override=True)
+except Exception:
+    # Never crash Celery boot due to dotenv issues
+    pass
 
-# Optional: Set a result backend (also using Redis)
-app.conf.result_backend = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+# -----------------------------------------------------------------------------
+# Django settings module for Celery
+# -----------------------------------------------------------------------------
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "core.settings")
 
-# Auto-discover tasks from your Django apps
+from django.conf import settings  # noqa: E402
+
+app = Celery("core")
+
+# Load Celery settings from Django settings.py (CELERY_ namespace)
+app.config_from_object("django.conf:settings", namespace="CELERY")
+
+# Broker / backend (prefer REDIS_URL if present)
+redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+app.conf.broker_url = redis_url
+app.conf.result_backend = redis_url
+
+# Discover tasks from installed apps
 app.autodiscover_tasks(lambda: settings.INSTALLED_APPS)
 
 # Optional: Custom task settings (tune as needed)
-app.conf.task_serializer = 'json'
-app.conf.result_serializer = 'json'
-app.conf.accept_content = ['json']
-app.conf.task_always_eager = False  # Set to True for debugging (synchronous execution)
-
-
-
+app.conf.task_serializer = "json"
+app.conf.result_serializer = "json"
+app.conf.accept_content = ["json"]
+app.conf.task_always_eager = False  # Set True for debugging (synchronous execution)

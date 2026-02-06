@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from django.conf import settings
 from django.core.cache import cache
+from rest_framework.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -22,21 +24,28 @@ class AIRecommendationResult:
     cached: bool = False
 
 
+# ---------------------------------------------------------------------------
+# Feature flags
+# ---------------------------------------------------------------------------
 def _ai_enabled() -> bool:
-    return bool(getattr(settings, "AI_ENABLED", False)) and bool(getattr(settings, "AI_DISPUTES_ENABLED", False))
+    return bool(getattr(settings, "AI_ENABLED", False)) and bool(
+        getattr(settings, "AI_DISPUTES_ENABLED", False)
+    )
 
 
 def _recommendations_enabled() -> bool:
     # Optional third flag so you can enable summaries but keep recommendations off
-    return bool(getattr(settings, "AI_DISPUTE_RECOMMENDATIONS_ENABLED", True))
+    return bool(getattr(settings, "AI_DISPUTE_RECOMMENDATIONS_ENABLED", False))
 
 
+# ---------------------------------------------------------------------------
+# Cache helpers
+# ---------------------------------------------------------------------------
 def _cache_key(dispute_id: int) -> str:
     return f"mhb:ai:dispute:{dispute_id}:recommendation:v1"
 
 
 def _get_cache_ttl_seconds() -> int:
-    # Default cache TTL: 24 hours. You can override in settings.
     return int(getattr(settings, "AI_DISPUTE_RECOMMENDATION_CACHE_TTL_SECONDS", 86400))
 
 
@@ -47,35 +56,53 @@ def _safe_json_load(s: str) -> Optional[dict]:
         return None
 
 
+# ---------------------------------------------------------------------------
+# OpenAI client (SAFE + LAZY)
+# ---------------------------------------------------------------------------
 def _require_openai_client():
     """
-    Lazy import so the server doesn't error if the OpenAI package isn't installed
-    while AI is disabled.
+    Create an OpenAI client only when AI is enabled and a key exists.
+
+    Key lookup order:
+      1) settings.OPENAI_API_KEY
+      2) settings.AI_OPENAI_API_KEY (legacy alias)
+      3) os.environ["OPENAI_API_KEY"] (OpenAI SDK default)
+
+    Raises DRF ValidationError so the API returns:
+      {"detail": "..."}
     """
+
+    # HARD GATE: feature flags first
+    if not _ai_enabled() or not _recommendations_enabled():
+        raise ValidationError("AI dispute recommendations are disabled.")
+
     try:
         from openai import OpenAI  # type: ignore
     except Exception as e:
-        raise RuntimeError(
-            "OpenAI SDK not installed. Install it (pip install openai) or keep AI disabled."
+        raise ValidationError(
+            "OpenAI SDK is not installed. Install it or disable AI features."
         ) from e
 
-    api_key = getattr(settings, "OPENAI_API_KEY", None) or getattr(settings, "AI_OPENAI_API_KEY", None)
+    api_key = (
+        getattr(settings, "OPENAI_API_KEY", None)
+        or getattr(settings, "AI_OPENAI_API_KEY", None)
+        or os.getenv("OPENAI_API_KEY")
+    )
+
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is not set. Keep AI disabled or configure key in environment/settings.")
+        raise ValidationError("OPENAI_API_KEY is not set.")
 
     return OpenAI(api_key=api_key)
 
 
-def build_dispute_recommendation_prompt(*, dispute: Any, evidence_context: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Produces a JSON-schema driven instruction set for the model.
-
-    evidence_context should be the exact structure your evidence pipeline outputs
-    (messages, photos, docs, milestones, invoice data, dispute metadata, etc).
-    """
-    # You can override the model in settings.
+# ---------------------------------------------------------------------------
+# Prompt builder
+# ---------------------------------------------------------------------------
+def build_dispute_recommendation_prompt(
+    *, dispute: Any, evidence_context: Dict[str, Any]
+) -> Dict[str, Any]:
     model = getattr(settings, "AI_OPENAI_MODEL_DISPUTE_RECOMMENDATION", None) or getattr(
-        settings, "AI_OPENAI_MODEL", "gpt-4.1-mini"
+        settings, "AI_OPENAI_MODEL", "gpt-4o-mini"
     )
 
     system = (
@@ -89,7 +116,6 @@ def build_dispute_recommendation_prompt(*, dispute: Any, evidence_context: Dict[
         "- Produce output that can be shown to both parties.\n"
     )
 
-    # This is the “what the AI sees”. Keep it deterministic and auditable.
     user = {
         "dispute": {
             "id": getattr(dispute, "id", None),
@@ -122,7 +148,12 @@ def build_dispute_recommendation_prompt(*, dispute: Any, evidence_context: Dict[
                         "missing_info": {"type": "array", "items": {"type": "string"}},
                         "risk_flags": {"type": "array", "items": {"type": "string"}},
                     },
-                    "required": ["neutral_summary", "main_issues", "missing_info", "risk_flags"],
+                    "required": [
+                        "neutral_summary",
+                        "main_issues",
+                        "missing_info",
+                        "risk_flags",
+                    ],
                 },
                 "recommendation": {
                     "type": "object",
@@ -133,60 +164,22 @@ def build_dispute_recommendation_prompt(*, dispute: Any, evidence_context: Dict[
                         "confidence": {"type": "number"},
                         "notes_for_parties": {"type": "string"},
                     },
-                    "required": ["recommended_option_id", "why_this_option", "confidence", "notes_for_parties"],
+                    "required": [
+                        "recommended_option_id",
+                        "why_this_option",
+                        "confidence",
+                        "notes_for_parties",
+                    ],
                 },
-                "options": {
-                    "type": "array",
-                    "minItems": 3,
-                    "maxItems": 3,
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": False,
-                        "properties": {
-                            "option_id": {"type": "string"},
-                            "label": {"type": "string"},
-                            "outcome": {"type": "string"},
-                            "proposed_financials": {
-                                "type": "object",
-                                "additionalProperties": False,
-                                "properties": {
-                                    "refund_to_homeowner": {"type": "number"},
-                                    "payout_to_contractor": {"type": "number"},
-                                    "hold_in_escrow": {"type": "number"},
-                                    "explanation": {"type": "string"},
-                                },
-                                "required": ["refund_to_homeowner", "payout_to_contractor", "hold_in_escrow", "explanation"],
-                            },
-                            "action_plan": {"type": "array", "items": {"type": "string"}},
-                            "evidence_citations": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "additionalProperties": False,
-                                    "properties": {
-                                        "source": {"type": "string"},
-                                        "id": {"type": "string"},
-                                        "why_it_matters": {"type": "string"},
-                                    },
-                                    "required": ["source", "id", "why_it_matters"],
-                                },
-                            },
-                        },
-                        "required": ["option_id", "label", "outcome", "proposed_financials", "action_plan", "evidence_citations"],
-                    },
-                },
-                "draft_resolution_agreement": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "properties": {
-                        "title": {"type": "string"},
-                        "terms": {"type": "array", "items": {"type": "string"}},
-                        "signature_block": {"type": "string"},
-                    },
-                    "required": ["title", "terms", "signature_block"],
-                },
+                "options": {"type": "array"},
+                "draft_resolution_agreement": {"type": "object"},
             },
-            "required": ["overview", "recommendation", "options", "draft_resolution_agreement"],
+            "required": [
+                "overview",
+                "recommendation",
+                "options",
+                "draft_resolution_agreement",
+            ],
         },
     }
 
@@ -198,13 +191,14 @@ def build_dispute_recommendation_prompt(*, dispute: Any, evidence_context: Dict[
     }
 
 
-def generate_dispute_recommendation(*, dispute: Any, evidence_context: Dict[str, Any], force: bool = False) -> AIRecommendationResult:
-    """
-    Returns a structured, display-ready recommendation payload.
-    Uses cache to avoid repeated model calls.
-    """
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+def generate_dispute_recommendation(
+    *, dispute: Any, evidence_context: Dict[str, Any], force: bool = False
+) -> AIRecommendationResult:
     if not _ai_enabled() or not _recommendations_enabled():
-        raise PermissionError("AI dispute recommendations are disabled by settings.")
+        raise ValidationError("AI dispute recommendations are disabled.")
 
     key = _cache_key(int(dispute.id))
     if not force:
@@ -217,10 +211,11 @@ def generate_dispute_recommendation(*, dispute: Any, evidence_context: Dict[str,
                 cached=True,
             )
 
-    prompt = build_dispute_recommendation_prompt(dispute=dispute, evidence_context=evidence_context)
+    prompt = build_dispute_recommendation_prompt(
+        dispute=dispute, evidence_context=evidence_context
+    )
     client = _require_openai_client()
 
-    # Using Responses API with JSON schema enforcement (works with modern OpenAI SDKs)
     model = prompt["model"]
 
     try:
@@ -228,7 +223,12 @@ def generate_dispute_recommendation(*, dispute: Any, evidence_context: Dict[str,
             model=model,
             input=[
                 {"role": "system", "content": prompt["system"]},
-                {"role": "user", "content": json.dumps(prompt["user_json"], ensure_ascii=False)},
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        prompt["user_json"], ensure_ascii=False
+                    ),
+                },
             ],
             text={
                 "format": {
@@ -241,15 +241,13 @@ def generate_dispute_recommendation(*, dispute: Any, evidence_context: Dict[str,
         )
     except Exception as e:
         logger.exception("OpenAI call failed for dispute recommendation.")
-        raise RuntimeError(f"AI recommendation failed: {e}") from e
+        raise ValidationError(f"AI recommendation failed: {e}") from e
 
-    # SDK returns output_text that should be JSON when using json_schema format
     raw = getattr(resp, "output_text", None) or ""
     payload = _safe_json_load(raw)
     if not isinstance(payload, dict):
-        raise RuntimeError("AI recommendation returned invalid JSON output.")
+        raise ValidationError("AI recommendation returned invalid JSON output.")
 
-    # Attach metadata for debugging/audit (safe, no secrets)
     payload["_artifact_type"] = "recommendation"
     payload["_model"] = model
 

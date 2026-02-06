@@ -2,12 +2,45 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Optional
 
 from django.db.models import Q
 from rest_framework import serializers
 
 from projects.models import Milestone, Agreement
+
+
+def _today() -> date:
+    try:
+        from django.utils.timezone import now
+        return now().date()
+    except Exception:
+        return date.today()
+
+
+def _normalize_money(value):
+    """
+    Best-effort normalization for incoming amount values.
+    This does NOT force cents. It simply cleans "$1,234.50" -> Decimal("1234.50")
+    If your model uses Integer cents instead, change this accordingly.
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float, Decimal)):
+        try:
+            return Decimal(str(value))
+        except Exception:
+            return None
+    if isinstance(value, str):
+        s = value.strip().replace(",", "")
+        if s.startswith("$"):
+            s = s[1:].strip()
+        try:
+            return Decimal(s)
+        except (InvalidOperation, ValueError):
+            return None
+    return None
 
 
 class MilestoneSerializer(serializers.ModelSerializer):
@@ -23,6 +56,11 @@ class MilestoneSerializer(serializers.ModelSerializer):
     Validates:
       - Blocks date overlaps within same agreement unless allow_overlap=true.
       - Accepts incoming 'end_date' from clients and maps it to 'completion_date'.
+
+    HARDENING (NEW):
+      - If clients (AI) send completion_date/null and omit end_date,
+        we auto-fill completion_date (and start_date if missing) from Agreement dates,
+        preventing DB NOT NULL 500s.
     """
 
     agreement_id    = serializers.SerializerMethodField()
@@ -38,7 +76,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
     class Meta:
         model  = Milestone
         fields = "__all__"
-        # Optional: make computed fields explicit read-only (harmless even with "__all__")
         read_only_fields = (
             "agreement_id",
             "project_title",
@@ -120,10 +157,8 @@ class MilestoneSerializer(serializers.ModelSerializer):
     def get_due_date(self, obj: Milestone):
         """
         Unified 'due date' convenience used by UI and PDFs.
-        We inspect several commonly-used fields (old & new) and return the first non-empty one.
         Priority:
           completion_date → due_date → end_date → end → target_date → finish_date → scheduled_date → start_date
-        Return a date/datetime (so DRF renders it) or None.
         """
         for attr in (
             "completion_date",
@@ -149,17 +184,16 @@ class MilestoneSerializer(serializers.ModelSerializer):
             due = self.get_due_date(obj)
             if not due:
                 return False
+
             from django.utils.timezone import now
             today = now().date()
             completed = bool(getattr(obj, "completed", False))
 
-            # Normalize to date() if it's a datetime
             if isinstance(due, datetime):
                 due_date = due.date()
             elif isinstance(due, date):
                 due_date = due
             else:
-                # Unknown type; do not flag overdue
                 return False
 
             return (not completed) and (due_date < today)
@@ -170,13 +204,12 @@ class MilestoneSerializer(serializers.ModelSerializer):
     @staticmethod
     def _as_date(value) -> Optional[date]:
         """Accept a date/datetime or ISO-like string and return a date, else None."""
-        if value is None:
+        if value is None or value == "":
             return None
         if isinstance(value, date) and not isinstance(value, datetime):
             return value
         if isinstance(value, datetime):
             return value.date()
-        # strings like 'YYYY-MM-DD' or ISO
         try:
             return datetime.fromisoformat(str(value)).date()
         except Exception:
@@ -184,8 +217,8 @@ class MilestoneSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         """
-        Map incoming 'end_date' → 'completion_date' and run an overlap check using only
-        'start_date' and 'completion_date' (no reference to a non-existent 'due_date').
+        Map incoming 'end_date' → 'completion_date', auto-fill missing dates (NEW),
+        then run overlap validation using start_date/completion_date.
         """
         allow_overlap = attrs.get("allow_overlap", False)
 
@@ -195,6 +228,13 @@ class MilestoneSerializer(serializers.ModelSerializer):
             if "completion_date" not in attrs:
                 attrs["completion_date"] = incoming_end
 
+        # Optional: normalize amount-like strings if your model uses DecimalField and clients send "$0.00"
+        if "amount" in getattr(self, "initial_data", {}):
+            incoming_amount = _normalize_money(self.initial_data.get("amount"))
+            # Only set if serializer is going to write 'amount' and it isn't already in attrs
+            if incoming_amount is not None and "amount" not in attrs:
+                attrs["amount"] = incoming_amount
+
         # Resolve agreement for partial updates
         agreement = attrs.get("agreement") or getattr(self.instance, "agreement", None)
 
@@ -202,9 +242,28 @@ class MilestoneSerializer(serializers.ModelSerializer):
         start_raw = attrs.get("start_date", getattr(self.instance, "start_date", None))
         end_raw   = attrs.get("completion_date", getattr(self.instance, "completion_date", None))
 
-        # Coerce to date for safety (handles strings on manually-constructed serializers)
         start = self._as_date(start_raw)
         end   = self._as_date(end_raw)
+
+        # ---------------- NEW: auto-fill dates to prevent NOT NULL 500s ----------------
+        # If AI posts null dates, your DB may require completion_date (or start_date).
+        # We fill from Agreement end/start, else today.
+        if agreement:
+            ag_start = self._as_date(getattr(agreement, "start_date", None))
+            ag_end   = self._as_date(getattr(agreement, "end_date", None))
+        else:
+            ag_start = None
+            ag_end = None
+
+        if start is None:
+            start = ag_start or _today()
+            # only set if client didn't explicitly send start_date in partial update
+            attrs["start_date"] = start
+
+        if end is None:
+            end = ag_end or ag_start or start or _today()
+            attrs["completion_date"] = end
+        # ---------------------------------------------------------------------------
 
         # Basic range sanity
         if start and end and start > end:
@@ -212,9 +271,8 @@ class MilestoneSerializer(serializers.ModelSerializer):
                 "completion_date": "Completion date must be on or after the start date."
             })
 
-        # Skip if insufficient context or override requested
+        # Skip overlap check if override requested or insufficient context
         if not (agreement and start and end) or allow_overlap:
-            # Strip non-model helper key so it never reaches create()/update()
             attrs.pop("allow_overlap", None)
             return attrs
 
@@ -223,7 +281,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
         if self.instance:
             qs = qs.exclude(pk=self.instance.pk)
 
-        # Intervals [s1,e1] & [s2,e2] overlap if s1 <= e2 and s2 <= e1
         conflict = qs.filter(
             Q(start_date__lte=end) & Q(completion_date__gte=start)
         ).exists()
@@ -236,7 +293,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
                 )
             })
 
-        # Ensure helper key never reaches model save
         attrs.pop("allow_overlap", None)
         return attrs
 
@@ -247,7 +303,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
         data["project_title"]   = self.get_project_title(instance)
         data["homeowner_name"]  = self.get_homeowner_name(instance)
         data["homeowner_email"] = self.get_homeowner_email(instance)
-        data["due_date"]        = self.get_due_date(instance)   # DRF will render date/datetime properly
+        data["due_date"]        = self.get_due_date(instance)
         data["is_overdue"]      = self.get_is_overdue(instance)
         # Mirror end_date for UIs that still read it
         data["end_date"]        = data.get("completion_date")

@@ -7,6 +7,7 @@ from django.db.models import Q
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from .models_dispute import Dispute, DisputeAttachment
+from .models_ai_scope import AgreementAIScope  # noqa: E402,F401
 import uuid
 import secrets
 from datetime import timedelta
@@ -907,4 +908,6 @@ from .models_schedule import EmployeeWorkSchedule, EmployeeScheduleException  # 
 from .models_ai_artifacts import DisputeAIArtifact  # noqa: E402,F401
 
 from .models_ai_entitlements import ContractorAIEntitlement  # noqa: E402,F401
+from .models_ai_purchases import DisputeAIPurchase  # noqa: E402,F401
+
 

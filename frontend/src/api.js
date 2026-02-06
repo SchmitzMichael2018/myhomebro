@@ -3,12 +3,22 @@
 // UPDATED v2026-01-04 — add safe debug logging helpers for 400/422 responses (no behavior changes)
 // UPDATED v2026-01-08 — add contractor Business Dashboard summary API
 // UPDATED v2026-01-10 — add agreement close & archive helpers
+// UPDATED v2026-01-23 — token key hardening (read legacy keys, stop writing them)
 
-console.log("api.js v2026-01-10-agreement-closeout");
+console.log("api.js v2026-01-23-token-hardening");
 
 import axios from "axios";
 
-const TOK = { access: "access", refresh: "refresh", legacyAccess: "accessToken" };
+// Canonical keys
+const TOK = {
+  access: "access",
+  refresh: "refresh",
+  // legacy reads only (do NOT write these)
+  legacyAccessToken: "access_token",
+  legacyToken: "token",
+  legacyAccessTokenCamel: "accessToken",
+};
+
 const BASE_URL = "/api";
 
 let MEM_ACCESS = null;
@@ -134,11 +144,22 @@ export function extractApiErrorMessage(err) {
 export const getAccessToken = () => {
   if (MEM_ACCESS) return MEM_ACCESS;
   try {
-    return (
+    // Canonical first
+    const canon =
       localStorage.getItem(TOK.access) ||
       sessionStorage.getItem(TOK.access) ||
-      localStorage.getItem(TOK.legacyAccess) ||
-      sessionStorage.getItem(TOK.legacyAccess)
+      null;
+    if (canon) return canon;
+
+    // Legacy reads (support older code paths)
+    return (
+      localStorage.getItem(TOK.legacyAccessToken) ||
+      sessionStorage.getItem(TOK.legacyAccessToken) ||
+      localStorage.getItem(TOK.legacyToken) ||
+      sessionStorage.getItem(TOK.legacyToken) ||
+      localStorage.getItem(TOK.legacyAccessTokenCamel) ||
+      sessionStorage.getItem(TOK.legacyAccessTokenCamel) ||
+      null
     );
   } catch {
     return null;
@@ -148,7 +169,11 @@ export const getAccessToken = () => {
 export const getRefreshToken = () => {
   if (MEM_REFRESH) return MEM_REFRESH;
   try {
-    return localStorage.getItem(TOK.refresh) || sessionStorage.getItem(TOK.refresh);
+    return (
+      localStorage.getItem(TOK.refresh) ||
+      sessionStorage.getItem(TOK.refresh) ||
+      null
+    );
   } catch {
     return null;
   }
@@ -184,20 +209,34 @@ export function setAuthToken(access, refresh = null, remember = true) {
   try {
     const store = remember ? localStorage : sessionStorage;
     const other = remember ? sessionStorage : localStorage;
+
     if (access) {
+      // ✅ canonical write ONLY
       store.setItem(TOK.access, access);
-      store.setItem(TOK.legacyAccess, access);
+
+      // ❌ do not write legacy keys anymore (prevents collisions/overwrites)
+      // store.setItem(TOK.legacyAccessTokenCamel, access);
+      // store.setItem(TOK.legacyAccessToken, access);
+      // store.setItem(TOK.legacyToken, access);
     }
     if (refresh) store.setItem(TOK.refresh, refresh);
+
+    // Clear out the other store’s canonical keys
     other.removeItem(TOK.access);
     other.removeItem(TOK.refresh);
-    other.removeItem(TOK.legacyAccess);
+
+    // Also scrub legacy keys in both storages to reduce ambiguity
+    localStorage.removeItem(TOK.legacyAccessToken);
+    localStorage.removeItem(TOK.legacyToken);
+    localStorage.removeItem(TOK.legacyAccessTokenCamel);
+    sessionStorage.removeItem(TOK.legacyAccessToken);
+    sessionStorage.removeItem(TOK.legacyToken);
+    sessionStorage.removeItem(TOK.legacyAccessTokenCamel);
   } catch {}
   applyAuthHeader(access);
 }
 
-export const setTokens = (a, r, remember = true) =>
-  setAuthToken(a, r, remember);
+export const setTokens = (a, r, remember = true) => setAuthToken(a, r, remember);
 
 export function clearAuth(redirect = false) {
   MEM_ACCESS = null;
@@ -205,10 +244,16 @@ export function clearAuth(redirect = false) {
   try {
     localStorage.removeItem(TOK.access);
     localStorage.removeItem(TOK.refresh);
-    localStorage.removeItem(TOK.legacyAccess);
     sessionStorage.removeItem(TOK.access);
     sessionStorage.removeItem(TOK.refresh);
-    sessionStorage.removeItem(TOK.legacyAccess);
+
+    // scrub legacy keys too
+    localStorage.removeItem(TOK.legacyAccessToken);
+    localStorage.removeItem(TOK.legacyToken);
+    localStorage.removeItem(TOK.legacyAccessTokenCamel);
+    sessionStorage.removeItem(TOK.legacyAccessToken);
+    sessionStorage.removeItem(TOK.legacyToken);
+    sessionStorage.removeItem(TOK.legacyAccessTokenCamel);
   } catch {}
   applyAuthHeader(null);
 
@@ -225,9 +270,7 @@ function normalizeForJson(config) {
 
   const url = config.url || "";
   const isAttachment =
-    /\/attachments\/|\/milestone-files\/|\/license-upload\/|\/upload\//i.test(
-      url
-    );
+    /\/attachments\/|\/milestone-files\/|\/license-upload\/|\/upload\//i.test(url);
 
   if (isAttachment) return config;
 
@@ -283,9 +326,7 @@ function installInterceptors(instance) {
   let queue = [];
 
   const flush = (err, token) => {
-    queue.forEach(({ resolve, reject }) =>
-      err ? reject(err) : resolve(token)
-    );
+    queue.forEach(({ resolve, reject }) => (err ? reject(err) : resolve(token)));
     queue = [];
   };
 
@@ -304,9 +345,7 @@ function installInterceptors(instance) {
       config._retry = true;
 
       if (isRefreshing) {
-        return new Promise((resolve, reject) =>
-          queue.push({ resolve, reject })
-        );
+        return new Promise((resolve, reject) => queue.push({ resolve, reject }));
       }
 
       isRefreshing = true;
@@ -344,9 +383,7 @@ applyAuthHeader(getAccessToken());
 // Business Dashboard API
 // ------------------------
 export async function getContractorBusinessDashboardSummary(range = "30") {
-  const res = await api.get(
-    `/projects/business/contractor/summary/?range=${range}`
-  );
+  const res = await api.get(`/projects/business/contractor/summary/?range=${range}`);
   return res.data;
 }
 
@@ -355,17 +392,13 @@ export async function getContractorBusinessDashboardSummary(range = "30") {
 // ------------------------
 export async function getAgreementClosureStatus(agreementId) {
   if (!agreementId) throw new Error("agreementId is required");
-  const res = await api.get(
-    `/projects/agreements/${agreementId}/closure_status/`
-  );
+  const res = await api.get(`/projects/agreements/${agreementId}/closure_status/`);
   return res.data;
 }
 
 export async function closeAndArchiveAgreement(agreementId) {
   if (!agreementId) throw new Error("agreementId is required");
-  const res = await api.post(
-    `/projects/agreements/${agreementId}/close_and_archive/`
-  );
+  const res = await api.post(`/projects/agreements/${agreementId}/close_and_archive/`);
   return res.data;
 }
 

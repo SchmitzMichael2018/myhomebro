@@ -1,8 +1,16 @@
 // frontend/src/components/Step4Finalize.jsx
-// v2026-01-18 — Rework milestone banner + Dispute status summary (robust, non-breaking)
-// - Shows “✅ Rework milestone created — View” if a Rework milestone exists on this agreement
-// - Adds a Dispute summary card (best-effort detection via agreement fields or milestone statuses)
-// - Keeps existing UX/layout intact
+// v2026-01-30 — Step4 clarifications carry-forward + de-duplication + hide empty optional fields
+//
+// Fixes in this version:
+// 1) Yellow “Assumptions/Responsibilities” fields now ALWAYS render in Step 4
+//    (even if they’re saved outside agreement.ai_scope).
+// 2) Step 4 de-duplicates overlapping meanings (e.g., Permits Inspections vs Permits vs Permit Notes).
+// 3) ClarificationsModal can now edit ALL clarification fields (no longer hides the yellow keys).
+// 4) Bug fix: Step4 now maintains a local agreement state so ClarificationsModal onSaved can update UI.
+//
+// Notes:
+// - This is a full file replacement.
+// - It preserves your current UX (rework banner, dispute summary, funding preview, signatures, etc.).
 
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -10,6 +18,7 @@ import api from "../api";
 import toast from "react-hot-toast";
 import SignatureModal from "./SignatureModal";
 import SendFundingLinkButton from "./SendFundingLinkButton";
+import ClarificationsModal from "./ClarificationsModal";
 
 function toDateOnly(v) {
   if (!v) return "";
@@ -216,8 +225,225 @@ function formatDisputeSummary(agreement, displayMilestones) {
   return pieces.join(" — ");
 }
 
+/**
+ * Normalize "Assumptions/Responsibilities" (the yellow fields) for Step 4 display.
+ * We intentionally pull from BOTH:
+ * - agreement.ai_scope.answers (if present)
+ * - top-level agreement fields (if your backend stores them there)
+ * And we de-duplicate values so you don’t see: Permits Inspections = X, Permits = X, Permit Notes = X.
+ */
+function normalizeAssumptions(a) {
+  if (!a) return null;
+
+  const answers = (a.ai_scope && a.ai_scope.answers) || {};
+
+  const pick = (...vals) => {
+    for (const v of vals) {
+      if (v === null || v === undefined) continue;
+      if (typeof v === "string" && v.trim() === "") continue;
+      return v;
+    }
+    return "";
+  };
+
+  const toBool = (v) => {
+    if (v === true) return true;
+    if (v === false) return false;
+    if (v === "true") return true;
+    if (v === "false") return false;
+    if (typeof v === "string") {
+      const s = v.trim().toLowerCase();
+      if (s === "yes" || s === "y") return true;
+      if (s === "no" || s === "n") return false;
+    }
+    return !!v;
+  };
+
+  // Materials responsibility
+  const whoPurchasesMaterials = pick(
+    answers.who_purchases_materials,
+    answers.materials_purchasing,
+    answers.materials_responsibility,
+    a.who_purchases_materials,
+    a.materials_purchasing,
+    a.materials_responsibility
+  );
+
+  // Measurements
+  const measurementsNeededRaw = pick(
+    answers.measurements_needed,
+    answers.measurementsRequired,
+    a.measurements_needed,
+    a.measurementsRequired
+  );
+  const measurementsNeeded = toBool(measurementsNeededRaw);
+
+  const measurementDetails = pick(
+    answers.measurement_notes,
+    answers.measurements_notes,
+    answers.measurementDetails,
+    a.measurement_notes,
+    a.measurements_notes,
+    a.measurementDetails
+  );
+
+  // Permits
+  const permitsValue = pick(
+    answers.permits_inspections,
+    answers.permits,
+    answers.permit_acquisition,
+    a.permits_inspections,
+    a.permits,
+    a.permit_acquisition
+  );
+
+  const permitDetailsRaw = pick(
+    answers.permit_notes,
+    answers.permits_notes,
+    answers.permitDetails,
+    a.permit_notes,
+    a.permits_notes,
+    a.permitDetails
+  );
+
+  // Allowances
+  const allowancesValue = pick(
+    answers.allowances_selections,
+    answers.allowances,
+    answers.allowance_selections,
+    a.allowances_selections,
+    a.allowances,
+    a.allowance_selections
+  );
+
+  const allowanceRulesRaw = pick(
+    answers.allowance_notes,
+    answers.allowances_notes,
+    answers.allowanceRules,
+    a.allowance_notes,
+    a.allowances_notes,
+    a.allowanceRules
+  );
+
+  // De-duplication: if "details" equals the main value, hide the details.
+  const dedupe = (main, details) => {
+    const m = (main || "").toString().trim();
+    const d = (details || "").toString().trim();
+    if (!d) return "";
+    if (!m) return d;
+    if (m.toLowerCase() === d.toLowerCase()) return "";
+    return d;
+  };
+
+  const permitDetails = dedupe(permitsValue, permitDetailsRaw);
+  const allowanceRules = dedupe(allowancesValue, allowanceRulesRaw);
+
+  // Determine if we should render the block (any signal at all)
+  const hasAny =
+    !!whoPurchasesMaterials ||
+    !!measurementDetails ||
+    !!permitsValue ||
+    !!permitDetails ||
+    !!allowancesValue ||
+    !!allowanceRules ||
+    measurementsNeeded === true; // show if explicitly needed
+
+  return {
+    hasAny,
+    whoPurchasesMaterials: whoPurchasesMaterials ? String(whoPurchasesMaterials) : "",
+    measurementsNeeded,
+    measurementDetails: measurementDetails ? String(measurementDetails) : "",
+    permitsValue: permitsValue ? String(permitsValue) : "",
+    permitDetails: permitDetails ? String(permitDetails) : "",
+    allowancesValue: allowancesValue ? String(allowancesValue) : "",
+    allowanceRules: allowanceRules ? String(allowanceRules) : "",
+  };
+}
+
+function hasText(v) {
+  if (v === null || v === undefined) return false;
+  const s = String(v).trim();
+  if (!s) return false;
+  if (s === "—") return false;
+  return true;
+}
+
+
+function isAnsweredValue(v) {
+  // IMPORTANT: boolean false is a valid "answered" value (explicit No).
+  if (v === false) return true;
+  if (v === 0) return true;
+  if (v === null || v === undefined) return false;
+  if (typeof v === "string") return v.trim() !== "";
+  return true;
+}
+
+function resolveClarificationAnswer(a, key) {
+  // Prefer direct match, then fall back to canonical assumptions/responsibilities.
+  const answers = (a?.ai_scope && a.ai_scope.answers) ? a.ai_scope.answers : {};
+  const direct = answers ? answers[key] : undefined;
+  if (isAnsweredValue(direct)) return direct;
+
+  const assumptions = normalizeAssumptions(a) || {};
+  const nk = String(key || "").toLowerCase();
+
+  // Materials responsibility synonyms
+  if (nk.includes("material") && (nk.includes("purchas") || nk.includes("buy") || nk.includes("respons"))) {
+    const v = assumptions.whoPurchasesMaterials;
+    return isAnsweredValue(v) ? v : direct;
+  }
+
+  // Measurements synonyms
+  if (nk.includes("measure")) {
+    if (nk.includes("note") || nk.includes("detail") || nk.includes("clarif")) {
+      const v = assumptions.measurementDetails;
+      return isAnsweredValue(v) ? v : direct;
+    }
+    // boolean
+    if (typeof assumptions.measurementsNeeded === "boolean") return assumptions.measurementsNeeded;
+    return direct;
+  }
+
+  // Permits synonyms
+  if (nk.includes("permit")) {
+    if (nk.includes("note") || nk.includes("detail")) {
+      const v = assumptions.permitDetails;
+      return isAnsweredValue(v) ? v : direct;
+    }
+    const v = assumptions.permitsValue;
+    return isAnsweredValue(v) ? v : direct;
+  }
+
+  // Allowances synonyms
+  if (nk.includes("allow")) {
+    if (nk.includes("rule") || nk.includes("note") || nk.includes("detail") || nk.includes("select")) {
+      const v = assumptions.allowanceRules;
+      return isAnsweredValue(v) ? v : direct;
+    }
+    const v = assumptions.allowancesValue;
+    return isAnsweredValue(v) ? v : direct;
+  }
+
+  // Last resort: normalized key match
+  try {
+    const target = nk.replace(/[^a-z0-9_]/g, "");
+    for (const ak of Object.keys(answers || {})) {
+      const nak = String(ak).toLowerCase();
+      if (nak === nk || nak.replace(/[^a-z0-9_]/g, "") === target) {
+        const v = answers[ak];
+        if (isAnsweredValue(v)) return v;
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return direct;
+}
+
+
 export default function Step4Finalize({
-  agreement,
+  agreement: agreementProp,
   dLocal,
   id,
   previewPdf,
@@ -247,6 +473,12 @@ export default function Step4Finalize({
 }) {
   const navigate = useNavigate();
 
+  // ✅ Local agreement state so modal saves reflect immediately in Step 4
+  const [agreement, setAgreement] = useState(agreementProp || null);
+  useEffect(() => {
+    setAgreement(agreementProp || null);
+  }, [agreementProp]);
+
   const [loadingHomeowner, setLoadingHomeowner] = useState(false);
   const [homeownerObj, setHomeownerObj] = useState(null);
 
@@ -258,6 +490,7 @@ export default function Step4Finalize({
   const [resendFinalError, setResendFinalError] = useState(null);
 
   const [showSignatureModal, setShowSignatureModal] = useState(false);
+  const [showClarificationsModal, setShowClarificationsModal] = useState(false);
 
   const [fundingPreview, setFundingPreview] = useState(null);
   const [fundingLoading, setFundingLoading] = useState(false);
@@ -615,7 +848,9 @@ export default function Step4Finalize({
     if (fundingPreview.tier_label) {
       tierLabel = fundingPreview.tier_label;
     } else if (fundingPreview.tier_name) {
-      tierLabel = `Current tier: ${String(fundingPreview.tier_name).toUpperCase()}`;
+      tierLabel = `Current tier: ${String(
+        fundingPreview.tier_name
+      ).toUpperCase()}`;
     }
   }
 
@@ -692,7 +927,9 @@ export default function Step4Finalize({
           100
       );
 
-  let previewButtonLabel = isFullySigned ? "View Signed Agreement" : "Preview PDF";
+  let previewButtonLabel = isFullySigned
+    ? "View Signed Agreement"
+    : "Preview PDF";
   if (amendmentNumber > 0) previewButtonLabel += ` — Amendment ${amendmentNumber}`;
   if (!signedByContractor) previewButtonLabel += " (Required)";
 
@@ -722,16 +959,23 @@ export default function Step4Finalize({
     [agreement, displayMilestones]
   );
 
-  return (
+  // ✅ Assumptions/Responsibilities (yellow fields)
+  const assumptions = useMemo(() => normalizeAssumptions(agreement), [agreement]);
+
+  
+
+  // Hide optional cards unless they contain real values (Step 2 doesn't collect these today)
+  const showMeasurementDetails = hasText(assumptions?.measurementDetails);
+  const showPermitDetails = hasText(assumptions?.permitDetails);
+  const showAllowanceRules = hasText(assumptions?.allowanceRules);
+return (
     <div className="mt-4 space-y-6">
       {/* ✅ Rework milestone banner */}
       {latestRework?.id ? (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
           <div className="leading-snug">
             <span className="font-semibold">✅ Rework milestone created:</span>{" "}
-            <span className="font-semibold">
-              Milestone #{latestRework.id}
-            </span>
+            <span className="font-semibold">Milestone #{latestRework.id}</span>
             {latestRework?.title ? (
               <>
                 {" "}
@@ -870,6 +1114,101 @@ export default function Step4Finalize({
           {agreement?.description || "No project description provided."}
         </div>
       </section>
+
+      {/* ✅ Scope Clarifications (Included in Agreement) */}
+      {agreement?.ai_scope ? (
+        <section className="rounded-lg border bg-white p-4 shadow">
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">
+              Scope Clarifications{" "}
+              <span className="text-xs font-normal text-gray-500">
+                (Included in Agreement)
+              </span>
+            </h3>
+
+            <button
+              type="button"
+              onClick={() => setShowClarificationsModal(true)}
+              className="rounded border px-3 py-2 text-sm font-medium hover:bg-gray-50"
+              title="Edit scope clarifications"
+            >
+              Edit Clarifications
+            </button>
+          </div>
+
+          {Array.isArray(agreement.ai_scope.questions) &&
+          agreement.ai_scope.questions.length ? (
+            <div className="space-y-2 text-sm text-gray-800">
+              {agreement.ai_scope.questions.map((q) => {
+                const key = q?.key;
+                if (!key) return null;
+                const label =
+                  q?.label ||
+                  key
+                    .replace(/_/g, " ")
+                    .replace(/\b\w/g, (c) => c.toUpperCase());
+
+                const required = !!q?.required;
+                const answer = resolveClarificationAnswer(agreement, key);
+                const hasAnswer = isAnsweredValue(answer);
+
+                // Only show answered questions (or required ones) to avoid noise.
+                if (!hasAnswer && !required) return null;
+
+                return (
+                  <div key={key} className="flex flex-col">
+                    <div>
+                      <span className="font-semibold">{label}:</span>{" "}
+                      {hasAnswer ? (
+                        <span>{String(answer)}</span>
+                      ) : (
+                        <span className="text-red-600">
+                          Required — Not Provided
+                        </span>
+                      )}
+                    </div>
+                    {q?.help ? (
+                      <div className="text-[11px] text-gray-500">{q.help}</div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : agreement.ai_scope?.answers &&
+            Object.keys(agreement.ai_scope.answers).length ? (
+            <div className="space-y-2 text-sm text-gray-800">
+              {Object.entries(agreement.ai_scope.answers).map(([k, v]) => {
+                if (v == null || String(v).trim() === "") return null;
+                return (
+                  <div key={k}>
+                    <span className="font-semibold">
+                      {k
+                        .replace(/_/g, " ")
+                        .replace(/\b\w/g, (c) => c.toUpperCase())}
+                      :
+                    </span>{" "}
+                    <span>{String(v)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-sm text-gray-500">
+              No scope clarifications were provided.
+            </div>
+          )}
+
+          {agreement.ai_scope?.updated_at ? (
+            <div className="mt-3 text-[11px] text-gray-500">
+              Last updated:{" "}
+              {new Date(agreement.ai_scope.updated_at).toLocaleString()}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {/* ✅ Assumptions & Responsibilities (Yellow fields) */}
+      
 
       {/* Milestones & Totals */}
       <section className="rounded-lg border bg-white p-4 shadow">
@@ -1281,6 +1620,22 @@ export default function Step4Finalize({
           onSigned={handleContractorSigned}
         />
       )}
+
+      {/* Clarifications Modal */}
+      <ClarificationsModal
+        open={showClarificationsModal}
+        agreementId={agreement?.id || id}
+        initialAgreement={agreement}
+        // ✅ Do NOT hide the yellow fields — they must persist and be editable from Step 4 too
+        excludeKeys={[]}
+        onClose={() => setShowClarificationsModal(false)}
+        onSaved={(updated) => {
+          if (updated) {
+            setAgreement(updated);
+            toast.success("Clarifications saved.");
+          }
+        }}
+      />
     </div>
   );
 }

@@ -1,17 +1,11 @@
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import api from "../api";
+import api, { getAccessToken } from "../api";
 import { useAuth } from "../context/AuthContext";
 
 // InvoiceList.jsx
-// v2026-01-20 — Flat invoice list + Quick Filter Chips
-// - Flat list scales well (no accordion)
-// - Filters: Agreement + Status + Search
-// - Quick chips row: All, Unpaid, Disputed, Paid (1-click)
-// - Sort: Unpaid first, then newest
-// - Keeps View (/app/invoices/:id), View milestone (/milestones/:id), Send/Resend
-// - Prefers display_status for escrow-paid invoices
+// v2026-01-23 — token detection uses getAccessToken() (canonical+legacy read)
 
 const money = (amount) =>
   Number(amount || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
@@ -51,12 +45,7 @@ function getUserType(user) {
 
 function tokenPresent() {
   try {
-    const t =
-      localStorage.getItem("access") ||
-      localStorage.getItem("access_token") ||
-      localStorage.getItem("token") ||
-      "";
-    return Boolean(t);
+    return Boolean(getAccessToken());
   } catch {
     return false;
   }
@@ -116,7 +105,6 @@ function normalizeInvoice(inv) {
   const invoiceNumber = inv?.invoice_number ?? inv?.number ?? (id != null ? `INV-${id}` : "INV-—");
   const amount = Number(inv?.amount ?? inv?.amount_due ?? inv?.total ?? inv?.total_amount ?? 0) || 0;
 
-  // ✅ prefer display_status so escrow-paid invoices show Paid
   const status = inv?.display_status ?? inv?.status_label ?? inv?.status ?? "pending";
 
   const milestoneId =
@@ -234,7 +222,6 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
     const q = query.trim().toLowerCase();
 
     return normalized.filter((x) => {
-      // Agreement filter
       if (agreementFilter !== "all") {
         if (x.agreementId != null) {
           const matchKey = `id:${x.agreementId}`;
@@ -245,13 +232,11 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
         }
       }
 
-      // Status filter
       if (statusFilter !== "all") {
         const b = statusBucket(x.status);
         if (b !== statusFilter) return false;
       }
 
-      // Search
       if (!q) return true;
 
       return (
@@ -349,7 +334,6 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
   }
 
   function setQuickFilter(kind) {
-    // Keep agreement filter; quick chips mostly control status + search
     if (kind === "all") {
       setStatusFilter("all");
       return;
@@ -361,12 +345,12 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
     statusFilter === "all"
       ? "all"
       : statusFilter === "pending"
-      ? "pending"
-      : statusFilter === "disputed"
-      ? "disputed"
-      : statusFilter === "paid"
-      ? "paid"
-      : "other";
+        ? "pending"
+        : statusFilter === "disputed"
+          ? "disputed"
+          : statusFilter === "paid"
+            ? "paid"
+            : "other";
 
   const anyFiltersActive = query.trim() || agreementFilter !== "all" || statusFilter !== "all";
 
@@ -392,7 +376,6 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
             )}
           </div>
 
-          {/* Quick filter chips */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -504,7 +487,6 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-          {/* Desktop header */}
           <div className="hidden grid-cols-12 gap-3 border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-extrabold text-slate-600 md:grid">
             <div className="col-span-2">Invoice</div>
             <div className="col-span-2">Agreement</div>
@@ -522,13 +504,11 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
 
               return (
                 <div key={item.id} className="grid grid-cols-1 gap-2 px-4 py-3 md:grid-cols-12 md:gap-3">
-                  {/* Invoice */}
                   <div className="md:col-span-2">
                     <div className="font-extrabold text-slate-900">{item.invoiceNumber}</div>
                     <div className="mt-1 text-xs text-slate-500">{prettyDate(item.isoDate)}</div>
                   </div>
 
-                  {/* Agreement */}
                   <div className="min-w-0 md:col-span-2">
                     <button
                       type="button"
@@ -543,7 +523,6 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
                     </button>
                   </div>
 
-                  {/* Milestone */}
                   <div className="min-w-0 md:col-span-3">
                     <div className="flex items-baseline gap-2">
                       <span className="text-xs font-extrabold text-slate-500">
@@ -563,26 +542,20 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
                     <div className="mt-1 line-clamp-2 text-xs text-slate-600">{item.milestoneDescription || "—"}</div>
                   </div>
 
-                  {/* Customer */}
                   <div className="md:col-span-2">
                     <div className="text-sm font-extrabold text-slate-900">{item.homeownerName}</div>
                   </div>
 
-                  {/* Amount */}
                   <div className="md:col-span-1">
                     <div className="text-sm font-extrabold text-slate-900">{money(item.amount)}</div>
                   </div>
 
-                  {/* Status */}
                   <div className="md:col-span-1">
-                    <span
-                      className={`inline-flex rounded-full px-3 py-1 text-xs font-extrabold ${statusPillClasses(item.status)}`}
-                    >
+                    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-extrabold ${statusPillClasses(item.status)}`}>
                       {statusLabel(item.status)}
                     </span>
                   </div>
 
-                  {/* Actions */}
                   <div className="flex items-center gap-2 md:col-span-1 md:justify-end">
                     <button
                       type="button"
@@ -604,7 +577,6 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
                     )}
                   </div>
 
-                  {/* Mobile-only compact summary row */}
                   <div className="md:hidden">
                     <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
                       <span className="font-bold text-slate-500">Agreement:</span>

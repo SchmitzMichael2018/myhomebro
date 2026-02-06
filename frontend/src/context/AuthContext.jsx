@@ -1,6 +1,7 @@
 // src/context/AuthContext.jsx
+// v2026-01-24 — single-source-of-truth auth (api.js owns headers + refresh)
+
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
-import axios from "axios";
 import api, { getAccessToken, setTokens, clearAuth } from "../api";
 
 const AuthContext = createContext(null);
@@ -16,46 +17,40 @@ export function AuthProvider({ children }) {
   const openLogin = () => setIsLoginOpen(true);
   const closeLogin = () => setIsLoginOpen(false);
 
+  // Boot: do NOT set axios.defaults here; api.js handles it.
   useEffect(() => {
     const tok = getAccessToken();
     if (tok) {
+      // We may not have user profile yet; keep minimal placeholder.
       setUser((u) => u || { email: null });
-      // ensure axios global default also has the header (covers stray axios usage)
-      axios.defaults.headers.common.Authorization = `Bearer ${tok}`;
+    } else {
+      setUser(null);
     }
     setReady(true);
   }, []);
 
   const login = async ({ email, password, remember }) => {
-    // Use the working SimpleJWT endpoint
-    const endpoints = ["/token/"];
-    let data;
+    // Your backend uses /api/token/ (you already confirmed this is working)
+    const resp = await api.post("/token/", { email, password });
 
-    for (let i = 0; i < endpoints.length; i++) {
-      try {
-        // Only send email/password; do NOT include a username field
-        const resp = await api.post(endpoints[i], { email, password });
-        data = resp.data;
-        break;
-      } catch (e) {
-        if (i === endpoints.length - 1) throw e;
-      }
+    const access = resp.data?.access || resp.data?.access_token;
+    const refresh = resp.data?.refresh || resp.data?.refresh_token;
+
+    if (!access || !refresh) {
+      throw new Error("Login did not return tokens.");
     }
 
-    const access = data.access || data.access_token;
-    const refresh = data.refresh || data.refresh_token;
-    if (!access || !refresh) throw new Error("Login did not return tokens.");
-
+    // api.js stores tokens + applies Authorization
     setTokens(access, refresh, !!remember);
-    // set both our instance and global axios header (defensive)
-    axios.defaults.headers.common.Authorization = `Bearer ${access}`;
+
+    // Minimal user object. (Optional: call a /whoami endpoint later)
     setUser({ email });
     return true;
   };
 
   const logout = async () => {
-    clearAuth();
-    delete axios.defaults.headers.common.Authorization;
+    // clearAuth already clears tokens; we do NOT touch axios.defaults here.
+    clearAuth(true);
     setUser(null);
   };
 

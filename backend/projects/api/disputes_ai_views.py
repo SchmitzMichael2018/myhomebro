@@ -1,5 +1,5 @@
 # backend/projects/api/disputes_ai_views.py
-# v2026-01-22 — Dispute AI endpoints with persistence + entitlement gating (Step A)
+# v2026-01-22 — Dispute AI endpoints with persistence + entitlement + paid unlock (Step B)
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from rest_framework.status import (
 from projects.ai.disputes_recommendation import generate_dispute_recommendation
 from projects.models_ai_artifacts import DisputeAIArtifact
 from projects.models_ai_entitlements import ContractorAIEntitlement
+from projects.models_ai_purchases import DisputeAIPurchase
 from projects.services.ai.evidence_context import build_dispute_evidence_context
 
 
@@ -41,7 +42,7 @@ def _get_contractor_for_user(user):
     return getattr(user, "contractor_profile", None)
 
 
-def _get_entitlement_for_request(request) -> ContractorAIEntitlement | None:
+def _get_entitlement_for_request(request):
     contractor = _get_contractor_for_user(getattr(request, "user", None))
     if not contractor:
         return None
@@ -90,10 +91,7 @@ def dispute_ai_artifacts(request, dispute_id: int):
     if latest:
         a = qs.first()
         if not a:
-            return JsonResponse(
-                {"detail": "No artifacts found.", "items": [], "count": 0},
-                status=HTTP_200_OK,
-            )
+            return JsonResponse({"detail": "No artifacts found.", "items": [], "count": 0}, status=HTTP_200_OK)
         return JsonResponse(
             {"detail": "OK", "count": 1, "items": [_serialize_artifact(a, include_payload=include_payload)]},
             status=HTTP_200_OK,
@@ -106,26 +104,22 @@ def dispute_ai_artifacts(request, dispute_id: int):
     limit = max(1, min(limit, 100))
 
     items = [_serialize_artifact(a, include_payload=False) for a in qs[:limit]]
-    return JsonResponse(
-        {"detail": "OK", "count": qs.count(), "items": items},
-        status=HTTP_200_OK,
-    )
+    return JsonResponse({"detail": "OK", "count": qs.count(), "items": items}, status=HTTP_200_OK)
 
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def dispute_ai_recommendation(request, dispute_id: int):
     """
-    Step A gating:
-      - If a stored artifact exists for this evidence digest and force=false => return it (no quota consumed)
-      - Else => require entitlement to generate new recommendation
-      - If generated => store new artifact AND consume quota/free use
+    Generation rules:
+      1) If stored artifact exists for digest and force=false => return it (no quota, no payment)
+      2) Else if paid purchase exists for digest => allow generation (no quota consumed)
+      3) Else require entitlement quota:
+            - if quota ok => allow generation and consume quota
+            - else 402 => frontend can start Stripe checkout
     """
     if not _ai_enabled() or not _recommendations_enabled():
-        return JsonResponse(
-            {"detail": "AI dispute recommendations are disabled."},
-            status=HTTP_403_FORBIDDEN,
-        )
+        return JsonResponse({"detail": "AI dispute recommendations are disabled."}, status=HTTP_403_FORBIDDEN)
 
     Dispute = _get_dispute_model()
 
@@ -134,7 +128,6 @@ def dispute_ai_recommendation(request, dispute_id: int):
     except Dispute.DoesNotExist:
         return JsonResponse({"detail": "Dispute not found."}, status=HTTP_404_NOT_FOUND)
 
-    # Read force flag
     try:
         force = bool(request.data.get("force"))
     except Exception:
@@ -147,12 +140,9 @@ def dispute_ai_recommendation(request, dispute_id: int):
             raise RuntimeError("Evidence context builder must return a dict.")
         digest = DisputeAIArtifact.compute_digest(evidence_context)
     except Exception as e:
-        return JsonResponse(
-            {"detail": f"Evidence context error: {e}"},
-            status=HTTP_400_BAD_REQUEST,
-        )
+        return JsonResponse({"detail": f"Evidence context error: {e}"}, status=HTTP_400_BAD_REQUEST)
 
-    # Return stored artifact if same digest and not force (no quota consumed)
+    # Return stored artifact if digest matches and not force
     if not force:
         existing = (
             DisputeAIArtifact.objects.filter(
@@ -177,43 +167,49 @@ def dispute_ai_recommendation(request, dispute_id: int):
                 status=HTTP_200_OK,
             )
 
-    # ---- Step A: entitlement gate for NEW generation ----
-    ent = _get_entitlement_for_request(request)
-    if not ent:
+    contractor = _get_contractor_for_user(request.user)
+    if not contractor:
         return JsonResponse(
             {"detail": "AI recommendations are available to contractor accounts only."},
             status=HTTP_403_FORBIDDEN,
         )
 
-    if not ent.can_generate_recommendation():
-        # Step B will replace this with Stripe checkout + 402 -> payment flow.
-        return JsonResponse(
-            {
-                "detail": "AI recommendation quota exceeded.",
-                "code": "ai_quota_exceeded",
-                "tier": ent.tier,
-                "free_recommendations_remaining": int(ent.free_recommendations_remaining or 0),
-                "monthly_recommendations_included": int(ent.monthly_recommendations_included or 0),
-                "monthly_recommendations_used": int(ent.monthly_recommendations_used or 0),
-                "suggested_price_cents": 2900,  # Step B anchor ($29)
-            },
-            status=HTTP_402_PAYMENT_REQUIRED,
-        )
+    # ✅ Step B: if a PAID purchase exists for this dispute+digest, allow generation without consuming quota
+    paid_purchase = DisputeAIPurchase.objects.filter(
+        dispute_id=dispute.id,
+        contractor_id=contractor.id,
+        artifact_type="recommendation",
+        input_digest=digest,
+        status=DisputeAIPurchase.STATUS_PAID,
+    ).order_by("-id").first()
 
-    # Generate fresh recommendation (DB is our cache; OpenAI cache bypass)
+    is_paid_unlock = bool(paid_purchase)
+
+    # Step A entitlement gate (only if not paid unlock)
+    ent = _get_entitlement_for_request(request)
+
+    if not is_paid_unlock:
+        if not ent or not ent.can_generate_recommendation():
+            return JsonResponse(
+                {
+                    "detail": "AI recommendation quota exceeded.",
+                    "code": "ai_quota_exceeded",
+                    "tier": getattr(ent, "tier", "free") if ent else "free",
+                    "free_recommendations_remaining": int(getattr(ent, "free_recommendations_remaining", 0) or 0) if ent else 0,
+                    "monthly_recommendations_included": int(getattr(ent, "monthly_recommendations_included", 0) or 0) if ent else 0,
+                    "monthly_recommendations_used": int(getattr(ent, "monthly_recommendations_used", 0) or 0) if ent else 0,
+                    "suggested_price_cents": int(getattr(settings, "AI_RECOMMENDATION_PRICE_CENTS", 2900)),
+                },
+                status=HTTP_402_PAYMENT_REQUIRED,
+            )
+
+    # Generate fresh recommendation
     try:
-        result = generate_dispute_recommendation(
-            dispute=dispute,
-            evidence_context=evidence_context,
-            force=True,
-        )
+        result = generate_dispute_recommendation(dispute=dispute, evidence_context=evidence_context, force=True)
     except Exception as e:
-        return JsonResponse(
-            {"detail": f"AI recommendation failed: {e}"},
-            status=HTTP_400_BAD_REQUEST,
-        )
+        return JsonResponse({"detail": f"AI recommendation failed: {e}"}, status=HTTP_400_BAD_REQUEST)
 
-    # Store new version + consume quota (atomic)
+    # Store new version; consume quota only if NOT paid unlock
     try:
         with transaction.atomic():
             last = (
@@ -233,17 +229,17 @@ def dispute_ai_recommendation(request, dispute_id: int):
                 input_digest=digest,
                 model_name=result.model or "",
                 payload=result.payload or {},
-                created_by=request.user if getattr(request, "user", None) and request.user.is_authenticated else None,
+                created_by=request.user if request.user.is_authenticated else None,
+                paid=bool(is_paid_unlock),
+                price_cents=(paid_purchase.price_cents if paid_purchase else None),
+                stripe_payment_intent_id=(paid_purchase.stripe_payment_intent_id if paid_purchase else ""),
             )
 
-            # consume a free use/quota ONLY because we generated new
-            ent.consume_recommendation_quota()
+            if ent and (not is_paid_unlock):
+                ent.consume_recommendation_quota()
 
     except Exception as e:
-        return JsonResponse(
-            {"detail": f"DB save failed: {e}"},
-            status=HTTP_400_BAD_REQUEST,
-        )
+        return JsonResponse({"detail": f"DB save failed: {e}"}, status=HTTP_400_BAD_REQUEST)
 
     return JsonResponse(
         {
@@ -254,6 +250,7 @@ def dispute_ai_recommendation(request, dispute_id: int):
             "payload": stored.payload,
             "version": stored.version,
             "created_at": stored.created_at.isoformat(),
+            "paid_unlock": bool(is_paid_unlock),
         },
         status=HTTP_200_OK,
     )

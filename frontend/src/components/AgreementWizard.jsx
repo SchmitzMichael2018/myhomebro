@@ -143,7 +143,8 @@ function friendly(d) {
 export default function AgreementWizard() {
   const { id: idParam } = useParams();
   const navigate = useNavigate();
-  const search = new URLSearchParams(useLocation().search);
+  const location = useLocation();
+  const search = new URLSearchParams(location.search);
   const step = Number(search.get("step") || "1");
 
   const agreementId =
@@ -424,12 +425,15 @@ export default function AgreementWizard() {
     };
   }, [agreement, dLocal]);
 
+  // Detect whether we are inside the /app namespace (authenticated shell)
+  const APP_PREFIX = location?.pathname?.startsWith("/app") ? "/app" : "";
+
   // Navigation Helper
   const goStep = (n) =>
     navigate(
       agreementId
-        ? `/agreements/${agreementId}/wizard?step=${n}`
-        : `/agreements/new?step=${n}`
+        ? `${APP_PREFIX}/agreements/${agreementId}/wizard?step=${n}`
+        : `${APP_PREFIX}/agreements/new?step=${n}`
     );
 
   // --- MEMOIZED OPTIONS ---
@@ -745,7 +749,7 @@ export default function AgreementWizard() {
 
           toast.success("Agreement created.");
           navigate(
-            `/agreements/${newId}/wizard?step=${next ? 2 : 1}`,
+            `${APP_PREFIX}/agreements/${newId}/wizard?step=${next ? 2 : 1}`,
             { replace: true }
           );
         } catch (e0) {
@@ -951,6 +955,13 @@ export default function AgreementWizard() {
         }
       );
 
+      // Revoke any prior preview URL to avoid memory leaks
+      if (pdfUrl) {
+        try {
+          URL.revokeObjectURL(pdfUrl);
+        } catch {}
+      }
+
       const blob = new Blob([res.data], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
 
@@ -1056,13 +1067,13 @@ export default function AgreementWizard() {
     <div className="p-4 md:p-6">
       <div className="mb-4 flex flex-wrap gap-2">
         {TABS.map((t) => (
-          <button
+          <button type="button"
             key={t.step}
             onClick={() =>
               navigate(
                 agreementId
-                  ? `/agreements/${agreementId}/wizard?step=${t.step}`
-                  : `/agreements/new?step=${t.step}`
+                  ? `${APP_PREFIX}/agreements/${agreementId}/wizard?step=${t.step}`
+                  : `${APP_PREFIX}/agreements/new?step=${t.step}`
               )
             }
             className={`rounded px-3 py-2 text-sm ${
@@ -1167,8 +1178,8 @@ export default function AgreementWizard() {
             editMilestone={editMilestone}
             setEditMilestone={setEditMilestone}
             updateMilestone={() => {}}
-            onBack={() => navigate(`/agreements/${agreementId}/wizard?step=1`)}
-            onNext={() => navigate(`/agreements/${agreementId}/wizard?step=3`)}
+            onBack={() => goStep(1)}
+            onNext={() => goStep(3)}
           />
 
           {editMilestone && (
@@ -1198,8 +1209,8 @@ export default function AgreementWizard() {
           saveWarranty={saveWarranty}
           attachments={attachments}
           refreshAttachments={loadEdit}
-          onBack={() => navigate(`/agreements/${agreementId}/wizard?step=2`)}
-          onNext={() => navigate(`/agreements/${agreementId}/wizard?step=4`)}
+          onBack={() => goStep(2)}
+          onNext={() => goStep(4)}
         />
       )}
 
@@ -1214,7 +1225,7 @@ export default function AgreementWizard() {
             agreement={agreement}
             dLocal={dStep4}
             isEdit={isEdit}
-            goBack={() => navigate(`/agreements/${agreementId}/wizard?step=3`)}
+            goBack={() => goStep(3)}
             previewPdf={previewPdf}
             goPublic={goPublic}
             signing={signing}
@@ -1247,8 +1258,11 @@ export default function AgreementWizard() {
         onClose={() => {
           setPdfOpen(false);
           if (pdfUrl) {
-            URL.revokeObjectURL(pdfUrl);
+            try {
+              URL.revokeObjectURL(pdfUrl);
+            } catch {}
           }
+          setPdfUrl(null);
         }}
         fileUrl={pdfUrl}
         title={step4Label || "Agreement Preview"}

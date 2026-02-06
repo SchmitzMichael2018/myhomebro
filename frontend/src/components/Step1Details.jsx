@@ -1,7 +1,8 @@
 // frontend/src/components/Step1Details.jsx
-// Extracted from AgreementWizard.jsx (Option A: logic unchanged)
+// v2026-01-22 — Step 1 Details + AI Description Assist
 
-import React from "react";
+import React, { useMemo, useState } from "react";
+import api from "../api";
 
 // PrettyJson helper copied 1:1
 function PrettyJson({ data }) {
@@ -17,6 +18,10 @@ function PrettyJson({ data }) {
       {text}
     </pre>
   );
+}
+
+function safeTrim(s) {
+  return (s || "").toString().trim();
 }
 
 /* ───────── Step 1 ───────── */
@@ -46,6 +51,68 @@ export default function Step1Details({
 }) {
   const empty = (people?.length || 0) === 0;
 
+  // ── AI state ──
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiErr, setAiErr] = useState("");
+  const [aiPreview, setAiPreview] = useState(""); // suggested description
+
+  const hasSomeContext = useMemo(() => {
+    return (
+      !!safeTrim(dLocal.project_title) ||
+      !!safeTrim(dLocal.project_type) ||
+      !!safeTrim(dLocal.project_subtype)
+    );
+  }, [dLocal.project_title, dLocal.project_type, dLocal.project_subtype]);
+
+  async function runAiDescription(mode) {
+    // mode: "improve" | "generate"
+    setAiErr("");
+    setAiPreview("");
+    setAiBusy(true);
+
+    try {
+      const payload = {
+        mode,
+        agreement_id: agreementId || null,
+        project_title: dLocal.project_title || "",
+        project_type: dLocal.project_type || "",
+        project_subtype: dLocal.project_subtype || "",
+        current_description: dLocal.description || "",
+      };
+
+      const res = await api.post(`/projects/agreements/ai/description/`, payload);
+      const text = res?.data?.description || "";
+      if (!safeTrim(text)) {
+        throw new Error("AI returned an empty description.");
+      }
+      setAiPreview(text);
+    } catch (e) {
+      setAiErr(
+        e?.response?.data?.detail ||
+          e?.message ||
+          "AI description request failed."
+      );
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  function applyAiDescription(action) {
+    // action: "replace" | "append"
+    const suggestion = safeTrim(aiPreview);
+    if (!suggestion) return;
+
+    setDLocal((s) => {
+      const cur = safeTrim(s.description);
+      if (action === "append" && cur) {
+        return { ...s, description: `${cur}\n\n${suggestion}` };
+      }
+      return { ...s, description: suggestion };
+    });
+
+    setAiPreview("");
+  }
+
   return (
     <div className="rounded-lg border bg-white p-4">
       <div className="text-sm text-gray-600 mb-2">
@@ -65,9 +132,7 @@ export default function Step1Details({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {/* Homeowner selector */}
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium mb-1">
-            Homeowner
-          </label>
+          <label className="block text-sm font-medium mb-1">Homeowner</label>
           <select
             className="w-full rounded border px-3 py-2 text-sm"
             name="homeowner"
@@ -117,9 +182,7 @@ export default function Step1Details({
                 />
               </div>
               <div className="md:col-span-1">
-                <label className="block text-xs font-medium mb-1">
-                  Email
-                </label>
+                <label className="block text-xs font-medium mb-1">Email</label>
                 <input
                   className="w-full rounded border px-3 py-2 text-sm"
                   value={qaEmail}
@@ -150,9 +213,7 @@ export default function Step1Details({
 
         {/* Project title */}
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium mb-1">
-            Project Title
-          </label>
+          <label className="block text-sm font-medium mb-1">Project Title</label>
           <input
             className="w-full rounded border px-3 py-2 text-sm"
             name="project_title"
@@ -202,9 +263,7 @@ export default function Step1Details({
 
         {/* Description */}
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium mb-1">
-            Description
-          </label>
+          <label className="block text-sm font-medium mb-1">Description</label>
           <textarea
             className="w-full rounded border px-3 py-2 text-sm"
             rows={3}
@@ -213,11 +272,80 @@ export default function Step1Details({
             onChange={onLocalChange}
             placeholder="Brief project scope…"
           />
+
+          {/* AI Assist row */}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <div className="text-xs text-gray-600">
+              ✨ AI Assist: turn a rough idea into a clear, dispute-resistant scope.
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => runAiDescription("improve")}
+                disabled={aiBusy || !safeTrim(dLocal.description)}
+                className="rounded border px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
+                title="Rewrite what you typed to be clearer and less ambiguous"
+              >
+                {aiBusy ? "Working…" : "✨ Improve Description"}
+              </button>
+              <button
+                type="button"
+                onClick={() => runAiDescription("generate")}
+                disabled={aiBusy || !hasSomeContext}
+                className="rounded border px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
+                title="Generate a starter scope using title/type/subtype"
+              >
+                {aiBusy ? "Working…" : "✨ Generate from Type"}
+              </button>
+            </div>
+          </div>
+
+          {/* AI error */}
+          {aiErr && (
+            <div className="mt-2 text-xs text-red-600">{aiErr}</div>
+          )}
+
+          {/* AI preview */}
+          {aiPreview && (
+            <div className="mt-3 rounded-md border bg-indigo-50 p-3">
+              <div className="text-xs font-semibold text-indigo-900 mb-2">
+                AI Suggested Description (preview)
+              </div>
+              <div className="text-sm whitespace-pre-wrap text-indigo-900">
+                {aiPreview}
+              </div>
+              <div className="mt-3 flex gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => applyAiDescription("replace")}
+                  className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-700"
+                >
+                  Replace
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyAiDescription("append")}
+                  className="rounded border px-3 py-1.5 text-xs"
+                >
+                  Append
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAiPreview("")}
+                  className="rounded border px-3 py-1.5 text-xs"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Project Address — ALWAYS VISIBLE & MANDATORY */}
         <div className="md:col-span-2 mt-4 border-t pt-4">
-          <h3 className="text-sm font-semibold mb-2">Project Address (Required)</h3>
+          <h3 className="text-sm font-semibold mb-2">
+            Project Address (Required)
+          </h3>
         </div>
 
         <div className="md:col-span-2">
@@ -287,13 +415,13 @@ export default function Step1Details({
       </div>
 
       <div className="mt-6 flex gap-2 justify-end">
-        <button
+        <button type="button"
           onClick={() => saveStep1(false)}
           className="rounded bg-white border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
         >
           Save Draft
         </button>
-        <button
+        <button type="button"
           onClick={() => saveStep1(true)}
           className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
         >

@@ -5,14 +5,14 @@ from django.db import transaction
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
-from .models import Agreement, Invoice
+from .models import Agreement, Invoice, Contractor
+from .models_ai_entitlements import ContractorAIEntitlement
 from .tasks import (
     task_send_invoice_notification,
     task_generate_full_agreement_pdf,
 )
 
 logger = logging.getLogger(__name__)
-
 
 # --------------------------------------------------------------------
 # Agreement pre-save: track escrow_funded transitions
@@ -56,11 +56,9 @@ def on_agreement_creation(sender, instance, created, **kwargs):
 def on_agreement_escrow_funded(sender, instance: Agreement, created: bool, **kwargs):
     """
     When escrow is funded:
-      ✔ This confirms funds are available
-      ❌ This does NOT create invoices
-      ❌ This does NOT mark milestones invoiced
-
-    Invoices are created ONLY when a milestone is completed.
+      ✔ Confirms funds are available
+      ❌ Does NOT create invoices
+      ❌ Does NOT mark milestones invoiced
     """
     was_previously_funded = getattr(instance, "_previous_escrow_funded", False)
 
@@ -69,7 +67,6 @@ def on_agreement_escrow_funded(sender, instance: Agreement, created: bool, **kwa
             f"💰 Escrow funded for Agreement {instance.id}. "
             f"Milestones remain uninvoiced until completed."
         )
-        # Intentionally no milestone or invoice mutations here.
 
 
 # --------------------------------------------------------------------
@@ -91,3 +88,39 @@ def on_invoice_creation(sender, instance: Invoice, created: bool, **kwargs):
                 f"❌ Failed to dispatch invoice notification for "
                 f"Invoice {instance.id}: {e}"
             )
+
+
+# --------------------------------------------------------------------
+# ✅ NEW: Contractor post-save → auto-create AI entitlement
+# --------------------------------------------------------------------
+@receiver(post_save, sender=Contractor)
+def on_contractor_creation(sender, instance: Contractor, created: bool, **kwargs):
+    """
+    Automatically provision AI entitlements for every contractor.
+
+    This ensures:
+      - No manual admin work
+      - Every contractor has a baseline AI plan
+      - Admin UI is always populated
+    """
+    if not created:
+        return
+
+    try:
+        ContractorAIEntitlement.objects.get_or_create(
+            contractor=instance,
+            defaults={
+                "tier": ContractorAIEntitlement.TIER_FREE,
+                "free_recommendations_remaining": 1,  # free trial
+                "allow_ai_summaries": True,
+                "allow_ai_recommendations": True,
+            },
+        )
+        logger.info(
+            f"🤖 AI entitlements auto-created for Contractor {instance.id}."
+        )
+    except Exception as e:
+        logger.error(
+            f"❌ Failed to auto-create AI entitlements for Contractor "
+            f"{instance.id}: {e}"
+        )
