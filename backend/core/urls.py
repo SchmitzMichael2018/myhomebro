@@ -65,20 +65,11 @@ def spa_index(_request):
   </head>
   <body class="bg-slate-50">
     <div id="root"></div>
-    <footer style="margin-top:2rem; padding:1rem 0; border-top:1px solid rgba(148,163,184,0.3); font-family:-apple-system,BlinkMacSystemFont,system-ui,Segoe UI,sans-serif; font-size:12px; color:#64748b; text-align:center;">
-      <span>&copy; {year} MyHomeBro. </span>
-      <a href="/legal/terms-of-service/" target="_blank" rel="noreferrer" style="color:#2563eb; text-decoration:underline; margin-left:0.5rem; margin-right:0.5rem;">
-        Terms of Service
-      </a>
-      <span>&middot;</span>
-      <a href="/legal/privacy-policy/" target="_blank" rel="noreferrer" style="color:#2563eb; text-decoration:underline; margin-left:0.5rem;">
-        Privacy Policy
-      </a>
-    </footer>
     <script type="module" src="/static/assets/index.js"></script>
   </body>
-</html>""".format(year="2025")
+</html>"""
     return HttpResponse(html, content_type="text/html; charset=utf-8")
+
 
 
 def favicon(_request):

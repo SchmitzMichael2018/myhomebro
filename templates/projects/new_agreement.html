@@ -1,3 +1,4 @@
+{% load tz %}
 <!doctype html>
 <html>
   <head>
@@ -130,7 +131,7 @@
       </div>
 
       <div class="footer">
-        © {{ year|default:2025 }} MyHomeBro. All rights reserved.
+        © {% now "Y" %} MyHomeBro. All rights reserved.
       </div>
     </div>
   </body>
