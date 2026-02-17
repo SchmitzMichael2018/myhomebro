@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import io
 import os
-from typing import List, Optional, Iterable, Dict, Any
+from typing import List, Optional, Iterable
 from datetime import date, datetime
 
 from django.conf import settings
@@ -26,10 +26,11 @@ try:
 except Exception:
   PdfMerger = None  # type: ignore
 
+# ✅ Legal clauses
 try:
   from projects.services.legal_clauses import build_legal_notices
 except Exception:  # pragma: no cover
-  def build_legal_notices(project_state: Optional[str] = None) -> List[tuple[str, str]]:
+  def build_legal_notices(project_state: Optional[str] = None, payment_mode: Optional[str] = None) -> List[tuple[str, str]]:
     return [
       (
         "Terms Incorporated",
@@ -287,7 +288,7 @@ def _project_address(ag: Agreement) -> str:
     ag, "project_address_same_as_homeowner", False
   )
   if is_same:
-    return "Same as Homeowner Address"
+    return "Same as Customer Address"
 
   return ""
 
@@ -411,6 +412,15 @@ def _pretty_key(k: str) -> str:
   return k.replace("_", " ").strip().title()
 
 
+def _normalize_payment_mode(v) -> str:
+  s = str(v or "").strip().lower()
+  if "direct" in s:
+    return "direct"
+  if "escrow" in s:
+    return "escrow"
+  return "escrow"
+
+
 def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> bytes:
   from reportlab.lib.pagesizes import letter
   from reportlab.lib.units import inch
@@ -475,6 +485,8 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
         if buf:
           out.append(" ".join(buf))
     return out
+
+  payment_mode = _normalize_payment_mode(getattr(ag, "payment_mode", None))
 
   buf = io.BytesIO()
   doc = SimpleDocTemplate(
@@ -551,7 +563,9 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
   c_lic_no = _s(getattr(contractor, "license_number", None))
   c_lic_ex = _s(getattr(contractor, "license_expiration", None))
 
-  h_name = _s(getattr(homeowner, "full_name", None) or getattr(homeowner, "name", None))
+  h_name_raw = _s(getattr(homeowner, "full_name", None) or getattr(homeowner, "name", None))
+  h_company = _s(getattr(homeowner, "company_name", None)).strip()
+  h_name = f"{h_company} ({h_name_raw})" if (h_company and h_name_raw) else (h_company or h_name_raw)
   h_email = _s(getattr(homeowner, "email", None))
   h_addr = _fmt_addr_from(homeowner) or _composite_addr_from_snapshots(ag, "homeowner")
 
@@ -594,17 +608,19 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
 
   story.append(Paragraph(f"<b>Contractor:</b> {_dot_join([c_name, c_email, c_phone]) or '—'}", s_val))
   if c_addr:
-    story.append(Paragraph(f"<b>Contractor Address:</b> {c_addr}", s_val))
+    # ✅ FIX: show contractor address (was mistakenly showing customer address)
+    story.append(Paragraph(f"<b>Contractor Address:</b> {c_addr or '---'}", s_val))
   if c_lic_no:
     lic = f"License #{c_lic_no}"
     if c_lic_ex:
       lic += f" (exp {c_lic_ex})"
     story.append(Paragraph(f"<b>{lic}</b>", s_small))
 
-  story.append(Paragraph(f"<b>Homeowner:</b> {_dot_join([h_name, h_email]) or '—'}", s_val))
-  story.append(Paragraph(f"<b>Homeowner Address:</b> {h_addr or '---'}", s_val))
+  story.append(Paragraph(f"<b>Customer:</b> {_dot_join([h_name, h_email]) or '—'}", s_val))
+  story.append(Paragraph(f"<b>Customer Address:</b> {h_addr or '---'}", s_val))
   story.append(Paragraph(f"<b>Project Address:</b> {p_addr or '---'}", s_val))
   story.append(Paragraph(f"<b>Type:</b> {type_line}", s_val))
+  story.append(Paragraph(f"<b>Payment Mode:</b> {'Direct Pay' if payment_mode == 'direct' else 'Escrow (Protected)'}", s_val))
   story.append(Paragraph(f"<b>Schedule:</b> {schedule_line}", s_val))
   story.append(Paragraph(f"<b>Status:</b> {status_line}", s_small))
   story.append(Spacer(1, 12))
@@ -737,7 +753,9 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
   story.append(Spacer(1, 6))
 
   project_state = _detect_project_state(ag)
-  clauses = build_legal_notices(project_state)
+
+  # ✅ CRITICAL: pass payment_mode so Direct Pay clauses render correctly
+  clauses = build_legal_notices(project_state=project_state, payment_mode=payment_mode)
 
   def _clause_block(title: str, text: str):
     parts = [Paragraph(title, s_h3)]
@@ -754,7 +772,13 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     block = _clause_block(title, text)
 
     # Keep short clauses from splitting across pages (prevents 1-line spillovers like Liability)
-    if title in ("Limitation of Liability", "Insurance", "Payment & Escrow", "Payment Processing & Platform Fees"):
+    if title in (
+      "Limitation of Liability",
+      "Insurance",
+      "Payment & Escrow",
+      "Payment (Direct Pay)",
+      "Payment Processing & Platform Fees",
+    ):
       story.append(KeepTogether(block))
     else:
       for p in block:
@@ -769,7 +793,7 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
   ))
   story.append(Spacer(1, 10))
 
-  # Metadata + Signatures flow after Governing Law (ideally on page 6)
+  # Metadata + Signatures flow after Governing Law
   from reportlab.platypus import Table as RLTable, TableStyle as RLTableStyle, Spacer as RLSpacer
 
   story.append(Paragraph("Document Metadata & Amendment History", s_h2))
@@ -792,6 +816,7 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     ["Agreement ID", str(getattr(ag, "id", "")) or "—"],
     ["Amendment Number", str(ag_amend_num or 0)],
     ["PDF Version", f"v{ag_pdf_ver}" if ag_pdf_ver is not None else "—"],
+    ["Payment Mode", "Direct Pay" if payment_mode == "direct" else "Escrow (Protected)"],
     ["Original Created", _fmt_dt(ag_created)],
     ["Last Amended", _fmt_dt(ag_amended)],
     ["Generated At", localtime().strftime("%Y-%m-%d %H:%M")],
@@ -859,7 +884,7 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
   sig_tbl = RLTable(
     [[
       _sig_block(c_name_sig, c_img, c_at_raw, c_ip, "Contractor"),
-      _sig_block(h_name_sig, h_img, h_at_raw, h_ip, "Homeowner"),
+      _sig_block(h_name_sig, h_img, h_at_raw, h_ip, "Customer"),
     ]],
     colWidths=[3.5 * inch, 3.5 * inch],
   )

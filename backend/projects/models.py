@@ -11,6 +11,8 @@ from .models_ai_scope import AgreementAIScope  # noqa: E402,F401
 import uuid
 import secrets
 from datetime import timedelta
+from .models_invite import ContractorInvite  # noqa: F401
+
 
 # --- Safe default for warranty snapshot (used if blank/None) ---
 DEFAULT_WARRANTY_TEXT = (
@@ -42,8 +44,18 @@ class AgreementProjectType(models.TextChoices):
     DIY_HELP = "DIY Help", "DIY Help"
 
 
+# ✅ NEW: Payment mode for Agreement
+class AgreementPaymentMode(models.TextChoices):
+    ESCROW = "escrow", "Escrow (Protected)"
+    DIRECT = "direct", "Direct Pay (Fast)"
+
+
 class InvoiceStatus(models.TextChoices):
     INCOMPLETE = "incomplete", "Incomplete"
+
+    # ✅ NEW: Used primarily for DIRECT invoices (pay link created / awaiting payment)
+    SENT = "sent", "Sent (Awaiting Payment)"
+
     PENDING = "pending", "Pending Approval"
     APPROVED = "approved", "Approved"
     DISPUTED = "disputed", "Disputed"
@@ -154,31 +166,57 @@ class Homeowner(models.Model):
         related_name="homeowners",
         null=True,
     )
+
+    # Contact / Customer
     full_name = models.CharField(max_length=255)
-    email = models.EmailField(unique=True, db_index=True)
-    phone_number = models.CharField(max_length=20, blank=True)
-    street_address = models.CharField(max_length=255)
-    address_line_2 = models.CharField(
-        max_length=255, blank=True, help_text="e.g., Apt, Suite, Building"
+
+    # ✅ NEW: Company name for subcontractor / GC customers
+    company_name = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Optional company name for subcontractor / GC customers.",
     )
-    city = models.CharField(max_length=100)
-    state = models.CharField(max_length=50)
-    zip_code = models.CharField(max_length=20)
+
+    email = models.EmailField(db_index=True)
+    phone_number = models.CharField(max_length=20, blank=True, default="")
+
+    # Address (invite flow can create customers without this; agreement gate enforces later)
+    street_address = models.CharField(max_length=255, blank=True, default="")
+    address_line_2 = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="e.g., Apt, Suite, Building",
+    )
+    city = models.CharField(max_length=100, blank=True, default="")
+    state = models.CharField(max_length=50, blank=True, default="")
+    zip_code = models.CharField(max_length=20, blank=True, default="")
+
     status = models.CharField(
         max_length=20,
         choices=HomeownerStatus.choices,
         default=HomeownerStatus.ACTIVE,
         db_index=True,
     )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["full_name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["created_by", "email"],
+                name="uniq_homeowner_email_per_contractor",
+            )
+        ]
 
     def __str__(self):
+        company = (self.company_name or "").strip()
+        if company:
+            return f"{company} ({self.full_name})"
         return self.full_name
-
 
 class Project(models.Model):
     number = models.CharField(
@@ -254,6 +292,15 @@ class Agreement(models.Model):
 
     # Public identifiers
     project_uid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+
+    # ✅ NEW: Payment mode (ESCROW vs DIRECT)
+    payment_mode = models.CharField(
+        max_length=20,
+        choices=AgreementPaymentMode.choices,
+        default=AgreementPaymentMode.ESCROW,
+        db_index=True,
+        help_text="ESCROW uses protected funding/release. DIRECT uses pay-now invoices to contractor Stripe.",
+    )
 
     # Summary
     description = models.TextField(blank=True)
@@ -391,6 +438,10 @@ class Agreement(models.Model):
     def is_fully_signed(self):
         return self.signed_by_contractor and self.signed_by_homeowner
 
+    @property
+    def is_direct_pay(self) -> bool:
+        return self.payment_mode == AgreementPaymentMode.DIRECT
+
     def save(self, *args, **kwargs):
         if not self.contractor and self.project and self.project.contractor_id:
             self.contractor = self.project.contractor
@@ -406,21 +457,28 @@ class Agreement(models.Model):
         if not snap:
             self.warranty_text_snapshot = DEFAULT_WARRANTY_TEXT
 
-        try:
-            funded_amt = Decimal(str(self.escrow_funded_amount or "0"))
-        except Exception:
-            funded_amt = Decimal("0.00")
+        # ✅ Only escrow logic should affect escrow flags/status
+        # If DIRECT, do NOT auto-mark escrow_funded based on amounts
+        if not self.is_direct_pay:
+            try:
+                funded_amt = Decimal(str(self.escrow_funded_amount or "0"))
+            except Exception:
+                funded_amt = Decimal("0.00")
 
-        try:
-            total_amt = Decimal(str(self.total_cost or "0"))
-        except Exception:
-            total_amt = Decimal("0.00")
+            try:
+                total_amt = Decimal(str(self.total_cost or "0"))
+            except Exception:
+                total_amt = Decimal("0.00")
 
-        if total_amt > 0 and funded_amt >= total_amt:
-            self.escrow_funded = True
-            self.status = ProjectStatus.FUNDED
-        elif self.is_fully_signed and self.status == ProjectStatus.DRAFT:
-            self.status = ProjectStatus.SIGNED
+            if total_amt > 0 and funded_amt >= total_amt:
+                self.escrow_funded = True
+                self.status = ProjectStatus.FUNDED
+            elif self.is_fully_signed and self.status == ProjectStatus.DRAFT:
+                self.status = ProjectStatus.SIGNED
+        else:
+            # DIRECT flow: use signature → SIGNED only
+            if self.is_fully_signed and self.status == ProjectStatus.DRAFT:
+                self.status = ProjectStatus.SIGNED
 
         super().save(*args, **kwargs)
 
@@ -522,7 +580,6 @@ class Milestone(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     # ✅ NEW: Link a rework milestone back to the original disputed milestone
-    # This is set automatically when a dispute is resolved (rework accepted).
     rework_origin_milestone_id = models.IntegerField(
         null=True,
         blank=True,
@@ -636,11 +693,14 @@ class Invoice(models.Model):
     # ✅ PDF storage for invoices (views already expect invoice.pdf_file)
     pdf_file = models.FileField(upload_to="invoices/pdf/", null=True, blank=True)
 
+    # -----------------------------
+    # ESCROW fields (existing)
+    # -----------------------------
     escrow_released = models.BooleanField(default=False)
     escrow_released_at = models.DateTimeField(null=True, blank=True)
     stripe_transfer_id = models.CharField(max_length=255, blank=True)
 
-    # ✅ NEW: Contractor audit trail (tax reporting)
+    # ✅ Contractor audit trail (tax reporting)
     platform_fee_cents = models.PositiveIntegerField(default=0)
     payout_cents = models.PositiveIntegerField(default=0)
 
@@ -660,17 +720,22 @@ class Invoice(models.Model):
     last_email_error = models.TextField(blank=True)
 
     # ------------------------------------------------------------------
-    # ✅ NEW: Milestone snapshot fields (frozen at invoicing time)
+    # Milestone snapshot fields (frozen at invoicing time)
     # ------------------------------------------------------------------
     milestone_id_snapshot = models.IntegerField(null=True, blank=True, db_index=True)
     milestone_title_snapshot = models.CharField(max_length=255, blank=True)
     milestone_description_snapshot = models.TextField(blank=True)
 
-    # Completion notes snapshot (typically derived from milestone comments)
     milestone_completion_notes = models.TextField(blank=True)
-
-    # Attachments snapshot (list of dicts with name/url/metadata)
     milestone_attachments_snapshot = models.JSONField(default=list, blank=True)
+
+    # ------------------------------------------------------------------
+    # ✅ NEW: DIRECT PAY (Subcontractor) Stripe fields
+    # ------------------------------------------------------------------
+    direct_pay_checkout_session_id = models.CharField(max_length=255, blank=True, default="")
+    direct_pay_payment_intent_id = models.CharField(max_length=255, blank=True, default="")
+    direct_pay_checkout_url = models.URLField(blank=True, default="")
+    direct_pay_paid_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -697,6 +762,15 @@ class Invoice(models.Model):
 
     def __str__(self):
         return f"Invoice {self.invoice_number} (${self.amount})"
+
+    @property
+    def is_direct_pay(self) -> bool:
+        # Invoice inherits mode from agreement
+        return getattr(self.agreement, "payment_mode", "") == AgreementPaymentMode.DIRECT
+
+    @property
+    def direct_pay_link_ready(self) -> bool:
+        return bool(self.direct_pay_checkout_url)
 
 
 class Expense(models.Model):
@@ -811,19 +885,16 @@ class EmployeeProfile(models.Model):
         related_name="employee_profile",
     )
 
-    # Basic identity
     first_name = models.CharField(max_length=80, blank=True, default="")
     last_name = models.CharField(max_length=80, blank=True, default="")
     phone_number = models.CharField(max_length=40, blank=True, default="")
 
-    # Home address
     home_address_line1 = models.CharField(max_length=200, blank=True, default="")
     home_address_line2 = models.CharField(max_length=200, blank=True, default="")
     home_city = models.CharField(max_length=120, blank=True, default="")
     home_state = models.CharField(max_length=60, blank=True, default="")
     home_postal_code = models.CharField(max_length=30, blank=True, default="")
 
-    # IDs / licenses
     drivers_license_number = models.CharField(max_length=80, blank=True, default="")
     drivers_license_state = models.CharField(max_length=40, blank=True, default="")
     drivers_license_expiration = models.DateField(null=True, blank=True)
@@ -834,10 +905,8 @@ class EmployeeProfile(models.Model):
     professional_license_expiration = models.DateField(null=True, blank=True)
     professional_license_file = models.FileField(upload_to=employee_profile_upload_to, null=True, blank=True)
 
-    # Photo (requires Pillow)
     photo = models.ImageField(upload_to=employee_profile_upload_to, null=True, blank=True)
 
-    # Work schedule & time off
     assigned_work_schedule = models.TextField(blank=True, default="")
     day_off_requests = models.TextField(blank=True, default="")
 
@@ -851,14 +920,9 @@ class EmployeeProfile(models.Model):
         return f"EmployeeProfile(subaccount_id={self.subaccount_id})"
 
 
-# ------------------------------------------------------------------
-# ✅ NEW: Assignment models (Owner assigns work to subaccounts)
-# ------------------------------------------------------------------
 class AgreementAssignment(models.Model):
     """
     Assign an entire Agreement to a ContractorSubAccount.
-    Meaning: all milestones under the agreement are visible to the subaccount,
-    unless a milestone has an explicit MilestoneAssignment to another subaccount.
     """
     agreement = models.ForeignKey(
         "projects.Agreement",
@@ -882,7 +946,6 @@ class AgreementAssignment(models.Model):
 class MilestoneAssignment(models.Model):
     """
     Explicitly assign ONE milestone to ONE ContractorSubAccount.
-    Overrides agreement-level assignments.
     """
     milestone = models.OneToOneField(
         "projects.Milestone",
@@ -909,5 +972,4 @@ from .models_ai_artifacts import DisputeAIArtifact  # noqa: E402,F401
 
 from .models_ai_entitlements import ContractorAIEntitlement  # noqa: E402,F401
 from .models_ai_purchases import DisputeAIPurchase  # noqa: E402,F401
-
-
+from .models_billing import ContractorBillingProfile  # noqa: F401

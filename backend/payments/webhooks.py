@@ -6,6 +6,15 @@
 # - refund sync: handle refund.updated and charge.refunded to update payments.Refund status to match Stripe
 # - invoice branch: robust card brand/last4 capture
 # - never returns 500 to Stripe to avoid retry storms
+#
+# v2026-02-11:
+# - ✅ Direct Pay (Checkout) support:
+#   - handle checkout.session.completed with metadata.payment_mode=DIRECT + metadata.invoice_id
+#   - mark projects.Invoice paid using direct_pay_* fields (no escrow hold)
+#
+# v2026-02-15 (this update):
+# - ✅ Direct Pay: make metadata check case-insensitive and tolerant
+# - ✅ Direct Pay: handle async checkout completion events (future-proof)
 
 from __future__ import annotations
 
@@ -262,7 +271,6 @@ def _handle_invoice_payment_succeeded(intent: dict) -> None:
     except Exception:
         send_receipt_email = None
 
-    # legacy fallback (will be overridden by computed fee if we can compute)
     platform_fee_cents = _safe_int(metadata.get("platform_fee_cents"), default=0)
 
     with transaction.atomic():
@@ -274,9 +282,6 @@ def _handle_invoice_payment_succeeded(intent: dict) -> None:
 
         changed = _mark_invoice_paid(inv, pi_id=pi_id, stripe_charge_id=stripe_charge_id)
 
-        # ─────────────────────────────────────────────
-        # NEW: compute + persist fee snapshot on Receipt
-        # ─────────────────────────────────────────────
         fee_snapshot = {}
         computed_fee_cents = 0
 
@@ -289,14 +294,14 @@ def _handle_invoice_payment_succeeded(intent: dict) -> None:
                 from payments.fees import (
                     compute_fee_summary_for_invoice_payment,
                     build_invoice_payment_fee_snapshot,
-                    _cents_from_money,  # internal helper, OK to use inside your app
+                    _cents_from_money,
                 )
 
                 summary = compute_fee_summary_for_invoice_payment(
                     amount_cents=amount_received_cents,
                     contractor=contractor,
                     agreement_id=agreement_id,
-                    is_high_risk=False,  # wire this if you have a per-invoice flag later
+                    is_high_risk=False,
                 )
 
                 fee_snapshot = build_invoice_payment_fee_snapshot(summary)
@@ -331,14 +336,12 @@ def _handle_invoice_payment_succeeded(intent: dict) -> None:
                         card_last4=card_last4,
                     )
 
-                    # If Receipt has agreement FK, populate it (optional but recommended)
                     try:
                         if hasattr(Receipt, "agreement") and getattr(inv, "agreement_id", None):
                             create_kwargs["agreement_id"] = inv.agreement_id
                     except Exception:
                         pass
 
-                    # Persist snapshot fields (only set keys that exist on the model)
                     for k, v in (fee_snapshot or {}).items():
                         try:
                             if hasattr(Receipt, k):
@@ -379,6 +382,93 @@ def _handle_invoice_payment_succeeded(intent: dict) -> None:
             log.info("Invoice marked PAID invoice=%s pi=%s cents=%s", inv.id, pi_id, amount_received_cents)
         else:
             log.info("Invoice already paid/released invoice=%s pi=%s", inv.id, pi_id)
+
+
+def _handle_direct_pay_checkout_completed(session: dict) -> None:
+    """
+    Direct Pay (Checkout) path:
+    - Checkout Session created for a DIRECT agreement invoice
+    - We store metadata.invoice_id and metadata.payment_mode="DIRECT"
+    - On checkout completion, mark the projects.Invoice as paid using direct_pay_* fields
+    """
+    meta = session.get("metadata") or {}
+
+    payment_mode = str(meta.get("payment_mode") or "").strip()
+    if payment_mode.lower() != "direct":
+        return
+
+    invoice_id = meta.get("invoice_id")
+    if not invoice_id:
+        return
+
+    Invoice = _get_model("projects", "Invoice")
+    if Invoice is None:
+        return
+
+    inv_id = _safe_int(invoice_id, default=0)
+    if inv_id <= 0:
+        return
+
+    session_id = session.get("id") or ""
+    payment_intent = session.get("payment_intent") or ""
+
+    with transaction.atomic():
+        try:
+            inv = Invoice.objects.select_for_update().select_related("agreement").get(id=inv_id)
+        except Exception:
+            log.warning("Direct Pay checkout handler: invoice not found id=%s (session=%s)", invoice_id, session_id)
+            return
+
+        # Safety: only apply to agreements that are truly direct pay
+        try:
+            ag = getattr(inv, "agreement", None)
+            if ag and str(getattr(ag, "payment_mode", "") or "").lower() != "direct":
+                log.warning("Direct Pay checkout handler: invoice=%s agreement not direct; skipping", inv_id)
+                return
+        except Exception:
+            pass
+
+        # Idempotent: if already paid, do nothing
+        if str(getattr(inv, "status", "") or "").lower() == "paid":
+            return
+        if getattr(inv, "direct_pay_paid_at", None):
+            return
+
+        update_fields = []
+
+        try:
+            from projects.models import InvoiceStatus  # type: ignore
+            inv.status = InvoiceStatus.PAID if hasattr(InvoiceStatus, "PAID") else "paid"
+        except Exception:
+            inv.status = "paid"
+        update_fields.append("status")
+
+        if hasattr(inv, "direct_pay_paid_at"):
+            inv.direct_pay_paid_at = now()
+            update_fields.append("direct_pay_paid_at")
+
+        if payment_intent and hasattr(inv, "direct_pay_payment_intent_id"):
+            inv.direct_pay_payment_intent_id = payment_intent
+            update_fields.append("direct_pay_payment_intent_id")
+
+        if session_id and hasattr(inv, "direct_pay_checkout_session_id"):
+            inv.direct_pay_checkout_session_id = session_id
+            update_fields.append("direct_pay_checkout_session_id")
+
+        try:
+            if update_fields:
+                inv.save(update_fields=update_fields)
+            else:
+                inv.save()
+        except Exception:
+            inv.save()
+
+        log.info(
+            "Direct Pay invoice marked PAID invoice=%s session=%s pi=%s",
+            inv_id,
+            session_id,
+            payment_intent,
+        )
 
 
 def _upsert_payment_for_escrow_funding(ag, pi_id: str, paid: Decimal, currency: str) -> None:
@@ -518,6 +608,10 @@ def stripe_webhook(request):
     Handles:
     - account.updated
     - account.application.deauthorized
+    - checkout.session.completed (✅ Direct Pay invoices)
+      - If metadata.payment_mode == DIRECT and metadata.invoice_id exists: mark invoice paid (direct_pay_* fields)
+    - checkout.session.async_payment_succeeded (✅ future-proof)
+      - treat same as completed for Direct Pay
     - payment_intent.succeeded
       - If metadata.invoice_id exists: mark invoice paid + generate receipt (optional)
       - Else if metadata.agreement_id exists: escrow funding (supports amendments / top-ups)
@@ -570,6 +664,22 @@ def stripe_webhook(request):
                         stripe_status_updated_at=now(),
                     )
 
+        # ✅ Direct Pay Checkout completion (card payments usually land here)
+        elif event_type == "checkout.session.completed":
+            try:
+                _handle_direct_pay_checkout_completed(data_obj)
+            except Exception:
+                log.exception("Direct Pay checkout handler failed (session=%s).", data_obj.get("id"))
+            return HttpResponse(status=200)
+
+        # ✅ Future-proof: async payment methods (if you enable them later)
+        elif event_type == "checkout.session.async_payment_succeeded":
+            try:
+                _handle_direct_pay_checkout_completed(data_obj)
+            except Exception:
+                log.exception("Direct Pay async checkout handler failed (session=%s).", data_obj.get("id"))
+            return HttpResponse(status=200)
+
         elif event_type == "refund.updated":
             try:
                 _sync_refund_from_stripe(data_obj)
@@ -591,7 +701,7 @@ def stripe_webhook(request):
             intent = data_obj
             metadata = intent.get("metadata") or {}
 
-            # ✅ Invoice payments
+            # ✅ Invoice payments (existing PI-based invoice payment path)
             if metadata.get("invoice_id"):
                 try:
                     _handle_invoice_payment_succeeded(intent)
@@ -599,7 +709,6 @@ def stripe_webhook(request):
                     log.exception("Invoice payment handler failed (pi=%s).", intent.get("id"))
                 return HttpResponse(status=200)
 
-            # Escrow funding (agreement_id) — keep your existing logic
             Agreement = _get_model("projects", "Agreement")
             Milestone = _get_model("projects", "Milestone")
             AgreementFundingLink = _get_model("projects", "AgreementFundingLink")

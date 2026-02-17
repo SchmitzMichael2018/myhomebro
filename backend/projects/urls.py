@@ -14,6 +14,8 @@ from .views.agreements import (
     send_final_agreement_link_view,
 )
 from .views.invoice import InvoiceViewSet, InvoicePDFView
+from .views.invoice_direct_pay_email import invoice_email_direct_pay_link
+
 from .views.milestone import (
     MilestoneViewSet,
     MilestoneFileViewSet,
@@ -112,6 +114,9 @@ from .views.agreement_closeout import (
 # ✅ NEW: Feature flags endpoint (Django settings → frontend gating)
 from .views.feature_flags import FeatureFlagsView
 
+# ✅ NEW: Direct Pay (subcontractor / no escrow) invoice pay link endpoint
+from .views.invoice_direct_pay import invoice_create_direct_pay_link
+
 app_name = "projects_api"
 
 router = DefaultRouter(trailing_slash="/?")
@@ -157,6 +162,12 @@ urlpatterns = [
     # Mounts (under /api/projects/...):
     #   POST /api/projects/disputes/<id>/ai/recommendation/
     path("", include("projects.api.disputes_ai_urls")),
+
+    # -------------------------------------------------
+    # ✅ Direct Pay (Subcontractor / no escrow)
+    # -------------------------------------------------
+    path("invoices/<int:pk>/direct_pay_link/", invoice_create_direct_pay_link),
+    path("invoices/<int:pk>/direct_pay_email/", invoice_email_direct_pay_link),
 
     # -------------------------------------------------
     # Agreement utilities
@@ -289,6 +300,8 @@ urlpatterns = [
     path("", include(router.urls)),
     path("", include(milestone_router.urls)),
     path("", include(agreements_router.urls)),
+
+    path("", include("projects.urls_invites")),
 ]
 
 urlpatterns += [

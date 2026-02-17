@@ -48,6 +48,32 @@ def _normalize_project_type(value: Optional[str]) -> Optional[str]:
     return _NORMALIZE_PROJECT_TYPE.get(key, value)
 
 
+def _normalize_payment_mode(value: Optional[str]) -> Optional[str]:
+    """
+    Make serializer tolerant to UI variants:
+      "direct", "DIRECT", "Direct Pay", etc. -> "direct"
+      "escrow", "ESCROW", "protected" -> "escrow"
+    If unknown, return original (let model/validation handle).
+    """
+    if value in (None, ""):
+        return None
+    s = str(value).strip().lower()
+
+    # common synonyms
+    if s in ("direct", "direct_pay", "direct pay", "subcontractor", "no_escrow", "no escrow"):
+        return "direct"
+    if s in ("escrow", "protected", "stripe", "funding"):
+        return "escrow"
+
+    # tolerate "DIRECT" / "ESCROW"
+    if s == "direct":
+        return "direct"
+    if s == "escrow":
+        return "escrow"
+
+    return value  # fall through
+
+
 # ------------------------------------------------------------
 # ✅ NEW: Writable nested serializer for ai_scope PATCH support
 # ------------------------------------------------------------
@@ -115,13 +141,9 @@ class AgreementSerializer(serializers.ModelSerializer):
     remaining_to_fund = serializers.SerializerMethodField()
 
     # ✅ AI scope clarifications
-    # Keep your existing READ behavior:
     ai_scope = serializers.SerializerMethodField()
-    # ✅ NEW: Accept WRITE payloads without breaking read behavior
     ai_scope_input = AgreementAIScopeWriteSerializer(write_only=True, required=False)
 
-    # ✅ OPTIONAL: allow "scope_clarifications" as a write alias for ai_scope.answers
-    # (Useful if your frontend/PDF calls it that.)
     scope_clarifications = serializers.JSONField(write_only=True, required=False)
 
     # ---- WRITE aliases for warranty ----
@@ -402,6 +424,10 @@ class AgreementSerializer(serializers.ModelSerializer):
         if "project_type" in data and data["project_type"]:
             data["project_type"] = _normalize_project_type(data["project_type"])
 
+        # ✅ NEW: Normalize payment_mode
+        if "payment_mode" in data and data["payment_mode"] is not None:
+            data["payment_mode"] = _normalize_payment_mode(data["payment_mode"])
+
         mappings = [
             ("project_address_line1", "address_line1"),
             ("project_address_line2", "address_line2"),
@@ -418,19 +444,14 @@ class AgreementSerializer(serializers.ModelSerializer):
             elif model_key in data and data[model_key] is not None:
                 data[proj_key] = data[model_key]
 
-        # UI-only / client-only keys
         data.pop("project_address_same_as_homeowner", None)
 
         # If frontend sends status, ignore it (server authoritative)
         data.pop("status", None)
 
-        # ✅ NEW: accept frontend "ai_scope" key by remapping it into our writable ai_scope_input
+        # ✅ accept frontend "ai_scope" key by remapping it into our writable ai_scope_input
         if "ai_scope" in data and data["ai_scope"] is not None and "ai_scope_input" not in data:
             data["ai_scope_input"] = data.pop("ai_scope")
-
-        # ✅ NEW: accept frontend "scope_clarifications" key (write-only alias)
-        # We keep it separate and apply in update()
-        # (nothing else to do here)
 
         address_keys = {
             "project_address_line1",
@@ -532,27 +553,23 @@ class AgreementSerializer(serializers.ModelSerializer):
         scope_obj.save()
 
     def create(self, validated_data):
-        # ✅ pull ai scope inputs before popping fields
         ai_scope_payload = validated_data.pop("ai_scope_input", None)
         scope_clarifications_payload = validated_data.pop("scope_clarifications", None)
 
         validated_data = self._pop_non_model_fields(validated_data)
         agreement = Agreement.objects.create(**validated_data)
 
-        # ✅ persist ai scope after creating agreement
         self._persist_ai_scope(agreement, ai_scope_payload, scope_clarifications_payload)
 
         return agreement
 
     def update(self, instance, validated_data):
-        # ✅ pull ai scope inputs before popping fields
         ai_scope_payload = validated_data.pop("ai_scope_input", None)
         scope_clarifications_payload = validated_data.pop("scope_clarifications", None)
 
         validated_data = self._pop_non_model_fields(validated_data)
         instance = super().update(instance, validated_data)
 
-        # ✅ persist ai scope after updating agreement fields
         self._persist_ai_scope(instance, ai_scope_payload, scope_clarifications_payload)
 
         return instance

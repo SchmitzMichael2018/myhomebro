@@ -1,5 +1,6 @@
 # backend/projects/views/invoice.py
 # v2026-01-10 — Dispute hard-lock: prevent submit/resend while dispute active
+# v2026-02-11 — Direct Pay invoices: create Stripe Checkout link for subcontractor jobs (no escrow)
 # Keeps all existing behavior otherwise.
 
 import logging
@@ -21,6 +22,9 @@ from postmarker.core import PostmarkClient
 from ..models import Invoice, InvoiceStatus, MilestoneComment, MilestoneFile
 from ..serializers.invoices import InvoiceSerializer
 from projects.services.invoice_pdf import generate_invoice_pdf_bytes
+
+# ✅ NEW: Direct Pay service
+from projects.services.direct_pay import create_direct_pay_checkout_for_invoice
 
 logger = logging.getLogger(__name__)
 
@@ -276,7 +280,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         return (
             Invoice.objects
             .filter(agreement__project__contractor__user=user)
-            .select_related("agreement__project__contractor__user", "agreement__project__homeowner")
+            .select_related("agreement__project__contractor__user", "agreement__project__homeowner", "agreement__contractor", "agreement__project")
             .distinct()
         )
 
@@ -292,6 +296,52 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         except Exception:
             logger.exception("PDF generation for Invoice %s failed", getattr(invoice, "id", pk))
             return Response({"detail": "Failed to generate invoice PDF."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    # ------------------------------------------------------------------
+    # ✅ NEW: Direct Pay (Subcontractor / no escrow) — create Stripe Checkout link
+    # POST /api/projects/invoices/<id>/direct_pay_link/
+    # ------------------------------------------------------------------
+    @action(detail=True, methods=["post"], url_path="direct_pay_link")
+    def direct_pay_link(self, request, pk=None):
+        invoice = self.get_object()
+
+        # Ownership guard (match your submit/resend rule)
+        if request.user != invoice.agreement.project.contractor.user:
+            raise PermissionDenied("Only the contractor can create a Direct Pay link for this invoice.")
+
+        # 🔒 Reuse dispute hard-lock
+        if _agreement_has_active_dispute(getattr(invoice, "agreement", None)):
+            return Response(
+                {"detail": "This agreement has an active dispute. Direct Pay link creation is paused."},
+                status=400,
+            )
+
+        # Must be direct pay agreement
+        if getattr(invoice.agreement, "payment_mode", None) != "direct":
+            return Response(
+                {"detail": "This agreement is not in Direct Pay mode."},
+                status=400,
+            )
+
+        # Safety: paid invoices cannot get a new pay link
+        if str(getattr(invoice, "status", "") or "").lower() == "paid" or getattr(invoice, "direct_pay_paid_at", None):
+            return Response(
+                {"detail": "This invoice is already paid and cannot generate a new pay link."},
+                status=400,
+            )
+
+        # If a link already exists, just return it (idempotent behavior)
+        existing_url = (getattr(invoice, "direct_pay_checkout_url", "") or "").strip()
+        if existing_url:
+            return Response({"checkout_url": existing_url}, status=status.HTTP_200_OK)
+
+        try:
+            checkout_url = create_direct_pay_checkout_for_invoice(invoice)
+        except Exception as e:
+            logger.exception("Direct Pay link creation failed for invoice %s", getattr(invoice, "id", pk))
+            return Response({"detail": "Failed to create Direct Pay link.", "error": str(e)}, status=400)
+
+        return Response({"checkout_url": checkout_url}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"])
     def submit(self, request, pk=None):

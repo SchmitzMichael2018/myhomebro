@@ -95,7 +95,19 @@ class HomeownerViewSet(viewsets.ModelViewSet):
         q = (self.request.query_params.get("q") or "").strip()
         if q:
             model_fields = {f.name for f in Homeowner._meta.get_fields()}
-            search_candidates = ("name", "full_name", "first_name", "last_name", "email", "phone", "phone_number")
+
+            # ✅ UPDATED: include company_name
+            search_candidates = (
+                "company_name",
+                "name",
+                "full_name",
+                "first_name",
+                "last_name",
+                "email",
+                "phone",
+                "phone_number",
+            )
+
             search_fields = [f for f in search_candidates if f in model_fields]
             if search_fields:
                 cond = Q()
@@ -139,7 +151,7 @@ class HomeownerViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request: Request, *args, **kwargs):
         instance: Homeowner = self.get_object()
-        contractor = _get_contractor_for_user(self.request.user)
+        contractor = _get_contractor_for_user(request.user)
         if contractor is None or instance.created_by_id != contractor.id:
             raise PermissionDenied(detail={
                 "detail": "You do not have permission to delete this customer.",

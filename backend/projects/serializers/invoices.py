@@ -24,6 +24,9 @@ class InvoiceSerializer(serializers.ModelSerializer):
     project_title = serializers.SerializerMethodField()
     agreement_id = serializers.SerializerMethodField()
 
+    # ✅ NEW: agreement payment mode (escrow vs direct)
+    agreement_payment_mode = serializers.SerializerMethodField()
+
     # ─────────────────────────────
     # Milestone context (existing)
     # ─────────────────────────────
@@ -34,7 +37,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
     milestone_attachments = serializers.SerializerMethodField()
 
     # ─────────────────────────────
-    # ✅ NEW: escrow / payout audit
+    # ✅ NEW: escrow / payout audit (existing)
     # ─────────────────────────────
     escrow_released = serializers.BooleanField(read_only=True)
     escrow_released_at = serializers.DateTimeField(read_only=True)
@@ -48,6 +51,10 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
     # ✅ NEW: UI-friendly status
     display_status = serializers.SerializerMethodField()
+
+    # ✅ NEW: DIRECT PAY fields (read-only)
+    direct_pay_checkout_url = serializers.CharField(read_only=True)
+    direct_pay_paid_at = serializers.DateTimeField(read_only=True)
 
     class Meta:
         model = Invoice
@@ -73,9 +80,16 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "escrow_released",
             "escrow_released_at",
 
+            # ✅ DIRECT PAY timestamps/link
+            "direct_pay_paid_at",
+            "direct_pay_checkout_url",
+
             # relations
             "agreement",
             "agreement_id",
+
+            # ✅ agreement payment mode
+            "agreement_payment_mode",
 
             # stripe / payout
             "stripe_transfer_id",
@@ -106,6 +120,10 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if getattr(obj, "escrow_released", False):
             return "Paid"
 
+        # ✅ DIRECT PAY paid = paid
+        if getattr(obj, "direct_pay_paid_at", None):
+            return "Paid"
+
         raw = str(getattr(obj, "status", "") or "")
         return raw.replace("_", " ").strip().title() if raw else "—"
 
@@ -121,11 +139,19 @@ class InvoiceSerializer(serializers.ModelSerializer):
         return cents_to_dollars(cents)
 
     # ─────────────────────────────
-    # Existing helper methods
+    # Agreement helpers
     # ─────────────────────────────
     def get_agreement_id(self, obj):
         return getattr(obj.agreement, "id", None)
 
+    def get_agreement_payment_mode(self, obj):
+        agreement = getattr(obj, "agreement", None)
+        # Will be "escrow" or "direct"
+        return getattr(agreement, "payment_mode", None) if agreement else None
+
+    # ─────────────────────────────
+    # Existing helper methods
+    # ─────────────────────────────
     def get_homeowner_name(self, obj):
         agreement = obj.agreement
         project = getattr(agreement, "project", None)

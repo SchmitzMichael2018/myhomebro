@@ -1,5 +1,5 @@
 # backend/projects/views/funding.py
-# v2025-12-14-receipts — Escrow funding + public fund + fee preview + amendment top-ups + receipt endpoint
+# v2026-02-10 — Escrow funding + public fund + fee preview + amendment top-ups + receipt endpoint
 #
 # Includes:
 # - Milestones are source of truth for total required (self-heals agreement.total_cost)
@@ -8,6 +8,11 @@
 # - Card-only PaymentIntents (removes Cash App / Klarna / Amazon Pay, etc.)
 # - Adds receipt_email to PaymentIntent (Stripe can email receipts if enabled)
 # - Adds receipt endpoint: GET /api/projects/funding/receipt/?token=...
+#
+# ✅ Fix:
+# - Funding preview intro pricing now anchors to the *most recent* of:
+#     contractor.created_at OR contractor.user.date_joined
+#   This prevents pre-created contractor rows (invites/seeds) from incorrectly ending intro pricing.
 
 from __future__ import annotations
 
@@ -26,7 +31,7 @@ from rest_framework.views import APIView
 import stripe
 
 from projects.models import Agreement, AgreementFundingLink, Milestone
-from payments.fees import compute_fee_summary
+from payments.fees import compute_fee_summary, INTRO_DAYS  # ✅ pull intro days for UI consistency
 
 logger = logging.getLogger(__name__)
 stripe.api_key = getattr(settings, "STRIPE_SECRET_KEY", None)
@@ -99,6 +104,31 @@ def _sync_funding_flags(agreement: Agreement, *, heal_total: bool = True, persis
         "remaining": remaining,
         "escrow_funded": is_funded,
     }
+
+
+def _pricing_start_date_for_contractor(contractor):
+    """
+    ✅ Determines pricing start anchor for intro pricing.
+    Use the *most recent* of contractor.created_at and contractor.user.date_joined.
+    This prevents pre-created contractor rows from incorrectly ending intro pricing.
+    """
+    created_at = getattr(contractor, "created_at", None) or getattr(contractor, "created", None)
+    user = getattr(contractor, "user", None)
+    joined_at = getattr(user, "date_joined", None) if user else None
+
+    # Normalize to a date (compute_fee_summary accepts date or datetime, but we keep it consistent)
+    candidates = []
+    if created_at:
+        candidates.append(created_at)
+    if joined_at:
+        candidates.append(joined_at)
+
+    if not candidates:
+        return timezone.now()
+
+    # We want the latest timestamp
+    latest = max(candidates)
+    return latest
 
 
 # ─────────────────────────────────────────────────────────────
@@ -458,13 +488,16 @@ class AgreementFundingPreviewView(APIView):
 
     def get(self, request, pk: int, *args, **kwargs):
         try:
-            agreement = Agreement.objects.select_related("contractor").get(pk=pk)
+            agreement = Agreement.objects.select_related("contractor", "contractor__user").get(pk=pk)
         except Agreement.DoesNotExist:
             return Response({"detail": "Agreement not found."}, status=status.HTTP_404_NOT_FOUND)
 
         contractor = getattr(agreement, "contractor", None)
-        if not contractor or not getattr(contractor, "created_at", None):
+        if not contractor:
             return Response({"detail": "Agreement is missing contractor metadata."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # ✅ Use the most recent anchor date (prevents old pre-created contractor rows from killing intro)
+        pricing_start = _pricing_start_date_for_contractor(contractor)
 
         sync = _sync_funding_flags(agreement, heal_total=True, persist=True)
         total_required = sync["total_required"]
@@ -473,7 +506,7 @@ class AgreementFundingPreviewView(APIView):
         try:
             summary = compute_fee_summary(
                 project_amount=total_required,
-                contractor_created_at=contractor.created_at,
+                contractor_created_at=pricing_start,
                 monthly_volume=monthly_volume,
                 fee_payer="contractor",
                 is_high_risk=getattr(agreement, "is_high_risk", False),
@@ -500,6 +533,7 @@ class AgreementFundingPreviewView(APIView):
                     "tier_name": "unknown",
                     "tier_label": "Fee summary unavailable",
                     "high_risk_applied": False,
+                    "intro_days": INTRO_DAYS,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -521,6 +555,7 @@ class AgreementFundingPreviewView(APIView):
                 "tier_name": summary.rate_info.tier_name,
                 "tier_label": getattr(summary.rate_info, "label", ""),
                 "high_risk_applied": summary.rate_info.high_risk_applied,
+                "intro_days": INTRO_DAYS,
             },
             status=status.HTTP_200_OK,
         )

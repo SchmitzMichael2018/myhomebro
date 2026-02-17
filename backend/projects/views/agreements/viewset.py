@@ -58,17 +58,99 @@ RETENTION_YEARS = 3
 class AgreementViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     serializer_class = AgreementSerializer
-    queryset = (
-        Agreement.objects.select_related("project", "contractor", "homeowner")
-        .all()
-        .order_by("-updated_at")
+
+    # IMPORTANT:
+    # - Do NOT use .all() as a public queryset for contractors; it leaks data.
+    # - get_queryset() below filters by the authenticated contractor (staff can see all).
+    queryset = Agreement.objects.select_related("project", "contractor", "homeowner").order_by(
+        "-updated_at"
     )
+
+    def get_queryset(self):
+        """
+        ✅ SECURITY FIX:
+        Contractors must only see their own agreements.
+        Staff/superusers can see all.
+        """
+        qs = Agreement.objects.select_related("project", "contractor", "homeowner").order_by(
+            "-updated_at"
+        )
+
+        user = getattr(self.request, "user", None)
+        if not user or not user.is_authenticated:
+            return qs.none()
+
+        # Staff can see everything
+        if user.is_staff or user.is_superuser:
+            return qs
+
+        # Contractors: restrict to their own agreements
+        contractor = resolve_contractor_for_user(user)
+        if contractor is None:
+            return qs.none()
+
+        return qs.filter(contractor=contractor)
 
     def _enforce_editability(self, instance: Agreement, data: dict):
         return enforce_editability(self.request, instance, data)
 
     def _prepare_payload(self, request):
         return prepare_payload(request)
+
+    # ---------------------------------------------------------------------
+    # ✅ Completion Gate: require BOTH Home Address + Project Address
+    # ---------------------------------------------------------------------
+    def _validate_required_addresses(self, ag: Agreement):
+        """
+        Invite acceptance may create a Customer with minimal info (name/email/phone).
+        But a FINAL agreement must have:
+          - Customer (home) address complete
+          - Project address complete
+
+        Returns:
+          - None if OK
+          - Response(400) with missing fields if incomplete
+        """
+        missing = {
+            "home_address": [],
+            "project_address": [],
+        }
+
+        # ---- Customer/Homeowner address ----
+        h = getattr(ag, "homeowner", None)
+
+        if not h or not getattr(h, "street_address", "").strip():
+            missing["home_address"].append("street_address")
+        if not h or not getattr(h, "city", "").strip():
+            missing["home_address"].append("city")
+        if not h or not getattr(h, "state", "").strip():
+            missing["home_address"].append("state")
+        if not h or not getattr(h, "zip_code", "").strip():
+            missing["home_address"].append("zip_code")
+
+        # ---- Project address (Agreement fields) ----
+        if not getattr(ag, "project_address_line1", "").strip():
+            missing["project_address"].append("project_address_line1")
+        if not getattr(ag, "project_address_city", "").strip():
+            missing["project_address"].append("project_address_city")
+        if not getattr(ag, "project_address_state", "").strip():
+            missing["project_address"].append("project_address_state")
+        if not getattr(ag, "project_postal_code", "").strip():
+            missing["project_address"].append("project_postal_code")
+
+        # prune empties
+        missing = {k: v for k, v in missing.items() if v}
+
+        if missing:
+            return Response(
+                {
+                    "detail": "Agreement is missing required address information.",
+                    "missing": missing,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return None
 
     # ---------------------------------------------------------------------
     # CREATE
@@ -267,6 +349,11 @@ class AgreementViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def finalize_pdf(self, request, pk=None):
         ag = self.get_object()
+
+        addr_error = self._validate_required_addresses(ag)
+        if addr_error:
+            return addr_error
+
         try:
             pdf_url = finalize_agreement_pdf(ag, generate_full_agreement_pdf=generate_full_agreement_pdf)
         except RuntimeError as e:
@@ -281,29 +368,49 @@ class AgreementViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def send_signature_request(self, request, pk=None):
         ag: Agreement = self.get_object()
+
+        addr_error = self._validate_required_addresses(ag)
+        if addr_error:
+            return addr_error
+
         try:
             payload = send_signature_request_to_homeowner(ag)
             return Response(payload, status=status.HTTP_200_OK)
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            return Response({"detail": f"Unexpected error: {type(e).__name__}: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"detail": f"Unexpected error: {type(e).__name__}: {e}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     @action(detail=True, methods=["post"], url_path="send_final_agreement_link")
     def send_final_agreement_link(self, request, pk=None):
         ag: Agreement = self.get_object()
+
+        addr_error = self._validate_required_addresses(ag)
+        if addr_error:
+            return addr_error
+
         try:
             payload = send_final_link_for_agreement(ag, force_send=True)
             return Response(payload, status=status.HTTP_200_OK)
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            return Response({"detail": f"Unexpected error: {type(e).__name__}: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"detail": f"Unexpected error: {type(e).__name__}: {e}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     @action(detail=True, methods=["post"])
     def contractor_sign(self, request, pk=None):
         ag: Agreement = self.get_object()
         require_contractor_sign_allowed(request.user, ag)
+
+        addr_error = self._validate_required_addresses(ag)
+        if addr_error:
+            return addr_error
 
         name = (request.data.get("typed_name") or request.data.get("name") or "").strip()
         signature_file = request.FILES.get("signature")

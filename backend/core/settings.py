@@ -157,10 +157,10 @@ INSTALLED_APPS = [
     # Local apps
     "core",
     "accounts",
-    "projects",
     "payments",
     "receipts.apps.ReceiptsConfig",
     "adminpanel",
+    "projects.apps.ProjectsConfig",
 ]
 
 MIDDLEWARE = [
