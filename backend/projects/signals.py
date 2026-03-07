@@ -2,10 +2,11 @@
 
 import logging
 from django.db import transaction
-from django.db.models.signals import post_save, pre_save
+from django.db.models.signals import post_save, pre_save, post_delete
 from django.dispatch import receiver
+from django.utils import timezone
 
-from .models import Agreement, Invoice, Contractor
+from .models import Agreement, Invoice, Contractor, Milestone
 from .models_ai_entitlements import ContractorAIEntitlement
 from .tasks import (
     task_send_invoice_notification,
@@ -91,7 +92,7 @@ def on_invoice_creation(sender, instance: Invoice, created: bool, **kwargs):
 
 
 # --------------------------------------------------------------------
-# ✅ NEW: Contractor post-save → auto-create AI entitlement
+# Contractor post-save → auto-create AI entitlement
 # --------------------------------------------------------------------
 @receiver(post_save, sender=Contractor)
 def on_contractor_creation(sender, instance: Contractor, created: bool, **kwargs):
@@ -124,3 +125,31 @@ def on_contractor_creation(sender, instance: Contractor, created: bool, **kwargs
             f"❌ Failed to auto-create AI entitlements for Contractor "
             f"{instance.id}: {e}"
         )
+
+
+# --------------------------------------------------------------------
+# ✅ Milestone save/delete → touch Agreement.updated_at
+# --------------------------------------------------------------------
+def _touch_agreement_updated_at(agreement: Agreement | None):
+    """
+    Preview cache invalidation relies on Agreement.updated_at.
+    Milestone changes must bump Agreement.updated_at so cached previews regenerate.
+    """
+    if not agreement or not getattr(agreement, "id", None):
+        return
+    try:
+        Agreement.objects.filter(pk=agreement.pk).update(updated_at=timezone.now())
+    except Exception as e:
+        logger.warning(
+            f"⚠️ Could not touch Agreement.updated_at for {getattr(agreement, 'pk', None)}: {e}"
+        )
+
+
+@receiver(post_save, sender=Milestone)
+def on_milestone_saved_touch_agreement(sender, instance: Milestone, created: bool, **kwargs):
+    _touch_agreement_updated_at(getattr(instance, "agreement", None))
+
+
+@receiver(post_delete, sender=Milestone)
+def on_milestone_deleted_touch_agreement(sender, instance: Milestone, **kwargs):
+    _touch_agreement_updated_at(getattr(instance, "agreement", None))

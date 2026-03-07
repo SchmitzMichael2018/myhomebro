@@ -1,4 +1,3 @@
-# backend/projects/urls.py
 from __future__ import annotations
 
 from django.urls import path, include, re_path
@@ -36,7 +35,6 @@ from .views.attachments import (
     AgreementAttachmentViewSet,
     AgreementAttachmentNestedView,
 )
-from .views.expenses import ExpenseViewSet
 
 from .views.agreements_merge import MergeAgreementsView
 from .views.calendar import MilestoneCalendarView, AgreementCalendarView
@@ -105,6 +103,8 @@ from .views.subaccount_schedule import (
 # ✅ Contractor Business Dashboard
 from .views.business_dashboard import BusinessDashboardSummaryAPIView
 
+from .views.expense_requests import ExpenseRequestViewSet
+
 # ✅ NEW: Agreement close-out / archive views
 from .views.agreement_closeout import (
     AgreementClosureStatusView,
@@ -117,6 +117,26 @@ from .views.feature_flags import FeatureFlagsView
 # ✅ NEW: Direct Pay (subcontractor / no escrow) invoice pay link endpoint
 from .views.invoice_direct_pay import invoice_create_direct_pay_link
 
+# ✅ Agreement AI endpoints
+from projects.api.ai_agreement_views import (
+    ai_agreement_description,
+    ai_suggest_milestones,
+)
+
+# ✅ NEW: Void Agreement AI credit endpoint
+from projects.api.ai_void_credit_views import void_agreement_ai_credit
+
+# ✅ NEW: Template endpoints
+from .views_template import (
+    TemplateListCreateView,
+    TemplateDetailView,
+    ApplyTemplateToAgreementView,
+    SaveAgreementAsTemplateView,
+)
+
+# ✅ NEW: Template recommendation endpoint
+from .views_template_recommend import TemplateRecommendView
+
 app_name = "projects_api"
 
 router = DefaultRouter(trailing_slash="/?")
@@ -127,7 +147,7 @@ router.register(r"invoices", InvoiceViewSet, basename="invoices")
 router.register(r"milestones", MilestoneViewSet, basename="milestones")
 router.register(r"milestone-files", MilestoneFileViewSet, basename="milestone-files")
 router.register(r"disputes", DisputeViewSet, basename="disputes")
-router.register(r"expenses", ExpenseViewSet, basename="expenses")
+router.register(r"expense-requests", ExpenseRequestViewSet, basename="expense-requests")
 router.register(r"attachments", AgreementAttachmentViewSet, basename="attachments")
 router.register(r"subaccounts", ContractorSubAccountViewSet, basename="subaccounts")
 router.register(r"dispute-workorders", DisputeWorkOrderViewSet, basename="dispute-workorders")
@@ -164,6 +184,23 @@ urlpatterns = [
     path("", include("projects.api.disputes_ai_urls")),
 
     # -------------------------------------------------
+    # ✅ NEW: Project Templates
+    # -------------------------------------------------
+    path("templates/", TemplateListCreateView.as_view(), name="template-list-create"),
+    path("templates/recommend/", TemplateRecommendView.as_view(), name="template-recommend"),
+    path("templates/<int:pk>/", TemplateDetailView.as_view(), name="template-detail"),
+    path(
+        "agreements/<int:agreement_id>/apply-template/",
+        ApplyTemplateToAgreementView.as_view(),
+        name="agreement-apply-template",
+    ),
+    path(
+        "agreements/<int:agreement_id>/save-as-template/",
+        SaveAgreementAsTemplateView.as_view(),
+        name="agreement-save-as-template",
+    ),
+
+    # -------------------------------------------------
     # ✅ Direct Pay (Subcontractor / no escrow)
     # -------------------------------------------------
     path("invoices/<int:pk>/direct_pay_link/", invoice_create_direct_pay_link),
@@ -176,6 +213,15 @@ urlpatterns = [
     path("agreements/<int:pk>/milestones/", agreement_milestones),
     path("agreements/public_sign/", agreement_public_sign),
     path("agreements/public_pdf/", agreement_public_pdf),
+
+    # -------------------------------------------------
+    # ✅ Agreement AI (1 credit = 1 agreement)
+    # -------------------------------------------------
+    path("agreements/ai/description/", ai_agreement_description),
+    path("agreements/<int:agreement_id>/ai/suggest-milestones/", ai_suggest_milestones),
+
+    # ✅ NEW: Void Agreement AI credit (draft-only refund)
+    path("agreements/<int:agreement_id>/ai/void-credit/", void_agreement_ai_credit),
 
     path(
         "agreements/<int:agreement_id>/refund/",
@@ -304,9 +350,25 @@ urlpatterns = [
     path("", include("projects.urls_invites")),
 ]
 
+# ---------------------------------------------------------------------
+# ✅ Explicit endpoint hard-wires (works even if router/viewset is behind)
+# ---------------------------------------------------------------------
 urlpatterns += [
+    # Existing preview_pdf hard-wire
     re_path(
         r"^agreements/(?P<pk>\d+)/preview_pdf/?$",
         AgreementViewSet.as_view({"get": "preview_pdf"}),
+    ),
+
+    # ✅ NEW: preview_link hard-wire (fixes production 404)
+    re_path(
+        r"^agreements/(?P<pk>\d+)/preview_link/?$",
+        AgreementViewSet.as_view({"get": "preview_link"}),
+    ),
+
+    # ✅ NEW: acknowledge hard-wire (persists Step 4 checkbox state)
+    re_path(
+        r"^agreements/(?P<pk>\d+)/acknowledge/?$",
+        AgreementViewSet.as_view({"post": "acknowledge"}),
     ),
 ]

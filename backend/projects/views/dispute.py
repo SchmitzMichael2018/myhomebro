@@ -6,7 +6,6 @@ from datetime import datetime
 
 from django.conf import settings
 from django.core.exceptions import FieldError
-from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
@@ -15,7 +14,7 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework.response import Response
 
-from ..models_dispute import Dispute, DisputeAttachment
+from ..models_dispute import Dispute, DisputeAttachment, DisputeWorkOrder
 from ..serializers.dispute import (
     DisputeSerializer,
     DisputeCreateSerializer,
@@ -171,79 +170,45 @@ def _parse_rework_by_date(proposal: dict):
         return None
 
 
-def _create_rework_milestone(dispute: Dispute) -> Milestone | None:
-    """
-    Create a non-billable milestone for accepted rework proposals.
-    Uses best-effort field names to fit your Milestone schema.
-    """
+def _proposal_is_rework(dispute: Dispute) -> bool:
     proposal = dispute.proposal or {}
     if not isinstance(proposal, dict):
-        return None
+        return False
+    return str(proposal.get("proposal_type") or "").strip().lower() == "rework"
 
-    ptype = str(proposal.get("proposal_type") or "").lower()
-    if ptype != "rework":
-        return None
 
-    rework_by = _parse_rework_by_date(proposal)
-    if not rework_by:
-        return None
-
-    # Determine next order (if your Milestone has 'order')
-    max_order = (
-        Milestone.objects.filter(agreement=dispute.agreement)
-        .aggregate(models.Max("order"))
-        .get("order__max")
-    )
-    next_order = (max_order or 0) + 1
-
-    notes = proposal.get("notes") or "Dispute rework accepted by homeowner"
-
-    # Build kwargs using best-effort to match your Milestone fields
-    kwargs = {
-        "agreement": dispute.agreement,
-        "title": f"Rework — Dispute #{dispute.id}",
-        "description": notes,
-    }
-
-    # Order is common in your app; set if field exists
-    if any(f.name == "order" for f in Milestone._meta.fields):
-        kwargs["order"] = next_order
-
-    # Amount is common; set to 0 if exists
-    if any(f.name == "amount" for f in Milestone._meta.fields):
-        kwargs["amount"] = 0
-
-    # Due date field names vary; try common ones
-    field_names = {f.name for f in Milestone._meta.fields}
-    if "due_date" in field_names:
-        kwargs["due_date"] = rework_by
-    elif "completion_date" in field_names:
-        kwargs["completion_date"] = rework_by
-    elif "end_date" in field_names:
-        kwargs["end_date"] = rework_by
-
-    # “billable/invoiced” flags vary; set safe values if present
-    for name, value in [
-        ("is_invoiced", False),
-        ("invoiced", False),
-        ("billable", False),
-        ("is_billable", False),
-    ]:
-        if name in field_names:
-            kwargs[name] = value
-
-    # Status/completed flags vary
-    if "completed" in field_names:
-        kwargs["completed"] = False
-    if "status" in field_names:
-        # if status exists, keep it neutral; do not guess values
-        pass
-
+def _get_latest_workorder(dispute: Dispute) -> DisputeWorkOrder | None:
     try:
-        m = Milestone.objects.create(**kwargs)
-        return m
+        return (
+            DisputeWorkOrder.objects.filter(dispute=dispute)
+            .order_by("-id")
+            .first()
+        )
     except Exception:
-        # If schema mismatch, fail safely.
+        return None
+
+
+def _try_fetch_rework_milestone_id(dispute: Dispute) -> int | None:
+    """
+    Best-effort: pull rework_milestone_id from DisputeWorkOrder if created,
+    else try to find an agreement milestone with a matching dispute title.
+    """
+    wo = _get_latest_workorder(dispute)
+    if wo and getattr(wo, "rework_milestone_id", None):
+        try:
+            return int(wo.rework_milestone_id)
+        except Exception:
+            return None
+
+    # Fallback heuristic (should be rare once workorders are canonical)
+    try:
+        m = (
+            Milestone.objects.filter(agreement=dispute.agreement, title__icontains=f"Dispute #{dispute.id}")
+            .order_by("-id")
+            .first()
+        )
+        return int(m.id) if m else None
+    except Exception:
         return None
 
 
@@ -291,7 +256,6 @@ class DisputeViewSet(viewsets.ModelViewSet):
     # ─────────────────────────────────────────────
     @action(detail=True, methods=["post"], url_path="ai-summary")
     def ai_summary(self, request, pk=None):
-        # Enforce feature flags (Django is source of truth)
         if not getattr(settings, "AI_ENABLED", False):
             return Response({"detail": "AI is disabled."}, status=403)
         if not getattr(settings, "AI_DISPUTES_ENABLED", False):
@@ -303,13 +267,8 @@ class DisputeViewSet(viewsets.ModelViewSet):
             data = generate_dispute_ai_summary(dispute)
             return Response(data, status=200)
         except Exception as e:
-            # Fail-safe: never crash the dispute system
             return Response(
-                {
-                    "ok": False,
-                    "error": "AI summary failed.",
-                    "detail": str(e),
-                },
+                {"ok": False, "error": "AI summary failed.", "detail": str(e)},
                 status=500,
             )
 
@@ -322,7 +281,6 @@ class DisputeViewSet(viewsets.ModelViewSet):
         dispute.last_activity_at = timezone.now()
         dispute.save(update_fields=["public_token", "last_activity_at", "updated_at"])
 
-        # Admin notify optional
         if email_admin_dispute_update:
             from django.conf import settings as dj_settings
             email_admin_dispute_update(dispute, getattr(dj_settings, "DISPUTE_ADMIN_EMAIL", "") or "", "Dispute created")
@@ -410,7 +368,6 @@ class DisputeViewSet(viewsets.ModelViewSet):
             "status", "updated_at"
         ])
 
-        # Email homeowner decision link
         if proposal_sent and email_homeowner_proposal_sent:
             email_homeowner_proposal_sent(dispute)
 
@@ -535,17 +492,26 @@ def public_dispute_accept(request, dispute_id: int):
         ("\n\n" if dispute.homeowner_response else "") + tag
     )
 
-    # ✅ B: create non-billable rework milestone if proposal indicates rework
-    created_milestone = _create_rework_milestone(dispute)
-
+    # ✅ Canonical resolution: set status to resolved_contractor and let Dispute.save()
+    # create the DisputeWorkOrder + rework milestone on_commit (models_dispute.py).
     dispute.status = "resolved_contractor"
     dispute.escrow_frozen = False
     dispute.resolved_at = now
     dispute.last_activity_at = now
+
     dispute.save(update_fields=[
         "homeowner_response", "status", "escrow_frozen", "resolved_at",
         "last_activity_at", "updated_at"
     ])
+
+    # Attempt to resolve rework milestone linkage now (best-effort).
+    # NOTE: the actual milestone creation is scheduled via transaction.on_commit in Dispute.save().
+    # In practice, with autocommit this will often be immediate; if not, UI can refresh.
+    rework_mid = None
+    try:
+        rework_mid = _try_fetch_rework_milestone_id(dispute)
+    except Exception:
+        rework_mid = None
 
     # Contractor + admin confirmation emails (optional)
     if email_contractor_status_update:
@@ -559,8 +525,8 @@ def public_dispute_accept(request, dispute_id: int):
         email_admin_dispute_update(dispute, getattr(dj_settings, "DISPUTE_ADMIN_EMAIL", "") or "", "Homeowner accepted proposal")
 
     payload = DisputePublicSerializer(dispute, context={"request": request}).data
-    payload["rework_milestone_created"] = bool(created_milestone)
-    payload["rework_milestone_id"] = created_milestone.id if created_milestone else None
+    payload["rework_milestone_created"] = bool(rework_mid)
+    payload["rework_milestone_id"] = rework_mid
 
     return Response(payload, status=200)
 
@@ -592,7 +558,6 @@ def public_dispute_reject(request, dispute_id: int):
     dispute.last_activity_at = now
     dispute.save(update_fields=["homeowner_response", "status", "escrow_frozen", "last_activity_at", "updated_at"])
 
-    # Contractor + admin confirmation emails (optional)
     if email_contractor_status_update:
         contractor_email = ""
         if dispute.created_by and getattr(dispute.created_by, "email", ""):

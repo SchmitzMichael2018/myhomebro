@@ -1,14 +1,23 @@
 # backend/projects/services/direct_pay.py
+# v2026-03-03 — Option A: Agreement is source-of-truth for customer in Direct Pay
+# - Checkout Session uses customer_email from agreement.homeowner.email
+# - Adds receipt_email to PaymentIntent (best effort) + metadata customer fields
+# - Keeps pricing + idempotency + locking unchanged
 
 from __future__ import annotations
 
 import logging
 from decimal import Decimal, ROUND_HALF_UP
+from typing import Optional, Tuple
 
 from django.conf import settings
 from django.db import transaction
+from django.utils import timezone
 
 from projects.models import Invoice, InvoiceStatus
+
+# ✅ canonical agreement completion recompute
+from projects.services.agreement_completion import recompute_and_apply_agreement_completion
 
 log = logging.getLogger(__name__)
 
@@ -107,6 +116,32 @@ def _compute_direct_pay_fee_cents(amount_cents: int, *, is_ai_pro: bool) -> int:
     return total
 
 
+def _get_agreement_customer(agreement) -> Tuple[Optional[object], str, str]:
+    """
+    Option A:
+    Agreement.homeowner is canonical "Customer". Fallback to agreement.project.homeowner for legacy.
+
+    Returns: (customer_obj, customer_email, customer_name)
+    """
+    if not agreement:
+        return (None, "", "")
+
+    customer = getattr(agreement, "homeowner", None) or getattr(agreement, "customer", None)
+    if not customer:
+        project = getattr(agreement, "project", None)
+        customer = getattr(project, "homeowner", None) if project else None
+
+    email = getattr(customer, "email", "") if customer else ""
+    name = (
+        getattr(customer, "full_name", None)
+        or getattr(customer, "name", None)
+        or getattr(customer, "display_name", None)
+        or email
+        or ""
+    )
+    return (customer, str(email or "").strip(), str(name or "").strip())
+
+
 def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
     """
     Create (or reuse) a Stripe Checkout Session that pays directly to the contractor's
@@ -118,12 +153,15 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
       - Free plan: 2% + $1
       - AI Pro:    1% + $1
 
+    Option A:
+      - The payer identity should follow agreement.homeowner (customer)
+      - We pass customer_email + receipt_email where possible
+
     Idempotent behavior:
     - If invoice already has a direct_pay_checkout_url and is not paid, return it.
     - Uses select_for_update to prevent double-creation on concurrent requests.
     """
 
-    # Stripe key
     stripe_key = str(getattr(settings, "STRIPE_SECRET_KEY", "") or "").strip()
     if not stripe_key:
         raise ValueError("STRIPE_SECRET_KEY not configured.")
@@ -132,7 +170,7 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
     if not agreement:
         raise ValueError("Invoice has no agreement.")
 
-    # ✅ Direct Pay driven by agreement.payment_mode
+    # Direct Pay driven by agreement.payment_mode
     if str(getattr(agreement, "payment_mode", "") or "").lower() != "direct":
         raise ValueError("Agreement is not in Direct Pay mode (payment_mode != 'direct').")
 
@@ -142,15 +180,11 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
     if not str(getattr(contractor, "stripe_account_id", "") or "").strip():
         raise ValueError("Contractor has no Stripe Connect account (stripe_account_id missing).")
 
-    # Amount validation
     amount_cents = _to_cents(getattr(invoice, "amount", None))
     if amount_cents <= 0:
         raise ValueError("Invoice amount must be greater than 0.")
 
-    # Success/cancel URLs
     frontend_url = _frontend_url()
-    # Don’t hard-fail if FRONTEND_URL missing; provide safe placeholders.
-    # (Webhook is the real source of truth.)
     success_url = (
         f"{frontend_url}/invoice-paid?invoice={invoice.invoice_number}&session_id={{CHECKOUT_SESSION_ID}}"
         if frontend_url
@@ -168,11 +202,9 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
     except Exception:
         project_title = ""
 
-    # ✅ NEW: Direct Pay fee logic (locked pricing)
     is_ai_pro = _is_ai_pro(contractor)
     application_fee_amount = _compute_direct_pay_fee_cents(amount_cents, is_ai_pro=is_ai_pro)
 
-    # Import stripe safely
     try:
         import stripe  # type: ignore
     except Exception:
@@ -180,14 +212,11 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
 
     stripe.api_key = stripe_key
 
-    # ------------------------------------------------------------------
-    # ✅ Idempotent + concurrency-safe creation
-    # ------------------------------------------------------------------
     with transaction.atomic():
         inv = (
             Invoice.objects
             .select_for_update()
-            .select_related("agreement", "agreement__contractor", "agreement__project")
+            .select_related("agreement", "agreement__contractor", "agreement__project", "agreement__homeowner")
             .get(pk=invoice.pk)
         )
 
@@ -195,16 +224,28 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
         if _is_paid(inv) or inv.status == InvoiceStatus.PAID:
             raise ValueError("Invoice is already PAID.")
 
-        # If link already exists, reuse (prevents multi-sessions)
+        # If link already exists, reuse
         existing_url = str(getattr(inv, "direct_pay_checkout_url", "") or "").strip()
         if existing_url:
             return existing_url
+
+        # ✅ Option A customer identity (from agreement)
+        agreement_locked = getattr(inv, "agreement", None)
+        _cust_obj, customer_email, customer_name = _get_agreement_customer(agreement_locked)
+
+        if not customer_email:
+            # We can still create a session, but it will be worse UX. Fail fast for consistency.
+            raise ValueError("Agreement customer email is missing. Set the Customer email before creating Direct Pay link.")
 
         # Create Checkout session
         try:
             session = stripe.checkout.Session.create(
                 mode="payment",
-                payment_method_types=["card"],  # add ACH later if desired
+                payment_method_types=["card"],
+
+                # ✅ This pre-fills email on Stripe Checkout and ties receipts to customer email
+                customer_email=customer_email,
+
                 line_items=[
                     {
                         "quantity": 1,
@@ -223,14 +264,25 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
                     "invoice_number": str(inv.invoice_number),
                     "agreement_id": str(inv.agreement_id),
                     "payment_mode": "DIRECT",
+                    "customer_email": customer_email,
+                    "customer_name": customer_name,
                 },
                 success_url=success_url,
                 cancel_url=cancel_url,
                 payment_intent_data={
-                    # ✅ Destination charge → contractor receives funds directly
                     "transfer_data": {"destination": contractor.stripe_account_id},
-                    # ✅ MyHomeBro fee (locked pricing)
                     "application_fee_amount": int(application_fee_amount),
+
+                    # ✅ Best-effort: makes Stripe send receipts to this email (if enabled)
+                    "receipt_email": customer_email,
+
+                    "metadata": {
+                        "kind": "direct_pay_checkout",
+                        "invoice_id": str(inv.id),
+                        "invoice_number": str(inv.invoice_number),
+                        "agreement_id": str(inv.agreement_id),
+                        "customer_email": customer_email,
+                    },
                 },
             )
         except Exception as e:
@@ -240,13 +292,94 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
         session_id = getattr(session, "id", None) or (session.get("id") if isinstance(session, dict) else "")
         session_url = getattr(session, "url", None) or (session.get("url") if isinstance(session, dict) else "")
 
+        # Capture payment_intent if Stripe returns it on session
+        payment_intent_id = getattr(session, "payment_intent", None) or (
+            session.get("payment_intent") if isinstance(session, dict) else ""
+        )
+
         if not session_url:
             raise ValueError("Stripe did not return a checkout URL.")
 
-        # Persist session + URL
         inv.direct_pay_checkout_session_id = session_id or ""
         inv.direct_pay_checkout_url = session_url or ""
+        if hasattr(inv, "direct_pay_payment_intent_id") and payment_intent_id:
+            inv.direct_pay_payment_intent_id = str(payment_intent_id)
         inv.status = InvoiceStatus.SENT
-        inv.save(update_fields=["direct_pay_checkout_session_id", "direct_pay_checkout_url", "status"])
+
+        update_fields = ["direct_pay_checkout_session_id", "direct_pay_checkout_url", "status"]
+        if hasattr(inv, "direct_pay_payment_intent_id") and payment_intent_id:
+            update_fields.append("direct_pay_payment_intent_id")
+
+        inv.save(update_fields=update_fields)
 
         return inv.direct_pay_checkout_url
+
+
+def finalize_direct_pay_invoice_paid(
+    *,
+    invoice_id: Optional[int] = None,
+    invoice_number: Optional[str] = None,
+    checkout_session_id: Optional[str] = None,
+    payment_intent_id: Optional[str] = None,
+    paid_at: Optional[timezone.datetime] = None,
+) -> Invoice:
+    """
+    Canonical helper for Stripe webhook handler(s).
+    Marks the invoice PAID and stamps direct_pay_paid_at, then recomputes agreement completion.
+
+    You can locate the invoice by:
+      - invoice_id (preferred)
+      - invoice_number
+      - checkout_session_id
+      - payment_intent_id (if stored)
+    """
+    if not any([invoice_id, invoice_number, checkout_session_id, payment_intent_id]):
+        raise ValueError("Must provide at least one identifier to finalize direct pay invoice.")
+
+    paid_at = paid_at or timezone.now()
+
+    with transaction.atomic():
+        qs = Invoice.objects.select_for_update().all()
+
+        inv = None
+        if invoice_id:
+            inv = qs.filter(id=invoice_id).first()
+        if inv is None and invoice_number:
+            inv = qs.filter(invoice_number=invoice_number).first()
+        if inv is None and checkout_session_id:
+            inv = qs.filter(direct_pay_checkout_session_id=checkout_session_id).first()
+        if inv is None and payment_intent_id:
+            inv = qs.filter(direct_pay_payment_intent_id=payment_intent_id).first()
+
+        if inv is None:
+            raise ValueError("Invoice not found for direct pay finalization.")
+
+        # Idempotent: if already paid, ensure fields are set and return.
+        already_paid = _is_paid(inv) or inv.status == InvoiceStatus.PAID
+
+        inv.status = InvoiceStatus.PAID
+        if hasattr(inv, "direct_pay_paid_at") and not getattr(inv, "direct_pay_paid_at", None):
+            inv.direct_pay_paid_at = paid_at
+
+        if payment_intent_id and hasattr(inv, "direct_pay_payment_intent_id"):
+            # Store for audit/traceability if not already set
+            if not (getattr(inv, "direct_pay_payment_intent_id", "") or "").strip():
+                inv.direct_pay_payment_intent_id = str(payment_intent_id)
+
+        update_fields = ["status"]
+        if hasattr(inv, "direct_pay_paid_at"):
+            update_fields.append("direct_pay_paid_at")
+        if payment_intent_id and hasattr(inv, "direct_pay_payment_intent_id"):
+            update_fields.append("direct_pay_payment_intent_id")
+
+        inv.save(update_fields=list(set(update_fields)))
+
+    # recompute agreement completion after invoice becomes paid
+    try:
+        if getattr(inv, "agreement_id", None):
+            recompute_and_apply_agreement_completion(int(inv.agreement_id))
+    except Exception as exc:
+        log.warning("Agreement completion recompute failed for direct pay invoice %s: %s", getattr(inv, "id", None), exc)
+
+    inv.refresh_from_db()
+    return inv

@@ -19,6 +19,9 @@ from projects.services.agreements.pdf_stream import serve_public_pdf
 from projects.services.agreements.pdf_loader import load_pdf_services
 from projects.views.funding import send_funding_link_for_agreement
 
+# ✅ Range support helper (fixes iOS/Safari "only first page" PDF rendering)
+from projects.services.http_range import ranged_file_response
+
 build_agreement_pdf_bytes, generate_full_agreement_pdf = load_pdf_services()
 
 
@@ -35,7 +38,10 @@ def send_final_agreement_link_view(request, agreement_id: int):
     except ValueError as e:
         return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        return Response({"detail": f"Unexpected error: {type(e).__name__}: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(
+            {"detail": f"Unexpected error: {type(e).__name__}: {e}"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
 
 @api_view(["GET"])
@@ -64,7 +70,13 @@ def agreement_milestones(request, pk: int):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def agreement_pdf(request, agreement_id: int):
+    """
+    Serve the final agreement PDF (authenticated).
+    ✅ Uses HTTP Range support when possible to fix mobile multi-page rendering (iOS/Safari).
+    """
     ag = get_object_or_404(Agreement, pk=agreement_id)
+
+    # If missing, try generating a full PDF first
     if (not getattr(ag, "pdf_file", None)) or (not getattr(ag.pdf_file, "name", "")):
         if generate_full_agreement_pdf:
             try:
@@ -75,7 +87,20 @@ def agreement_pdf(request, agreement_id: int):
 
     if getattr(ag, "pdf_file", None) and getattr(ag.pdf_file, "name", ""):
         try:
+            # Prefer ranged response if storage provides a filesystem path (most common on PythonAnywhere)
+            pdf_path = getattr(getattr(ag, "pdf_file", None), "path", None)
+            if pdf_path:
+                return ranged_file_response(
+                    request,
+                    pdf_path,
+                    content_type="application/pdf",
+                    filename=f"agreement_{ag.id}.pdf",
+                    inline=True,
+                )
+
+            # Fallback: stream without ranges if .path not available (e.g., remote storage)
             from django.http import FileResponse
+
             return FileResponse(ag.pdf_file.open("rb"), content_type="application/pdf")
         except Exception:
             raise Http404("PDF not available")
@@ -113,7 +138,10 @@ def agreement_public_sign(request):
             or "",
             "status": getattr(ag, "status", "draft"),
             "pdf_url": pdf_url,
-            "is_fully_signed": bool(getattr(ag, "signed_by_contractor", False) and getattr(ag, "signed_by_homeowner", False)),
+            "is_fully_signed": bool(
+                getattr(ag, "signed_by_contractor", False)
+                and getattr(ag, "signed_by_homeowner", False)
+            ),
         }
         return Response(data, status=200)
 
@@ -160,7 +188,10 @@ def agreement_public_sign(request):
 
     auto_funding = None
     try:
-        if bool(getattr(ag, "signed_by_contractor", False) and getattr(ag, "signed_by_homeowner", False)) and not getattr(ag, "escrow_funded", False):
+        if (
+            bool(getattr(ag, "signed_by_contractor", False) and getattr(ag, "signed_by_homeowner", False))
+            and not getattr(ag, "escrow_funded", False)
+        ):
             auto_funding = send_funding_link_for_agreement(ag, request=request)
     except ValueError:
         auto_funding = None
@@ -185,11 +216,14 @@ def agreement_public_pdf(request):
     ag = unsign_public_token(token)
     preview_flag = (request.query_params.get("preview") or "").strip() == "1"
     try:
+        # Note: serve_public_pdf() may still need Range support internally as well.
+        # If mobile still only shows page 1 on the PUBLIC preview URL, we'll patch pdf_stream.py next.
         return serve_public_pdf(
             ag,
             preview_flag=preview_flag,
             build_agreement_pdf_bytes=build_agreement_pdf_bytes,
             generate_full_agreement_pdf=generate_full_agreement_pdf,
+            request=request,
         )
     except Http404 as e:
         raise e

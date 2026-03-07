@@ -1,7 +1,13 @@
 # backend/projects/views/signing.py
+
+from __future__ import annotations
+
+import base64
+import re
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.conf import settings
+from django.core.files.base import ContentFile
 from rest_framework import viewsets, permissions, response, status, decorators
 
 from projects.models import Agreement
@@ -14,7 +20,93 @@ from projects.serializers.signing import (
 from projects.services.pdf import build_agreement_pdf_bytes, attach_pdf_to_agreement
 from projects.services.mailer import email_signed_agreement
 from projects.services.sms import sms_link_to_parties  # safe: no-op if not configured
-import base64
+
+
+DATA_URL_RE = re.compile(r"^data:(?P<mime>[-\w.\/]+);base64,(?P<b64>.+)$", re.IGNORECASE)
+
+
+def _client_ip(request) -> str:
+    ip = request.META.get("HTTP_X_FORWARDED_FOR")
+    if ip:
+        ip = ip.split(",")[0].strip()
+    else:
+        ip = request.META.get("REMOTE_ADDR", "")
+    return ip or ""
+
+
+def _user_agent(request) -> str:
+    return request.META.get("HTTP_USER_AGENT", "") or ""
+
+
+def _decode_base64_image(data: str) -> tuple[bytes | None, str | None]:
+    """
+    Accepts:
+      - raw base64 string
+      - data URL: data:image/png;base64,....
+    Returns: (bytes, ext) where ext is 'png'/'jpg' etc, or (None, None)
+    """
+    if not data:
+        return None, None
+
+    s = str(data).strip()
+    if not s:
+        return None, None
+
+    mime = None
+    b64 = s
+
+    m = DATA_URL_RE.match(s)
+    if m:
+        mime = (m.group("mime") or "").lower().strip()
+        b64 = (m.group("b64") or "").strip()
+
+    # Common padding issues
+    b64 = b64.replace("\n", "").replace("\r", "").strip()
+    if not b64:
+        return None, None
+
+    try:
+        raw = base64.b64decode(b64, validate=False)
+    except Exception:
+        return None, None
+
+    # Guess extension
+    ext = "png"
+    if mime:
+        if "jpeg" in mime or "jpg" in mime:
+            ext = "jpg"
+        elif "png" in mime:
+            ext = "png"
+        elif "webp" in mime:
+            ext = "webp"
+    else:
+        # Best-effort signature sniffing
+        if raw[:2] == b"\xff\xd8":
+            ext = "jpg"
+        elif raw[:4] == b"RIFF" and b"WEBP" in raw[:16]:
+            ext = "webp"
+        else:
+            ext = "png"
+
+    return raw, ext
+
+
+def _call_build_pdf_bytes(**kwargs) -> bytes:
+    """
+    Your codebase has multiple PDF service signatures (agreement_pdf.py vs service wrapper).
+    This wrapper tries "rich kwargs" first, then falls back to the simplest signature.
+    """
+    ag = kwargs.get("ag")
+    if ag is None:
+        raise ValueError("Missing agreement for PDF build")
+
+    # Try full kwargs first (your current calling style)
+    try:
+        return build_agreement_pdf_bytes(**kwargs)
+    except TypeError:
+        # Fall back to minimal signature: build_agreement_pdf_bytes(ag, is_preview=bool)
+        is_preview = bool(kwargs.get("is_preview", False))
+        return build_agreement_pdf_bytes(ag, is_preview=is_preview)
 
 
 class IsAgreementParticipant(permissions.BasePermission):
@@ -94,13 +186,15 @@ class AgreementSigningViewSet(viewsets.ViewSet):
         if changed_fields:
             ag.save(update_fields=changed_fields)
 
-        pdf_bytes = build_agreement_pdf_bytes(
-            ag,
+        # Build preview PDF (use wrapper for signature-compatibility)
+        pdf_bytes = _call_build_pdf_bytes(
+            ag=ag,
             version_label="preview",
             is_preview=True,
             warranty_type=warranty_type,
             warranty_text=warranty_text,
         )
+
         b64 = base64.b64encode(pdf_bytes).decode("ascii")
         return response.Response({"ok": True, "pdf_base64": b64})
 
@@ -125,7 +219,12 @@ class AgreementSigningViewSet(viewsets.ViewSet):
             ag.reviewed_by = reviewer_role
             changed = True
         if changed:
-            ag.save(update_fields=["reviewed_at", "reviewed_by"] if hasattr(ag, "reviewed_by") else ["reviewed_at"])
+            fields = []
+            if hasattr(ag, "reviewed_at"):
+                fields.append("reviewed_at")
+            if hasattr(ag, "reviewed_by"):
+                fields.append("reviewed_by")
+            ag.save(update_fields=fields)
 
         return response.Response({"ok": True, "reviewed_at": getattr(ag, "reviewed_at", None)})
 
@@ -138,9 +237,11 @@ class AgreementSigningViewSet(viewsets.ViewSet):
           - signer_name
           - signer_role ("contractor" | "homeowner")
           - signature_text
-          - optional: signature_image (finger or uploaded image)
+          - optional:
+              - signature_image as multipart file (signature_image)
+              - signature_image_base64 or signature_image (data URL/base64 string) in JSON
 
-        Also enforces "preview then review" gate if supported by the model.
+        Enforces "preview then review" gate if supported by the model.
         """
         ag = self._get_agreement(pk)
         if not IsAgreementParticipant().has_object_permission(request, self, ag):
@@ -159,21 +260,33 @@ class AgreementSigningViewSet(viewsets.ViewSet):
 
         signer_name = payload.get("signer_name")
         signer_role = (payload.get("signer_role") or "").lower()
-        signature_text = payload.get("signature_text", "")
-
-        # Optional file: finger-drawn or uploaded signature image
-        signature_image = request.FILES.get("signature_image")
+        signature_text = payload.get("signature_text", "") or ""
 
         # Capture IP and User-Agent for audit purposes
-        ip = request.META.get("HTTP_X_FORWARDED_FOR")
-        if ip:
-            ip = ip.split(",")[0].strip()
-        else:
-            ip = request.META.get("REMOTE_ADDR", "")
-        ua = request.META.get("HTTP_USER_AGENT", "")
+        ip = _client_ip(request)
+        ua = _user_agent(request)
+        now = timezone.now()
+
+        # Optional file: finger-drawn or uploaded signature image
+        signature_file = request.FILES.get("signature_image")
+
+        # Optional base64 signature (common for SignaturePad)
+        # Accept either signature_image_base64 OR signature_image if it is a string
+        sig_b64 = None
+        try:
+            if isinstance(request.data.get("signature_image_base64"), str):
+                sig_b64 = request.data.get("signature_image_base64")
+            elif isinstance(request.data.get("signature_image"), str):
+                sig_b64 = request.data.get("signature_image")
+        except Exception:
+            sig_b64 = None
+
+        decoded_bytes = None
+        decoded_ext = None
+        if not signature_file and sig_b64:
+            decoded_bytes, decoded_ext = _decode_base64_image(sig_b64)
 
         # Persist role-specific signature metadata if the fields exist
-        now = timezone.now()
         if signer_role == "homeowner":
             if hasattr(ag, "homeowner_signature_name"):
                 ag.homeowner_signature_name = signer_name
@@ -183,13 +296,22 @@ class AgreementSigningViewSet(viewsets.ViewSet):
                 ag.homeowner_signed_at = now
             if hasattr(ag, "homeowner_signed_ip"):
                 ag.homeowner_signed_ip = ip
-            if signature_image and hasattr(ag, "homeowner_signature"):
-                # ImageField/FileField: don't save() the model yet; we batch below
-                ag.homeowner_signature.save(
-                    f"homeowner_sig_{ag.id}.png",
-                    signature_image,
-                    save=False,
-                )
+
+            # Save signature image to ImageField if present
+            if hasattr(ag, "homeowner_signature"):
+                if signature_file:
+                    ag.homeowner_signature.save(
+                        f"homeowner_sig_{ag.id}.png",
+                        signature_file,
+                        save=False,
+                    )
+                elif decoded_bytes:
+                    ext = decoded_ext or "png"
+                    ag.homeowner_signature.save(
+                        f"homeowner_sig_{ag.id}.{ext}",
+                        ContentFile(decoded_bytes),
+                        save=False,
+                    )
 
         elif signer_role == "contractor":
             if hasattr(ag, "contractor_signature_name"):
@@ -200,12 +322,26 @@ class AgreementSigningViewSet(viewsets.ViewSet):
                 ag.contractor_signed_at = now
             if hasattr(ag, "contractor_signed_ip"):
                 ag.contractor_signed_ip = ip
-            if signature_image and hasattr(ag, "contractor_signature"):
-                ag.contractor_signature.save(
-                    f"contractor_sig_{ag.id}.png",
-                    signature_image,
-                    save=False,
-                )
+
+            if hasattr(ag, "contractor_signature"):
+                if signature_file:
+                    ag.contractor_signature.save(
+                        f"contractor_sig_{ag.id}.png",
+                        signature_file,
+                        save=False,
+                    )
+                elif decoded_bytes:
+                    ext = decoded_ext or "png"
+                    ag.contractor_signature.save(
+                        f"contractor_sig_{ag.id}.{ext}",
+                        ContentFile(decoded_bytes),
+                        save=False,
+                    )
+        else:
+            return response.Response(
+                {"detail": "Invalid signer_role. Must be 'contractor' or 'homeowner'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # Generic audit fields & PDF version bump
         new_version = (ag.pdf_version or 0) + 1 if hasattr(ag, "pdf_version") else 1
@@ -219,13 +355,12 @@ class AgreementSigningViewSet(viewsets.ViewSet):
         if hasattr(ag, "signature_note"):
             ag.signature_note = f"{signer_role} {signer_name} accepted ToS/Privacy; text: {signature_text[:60]}"
 
-        # Save all the above in one shot
         ag.save()
 
         # Build the signed PDF version
         version_label = f"v{new_version}"
-        pdf_bytes = build_agreement_pdf_bytes(
-            ag,
+        pdf_bytes = _call_build_pdf_bytes(
+            ag=ag,
             version_label=version_label,
             signer_name=signer_name,
             signer_role=signer_role,
@@ -237,8 +372,11 @@ class AgreementSigningViewSet(viewsets.ViewSet):
         )
         attach_pdf_to_agreement(ag, pdf_bytes, version=new_version)
 
-        # Email the freshly signed agreement
-        email_signed_agreement(ag)
+        # Email the freshly signed agreement (best-effort)
+        try:
+            email_signed_agreement(ag)
+        except Exception:
+            pass
 
         # SMS link (best-effort)
         try:
@@ -248,7 +386,14 @@ class AgreementSigningViewSet(viewsets.ViewSet):
         except Exception:
             pass
 
-        return response.Response({"ok": True, "version": new_version})
+        # Return updated agreement so frontend can immediately show "Signed ✅"
+        return response.Response(
+            {
+                "ok": True,
+                "version": new_version,
+                "agreement": AgreementReviewSerializer(ag).data,
+            }
+        )
 
     @decorators.action(detail=True, methods=["post"], url_path="email")
     def email(self, request, pk=None):
@@ -273,10 +418,14 @@ class AgreementSigningViewSet(viewsets.ViewSet):
         ag = self._get_agreement(pk)
         if not (request.user and request.user.is_authenticated and request.user.is_staff):
             return response.Response({"detail": "Admin only"}, status=status.HTTP_403_FORBIDDEN)
+
         new_version = (ag.pdf_version or 0) + 1 if hasattr(ag, "pdf_version") else 1
         if hasattr(ag, "pdf_version"):
             ag.pdf_version = new_version
-        ag.save(update_fields=["pdf_version"])
-        pdf_bytes = build_agreement_pdf_bytes(ag, version_label=f"v{new_version}")
+            ag.save(update_fields=["pdf_version"])
+        else:
+            ag.save()
+
+        pdf_bytes = _call_build_pdf_bytes(ag=ag, version_label=f"v{new_version}", is_preview=False)
         attach_pdf_to_agreement(ag, pdf_bytes, version=new_version)
         return response.Response({"ok": True, "version": new_version})

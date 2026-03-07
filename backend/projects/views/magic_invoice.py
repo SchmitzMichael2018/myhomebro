@@ -1,5 +1,9 @@
 # backend/projects/views/magic_invoice.py
-# v2026-01-10 — Dispute hard-lock: NO approve / release if agreement has active dispute
+# v2026-03-03 — ✅ Option A support: Agreement is source-of-truth for customer display
+# - Adds customer_name/customer_email aliases to response (derived from InvoiceSerializer)
+# - Adds milestone_number alias preferring milestone_order (per agreement), fallback to milestone_id
+#
+# v2026-02-23 — ✅ Auto-complete Agreement after invoice PAID/released (escrow paths)
 #
 # Endpoints:
 #   GET    /api/projects/invoices/magic/<token>/
@@ -12,12 +16,12 @@
 #     * if agreement escrow is funded:
 #         - release escrow via Stripe Transfer (net of platform fee)
 #         - ALWAYS set invoice.status = PAID when escrow released
+#         - ✅ NEW: recompute agreement completion after invoice becomes PAID/released
 #     * else:
 #         - fallback card PaymentIntent (legacy)
 #         - returns stripe_client_secret + mode="card_payment"
 #
-# NEW (v2026-01-10):
-# - If agreement has ANY active dispute (initiated/open/under_review), approve is blocked.
+# Dispute hard-lock: NO approve / release if agreement has active dispute
 
 import logging
 from decimal import Decimal, ROUND_HALF_UP
@@ -32,6 +36,9 @@ from rest_framework.views import APIView
 
 from ..models import Invoice, InvoiceStatus
 from ..serializers.invoices import InvoiceSerializer
+
+# ✅ canonical agreement completion recompute
+from projects.services.agreement_completion import recompute_and_apply_agreement_completion
 
 logger = logging.getLogger(__name__)
 
@@ -85,17 +92,22 @@ class MagicInvoiceView(APIView):
 
         data = InvoiceSerializer(invoice, context={"request": request}).data
 
+        # ✅ Option A aliases (helps frontend standardize on "Customer")
+        # Serializer may return both homeowner_* and customer_* depending on version.
+        data["customer_name"] = data.get("customer_name") or data.get("homeowner_name")
+        data["customer_email"] = data.get("customer_email") or data.get("homeowner_email")
+
+        # ✅ Milestone number alias (prefer per-agreement order)
+        data["milestone_number"] = data.get("milestone_order") or data.get("milestone_id")
+
         agreement = getattr(invoice, "agreement", None)
         if agreement:
             ag_status = _agreement_status(agreement)
             escrow_funded = _truthy(getattr(agreement, "escrow_funded", False)) or ag_status == "funded"
 
-            # ✅ required so the public UI can hide card payment fields
             data["agreement_id"] = getattr(agreement, "id", None)
             data["agreement_status"] = ag_status
             data["escrow_funded"] = escrow_funded
-
-            # ✅ NEW: let public UI show "Dispute active" guardrail messaging
             data["dispute_active"] = _agreement_has_active_dispute(agreement)
 
         return Response(data)
@@ -111,7 +123,7 @@ class MagicInvoiceApproveView(APIView):
         if not agreement:
             return Response({"detail": "Invoice is missing agreement."}, status=400)
 
-        # 🔒 NEW: HARD STOP if any active dispute exists
+        # 🔒 HARD STOP if any active dispute exists
         if _agreement_has_active_dispute(agreement):
             return Response(
                 {
@@ -127,7 +139,6 @@ class MagicInvoiceApproveView(APIView):
 
         # If escrow already released, treat as paid and return idempotently.
         if getattr(invoice, "escrow_released", False):
-            # 🔒 Enforce invariant: escrow released => paid
             with transaction.atomic():
                 invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
                 update_fields = []
@@ -142,6 +153,12 @@ class MagicInvoiceApproveView(APIView):
 
                 if update_fields:
                     invoice.save(update_fields=update_fields)
+
+            # ✅ recompute agreement completion after confirming paid/released
+            try:
+                recompute_and_apply_agreement_completion(getattr(invoice, "agreement_id", None))
+            except Exception as exc:
+                logger.warning("Agreement completion recompute failed (idempotent path): %s", exc)
 
             return Response(
                 {
@@ -222,7 +239,6 @@ class MagicInvoiceApproveView(APIView):
 
                     update_fields = ["status", "escrow_released", "escrow_released_at"]
 
-                    # optional audit fields
                     if hasattr(invoice, "platform_fee_cents"):
                         try:
                             invoice.platform_fee_cents = int(platform_fee_cents)
@@ -238,6 +254,12 @@ class MagicInvoiceApproveView(APIView):
                             pass
 
                     invoice.save(update_fields=update_fields)
+
+                # ✅ recompute agreement completion after paid/released
+                try:
+                    recompute_and_apply_agreement_completion(getattr(invoice, "agreement_id", None))
+                except Exception as exc:
+                    logger.warning("Agreement completion recompute failed (transfer exists path): %s", exc)
 
                 return Response(
                     {
@@ -306,6 +328,12 @@ class MagicInvoiceApproveView(APIView):
 
                 invoice.save(update_fields=update_fields)
 
+            # ✅ recompute agreement completion after paid/released
+            try:
+                recompute_and_apply_agreement_completion(getattr(invoice, "agreement_id", None))
+            except Exception as exc:
+                logger.warning("Agreement completion recompute failed (transfer created path): %s", exc)
+
             return Response(
                 {
                     "invoice": InvoiceSerializer(invoice, context={"request": request}).data,
@@ -321,6 +349,8 @@ class MagicInvoiceApproveView(APIView):
         # ==========================================================
         # ❗ NOT FUNDED → CARD PAYMENT (legacy)
         # ==========================================================
+        # NOTE: We do NOT recompute agreement completion here because payment is not confirmed yet.
+        # Completion should be recomputed when the PaymentIntent actually succeeds (webhook / callback).
         try:
             with transaction.atomic():
                 invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)

@@ -4,9 +4,17 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any, Dict, Optional, List
 
+from django.utils import timezone
 from rest_framework import serializers
 
 from projects.models import Agreement, Homeowner
+
+# ✅ NEW: PDF version history model
+try:
+    from projects.models import AgreementPDFVersion  # type: ignore
+except Exception:  # pragma: no cover
+    AgreementPDFVersion = None  # type: ignore
+
 from projects.models_ai_scope import AgreementAIScope  # ✅ persisted AI scope Q/A
 
 try:
@@ -14,6 +22,12 @@ try:
 except Exception:  # pragma: no cover
     Milestone = None  # type: ignore
     Invoice = None  # type: ignore
+
+# ✅ NEW: template model (guarded)
+try:
+    from projects.models_templates import ProjectTemplate  # type: ignore
+except Exception:  # pragma: no cover
+    ProjectTemplate = None  # type: ignore
 
 
 def _to_decimal(val) -> Optional[Decimal]:
@@ -49,48 +63,33 @@ def _normalize_project_type(value: Optional[str]) -> Optional[str]:
 
 
 def _normalize_payment_mode(value: Optional[str]) -> Optional[str]:
-    """
-    Make serializer tolerant to UI variants:
-      "direct", "DIRECT", "Direct Pay", etc. -> "direct"
-      "escrow", "ESCROW", "protected" -> "escrow"
-    If unknown, return original (let model/validation handle).
-    """
     if value in (None, ""):
         return None
     s = str(value).strip().lower()
 
-    # common synonyms
     if s in ("direct", "direct_pay", "direct pay", "subcontractor", "no_escrow", "no escrow"):
         return "direct"
     if s in ("escrow", "protected", "stripe", "funding"):
         return "escrow"
-
-    # tolerate "DIRECT" / "ESCROW"
-    if s == "direct":
-        return "direct"
-    if s == "escrow":
-        return "escrow"
-
-    return value  # fall through
+    return value
 
 
-# ------------------------------------------------------------
-# ✅ NEW: Writable nested serializer for ai_scope PATCH support
-# ------------------------------------------------------------
+def _normalize_signature_policy(value: Optional[str]) -> Optional[str]:
+    if value in (None, ""):
+        return None
+    s = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+
+    if s in ("both", "both_required", "both_parties", "both_parties_required", "both_sign", "both_sign_required"):
+        return "both_required"
+    if s in ("contractor", "contractor_only", "internal", "work_order", "workorder", "internal_only"):
+        return "contractor_only"
+    if s in ("external", "external_signed", "signed_outside", "outside", "outside_signed", "signed_outside_myhomebro"):
+        return "external_signed"
+
+    return value
+
+
 class AgreementAIScopeWriteSerializer(serializers.Serializer):
-    """
-    Allows PATCH payloads like:
-      {
-        "ai_scope": {
-          "questions": [...],
-          "answers": {...},
-          "scope_text": "..."
-        }
-      }
-
-    This DOES NOT replace your existing read-only get_ai_scope output.
-    It's only used to accept input and persist into AgreementAIScope.
-    """
     questions = serializers.ListField(required=False)
     answers = serializers.JSONField(required=False)
     scope_text = serializers.CharField(required=False, allow_blank=True, allow_null=True)
@@ -110,14 +109,74 @@ def _merge_dict(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
-class AgreementSerializer(serializers.ModelSerializer):
-    """
-    Agreement serializer with robust project address handling and
-    milestone-based rollups for total, start, and end dates.
-    """
+def _boolish(v: Any, default: bool = True) -> bool:
+    if v is True:
+        return True
+    if v is False:
+        return False
+    if v in (1, "1", "true", "True", "yes", "Yes"):
+        return True
+    if v in (0, "0", "false", "False", "no", "No"):
+        return False
+    return default
 
-    # ---- READ convenience fields ----
+
+def _safe_file_url(f) -> Optional[str]:
+    """
+    Safely return file.url if available. Never raise.
+    """
+    try:
+        if f and getattr(f, "name", ""):
+            return f.url
+    except Exception:
+        return None
+    return None
+
+
+# ✅ NEW: lightweight selected template serializer
+class SelectedTemplateMiniSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProjectTemplate  # type: ignore
+        fields = [
+            "id",
+            "name",
+            "project_type",
+            "project_subtype",
+            "estimated_days",
+            "is_system",
+        ]
+
+
+# ✅ NEW: Nested serializer for AgreementPDFVersion
+class AgreementPDFVersionSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AgreementPDFVersion  # type: ignore
+        fields = [
+            "id",
+            "version_number",
+            "kind",
+            "file_url",
+            "sha256",
+            "created_at",
+            "signed_by_contractor",
+            "signed_by_homeowner",
+            "contractor_signature_name",
+            "homeowner_signature_name",
+            "contractor_signed_at",
+            "homeowner_signed_at",
+        ]
+
+    def get_file_url(self, obj):
+        return _safe_file_url(getattr(obj, "file", None))
+
+
+class AgreementSerializer(serializers.ModelSerializer):
+    # IMPORTANT: these methods must respect signature requirements/waivers
     is_fully_signed = serializers.SerializerMethodField()
+    signature_is_satisfied = serializers.SerializerMethodField()
+
     project_title = serializers.SerializerMethodField()
     homeowner_name = serializers.SerializerMethodField()
     homeowner_email = serializers.SerializerMethodField()
@@ -133,83 +192,157 @@ class AgreementSerializer(serializers.ModelSerializer):
     is_editable = serializers.SerializerMethodField()
     is_locked = serializers.SerializerMethodField()
 
-    # AgreementList Total column
     display_total = serializers.SerializerMethodField()
 
-    # ✅ NEW: escrow rollups
     escrow_total_required = serializers.SerializerMethodField()
     remaining_to_fund = serializers.SerializerMethodField()
 
-    # ✅ AI scope clarifications
     ai_scope = serializers.SerializerMethodField()
     ai_scope_input = AgreementAIScopeWriteSerializer(write_only=True, required=False)
 
     scope_clarifications = serializers.JSONField(write_only=True, required=False)
 
-    # ---- WRITE aliases for warranty ----
-    use_default_warranty = serializers.BooleanField(
-        write_only=True, required=False, default=True
-    )
-    custom_warranty_text = serializers.CharField(
-        write_only=True, required=False, allow_blank=True, default=""
-    )
+    use_default_warranty = serializers.BooleanField(write_only=True, required=False, default=True)
+    custom_warranty_text = serializers.CharField(write_only=True, required=False, allow_blank=True, default="")
 
-    warranty_text_snapshot = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        allow_null=True,
-    )
+    warranty_text_snapshot = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
-    # Explicit project address fields (source of truth)
-    project_address_line1 = serializers.CharField(
-        required=False, allow_blank=True, allow_null=True
-    )
-    project_address_line2 = serializers.CharField(
-        required=False, allow_blank=True, allow_null=True
-    )
-    project_address_city = serializers.CharField(
-        required=False, allow_blank=True, allow_null=True
-    )
-    project_address_state = serializers.CharField(
-        required=False, allow_blank=True, allow_null=True
-    )
-    project_postal_code = serializers.CharField(
-        required=False, allow_blank=True, allow_null=True
-    )
+    project_subtype = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
-    # Generic alias fields (if model uses these instead)
-    address_line1 = serializers.CharField(
-        required=False, allow_blank=True, allow_null=True
-    )
-    address_line2 = serializers.CharField(
-        required=False, allow_blank=True, allow_null=True
-    )
-    city = serializers.CharField(
-        required=False, allow_blank=True, allow_null=True
-    )
-    state = serializers.CharField(
-        required=False, allow_blank=True, allow_null=True
-    )
-    postal_code = serializers.CharField(
-        required=False, allow_blank=True, allow_null=True
-    )
+    project_address_line1 = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    project_address_line2 = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    project_address_city = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    project_address_state = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    project_postal_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    address_line1 = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    address_line2 = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    city = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    state = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    postal_code = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    external_contract_attested_by = serializers.PrimaryKeyRelatedField(read_only=True)
+
+    contractor_ack_reviewed = serializers.BooleanField(read_only=True)
+    contractor_ack_tos = serializers.BooleanField(read_only=True)
+    contractor_ack_esign = serializers.BooleanField(read_only=True)
+    contractor_ack_at = serializers.DateTimeField(read_only=True)
+
+    # ✅ NEW: expose PDF URLs + history
+    current_pdf_url = serializers.SerializerMethodField()
+    pdf_versions = serializers.SerializerMethodField()
+
+    # ✅ NEW: template tracking fields
+    selected_template = serializers.SerializerMethodField()
+    selected_template_id = serializers.SerializerMethodField()
+    selected_template_name_snapshot = serializers.CharField(read_only=True)
 
     class Meta:
         model = Agreement
         fields = "__all__"
 
-    # ------------------------------------------------------------------
-    # READ helpers
-    # ------------------------------------------------------------------
+    # ---------------- pdf helpers ----------------
+
+    def get_current_pdf_url(self, obj):
+        """
+        URL for Agreement.pdf_file (latest/current).
+        """
+        return _safe_file_url(getattr(obj, "pdf_file", None))
+
+    def get_pdf_versions(self, obj):
+        """
+        Return historical PDF versions (AgreementPDFVersion).
+        """
+        if AgreementPDFVersion is None:
+            return []
+        try:
+            qs = getattr(obj, "pdf_versions", None)
+            if qs is None:
+                return []
+            return AgreementPDFVersionSerializer(qs.all(), many=True, context=self.context).data
+        except Exception:
+            return []
+
+    # ---------------- template helpers ----------------
+
+    def get_selected_template(self, obj):
+        tpl = getattr(obj, "selected_template", None)
+        if not tpl or ProjectTemplate is None:
+            return None
+        try:
+            return SelectedTemplateMiniSerializer(tpl, context=self.context).data
+        except Exception:
+            return None
+
+    def get_selected_template_id(self, obj):
+        try:
+            return getattr(obj, "selected_template_id", None)
+        except Exception:
+            return None
+
+    # ---------------- signature helpers ----------------
+
+    def _req_flags(self, obj) -> tuple[bool, bool]:
+        """
+        Return (require_contractor_signature, require_customer_signature).
+        Defaults True when missing.
+        """
+        req_contr = _boolish(getattr(obj, "require_contractor_signature", None), True)
+        req_cust = _boolish(getattr(obj, "require_customer_signature", None), True)
+        return req_contr, req_cust
+
+    def _contractor_signed(self, obj) -> bool:
+        if bool(getattr(obj, "signed_by_contractor", False)):
+            return True
+        if bool(getattr(obj, "contractor_signed", False)):
+            return True
+        if getattr(obj, "contractor_signature_name", None):
+            return True
+        if getattr(obj, "contractor_signed_at", None) or getattr(obj, "signed_at_contractor", None):
+            return True
+        return False
+
+    def _homeowner_signed(self, obj) -> bool:
+        if bool(getattr(obj, "signed_by_homeowner", False)):
+            return True
+        if bool(getattr(obj, "homeowner_signed", False)):
+            return True
+        if getattr(obj, "homeowner_signature_name", None):
+            return True
+        if getattr(obj, "homeowner_signed_at", None) or getattr(obj, "signed_at_homeowner", None):
+            return True
+        return False
 
     def get_is_fully_signed(self, obj):
-        return bool(obj.signed_by_contractor and obj.signed_by_homeowner)
+        """
+        Fully signed = each required party satisfied.
+        If a party is not required (waived), it's treated as satisfied.
+        """
+        req_contr, req_cust = self._req_flags(obj)
+        contr_ok = (not req_contr) or self._contractor_signed(obj)
+        cust_ok = (not req_cust) or self._homeowner_signed(obj)
+        return bool(contr_ok and cust_ok)
+
+    def get_signature_is_satisfied(self, obj):
+        """
+        Keep compatibility: if model has signature_is_satisfied, trust it,
+        otherwise use our corrected fully-signed computation.
+        """
+        try:
+            v = getattr(obj, "signature_is_satisfied")
+            if isinstance(v, bool):
+                return v
+        except Exception:
+            pass
+        return self.get_is_fully_signed(obj)
 
     def get_is_editable(self, obj):
         return not self.get_is_fully_signed(obj)
 
     def get_is_locked(self, obj):
         return self.get_is_fully_signed(obj)
+
+    # ---------------- existing methods ----------------
 
     def get_project_title(self, obj):
         if getattr(obj, "project", None):
@@ -229,21 +362,14 @@ class AgreementSerializer(serializers.ModelSerializer):
         ho = self._homeowner_obj(obj)
         if not ho:
             return None
-        return (
-            getattr(ho, "full_name", None)
-            or getattr(ho, "name", None)
-            or getattr(ho, "email", None)
-        )
+        return getattr(ho, "full_name", None) or getattr(ho, "name", None) or getattr(ho, "email", None)
 
     def get_homeowner_email(self, obj):
         ho = self._homeowner_obj(obj)
         return getattr(ho, "email", None) if ho else None
 
     def get_homeowner_address(self, obj) -> Optional[str]:
-        snap = (
-            getattr(obj, "homeowner_address_snapshot", None)
-            or getattr(obj, "homeowner_address_text", None)
-        )
+        snap = getattr(obj, "homeowner_address_snapshot", None) or getattr(obj, "homeowner_address_text", None)
         if snap and str(snap).strip():
             return str(snap).strip()
 
@@ -259,23 +385,8 @@ class AgreementSerializer(serializers.ModelSerializer):
                         return str(v).strip()
             return ""
 
-        line1 = _g(
-            ho,
-            "address_line1",
-            "address1",
-            "street_address",
-            "street1",
-            "address",
-        )
-        line2 = _g(
-            ho,
-            "address_line2",
-            "address_line_2",
-            "address2",
-            "street2",
-            "unit",
-            "apt",
-        )
+        line1 = _g(ho, "address_line1", "address1", "street_address", "street1", "address")
+        line2 = _g(ho, "address_line2", "address_line_2", "address2", "street2", "unit", "apt")
         city = _g(ho, "city", "town", "city_name")
         state = _g(ho, "state", "region", "state_code", "province")
         postal = _g(ho, "postal_code", "zip_code", "zip", "zipcode")
@@ -311,9 +422,7 @@ class AgreementSerializer(serializers.ModelSerializer):
                 except Exception:
                     pass
 
-        start_dates = [
-            m.start_date for m in qs if getattr(m, "start_date", None) is not None
-        ]
+        start_dates = [m.start_date for m in qs if getattr(m, "start_date", None) is not None]
         min_start = min(start_dates) if start_dates else None
 
         end_candidates = []
@@ -371,7 +480,6 @@ class AgreementSerializer(serializers.ModelSerializer):
         except Exception:
             return val
 
-    # ✅ escrow rollups
     def get_escrow_total_required(self, obj):
         val = self.get_total(obj)
         try:
@@ -384,11 +492,7 @@ class AgreementSerializer(serializers.ModelSerializer):
         funded = getattr(obj, "escrow_funded_amount", None) or Decimal("0.00")
 
         try:
-            total_required = (
-                total_required
-                if isinstance(total_required, Decimal)
-                else Decimal(str(total_required))
-            )
+            total_required = total_required if isinstance(total_required, Decimal) else Decimal(str(total_required))
             funded = funded if isinstance(funded, Decimal) else Decimal(str(funded))
         except Exception:
             return None
@@ -399,7 +503,6 @@ class AgreementSerializer(serializers.ModelSerializer):
 
         return float(remaining)
 
-    # ✅ AI scope clarifications (READ)
     def get_ai_scope(self, obj):
         try:
             scope = getattr(obj, "ai_scope", None)
@@ -414,19 +517,24 @@ class AgreementSerializer(serializers.ModelSerializer):
         except Exception:
             return None
 
-    # ------------------------------------------------------------------
-    # INPUT normalisation
-    # ------------------------------------------------------------------
-
     def to_internal_value(self, data: Dict[str, Any]):
         data = dict(data)
+
+        # Accept UI aliases (older clients)
+        if "agreement_payment_mode" in data and "payment_mode" not in data:
+            data["payment_mode"] = data.pop("agreement_payment_mode")
+
+        if "agreement_escrow_funded" in data and "escrow_funded" not in data:
+            data["escrow_funded"] = data.pop("agreement_escrow_funded")
 
         if "project_type" in data and data["project_type"]:
             data["project_type"] = _normalize_project_type(data["project_type"])
 
-        # ✅ NEW: Normalize payment_mode
         if "payment_mode" in data and data["payment_mode"] is not None:
             data["payment_mode"] = _normalize_payment_mode(data["payment_mode"])
+
+        if "signature_policy" in data and data["signature_policy"] is not None:
+            data["signature_policy"] = _normalize_signature_policy(data["signature_policy"])
 
         mappings = [
             ("project_address_line1", "address_line1"),
@@ -445,11 +553,8 @@ class AgreementSerializer(serializers.ModelSerializer):
                 data[proj_key] = data[model_key]
 
         data.pop("project_address_same_as_homeowner", None)
-
-        # If frontend sends status, ignore it (server authoritative)
         data.pop("status", None)
 
-        # ✅ accept frontend "ai_scope" key by remapping it into our writable ai_scope_input
         if "ai_scope" in data and data["ai_scope"] is not None and "ai_scope_input" not in data:
             data["ai_scope_input"] = data.pop("ai_scope")
 
@@ -458,7 +563,6 @@ class AgreementSerializer(serializers.ModelSerializer):
             "project_address_line2",
             "project_address_city",
             "project_address_state",
-            "project_address_line1",
             "project_postal_code",
             "address_line1",
             "address_line2",
@@ -469,12 +573,19 @@ class AgreementSerializer(serializers.ModelSerializer):
             "zip_code",
         }
 
-        # Normalize empty strings -> None, but keep empty strings for address keys
+        KEEP_EMPTY_STRING_KEYS = set(address_keys) | {
+            "project_subtype",
+            "external_contract_reference",
+        }
+
         for key, value in list(data.items()):
-            if key not in address_keys and isinstance(value, str) and value.strip() == "":
+            if key not in KEEP_EMPTY_STRING_KEYS and isinstance(value, str) and value.strip() == "":
                 data[key] = None
 
-        # Warranty write-alias behavior
+        if data.get("project_subtype", None) is None:
+            if "project_subtype" in data:
+                data["project_subtype"] = ""
+
         use_default = data.pop("use_default_warranty", None)
         custom_text = data.pop("custom_warranty_text", None)
         if use_default is not None:
@@ -492,10 +603,6 @@ class AgreementSerializer(serializers.ModelSerializer):
 
         return super().to_internal_value(data)
 
-    # ------------------------------------------------------------------
-    # SAVE overrides (CRITICAL FIX)
-    # ------------------------------------------------------------------
-
     def _pop_non_model_fields(self, data: dict) -> dict:
         NON_MODEL_FIELDS = {
             "address_line1",
@@ -512,23 +619,20 @@ class AgreementSerializer(serializers.ModelSerializer):
             data.pop(key, None)
         return data
 
-    def _persist_ai_scope(self, agreement: Agreement, ai_scope_payload: Optional[dict], scope_clarifications_payload: Optional[dict]) -> None:
-        """
-        Persist ai_scope updates into AgreementAIScope (OneToOne).
-        Merge answers; replace questions only when provided.
-        """
+    def _persist_ai_scope(
+        self,
+        agreement: Agreement,
+        ai_scope_payload: Optional[dict],
+        scope_clarifications_payload: Optional[dict],
+    ) -> None:
         if ai_scope_payload is None and not isinstance(scope_clarifications_payload, dict):
             return
 
-        # Treat scope_clarifications as answers alias if provided
         if ai_scope_payload is None:
             ai_scope_payload = {}
         if isinstance(scope_clarifications_payload, dict) and scope_clarifications_payload:
             ai_scope_payload = dict(ai_scope_payload)
-            ai_scope_payload["answers"] = _merge_dict(
-                _safe_dict(ai_scope_payload.get("answers")),
-                scope_clarifications_payload,
-            )
+            ai_scope_payload["answers"] = _merge_dict(_safe_dict(ai_scope_payload.get("answers")), scope_clarifications_payload)
 
         if not isinstance(ai_scope_payload, dict):
             return
@@ -552,6 +656,30 @@ class AgreementSerializer(serializers.ModelSerializer):
 
         scope_obj.save()
 
+    def _stamp_external_attestation_if_needed(self, instance: Agreement, validated_data: dict) -> None:
+        try:
+            policy = validated_data.get("signature_policy", None) or getattr(instance, "signature_policy", None) or ""
+            policy = str(policy).strip().lower()
+        except Exception:
+            policy = ""
+
+        if policy != "external_signed":
+            return
+
+        incoming_attested = validated_data.get("external_contract_attested", None)
+        if incoming_attested is not True:
+            return
+
+        already_at = getattr(instance, "external_contract_attested_at", None)
+        if already_at:
+            return
+
+        req = self.context.get("request", None)
+        user = getattr(req, "user", None) if req else None
+
+        instance.external_contract_attested_at = timezone.now()
+        instance.external_contract_attested_by = user if user and getattr(user, "is_authenticated", False) else None
+
     def create(self, validated_data):
         ai_scope_payload = validated_data.pop("ai_scope_input", None)
         scope_clarifications_payload = validated_data.pop("scope_clarifications", None)
@@ -559,8 +687,10 @@ class AgreementSerializer(serializers.ModelSerializer):
         validated_data = self._pop_non_model_fields(validated_data)
         agreement = Agreement.objects.create(**validated_data)
 
-        self._persist_ai_scope(agreement, ai_scope_payload, scope_clarifications_payload)
+        self._stamp_external_attestation_if_needed(agreement, validated_data)
+        agreement.save(update_fields=["external_contract_attested_at", "external_contract_attested_by"] if agreement.external_contract_attested_at else [])
 
+        self._persist_ai_scope(agreement, ai_scope_payload, scope_clarifications_payload)
         return agreement
 
     def update(self, instance, validated_data):
@@ -568,11 +698,12 @@ class AgreementSerializer(serializers.ModelSerializer):
         scope_clarifications_payload = validated_data.pop("scope_clarifications", None)
 
         validated_data = self._pop_non_model_fields(validated_data)
+
         instance = super().update(instance, validated_data)
 
+        self._stamp_external_attestation_if_needed(instance, validated_data)
+        if instance.external_contract_attested_at:
+            instance.save(update_fields=["external_contract_attested_at", "external_contract_attested_by"])
+
         self._persist_ai_scope(instance, ai_scope_payload, scope_clarifications_payload)
-
         return instance
-
-    def to_representation(self, instance):
-        return super().to_representation(instance)

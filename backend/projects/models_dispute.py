@@ -184,11 +184,80 @@ class Dispute(models.Model):
         )
         return _parse_date(val)
 
+    def _proposal_is_rework(self) -> bool:
+        p = self.proposal or {}
+        if not isinstance(p, dict):
+            return False
+        return str(p.get("proposal_type") or "").strip().lower() == "rework"
+
+    def _parse_rework_amount(self) -> Decimal | None:
+        """
+        Optional proposal field: rework_amount
+        Accepts: "50", "50.00", "$50.00", 50, 50.0
+        """
+        p = self.proposal or {}
+        if not isinstance(p, dict):
+            return None
+
+        raw = (
+            p.get("rework_amount")
+            or p.get("reworkAmount")
+            or p.get("amount")
+            or None
+        )
+        if raw in (None, "", [], {}):
+            return None
+
+        try:
+            if isinstance(raw, Decimal):
+                return raw
+            if isinstance(raw, (int, float)):
+                return Decimal(str(raw))
+            s = str(raw).strip().replace(",", "")
+            if s.startswith("$"):
+                s = s[1:].strip()
+            if not s:
+                return None
+            return Decimal(s)
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+
+    def _origin_milestone(self):
+        """
+        The milestone this dispute is about (may be null).
+        """
+        return getattr(self, "milestone", None)
+
+    def _origin_title(self) -> str:
+        m = self._origin_milestone()
+        return (getattr(m, "title", "") or "").strip() if m else ""
+
+    def _origin_amount(self) -> Decimal | None:
+        m = self._origin_milestone()
+        if not m:
+            return None
+        try:
+            amt = getattr(m, "amount", None)
+            if amt in (None, ""):
+                return None
+            return Decimal(str(amt))
+        except Exception:
+            return None
+
+    def _rework_title(self) -> str:
+        """
+        Produce a UI-friendly rework title that clearly links to the origin milestone.
+        """
+        origin_title = self._origin_title()
+        if origin_title:
+            return f"Rework — {origin_title} (Dispute #{self.pk})"
+        return f"Rework — Dispute #{self.pk}"
+
     def _rework_artifacts_exist(self) -> bool:
         """
         True if:
           - any DisputeWorkOrder with rework_milestone_id set, OR
-          - a milestone exists with exact title match
+          - a milestone exists for this agreement referencing "Dispute #<id>"
         """
         from projects.models import Milestone  # type: ignore
 
@@ -202,9 +271,15 @@ class Dispute(models.Model):
         if linked:
             return True
 
-        title = f"Rework — Dispute #{self.pk}"
-        if Milestone.objects.filter(agreement=self.agreement, title=title).exists():
-            return True
+        # Heuristic: any milestone that references this dispute id
+        try:
+            if Milestone.objects.filter(
+                agreement=self.agreement,
+                title__icontains=f"Dispute #{self.pk}",
+            ).exists():
+                return True
+        except Exception:
+            pass
 
         return False
 
@@ -232,11 +307,9 @@ class Dispute(models.Model):
 
         # Sequence/ordering helper
         def next_int_for(name: str) -> int:
-            # Try to set to next available based on agreement milestones count
             try:
                 existing_count = getattr(agreement, "milestones", None)
                 if existing_count is not None:
-                    # related manager
                     return int(agreement.milestones.count()) + 1
             except Exception:
                 pass
@@ -246,25 +319,19 @@ class Dispute(models.Model):
             if name == "id":
                 continue
 
-            # Skip if already set
             if has_value(name):
                 continue
 
-            # Determine if required
             required = (not getattr(f, "null", True)) and (not getattr(f, "blank", True))
-
-            # If field has default, it isn't required
             try:
                 if f.has_default():
                     required = False
             except Exception:
-                # older field types may not have has_default; ignore
                 pass
 
             if not required:
                 continue
 
-            # Fill common required fields
             if name in ("agreement",) and agreement:
                 m_kwargs[name] = agreement
                 continue
@@ -281,7 +348,6 @@ class Dispute(models.Model):
                 m_kwargs[name] = agreement_homeowner
                 continue
 
-            # Dates
             if name in ("start_date", "agreement_start", "scheduled_date"):
                 m_kwargs[name] = today
                 continue
@@ -290,38 +356,70 @@ class Dispute(models.Model):
                 m_kwargs[name] = fallback_due
                 continue
 
-            # Amounts/fees
+            # Amounts/fees (default 0; but we set a better value earlier when possible)
             if name in ("amount", "price", "cost", "total"):
                 m_kwargs[name] = Decimal("0.00")
                 continue
 
-            # Status fields
             if name in ("status",):
                 m_kwargs[name] = "incomplete"
                 continue
 
-            # Numeric duration
             if name in ("days", "hours", "minutes", "milestone_days", "milestone_hours", "milestone_minutes"):
                 m_kwargs[name] = 0
                 continue
 
-            # Ordering / numbering
             if name in ("order", "sequence", "milestone_number", "number", "position"):
                 m_kwargs[name] = next_int_for(name)
                 continue
 
-            # Text fields
             if name in ("title",):
-                m_kwargs[name] = f"Rework — Dispute #{self.pk}"
+                m_kwargs[name] = self._rework_title()
                 continue
 
             if name in ("description", "notes"):
                 m_kwargs[name] = f"Rework required from Dispute #{self.pk}."
                 continue
 
-            # If it's still required and unknown, we leave it unset; the create will raise,
-            # and we will capture the exception into WorkOrder.notes.
         return m_kwargs
+
+    def _stamp_origin_link(self, milestone_obj) -> None:
+        """
+        Ensure rework milestone stores rework_origin_milestone_id if the field exists.
+        """
+        try:
+            origin_id = getattr(self, "milestone_id", None)
+            if not origin_id:
+                return
+            if hasattr(milestone_obj, "rework_origin_milestone_id") and not getattr(milestone_obj, "rework_origin_milestone_id", None):
+                milestone_obj.rework_origin_milestone_id = origin_id
+                milestone_obj.save(update_fields=["rework_origin_milestone_id"])
+        except Exception:
+            pass
+
+    def _compute_rework_amount(self) -> Decimal:
+        """
+        Determine the rework milestone amount.
+        Priority:
+          1) proposal.rework_amount (if provided and valid)
+          2) origin milestone amount
+          3) 0.00
+        """
+        amt = self._parse_rework_amount()
+        if amt is not None:
+            try:
+                return Decimal(str(amt)).quantize(Decimal("0.01"))
+            except Exception:
+                pass
+
+        origin_amt = self._origin_amount()
+        if origin_amt is not None:
+            try:
+                return Decimal(str(origin_amt)).quantize(Decimal("0.01"))
+            except Exception:
+                pass
+
+        return Decimal("0.00")
 
     def _create_rework_workorder_and_milestone(self):
         """
@@ -329,11 +427,24 @@ class Dispute(models.Model):
           - create DisputeWorkOrder if missing
           - create rework milestone if missing
           - save milestone id on work order
-        If milestone creation fails, writes error into work order notes so it’s visible.
+
+        UI FIXES (NEW):
+          ✅ rework milestone title includes origin milestone title
+          ✅ amount copies origin/proposal amount (not always $0.00)
+          ✅ always stamps rework_origin_milestone_id when field exists
+          ✅ avoids creating duplicate “rework” milestones by preferring workorder linkage
         """
         from projects.models import Milestone  # type: ignore
 
+        # Only create rework artifacts when the proposal is a "rework" proposal.
+        # (Your view sets status resolved_contractor when homeowner accepts. We still guard.)
+        if not self._proposal_is_rework():
+            return
+
         rework_by = self._get_rework_by_date()
+        title = self._rework_title()
+        origin_title = self._origin_title()
+        origin_id = getattr(self, "milestone_id", None)
 
         # 1) Work order (idempotent)
         wo, _created = DisputeWorkOrder.objects.get_or_create(
@@ -341,7 +452,7 @@ class Dispute(models.Model):
             agreement=self.agreement,
             defaults={
                 "due_date": rework_by,
-                "title": f"Rework — Dispute #{self.pk}",
+                "title": title,
                 "notes": "",
                 "status": "open",
             },
@@ -352,37 +463,47 @@ class Dispute(models.Model):
         if rework_by and not wo.due_date:
             wo.due_date = rework_by
             changed = True
-        if wo.title == "Dispute follow-up":
-            wo.title = f"Rework — Dispute #{self.pk}"
-            changed = True
-        if changed:
-            wo.save(update_fields=["due_date", "title"])
 
-        # If already linked, we’re done
+        # Upgrade placeholder title
+        if (wo.title or "").strip() in ("Dispute follow-up", "", "Rework — Dispute #"):
+            wo.title = title
+            changed = True
+
+        # Ensure notes contain origin info (non-breaking, helps admin/debugging)
+        try:
+            notes_blob = wo.notes or ""
+            origin_line = ""
+            if origin_id and origin_title:
+                origin_line = f"[Origin] milestone_id={origin_id} title={origin_title}"
+            elif origin_id:
+                origin_line = f"[Origin] milestone_id={origin_id}"
+            if origin_line and origin_line not in notes_blob:
+                wo.notes = (notes_blob + ("\n" if notes_blob else "") + origin_line).strip()
+                changed = True
+        except Exception:
+            pass
+
+        if changed:
+            wo.save(update_fields=["due_date", "title", "notes"])
+
+        # If already linked, stamp linkage and exit
         if wo.rework_milestone_id:
+            try:
+                existing = Milestone.objects.filter(id=wo.rework_milestone_id).first()
+                if existing:
+                    self._stamp_origin_link(existing)
+            except Exception:
+                pass
             return
 
-        # 2) Find existing milestone if already created
-        base_title = f"Rework — Dispute #{self.pk}"
+        # 2) Find existing milestone if already created (prefer title w/ dispute id)
         existing = (
-            Milestone.objects.filter(agreement=self.agreement, title=base_title)
-            .order_by("-id")
-            .first()
-            or Milestone.objects.filter(
-                agreement=self.agreement, title__icontains=f"Dispute #{self.pk}"
-            )
+            Milestone.objects.filter(agreement=self.agreement, title__icontains=f"Dispute #{self.pk}")
             .order_by("-id")
             .first()
         )
         if existing:
-            # ✅ Stamp origin milestone link if this is a rework milestone and field exists
-            try:
-                if hasattr(existing, 'rework_origin_milestone_id') and not getattr(existing, 'rework_origin_milestone_id', None):
-                    if getattr(self, 'milestone_id', None):
-                        existing.rework_origin_milestone_id = self.milestone_id
-                        existing.save(update_fields=['rework_origin_milestone_id'])
-            except Exception:
-                pass
+            self._stamp_origin_link(existing)
             wo.rework_milestone_id = existing.id
             wo.save(update_fields=["rework_milestone_id"])
             return
@@ -392,15 +513,13 @@ class Dispute(models.Model):
 
         m_kwargs: dict = {}
 
-        # agreement FK
         if "agreement" in field_names:
             m_kwargs["agreement"] = self.agreement
 
-        # title
         if "title" in field_names:
-            m_kwargs["title"] = base_title
+            m_kwargs["title"] = title
 
-        # due date common field in your app is completion_date
+        # dates: your app commonly uses completion_date
         if rework_by:
             if "completion_date" in field_names:
                 m_kwargs["completion_date"] = rework_by
@@ -409,17 +528,20 @@ class Dispute(models.Model):
             elif "end_date" in field_names:
                 m_kwargs["end_date"] = rework_by
 
-        # amount safe default
+        # amount: DO NOT default to 0.00 anymore unless we truly have no info
+        rework_amount = self._compute_rework_amount()
         if "amount" in field_names:
-            m_kwargs["amount"] = Decimal("0.00")
+            m_kwargs["amount"] = rework_amount
 
-        # status safe default
         if "status" in field_names:
+            # Keep it consistent with your InvoiceStatus naming style (incomplete)
             m_kwargs["status"] = "incomplete"
 
-        # optional description
         if "description" in field_names and "description" not in m_kwargs:
-            m_kwargs["description"] = f"Rework required from Dispute #{self.pk}."
+            base_desc = f"Rework required from Dispute #{self.pk}."
+            if origin_title:
+                base_desc = f"{base_desc}\n\nOrigin milestone: {origin_title} (#{origin_id})"
+            m_kwargs["description"] = base_desc
 
         # optional linkage fields (only if present)
         if "dispute_id" in field_names:
@@ -429,9 +551,7 @@ class Dispute(models.Model):
         if "is_rework" in field_names:
             m_kwargs["is_rework"] = True
 
-
-        # ✅ NEW: link rework milestone back to the original disputed milestone
-        # (This field lives on Milestone; added for Option 1)
+        # ✅ link rework milestone back to the original disputed milestone
         if "rework_origin_milestone_id" in field_names:
             m_kwargs["rework_origin_milestone_id"] = getattr(self, "milestone_id", None)
 
@@ -441,14 +561,19 @@ class Dispute(models.Model):
         try:
             new_m = Milestone.objects.create(**m_kwargs)
         except Exception as e:
-            # Make the failure visible
             msg = f"[AUTO_CREATE_REWORK_MILESTONE_ERROR] {type(e).__name__}: {e}"
-            if wo.notes:
-                wo.notes = f"{wo.notes}\n{msg}"
-            else:
-                wo.notes = msg
-            wo.save(update_fields=["notes"])
+            try:
+                if wo.notes:
+                    wo.notes = f"{wo.notes}\n{msg}"
+                else:
+                    wo.notes = msg
+                wo.save(update_fields=["notes"])
+            except Exception:
+                pass
             return
+
+        # Ensure origin link if field exists (belt + suspenders)
+        self._stamp_origin_link(new_m)
 
         wo.rework_milestone_id = new_m.id
         wo.save(update_fields=["rework_milestone_id"])
@@ -470,9 +595,7 @@ class Dispute(models.Model):
 
         # Ensure rework artifacts exist whenever status is resolved_contractor
         if self.status == "resolved_contractor":
-            should_create = (prior_status != "resolved_contractor") or (
-                not self._rework_artifacts_exist()
-            )
+            should_create = (prior_status != "resolved_contractor") or (not self._rework_artifacts_exist())
             if should_create:
 
                 def _do_create():

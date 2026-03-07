@@ -5,7 +5,7 @@ from django.conf import settings
 from django.template.loader import render_to_string
 from django.utils.timezone import now
 
-DEFAULT_FROM = getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@myhomebro.com")
+DEFAULT_FROM = getattr(settings, "DEFAULT_FROM_EMAIL", "info@myhomebro.com")
 
 
 def _attach_agreement_pdf(msg, agreement) -> bool:
@@ -254,5 +254,158 @@ def email_final_agreement_copy(
     if attach_pdf:
         _attach_agreement_pdf(msg, agreement)
 
+    msg.send(fail_silently=False)
+    return True
+
+
+# ---------------------------------------------------------------------
+# NEW: Expense Request Email (customer action email + attachment links)
+# ---------------------------------------------------------------------
+
+def _site_url() -> str:
+    return (getattr(settings, "MHB_SITE_URL", "") or "").rstrip("/")
+
+
+def email_expense_request(
+    expense,
+    *,
+    customer_email: str,
+    customer_name: str,
+    approve_url: str,
+    pay_url: str,
+    reject_url: str,
+    attachment_links: list[dict],
+    is_resend: bool = False,
+) -> bool:
+    """
+    Sends an HTML email to the customer for an expense request:
+    - Approve (optional)
+    - Pay via Stripe
+    - Reject
+    - Shows attachments as links
+
+    attachment_links items: {"name": "...", "url": "..."}
+    """
+    if not customer_email:
+        return False
+
+    subject = f"MyHomeBro — {'Reminder: ' if is_resend else ''}Expense request for approval"
+
+    description = getattr(expense, "description", "") or "Expense"
+    amount = getattr(expense, "amount", None)
+    incurred_date = getattr(expense, "incurred_date", None)
+    notes = (getattr(expense, "notes_to_homeowner", "") or "").strip()
+
+    text_body = (
+        f"Hi {customer_name},\n\n"
+        f"A contractor has sent an expense request for your review:\n"
+        f"- Description: {description}\n"
+        f"- Amount: ${amount}\n"
+        f"- Date incurred: {incurred_date}\n\n"
+        f"{('Notes from contractor:\\n' + notes + '\\n\\n') if notes else ''}"
+        f"Approve: {approve_url}\n"
+        f"Pay: {pay_url}\n"
+        f"Reject: {reject_url}\n\n"
+        "— MyHomeBro"
+    )
+
+    logo_url = getattr(settings, "PUBLIC_LOGO_URL", None)
+    logo_html = (
+        f'<div style="text-align:center;margin:0 0 14px 0;">'
+        f'<img src="{logo_url}" alt="MyHomeBro" style="height:40px;max-width:200px;" />'
+        f"</div>"
+        if logo_url
+        else '<div style="text-align:center;font-weight:700;font-size:18px;margin:0 0 14px 0;">MyHomeBro</div>'
+    )
+
+    attachments_html = ""
+    if attachment_links:
+        items = "".join(
+            f'<li style="margin:6px 0;"><a href="{a["url"]}" '
+            f'style="color:#2563eb;text-decoration:none;">{a["name"]}</a></li>'
+            for a in attachment_links
+        )
+        attachments_html = f"""
+          <div style="margin-top:14px;">
+            <div style="font-weight:700;color:#111827;margin-bottom:6px;">Attachments</div>
+            <ul style="margin:0;padding-left:18px;color:#374151;font-size:14px;line-height:1.6;">
+              {items}
+            </ul>
+          </div>
+        """
+
+    notes_html = ""
+    if notes:
+        notes_html = f"""
+          <div style="margin-top:14px;">
+            <div style="font-weight:700;color:#111827;margin-bottom:6px;">Notes from contractor</div>
+            <div style="color:#374151;font-size:14px;line-height:1.6;white-space:pre-wrap;">{notes}</div>
+          </div>
+        """
+
+    html_body = f"""
+<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#f6f7fb;font-family:Arial,Helvetica,sans-serif;">
+    <div style="max-width:640px;margin:0 auto;padding:28px;">
+      <div style="background:#ffffff;border:1px solid #e6e8ef;border-radius:14px;padding:26px;">
+        {logo_html}
+
+        <h1 style="margin:0 0 10px 0;font-size:22px;line-height:1.2;color:#111827;text-align:center;">
+          Expense Request
+        </h1>
+
+        <p style="margin:0 0 14px 0;color:#374151;font-size:14px;line-height:1.6;">
+          Hi {customer_name},
+        </p>
+
+        <div style="background:#f9fafb;border:1px solid #eef0f6;border-radius:12px;padding:14px;">
+          <div style="color:#111827;font-weight:700;margin-bottom:6px;">{description}</div>
+          <div style="color:#374151;font-size:14px;line-height:1.6;">
+            Amount: <b>${amount}</b><br/>
+            Date incurred: {incurred_date}
+          </div>
+        </div>
+
+        {notes_html}
+        {attachments_html}
+
+        <div style="margin:18px 0;text-align:center;">
+          <a href="{pay_url}"
+             style="display:inline-block;background:#16a34a;color:#ffffff;text-decoration:none;
+                    padding:12px 18px;border-radius:999px;font-weight:800;font-size:14px;">
+            Approve & Pay
+          </a>
+        </div>
+
+        <div style="text-align:center;margin-top:8px;">
+          <a href="{reject_url}" style="color:#b91c1c;text-decoration:none;font-weight:700;font-size:13px;">
+            Reject this expense
+          </a>
+        </div>
+
+        <p style="margin:16px 0 6px 0;color:#6b7280;font-size:12px;line-height:1.6;">
+          If the button does not work, copy and paste this link into your browser:
+        </p>
+        <p style="margin:0;color:#2563eb;font-size:12px;word-break:break-all;">
+          {pay_url}
+        </p>
+
+        <div style="margin-top:18px;padding-top:14px;border-top:1px solid #eef0f6;color:#6b7280;font-size:12px;">
+          Year: {now().year}
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
+"""
+
+    msg = EmailMultiAlternatives(
+        subject=subject,
+        body=text_body,
+        from_email=DEFAULT_FROM,
+        to=[customer_email],
+    )
+    msg.attach_alternative(html_body, "text/html")
     msg.send(fail_silently=False)
     return True

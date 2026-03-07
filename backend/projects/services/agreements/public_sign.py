@@ -13,9 +13,64 @@ from django.utils.timezone import now
 from projects.models import Agreement
 from projects.services.agreements.final_link import send_final_link_for_agreement
 
+# ✅ NEW: PDF auto-finalize hook (same behavior as contractor sign)
+from projects.services.agreements.pdf_loader import load_pdf_services
+from projects.services.agreements.pdf_actions import finalize_agreement_pdf
+
 
 _PUBLIC_SIGN_SALT = "agreements.public.sign.v1"
 _PUBLIC_SIGN_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
+
+_PDF_BUILD_FN = None
+_PDF_GEN_FN = None
+
+
+def _get_pdf_services():
+    """
+    Mirrors AgreementViewSet behavior: pdf_loader returns (build_bytes_fn, generate_full_fn)
+    We only need the generate function here.
+    """
+    global _PDF_BUILD_FN, _PDF_GEN_FN
+    if callable(_PDF_GEN_FN):
+        return _PDF_BUILD_FN, _PDF_GEN_FN
+    b, g = load_pdf_services()
+    _PDF_BUILD_FN, _PDF_GEN_FN = b, g
+    return _PDF_BUILD_FN, _PDF_GEN_FN
+
+
+def _signature_satisfied(ag: Agreement) -> bool:
+    """
+    Waiver/policy aware signature satisfaction (property on Agreement model).
+    """
+    try:
+        return bool(getattr(ag, "signature_is_satisfied", False))
+    except Exception:
+        return False
+
+
+def _auto_finalize_if_satisfied_transition(ag: Agreement, *, satisfied_before: bool) -> None:
+    """
+    If signature satisfaction transitions False -> True, finalize PDF once.
+    This creates AgreementPDFVersion rows + updates Agreement.pdf_file/pdf_version.
+    """
+    satisfied_after = _signature_satisfied(ag)
+    if satisfied_before or not satisfied_after:
+        return
+
+    _build_fn, gen_fn = _get_pdf_services()
+    if not callable(gen_fn):
+        print("public_sign: auto-finalize skipped (pdf generator not loaded)", file=sys.stderr)
+        return
+
+    try:
+        finalize_agreement_pdf(ag, generate_full_agreement_pdf=gen_fn)
+        try:
+            ag.refresh_from_db()
+        except Exception:
+            pass
+    except Exception as e:
+        # Don't block signing if PDF finalize fails
+        print("public_sign: auto-finalize failed:", repr(e), file=sys.stderr)
 
 
 def build_public_sign_url(ag: Agreement, *, mode: Optional[str] = None) -> str:
@@ -61,9 +116,12 @@ def apply_homeowner_signature(
     Returns: (agreement, meta)
     meta includes:
       - was_homeowner_signed: bool
-      - became_fully_signed: bool
+      - became_signature_satisfied: bool   (waiver/policy aware)
+      - satisfied_before: bool
+      - satisfied_after: bool
     """
     was_homeowner_signed = bool(getattr(ag, "signed_by_homeowner", False))
+    satisfied_before = _signature_satisfied(ag)
 
     # Signature image handling is best-effort; caller may have already saved file
     try:
@@ -86,17 +144,32 @@ def apply_homeowner_signature(
     except Exception as e:
         raise ValueError("Could not process signature image.") from e
 
+    # Apply signature fields
     ag.homeowner_signature_name = (typed_name or "").strip()
     ag.signed_by_homeowner = True
     ag.signed_at_homeowner = now()
     ag.homeowner_signed_ip = signed_ip or None
+
+    # Save
     ag.save()
 
-    became_fully_signed = bool(
-        getattr(ag, "signed_by_contractor", False) and getattr(ag, "signed_by_homeowner", False)
-    )
+    # Refresh and re-check satisfaction (waiver/policy aware)
+    try:
+        ag.refresh_from_db()
+    except Exception:
+        pass
 
-    return ag, {"was_homeowner_signed": was_homeowner_signed, "became_fully_signed": became_fully_signed}
+    satisfied_after = _signature_satisfied(ag)
+
+    # ✅ Auto finalize on transition
+    _auto_finalize_if_satisfied_transition(ag, satisfied_before=satisfied_before)
+
+    return ag, {
+        "was_homeowner_signed": was_homeowner_signed,
+        "satisfied_before": bool(satisfied_before),
+        "satisfied_after": bool(satisfied_after),
+        "became_signature_satisfied": bool((not satisfied_before) and satisfied_after),
+    }
 
 
 def maybe_send_final_copy_after_homeowner_sign(
@@ -104,13 +177,17 @@ def maybe_send_final_copy_after_homeowner_sign(
     *,
     was_homeowner_signed: bool,
 ) -> None:
-    """If agreement just became fully signed, send final link (guarded by pdf_version)."""
+    """
+    If agreement just became signature-satisfied (waiver/policy aware), send final link.
+    (Guarded by pdf_version inside send_final_link_for_agreement.)
+    """
     try:
-        if (
-            bool(getattr(ag, "signed_by_contractor", False))
-            and bool(getattr(ag, "signed_by_homeowner", False))
-            and not was_homeowner_signed
-        ):
+        # Only send when homeowner JUST signed in this request
+        if was_homeowner_signed:
+            return
+
+        # Waiver/policy-aware satisfaction
+        if bool(getattr(ag, "signature_is_satisfied", False)):
             send_final_link_for_agreement(ag, force_send=False)
     except Exception as e:
         print("maybe_send_final_copy_after_homeowner_sign error:", repr(e), file=sys.stderr)

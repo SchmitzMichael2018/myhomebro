@@ -1,7 +1,9 @@
 # backend/projects/views/invoice.py
-# v2026-01-10 — Dispute hard-lock: prevent submit/resend while dispute active
-# v2026-02-11 — Direct Pay invoices: create Stripe Checkout link for subcontractor jobs (no escrow)
-# Keeps all existing behavior otherwise.
+# v2026-03-03 — ✅ Option A: Agreement is source-of-truth for Customer (invoice email + views)
+# - Invoice recipient now uses agreement.homeowner first (fallback to agreement.project.homeowner)
+# - select_related includes agreement__homeowner
+# - InvoicePDFView authorization checks agreement.homeowner user safely
+# - Email milestone line prefers milestone_order (per agreement) over milestone_id_snapshot (DB id)
 
 import logging
 import os
@@ -23,8 +25,11 @@ from ..models import Invoice, InvoiceStatus, MilestoneComment, MilestoneFile
 from ..serializers.invoices import InvoiceSerializer
 from projects.services.invoice_pdf import generate_invoice_pdf_bytes
 
-# ✅ NEW: Direct Pay service
+# ✅ Direct Pay service
 from projects.services.direct_pay import create_direct_pay_checkout_for_invoice
+
+# ✅ canonical agreement completion recompute
+from projects.services.agreement_completion import recompute_and_apply_agreement_completion
 
 logger = logging.getLogger(__name__)
 
@@ -37,27 +42,44 @@ def _api_base() -> str:
     return getattr(settings, "API_BASE_URL", _frontend_base()).rstrip("/")
 
 
-def _get_homeowner(invoice: Invoice):
+def _get_customer(invoice: Invoice):
+    """
+    Option A:
+    Agreement.homeowner is the canonical "Customer" for invoices.
+    Fallback: agreement.project.homeowner (legacy)
+    """
     agreement = getattr(invoice, "agreement", None)
-    project = getattr(agreement, "project", None) if agreement else None
-    homeowner = getattr(project, "homeowner", None) if project else None
-    return homeowner
+    if not agreement:
+        return None
+
+    # ✅ preferred
+    customer = getattr(agreement, "homeowner", None) or getattr(agreement, "customer", None)
+    if customer:
+        return customer
+
+    # fallback legacy
+    project = getattr(agreement, "project", None)
+    return getattr(project, "homeowner", None) if project else None
 
 
-def _get_homeowner_email(invoice: Invoice) -> str | None:
-    homeowner = _get_homeowner(invoice)
-    email = getattr(homeowner, "email", None) if homeowner else None
-    return email or getattr(invoice, "homeowner_email", None) or None
+def _get_customer_email(invoice: Invoice) -> str | None:
+    customer = _get_customer(invoice)
+    email = getattr(customer, "email", None) if customer else None
+    # Keep invoice snapshot fallback for safety
+    return email or getattr(invoice, "homeowner_email", None) or getattr(invoice, "customer_email", None) or None
 
 
-def _get_homeowner_name(invoice: Invoice) -> str:
-    homeowner = _get_homeowner(invoice)
-    if homeowner:
+def _get_customer_name(invoice: Invoice) -> str:
+    customer = _get_customer(invoice)
+    if customer:
         for attr in ["full_name", "name", "display_name"]:
-            val = getattr(homeowner, attr, None)
+            val = getattr(customer, attr, None)
             if val:
                 return val
-    return getattr(invoice, "homeowner_name", None) or "Homeowner"
+        # final fallback
+        if getattr(customer, "email", None):
+            return str(getattr(customer, "email"))
+    return getattr(invoice, "homeowner_name", None) or getattr(invoice, "customer_name", None) or "Customer"
 
 
 def _magic_token(invoice: Invoice) -> str:
@@ -172,20 +194,26 @@ def _send_invoice_email_postmark(invoice: Invoice) -> dict:
     from_email = getattr(settings, "POSTMARK_FROM_EMAIL", "info@myhomebro.com")
     message_stream = getattr(settings, "POSTMARK_MESSAGE_STREAM", "outbound")
 
-    to_email = _get_homeowner_email(invoice)
+    to_email = _get_customer_email(invoice)
     if not to_email:
-        raise RuntimeError("Homeowner email not found for this invoice.")
+        raise RuntimeError("Customer email not found for this invoice.")
 
-    homeowner_name = _get_homeowner_name(invoice)
+    customer_name = _get_customer_name(invoice)
 
     inv_number = getattr(invoice, "invoice_number", None) or str(invoice.id)
     amount_val = getattr(invoice, "amount", None) or 0
 
-    project = getattr(getattr(invoice, "agreement", None), "project", None)
+    agreement = getattr(invoice, "agreement", None)
+    project = getattr(agreement, "project", None) if agreement else None
     project_title = getattr(project, "title", None) or getattr(invoice, "project_title", None) or "Your Project"
 
-    ms_id = getattr(invoice, "milestone_id_snapshot", None) or getattr(invoice, "milestone_id", None) or ""
-    ms_title = _safe_text(getattr(invoice, "milestone_title_snapshot", "") or getattr(invoice, "milestone_title", "") or "Milestone")
+    # Prefer per-agreement milestone number if available via serializer (new)
+    ser = InvoiceSerializer(invoice, context={"request": None}).data
+    ms_order = ser.get("milestone_order")
+    ms_id = ms_order or getattr(invoice, "milestone_id_snapshot", None) or getattr(invoice, "milestone_id", None) or ""
+    ms_title = _safe_text(
+        getattr(invoice, "milestone_title_snapshot", "") or getattr(invoice, "milestone_title", "") or "Milestone"
+    )
 
     notes, atts = _invoice_notes_and_attachments(invoice)
 
@@ -200,7 +228,7 @@ def _send_invoice_email_postmark(invoice: Invoice) -> dict:
     <div style="font-family: Arial, sans-serif; line-height: 1.45; color:#111827;">
       <h2 style="margin:0 0 10px;">Invoice Ready</h2>
 
-      <p style="margin:0 0 10px;">Hi {homeowner_name},</p>
+      <p style="margin:0 0 10px;">Hi {customer_name},</p>
 
       <p style="margin:0 0 14px;">
         Your contractor submitted an invoice for <b>{project_title}</b>.
@@ -271,6 +299,18 @@ def _agreement_has_active_dispute(agreement) -> bool:
         return False
 
 
+def _recompute_completion_for_invoice(invoice: Invoice) -> None:
+    """
+    Safe helper. Only marks agreement completed if truly eligible.
+    """
+    try:
+        ag_id = getattr(invoice, "agreement_id", None)
+        if ag_id:
+            recompute_and_apply_agreement_completion(int(ag_id))
+    except Exception as exc:
+        logger.warning("Agreement completion recompute failed for invoice %s: %s", getattr(invoice, "id", None), exc)
+
+
 class InvoiceViewSet(viewsets.ModelViewSet):
     serializer_class = InvoiceSerializer
     permission_classes = [IsAuthenticated]
@@ -280,7 +320,13 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         return (
             Invoice.objects
             .filter(agreement__project__contractor__user=user)
-            .select_related("agreement__project__contractor__user", "agreement__project__homeowner", "agreement__contractor", "agreement__project")
+            .select_related(
+                "agreement__project__contractor__user",
+                "agreement__project__homeowner",
+                "agreement__homeowner",
+                "agreement__contractor",
+                "agreement__project",
+            )
             .distinct()
         )
 
@@ -298,39 +344,51 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Failed to generate invoice PDF."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     # ------------------------------------------------------------------
-    # ✅ NEW: Direct Pay (Subcontractor / no escrow) — create Stripe Checkout link
+    # Manual agreement completion recompute (safe/idempotent)
+    # POST /api/projects/invoices/<id>/recompute_completion/
+    # ------------------------------------------------------------------
+    @action(detail=True, methods=["post"], url_path="recompute_completion")
+    def recompute_completion(self, request, pk=None):
+        invoice = self.get_object()
+
+        # Ownership guard
+        if request.user != invoice.agreement.project.contractor.user:
+            raise PermissionDenied("Only the contractor can recompute agreement completion for this invoice.")
+
+        _recompute_completion_for_invoice(invoice)
+
+        invoice.refresh_from_db()
+        return Response(self.get_serializer(invoice, context={"request": request}).data, status=status.HTTP_200_OK)
+
+    # ------------------------------------------------------------------
+    # Direct Pay — create Stripe Checkout link
     # POST /api/projects/invoices/<id>/direct_pay_link/
     # ------------------------------------------------------------------
     @action(detail=True, methods=["post"], url_path="direct_pay_link")
     def direct_pay_link(self, request, pk=None):
         invoice = self.get_object()
 
-        # Ownership guard (match your submit/resend rule)
         if request.user != invoice.agreement.project.contractor.user:
             raise PermissionDenied("Only the contractor can create a Direct Pay link for this invoice.")
 
-        # 🔒 Reuse dispute hard-lock
         if _agreement_has_active_dispute(getattr(invoice, "agreement", None)):
             return Response(
                 {"detail": "This agreement has an active dispute. Direct Pay link creation is paused."},
                 status=400,
             )
 
-        # Must be direct pay agreement
         if getattr(invoice.agreement, "payment_mode", None) != "direct":
             return Response(
                 {"detail": "This agreement is not in Direct Pay mode."},
                 status=400,
             )
 
-        # Safety: paid invoices cannot get a new pay link
         if str(getattr(invoice, "status", "") or "").lower() == "paid" or getattr(invoice, "direct_pay_paid_at", None):
             return Response(
                 {"detail": "This invoice is already paid and cannot generate a new pay link."},
                 status=400,
             )
 
-        # If a link already exists, just return it (idempotent behavior)
         existing_url = (getattr(invoice, "direct_pay_checkout_url", "") or "").strip()
         if existing_url:
             return Response({"checkout_url": existing_url}, status=status.HTTP_200_OK)
@@ -341,6 +399,14 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             logger.exception("Direct Pay link creation failed for invoice %s", getattr(invoice, "id", pk))
             return Response({"detail": "Failed to create Direct Pay link.", "error": str(e)}, status=400)
 
+        # If invoice became paid as part of service flow, recompute completion (safe)
+        try:
+            invoice.refresh_from_db()
+            if str(getattr(invoice, "status", "") or "").lower() == "paid" or getattr(invoice, "direct_pay_paid_at", None):
+                _recompute_completion_for_invoice(invoice)
+        except Exception:
+            pass
+
         return Response({"checkout_url": checkout_url}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"])
@@ -349,11 +415,9 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         if request.user != invoice.agreement.project.contractor.user:
             raise PermissionDenied("Only the contractor can submit invoice notifications.")
 
-        # 🔒 NEW: block submit while dispute active
         if _agreement_has_active_dispute(getattr(invoice, "agreement", None)):
             return Response({"detail": "This agreement has an active dispute. Invoice submission is paused."}, status=400)
 
-        # ✅ Safety: never downgrade released/paid invoices to pending
         if getattr(invoice, "escrow_released", False) or str(invoice.status or "").lower() == "paid":
             return Response({"detail": "This invoice is already paid/released and cannot be re-submitted."}, status=400)
 
@@ -380,7 +444,10 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             logger.exception("Invoice submit email failed for invoice %s", invoice.id)
             invoice.last_email_error = str(e)
             invoice.save(update_fields=["last_email_error"])
-            return Response({"detail": "Invoice saved but email failed to send.", "error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"detail": "Invoice saved but email failed to send.", "error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     @action(detail=True, methods=["post"])
     def resend(self, request, pk=None):
@@ -388,11 +455,9 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         if request.user != invoice.agreement.project.contractor.user:
             raise PermissionDenied("Only the contractor can resend invoice notifications.")
 
-        # 🔒 NEW: block resend while dispute active
         if _agreement_has_active_dispute(getattr(invoice, "agreement", None)):
             return Response({"detail": "This agreement has an active dispute. Invoice resend is paused."}, status=400)
 
-        # ✅ Safety: never resend/alter state for released/paid invoices
         if getattr(invoice, "escrow_released", False) or str(invoice.status or "").lower() == "paid":
             return Response({"detail": "This invoice is already paid/released and cannot be resent."}, status=400)
 
@@ -429,10 +494,16 @@ class InvoicePDFView(APIView):
         invoice = get_object_or_404(Invoice, pk=pk)
         user = request.user
 
-        if (
-            user != invoice.agreement.project.contractor.user and
-            user != invoice.agreement.project.homeowner.created_by.user
-        ):
+        # ✅ Contractor can always view
+        contractor_user = getattr(getattr(getattr(invoice, "agreement", None), "project", None), "contractor", None)
+        contractor_user = getattr(contractor_user, "user", None)
+
+        # ✅ Customer can view if they have a linked auth user (optional)
+        agreement = getattr(invoice, "agreement", None)
+        customer = getattr(agreement, "homeowner", None) if agreement else None
+        customer_user = getattr(customer, "user", None)
+
+        if user != contractor_user and (customer_user is None or user != customer_user):
             return Response({"detail": "Unauthorized access."}, status=status.HTTP_403_FORBIDDEN)
 
         if not getattr(invoice, "pdf_file", None):

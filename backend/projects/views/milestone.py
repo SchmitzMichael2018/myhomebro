@@ -1,21 +1,21 @@
 # backend/projects/views/milestone.py
-# v2026-01-01 — Unify milestone refund behavior with agreement refund endpoints
+# v2026-02-23 — ✅ Signature-policy aware gating for milestone complete + invoice
 #
-# v2026-01-05 — Employee milestone visibility fix (robust)
-# - If user resolves to a contractor -> contractor-scoped milestones (unchanged)
-# - If not -> treat as subaccount and show ONLY milestones assigned to that user
-# - Adds /my-assigned/ debug endpoint for quick verification
-#
-# v2026-01-25 — Bulk AI milestone creation + auto-spread amounts
-# - POST /api/projects/milestones/bulk-ai-create/
-# - Single request to create suggested milestones
-# - Optional spread_total across milestones with rounding safety
-# - Mode replace/append
+# Fixes:
+# - Milestone completion now requires:
+#     - agreement.signature_is_satisfied == True (policy-aware)
+#     - AND if agreement.payment_mode == "escrow": agreement.escrow_funded == True
+# - Direct Pay agreements do NOT require escrow funded for invoicing
+# - Ensures PATCH/PUT completion path cannot bypass completion gating
+# - Adds structured error codes:
+#     - SIGNATURE_REQUIRED
+#     - ESCROW_REQUIRED
 
 from __future__ import annotations
 
 import logging
 import os
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import List, Dict, Any, Optional
 
@@ -46,6 +46,13 @@ from projects.serializers.milestone_comment import MilestoneCommentSerializer
 from projects.serializers.invoices import InvoiceSerializer
 from projects.permissions_subaccounts import IsContractorOrSubAccount, CanEditMilestones
 from projects.utils.accounts import get_contractor_for_user
+
+from projects.models_amendment_request import AmendmentRequest
+from projects.serializers_amendment_request import AmendmentRequestSerializer
+from projects.services.agreement_locking import (
+    can_edit_milestones_under_agreement,
+    is_completed_agreement,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +105,6 @@ def _spread_total_equal(total: Decimal, n: int) -> List[Decimal]:
     if total < 0:
         total = Decimal("0.00")
 
-    # Work in cents to guarantee exactness
     total_cents = int((total * 100).to_integral_value(rounding=ROUND_HALF_UP))
     base = total_cents // n
     rem = total_cents % n
@@ -134,10 +140,6 @@ def _get_invoice_queryset_for_agreement(agreement):
 
 
 def _released_total_cents_for_agreement(agreement) -> int:
-    """
-    Released = invoices with escrow_released True OR stripe_transfer_id present.
-    Sum invoice.amount for released invoices.
-    """
     qs = _get_invoice_queryset_for_agreement(agreement)
 
     released_ids = set()
@@ -161,9 +163,6 @@ def _released_total_cents_for_agreement(agreement) -> int:
 
 
 def _funded_total_cents_for_agreement(agreement) -> int:
-    """
-    Funded total = Agreement.escrow_funded_amount (your canonical field).
-    """
     if hasattr(agreement, "escrow_funded_amount"):
         return _money_to_cents(getattr(agreement, "escrow_funded_amount", 0))
     return 0
@@ -176,9 +175,6 @@ def _unreleased_total_cents_for_agreement(agreement) -> int:
 
 
 def _milestone_looks_started(m: Milestone) -> bool:
-    """
-    'Started' for refund safety = completed OR invoiced OR invoice linked.
-    """
     if getattr(m, "completed", False):
         return True
     if getattr(m, "is_invoiced", False):
@@ -206,14 +202,6 @@ def _ensure_descope_fields_exist(m: Milestone) -> bool:
 
 
 def _refund_single_milestone_via_agreement_engine(*, request_user, milestone: Milestone, reason: str) -> dict:
-    """
-    Unified refund engine:
-    - Only refunds THIS milestone
-    - Caps by DB unreleased escrow remaining
-    - Caps by Stripe remaining refundable
-    - Uses PaymentIntent refund (platform-controlled)
-    - Marks milestone descope_status='refunded' (if fields exist)
-    """
     agreement = milestone.agreement
 
     if not getattr(agreement, "escrow_funded", False):
@@ -304,6 +292,199 @@ def _refund_single_milestone_via_agreement_engine(*, request_user, milestone: Mi
     return {"ok": True, "refund_cents": int(refund_cents), "stripe_refund_id": rid}
 
 
+def _parse_bool(v) -> bool:
+    if v is None:
+        return False
+    if isinstance(v, bool):
+        return v
+    s = str(v).strip().lower()
+    return s in ("1", "true", "yes", "y", "on")
+
+
+def _collect_uploaded_files(request) -> List[Any]:
+    uploaded_files: List[Any] = []
+    try:
+        if hasattr(request, "FILES"):
+            if "file" in request.FILES:
+                uploaded_files.append(request.FILES["file"])
+            if "files" in request.FILES:
+                uploaded_files.extend(request.FILES.getlist("files"))
+    except Exception:
+        pass
+    return uploaded_files
+
+
+# ----------------------------- NEW: business rule gating ----------------------------- #
+def _agreement_payment_mode(agreement: Agreement) -> str:
+    """
+    Return "escrow" or "direct" (default escrow).
+    """
+    try:
+        mode = str(getattr(agreement, "payment_mode", "") or "escrow").strip().lower()
+        if mode not in ("escrow", "direct"):
+            return "escrow"
+        return mode
+    except Exception:
+        return "escrow"
+
+
+def _agreement_requires_escrow(agreement: Agreement) -> bool:
+    return _agreement_payment_mode(agreement) == "escrow"
+
+
+def _agreement_signature_satisfied(agreement: Agreement) -> bool:
+    """
+    Uses Agreement.signature_is_satisfied if present, else falls back to is_fully_signed.
+    """
+    try:
+        v = getattr(agreement, "signature_is_satisfied")
+        return bool(v)
+    except Exception:
+        return bool(getattr(agreement, "signed_by_contractor", False) and getattr(agreement, "signed_by_homeowner", False))
+
+
+def _can_complete_milestone(agreement: Agreement) -> Optional[Response]:
+    """
+    Completion rules:
+      - ALWAYS require signature satisfaction (policy-aware)
+      - If escrow-mode: require escrow_funded True
+    """
+    if not _agreement_signature_satisfied(agreement):
+        return Response(
+            {
+                "detail": "Agreement must meet signature requirements before completing milestones.",
+                "code": "SIGNATURE_REQUIRED",
+                "agreement_id": agreement.id,
+                "payment_mode": _agreement_payment_mode(agreement),
+                "signature_policy": getattr(agreement, "signature_policy", None),
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    if _agreement_requires_escrow(agreement) and not getattr(agreement, "escrow_funded", False):
+        return Response(
+            {
+                "detail": "Escrow must be funded before completing milestones.",
+                "code": "ESCROW_REQUIRED",
+                "agreement_id": agreement.id,
+                "payment_mode": _agreement_payment_mode(agreement),
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    return None
+
+
+def _can_invoice_milestone(agreement: Agreement) -> Optional[Response]:
+    """
+    Invoicing rules:
+      - If escrow-mode: require escrow_funded True
+      - Direct pay: no escrow requirement
+    """
+    if _agreement_requires_escrow(agreement) and not getattr(agreement, "escrow_funded", False):
+        return Response(
+            {
+                "detail": "Agreement escrow must be funded before invoicing milestones.",
+                "code": "ESCROW_REQUIRED",
+                "agreement_id": agreement.id,
+                "payment_mode": _agreement_payment_mode(agreement),
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+    return None
+
+
+def _mark_milestone_complete_side_effects(*, request, milestone: Milestone, completion_notes: str = "") -> Milestone:
+    """
+    Shared completion side-effect handler. Used by:
+      - POST /milestones/:id/complete/
+      - PUT/PATCH /milestones/:id/ when completed=true is submitted
+    """
+    stamp = timezone.now().strftime("%Y-%m-%d %H:%M:%S %Z")
+
+    milestone.completed = True
+    update_fields = ["completed"]
+
+    if hasattr(milestone, "completion_notes") and completion_notes:
+        setattr(milestone, "completion_notes", completion_notes)
+        update_fields.append("completion_notes")
+
+    if hasattr(milestone, "completed_at"):
+        milestone.completed_at = timezone.now()
+        update_fields.append("completed_at")
+
+    milestone.save(update_fields=update_fields)
+
+    base_line = f"[System] Milestone marked complete at {stamp}."
+    content = f"{base_line}\n\n{completion_notes}" if completion_notes else base_line
+    try:
+        MilestoneComment.objects.create(milestone=milestone, author=request.user, content=content)
+    except Exception:
+        pass
+
+    for up in _collect_uploaded_files(request):
+        try:
+            MilestoneFile.objects.create(milestone=milestone, uploaded_by=request.user, file=up)
+        except Exception:
+            pass
+
+    milestone.refresh_from_db()
+    return milestone
+
+
+# ----------------------------- NEW: edit locking ----------------------------- #
+def _is_amendment_request(request) -> bool:
+    try:
+        q = str(request.query_params.get("amendment", "")).strip().lower()
+    except Exception:
+        q = ""
+    try:
+        h = str(request.headers.get("X-MHB-Amendment", "")).strip().lower()
+    except Exception:
+        h = ""
+    return q in {"1", "true", "yes"} or h in {"1", "true", "yes"}
+
+
+def _locked_response(agreement: Agreement) -> Response:
+    if is_completed_agreement(agreement):
+        return Response(
+            {
+                "detail": "Agreement is completed. No edits or amendments allowed.",
+                "code": "AGREEMENT_COMPLETED_LOCKED",
+                "agreement_id": agreement.id,
+                "agreement_status": getattr(agreement, "status", None),
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    return Response(
+        {
+            "detail": "Agreement is signed/locked. Milestones cannot be edited outside the amendment process.",
+            "code": "AGREEMENT_SIGNED_LOCKED",
+            "agreement_id": agreement.id,
+            "agreement_status": getattr(agreement, "status", None),
+        },
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
+
+def _enforce_no_edit_on_locked_agreement(*, request, milestone: Milestone, data: dict) -> Optional[Response]:
+    agreement = milestone.agreement
+    allow_amendment = _is_amendment_request(request)
+
+    if can_edit_milestones_under_agreement(agreement, allow_amendment=allow_amendment):
+        return None
+
+    # locked (signed or completed)
+    allowed_fields = {"completed", "completion_notes", "notes"}
+
+    incoming_keys = set((data or {}).keys())
+    if incoming_keys and incoming_keys.issubset(allowed_fields):
+        return None
+
+    return _locked_response(agreement)
+
+
 # ----------------------------- viewsets ----------------------------- #
 class MilestoneViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsContractorOrSubAccount, CanEditMilestones]
@@ -311,13 +492,6 @@ class MilestoneViewSet(viewsets.ModelViewSet):
     queryset = Milestone.objects.select_related("agreement").all()
 
     def _assigned_queryset_for_user(self, user):
-        """
-        Build a safe assignment filter without assuming your exact schema.
-        Supports:
-          - assigned_to (User)
-          - assigned_user (User)
-          - assigned_employee.user (EmployeeProfile -> User)
-        """
         assignment_filter = Q(assigned_to=user) | Q(assigned_user=user) | Q(assigned_employee__user=user)
 
         return (
@@ -375,6 +549,14 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         agreement_id = data.get("agreement") or data.get("agreement_id")
         incoming_order = data.get("order")
 
+        if agreement_id:
+            try:
+                ag = Agreement.objects.select_related("project").get(pk=int(agreement_id))
+                if not can_edit_milestones_under_agreement(ag, allow_amendment=_is_amendment_request(request)):
+                    return _locked_response(ag)
+            except Exception:
+                pass
+
         if agreement_id and (incoming_order in (None, "", [], {})):
             try:
                 ag_id = int(agreement_id)
@@ -402,30 +584,192 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
-    # ---------------- NEW: bulk AI creation ---------------- #
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        milestone: Milestone = self.get_object()
+        agreement = getattr(milestone, "agreement", None)
+
+        if agreement is None:
+            return Response({"detail": "Milestone has no agreement."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if is_completed_agreement(agreement):
+            return Response(
+                {
+                    "detail": "Agreement is completed. Milestones cannot be deleted.",
+                    "code": "AGREEMENT_COMPLETED_LOCKED",
+                    "agreement_id": agreement.id,
+                    "agreement_status": getattr(agreement, "status", None),
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if not can_edit_milestones_under_agreement(agreement, allow_amendment=False):
+            return Response(
+                {
+                    "detail": "Agreement is signed/locked. Milestones cannot be deleted.",
+                    "code": "AGREEMENT_SIGNED_LOCKED",
+                    "agreement_id": agreement.id,
+                    "agreement_status": getattr(agreement, "status", None),
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if _milestone_looks_started(milestone):
+            return Response(
+                {
+                    "detail": "Milestone cannot be deleted because it is completed and/or invoiced/linked to an invoice.",
+                    "code": "MILESTONE_STARTED_LOCKED",
+                    "milestone_id": milestone.id,
+                    "agreement_id": agreement.id,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return super().destroy(request, *args, **kwargs)
+
+    # ---------------- HARDEN completion via PUT/PATCH + LOCK edits on signed ---------------- #
+    def update(self, request, *args, **kwargs):
+        """
+        Enforces completion rules (signature + escrow if escrow mode)
+        even when completed=true is submitted through PATCH/PUT.
+        """
+        partial = kwargs.pop("partial", False)
+        instance: Milestone = self.get_object()
+        data = request.data.copy()
+
+        # Prevent bypassing amendments (but allow completion-only updates if agreement locked)
+        locked_resp = _enforce_no_edit_on_locked_agreement(request=request, milestone=instance, data=data)
+        if locked_resp is not None:
+            return locked_resp
+
+        wants_complete = False
+        if "completed" in data:
+            wants_complete = _parse_bool(data.get("completed"))
+
+        completion_notes = ((data.get("completion_notes") or data.get("notes") or "") if isinstance(data, dict) else "")
+        completion_notes = (completion_notes or "").strip()
+
+        # If they are setting completed=true and it's currently false:
+        if wants_complete and not getattr(instance, "completed", False):
+            # ✅ Gate completion based on agreement rules
+            gate = _can_complete_milestone(instance.agreement)
+            if gate is not None:
+                return gate
+
+            # remove completed so serializer doesn't flip without side-effects
+            try:
+                data.pop("completed", None)
+            except Exception:
+                pass
+
+            serializer = self.get_serializer(instance, data=data, partial=partial)
+            serializer.is_valid(raise_exception=True)
+
+            try:
+                with transaction.atomic():
+                    self.perform_update(serializer)
+                    locked = Milestone.objects.select_for_update().get(pk=instance.pk)
+
+                    if not getattr(locked, "completed", False):
+                        if getattr(locked, "is_invoiced", False) or getattr(locked, "invoice_id", None):
+                            return Response(
+                                {"detail": "This milestone has already been invoiced and cannot be marked complete again."},
+                                status=status.HTTP_400_BAD_REQUEST,
+                            )
+
+                        locked = _mark_milestone_complete_side_effects(
+                            request=request,
+                            milestone=locked,
+                            completion_notes=completion_notes,
+                        )
+
+                out = MilestoneSerializer(locked, context={"request": request}).data
+                return Response(out, status=status.HTTP_200_OK)
+
+            except Exception as exc:
+                logger.exception("Failed to update+complete milestone %s: %s", getattr(instance, "id", None), exc)
+                return Response({"detail": "Unable to update/complete milestone."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return super().update(request, *args, partial=partial, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        kwargs["partial"] = True
+        return self.update(request, *args, **kwargs)
+
+    # ---------------- Request Change -> Amendment workflow ---------------- #
+    @action(detail=True, methods=["post"], url_path="request_change")
+    def request_change(self, request, pk=None):
+        milestone: Milestone = self.get_object()
+        agreement = milestone.agreement
+
+        if is_completed_agreement(agreement):
+            return Response(
+                {
+                    "detail": "Agreement is completed. No amendments allowed.",
+                    "code": "AGREEMENT_COMPLETED_LOCKED",
+                    "agreement_id": agreement.id,
+                    "agreement_status": getattr(agreement, "status", None),
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        payload = request.data or {}
+        change_type = (payload.get("change_type") or AmendmentRequest.ChangeType.OTHER).strip()
+        requested_changes = payload.get("requested_changes") or {}
+        justification = str(payload.get("justification") or "").strip()
+
+        if not justification:
+            return Response({"detail": "justification is required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        ser = AmendmentRequestSerializer(
+            data={
+                "agreement": agreement.id,
+                "milestone": milestone.id,
+                "change_type": change_type,
+                "requested_changes": requested_changes,
+                "justification": justification,
+            }
+        )
+        ser.is_valid(raise_exception=True)
+
+        obj = AmendmentRequest.objects.create(
+            agreement=agreement,
+            milestone=milestone,
+            requested_by=request.user,
+            change_type=ser.validated_data["change_type"],
+            requested_changes=ser.validated_data.get("requested_changes") or {},
+            justification=ser.validated_data["justification"],
+            status=AmendmentRequest.Status.OPEN,
+        )
+
+        try:
+            MilestoneComment.objects.create(
+                milestone=milestone,
+                author=request.user,
+                content=(
+                    "[System] Amendment request submitted.\n"
+                    f"Type: {obj.change_type}\n"
+                    f"Requested: {obj.requested_changes}\n\n"
+                    f"Justification: {obj.justification}"
+                ).strip(),
+            )
+        except Exception:
+            pass
+
+        return Response(
+            {
+                "ok": True,
+                "id": obj.id,
+                "status": obj.status,
+                "agreement_id": agreement.id,
+                "milestone_id": milestone.id,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    # ---------------- bulk AI creation ---------------- #
     @action(detail=False, methods=["post"], url_path="bulk-ai-create")
     def bulk_ai_create(self, request):
-        """
-        POST /api/projects/milestones/bulk-ai-create/
-
-        Body:
-        {
-          "agreement_id": 3,
-          "mode": "replace" | "append",
-          "spread_total": "1250.00",         // optional; if set and strategy == "equal" then spread across milestones
-          "spread_strategy": "equal" | "keep_existing_amounts",
-          "auto_schedule": false,            // optional; if true and Agreement.start/end set, sequential dates are applied
-          "milestones": [
-            {"title":"...", "description":"...", "start_date": null, "completion_date": null, "amount": 0},
-            ...
-          ]
-        }
-
-        Recommended behavior (MyHomeBro):
-        - AI bulk create should NOT be blocked by overlap validation.
-        - By default, AI milestones are scope/pricing drafts (dates may be null).
-        - If auto_schedule=true and agreement.start/end exist, we will assign sequential non-overlapping dates.
-        """
         payload = request.data or {}
         agreement_id = payload.get("agreement_id") or payload.get("agreement")
         mode = (payload.get("mode") or "append").strip().lower()
@@ -449,7 +793,9 @@ class MilestoneViewSet(viewsets.ModelViewSet):
 
         agreement = get_object_or_404(Agreement.objects.select_related("project"), pk=ag_id)
 
-        # Ensure contractor scope (owner) matches agreement.project.contractor
+        if not can_edit_milestones_under_agreement(agreement, allow_amendment=_is_amendment_request(request)):
+            return _locked_response(agreement)
+
         contractor = get_contractor_for_user(request.user)
         if contractor is None:
             return Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
@@ -457,7 +803,6 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         if getattr(agreement, "project", None) is None or getattr(agreement.project, "contractor_id", None) != contractor.id:
             return Response({"detail": "Not authorized for this agreement."}, status=status.HTTP_403_FORBIDDEN)
 
-        # Parse spread_total if provided
         spread_total_raw = payload.get("spread_total", None)
         spread_total: Optional[Decimal] = None
         if spread_total_raw not in (None, "", []):
@@ -466,7 +811,6 @@ class MilestoneViewSet(viewsets.ModelViewSet):
             except Exception:
                 spread_total = None
 
-        # Determine ordering start point
         existing_max = (
             Milestone.objects.filter(agreement_id=ag_id)
             .aggregate(Max("order"))["order__max"]
@@ -474,7 +818,6 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         )
         next_order = 1 if mode == "replace" else (existing_max + 1)
 
-        # If replace, delete existing milestones (ONLY if they have NOT been invoiced/started)
         with transaction.atomic():
             if mode == "replace":
                 existing = list(Milestone.objects.select_for_update().filter(agreement_id=ag_id))
@@ -487,27 +830,31 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                 Milestone.objects.filter(agreement_id=ag_id).delete()
                 next_order = 1
 
-            # Prepare amounts
             n = len(milestones_in)
             if spread_total is not None and spread_strategy == "equal":
                 amounts = _spread_total_equal(spread_total, n)
             else:
                 amounts = [_quantize_money(_to_decimal_amount((m or {}).get("amount"))) for m in milestones_in]
 
-            # Auto-schedule (optional): sequential, non-overlapping date slices from Agreement.start to Agreement.end
             ag_start = getattr(agreement, "start", None)
             ag_end = getattr(agreement, "end", None)
 
-            schedule_pairs: List[tuple[Optional[date], Optional[date]]] = [(None, None)] * n
-            if auto_schedule and ag_start and ag_end and isinstance(ag_start, date) and isinstance(ag_end, date) and ag_end >= ag_start and n > 0:
+            schedule_pairs: List[tuple[Optional[Any], Optional[Any]]] = [(None, None)] * n
+            if (
+                auto_schedule
+                and ag_start
+                and ag_end
+                and hasattr(ag_start, "year")
+                and hasattr(ag_end, "year")
+                and ag_end >= ag_start
+                and n > 0
+            ):
                 total_days = (ag_end - ag_start).days
-                # Ensure at least 1 day window when possible
-                step = max(1, (total_days + 1) // n)  # inclusive-ish
+                step = max(1, (total_days + 1) // n)
                 cur = ag_start
                 pairs = []
                 for i in range(n):
                     start_i = cur
-                    # last milestone ends at ag_end
                     if i == n - 1:
                         end_i = ag_end
                     else:
@@ -524,8 +871,6 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                 title = str(m.get("title") or "").strip() or f"Milestone {idx + 1}"
                 desc = str(m.get("description") or "").strip()
 
-                # Respect explicit dates from client ONLY if auto_schedule is False.
-                # If auto_schedule is True, we compute sequential dates.
                 start_date = None
                 completion_date = None
 
@@ -538,7 +883,6 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                         start_date = None
                     if completion_date == "":
                         completion_date = None
-                    # IMPORTANT: Do NOT auto-fill from agreement dates (prevents overlap blocking at Step 2)
 
                 data = {
                     "agreement": ag_id,
@@ -548,8 +892,6 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                     "amount": str(amounts[idx]),
                     "start_date": start_date,
                     "completion_date": completion_date,
-
-                    # ✅ Critical: AI bulk create should never be blocked by overlap validation.
                     "allow_overlap": True,
                 }
 
@@ -561,10 +903,16 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         out = MilestoneSerializer(created_objs, many=True, context={"request": request}).data
         return Response({"created": out, "count": len(created_objs)}, status=status.HTTP_201_CREATED)
 
-    # ---------------- existing actions ---------------- #
+    # ---------------- completion actions ---------------- #
     @action(detail=True, methods=["post"], url_path="complete")
     def complete(self, request, pk=None):
         milestone: Milestone = self.get_object()
+        agreement = milestone.agreement
+
+        # ✅ Gate completion (signature + escrow if needed)
+        gate = _can_complete_milestone(agreement)
+        if gate is not None:
+            return gate
 
         if getattr(milestone, "completed", False) is True:
             return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=status.HTTP_200_OK)
@@ -579,50 +927,28 @@ class MilestoneViewSet(viewsets.ModelViewSet):
 
         try:
             with transaction.atomic():
-                milestone = Milestone.objects.select_for_update().get(pk=milestone.pk)
+                locked = Milestone.objects.select_for_update().get(pk=milestone.pk)
 
-                if getattr(milestone, "completed", False) is True:
-                    return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=status.HTTP_200_OK)
+                if getattr(locked, "completed", False) is True:
+                    return Response(MilestoneSerializer(locked, context={"request": request}).data, status=status.HTTP_200_OK)
 
-                milestone.completed = True
-                update_fields = ["completed"]
+                if getattr(locked, "is_invoiced", False) or getattr(locked, "invoice_id", None):
+                    return Response(
+                        {"detail": "This milestone has already been invoiced and cannot be marked complete again."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
-                if hasattr(milestone, "completion_notes") and completion_notes:
-                    setattr(milestone, "completion_notes", completion_notes)
-                    update_fields.append("completion_notes")
-
-                # Track timestamp if your model uses completed_at
-                if hasattr(milestone, "completed_at"):
-                    milestone.completed_at = timezone.now()
-                    update_fields.append("completed_at")
-
-                milestone.save(update_fields=update_fields)
-
-                stamp = timezone.now().strftime("%Y-%m-%d %H:%M:%S %Z")
-                base_line = f"[System] Milestone marked complete at {stamp}."
-                content = f"{base_line}\n\n{completion_notes}" if completion_notes else base_line
-                try:
-                    MilestoneComment.objects.create(milestone=milestone, author=request.user, content=content)
-                except Exception:
-                    pass
-
-                uploaded_files = []
-                if hasattr(request, "FILES"):
-                    if "file" in request.FILES:
-                        uploaded_files.append(request.FILES["file"])
-                    if "files" in request.FILES:
-                        uploaded_files.extend(request.FILES.getlist("files"))
-
-                for up in uploaded_files:
-                    MilestoneFile.objects.create(milestone=milestone, uploaded_by=request.user, file=up)
-
-                milestone.refresh_from_db()
+                locked = _mark_milestone_complete_side_effects(
+                    request=request,
+                    milestone=locked,
+                    completion_notes=completion_notes,
+                )
 
         except Exception as exc:
             logger.exception("Failed to mark milestone %s complete: %s", getattr(milestone, "id", None), exc)
             return Response({"detail": "Unable to mark milestone complete."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=status.HTTP_200_OK)
+        return Response(MilestoneSerializer(locked, context={"request": request}).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="complete-to-review")
     def complete_to_review(self, request, pk=None):
@@ -660,11 +986,10 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         if not getattr(milestone, "completed", False):
             return Response({"detail": "Milestone must be completed before invoicing."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not getattr(agreement, "escrow_funded", False):
-            return Response(
-                {"detail": "Agreement escrow must be funded before invoicing milestones."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        # ✅ Escrow mode requires funded; Direct mode does not
+        gate = _can_invoice_milestone(agreement)
+        if gate is not None:
+            return gate
 
         if getattr(milestone, "invoice_id", None):
             inv = Invoice.objects.filter(pk=milestone.invoice_id).first()
@@ -719,6 +1044,8 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                 except Exception:
                     attachments = []
 
+                # Status for escrow flow stays PENDING approval.
+                # For direct-pay you may later want SENT; for now leave as PENDING (your existing pipeline).
                 invoice = Invoice.objects.create(
                     agreement=agreement,
                     amount=milestone.amount,

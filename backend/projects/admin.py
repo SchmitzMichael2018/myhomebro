@@ -1,4 +1,3 @@
-# backend/projects/admin.py
 from __future__ import annotations
 
 from django.contrib import admin, messages
@@ -49,6 +48,13 @@ try:
     from .models_ai_artifacts import DisputeAIArtifact  # type: ignore
 except Exception:  # pragma: no cover
     DisputeAIArtifact = None  # type: ignore
+
+# ✅ NEW: Template models (guarded)
+try:
+    from .models_templates import ProjectTemplate, ProjectTemplateMilestone  # type: ignore
+except Exception:  # pragma: no cover
+    ProjectTemplate = None  # type: ignore
+    ProjectTemplateMilestone = None  # type: ignore
 
 # Optional services used by admin actions (guarded)
 try:
@@ -259,6 +265,133 @@ if AgreementAmendment is not None:
         list_display = ("id", "parent", "child", "amendment_number")
         search_fields = ("parent__project__number", "child__project__number")
         list_filter = ("amendment_number",)
+
+
+# ─────────────────────────────────────────────────────────────
+# ✅ NEW: Project Templates
+# ─────────────────────────────────────────────────────────────
+if ProjectTemplate is not None and ProjectTemplateMilestone is not None:
+
+    class ProjectTemplateMilestoneInline(admin.TabularInline):
+        model = ProjectTemplateMilestone
+        extra = 1
+        fields = (
+            "sort_order",
+            "title",
+            "description",
+            "recommended_days_from_start",
+            "recommended_duration_days",
+            "suggested_amount_percent",
+            "suggested_amount_fixed",
+            "materials_hint",
+            "is_optional",
+        )
+
+    @admin.register(ProjectTemplate)
+    class ProjectTemplateAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "name",
+            "project_type",
+            "project_subtype",
+            "is_system",
+            "contractor",
+            "is_active",
+            "estimated_days",
+            "milestone_count_display",
+            "created_at",
+        )
+        list_filter = (
+            "is_system",
+            "is_active",
+            "project_type",
+            "project_subtype",
+            "created_at",
+        )
+        search_fields = (
+            "name",
+            "project_type",
+            "project_subtype",
+            "description",
+            "contractor__business_name",
+            "contractor__user__email",
+        )
+        readonly_fields = ("created_at", "updated_at")
+        inlines = [ProjectTemplateMilestoneInline]
+
+        fieldsets = (
+            (
+                "Template Basics",
+                {
+                    "fields": (
+                        "name",
+                        "contractor",
+                        "is_system",
+                        "is_active",
+                    )
+                },
+            ),
+            (
+                "Project Matching",
+                {
+                    "fields": (
+                        "project_type",
+                        "project_subtype",
+                        "estimated_days",
+                    )
+                },
+            ),
+            (
+                "Defaults",
+                {
+                    "fields": (
+                        "description",
+                        "default_scope",
+                        "default_clarifications",
+                    )
+                },
+            ),
+            (
+                "Audit",
+                {
+                    "fields": (
+                        "created_from_agreement",
+                        "created_at",
+                        "updated_at",
+                    )
+                },
+            ),
+        )
+
+        @admin.display(description="Milestones")
+        def milestone_count_display(self, obj):
+            try:
+                return obj.milestones.count()
+            except Exception:
+                return 0
+
+    @admin.register(ProjectTemplateMilestone)
+    class ProjectTemplateMilestoneAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "template",
+            "sort_order",
+            "title",
+            "suggested_amount_percent",
+            "suggested_amount_fixed",
+            "is_optional",
+        )
+        list_filter = (
+            "is_optional",
+            "template__project_type",
+            "template__is_system",
+        )
+        search_fields = (
+            "title",
+            "description",
+            "materials_hint",
+            "template__name",
+        )
 
 
 # ─────────────────────────────────────────────────────────────

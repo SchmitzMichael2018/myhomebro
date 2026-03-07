@@ -45,12 +45,10 @@ def _parse_dt(val):
             return timezone.make_aware(val, timezone.get_current_timezone())
         return val
     if isinstance(val, date):
-        # treat as midnight local
         d = datetime(val.year, val.month, val.day)
         return timezone.make_aware(d, timezone.get_current_timezone())
     if isinstance(val, str):
         try:
-            # Python 3.11+ supports fromisoformat well; if string has Z, replace.
             s = val.replace("Z", "+00:00")
             dt = datetime.fromisoformat(s)
             if timezone.is_naive(dt):
@@ -74,6 +72,46 @@ def _compute_intro(created_dt: datetime | None):
     return intro_active, max(0, remaining)
 
 
+def _ai_credit_payload(contractor: Contractor) -> dict:
+    """
+    Returns a stable AI entitlement payload based on Contractor fields.
+
+    Requires Contractor fields:
+        ai_free_agreements_total (default 5)
+        ai_free_agreements_used  (default 0)
+    """
+    total = getattr(contractor, "ai_free_agreements_total", None)
+    used = getattr(contractor, "ai_free_agreements_used", None)
+
+    if total is None or used is None:
+        return {
+            "enabled": False,
+            "free_total": 0,
+            "free_used": 0,
+            "free_remaining": 0,
+            "reason": "ai_credits_not_configured",
+        }
+
+    try:
+        total_n = int(total or 0)
+    except Exception:
+        total_n = 0
+
+    try:
+        used_n = int(used or 0)
+    except Exception:
+        used_n = 0
+
+    remaining = max(0, total_n - used_n)
+
+    return {
+        "enabled": remaining > 0,
+        "free_total": total_n,
+        "free_used": used_n,
+        "free_remaining": remaining,
+    }
+
+
 class ContractorMeView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -85,39 +123,56 @@ class ContractorMeView(APIView):
 
         u = getattr(c, "user", None)
 
-        # Try to expose a consistent created date
         contractor_created_raw = getattr(c, "created_at", None) or getattr(c, "created", None) or None
         user_joined_raw = getattr(u, "date_joined", None) if u else None
 
         contractor_created_dt = _parse_dt(contractor_created_raw)
         user_joined_dt = _parse_dt(user_joined_raw)
 
-        # Pricing anchor: account creation (user.date_joined) preferred; fallback to contractor.created_at
         pricing_start_dt = user_joined_dt or contractor_created_dt
-
         intro_active, intro_days_remaining = _compute_intro(pricing_start_dt)
+
+        ai_agreement_writer = _ai_credit_payload(c)
+
+        ai_summary = {
+            "agreement_writer": ai_agreement_writer,
+            "credits_remaining": ai_agreement_writer.get("free_remaining", 0),
+            "credits_total": ai_agreement_writer.get("free_total", 0),
+            "enabled": bool(ai_agreement_writer.get("enabled", False)),
+            "rule": "1 credit = 1 AI-written agreement",
+        }
 
         payload = {
             "id": c.id,
             "business_name": c.business_name,
             "phone": c.phone,
+
+            # ✅ address pieces
             "address": c.address,
             "city": getattr(c, "city", ""),
             "state": getattr(c, "state", ""),
+            "zip": getattr(c, "zip", ""),  # ✅ FIX: include zip in /me payload
+
             "license_number": c.license_number,
             "license_expiration": _safe_dt(c.license_expiration),
             "logo": _safe_url(c.logo),
             "license_file": _safe_url(c.license_file),
-            "insurance_file": _safe_url(getattr(c, "insurance_file", None)),  # 🔹 new
+            "insurance_file": _safe_url(getattr(c, "insurance_file", None)),
             "skills": [s.name for s in c.skills.all()],
 
-            # ✅ New fields for intro pricing / UI
+            # intro pricing / UI
             "created_at": _safe_dt(contractor_created_raw),
             "user_date_joined": _safe_dt(user_joined_raw),
             "pricing_start_at": _safe_dt(pricing_start_dt),
             "intro_days_total": INTRO_DAYS_TOTAL,
             "intro_active": bool(intro_active),
             "intro_days_remaining": intro_days_remaining,
+
+            # existing field
+            "ai_agreement_writer": ai_agreement_writer,
+
+            # new convenience field
+            "ai": ai_summary,
         }
 
         if u:
@@ -160,11 +215,20 @@ class ContractorMeView(APIView):
                 u.last_name = ln
             u.save()
 
-            # scalar fields
-            for f in ["business_name", "phone", "address", "city", "state", "license_number"]:
+            # ✅ scalar fields (include zip)
+            for f in [
+                "business_name",
+                "phone",
+                "address",
+                "city",
+                "state",
+                "zip",  # ✅ FIX: persist zip from request
+                "license_number",
+            ]:
                 if f in data:
                     setattr(c, f, data.get(f))
 
+            # license date
             lic_date = data.get("license_expiration_date") or data.get("license_expiration")
             if lic_date:
                 c.license_expiration = lic_date
@@ -184,6 +248,7 @@ class ContractorMeView(APIView):
                     skills_values = [v.strip() for v in val.split(",") if v.strip()]
                 elif isinstance(val, (list, tuple)):
                     skills_values = list(val)
+
             if skills_values is not None:
                 objs = []
                 for name in skills_values:
@@ -199,7 +264,7 @@ class ContractorMeView(APIView):
                 c.logo = request.FILES["logo"]
             if "license_file" in request.FILES:
                 c.license_file = request.FILES["license_file"]
-            if "insurance_file" in request.FILES:  # 🔹 new
+            if "insurance_file" in request.FILES:
                 c.insurance_file = request.FILES["insurance_file"]
 
             c.save()

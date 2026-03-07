@@ -3,14 +3,23 @@ from __future__ import annotations
 
 import io
 import os
+import hashlib
 from typing import List, Optional, Iterable
 from datetime import date, datetime
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.files.base import ContentFile
+from django.db import transaction
 from django.utils.timezone import localtime
 
 from projects.models import Agreement, Milestone
+
+# ✅ NEW: version history model
+try:
+  from projects.models import AgreementPDFVersion  # type: ignore
+except Exception:
+  AgreementPDFVersion = None  # type: ignore
 
 # Kept for compatibility even if unused here
 from projects.services.pdf.scope_filter import is_assumption_key  # noqa: F401
@@ -339,7 +348,53 @@ def _watermark_preview(canvas):
   canvas.restoreState()
 
 
-def _header_footer(canvas, doc):
+def _escape_html(s: str) -> str:
+  return (
+    (s or "")
+    .replace("&", "&amp;")
+    .replace("<", "&lt;")
+    .replace(">", "&gt;")
+  )
+
+
+def _desc_to_html(desc: str) -> str:
+  desc = (desc or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+  if not desc:
+    return ""
+
+  lines = [ln.strip() for ln in desc.split("\n")]
+
+  bullets: List[str] = []
+  normals: List[str] = []
+
+  for ln in lines:
+    if not ln:
+      normals.append("")
+      continue
+    if ln.startswith(("-", "•", "*")):
+      bullets.append(ln.lstrip("-•*").strip())
+    else:
+      normals.append(ln)
+
+  parts: List[str] = []
+
+  normal_txt = "\n".join(normals).strip()
+  if normal_txt:
+    parts.append(_escape_html(normal_txt).replace("\n\n", "<br/><br/>").replace("\n", "<br/>"))
+
+  if bullets:
+    li = "".join([f"<li>{_escape_html(b)}</li>" for b in bullets if b])
+    if li:
+      parts.append(f"<ul>{li}</ul>")
+
+  return "<br/>".join([p for p in parts if p])
+
+
+def _header_footer(canvas, doc, *, ag: Optional[Agreement] = None):
+  """
+  Draw header/footer + mini signatures in footer of each page.
+  ✅ Footer signatures only show when agreement is EXECUTED (signature_is_satisfied True).
+  """
   from reportlab.lib import colors
   from reportlab.lib.pagesizes import letter
   from reportlab.lib.units import inch
@@ -348,6 +403,7 @@ def _header_footer(canvas, doc):
   canvas.saveState()
   w, h = letter
 
+  # Header rule
   canvas.setStrokeColor(colors.HexColor("#E5E7EB"))
   canvas.setLineWidth(0.6)
   canvas.line(0.75 * inch, h - 0.9 * inch, w - 0.75 * inch, h - 0.9 * inch)
@@ -356,10 +412,13 @@ def _header_footer(canvas, doc):
   canvas.setFillColor(colors.HexColor("#6B7280"))
   canvas.drawRightString(w - 0.8 * inch, h - 0.72 * inch, "Agreement")
 
+  # Footer rule
+  footer_rule_y = 0.9 * inch
   canvas.setStrokeColor(colors.HexColor("#E5E7EB"))
   canvas.setLineWidth(0.6)
-  canvas.line(0.75 * inch, 0.9 * inch, w - 0.75 * inch, 0.9 * inch)
+  canvas.line(0.75 * inch, footer_rule_y, w - 0.75 * inch, footer_rule_y)
 
+  # Footer logo (left)
   mhb_path = _myhomebro_logo_path()
   if mhb_path and os.path.exists(mhb_path):
     try:
@@ -368,28 +427,82 @@ def _header_footer(canvas, doc):
       max_w, max_h = 75, 18
       scale = min(max_w / iw, max_h / ih, 1.0)
       fw, fh = iw * scale, ih * scale
-      canvas.drawImage(im, 0.8 * inch, 0.86 * inch - fh + 4, width=fw, height=fh, mask="auto")
+      canvas.drawImage(im, 0.8 * inch, 0.62 * inch, width=fw, height=fh, mask="auto")
     except Exception:
       canvas.setFont("Helvetica-Bold", 9)
       canvas.setFillColor(colors.HexColor("#111827"))
-      canvas.drawString(0.8 * inch, 0.73 * inch, "MyHomeBro")
+      canvas.drawString(0.8 * inch, 0.63 * inch, "MyHomeBro")
   else:
     canvas.setFont("Helvetica-Bold", 9)
     canvas.setFillColor(colors.HexColor("#111827"))
-    canvas.drawString(0.8 * inch, 0.73 * inch, "MyHomeBro")
+    canvas.drawString(0.8 * inch, 0.63 * inch, "MyHomeBro")
 
+  # Footer right: timestamp + page #
   canvas.setFont("Helvetica", 9)
   ts = localtime().strftime("%Y-%m-%d %H:%M")
   right = f"Generated {ts}  |  Page {canvas.getPageNumber()}"
   canvas.setFillColor(colors.HexColor("#475569"))
   tw = canvas.stringWidth(right, "Helvetica", 9)
-  canvas.drawString(w - 0.8 * inch - tw, 0.7 * inch, right)
+  canvas.drawString(w - 0.8 * inch - tw, 0.62 * inch, right)
+
+  # ✅ Mini signatures BELOW the line — EXECUTED ONLY
+  show_footer_sigs = False
+  if ag is not None:
+    try:
+      show_footer_sigs = bool(getattr(ag, "signature_is_satisfied", False))
+    except Exception:
+      show_footer_sigs = False
+
+  if show_footer_sigs and ag is not None:
+    try:
+      contractor_signed = bool(
+        getattr(ag, "contractor_signed", False)
+        or getattr(ag, "signed_by_contractor", False)
+        or getattr(ag, "contractor_signature_name", None)
+      )
+      homeowner_signed = bool(
+        getattr(ag, "homeowner_signed", False)
+        or getattr(ag, "signed_by_homeowner", False)
+        or getattr(ag, "homeowner_signature_name", None)
+      )
+
+      c_img_path = _signature_path(getattr(ag, "contractor_signature", None)) if contractor_signed else None
+      h_img_path = _signature_path(getattr(ag, "homeowner_signature", None)) if homeowner_signed else None
+
+      max_sig_w = 95
+      max_sig_h = 16
+      sig_y = 0.64 * inch
+      start_x = (w / 2) - 110
+
+      def draw_sig(path: str, x: float, y: float, label: str):
+        try:
+          im = ImageReader(path)
+          iw, ih = im.getSize()
+          if not iw or not ih:
+            return
+          scale = min(max_sig_w / float(iw), max_sig_h / float(ih), 1.0)
+          fw, fh = float(iw) * scale, float(ih) * scale
+
+          canvas.setFont("Helvetica", 7.0)
+          canvas.setFillColor(colors.HexColor("#6B7280"))
+          canvas.drawString(x, y + fh + 1, label)
+
+          canvas.drawImage(im, x, y, width=fw, height=fh, mask="auto")
+        except Exception:
+          return
+
+      if c_img_path:
+        draw_sig(c_img_path, start_x, sig_y, "Contractor")
+        start_x += 115
+      if h_img_path:
+        draw_sig(h_img_path, start_x, sig_y, "Customer")
+    except Exception:
+      pass
 
   canvas.restoreState()
 
 
 def _ai_scope_payload(ag: Agreement) -> tuple[list[dict], dict]:
-  """Returns (questions, answers) from AgreementAIScope if present."""
   try:
     scope = getattr(ag, "ai_scope", None)
     if not scope:
@@ -421,6 +534,24 @@ def _normalize_payment_mode(v) -> str:
   return "escrow"
 
 
+def _boolish(v, default: bool = True) -> bool:
+  if v is True:
+    return True
+  if v is False:
+    return False
+  if v in (1, "1", "true", "True", "yes", "Yes"):
+    return True
+  if v in (0, "0", "false", "False", "no", "No"):
+    return False
+  return default
+
+
+def _signature_requirements(ag: Agreement) -> tuple[bool, bool]:
+  req_contr = _boolish(getattr(ag, "require_contractor_signature", None), True)
+  req_cust = _boolish(getattr(ag, "require_customer_signature", None), True)
+  return req_contr, req_cust
+
+
 def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> bytes:
   from reportlab.lib.pagesizes import letter
   from reportlab.lib.units import inch
@@ -436,6 +567,7 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     Image,
     PageBreak,
     KeepTogether,
+    CondPageBreak,
   )
 
   def _scaled_image(path: Optional[str], max_w: float, max_h: float) -> Optional[Image]:
@@ -539,6 +671,13 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     parent=s_table,
     alignment=TA_CENTER,
   )
+  s_table_sub = ParagraphStyle(
+    "TableCellSub",
+    parent=s_table,
+    fontSize=8.5,
+    leading=10.5,
+    textColor=colors.HexColor("#374151"),
+  )
 
   story: list = []
 
@@ -608,7 +747,6 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
 
   story.append(Paragraph(f"<b>Contractor:</b> {_dot_join([c_name, c_email, c_phone]) or '—'}", s_val))
   if c_addr:
-    # ✅ FIX: show contractor address (was mistakenly showing customer address)
     story.append(Paragraph(f"<b>Contractor Address:</b> {c_addr or '---'}", s_val))
   if c_lic_no:
     lic = f"License #{c_lic_no}"
@@ -631,45 +769,69 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     rows = [[
       Paragraph("#", s_table_center),
       Paragraph("Milestone", s_table),
-      Paragraph("Due", s_table_center),
+      Paragraph("Due Date", s_table_center),
       Paragraph("Amount", s_table_center),
-      Paragraph("Status", s_table_center),
     ]]
-    total_amt = 0.0
-    for i, m in enumerate(ms, 1):
-      title = _s(m.title or getattr(m, "description", None) or "—")
-      amt = float(getattr(m, "amount", 0) or 0)
+
+    total_amt = Decimal("0.00")
+
+    for idx, m in enumerate(ms, 1):
+      try:
+        order_num = int(getattr(m, "order", None) or 0) or idx
+      except Exception:
+        order_num = idx
+
+      title = _s(getattr(m, "title", None) or "").strip() or "—"
+      desc = _s(getattr(m, "description", None) or "").strip()
+
+      amt = Decimal(str(getattr(m, "amount", 0) or 0))
       total_amt += amt
+
       due_raw = _due_of(m)
       due = _fmt_date_friendly(due_raw) if due_raw else "TBD"
-      status = "Complete" if getattr(m, "completed", False) else (_s(getattr(m, "status", "")) or "Pending")
+
+      desc_html = _desc_to_html(desc)
+      milestone_html = f"<b>{_escape_html(title)}</b>"
+      if desc_html:
+        milestone_html += f"<br/>{desc_html}"
+
       rows.append([
-        Paragraph(str(i), s_table_center),
-        Paragraph(title, s_table),
+        Paragraph(str(order_num), s_table_center),
+        Paragraph(milestone_html, s_table_sub),
         Paragraph(due, s_table_center),
-        Paragraph(_currency(amt), s_table_center),
-        Paragraph(status, s_table_center),
+        Paragraph(_currency(float(amt)), s_table_center),
       ])
-    rows.append(["", "", Paragraph("<b>Total</b>", s_table_center), Paragraph(f"<b>{_currency(total_amt)}</b>", s_table_center), ""])
+
+    rows.append([
+      "",
+      Paragraph("<b>Totals</b>", s_table),
+      "",
+      Paragraph(f"<b>{_currency(float(total_amt))}</b>", s_table_center),
+    ])
 
     c1 = 0.55 * inch
-    c3 = 1.25 * inch
+    c3 = 1.35 * inch
     c4 = 1.20 * inch
-    c5 = 1.20 * inch
-    c2 = doc.width - (c1 + c3 + c4 + c5)
+    c2 = doc.width - (c1 + c3 + c4)
 
-    t = Table(rows, colWidths=[c1, c2, c3, c4, c5], repeatRows=1)
+    t = Table(rows, colWidths=[c1, c2, c3, c4], repeatRows=1)
     t.setStyle(TableStyle([
-      ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F3F4F6")),
-      ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#E5E7EB")),
-      ("ALIGN", (0, 1), (0, -1), "CENTER"),
-      ("ALIGN", (2, 1), (-1, -2), "CENTER"),
+      ("BACKGROUND", (0, 0), (-1, 0), "#F3F4F6"),
+      ("GRID", (0, 0), (-1, -1), 0.25, "#E5E7EB"),
+      ("ALIGN", (0, 1), (0, -2), "CENTER"),
+      ("ALIGN", (2, 1), (2, -2), "CENTER"),
       ("ALIGN", (3, 1), (3, -2), "RIGHT"),
-      ("ALIGN", (4, 1), (4, -2), "CENTER"),
       ("VALIGN", (0, 0), (-1, -1), "TOP"),
-      ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#FAFAFA")),
+      ("BACKGROUND", (0, -1), (-1, -1), "#FAFAFA"),
+      ("LINEABOVE", (0, -1), (-1, -1), 0.5, "#E5E7EB"),
+      ("TOPPADDING", (0, 0), (-1, -1), 3),
+      ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+      ("LEFTPADDING", (0, 0), (-1, -1), 6),
+      ("RIGHTPADDING", (0, 0), (-1, -1), 6),
     ]))
     story += [t, Spacer(1, 10)]
+
+    story.append(PageBreak())
 
     story.append(Paragraph(
       "Each milestone represents a distinct phase of work. Payment for a milestone is contingent upon substantial "
@@ -687,13 +849,12 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
   else:
     story += [Paragraph("No milestones defined.", s_muted), Spacer(1, 12)]
 
-  # Scope Clarifications starts page 2
   questions, answers = _ai_scope_payload(ag)
   if questions or answers:
-    story.append(PageBreak())
-    story.append(Paragraph("Scope Clarifications", s_h2))
+    story.append(CondPageBreak(2.4 * inch))
+    story.append(Paragraph("Scope Clarifications (Optional)", s_h2))
     story.append(Paragraph(
-      "The following clarifications define the agreed project scope and responsibilities for this Agreement.",
+      "The following clarifications are optional and help reduce misunderstandings about scope and responsibilities.",
       s_small,
     ))
     story.append(Spacer(1, 6))
@@ -707,16 +868,15 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
         if not key:
           continue
         label = str(q.get("label") or "").strip() or _pretty_key(key)
-        required = bool(q.get("required", False))
+
         ans = ""
         if isinstance(answers, dict):
           ans_val = answers.get(key)
           if ans_val is not None:
             ans = str(ans_val).strip()
+
         if ans:
           lines.append(f"<b>{label}:</b> {ans}")
-        elif required:
-          lines.append(f"<b>{label}:</b> <font color='#B91C1C'>[Required — Not Provided]</font>")
 
     if lines:
       for ln in lines:
@@ -732,7 +892,6 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
       story.append(Paragraph("No scope clarifications provided.", s_muted))
       story.append(Spacer(1, 12))
 
-  # Warranty
   story.append(Paragraph("Warranty", s_h2))
   wtype = (_s(getattr(ag, "warranty_type", ""))).strip().lower()
   wtext = _s(getattr(ag, "warranty_text_snapshot", ""))
@@ -747,14 +906,11 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     story.append(Paragraph(wtext.replace("\n", "<br/>"), s_just))
   story.append(Spacer(1, 12))
 
-  # Legal starts new page
-  story.append(PageBreak())
+  story.append(CondPageBreak(2.6 * inch))
   story.append(Paragraph("Legal Terms & Conditions", s_h2))
   story.append(Spacer(1, 6))
 
   project_state = _detect_project_state(ag)
-
-  # ✅ CRITICAL: pass payment_mode so Direct Pay clauses render correctly
   clauses = build_legal_notices(project_state=project_state, payment_mode=payment_mode)
 
   def _clause_block(title: str, text: str):
@@ -764,14 +920,14 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     parts.append(Spacer(1, 6))
     return parts
 
+  from reportlab.platypus import KeepTogether
+
   for title, text in clauses:
-    # Hard-pin Permits to a new page (keeps it at top of page 4 in typical lengths)
     if title == "Permits & Compliance":
-      story.append(PageBreak())
+      story.append(CondPageBreak(3.0 * inch))
 
     block = _clause_block(title, text)
 
-    # Keep short clauses from splitting across pages (prevents 1-line spillovers like Liability)
     if title in (
       "Limitation of Liability",
       "Insurance",
@@ -784,7 +940,6 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
       for p in block:
         story.append(p)
 
-  # Governing Law should follow immediately after Right to Cancel if there is room (avoid an extra page)
   story.append(Paragraph("Governing Law", s_h3))
   story.append(Paragraph(
     "This Agreement is governed by the laws of the state in which the project property is located, without "
@@ -793,7 +948,8 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
   ))
   story.append(Spacer(1, 10))
 
-  # Metadata + Signatures flow after Governing Law
+  story.append(PageBreak())
+
   from reportlab.platypus import Table as RLTable, TableStyle as RLTableStyle, Spacer as RLSpacer
 
   story.append(Paragraph("Document Metadata & Amendment History", s_h2))
@@ -822,10 +978,12 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     ["Generated At", localtime().strftime("%Y-%m-%d %H:%M")],
   ]
 
-  meta_tbl = RLTable(meta_rows, colWidths=[1.9 * inch, doc.width - 1.9 * inch])
+  from reportlab.lib.units import inch as _inch
+
+  meta_tbl = RLTable(meta_rows, colWidths=[1.9 * _inch, doc.width - 1.9 * _inch])
   meta_tbl.setStyle(RLTableStyle([
-    ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#E5E7EB")),
-    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F9FAFB")),
+    ("GRID", (0, 0), (-1, -1), 0.25, "#E5E7EB"),
+    ("BACKGROUND", (0, 0), (-1, 0), "#F9FAFB"),
     ("FONT", (0, 0), (-1, -1), "Helvetica", 9.5),
     ("ALIGN", (0, 0), (0, -1), "LEFT"),
     ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -835,20 +993,39 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
 
   story.append(Paragraph("Signatures", s_h2))
 
-  fully_signed = False
-  try:
-    if hasattr(ag, "is_fully_signed") and getattr(ag, "is_fully_signed", False):
-      fully_signed = True
-  except Exception:
-    pass
-  if not fully_signed:
-    if getattr(ag, "contractor_signed", False) and getattr(ag, "homeowner_signed", False):
-      fully_signed = True
+  req_contr, req_cust = _signature_requirements(ag)
 
-  show_signature_images = (not is_preview) and fully_signed
+  contractor_signed = bool(
+    getattr(ag, "contractor_signed", False)
+    or getattr(ag, "signed_by_contractor", False)
+    or getattr(ag, "contractor_signature_name", None)
+  )
+  homeowner_signed = bool(
+    getattr(ag, "homeowner_signed", False)
+    or getattr(ag, "signed_by_homeowner", False)
+    or getattr(ag, "homeowner_signature_name", None)
+  )
 
-  c_img = _signature_path(getattr(ag, "contractor_signature", None)) if show_signature_images else None
-  h_img = _signature_path(getattr(ag, "homeowner_signature", None)) if show_signature_images else None
+  c_img = _signature_path(getattr(ag, "contractor_signature", None)) if contractor_signed else None
+  h_img = _signature_path(getattr(ag, "homeowner_signature", None)) if homeowner_signed else None
+
+  def _sig_ip(ag: Agreement, which: str) -> Optional[str]:
+    if which == "contractor":
+      return (
+        getattr(ag, "contractor_signed_ip", None) or
+        getattr(ag, "contractor_ip", None) or
+        getattr(ag, "signed_ip_contractor", None)
+      )
+    return (
+      getattr(ag, "homeowner_signed_ip", None) or
+      getattr(ag, "homeowner_ip", None) or
+      getattr(ag, "signed_ip_homeowner", None)
+    )
+
+  def _sig_at(ag: Agreement, which: str):
+    if which == "contractor":
+      return getattr(ag, "signed_at_contractor", None) or getattr(ag, "contractor_signed_at", None)
+    return getattr(ag, "signed_at_homeowner", None) or getattr(ag, "homeowner_signed_at", None)
 
   def _fmt_dt_sig(val) -> str:
     if not val:
@@ -858,16 +1035,34 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     except Exception:
       return str(val)
 
-  def _sig_block(name: str, img_path: Optional[str], signed_at, ip, label: str) -> list:
+  def _sig_block(name: str, img_path: Optional[str], signed_at, ip, label: str, required: bool) -> list:
     block: list = []
-    simg = _scaled_image(img_path, max_w=200, max_h=80) if img_path else None
+
+    def _scaled_image_local(path: Optional[str], max_w: float, max_h: float):
+      try:
+        if not path or not os.path.exists(path):
+          return None
+        from reportlab.platypus import Image as RLImage
+        img = RLImage(path)
+        iw = getattr(img, "imageWidth", None) or getattr(img, "drawWidth", None) or 0
+        ih = getattr(img, "imageHeight", None) or getattr(img, "drawHeight", None) or 0
+        if not iw or not ih:
+          return None
+        scale = min(max_w / float(iw), max_h / float(ih), 1.0)
+        img.drawWidth = float(iw) * scale
+        img.drawHeight = float(ih) * scale
+        return img
+      except Exception:
+        return None
+
+    simg = _scaled_image_local(img_path, max_w=200, max_h=80) if img_path else None
     if simg:
       block += [simg, RLSpacer(1, 3)]
 
     signed_str = _fmt_dt_sig(signed_at)
     block += [
       Paragraph(f"<b>{label}:</b> {_s(name) or '—'}", s_body),
-      Paragraph(f"<b>Signed:</b> {signed_str or '—'}", s_small),
+      Paragraph(f"<b>Signed:</b> {signed_str or ('—' if required else 'Waived')}", s_small),
       Paragraph(f"<b>IP:</b> {_s(ip) or '—'}", s_small),
     ]
     return block
@@ -875,42 +1070,76 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
   c_name_sig = _s(getattr(ag, "contractor_signature_name", None))
   h_name_sig = _s(getattr(ag, "homeowner_signature_name", None))
 
-  c_at_raw = getattr(ag, "signed_at_contractor", None) or getattr(ag, "contractor_signed_at", None)
-  h_at_raw = getattr(ag, "signed_at_homeowner", None) or getattr(ag, "homeowner_signed_at", None)
+  c_at_raw = _sig_at(ag, "contractor")
+  h_at_raw = _sig_at(ag, "homeowner")
 
-  c_ip = getattr(ag, "contractor_signed_ip", None)
-  h_ip = getattr(ag, "homeowner_signed_ip", None)
+  c_ip = _sig_ip(ag, "contractor")
+  h_ip = _sig_ip(ag, "homeowner")
 
   sig_tbl = RLTable(
     [[
-      _sig_block(c_name_sig, c_img, c_at_raw, c_ip, "Contractor"),
-      _sig_block(h_name_sig, h_img, h_at_raw, h_ip, "Customer"),
+      _sig_block(c_name_sig, c_img, c_at_raw, c_ip, "Contractor", req_contr),
+      _sig_block(h_name_sig, h_img, h_at_raw, h_ip, "Customer", req_cust),
     ]],
-    colWidths=[3.5 * inch, 3.5 * inch],
+    colWidths=[3.5 * _inch, 3.5 * _inch],
   )
   sig_tbl.setStyle(RLTableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
   story.append(sig_tbl)
 
-  if is_preview:
-    story.append(Spacer(1, 6))
-    story.append(Paragraph("This is a preview. Final version will include any updated signatures.", s_small))
-
   def _first(c, d):
-    if is_preview:
+    executed = False
+    try:
+      executed = bool(getattr(ag, "signature_is_satisfied", False))
+    except Exception:
+      executed = False
+    if is_preview and not executed:
       _watermark_preview(c)
-    _header_footer(c, d)
+    _header_footer(c, d, ag=ag)
 
   def _later(c, d):
-    if is_preview:
+    executed = False
+    try:
+      executed = bool(getattr(ag, "signature_is_satisfied", False))
+    except Exception:
+      executed = False
+    if is_preview and not executed:
       _watermark_preview(c)
-    _header_footer(c, d)
+    _header_footer(c, d, ag=ag)
 
   doc.build(story, onFirstPage=_first, onLaterPages=_later)
   return buf.getvalue()
 
 
+def _sha256_hex(data: bytes) -> str:
+  try:
+    return hashlib.sha256(data).hexdigest()
+  except Exception:
+    return ""
+
+
+def _pick_kind_for_agreement(ag: Agreement) -> str:
+  try:
+    if bool(getattr(ag, "signature_is_satisfied", False)):
+      return "executed"
+  except Exception:
+    pass
+  return "final"
+
+
+def _snapshot_sig_fields(ag: Agreement) -> dict:
+  return {
+    "signed_by_contractor": bool(getattr(ag, "signed_by_contractor", False) or getattr(ag, "contractor_signed", False)),
+    "signed_by_homeowner": bool(getattr(ag, "signed_by_homeowner", False) or getattr(ag, "homeowner_signed", False)),
+    "contractor_signature_name": _s(getattr(ag, "contractor_signature_name", "")),
+    "homeowner_signature_name": _s(getattr(ag, "homeowner_signature_name", "")),
+    "contractor_signed_at": getattr(ag, "signed_at_contractor", None) or getattr(ag, "contractor_signed_at", None),
+    "homeowner_signed_at": getattr(ag, "signed_at_homeowner", None) or getattr(ag, "homeowner_signed_at", None),
+  }
+
+
 def generate_full_agreement_pdf(ag: Agreement, *, merge_attachments: bool = True) -> str:
   version = int(getattr(ag, "pdf_version", 0) or 0) + 1
+
   base_bytes = build_agreement_pdf_bytes(ag, is_preview=False)
 
   tmp_dir = os.path.join(getattr(settings, "MEDIA_ROOT", ""), "agreements", "tmp")
@@ -919,6 +1148,7 @@ def generate_full_agreement_pdf(ag: Agreement, *, merge_attachments: bool = True
   with open(base_path, "wb") as f:
     f.write(base_bytes)
 
+  final_bytes = base_bytes
   final_path = base_path
 
   if merge_attachments and PdfMerger:
@@ -946,12 +1176,43 @@ def generate_full_agreement_pdf(ag: Agreement, *, merge_attachments: bool = True
       except Exception:
         final_path = base_path
 
-  with open(final_path, "rb") as fh:
-    content = ContentFile(fh.read())
-    fname = f"agreement_{ag.id}_v{version}.pdf"
-    ag.pdf_file.save(fname, content, save=True)
-    if hasattr(ag, "pdf_version"):
-      ag.pdf_version = version
-      ag.save(update_fields=["pdf_version", "pdf_file"])
+  try:
+    with open(final_path, "rb") as fh:
+      final_bytes = fh.read()
+  except Exception:
+    final_bytes = base_bytes
+
+  sha = _sha256_hex(final_bytes)
+  kind = _pick_kind_for_agreement(ag)
+  sig_snap = _snapshot_sig_fields(ag)
+
+  fname_ag = f"agreement_{ag.id}_v{version}.pdf"
+  fname_ver = f"agreement_{ag.id}_v{version}_{kind}.pdf"
+
+  with transaction.atomic():
+    ag.pdf_version = version
+    ag.pdf_file.save(fname_ag, ContentFile(final_bytes), save=False)
+    ag.save(update_fields=["pdf_version", "pdf_file"])
+
+    if AgreementPDFVersion is not None:
+      try:
+        obj, created = AgreementPDFVersion.objects.get_or_create(
+          agreement=ag,
+          version_number=version,
+          defaults={
+            "kind": kind,
+            "sha256": sha,
+            **sig_snap,
+          },
+        )
+        obj.kind = kind
+        obj.sha256 = sha
+        for k, v in sig_snap.items():
+          setattr(obj, k, v)
+
+        obj.file.save(fname_ver, ContentFile(final_bytes), save=False)
+        obj.save()
+      except Exception:
+        pass
 
   return ag.pdf_file.path

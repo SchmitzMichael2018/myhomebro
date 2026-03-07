@@ -3,12 +3,18 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
-from typing import Optional
+from typing import Optional, Any, Dict
 
 from django.db.models import Q
 from rest_framework import serializers
 
 from projects.models import Milestone, Agreement
+
+# ✅ Centralized agreement locking rules
+from projects.services.agreement_locking import (
+    is_completed_agreement,
+    is_signed_or_locked_agreement,
+)
 
 
 def _today() -> date:
@@ -22,24 +28,34 @@ def _today() -> date:
 def _normalize_money(value):
     """
     Best-effort normalization for incoming amount values.
-    This does NOT force cents. It simply cleans "$1,234.50" -> Decimal("1234.50")
-    If your model uses Integer cents instead, change this accordingly.
+    Cleans "$1,234.50" -> Decimal("1234.50")
+    Returns:
+      - Decimal(...) when parseable
+      - None when missing/blank/unparseable
     """
     if value is None or value == "":
         return None
-    if isinstance(value, (int, float, Decimal)):
+
+    if isinstance(value, Decimal):
+        return value
+
+    if isinstance(value, (int, float)):
         try:
             return Decimal(str(value))
         except Exception:
             return None
+
     if isinstance(value, str):
         s = value.strip().replace(",", "")
         if s.startswith("$"):
             s = s[1:].strip()
+        if s == "":
+            return None
         try:
             return Decimal(s)
         except (InvalidOperation, ValueError):
             return None
+
     return None
 
 
@@ -49,39 +65,80 @@ class MilestoneSerializer(serializers.ModelSerializer):
 
     Adds (read helpers):
       - agreement_id, project_title
-      - homeowner_name, homeowner_email
+      - homeowner_name, homeowner_email  (legacy; UI may still depend)
+      - customer_name, customer_email    (alias)
       - due_date   (read-only convenience, unified fallback)
       - is_overdue (bool)
 
-    Validates:
-      - Blocks date overlaps within same agreement unless allow_overlap=true.
-      - Accepts incoming 'end_date' from clients and maps it to 'completion_date'.
+    Locking helpers:
+      - agreement_status (string)
+      - agreement_is_locked (bool)
+      - agreement_is_completed (bool)
 
-    HARDENING (NEW):
-      - If clients (AI) send completion_date/null and omit end_date,
-        we auto-fill completion_date (and start_date if missing) from Agreement dates,
-        preventing DB NOT NULL 500s.
+    ✅ NEW (completion gating helpers for frontend):
+      - agreement_payment_mode ("escrow"|"direct")
+      - agreement_escrow_funded (bool)
+      - agreement_signature_is_satisfied (bool)  # policy-aware
+
+    Rework / Dispute UX support:
+      - is_rework
+      - origin_milestone
+
+    Validates:
+      - Blocks date overlaps unless allow_overlap=true.
+      - Accepts incoming 'end_date' from clients and maps to 'completion_date'.
+
+    FINANCIAL RULE:
+      - Allows $0 milestones.
+      - Blocks negative or invalid amounts.
     """
 
-    agreement_id    = serializers.SerializerMethodField()
-    project_title   = serializers.SerializerMethodField()
-    homeowner_name  = serializers.SerializerMethodField()
-    homeowner_email = serializers.SerializerMethodField()
-    due_date        = serializers.SerializerMethodField()
-    is_overdue      = serializers.SerializerMethodField()
+    agreement_id = serializers.SerializerMethodField()
+    project_title = serializers.SerializerMethodField()
 
-    # Write-only escape hatch for scheduling conflicts
-    allow_overlap   = serializers.BooleanField(write_only=True, required=False, default=False)
+    homeowner_name = serializers.SerializerMethodField()
+    homeowner_email = serializers.SerializerMethodField()
+
+    customer_name = serializers.SerializerMethodField()
+    customer_email = serializers.SerializerMethodField()
+
+    due_date = serializers.SerializerMethodField()
+    is_overdue = serializers.SerializerMethodField()
+
+    agreement_status = serializers.SerializerMethodField()
+    agreement_is_locked = serializers.SerializerMethodField()
+    agreement_is_completed = serializers.SerializerMethodField()
+
+    # ✅ NEW: completion gating helpers
+    agreement_payment_mode = serializers.SerializerMethodField()
+    agreement_escrow_funded = serializers.SerializerMethodField()
+    agreement_signature_is_satisfied = serializers.SerializerMethodField()
+
+    is_rework = serializers.SerializerMethodField()
+    origin_milestone = serializers.SerializerMethodField()
+
+    allow_overlap = serializers.BooleanField(write_only=True, required=False, default=False)
 
     class Meta:
-        model  = Milestone
+        model = Milestone
         fields = "__all__"
         read_only_fields = (
             "agreement_id",
             "project_title",
             "homeowner_name",
             "homeowner_email",
+            "customer_name",
+            "customer_email",
             "is_overdue",
+            "is_rework",
+            "origin_milestone",
+            "agreement_status",
+            "agreement_is_locked",
+            "agreement_is_completed",
+            # ✅ NEW
+            "agreement_payment_mode",
+            "agreement_escrow_funded",
+            "agreement_signature_is_satisfied",
         )
 
     # ------------------------ helpers (read) ------------------------ #
@@ -154,12 +211,13 @@ class MilestoneSerializer(serializers.ModelSerializer):
             return v
         return ""
 
+    def get_customer_name(self, obj: Milestone) -> str:
+        return self.get_homeowner_name(obj)
+
+    def get_customer_email(self, obj: Milestone) -> str:
+        return self.get_homeowner_email(obj)
+
     def get_due_date(self, obj: Milestone):
-        """
-        Unified 'due date' convenience used by UI and PDFs.
-        Priority:
-          completion_date → due_date → end_date → end → target_date → finish_date → scheduled_date → start_date
-        """
         for attr in (
             "completion_date",
             "due_date",
@@ -176,10 +234,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
         return None
 
     def get_is_overdue(self, obj: Milestone) -> bool:
-        """
-        Overdue = has a due date in the past AND not completed.
-        Works for both date and datetime fields.
-        """
         try:
             due = self.get_due_date(obj)
             if not due:
@@ -200,10 +254,104 @@ class MilestoneSerializer(serializers.ModelSerializer):
         except Exception:
             return False
 
+    # ✅ locking helpers
+    def get_agreement_status(self, obj: Milestone) -> str:
+        ag = self._get_agreement(obj)
+        return (getattr(ag, "status", "") or "").strip() if ag else ""
+
+    def get_agreement_is_completed(self, obj: Milestone) -> bool:
+        ag = self._get_agreement(obj)
+        if not ag:
+            return False
+        try:
+            return bool(is_completed_agreement(ag))
+        except Exception:
+            return False
+
+    def get_agreement_is_locked(self, obj: Milestone) -> bool:
+        ag = self._get_agreement(obj)
+        if not ag:
+            return False
+        try:
+            return bool(is_signed_or_locked_agreement(ag))
+        except Exception:
+            return False
+
+    # ✅ NEW: completion gating helpers
+    def get_agreement_payment_mode(self, obj: Milestone) -> str:
+        ag = self._get_agreement(obj)
+        mode = (getattr(ag, "payment_mode", "") or "escrow").strip().lower() if ag else "escrow"
+        return "direct" if mode == "direct" else "escrow"
+
+    def get_agreement_escrow_funded(self, obj: Milestone) -> bool:
+        ag = self._get_agreement(obj)
+        if not ag:
+            return False
+        # If direct pay, escrow isn't relevant; return False (frontend should ignore for direct).
+        mode = (getattr(ag, "payment_mode", "") or "escrow").strip().lower()
+        if mode == "direct":
+            return False
+        return bool(getattr(ag, "escrow_funded", False))
+
+    def get_agreement_signature_is_satisfied(self, obj: Milestone) -> bool:
+        ag = self._get_agreement(obj)
+        if not ag:
+            return False
+        # Prefer policy-aware property if present
+        try:
+            return bool(getattr(ag, "signature_is_satisfied"))
+        except Exception:
+            return bool(getattr(ag, "signed_by_contractor", False) and getattr(ag, "signed_by_homeowner", False))
+
+    # ------------------------ rework/origin helpers (read) ------------------------ #
+    def get_is_rework(self, obj: Milestone) -> bool:
+        try:
+            return bool(getattr(obj, "rework_origin_milestone_id", None))
+        except Exception:
+            return False
+
+    def _origin_queryset(self):
+        return Milestone.objects.all().only(
+            "id",
+            "order",
+            "title",
+            "completed",
+            "is_invoiced",
+            "start_date",
+            "completion_date",
+            "amount",
+            "invoice_id",
+        )
+
+    def get_origin_milestone(self, obj: Milestone) -> Optional[Dict[str, Any]]:
+        try:
+            origin_id = getattr(obj, "rework_origin_milestone_id", None)
+            if not origin_id:
+                return None
+
+            origin = self._origin_queryset().filter(id=origin_id).first()
+            if not origin:
+                return None
+
+            return {
+                "id": origin.id,
+                "order": getattr(origin, "order", None),
+                "title": (getattr(origin, "title", "") or "").strip(),
+                "completed": bool(getattr(origin, "completed", False)),
+                "is_invoiced": bool(getattr(origin, "is_invoiced", False)),
+                "invoice_id": getattr(origin, "invoice_id", None),
+                "start_date": getattr(origin, "start_date", None),
+                "completion_date": getattr(origin, "completion_date", None),
+                "amount": getattr(origin, "amount", None),
+                "due_date": self.get_due_date(origin),
+                "is_overdue": self.get_is_overdue(origin),
+            }
+        except Exception:
+            return None
+
     # ------------------------ validation ------------------------ #
     @staticmethod
     def _as_date(value) -> Optional[date]:
-        """Accept a date/datetime or ISO-like string and return a date, else None."""
         if value is None or value == "":
             return None
         if isinstance(value, date) and not isinstance(value, datetime):
@@ -216,95 +364,121 @@ class MilestoneSerializer(serializers.ModelSerializer):
             return None
 
     def validate(self, attrs):
-        """
-        Map incoming 'end_date' → 'completion_date', auto-fill missing dates (NEW),
-        then run overlap validation using start_date/completion_date.
-        """
         allow_overlap = attrs.get("allow_overlap", False)
 
-        # Accept 'end_date' from clients and store as completion_date (only if not explicitly provided)
         if "end_date" in getattr(self, "initial_data", {}):
             incoming_end = self.initial_data.get("end_date") or None
             if "completion_date" not in attrs:
                 attrs["completion_date"] = incoming_end
 
-        # Optional: normalize amount-like strings if your model uses DecimalField and clients send "$0.00"
         if "amount" in getattr(self, "initial_data", {}):
-            incoming_amount = _normalize_money(self.initial_data.get("amount"))
-            # Only set if serializer is going to write 'amount' and it isn't already in attrs
-            if incoming_amount is not None and "amount" not in attrs:
+            raw_amt = self.initial_data.get("amount")
+            incoming_amount = _normalize_money(raw_amt)
+
+            if raw_amt not in (None, "") and incoming_amount is None:
+                raise serializers.ValidationError(
+                    {"amount": "Amount must be a valid number (e.g., 0, 25, 1250.00)."}
+                )
+
+            if incoming_amount is not None:
+                if incoming_amount < Decimal("0"):
+                    raise serializers.ValidationError({"amount": "Amount cannot be negative."})
                 attrs["amount"] = incoming_amount
 
-        # Resolve agreement for partial updates
+        if "amount" in attrs:
+            amt = attrs.get("amount")
+            if amt is None or amt == "":
+                pass
+            else:
+                try:
+                    amt_dec = amt if isinstance(amt, Decimal) else Decimal(str(amt))
+                except Exception:
+                    raise serializers.ValidationError(
+                        {"amount": "Amount must be a valid number (e.g., 0, 25, 1250.00)."}
+                    )
+                if amt_dec < Decimal("0"):
+                    raise serializers.ValidationError({"amount": "Amount cannot be negative."})
+                attrs["amount"] = amt_dec
+
         agreement = attrs.get("agreement") or getattr(self.instance, "agreement", None)
 
-        # Resolve start/end for validation on partial updates
         start_raw = attrs.get("start_date", getattr(self.instance, "start_date", None))
-        end_raw   = attrs.get("completion_date", getattr(self.instance, "completion_date", None))
+        end_raw = attrs.get("completion_date", getattr(self.instance, "completion_date", None))
 
         start = self._as_date(start_raw)
-        end   = self._as_date(end_raw)
+        end = self._as_date(end_raw)
 
-        # ---------------- NEW: auto-fill dates to prevent NOT NULL 500s ----------------
-        # If AI posts null dates, your DB may require completion_date (or start_date).
-        # We fill from Agreement end/start, else today.
         if agreement:
             ag_start = self._as_date(getattr(agreement, "start_date", None))
-            ag_end   = self._as_date(getattr(agreement, "end_date", None))
+            ag_end = self._as_date(getattr(agreement, "end_date", None))
         else:
             ag_start = None
             ag_end = None
 
         if start is None:
             start = ag_start or _today()
-            # only set if client didn't explicitly send start_date in partial update
             attrs["start_date"] = start
 
         if end is None:
             end = ag_end or ag_start or start or _today()
             attrs["completion_date"] = end
-        # ---------------------------------------------------------------------------
 
-        # Basic range sanity
         if start and end and start > end:
-            raise serializers.ValidationError({
-                "completion_date": "Completion date must be on or after the start date."
-            })
+            raise serializers.ValidationError(
+                {"completion_date": "Completion date must be on or after the start date."}
+            )
 
-        # Skip overlap check if override requested or insufficient context
         if not (agreement and start and end) or allow_overlap:
             attrs.pop("allow_overlap", None)
             return attrs
 
-        # Overlap check in same agreement (ignore self on update)
         qs = Milestone.objects.filter(agreement=agreement)
         if self.instance:
             qs = qs.exclude(pk=self.instance.pk)
 
-        conflict = qs.filter(
-            Q(start_date__lte=end) & Q(completion_date__gte=start)
-        ).exists()
+        conflict = qs.filter(Q(start_date__lte=end) & Q(completion_date__gte=start)).exists()
 
         if conflict:
-            raise serializers.ValidationError({
-                "non_field_errors": (
-                    "This milestone overlaps an existing milestone in the same agreement. "
-                    "Resubmit with allow_overlap=true to override."
-                )
-            })
+            raise serializers.ValidationError(
+                {
+                    "non_field_errors": (
+                        "This milestone overlaps an existing milestone in the same agreement. "
+                        "Resubmit with allow_overlap=true to override."
+                    )
+                }
+            )
 
         attrs.pop("allow_overlap", None)
         return attrs
 
-    # Always include computed fields for the client
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        data["agreement_id"]    = self.get_agreement_id(instance)
-        data["project_title"]   = self.get_project_title(instance)
-        data["homeowner_name"]  = self.get_homeowner_name(instance)
+
+        data["agreement_id"] = self.get_agreement_id(instance)
+        data["project_title"] = self.get_project_title(instance)
+
+        data["homeowner_name"] = self.get_homeowner_name(instance)
         data["homeowner_email"] = self.get_homeowner_email(instance)
-        data["due_date"]        = self.get_due_date(instance)
-        data["is_overdue"]      = self.get_is_overdue(instance)
-        # Mirror end_date for UIs that still read it
-        data["end_date"]        = data.get("completion_date")
+
+        data["customer_name"] = self.get_customer_name(instance)
+        data["customer_email"] = self.get_customer_email(instance)
+
+        data["due_date"] = self.get_due_date(instance)
+        data["is_overdue"] = self.get_is_overdue(instance)
+
+        data["is_rework"] = self.get_is_rework(instance)
+        data["origin_milestone"] = self.get_origin_milestone(instance)
+
+        # client convenience alias
+        data["end_date"] = data.get("completion_date")
+
+        data["agreement_status"] = self.get_agreement_status(instance)
+        data["agreement_is_locked"] = self.get_agreement_is_locked(instance)
+        data["agreement_is_completed"] = self.get_agreement_is_completed(instance)
+
+        # ✅ NEW: completion gate helpers
+        data["agreement_payment_mode"] = self.get_agreement_payment_mode(instance)
+        data["agreement_escrow_funded"] = self.get_agreement_escrow_funded(instance)
+        data["agreement_signature_is_satisfied"] = self.get_agreement_signature_is_satisfied(instance)
+
         return data

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from decimal import Decimal, ROUND_HALF_UP
 from rest_framework import serializers
-from ..models import Invoice, MilestoneComment, MilestoneFile
+
+from ..models import Invoice, Milestone, MilestoneComment, MilestoneFile
 
 
 def cents_to_dollars(cents: int) -> str:
@@ -17,27 +18,37 @@ def cents_to_dollars(cents: int) -> str:
 
 class InvoiceSerializer(serializers.ModelSerializer):
     # ─────────────────────────────
-    # Context helpers (existing)
+    # Context helpers
     # ─────────────────────────────
     homeowner_name = serializers.SerializerMethodField()
     homeowner_email = serializers.SerializerMethodField()
+
+    # ✅ NEW (preferred): customer naming for UI consistency
+    customer_name = serializers.SerializerMethodField()
+    customer_email = serializers.SerializerMethodField()
+
     project_title = serializers.SerializerMethodField()
     agreement_id = serializers.SerializerMethodField()
 
-    # ✅ NEW: agreement payment mode (escrow vs direct)
+    # ✅ agreement payment mode (escrow vs direct)
     agreement_payment_mode = serializers.SerializerMethodField()
 
     # ─────────────────────────────
-    # Milestone context (existing)
+    # Milestone context (snapshot-first)
     # ─────────────────────────────
     milestone_id = serializers.SerializerMethodField()
+
+    # ✅ NEW: per-agreement milestone numbering (1..N)
+    milestone_order = serializers.SerializerMethodField()
+    milestone_label = serializers.SerializerMethodField()
+
     milestone_title = serializers.SerializerMethodField()
     milestone_description = serializers.SerializerMethodField()
     milestone_completion_notes = serializers.SerializerMethodField()
     milestone_attachments = serializers.SerializerMethodField()
 
     # ─────────────────────────────
-    # ✅ NEW: escrow / payout audit (existing)
+    # Escrow / payout audit
     # ─────────────────────────────
     escrow_released = serializers.BooleanField(read_only=True)
     escrow_released_at = serializers.DateTimeField(read_only=True)
@@ -49,10 +60,10 @@ class InvoiceSerializer(serializers.ModelSerializer):
     platform_fee = serializers.SerializerMethodField()
     payout_amount = serializers.SerializerMethodField()
 
-    # ✅ NEW: UI-friendly status
+    # UI-friendly status
     display_status = serializers.SerializerMethodField()
 
-    # ✅ NEW: DIRECT PAY fields (read-only)
+    # DIRECT PAY fields (read-only)
     direct_pay_checkout_url = serializers.CharField(read_only=True)
     direct_pay_paid_at = serializers.DateTimeField(read_only=True)
 
@@ -80,7 +91,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "escrow_released",
             "escrow_released_at",
 
-            # ✅ DIRECT PAY timestamps/link
+            # DIRECT PAY timestamps/link
             "direct_pay_paid_at",
             "direct_pay_checkout_url",
 
@@ -88,19 +99,23 @@ class InvoiceSerializer(serializers.ModelSerializer):
             "agreement",
             "agreement_id",
 
-            # ✅ agreement payment mode
+            # agreement payment mode
             "agreement_payment_mode",
 
             # stripe / payout
             "stripe_transfer_id",
 
-            # computed context
+            # computed context (legacy + new)
             "homeowner_name",
             "homeowner_email",
+            "customer_name",
+            "customer_email",
             "project_title",
 
             # milestone snapshot/context
             "milestone_id",
+            "milestone_order",
+            "milestone_label",
             "milestone_title",
             "milestone_description",
             "milestone_completion_notes",
@@ -120,7 +135,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if getattr(obj, "escrow_released", False):
             return "Paid"
 
-        # ✅ DIRECT PAY paid = paid
+        # DIRECT PAY paid = paid
         if getattr(obj, "direct_pay_paid_at", None):
             return "Paid"
 
@@ -150,29 +165,63 @@ class InvoiceSerializer(serializers.ModelSerializer):
         return getattr(agreement, "payment_mode", None) if agreement else None
 
     # ─────────────────────────────
-    # Existing helper methods
+    # ✅ Option A: Agreement is source of truth for Customer
     # ─────────────────────────────
-    def get_homeowner_name(self, obj):
-        agreement = obj.agreement
+    def _agreement_customer(self, obj):
+        """
+        Canonical customer resolver:
+        1) agreement.homeowner (current truth)
+        2) fallback: agreement.project.homeowner (legacy)
+        """
+        agreement = getattr(obj, "agreement", None)
+        if not agreement:
+            return None
+
+        # Preferred: agreement.homeowner (your canonical "customer" on agreement)
+        customer = getattr(agreement, "homeowner", None) or getattr(agreement, "customer", None)
+        if customer:
+            return customer
+
+        # Fallback: legacy project-based homeowner
         project = getattr(agreement, "project", None)
-        homeowner = getattr(project, "homeowner", None) if project else None
-        if homeowner:
-            return (
-                getattr(homeowner, "full_name", None)
-                or getattr(homeowner, "name", None)
-                or "Homeowner"
-            )
-        return None
+        return getattr(project, "homeowner", None) if project else None
+
+    def _customer_name(self, customer) -> str | None:
+        if not customer:
+            return None
+        return (
+            getattr(customer, "full_name", None)
+            or getattr(customer, "name", None)
+            or getattr(customer, "email", None)
+            or "Customer"
+        )
+
+    def _customer_email(self, customer) -> str | None:
+        if not customer:
+            return None
+        return getattr(customer, "email", None)
+
+    # Legacy fields (keep for frontend compatibility)
+    def get_homeowner_name(self, obj):
+        c = self._agreement_customer(obj)
+        return self._customer_name(c)
 
     def get_homeowner_email(self, obj):
-        agreement = obj.agreement
-        project = getattr(agreement, "project", None)
-        homeowner = getattr(project, "homeowner", None) if project else None
-        return getattr(homeowner, "email", None) if homeowner else None
+        c = self._agreement_customer(obj)
+        return self._customer_email(c)
+
+    # Preferred fields (new)
+    def get_customer_name(self, obj):
+        c = self._agreement_customer(obj)
+        return self._customer_name(c)
+
+    def get_customer_email(self, obj):
+        c = self._agreement_customer(obj)
+        return self._customer_email(c)
 
     def get_project_title(self, obj):
-        agreement = obj.agreement
-        project = getattr(agreement, "project", None)
+        agreement = getattr(obj, "agreement", None)
+        project = getattr(agreement, "project", None) if agreement else None
         return getattr(project, "title", None) if project else None
 
     # -----------------------------
@@ -181,18 +230,64 @@ class InvoiceSerializer(serializers.ModelSerializer):
     def _source_milestone(self, obj):
         return getattr(obj, "source_milestone", None)
 
-    def get_milestone_id(self, obj):
+    def _snapshot_milestone_id(self, obj):
         snap = getattr(obj, "milestone_id_snapshot", None)
+        return int(snap) if snap else None
+
+    def get_milestone_id(self, obj):
+        snap = self._snapshot_milestone_id(obj)
         if snap:
             return snap
         m = self._source_milestone(obj)
         return getattr(m, "id", None) if m else None
 
+    def _resolve_milestone_obj_best_effort(self, obj):
+        """
+        Try to resolve a Milestone instance, even when invoice uses snapshots.
+        """
+        m = self._source_milestone(obj)
+        if m:
+            return m
+
+        snap_id = self._snapshot_milestone_id(obj)
+        if snap_id:
+            try:
+                return Milestone.objects.filter(id=snap_id).first()
+            except Exception:
+                return None
+
+        return None
+
+    def get_milestone_order(self, obj):
+        """
+        Per-agreement milestone index (1..N).
+        Uses milestone.order when available.
+        """
+        m = self._resolve_milestone_obj_best_effort(obj)
+        if not m:
+            return None
+
+        order = getattr(m, "order", None)
+        if order is None:
+            # some schemas use sequence/index
+            order = getattr(m, "sequence", None) or getattr(m, "index", None)
+        return order
+
+    def get_milestone_label(self, obj):
+        """
+        UI-friendly label: "Milestone #1" (or fallback to ID if order unknown).
+        """
+        order = self.get_milestone_order(obj)
+        if order is not None:
+            return f"Milestone #{order}"
+        mid = self.get_milestone_id(obj)
+        return f"Milestone #{mid}" if mid else "Milestone"
+
     def get_milestone_title(self, obj):
         snap = (getattr(obj, "milestone_title_snapshot", "") or "").strip()
         if snap:
             return snap
-        m = self._source_milestone(obj)
+        m = self._resolve_milestone_obj_best_effort(obj)
         if not m:
             return None
         return getattr(m, "title", None) or getattr(m, "name", None)
@@ -201,7 +296,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
         snap = (getattr(obj, "milestone_description_snapshot", "") or "").strip()
         if snap:
             return snap
-        m = self._source_milestone(obj)
+        m = self._resolve_milestone_obj_best_effort(obj)
         return getattr(m, "description", None) if m else None
 
     def get_milestone_completion_notes(self, obj):
@@ -209,7 +304,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if snap:
             return snap
 
-        m = self._source_milestone(obj)
+        m = self._resolve_milestone_obj_best_effort(obj)
         if not m:
             return ""
         qs = MilestoneComment.objects.filter(milestone=m).order_by("created_at")
@@ -225,7 +320,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if isinstance(snap, list) and snap:
             return snap
 
-        m = self._source_milestone(obj)
+        m = self._resolve_milestone_obj_best_effort(obj)
         if not m:
             return []
         request = self.context.get("request")
@@ -238,12 +333,14 @@ class InvoiceSerializer(serializers.ModelSerializer):
                 url = request.build_absolute_uri(f.file.url) if request else f.file.url
             except Exception:
                 url = f.file.url
-            out.append({
-                "id": f.id,
-                "name": getattr(f.file, "name", "") or f"file_{f.id}",
-                "url": url,
-                "uploaded_at": (
-                    f.uploaded_at.isoformat() if getattr(f, "uploaded_at", None) else None
-                ),
-            })
+            out.append(
+                {
+                    "id": f.id,
+                    "name": getattr(f.file, "name", "") or f"file_{f.id}",
+                    "url": url,
+                    "uploaded_at": (
+                        f.uploaded_at.isoformat() if getattr(f, "uploaded_at", None) else None
+                    ),
+                }
+            )
         return out

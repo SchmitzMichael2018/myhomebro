@@ -10,6 +10,9 @@ from django.apps import apps
 from .models import Agreement, Invoice, InvoiceStatus
 from projects.notifications import notify_invoice_created, notify_escrow_auto_released  # type: ignore
 
+# ✅ NEW: canonical agreement completion recompute
+from projects.services.agreement_completion import recompute_and_apply_agreement_completion
+
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────
@@ -67,10 +70,8 @@ def task_generate_full_agreement_pdf(agreement_id: int):
     try:
         agreement = Agreement.objects.get(id=agreement_id)
 
-        # Canonical implementation (your grep shows this exists in projects/services/pdf.py)
         from projects.services.pdf import generate_full_agreement_pdf as svc_generate_full  # type: ignore
 
-        # Most implementations here take Agreement instance
         svc_generate_full(agreement)
 
         logger.info(f"Generated PDF for Agreement {agreement_id}")
@@ -78,7 +79,6 @@ def task_generate_full_agreement_pdf(agreement_id: int):
     except Agreement.DoesNotExist:
         logger.error(f"Agreement {agreement_id} does not exist")
     except TypeError as e:
-        # If svc_generate_full expects (agreement_id) instead of (agreement), this will tell us.
         logger.error(f"PDF generation signature mismatch for Agreement {agreement_id}: {e}")
         raise
     except Exception as e:
@@ -111,6 +111,14 @@ def task_auto_release_undisputed_invoices():
             invoice.escrow_released = True
             invoice.escrow_released_at = now
             invoice.save(update_fields=["status", "escrow_released", "escrow_released_at"])
+
+            # ✅ NEW: recompute agreement completion after invoice becomes paid/released
+            try:
+                ag_id = getattr(invoice, "agreement_id", None)
+                if ag_id:
+                    recompute_and_apply_agreement_completion(int(ag_id))
+            except Exception as exc:
+                logger.warning(f"Agreement completion recompute failed for invoice {invoice.id}: {exc}")
 
             notify_escrow_auto_released(invoice)
             logger.info(f"Auto-released escrow for invoice {invoice.id}")

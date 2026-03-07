@@ -17,6 +17,43 @@ def resolve_contractor_for_user(user) -> Optional[Contractor]:
     return contractor
 
 
+def _coalesce_owner_id(data: Dict[str, Any]) -> Optional[int]:
+    """
+    Backward-compatible resolver for the project "owner" concept.
+
+    Historically the API used: homeowner
+    UI now uses: customer/client
+
+    Supported keys (first match wins):
+      - homeowner, homeowner_id
+      - customer, customer_id
+      - client, client_id
+
+    Values supported:
+      - int / numeric string
+      - dict with {"id": ...} (defensive)
+    """
+    keys = ("homeowner", "homeowner_id", "customer", "customer_id", "client", "client_id")
+    for key in keys:
+        val = data.get(key)
+        if val is None or val == "":
+            continue
+
+        # If FE accidentally sends an object, allow {id: 123}
+        if isinstance(val, dict):
+            val = val.get("id")
+
+        if val is None or val == "":
+            continue
+
+        try:
+            return int(val)
+        except Exception:
+            continue
+
+    return None
+
+
 def ensure_project_for_agreement_payload(
     *,
     payload: Dict[str, Any],
@@ -38,9 +75,11 @@ def ensure_project_for_agreement_payload(
         data.pop("project_title", None)
         return data, None
 
-    homeowner_id = data.get("homeowner")
+    # ✅ Accept homeowner/customer/client without changing existing model logic
+    homeowner_id = _coalesce_owner_id(data)
     if not homeowner_id:
-        raise ValueError("Homeowner is required to create a project.")
+        # Keep user-facing language aligned with UI (Customer), but functionally identical
+        raise ValueError("Customer is required to create a project.")
 
     homeowner = get_object_or_404(Homeowner, pk=homeowner_id)
 

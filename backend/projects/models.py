@@ -35,27 +35,38 @@ class ProjectStatus(models.TextChoices):
 
 class AgreementProjectType(models.TextChoices):
     REMODEL = "Remodel", "Remodel"
+    NEW_CONSTRUCTION = "New Construction", "New Construction"
     REPAIR = "Repair", "Repair"
-    INSTALLATION = "Installation", "Installation"
+    HVAC = "HVAC", "HVAC"
+    ROOFING = "Roofing", "Roofing"
+    ELECTRICAL = "Electrical", "Electrical"
+    PLUMBING = "Plumbing", "Plumbing"
+    LANDSCAPING = "Landscaping", "Landscaping"
     PAINTING = "Painting", "Painting"
+    FLOORING = "Flooring", "Flooring"
+    INSTALLATION = "Installation", "Installation"
     OUTDOOR = "Outdoor", "Outdoor"
     INSPECTION = "Inspection", "Inspection"
-    CUSTOM = "Custom", "Custom"
     DIY_HELP = "DIY Help", "DIY Help"
+    CUSTOM = "Custom", "Custom"
 
 
-# ✅ NEW: Payment mode for Agreement
+# ✅ Payment mode for Agreement
 class AgreementPaymentMode(models.TextChoices):
     ESCROW = "escrow", "Escrow (Protected)"
     DIRECT = "direct", "Direct Pay (Fast)"
 
 
+# ✅ NEW: Signature policy for Agreement
+class AgreementSignaturePolicy(models.TextChoices):
+    BOTH_REQUIRED = "both_required", "Both Parties Sign (Recommended)"
+    CONTRACTOR_ONLY = "contractor_only", "Contractor Only (Work Order / Internal)"
+    EXTERNAL_SIGNED = "external_signed", "Signed Outside MyHomeBro (Upload/Reference/Attest)"
+
+
 class InvoiceStatus(models.TextChoices):
     INCOMPLETE = "incomplete", "Incomplete"
-
-    # ✅ NEW: Used primarily for DIRECT invoices (pay link created / awaiting payment)
     SENT = "sent", "Sent (Awaiting Payment)"
-
     PENDING = "pending", "Pending Approval"
     APPROVED = "approved", "Approved"
     DISPUTED = "disputed", "Disputed"
@@ -101,6 +112,9 @@ class Contractor(models.Model):
     city = models.CharField(max_length=100, blank=True)
     state = models.CharField(max_length=50, blank=True)
 
+    # ✅ NEW: Zip so ZIP persists (frontend expects form.zip)
+    zip = models.CharField(max_length=20, blank=True, default="")
+
     skills = models.ManyToManyField(Skill, blank=True)
     license_number = models.CharField(max_length=50, blank=True)
     license_expiration = models.DateField(null=True, blank=True)
@@ -123,8 +137,13 @@ class Contractor(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
     terms_accepted_at = models.DateTimeField(null=True, blank=True)
     terms_version = models.CharField(max_length=20, default="v1.0")
+
+    # ✅ Free AI Agreement credits
+    ai_free_agreements_total = models.PositiveIntegerField(default=5)
+    ai_free_agreements_used = models.PositiveIntegerField(default=0)
 
     class Meta:
         ordering = ["business_name"]
@@ -158,6 +177,15 @@ class Contractor(models.Model):
     def stripe_action_required(self) -> bool:
         return int(self.requirements_due_count or 0) > 0
 
+    @property
+    def ai_free_agreements_remaining(self) -> int:
+        total = int(self.ai_free_agreements_total or 0)
+        used = int(self.ai_free_agreements_used or 0)
+        return max(0, total - used)
+
+    def can_use_ai_agreement_writer(self) -> bool:
+        return self.ai_free_agreements_remaining > 0
+
 
 class Homeowner(models.Model):
     created_by = models.ForeignKey(
@@ -167,10 +195,9 @@ class Homeowner(models.Model):
         null=True,
     )
 
-    # Contact / Customer
     full_name = models.CharField(max_length=255)
 
-    # ✅ NEW: Company name for subcontractor / GC customers
+    # ✅ Company name for subcontractor / GC customers
     company_name = models.CharField(
         max_length=255,
         blank=True,
@@ -181,7 +208,6 @@ class Homeowner(models.Model):
     email = models.EmailField(db_index=True)
     phone_number = models.CharField(max_length=20, blank=True, default="")
 
-    # Address (invite flow can create customers without this; agreement gate enforces later)
     street_address = models.CharField(max_length=255, blank=True, default="")
     address_line_2 = models.CharField(
         max_length=255,
@@ -217,6 +243,7 @@ class Homeowner(models.Model):
         if company:
             return f"{company} ({self.full_name})"
         return self.full_name
+
 
 class Project(models.Model):
     number = models.CharField(
@@ -293,7 +320,7 @@ class Agreement(models.Model):
     # Public identifiers
     project_uid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
 
-    # ✅ NEW: Payment mode (ESCROW vs DIRECT)
+    # ✅ Payment mode (ESCROW vs DIRECT)
     payment_mode = models.CharField(
         max_length=20,
         choices=AgreementPaymentMode.choices,
@@ -302,17 +329,79 @@ class Agreement(models.Model):
         help_text="ESCROW uses protected funding/release. DIRECT uses pay-now invoices to contractor Stripe.",
     )
 
+    # ✅ NEW: Signature policy (controls whether a signature is required in-platform)
+    signature_policy = models.CharField(
+        max_length=32,
+        choices=AgreementSignaturePolicy.choices,
+        default=AgreementSignaturePolicy.BOTH_REQUIRED,
+        db_index=True,
+        help_text="Controls signature requirements: both parties, contractor-only, or signed externally.",
+    )
+
+    # ✅ NEW: Signature requirement toggles (waivers)
+    # These are the exact fields your Step 4 checkboxes should PATCH.
+    require_contractor_signature = models.BooleanField(
+        default=True,
+        help_text="If False, contractor signature is waived and treated as satisfied.",
+    )
+    require_customer_signature = models.BooleanField(
+        default=True,
+        help_text="If False, customer signature is waived and treated as satisfied.",
+    )
+
+    # ✅ NEW: External contract evidence (for EXTERNAL_SIGNED policy)
+    external_contract_reference = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Optional: external contract / PO / work order reference number.",
+    )
+    external_contract_file = models.FileField(
+        upload_to="agreements/external_contracts/",
+        null=True,
+        blank=True,
+        help_text="Optional: upload external signed agreement/work order.",
+    )
+    external_contract_attested = models.BooleanField(
+        default=False,
+        help_text="Contractor attests external agreement exists (used with EXTERNAL_SIGNED policy).",
+    )
+    external_contract_attested_at = models.DateTimeField(null=True, blank=True)
+    external_contract_attested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="external_contract_attestations",
+    )
+
     # Summary
     description = models.TextField(blank=True)
     total_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     total_time_estimate = models.DurationField(null=True, blank=True)
     milestone_count = models.PositiveIntegerField(default=0)
 
+        # Template tracking
+    selected_template = models.ForeignKey(
+        "projects.ProjectTemplate",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="applied_agreements",
+        help_text="Template used to generate the current agreement milestones.",
+    )
+    selected_template_name_snapshot = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Snapshot of template name at time of apply, for audit/history.",
+    )
+
     # Timeline
     start = models.DateField(null=True, blank=True, db_index=True)
     end = models.DateField(null=True, blank=True, db_index=True)
 
-    # 🔹 EXPLICIT PROJECT ADDRESS FIELDS
+    # Project address fields
     project_address_line1 = models.CharField(
         max_length=255,
         blank=True,
@@ -358,7 +447,9 @@ class Agreement(models.Model):
     project_type = models.CharField(
         max_length=100, choices=AgreementProjectType.choices, blank=True
     )
-    project_subtype = models.CharField(max_length=100, blank=True)
+
+    project_subtype = models.CharField(max_length=100, blank=True, null=True, default="")
+
     standardized_category = models.CharField(
         max_length=100, blank=True, db_index=True
     )
@@ -375,7 +466,7 @@ class Agreement(models.Model):
     )
     warranty_text_snapshot = models.TextField(blank=True, default="")
 
-    # ✅ NEW: Persisted escrow funded amount (supports amendments / top-ups)
+    # Escrow funded amount
     escrow_funded_amount = models.DecimalField(
         max_digits=10,
         decimal_places=2,
@@ -390,6 +481,12 @@ class Agreement(models.Model):
     reviewed = models.BooleanField(default=False)
     reviewed_at = models.DateTimeField(null=True, blank=True)
     reviewed_by = models.CharField(max_length=32, null=True, blank=True)
+
+    # ✅ Contractor Step-4 acknowledgement flags (persist checkbox state across refresh)
+    contractor_ack_reviewed = models.BooleanField(default=False)
+    contractor_ack_tos = models.BooleanField(default=False)
+    contractor_ack_esign = models.BooleanField(default=False)
+    contractor_ack_at = models.DateTimeField(null=True, blank=True)
 
     signed_by_contractor = models.BooleanField(default=False)
     signed_at_contractor = models.DateTimeField(null=True, blank=True)
@@ -427,25 +524,73 @@ class Agreement(models.Model):
         ordering = ["-updated_at"]
 
     def __str__(self):
-        suffix = (
-            f" (Amendment {self.amendment_number})"
-            if self.amendment_number
-            else ""
-        )
+        suffix = f" (Amendment {self.amendment_number})" if self.amendment_number else ""
         return f"Agreement for {self.project.title}{suffix}"
+
+    # ---------------------------
+    # Signature satisfaction logic
+    # ---------------------------
 
     @property
     def is_fully_signed(self):
+        """
+        Legacy meaning: both parties signed inside MyHomeBro.
+        Keep this for existing code paths.
+        """
         return self.signed_by_contractor and self.signed_by_homeowner
+
+    @property
+    def signature_is_satisfied(self) -> bool:
+        """
+        Canonical meaning for business rules (milestones/invoices gating).
+
+        First apply waiver flags:
+          - require_contractor_signature=False means contractor signature is satisfied
+          - require_customer_signature=False means homeowner signature is satisfied
+
+        Then apply signature_policy:
+          - BOTH_REQUIRED: contractor + homeowner satisfied
+          - CONTRACTOR_ONLY: contractor satisfied
+          - EXTERNAL_SIGNED: contractor satisfied + external evidence
+        """
+        # Waiver-aware satisfaction
+        contractor_ok = (not bool(self.require_contractor_signature)) or bool(self.signed_by_contractor)
+        homeowner_ok = (not bool(self.require_customer_signature)) or bool(self.signed_by_homeowner)
+
+        policy = (self.signature_policy or AgreementSignaturePolicy.BOTH_REQUIRED).strip()
+
+        if policy == AgreementSignaturePolicy.BOTH_REQUIRED:
+            return bool(contractor_ok and homeowner_ok)
+
+        if policy == AgreementSignaturePolicy.CONTRACTOR_ONLY:
+            return bool(contractor_ok)
+
+        if policy == AgreementSignaturePolicy.EXTERNAL_SIGNED:
+            evidence = False
+            if (self.external_contract_reference or "").strip():
+                evidence = True
+            if bool(self.external_contract_file):
+                evidence = True
+            if self.external_contract_attested is True:
+                evidence = True
+            return bool(contractor_ok) and evidence
+
+        return bool(contractor_ok and homeowner_ok)
 
     @property
     def is_direct_pay(self) -> bool:
         return self.payment_mode == AgreementPaymentMode.DIRECT
 
+    @property
+    def requires_escrow(self) -> bool:
+        return not self.is_direct_pay
+
     def save(self, *args, **kwargs):
+        # Auto-link contractor from project
         if not self.contractor and self.project and self.project.contractor_id:
             self.contractor = self.project.contractor
 
+        # Normalize warranty_type
         if self.warranty_type:
             self.warranty_type = str(self.warranty_type).strip().lower()
             if self.warranty_type not in ("default", "custom"):
@@ -453,12 +598,17 @@ class Agreement(models.Model):
         else:
             self.warranty_type = "default"
 
+        # Ensure warranty snapshot always has text
         snap = (self.warranty_text_snapshot or "").strip()
         if not snap:
             self.warranty_text_snapshot = DEFAULT_WARRANTY_TEXT
 
-        # ✅ Only escrow logic should affect escrow flags/status
-        # If DIRECT, do NOT auto-mark escrow_funded based on amounts
+        # Terminal states should NEVER be overwritten by auto-status logic
+        if self.status in (ProjectStatus.COMPLETED, ProjectStatus.CANCELLED):
+            super().save(*args, **kwargs)
+            return
+
+        # Escrow logic should NOT run for DIRECT
         if not self.is_direct_pay:
             try:
                 funded_amt = Decimal(str(self.escrow_funded_amount or "0"))
@@ -472,15 +622,60 @@ class Agreement(models.Model):
 
             if total_amt > 0 and funded_amt >= total_amt:
                 self.escrow_funded = True
-                self.status = ProjectStatus.FUNDED
-            elif self.is_fully_signed and self.status == ProjectStatus.DRAFT:
+
+                if self.status in (ProjectStatus.DRAFT, ProjectStatus.SIGNED, ProjectStatus.FUNDED):
+                    self.status = ProjectStatus.FUNDED
+
+            elif self.signature_is_satisfied and self.status == ProjectStatus.DRAFT:
                 self.status = ProjectStatus.SIGNED
+
         else:
-            # DIRECT flow: use signature → SIGNED only
-            if self.is_fully_signed and self.status == ProjectStatus.DRAFT:
+            if self.signature_is_satisfied and self.status == ProjectStatus.DRAFT:
                 self.status = ProjectStatus.SIGNED
 
         super().save(*args, **kwargs)
+
+class AgreementPDFVersion(models.Model):
+    KIND_PREVIEW = "preview"
+    KIND_FINAL = "final"
+    KIND_EXECUTED = "executed"
+
+    KIND_CHOICES = (
+        (KIND_PREVIEW, "Preview"),
+        (KIND_FINAL, "Final"),
+        (KIND_EXECUTED, "Executed"),
+    )
+
+    agreement = models.ForeignKey(
+        "projects.Agreement",
+        on_delete=models.CASCADE,
+        related_name="pdf_versions",
+        db_index=True,
+    )
+
+    version_number = models.PositiveIntegerField(db_index=True)
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES, default=KIND_FINAL, db_index=True)
+
+    file = models.FileField(upload_to="agreements/pdf_versions/", null=True, blank=True)
+
+    # optional but highly recommended for audit
+    sha256 = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    # signature snapshot (optional, but makes it courtroom-clean)
+    signed_by_contractor = models.BooleanField(default=False)
+    signed_by_homeowner = models.BooleanField(default=False)
+    contractor_signature_name = models.CharField(max_length=255, blank=True, default="")
+    homeowner_signature_name = models.CharField(max_length=255, blank=True, default="")
+    contractor_signed_at = models.DateTimeField(null=True, blank=True)
+    homeowner_signed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        unique_together = (("agreement", "version_number"),)
+
+    def __str__(self):
+        return f"AgreementPDFVersion(agreement={self.agreement_id}, v{self.version_number}, kind={self.kind})"
 
 
 class AgreementFundingLink(models.Model):
@@ -579,7 +774,6 @@ class Milestone(models.Model):
     completed = models.BooleanField(default=False)
     completed_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
-    # ✅ NEW: Link a rework milestone back to the original disputed milestone
     rework_origin_milestone_id = models.IntegerField(
         null=True,
         blank=True,
@@ -587,7 +781,6 @@ class Milestone(models.Model):
         help_text="Original milestone id that this rework milestone corrects (the milestone referenced by the dispute).",
     )
 
-    # ✅ NEW: idempotent linkage (one invoice per milestone)
     invoice = models.OneToOneField(
         "projects.Invoice",
         null=True,
@@ -681,7 +874,6 @@ class Invoice(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     approved_at = models.DateTimeField(null=True, blank=True)
 
-    # ✅ NEW: Public magic token for homeowner invoice access
     public_token = models.UUIDField(
         default=uuid.uuid4,
         unique=True,
@@ -690,17 +882,13 @@ class Invoice(models.Model):
         help_text="Public magic token for homeowner invoice access",
     )
 
-    # ✅ PDF storage for invoices (views already expect invoice.pdf_file)
     pdf_file = models.FileField(upload_to="invoices/pdf/", null=True, blank=True)
 
-    # -----------------------------
-    # ESCROW fields (existing)
-    # -----------------------------
     escrow_released = models.BooleanField(default=False)
     escrow_released_at = models.DateTimeField(null=True, blank=True)
     stripe_transfer_id = models.CharField(max_length=255, blank=True)
+    stripe_payment_intent_id = models.CharField(max_length=255, blank=True, null=True, db_index=True)
 
-    # ✅ Contractor audit trail (tax reporting)
     platform_fee_cents = models.PositiveIntegerField(default=0)
     payout_cents = models.PositiveIntegerField(default=0)
 
@@ -714,14 +902,10 @@ class Invoice(models.Model):
     disputed_at = models.DateTimeField(null=True, blank=True)
     marked_complete_at = models.DateTimeField(null=True, blank=True)
 
-    # ✅ Email delivery tracking (Postmark invoice notifications)
     email_sent_at = models.DateTimeField(null=True, blank=True)
     email_message_id = models.CharField(max_length=255, blank=True)
     last_email_error = models.TextField(blank=True)
 
-    # ------------------------------------------------------------------
-    # Milestone snapshot fields (frozen at invoicing time)
-    # ------------------------------------------------------------------
     milestone_id_snapshot = models.IntegerField(null=True, blank=True, db_index=True)
     milestone_title_snapshot = models.CharField(max_length=255, blank=True)
     milestone_description_snapshot = models.TextField(blank=True)
@@ -729,9 +913,6 @@ class Invoice(models.Model):
     milestone_completion_notes = models.TextField(blank=True)
     milestone_attachments_snapshot = models.JSONField(default=list, blank=True)
 
-    # ------------------------------------------------------------------
-    # ✅ NEW: DIRECT PAY (Subcontractor) Stripe fields
-    # ------------------------------------------------------------------
     direct_pay_checkout_session_id = models.CharField(max_length=255, blank=True, default="")
     direct_pay_payment_intent_id = models.CharField(max_length=255, blank=True, default="")
     direct_pay_checkout_url = models.URLField(blank=True, default="")
@@ -765,7 +946,6 @@ class Invoice(models.Model):
 
     @property
     def is_direct_pay(self) -> bool:
-        # Invoice inherits mode from agreement
         return getattr(self.agreement, "payment_mode", "") == AgreementPaymentMode.DIRECT
 
     @property
@@ -827,12 +1007,12 @@ class AgreementAmendment(models.Model):
 class ContractorSubAccount(models.Model):
     ROLE_EMPLOYEE_READONLY = "employee_readonly"
     ROLE_EMPLOYEE_MILESTONES = "employee_milestones"
-    ROLE_EMPLOYEE_SUPERVISOR = "employee_supervisor"  # ✅ NEW
+    ROLE_EMPLOYEE_SUPERVISOR = "employee_supervisor"
 
     ROLE_CHOICES = (
         (ROLE_EMPLOYEE_READONLY, "Read-only employee"),
         (ROLE_EMPLOYEE_MILESTONES, "Milestones employee"),
-        (ROLE_EMPLOYEE_SUPERVISOR, "Supervisor / Foreman"),  # ✅ NEW
+        (ROLE_EMPLOYEE_SUPERVISOR, "Supervisor / Foreman"),
     )
 
     parent_contractor = models.ForeignKey(
@@ -867,10 +1047,6 @@ class ContractorSubAccount(models.Model):
     def __str__(self) -> str:
         return f"{self.display_name} ({self.get_role_display()}) for {self.parent_contractor}"
 
-
-# ------------------------------------------------------------------
-# ✅ NEW: Real Employee Profile (DB fields)
-# ------------------------------------------------------------------
 
 def employee_profile_upload_to(instance, filename: str) -> str:
     sid = getattr(instance, "subaccount_id", "unknown")
@@ -921,9 +1097,6 @@ class EmployeeProfile(models.Model):
 
 
 class AgreementAssignment(models.Model):
-    """
-    Assign an entire Agreement to a ContractorSubAccount.
-    """
     agreement = models.ForeignKey(
         "projects.Agreement",
         on_delete=models.CASCADE,
@@ -944,9 +1117,6 @@ class AgreementAssignment(models.Model):
 
 
 class MilestoneAssignment(models.Model):
-    """
-    Explicitly assign ONE milestone to ONE ContractorSubAccount.
-    """
     milestone = models.OneToOneField(
         "projects.Milestone",
         on_delete=models.CASCADE,
@@ -964,12 +1134,11 @@ class MilestoneAssignment(models.Model):
 
 
 # ensure AgreementAttachment is registered
-from .models_attachments import AgreementAttachment  # noqa: E402,F401
+from .models_attachments import AgreementAttachment, ExpenseRequestAttachment  # noqa: E402,F401
 from .models_schedule import EmployeeWorkSchedule, EmployeeScheduleException  # noqa: E402,F401
-
-# ✅ ensure DisputeAIArtifact is registered (Step 3 persistence)
 from .models_ai_artifacts import DisputeAIArtifact  # noqa: E402,F401
-
 from .models_ai_entitlements import ContractorAIEntitlement  # noqa: E402,F401
 from .models_ai_purchases import DisputeAIPurchase  # noqa: E402,F401
 from .models_billing import ContractorBillingProfile  # noqa: F401
+from .models_expense_request import ExpenseRequest  # noqa: E402,F401
+from .models_templates import ProjectTemplate, ProjectTemplateMilestone  # noqa: E402,F401
