@@ -1,11 +1,99 @@
 # backend/projects/services/mailer.py
 
-from django.core.mail import EmailMessage, EmailMultiAlternatives
+from __future__ import annotations
+
+import json
+from urllib import request as urlrequest
+from urllib.error import HTTPError, URLError
+
 from django.conf import settings
+from django.core.mail import EmailMessage, EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.utils.timezone import now
 
 DEFAULT_FROM = getattr(settings, "DEFAULT_FROM_EMAIL", "info@myhomebro.com")
+POSTMARK_SERVER_TOKEN = getattr(settings, "POSTMARK_SERVER_TOKEN", "") or ""
+POSTMARK_MESSAGE_STREAM = getattr(settings, "POSTMARK_MESSAGE_STREAM", "outbound") or "outbound"
+
+POSTMARK_AGREEMENT_INVITE_TEMPLATE = (
+    getattr(settings, "POSTMARK_AGREEMENT_INVITE_TEMPLATE", "agreement-invite") or "agreement-invite"
+)
+POSTMARK_ESCROW_FUNDING_TEMPLATE = (
+    getattr(settings, "POSTMARK_ESCROW_FUNDING_TEMPLATE", "escrow-funding") or "escrow-funding"
+)
+POSTMARK_SIGNED_AGREEMENT_TEMPLATE = (
+    getattr(settings, "POSTMARK_SIGNED_AGREEMENT_TEMPLATE", "signed-agreement") or "signed-agreement"
+)
+
+
+def _site_url() -> str:
+    return (getattr(settings, "MHB_SITE_URL", "") or "").rstrip("/")
+
+
+def _public_logo_url() -> str | None:
+    return getattr(settings, "PUBLIC_LOGO_URL", None)
+
+
+def _postmark_enabled() -> bool:
+    return bool(POSTMARK_SERVER_TOKEN)
+
+
+def _postmark_headers() -> dict[str, str]:
+    return {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "X-Postmark-Server-Token": POSTMARK_SERVER_TOKEN,
+    }
+
+
+def _postmark_request(payload: dict) -> dict:
+    """
+    Send a raw request to Postmark using stdlib urllib so no extra dependency is required.
+    Raises on HTTP/network failure.
+    """
+    req = urlrequest.Request(
+        url="https://api.postmarkapp.com/email/withTemplate",
+        data=json.dumps(payload).encode("utf-8"),
+        headers=_postmark_headers(),
+        method="POST",
+    )
+    with urlrequest.urlopen(req, timeout=20) as resp:
+        body = resp.read().decode("utf-8") or "{}"
+        return json.loads(body)
+
+
+def send_postmark_template_email(
+    *,
+    to_email: str | list[str],
+    template_alias: str,
+    template_model: dict,
+    tag: str | None = None,
+) -> dict:
+    """
+    Sends a Postmark template email.
+    """
+    if not _postmark_enabled():
+        raise RuntimeError("POSTMARK_SERVER_TOKEN is not configured.")
+
+    if isinstance(to_email, (list, tuple)):
+        to_value = ",".join([str(x).strip() for x in to_email if str(x).strip()])
+    else:
+        to_value = str(to_email or "").strip()
+
+    if not to_value:
+        raise ValueError("to_email is required.")
+
+    payload = {
+        "From": DEFAULT_FROM,
+        "To": to_value,
+        "TemplateAlias": template_alias,
+        "TemplateModel": template_model or {},
+        "MessageStream": POSTMARK_MESSAGE_STREAM,
+    }
+    if tag:
+        payload["Tag"] = tag
+
+    return _postmark_request(payload)
 
 
 def _attach_agreement_pdf(msg, agreement) -> bool:
@@ -13,7 +101,6 @@ def _attach_agreement_pdf(msg, agreement) -> bool:
     Try to attach the best available final PDF file.
     Returns True if an attachment was added.
     """
-    # Prefer pdf_file if present (your newer system)
     pdf_file = getattr(agreement, "pdf_file", None)
     if pdf_file and getattr(pdf_file, "name", ""):
         try:
@@ -30,7 +117,6 @@ def _attach_agreement_pdf(msg, agreement) -> bool:
         except Exception:
             pass
 
-    # Fallback to signed_pdf if you still have it (legacy)
     signed_pdf = getattr(agreement, "signed_pdf", None)
     if signed_pdf and getattr(signed_pdf, "name", ""):
         try:
@@ -59,6 +145,7 @@ def email_signed_agreement(
 ) -> bool:
     """
     Emails the latest signed PDF to contractor + homeowner.
+    Keeps Django email delivery because attachments are already working here.
     """
     to_addrs = []
 
@@ -85,10 +172,30 @@ def email_signed_agreement(
     return True
 
 
+def _render_signing_invite_fallback(
+    *,
+    homeowner_email: str,
+    subject: str,
+    text_body: str,
+    html_template: str,
+    context: dict,
+) -> bool:
+    html_body = render_to_string(html_template, context)
+    msg = EmailMultiAlternatives(
+        subject=subject,
+        body=text_body,
+        from_email=DEFAULT_FROM,
+        to=[homeowner_email],
+    )
+    msg.attach_alternative(html_body, "text/html")
+    msg.send(fail_silently=False)
+    return True
+
+
 def email_signing_invite(agreement, *, sign_url: str) -> bool:
     """
     Sends an HTML 'Review & Sign Agreement' email to the homeowner.
-    Used ONLY when a signature is still required.
+    Uses Postmark template first, then falls back to Django HTML rendering.
     """
     homeowner = getattr(agreement, "homeowner", None)
     homeowner_email = getattr(homeowner, "email", None)
@@ -103,30 +210,178 @@ def email_signing_invite(agreement, *, sign_url: str) -> bool:
         or f"Agreement #{agreement.id}"
     )
 
-    ctx = {
-        "homeowner_name": getattr(homeowner, "full_name", None)
-        or getattr(agreement, "homeowner_name", None)
-        or "Homeowner",
-        "contractor_name": getattr(contractor, "business_name", None)
+    contractor_name = (
+        getattr(contractor, "business_name", None)
         or getattr(contractor, "full_name", None)
-        or "Your contractor",
+        or "Your contractor"
+    )
+
+    homeowner_name = (
+        getattr(homeowner, "full_name", None)
+        or getattr(agreement, "homeowner_name", None)
+        or "Homeowner"
+    )
+
+    ctx = {
+        "homeowner_name": homeowner_name,
+        "contractor_name": contractor_name,
         "project_title": project_title,
         "link": sign_url,
         "year": now().year,
-        "site_logo_url": getattr(settings, "PUBLIC_LOGO_URL", None),
+        "site_logo_url": _public_logo_url(),
     }
 
     subject = f"Agreement for {project_title} — Signature Requested"
 
     text_body = (
-        f"Hello {ctx['homeowner_name']},\n\n"
+        f"Hello {homeowner_name},\n\n"
         f"Your contractor has prepared an agreement for your project '{project_title}'.\n\n"
         f"Review and sign here:\n{sign_url}\n\n"
         "If you did not request this, you can ignore this message.\n\n"
         "— MyHomeBro"
     )
 
-    html_body = render_to_string("projects/new_agreement.html", ctx)
+    if _postmark_enabled():
+        try:
+            send_postmark_template_email(
+                to_email=homeowner_email,
+                template_alias=POSTMARK_AGREEMENT_INVITE_TEMPLATE,
+                template_model=ctx,
+                tag="agreement-invite",
+            )
+            return True
+        except (HTTPError, URLError, RuntimeError, ValueError, Exception):
+            pass
+
+    # Fallback
+    return _render_signing_invite_fallback(
+        homeowner_email=homeowner_email,
+        subject=subject,
+        text_body=text_body,
+        html_template="projects/new_agreement.html",
+        context=ctx,
+    )
+
+
+def email_escrow_funding_request(
+    agreement,
+    *,
+    funding_url: str,
+) -> bool:
+    """
+    Sends an escrow funding request to the homeowner.
+    Uses Postmark first, falls back to local HTML rendering.
+    """
+    homeowner = getattr(agreement, "homeowner", None)
+    homeowner_email = getattr(homeowner, "email", None)
+    if not homeowner or not homeowner_email:
+        return False
+
+    contractor = getattr(agreement, "contractor", None)
+
+    project_title = (
+        getattr(agreement, "project_title", None)
+        or getattr(getattr(agreement, "project", None), "title", None)
+        or f"Agreement #{agreement.id}"
+    )
+
+    contractor_name = (
+        getattr(contractor, "business_name", None)
+        or getattr(contractor, "full_name", None)
+        or "Your contractor"
+    )
+
+    homeowner_name = (
+        getattr(homeowner, "full_name", None)
+        or getattr(agreement, "homeowner_name", None)
+        or "Homeowner"
+    )
+
+    ctx = {
+        "homeowner_name": homeowner_name,
+        "contractor_name": contractor_name,
+        "project_title": project_title,
+        "funding_url": funding_url,
+        "year": now().year,
+        "site_logo_url": _public_logo_url(),
+    }
+
+    subject = f"Fund Escrow for {project_title}"
+
+    text_body = (
+        f"Hello {homeowner_name},\n\n"
+        f"Your agreement for '{project_title}' is ready for escrow funding.\n\n"
+        f"Review and fund escrow here:\n{funding_url}\n\n"
+        "If you did not request this, you can ignore this message.\n\n"
+        "— MyHomeBro"
+    )
+
+    if _postmark_enabled():
+        try:
+            send_postmark_template_email(
+                to_email=homeowner_email,
+                template_alias=POSTMARK_ESCROW_FUNDING_TEMPLATE,
+                template_model=ctx,
+                tag="escrow-funding",
+            )
+            return True
+        except (HTTPError, URLError, RuntimeError, ValueError, Exception):
+            pass
+
+    logo_url = _public_logo_url()
+    logo_html = (
+        f'<div style="text-align:center;margin:0 0 14px 0;">'
+        f'<img src="{logo_url}" alt="MyHomeBro" style="height:40px;max-width:200px;" />'
+        f"</div>"
+        if logo_url
+        else '<div style="text-align:center;font-weight:700;font-size:18px;margin:0 0 14px 0;">MyHomeBro</div>'
+    )
+
+    html_body = f"""
+<!doctype html>
+<html>
+  <body style="margin:0;padding:0;background:#f6f7fb;font-family:Arial,Helvetica,sans-serif;">
+    <div style="max-width:640px;margin:0 auto;padding:28px;">
+      <div style="background:#ffffff;border:1px solid #e6e8ef;border-radius:14px;padding:26px;">
+        {logo_html}
+
+        <h1 style="margin:0 0 10px 0;font-size:24px;line-height:1.2;color:#111827;text-align:center;">
+          Escrow Funding Requested
+        </h1>
+
+        <p style="margin:0 0 18px 0;color:#374151;font-size:14px;line-height:1.6;">
+          Hello {homeowner_name},
+        </p>
+
+        <p style="margin:0 0 18px 0;color:#374151;font-size:14px;line-height:1.6;">
+          Your agreement for <b>{project_title}</b> is ready for escrow funding.
+          Once escrow is funded, the project can proceed under the agreement terms.
+        </p>
+
+        <div style="margin:20px 0;text-align:center;">
+          <a href="{funding_url}"
+             style="display:inline-block;background:#16a34a;color:#ffffff;text-decoration:none;
+                    padding:12px 18px;border-radius:999px;font-weight:700;font-size:14px;">
+            Review & Fund Escrow
+          </a>
+        </div>
+
+        <p style="margin:16px 0 6px 0;color:#6b7280;font-size:12px;line-height:1.6;">
+          If the button does not work, copy and paste this link into your browser:
+        </p>
+        <p style="margin:0;color:#2563eb;font-size:12px;word-break:break-all;">
+          {funding_url}
+        </p>
+
+        <div style="margin-top:18px;padding-top:14px;border-top:1px solid #eef0f6;color:#6b7280;font-size:12px;">
+          Contractor: {contractor_name}<br/>
+          Year: {now().year}
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
+"""
 
     msg = EmailMultiAlternatives(
         subject=subject,
@@ -191,7 +446,7 @@ def email_final_agreement_copy(
         "— MyHomeBro"
     )
 
-    logo_url = getattr(settings, "PUBLIC_LOGO_URL", None)
+    logo_url = _public_logo_url()
     logo_html = (
         f'<div style="text-align:center;margin:0 0 14px 0;">'
         f'<img src="{logo_url}" alt="MyHomeBro" style="height:40px;max-width:200px;" />'
@@ -259,12 +514,8 @@ def email_final_agreement_copy(
 
 
 # ---------------------------------------------------------------------
-# NEW: Expense Request Email (customer action email + attachment links)
+# Expense Request Email (customer action email + attachment links)
 # ---------------------------------------------------------------------
-
-def _site_url() -> str:
-    return (getattr(settings, "MHB_SITE_URL", "") or "").rstrip("/")
-
 
 def email_expense_request(
     expense,
@@ -283,8 +534,6 @@ def email_expense_request(
     - Pay via Stripe
     - Reject
     - Shows attachments as links
-
-    attachment_links items: {"name": "...", "url": "..."}
     """
     if not customer_email:
         return False
@@ -309,7 +558,7 @@ def email_expense_request(
         "— MyHomeBro"
     )
 
-    logo_url = getattr(settings, "PUBLIC_LOGO_URL", None)
+    logo_url = _public_logo_url()
     logo_html = (
         f'<div style="text-align:center;margin:0 0 14px 0;">'
         f'<img src="{logo_url}" alt="MyHomeBro" style="height:40px;max-width:200px;" />'

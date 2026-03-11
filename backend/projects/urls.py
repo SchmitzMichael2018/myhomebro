@@ -50,6 +50,9 @@ from .views.magic_invoice import (
 )
 from .views.magic_invoice_pdf import MagicInvoicePDFView
 
+from .views.public_intake import PublicIntakeView
+from .views.public_intake_start import PublicIntakeStartView
+
 from .views.contractor_me import ContractorMeView
 from .views.subaccounts import ContractorSubAccountViewSet, WhoAmIView
 
@@ -121,6 +124,7 @@ from .views.invoice_direct_pay import invoice_create_direct_pay_link
 from projects.api.ai_agreement_views import (
     ai_agreement_description,
     ai_suggest_milestones,
+    ai_draft_project,
 )
 
 # ✅ NEW: Void Agreement AI credit endpoint
@@ -137,6 +141,8 @@ from .views_template import (
 # ✅ NEW: Template recommendation endpoint
 from .views_template_recommend import TemplateRecommendView
 
+from .views.project_taxonomy import ProjectTypeViewSet, ProjectSubtypeViewSet
+
 app_name = "projects_api"
 
 router = DefaultRouter(trailing_slash="/?")
@@ -151,6 +157,8 @@ router.register(r"expense-requests", ExpenseRequestViewSet, basename="expense-re
 router.register(r"attachments", AgreementAttachmentViewSet, basename="attachments")
 router.register(r"subaccounts", ContractorSubAccountViewSet, basename="subaccounts")
 router.register(r"dispute-workorders", DisputeWorkOrderViewSet, basename="dispute-workorders")
+router.register(r"project-types", ProjectTypeViewSet, basename="project-types")
+router.register(r"project-subtypes", ProjectSubtypeViewSet, basename="project-subtypes")
 
 
 milestone_router = NestedDefaultRouter(
@@ -218,6 +226,7 @@ urlpatterns = [
     # ✅ Agreement AI (1 credit = 1 agreement)
     # -------------------------------------------------
     path("agreements/ai/description/", ai_agreement_description),
+    path("agreements/ai/draft/", ai_draft_project),
     path("agreements/<int:agreement_id>/ai/suggest-milestones/", ai_suggest_milestones),
 
     # ✅ NEW: Void Agreement AI credit (draft-only refund)
@@ -258,6 +267,12 @@ urlpatterns = [
     path("funding/public_fund/", PublicFundingInfoView.as_view()),
     path("funding/create_payment_intent/", CreateFundingPaymentIntentView.as_view()),
     path("funding/receipt/", FundingReceiptView.as_view()),
+
+    # -------------------------------------------------
+    # Public Intake (token-based, no auth)
+    # -------------------------------------------------
+    path("public-intake/", PublicIntakeView.as_view()),
+    path("public-intake/start/", PublicIntakeStartView.as_view()),
 
     # -------------------------------------------------
     # Owner → employee assignment

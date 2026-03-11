@@ -24,6 +24,7 @@ from projects.ai.agreement_description_writer import generate_or_improve_descrip
 from projects.ai.agreement_milestone_writer import suggest_scope_and_milestones
 from projects.models import Agreement
 from projects.services.ai_credits import consume_agreement_bundle_credit_if_needed
+from projects.services.ai.project_drafter import draft_project_structure
 
 
 def _ai_enabled() -> bool:
@@ -185,6 +186,88 @@ def ai_suggest_milestones(request, agreement_id: int):
         "milestones": out["milestones"],
         "questions": out.get("questions", []),
         "_model": out.get("_model"),
+        "agreement_ai_credit_consumed": True,
+        "charged_now": bool(charged_now),
+        **_ai_credits_payload(ai_credits),
+    }
+    return JsonResponse(payload, status=HTTP_200_OK)
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def ai_draft_project(request):
+    """
+    POST /api/projects/agreements/ai/draft/
+
+    Creates a smart Step 1 / Step 2 draft from:
+    - agreement_id (required; save draft first)
+    - project_title
+    - description
+    - optional requested type/subtype
+
+    Returns:
+      {
+        project_type,
+        project_subtype,
+        normalized_description,
+        suggested_template,
+        template_confidence,
+        template_score,
+        template_reason,
+        milestones,
+        clarifications,
+        pricing_summary,
+        estimated_days,
+        can_save_template
+      }
+    """
+    if not _ai_enabled():
+        return _deny("AI is disabled.", "AI_DISABLED")
+
+    contractor = _get_contractor_for_user(request.user)
+    if not contractor:
+        return _deny("Contractor only.", "CONTRACTOR_ONLY")
+
+    agreement_id = request.data.get("agreement_id") or request.data.get("agreement") or None
+    try:
+        agreement_id = int(agreement_id) if agreement_id is not None else 0
+    except Exception:
+        agreement_id = 0
+
+    if not agreement_id:
+        return _deny("Save draft first to use AI.", "AGREEMENT_REQUIRED")
+
+    agreement = _get_agreement_or_404(agreement_id)
+    if not agreement:
+        return _deny("Agreement not found.", "AGREEMENT_NOT_FOUND", status=HTTP_404_NOT_FOUND)
+
+    if agreement.contractor_id and agreement.contractor_id != contractor.id:
+        return _deny("Not your agreement.", "FORBIDDEN")
+
+    try:
+        charged_now, ai_credits = _charge_once(contractor, agreement)
+    except ValueError as e:
+        msg = str(e) or "AI not available."
+        if "agreement_id is required" in msg:
+            return _deny("Save draft first to use AI.", "AGREEMENT_REQUIRED")
+        if "No AI credits remaining" in msg:
+            return _deny("No Agreement AI credits remaining.", "AI_CREDITS_EXHAUSTED")
+        return _deny(msg, "AI_ERROR")
+
+    try:
+        result = draft_project_structure(
+            agreement=agreement,
+            contractor=contractor,
+            project_title=request.data.get("project_title") or "",
+            description=request.data.get("description") or request.data.get("current_description") or "",
+            requested_type=request.data.get("project_type") or "",
+            requested_subtype=request.data.get("project_subtype") or "",
+        )
+    except Exception as e:
+        return JsonResponse({"detail": str(e)}, status=HTTP_400_BAD_REQUEST)
+
+    payload = {
+        "detail": "OK",
+        **result,
         "agreement_ai_credit_consumed": True,
         "charged_now": bool(charged_now),
         **_ai_credits_payload(ai_credits),

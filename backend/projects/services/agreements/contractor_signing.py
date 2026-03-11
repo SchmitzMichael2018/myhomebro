@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 from typing import Optional, Dict, Any
 
 from django.core.files.base import ContentFile
@@ -11,6 +12,8 @@ from projects.models import Agreement
 from projects.services.mailer import email_signing_invite
 from projects.services.sms import sms_link_to_parties
 from projects.services.agreements.public_sign import build_public_sign_url
+
+logger = logging.getLogger(__name__)
 
 
 def send_signature_request_to_homeowner(ag: Agreement) -> Dict[str, Any]:
@@ -24,8 +27,7 @@ def send_signature_request_to_homeowner(ag: Agreement) -> Dict[str, Any]:
     try:
         email_signing_invite(ag, sign_url=sign_url)
     except Exception:
-        # best-effort
-        pass
+        logger.exception("Failed to send signing invite email for agreement %s", ag.pk)
 
     try:
         sms_link_to_parties(
@@ -34,7 +36,7 @@ def send_signature_request_to_homeowner(ag: Agreement) -> Dict[str, Any]:
             note="Please review and sign your agreement.",
         )
     except Exception:
-        pass
+        logger.exception("Failed to send signing invite SMS for agreement %s", ag.pk)
 
     return {"ok": True, "sign_url": sign_url}
 
@@ -79,7 +81,6 @@ def apply_contractor_signature(
 
 
 def unsign_contractor(ag: Agreement) -> Agreement:
-    # Only allowed if not fully signed; caller should enforce.
     ag.signed_by_contractor = False
     ag.signed_at_contractor = None
     if hasattr(ag, "contractor_signature_name"):

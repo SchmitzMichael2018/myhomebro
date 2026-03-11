@@ -56,6 +56,12 @@ except Exception:  # pragma: no cover
     ProjectTemplate = None  # type: ignore
     ProjectTemplateMilestone = None  # type: ignore
 
+# ✅ NEW: Project Intake model (guarded)
+try:
+    from .models_project_intake import ProjectIntake  # type: ignore
+except Exception:  # pragma: no cover
+    ProjectIntake = None  # type: ignore
+
 # Optional services used by admin actions (guarded)
 try:
     from projects.services.mailer import email_signed_agreement  # type: ignore  # pragma: no cover
@@ -126,6 +132,145 @@ if Homeowner is not None:
         search_fields = ("full_name", "email", "phone_number", "street_address", "city", "state", "zip_code")
         list_filter = ("status",)
         readonly_fields = ("created_at", "updated_at")
+
+
+# ─────────────────────────────────────────────────────────────
+# ✅ NEW: Project Intake
+# ─────────────────────────────────────────────────────────────
+if ProjectIntake is not None:
+    @admin.register(ProjectIntake)
+    class ProjectIntakeAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "customer_name",
+            "customer_email",
+            "initiated_by",
+            "status",
+            "homeowner",
+            "agreement",
+            "same_as_customer_address",
+            "created_at",
+            "updated_at",
+        )
+        list_filter = (
+            "initiated_by",
+            "status",
+            "same_as_customer_address",
+            "created_at",
+            "updated_at",
+        )
+        search_fields = (
+            "customer_name",
+            "customer_email",
+            "customer_phone",
+            "accomplishment_text",
+            "ai_project_title",
+            "ai_project_type",
+            "ai_project_subtype",
+            "homeowner__full_name",
+            "homeowner__email",
+        )
+        readonly_fields = (
+            "submitted_at",
+            "analyzed_at",
+            "converted_at",
+            "created_at",
+            "updated_at",
+        )
+
+        fieldsets = (
+            (
+                "Workflow",
+                {
+                    "fields": (
+                        "contractor",
+                        "homeowner",
+                        "agreement",
+                        "initiated_by",
+                        "status",
+                    )
+                },
+            ),
+            (
+                "Customer Information",
+                {
+                    "fields": (
+                        "customer_name",
+                        "customer_email",
+                        "customer_phone",
+                    )
+                },
+            ),
+            (
+                "Customer Address",
+                {
+                    "fields": (
+                        "customer_address_line1",
+                        "customer_address_line2",
+                        "customer_city",
+                        "customer_state",
+                        "customer_postal_code",
+                    )
+                },
+            ),
+            (
+                "Project Address",
+                {
+                    "fields": (
+                        "same_as_customer_address",
+                        "project_address_line1",
+                        "project_address_line2",
+                        "project_city",
+                        "project_state",
+                        "project_postal_code",
+                    )
+                },
+            ),
+            (
+                "Intake Request",
+                {
+                    "fields": (
+                        "accomplishment_text",
+                    )
+                },
+            ),
+            (
+                "AI Recommendation",
+                {
+                    "fields": (
+                        "ai_project_title",
+                        "ai_project_type",
+                        "ai_project_subtype",
+                        "ai_description",
+                        "ai_recommended_template_id",
+                        "ai_recommendation_confidence",
+                        "ai_recommendation_reason",
+                    )
+                },
+            ),
+            (
+                "AI Generated Structure",
+                {
+                    "fields": (
+                        "ai_milestones",
+                        "ai_clarification_questions",
+                        "ai_analysis_payload",
+                    )
+                },
+            ),
+            (
+                "Timestamps",
+                {
+                    "fields": (
+                        "submitted_at",
+                        "analyzed_at",
+                        "converted_at",
+                        "created_at",
+                        "updated_at",
+                    )
+                },
+            ),
+        )
 
 
 # ─────────────────────────────────────────────────────────────

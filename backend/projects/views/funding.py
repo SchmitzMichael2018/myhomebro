@@ -20,7 +20,6 @@ from decimal import Decimal
 import logging
 
 from django.conf import settings
-from django.core.mail import send_mail
 from django.db.models import Sum
 from django.utils import timezone
 
@@ -31,6 +30,7 @@ from rest_framework.views import APIView
 import stripe
 
 from projects.models import Agreement, AgreementFundingLink, Milestone
+from projects.services.mailer import email_escrow_funding_request
 from payments.fees import compute_fee_summary, INTRO_DAYS  # ✅ pull intro days for UI consistency
 
 logger = logging.getLogger(__name__)
@@ -116,7 +116,6 @@ def _pricing_start_date_for_contractor(contractor):
     user = getattr(contractor, "user", None)
     joined_at = getattr(user, "date_joined", None) if user else None
 
-    # Normalize to a date (compute_fee_summary accepts date or datetime, but we keep it consistent)
     candidates = []
     if created_at:
         candidates.append(created_at)
@@ -126,7 +125,6 @@ def _pricing_start_date_for_contractor(contractor):
     if not candidates:
         return timezone.now()
 
-    # We want the latest timestamp
     latest = max(candidates)
     return latest
 
@@ -185,29 +183,11 @@ def send_funding_link_for_agreement(
         base_url = request.build_absolute_uri("/").rstrip("/")
     public_fund_url = f"{base_url}/public-fund/{link.token}" if base_url else f"/public-fund/{link.token}"
 
-    project_title = agreement.project.title if agreement.project else "Your project"
-    homeowner_name = agreement.homeowner.full_name if agreement.homeowner else "Homeowner"
-
-    subject = "Escrow funding request for your project"
-    message = "\n".join(
-        [
-            f"Hello {homeowner_name},",
-            "",
-            "Your contractor is requesting escrow funding for:",
-            f"Project: {project_title}",
-            f"Amount due now: ${amount:.2f} {currency.upper()}",
-            "",
-            "To securely fund escrow, open the link below:",
-            public_fund_url,
-            "",
-            "— MyHomeBro",
-        ]
-    )
-
-    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", None)
     try:
-        if from_email:
-            send_mail(subject, message, from_email, [homeowner_email], fail_silently=False)
+        email_escrow_funding_request(
+            agreement,
+            funding_url=public_fund_url,
+        )
     except Exception:
         logger.exception("Failed sending escrow funding email for Agreement %s", agreement.id)
 

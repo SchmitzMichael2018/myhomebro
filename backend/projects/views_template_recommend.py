@@ -50,9 +50,12 @@ class TemplateRecommendView(APIView):
             return Response(
                 {
                     "recommended_template": None,
+                    "possible_match": None,
+                    "confidence": "none",
                     "score": 0,
                     "reason": "No templates available for this project type.",
                     "candidates": [],
+                    "detail": "No templates available for this project type.",
                 },
                 status=status.HTTP_200_OK,
             )
@@ -66,18 +69,41 @@ class TemplateRecommendView(APIView):
         )
 
         recommended_template = None
+        possible_match = None
+        confidence = "none"
+
         if result.template is not None:
-            recommended_template = ProjectTemplateListSerializer(
+            serialized = ProjectTemplateListSerializer(
                 result.template,
                 context={"request": request},
             ).data
 
+            if result.score >= 70:
+                recommended_template = serialized
+                confidence = "recommended"
+            elif result.score >= 35:
+                possible_match = serialized
+                confidence = "possible"
+            else:
+                confidence = "none"
+
+        detail = (
+            "Strong template recommendation found."
+            if confidence == "recommended"
+            else "Possible template match found."
+            if confidence == "possible"
+            else "No strong template recommendation."
+        )
+
         return Response(
             {
                 "recommended_template": recommended_template,
+                "possible_match": possible_match,
+                "confidence": confidence,
                 "score": result.score,
                 "reason": result.reason,
                 "candidates": result.candidates,
+                "detail": detail,
             },
             status=status.HTTP_200_OK,
         )
