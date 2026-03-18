@@ -552,6 +552,96 @@ def _signature_requirements(ag: Agreement) -> tuple[bool, bool]:
   return req_contr, req_cust
 
 
+def _clarification_is_answered(value) -> bool:
+  if value is False:
+    return True
+  if value == 0:
+    return True
+  if value is None:
+    return False
+  if isinstance(value, str):
+    return bool(value.strip())
+  if isinstance(value, (list, tuple, set)):
+    return len(value) > 0
+  if isinstance(value, dict):
+    return len(value) > 0
+  return True
+
+
+def _clarification_display_value(value) -> str:
+  if value is True:
+    return "Yes"
+  if value is False:
+    return "No"
+  if value is None:
+    return "Not provided"
+  if isinstance(value, (list, tuple, set)):
+    items = [str(x).strip() for x in value if str(x).strip()]
+    return ", ".join(items) if items else "Not provided"
+  if isinstance(value, dict):
+    try:
+      bits = []
+      for k, v in value.items():
+        ks = str(k).strip()
+        vs = str(v).strip()
+        if ks and vs:
+          bits.append(f"{ks}: {vs}")
+      return "; ".join(bits) if bits else "Not provided"
+    except Exception:
+      return "Not provided"
+  s = str(value).strip()
+  return s or "Not provided"
+
+
+def _normalized_clarification_rows(questions: list[dict], answers: dict) -> list[dict]:
+  q_list = questions if isinstance(questions, list) else []
+  a_map = answers if isinstance(answers, dict) else {}
+
+  question_map: dict[str, dict] = {}
+  ordered_keys: List[str] = []
+
+  for q in q_list:
+    if not isinstance(q, dict):
+      continue
+    key = str(q.get("key") or "").strip()
+    if not key:
+      continue
+    if key not in question_map:
+      ordered_keys.append(key)
+    question_map[key] = q
+
+  for key in a_map.keys():
+    s_key = str(key).strip()
+    if s_key and s_key not in question_map:
+      ordered_keys.append(s_key)
+
+  rows: List[dict] = []
+  for key in ordered_keys:
+    q = question_map.get(key, {})
+    label = str(q.get("label") or "").strip() or _pretty_key(key)
+    help_text = str(q.get("help") or "").strip()
+    required = bool(q.get("required", False))
+    value = a_map.get(key)
+    answered = _clarification_is_answered(value)
+
+    if not answered and not required:
+      # hide optional blanks to keep PDF clean
+      continue
+
+    rows.append({
+      "key": key,
+      "label": label or _pretty_key(key) or key,
+      "help": help_text,
+      "required": required,
+      "answered": answered,
+      "status_label": "Recommended" if required else "Optional",
+      "value_text": _clarification_display_value(value),
+    })
+
+  rows.sort(key=lambda r: (0 if r.get("answered") else 1, 0 if r.get("required") else 1, r.get("label", "").lower()))
+  return rows
+
+
 def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> bytes:
   from reportlab.lib.pagesizes import letter
   from reportlab.lib.units import inch
@@ -850,47 +940,61 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     story += [Paragraph("No milestones defined.", s_muted), Spacer(1, 12)]
 
   questions, answers = _ai_scope_payload(ag)
-  if questions or answers:
-    story.append(CondPageBreak(2.4 * inch))
-    story.append(Paragraph("Scope Clarifications (Optional)", s_h2))
+  clarification_rows = _normalized_clarification_rows(questions, answers)
+  if clarification_rows:
+    story.append(CondPageBreak(3.0 * inch))
+    story.append(Paragraph("Scope Clarifications", s_h2))
     story.append(Paragraph(
-      "The following clarifications are optional and help reduce misunderstandings about scope and responsibilities.",
+      "These clarifications summarize optional and recommended scope details captured during agreement setup. "
+      "They help reduce misunderstandings about responsibilities, materials, access, permits, selections, and other project assumptions.",
       s_small,
     ))
     story.append(Spacer(1, 6))
 
-    lines: List[str] = []
-    if isinstance(questions, list) and questions:
-      for q in questions:
-        if not isinstance(q, dict):
-          continue
-        key = str(q.get("key") or "").strip()
-        if not key:
-          continue
-        label = str(q.get("label") or "").strip() or _pretty_key(key)
+    clar_rows = [[
+      Paragraph("Clarification", s_table),
+      Paragraph("Response", s_table),
+      Paragraph("Status", s_table_center),
+    ]]
 
-        ans = ""
-        if isinstance(answers, dict):
-          ans_val = answers.get(key)
-          if ans_val is not None:
-            ans = str(ans_val).strip()
+    for row in clarification_rows:
+      label_html = f"<b>{_escape_html(row.get('label', ''))}</b>"
+      help_txt = row.get("help", "")
+      if help_txt:
+        label_html += f"<br/><font color='#6B7280'>{_escape_html(help_txt)}</font>"
 
-        if ans:
-          lines.append(f"<b>{label}:</b> {ans}")
+      response_html = _escape_html(row.get("value_text", "Not provided")).replace("\n", "<br/>")
+      status_html = row.get("status_label", "Optional")
 
-    if lines:
-      for ln in lines:
-        story.append(Paragraph(ln, s_just))
-      story.append(Spacer(1, 6))
-      story.append(Paragraph(
-        "<i>Where these Scope Clarifications assign responsibility for permits or indicate that permits are not "
-        "applicable, those clarifications control.</i>",
-        s_small,
-      ))
-      story.append(Spacer(1, 12))
-    else:
-      story.append(Paragraph("No scope clarifications provided.", s_muted))
-      story.append(Spacer(1, 12))
+      clar_rows.append([
+        Paragraph(label_html, s_table_sub),
+        Paragraph(response_html, s_table_sub),
+        Paragraph(status_html, s_table_center),
+      ])
+
+    clar_c1 = 2.35 * inch
+    clar_c3 = 1.00 * inch
+    clar_c2 = doc.width - (clar_c1 + clar_c3)
+
+    clar_tbl = Table(clar_rows, colWidths=[clar_c1, clar_c2, clar_c3], repeatRows=1)
+    clar_tbl.setStyle(TableStyle([
+      ("BACKGROUND", (0, 0), (-1, 0), "#F3F4F6"),
+      ("GRID", (0, 0), (-1, -1), 0.25, "#E5E7EB"),
+      ("VALIGN", (0, 0), (-1, -1), "TOP"),
+      ("ALIGN", (2, 1), (2, -1), "CENTER"),
+      ("TOPPADDING", (0, 0), (-1, -1), 4),
+      ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+      ("LEFTPADDING", (0, 0), (-1, -1), 6),
+      ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.append(clar_tbl)
+    story.append(Spacer(1, 6))
+    story.append(Paragraph(
+      "<i>Where these Scope Clarifications assign responsibility for permits, materials, selections, site access, "
+      "or other project logistics, those clarifications supplement the scope of work and help interpret the parties’ expectations.</i>",
+      s_small,
+    ))
+    story.append(Spacer(1, 12))
 
   story.append(Paragraph("Warranty", s_h2))
   wtype = (_s(getattr(ag, "warranty_type", ""))).strip().lower()

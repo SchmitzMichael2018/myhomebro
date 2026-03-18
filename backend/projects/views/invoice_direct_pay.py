@@ -1,7 +1,5 @@
 # backend/projects/views/invoice_direct_pay.py
-# v2026-03-03 — Option A hardening: Agreement is source-of-truth for customer
-# - Requires agreement.homeowner (customer) before creating checkout
-# - Syncs project.homeowner from agreement.homeowner to prevent stale project customer leaks
+# v2026-03-15 — add passive pricing observation hook for direct-pay path
 
 from __future__ import annotations
 
@@ -14,6 +12,7 @@ from rest_framework.exceptions import PermissionDenied
 from projects.models import Invoice
 from projects.services.direct_pay import create_direct_pay_checkout_for_invoice
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
+from projects.services.pricing_observations import record_pricing_observation_for_invoice
 
 
 def _agreement_has_active_dispute(agreement) -> bool:
@@ -25,13 +24,21 @@ def _agreement_has_active_dispute(agreement) -> bool:
         return False
 
 
-def _safe_recompute_completion(invoice: Invoice) -> None:
+def _safe_post_payment_tasks(invoice: Invoice) -> None:
+    """
+    Safe passive-learning + completion hook.
+    Never blocks direct pay link creation.
+    """
+    try:
+        record_pricing_observation_for_invoice(invoice)
+    except Exception:
+        pass
+
     try:
         ag_id = getattr(invoice, "agreement_id", None)
         if ag_id:
             recompute_and_apply_agreement_completion(int(ag_id))
     except Exception:
-        # never block link creation
         return
 
 
@@ -126,11 +133,11 @@ def invoice_create_direct_pay_link(request, pk: int):
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Safety: if invoice became paid somehow, recompute completion
+    # Safety: if invoice became paid somehow, capture pricing + recompute completion
     try:
         invoice.refresh_from_db()
         if str(getattr(invoice, "status", "") or "").lower() == "paid" or getattr(invoice, "direct_pay_paid_at", None):
-            _safe_recompute_completion(invoice)
+            _safe_post_payment_tasks(invoice)
     except Exception:
         pass
 

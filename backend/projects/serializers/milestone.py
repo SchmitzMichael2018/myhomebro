@@ -1,4 +1,3 @@
-# backend/projects/serializers/milestone.py
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -75,10 +74,10 @@ class MilestoneSerializer(serializers.ModelSerializer):
       - agreement_is_locked (bool)
       - agreement_is_completed (bool)
 
-    ✅ NEW (completion gating helpers for frontend):
+    Completion gating helpers:
       - agreement_payment_mode ("escrow"|"direct")
       - agreement_escrow_funded (bool)
-      - agreement_signature_is_satisfied (bool)  # policy-aware
+      - agreement_signature_is_satisfied (bool)
 
     Rework / Dispute UX support:
       - is_rework
@@ -109,7 +108,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
     agreement_is_locked = serializers.SerializerMethodField()
     agreement_is_completed = serializers.SerializerMethodField()
 
-    # ✅ NEW: completion gating helpers
     agreement_payment_mode = serializers.SerializerMethodField()
     agreement_escrow_funded = serializers.SerializerMethodField()
     agreement_signature_is_satisfied = serializers.SerializerMethodField()
@@ -135,7 +133,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "agreement_status",
             "agreement_is_locked",
             "agreement_is_completed",
-            # ✅ NEW
             "agreement_payment_mode",
             "agreement_escrow_funded",
             "agreement_signature_is_satisfied",
@@ -254,7 +251,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
         except Exception:
             return False
 
-    # ✅ locking helpers
     def get_agreement_status(self, obj: Milestone) -> str:
         ag = self._get_agreement(obj)
         return (getattr(ag, "status", "") or "").strip() if ag else ""
@@ -277,7 +273,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
         except Exception:
             return False
 
-    # ✅ NEW: completion gating helpers
     def get_agreement_payment_mode(self, obj: Milestone) -> str:
         ag = self._get_agreement(obj)
         mode = (getattr(ag, "payment_mode", "") or "escrow").strip().lower() if ag else "escrow"
@@ -287,7 +282,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
         ag = self._get_agreement(obj)
         if not ag:
             return False
-        # If direct pay, escrow isn't relevant; return False (frontend should ignore for direct).
         mode = (getattr(ag, "payment_mode", "") or "escrow").strip().lower()
         if mode == "direct":
             return False
@@ -297,7 +291,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
         ag = self._get_agreement(obj)
         if not ag:
             return False
-        # Prefer policy-aware property if present
         try:
             return bool(getattr(ag, "signature_is_satisfied"))
         except Exception:
@@ -409,8 +402,8 @@ class MilestoneSerializer(serializers.ModelSerializer):
         end = self._as_date(end_raw)
 
         if agreement:
-            ag_start = self._as_date(getattr(agreement, "start_date", None))
-            ag_end = self._as_date(getattr(agreement, "end_date", None))
+            ag_start = self._as_date(getattr(agreement, "start", None))
+            ag_end = self._as_date(getattr(agreement, "end", None))
         else:
             ag_start = None
             ag_end = None
@@ -469,14 +462,12 @@ class MilestoneSerializer(serializers.ModelSerializer):
         data["is_rework"] = self.get_is_rework(instance)
         data["origin_milestone"] = self.get_origin_milestone(instance)
 
-        # client convenience alias
         data["end_date"] = data.get("completion_date")
 
         data["agreement_status"] = self.get_agreement_status(instance)
         data["agreement_is_locked"] = self.get_agreement_is_locked(instance)
         data["agreement_is_completed"] = self.get_agreement_is_completed(instance)
 
-        # ✅ NEW: completion gate helpers
         data["agreement_payment_mode"] = self.get_agreement_payment_mode(instance)
         data["agreement_escrow_funded"] = self.get_agreement_escrow_funded(instance)
         data["agreement_signature_is_satisfied"] = self.get_agreement_signature_is_satisfied(instance)

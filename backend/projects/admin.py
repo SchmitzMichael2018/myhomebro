@@ -49,12 +49,21 @@ try:
 except Exception:  # pragma: no cover
     DisputeAIArtifact = None  # type: ignore
 
-# ✅ NEW: Template models (guarded)
+# ✅ Template + pricing intelligence models (guarded)
 try:
-    from .models_templates import ProjectTemplate, ProjectTemplateMilestone  # type: ignore
+    from .models_templates import (  # <-- corrected import
+        ProjectTemplate,
+        ProjectTemplateMilestone,
+        MarketPricingBaseline,
+        PricingObservation,
+        PricingStatistic,
+    )
 except Exception:  # pragma: no cover
     ProjectTemplate = None  # type: ignore
     ProjectTemplateMilestone = None  # type: ignore
+    MarketPricingBaseline = None  # type: ignore
+    PricingObservation = None  # type: ignore
+    PricingStatistic = None  # type: ignore
 
 # ✅ NEW: Project Intake model (guarded)
 try:
@@ -83,7 +92,6 @@ if Skill is not None:
 
 # ─────────────────────────────────────────────────────────────
 # Contractor
-# Shows city/state if present on the model (your model now includes them).
 # ─────────────────────────────────────────────────────────────
 if Contractor is not None:
     @admin.register(Contractor)
@@ -91,10 +99,9 @@ if Contractor is not None:
         list_display = (
             "id",
             "business_name",
-            "name",          # property -> user.get_full_name or business_name
-            "email",         # property -> user.email
+            "name",
+            "email",
             "phone",
-            # show if present (admin ignores missing attrs gracefully via callable)
             "get_city",
             "get_state",
             "stripe_account_id",
@@ -135,7 +142,7 @@ if Homeowner is not None:
 
 
 # ─────────────────────────────────────────────────────────────
-# ✅ NEW: Project Intake
+# Project Intake
 # ─────────────────────────────────────────────────────────────
 if ProjectIntake is not None:
     @admin.register(ProjectIntake)
@@ -413,7 +420,7 @@ if AgreementAmendment is not None:
 
 
 # ─────────────────────────────────────────────────────────────
-# ✅ NEW: Project Templates
+# Project Templates
 # ─────────────────────────────────────────────────────────────
 if ProjectTemplate is not None and ProjectTemplateMilestone is not None:
 
@@ -424,10 +431,15 @@ if ProjectTemplate is not None and ProjectTemplateMilestone is not None:
             "sort_order",
             "title",
             "description",
+            "normalized_milestone_type",
             "recommended_days_from_start",
             "recommended_duration_days",
             "suggested_amount_percent",
+            "suggested_amount_low",
             "suggested_amount_fixed",
+            "suggested_amount_high",
+            "pricing_confidence",
+            "pricing_source_note",
             "materials_hint",
             "is_optional",
         )
@@ -522,12 +534,16 @@ if ProjectTemplate is not None and ProjectTemplateMilestone is not None:
             "template",
             "sort_order",
             "title",
-            "suggested_amount_percent",
+            "normalized_milestone_type",
+            "suggested_amount_low",
             "suggested_amount_fixed",
+            "suggested_amount_high",
+            "pricing_confidence",
             "is_optional",
         )
         list_filter = (
             "is_optional",
+            "pricing_confidence",
             "template__project_type",
             "template__is_system",
         )
@@ -535,17 +551,133 @@ if ProjectTemplate is not None and ProjectTemplateMilestone is not None:
             "title",
             "description",
             "materials_hint",
+            "normalized_milestone_type",
             "template__name",
         )
 
 
 # ─────────────────────────────────────────────────────────────
+# Market Pricing Baselines
+# ─────────────────────────────────────────────────────────────
+if MarketPricingBaseline is not None:
+    @admin.register(MarketPricingBaseline)
+    class MarketPricingBaselineAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "project_type",
+            "project_subtype",
+            "normalized_milestone_type",
+            "region_state",
+            "region_city",
+            "low_amount",
+            "median_amount",
+            "high_amount",
+            "typical_total_project_days",
+            "is_active",
+            "updated_at",
+        )
+        list_filter = (
+            "is_active",
+            "project_type",
+            "project_subtype",
+            "region_state",
+            "region_city",
+        )
+        search_fields = (
+            "project_type",
+            "project_subtype",
+            "normalized_milestone_type",
+            "region_state",
+            "region_city",
+            "source_note",
+        )
+        readonly_fields = ("created_at", "updated_at")
+
+
+# ─────────────────────────────────────────────────────────────
+# Pricing Observations
+# ─────────────────────────────────────────────────────────────
+if PricingObservation is not None:
+    @admin.register(PricingObservation)
+    class PricingObservationAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "contractor",
+            "agreement",
+            "normalized_milestone_type",
+            "project_type",
+            "project_subtype",
+            "amount",
+            "region_state",
+            "region_city",
+            "paid_at",
+        )
+        list_filter = (
+            "project_type",
+            "project_subtype",
+            "region_state",
+            "region_city",
+            "paid_at",
+        )
+        search_fields = (
+            "normalized_milestone_type",
+            "milestone_title_snapshot",
+            "milestone_description_snapshot",
+            "project_type",
+            "project_subtype",
+            "contractor__business_name",
+            "contractor__user__email",
+        )
+        readonly_fields = ("created_at",)
+
+
+# ─────────────────────────────────────────────────────────────
+# Pricing Statistics
+# ─────────────────────────────────────────────────────────────
+if PricingStatistic is not None:
+    @admin.register(PricingStatistic)
+    class PricingStatisticAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "scope",
+            "contractor",
+            "project_type",
+            "project_subtype",
+            "normalized_milestone_type",
+            "region_state",
+            "region_city",
+            "sample_size",
+            "low_amount",
+            "median_amount",
+            "high_amount",
+            "updated_at",
+        )
+        list_filter = (
+            "scope",
+            "project_type",
+            "project_subtype",
+            "region_state",
+            "region_city",
+        )
+        search_fields = (
+            "project_type",
+            "project_subtype",
+            "normalized_milestone_type",
+            "region_state",
+            "region_city",
+            "source_note",
+            "contractor__business_name",
+            "contractor__user__email",
+        )
+        readonly_fields = ("updated_at",)
+
+
+# ─────────────────────────────────────────────────────────────
 # Disputes (optional)
 # ─────────────────────────────────────────────────────────────
-if Disappear := Dispute is not None:  # keep linter quiet about unused name
+if Dispute is not None:
     @admin.register(Dispute)  # type: ignore[misc]
     class DisputeAdmin(admin.ModelAdmin):
-        """Minimal, schema-agnostic registration."""
         list_display = ("id", "obj_str")
 
         def obj_str(self, obj):
@@ -581,10 +713,8 @@ if AgreementAttachment is not None:
 
 
 # ─────────────────────────────────────────────────────────────
-# ✅ AI: Admin Controls (Entitlements + Artifacts)
+# AI: Admin Controls (Entitlements + Artifacts)
 # ─────────────────────────────────────────────────────────────
-
-# ---- Entitlement actions (only registered if model import works) ----
 if ContractorAIEntitlement is not None:
 
     @admin.action(description="Grant +1 free AI recommendation")
@@ -739,7 +869,6 @@ if ContractorAIEntitlement is not None:
                 return ""
 
 
-# ---- Artifact audit admin (only registered if model import works) ----
 if DisputeAIArtifact is not None:
 
     @admin.register(DisputeAIArtifact)

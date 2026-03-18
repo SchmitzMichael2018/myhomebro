@@ -3,13 +3,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
-from typing import Optional
+from typing import Optional, Any
 
 from django.db import transaction
 from django.utils import timezone
 
 from projects.models import Agreement, Contractor, Milestone
 from projects.models_templates import ProjectTemplate
+
+try:
+    from projects.models_ai_scope import AgreementAIScope
+except Exception:  # pragma: no cover
+    AgreementAIScope = None  # type: ignore
 
 
 @dataclass
@@ -151,16 +156,235 @@ def _build_milestone_amounts(template: ProjectTemplate, agreement_total: Decimal
     return [Decimal("0.00") for _ in rows]
 
 
+def _safe_scope_text(template: ProjectTemplate) -> str:
+    return (getattr(template, "default_scope", None) or getattr(template, "description", None) or "").strip()
+
+
+def _safe_question_list(template: ProjectTemplate) -> list[dict]:
+    raw = getattr(template, "default_clarifications", None) or []
+    if not isinstance(raw, list):
+        return []
+
+    out: list[dict] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+
+        key = str(item.get("key") or "").strip()
+        label = str(item.get("label") or "").strip()
+        qtype = str(item.get("type") or "text").strip() or "text"
+        required = bool(item.get("required", False))
+        help_text = "" if item.get("help") is None else str(item.get("help")).strip()
+        options_raw = item.get("options", [])
+        options = [str(x).strip() for x in options_raw if str(x).strip()] if isinstance(options_raw, list) else []
+
+        if not key:
+            continue
+
+        out.append(
+            {
+                "key": key,
+                "label": label or key.replace("_", " ").title(),
+                "type": qtype,
+                "required": required,
+                "help": help_text,
+                "options": options,
+            }
+        )
+    return out
+
+
+def _merge_questions_preserving_answers(existing_questions: list[Any], incoming_questions: list[Any]) -> list[dict]:
+    """
+    Keep existing order first, then append new keys.
+    This protects answers already stored against stable keys.
+    """
+    out: list[dict] = []
+    seen: set[str] = set()
+
+    for source in (existing_questions or [], incoming_questions or []):
+        if not isinstance(source, list):
+            continue
+        for item in source:
+            if not isinstance(item, dict):
+                continue
+            key = str(item.get("key") or "").strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            out.append(
+                {
+                    "key": key,
+                    "label": str(item.get("label") or key.replace("_", " ").title()).strip(),
+                    "type": str(item.get("type") or "text").strip() or "text",
+                    "required": bool(item.get("required", False)),
+                    "help": "" if item.get("help") is None else str(item.get("help")).strip(),
+                    "options": item.get("options", []) if isinstance(item.get("options", []), list) else [],
+                }
+            )
+    return out
+
+
+def _persist_selected_template(agreement: Agreement, template: ProjectTemplate) -> None:
+    """
+    Persist the applied template selection onto the agreement using the actual schema.
+    """
+    update_fields: list[str] = []
+
+    if hasattr(agreement, "selected_template"):
+        agreement.selected_template = template
+        update_fields.append("selected_template")
+
+    if hasattr(agreement, "selected_template_name_snapshot"):
+        agreement.selected_template_name_snapshot = template.name
+        update_fields.append("selected_template_name_snapshot")
+
+    if update_fields:
+        update_fields.append("updated_at")
+        agreement.save(update_fields=update_fields)
+
+
 def _copy_template_text_fields(agreement: Agreement, template: ProjectTemplate) -> None:
     """
-    Copy template defaults into agreement.
-    Your schema does not yet have a clarifications JSON field on Agreement,
-    so for now we copy description only.
+    Copy template scope/description into the agreement and persist clarification
+    questions into AgreementAIScope while preserving any existing answers.
     """
-    if template.description:
-        agreement.description = template.description
+    update_fields: list[str] = []
 
-    agreement.save(update_fields=["description", "updated_at"])
+    next_description = (template.description or "").strip()
+    if next_description:
+        agreement.description = next_description
+        update_fields.append("description")
+
+    if hasattr(agreement, "selected_template"):
+        agreement.selected_template = template
+        update_fields.append("selected_template")
+
+    if hasattr(agreement, "selected_template_name_snapshot"):
+        agreement.selected_template_name_snapshot = template.name
+        update_fields.append("selected_template_name_snapshot")
+
+    if update_fields:
+        update_fields.append("updated_at")
+        agreement.save(update_fields=update_fields)
+
+    if AgreementAIScope is None:
+        return
+
+    scope_obj, _created = AgreementAIScope.objects.get_or_create(agreement=agreement)
+
+    incoming_scope_text = _safe_scope_text(template)
+    incoming_questions = _safe_question_list(template)
+
+    if incoming_scope_text:
+        scope_obj.scope_text = incoming_scope_text
+
+    existing_questions = scope_obj.questions if isinstance(scope_obj.questions, list) else []
+    scope_obj.questions = _merge_questions_preserving_answers(existing_questions, incoming_questions)
+
+    existing_answers = scope_obj.answers if isinstance(scope_obj.answers, dict) else {}
+    scope_obj.answers = existing_answers  # preserve, do not wipe answers
+
+    scope_obj.save()
+
+
+def _extract_agreement_scope_text(agreement: Agreement) -> str:
+    try:
+        scope_obj = getattr(agreement, "ai_scope", None)
+        txt = getattr(scope_obj, "scope_text", None) if scope_obj else None
+        if txt and str(txt).strip():
+            return str(txt).strip()
+    except Exception:
+        pass
+    return (agreement.description or "").strip()
+
+
+def _extract_agreement_clarification_questions(agreement: Agreement) -> list[dict]:
+    try:
+        scope_obj = getattr(agreement, "ai_scope", None)
+        questions = getattr(scope_obj, "questions", None) if scope_obj else None
+        if isinstance(questions, list):
+            cleaned: list[dict] = []
+            for q in questions:
+                if not isinstance(q, dict):
+                    continue
+                key = str(q.get("key") or "").strip()
+                if not key:
+                    continue
+                cleaned.append(
+                    {
+                        "key": key,
+                        "label": str(q.get("label") or key.replace("_", " ").title()).strip(),
+                        "type": str(q.get("type") or "text").strip() or "text",
+                        "required": bool(q.get("required", False)),
+                        "help": "" if q.get("help") is None else str(q.get("help")).strip(),
+                        "options": q.get("options", []) if isinstance(q.get("options", []), list) else [],
+                    }
+                )
+            return cleaned
+    except Exception:
+        pass
+    return []
+
+
+def _template_row_suggested_amount(row, agreement_total: Decimal) -> Decimal:
+    if row.suggested_amount_fixed is not None:
+        return _safe_decimal(row.suggested_amount_fixed)
+
+    if row.suggested_amount_percent is not None and agreement_total > 0:
+        return (
+            agreement_total
+            * _safe_decimal(row.suggested_amount_percent)
+            / Decimal("100")
+        ).quantize(Decimal("0.01"))
+
+    return Decimal("0.00")
+
+
+def _coerce_positive_int(value) -> Optional[int]:
+    try:
+        if value in (None, ""):
+            return None
+        n = int(value)
+        return n if n > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _fallback_duration_days(row_start: date, due_date: date) -> int:
+    if due_date < row_start:
+        return 1
+    return max((due_date - row_start).days + 1, 1)
+
+
+def _resolve_row_schedule(
+    *,
+    agreement_start: date,
+    fallback_start: date,
+    fallback_due: date,
+    row,
+) -> tuple[date, date, timedelta, Optional[int], Optional[int]]:
+    """
+    Prefer row-level scheduling hints when present; otherwise fall back
+    to even distribution across agreement date range.
+    """
+    hinted_offset = _coerce_positive_int(getattr(row, "recommended_days_from_start", None))
+    hinted_duration = _coerce_positive_int(getattr(row, "recommended_duration_days", None))
+
+    if hinted_offset is not None:
+        row_start = agreement_start + timedelta(days=max(hinted_offset - 1, 0))
+    else:
+        row_start = fallback_start
+
+    if hinted_duration is not None:
+        due_date = row_start + timedelta(days=max(hinted_duration - 1, 0))
+        duration_days = hinted_duration
+    else:
+        due_date = fallback_due
+        duration_days = _fallback_duration_days(row_start, due_date)
+
+    duration_delta = timedelta(days=max(duration_days, 1))
+    return row_start, due_date, duration_delta, hinted_offset, hinted_duration
 
 
 @transaction.atomic
@@ -179,6 +403,9 @@ def apply_template_to_agreement(
     if overwrite_existing:
         deleted_count = _clear_existing_milestones(agreement)
 
+    # Always persist the selected template relation
+    _persist_selected_template(agreement, template)
+
     if copy_text_fields:
         _copy_template_text_fields(agreement, template)
 
@@ -193,8 +420,17 @@ def apply_template_to_agreement(
 
     created = []
     for idx, row in enumerate(template_rows, start=1):
-        due_date = distributed_dates[idx - 1]
-        row_start = distributed_dates[idx - 2] if idx > 1 else date_range.start_date
+        fallback_due = distributed_dates[idx - 1]
+        fallback_start = distributed_dates[idx - 2] if idx > 1 else date_range.start_date
+
+        row_start, due_date, duration_delta, hinted_offset, hinted_duration = _resolve_row_schedule(
+            agreement_start=date_range.start_date,
+            fallback_start=fallback_start,
+            fallback_due=fallback_due,
+            row=row,
+        )
+
+        template_suggested_amount = _template_row_suggested_amount(row, agreement_total)
 
         milestone = Milestone.objects.create(
             agreement=agreement,
@@ -204,16 +440,21 @@ def apply_template_to_agreement(
             amount=amounts[idx - 1],
             start_date=row_start,
             completion_date=due_date,
+            duration=duration_delta,
+            normalized_milestone_type=(row.normalized_milestone_type or "").strip(),
+            template_suggested_amount=template_suggested_amount if template_suggested_amount > 0 else None,
+            ai_suggested_amount=amounts[idx - 1] if amounts[idx - 1] > 0 else None,
+            suggested_amount_low=row.suggested_amount_low,
+            suggested_amount_high=row.suggested_amount_high,
+            pricing_confidence=(row.pricing_confidence or "").strip(),
+            pricing_source_note=(row.pricing_source_note or "").strip(),
+            recommended_days_from_start=hinted_offset,
+            recommended_duration_days=hinted_duration,
+            materials_hint=(row.materials_hint or "").strip(),
         )
         created.append(milestone)
 
     agreement.milestone_count = len(created)
-
-    # Track which template generated this agreement's current milestone set.
-    if hasattr(agreement, "selected_template"):
-        agreement.selected_template = template
-    if hasattr(agreement, "selected_template_name_snapshot"):
-        agreement.selected_template_name_snapshot = template.name
 
     update_fields = ["milestone_count", "updated_at"]
     if hasattr(agreement, "selected_template"):
@@ -226,6 +467,8 @@ def apply_template_to_agreement(
     return {
         "template_id": template.id,
         "template_name": template.name,
+        "selected_template_id": template.id,
+        "selected_template_name_snapshot": template.name,
         "deleted_existing_count": deleted_count,
         "created_count": len(created),
         "milestone_ids": [m.id for m in created],
@@ -250,6 +493,9 @@ def save_agreement_as_template(
     end_date = agreement.end or start_date
     estimated_days = max((end_date - start_date).days + 1, 1)
 
+    template_scope_text = _extract_agreement_scope_text(agreement)
+    template_questions = _extract_agreement_clarification_questions(agreement)
+
     template = ProjectTemplate.objects.create(
         contractor=contractor,
         name=name.strip(),
@@ -257,8 +503,8 @@ def save_agreement_as_template(
         project_subtype=agreement.project_subtype or "",
         description=(description or agreement.description or "").strip(),
         estimated_days=estimated_days,
-        default_scope="",
-        default_clarifications=[],
+        default_scope=template_scope_text,
+        default_clarifications=template_questions,
         is_system=False,
         is_active=is_active,
         created_from_agreement=agreement,
@@ -267,13 +513,45 @@ def save_agreement_as_template(
     milestone_qs = agreement.milestones.all().order_by("order", "id")
     for milestone in milestone_qs:
         ProjectTemplateMilestone = template.milestones.model
+
+        recommended_days_from_start = None
+        if milestone.start_date and start_date:
+            try:
+                recommended_days_from_start = max((milestone.start_date - start_date).days + 1, 1)
+            except Exception:
+                recommended_days_from_start = None
+
+        recommended_duration_days = None
+        if getattr(milestone, "recommended_duration_days", None):
+            recommended_duration_days = milestone.recommended_duration_days
+        elif getattr(milestone, "duration", None):
+            try:
+                recommended_duration_days = max(int(milestone.duration.days), 1)
+            except Exception:
+                recommended_duration_days = None
+        elif milestone.start_date and milestone.completion_date:
+            try:
+                recommended_duration_days = max(
+                    (milestone.completion_date - milestone.start_date).days + 1,
+                    1,
+                )
+            except Exception:
+                recommended_duration_days = None
+
         ProjectTemplateMilestone.objects.create(
             template=template,
             title=milestone.title,
             description=milestone.description or "",
             sort_order=milestone.order,
+            recommended_days_from_start=recommended_days_from_start,
+            recommended_duration_days=recommended_duration_days,
             suggested_amount_fixed=milestone.amount if milestone.amount and milestone.amount > 0 else None,
-            materials_hint="",
+            normalized_milestone_type=(getattr(milestone, "normalized_milestone_type", "") or "").strip(),
+            suggested_amount_low=getattr(milestone, "suggested_amount_low", None),
+            suggested_amount_high=getattr(milestone, "suggested_amount_high", None),
+            pricing_confidence=(getattr(milestone, "pricing_confidence", "") or "").strip(),
+            pricing_source_note=(getattr(milestone, "pricing_source_note", "") or "").strip(),
+            materials_hint=(getattr(milestone, "materials_hint", "") or "").strip(),
         )
 
     return template

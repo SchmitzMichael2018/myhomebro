@@ -6,6 +6,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from projects.ai.template_builder import generate_materials_from_scope
 from projects.models import Agreement
 from projects.models_templates import ProjectTemplate
 from projects.serializers_template import (
@@ -218,3 +219,27 @@ class SaveAgreementAsTemplateView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class TemplateGenerateMaterialsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        contractor = get_request_contractor(request.user)
+        if contractor is None:
+            raise PermissionDenied("Only contractors can use template AI tools.")
+
+        data = request.data or {}
+
+        try:
+            result = generate_materials_from_scope(
+                name=data.get("name", ""),
+                project_type=data.get("project_type", ""),
+                project_subtype=data.get("project_subtype", ""),
+                description=data.get("description", ""),
+                milestones=data.get("milestones") or [],
+            )
+        except Exception as exc:
+            raise ValidationError(str(exc))
+
+        return Response(result, status=status.HTTP_200_OK)

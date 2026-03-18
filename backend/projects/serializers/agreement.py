@@ -1,6 +1,7 @@
 # backend/projects/serializers/agreement.py
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 from typing import Any, Dict, Optional, List
 
@@ -143,6 +144,227 @@ def _safe_file_url(f) -> Optional[str]:
     return None
 
 
+def _norm_keyish(value: Any) -> str:
+    s = str(value or "").strip().lower()
+    s = s.replace("&", " and ")
+    s = re.sub(r"[()/,:.-]+", " ", s)
+    s = re.sub(r"\s+", "_", s).strip("_")
+    return s
+
+
+def _norm_labelish(value: Any) -> str:
+    s = str(value or "").strip().lower()
+    s = s.replace("&", " and ")
+    s = re.sub(r"\(e\.g\.[^)]+\)", " ", s)
+    s = re.sub(r"[()/,:.-]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _question_group(question: dict) -> str:
+    raw_key = _norm_keyish(question.get("key"))
+    raw_label = _norm_labelish(question.get("label") or question.get("question"))
+
+    text = f"{raw_key} {raw_label}"
+
+    if "materials" in text and (
+        "purchase" in text or
+        "purchasing" in text or
+        "purchases" in text or
+        "responsible" in text
+    ):
+        return "materials_responsibility"
+
+    if "permit" in text:
+        return "permits_responsibility"
+
+    if "measurement" in text or "measurements" in text:
+        return "measurements_provided"
+
+    if "floor" in text and "later" in text:
+        return "flooring_finishes_later"
+
+    if "access" in text or "working hours" in text:
+        return "site_access_working_hours"
+
+    if "debris" in text or "waste" in text:
+        return "waste_removal_responsibility"
+
+    if "delivery" in text:
+        return "material_delivery_coordination"
+
+    if "change order" in text or "unforeseen" in text:
+        return "unforeseen_conditions_change_orders"
+
+    return raw_key or _norm_keyish(raw_label)
+
+
+def _question_input_type(question: dict, key: str) -> str:
+    qtype = str(
+        question.get("inputType")
+        or question.get("response_type")
+        or question.get("type")
+        or ""
+    ).strip().lower()
+
+    if qtype in ("radio", "boolean", "select"):
+        return "radio"
+
+    if key in {
+        "materials_responsibility",
+        "permits_responsibility",
+        "measurements_provided",
+        "flooring_finishes_later",
+    }:
+        return "radio"
+
+    return "textarea"
+
+
+def _question_options(key: str, question: dict) -> list:
+    opts = question.get("options")
+    if isinstance(opts, list) and opts:
+        return opts
+
+    if key == "materials_responsibility":
+        return ["Contractor", "Homeowner", "Split"]
+
+    if key == "permits_responsibility":
+        return ["Contractor", "Homeowner", "Split / depends"]
+
+    if key == "measurements_provided":
+        return ["Yes", "No", "Pending"]
+
+    if key == "flooring_finishes_later":
+        return ["Yes", "No", "Unsure"]
+
+    qtype = str(question.get("type") or "").strip().lower()
+    if qtype == "boolean":
+        return ["Yes", "No"]
+
+    return []
+
+
+def _question_score(question: dict) -> int:
+    score = 0
+    if question.get("required"):
+        score += 5
+    if question.get("help"):
+        score += 2
+    if question.get("placeholder"):
+        score += 1
+    if question.get("options"):
+        score += 3
+    if question.get("inputType") == "radio":
+        score += 2
+    if question.get("label"):
+        score += 1
+    return score
+
+
+def _canonicalize_questions(questions: list) -> list:
+    out: dict[str, dict[str, Any]] = {}
+
+    for raw in _safe_list(questions):
+        if not isinstance(raw, dict):
+            continue
+
+        key = _question_group(raw)
+        if not key:
+            continue
+
+        label = raw.get("label") or raw.get("question") or key.replace("_", " ").title()
+        input_type = _question_input_type(raw, key)
+        options = _question_options(key, raw)
+
+        normalized = {
+            "key": key,
+            "label": label,
+            "question": raw.get("question") or label,
+            "help": raw.get("help") or "",
+            "placeholder": raw.get("placeholder") or "",
+            "required": bool(raw.get("required", False)),
+            "inputType": input_type,
+            "type": raw.get("type") or ("boolean" if input_type == "radio" and options == ["Yes", "No"] else "text"),
+            "options": options,
+            "source": raw.get("source") or "unknown",
+        }
+
+        if key not in out:
+            out[key] = normalized
+            continue
+
+        prev = out[key]
+        prev_score = _question_score(prev)
+        next_score = _question_score(normalized)
+        winner = normalized if next_score > prev_score else prev
+
+        out[key] = {
+            **winner,
+            "key": key,
+            "required": bool(prev.get("required")) or bool(normalized.get("required")),
+            "help": winner.get("help") or prev.get("help") or normalized.get("help") or "",
+            "placeholder": winner.get("placeholder") or prev.get("placeholder") or normalized.get("placeholder") or "",
+            "options": winner.get("options") or prev.get("options") or normalized.get("options") or [],
+        }
+
+    return list(out.values())
+
+
+def _legacy_alias_keys_for_group(group_key: str) -> list[str]:
+    aliases = {
+        "materials_responsibility": [
+            "who_purchases_materials",
+            "materials_responsibility",
+            "materials_purchasing",
+            "who_is_responsible_for_purchasing_major_materials",
+            "who_will_purchase_materials",
+        ],
+        "permits_responsibility": [
+            "permits_responsibility",
+            "who_obtains_permits",
+            "who_obtains_necessary_building_permits",
+            "who_is_responsible_for_obtaining_all_required_building_permits",
+        ],
+        "measurements_provided": [
+            "measurements_provided",
+            "measurements_needed",
+            "detailed_measurements_provided",
+        ],
+        "flooring_finishes_later": [
+            "flooring_finishes_later",
+            "will_any_flooring_finishes_beyond_subfloor_installation_be_requested_later",
+        ],
+    }
+    return aliases.get(group_key, [])
+
+
+def _normalize_answers_for_questions(existing_answers: dict, canonical_questions: list) -> dict:
+    src = _safe_dict(existing_answers)
+    out: dict[str, Any] = {}
+
+    for q in canonical_questions:
+        key = str(q.get("key") or "").strip()
+        if not key:
+            continue
+
+        if key in src:
+            out[key] = src[key]
+            continue
+
+        for alias in _legacy_alias_keys_for_group(key):
+            if alias in src:
+                out[key] = src[alias]
+                break
+
+    # Keep unrelated answers too
+    for raw_key, raw_val in src.items():
+        if raw_key not in out:
+            out[raw_key] = raw_val
+
+    return out
+
+
 class SelectedTemplateMiniSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProjectTemplate  # type: ignore
@@ -253,8 +475,6 @@ class AgreementSerializer(serializers.ModelSerializer):
         model = Agreement
         fields = "__all__"
 
-    # ---------------- pdf helpers ----------------
-
     def get_current_pdf_url(self, obj):
         return _safe_file_url(getattr(obj, "pdf_file", None))
 
@@ -268,8 +488,6 @@ class AgreementSerializer(serializers.ModelSerializer):
             return AgreementPDFVersionSerializer(qs.all(), many=True, context=self.context).data
         except Exception:
             return []
-
-    # ---------------- template helpers ----------------
 
     def get_selected_template(self, obj):
         tpl = getattr(obj, "selected_template", None)
@@ -285,8 +503,6 @@ class AgreementSerializer(serializers.ModelSerializer):
             return getattr(obj, "selected_template_id", None)
         except Exception:
             return None
-
-    # ---------------- signature helpers ----------------
 
     def _req_flags(self, obj) -> tuple[bool, bool]:
         req_contr = _boolish(getattr(obj, "require_contractor_signature", None), True)
@@ -335,8 +551,6 @@ class AgreementSerializer(serializers.ModelSerializer):
 
     def get_is_locked(self, obj):
         return self.get_is_fully_signed(obj)
-
-    # ---------------- existing methods ----------------
 
     def get_project_title(self, obj):
         if getattr(obj, "project", None):
@@ -502,16 +716,18 @@ class AgreementSerializer(serializers.ModelSerializer):
             scope = getattr(obj, "ai_scope", None)
             if not scope:
                 return None
+
+            questions = _canonicalize_questions(scope.questions or [])
+            answers = _normalize_answers_for_questions(scope.answers or {}, questions)
+
             return {
-                "questions": scope.questions or [],
-                "answers": scope.answers or {},
+                "questions": questions,
+                "answers": answers,
                 "scope_text": getattr(scope, "scope_text", "") or "",
                 "updated_at": scope.updated_at.isoformat() if scope.updated_at else None,
             }
         except Exception:
             return None
-
-    # ---------------- input normalization ----------------
 
     def to_internal_value(self, data: Dict[str, Any]):
         data = dict(data)
@@ -531,7 +747,6 @@ class AgreementSerializer(serializers.ModelSerializer):
         if "signature_policy" in data and data["signature_policy"] is not None:
             data["signature_policy"] = _normalize_signature_policy(data["signature_policy"])
 
-        # Keep address aliases working both ways
         mappings = [
             ("project_address_line1", "address_line1"),
             ("project_address_line2", "address_line2"),
@@ -549,7 +764,6 @@ class AgreementSerializer(serializers.ModelSerializer):
             if proj_key in data and data[proj_key] is not None:
                 data[alias_key] = data[proj_key]
 
-        # Promote frontend alias fields to canonical model fields
         if "address_line1" in data and data["address_line1"] is not None:
             data["project_address_line1"] = data["address_line1"]
         if "address_line2" in data and data["address_line2"] is not None:
@@ -572,7 +786,6 @@ class AgreementSerializer(serializers.ModelSerializer):
         if "ai_scope" in data and data["ai_scope"] is not None and "ai_scope_input" not in data:
             data["ai_scope_input"] = data.pop("ai_scope")
 
-        # Resolve taxonomy refs into snapshot text fields before DRF validation
         raw_project_type_ref = data.get("project_type_ref")
         raw_project_subtype_ref = data.get("project_subtype_ref")
 
@@ -739,7 +952,7 @@ class AgreementSerializer(serializers.ModelSerializer):
         if not isinstance(ai_scope_payload, dict):
             return
 
-        incoming_questions = _safe_list(ai_scope_payload.get("questions"))
+        incoming_questions = _canonicalize_questions(_safe_list(ai_scope_payload.get("questions")))
         incoming_answers = _safe_dict(ai_scope_payload.get("answers"))
         incoming_scope_text = ai_scope_payload.get("scope_text", None)
 
@@ -751,7 +964,9 @@ class AgreementSerializer(serializers.ModelSerializer):
             scope_obj.questions = incoming_questions
 
         if incoming_answers:
-            scope_obj.answers = _merge_dict(_safe_dict(scope_obj.answers), incoming_answers)
+            merged_existing_answers = _normalize_answers_for_questions(_safe_dict(scope_obj.answers), incoming_questions or _safe_list(scope_obj.questions))
+            merged_incoming_answers = _normalize_answers_for_questions(incoming_answers, incoming_questions or _safe_list(scope_obj.questions))
+            scope_obj.answers = _merge_dict(merged_existing_answers, merged_incoming_answers)
 
         if incoming_scope_text is not None:
             scope_obj.scope_text = str(incoming_scope_text or "")

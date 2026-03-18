@@ -33,18 +33,18 @@ class TemplateRecommendView(APIView):
         project_title = (data.get("project_title") or "").strip()
         description = (data.get("description") or "").strip()
 
-        qs = (
+        # Broad accessible pool first — let scoring decide.
+        # This avoids forcing bad matches just because they happen to share a weak type/subtype.
+        base_qs = (
             ProjectTemplate.objects.annotate(
                 template_milestone_count=Count("milestones")
             )
             .filter(Q(is_system=True) | Q(contractor=contractor))
             .filter(is_active=True)
+            .order_by("-is_system", "name")
         )
 
-        if project_type:
-            qs = qs.filter(project_type__iexact=project_type)
-
-        templates = list(qs.order_by("-is_system", "name"))
+        templates = list(base_qs)
 
         if not templates:
             return Response(
@@ -53,9 +53,9 @@ class TemplateRecommendView(APIView):
                     "possible_match": None,
                     "confidence": "none",
                     "score": 0,
-                    "reason": "No templates available for this project type.",
+                    "reason": "No templates available.",
                     "candidates": [],
-                    "detail": "No templates available for this project type.",
+                    "detail": "No templates available.",
                 },
                 status=status.HTTP_200_OK,
             )
@@ -87,13 +87,15 @@ class TemplateRecommendView(APIView):
             else:
                 confidence = "none"
 
-        detail = (
-            "Strong template recommendation found."
-            if confidence == "recommended"
-            else "Possible template match found."
-            if confidence == "possible"
-            else "No strong template recommendation."
-        )
+        if confidence == "recommended":
+            detail = "Strong template recommendation found."
+        elif confidence == "possible":
+            detail = "Possible template match found."
+        else:
+            if project_subtype or project_type:
+                detail = "No strong matching template exists yet for this Type/Subtype."
+            else:
+                detail = "No strong template recommendation."
 
         return Response(
             {

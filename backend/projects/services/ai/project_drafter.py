@@ -240,6 +240,165 @@ def _try_json_loads(text: str) -> Optional[dict]:
         return None
 
 
+def _normalize_question_keyish(value: Any) -> str:
+    s = _safe_str(value).lower()
+    s = s.replace("&", " and ")
+    s = re.sub(r"[()/,:.-]+", " ", s)
+    s = re.sub(r"\s+", "_", s).strip("_")
+    return s
+
+
+def _normalize_question_labelish(value: Any) -> str:
+    s = _safe_str(value).lower()
+    s = s.replace("&", " and ")
+    s = re.sub(r"\(e\.g\.[^)]+\)", " ", s)
+    s = re.sub(r"[()/,:.-]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _clarification_group(item: dict[str, Any]) -> str:
+    raw_key = _normalize_question_keyish(item.get("key"))
+    raw_label = _normalize_question_labelish(item.get("label") or item.get("question"))
+    text = f"{raw_key} {raw_label}"
+
+    if "materials" in text and (
+        "purchase" in text or
+        "purchasing" in text or
+        "purchases" in text or
+        "responsible" in text
+    ):
+        return "materials_responsibility"
+
+    if "permit" in text:
+        return "permits_responsibility"
+
+    if "measurement" in text or "measurements" in text:
+        return "measurements_provided"
+
+    if "floor" in text and "later" in text:
+        return "flooring_finishes_later"
+
+    if "access" in text or "working hours" in text:
+        return "site_access_working_hours"
+
+    if "debris" in text or "waste" in text:
+        return "waste_removal_responsibility"
+
+    if "delivery" in text:
+        return "material_delivery_coordination"
+
+    if "change order" in text or "unforeseen" in text:
+        return "unforeseen_conditions_change_orders"
+
+    return raw_key or _normalize_question_keyish(raw_label)
+
+
+def _clarification_input_type(item: dict[str, Any], key: str) -> str:
+    qtype = _safe_str(item.get("inputType") or item.get("response_type") or item.get("type")).lower()
+
+    if qtype in {"radio", "boolean", "select"}:
+        return "radio"
+
+    if key in {
+        "materials_responsibility",
+        "permits_responsibility",
+        "measurements_provided",
+        "flooring_finishes_later",
+    }:
+        return "radio"
+
+    return "textarea"
+
+
+def _clarification_options(key: str, item: dict[str, Any]) -> list[Any]:
+    opts = item.get("options")
+    if isinstance(opts, list) and opts:
+        return opts
+
+    if key == "materials_responsibility":
+        return ["Contractor", "Homeowner", "Split"]
+
+    if key == "permits_responsibility":
+        return ["Contractor", "Homeowner", "Split / depends"]
+
+    if key == "measurements_provided":
+        return ["Yes", "No", "Pending"]
+
+    if key == "flooring_finishes_later":
+        return ["Yes", "No", "Unsure"]
+
+    qtype = _safe_str(item.get("type")).lower()
+    if qtype == "boolean":
+        return ["Yes", "No"]
+
+    return []
+
+
+def _clarification_score(item: dict[str, Any]) -> int:
+    score = 0
+    if item.get("required"):
+        score += 5
+    if item.get("help"):
+        score += 2
+    if item.get("placeholder"):
+        score += 1
+    if item.get("options"):
+        score += 3
+    if item.get("inputType") == "radio":
+        score += 2
+    if item.get("label"):
+        score += 1
+    return score
+
+
+def _canonicalize_clarifications(items: list[Any], source: str = "unknown") -> list[dict[str, Any]]:
+    by_key: dict[str, dict[str, Any]] = {}
+
+    for raw in items or []:
+        if not isinstance(raw, dict):
+            continue
+
+        key = _clarification_group(raw)
+        if not key:
+            continue
+
+        label = raw.get("label") or raw.get("question") or key.replace("_", " ").title()
+        input_type = _clarification_input_type(raw, key)
+        options = _clarification_options(key, raw)
+
+        normalized = {
+            "key": key,
+            "label": label,
+            "question": raw.get("question") or label,
+            "help": raw.get("help") or "",
+            "placeholder": raw.get("placeholder") or "",
+            "required": bool(raw.get("required", False)),
+            "inputType": input_type,
+            "type": raw.get("type") or ("boolean" if input_type == "radio" and options == ["Yes", "No"] else "text"),
+            "options": options,
+            "source": raw.get("source") or source,
+        }
+
+        if key not in by_key:
+            by_key[key] = normalized
+            continue
+
+        prev = by_key[key]
+        winner = normalized if _clarification_score(normalized) > _clarification_score(prev) else prev
+
+        by_key[key] = {
+            **winner,
+            "key": key,
+            "required": bool(prev.get("required")) or bool(normalized.get("required")),
+            "help": winner.get("help") or prev.get("help") or normalized.get("help") or "",
+            "placeholder": winner.get("placeholder") or prev.get("placeholder") or normalized.get("placeholder") or "",
+            "options": winner.get("options") or prev.get("options") or normalized.get("options") or [],
+        }
+
+    return list(by_key.values())
+
+
 def _roofing_force_override(project_title: str, description: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
     hay = _norm_text(f"{project_title}\n{description}")
     roof_signals = [
@@ -459,14 +618,17 @@ def estimate_project_total(
 
 
 def _clarifications_from_template(template: Optional[ProjectTemplate], project_subtype: str, project_type: str = "") -> list[dict[str, Any]]:
+    raw_items: list[dict[str, Any]] = []
+
     if template and isinstance(template.default_clarifications, list) and template.default_clarifications:
-        return template.default_clarifications
+        raw_items = template.default_clarifications
+    else:
+        for key, qs in FALLBACK_CLARIFICATIONS.items():
+            if key.lower() in _safe_str(project_subtype).lower() or key.lower() in _safe_str(project_type).lower():
+                raw_items = qs
+                break
 
-    for key, qs in FALLBACK_CLARIFICATIONS.items():
-        if key.lower() in _safe_str(project_subtype).lower() or key.lower() in _safe_str(project_type).lower():
-            return qs
-
-    return []
+    return _canonicalize_clarifications(raw_items, source="template" if template else "fallback")
 
 
 def _fallback_milestone_blueprint(project_subtype: str, project_type: str = "") -> list[dict[str, Any]]:
@@ -567,6 +729,8 @@ Rules:
 - Keep the description reusable and professional.
 - Milestones should be practical for contractor billing and customer review.
 - Clarifications should be job-specific variables.
+- Clarifications should avoid duplicates and use stable wording when possible.
+- Prefer concise, contractor-friendly phrasing.
 - Do not include markdown fences.
 """
 
@@ -666,7 +830,9 @@ def draft_project_structure(
 
         ai_clarifications = openai_data.get("clarifications") or []
         if isinstance(ai_clarifications, list) and ai_clarifications:
-            clarifications = ai_clarifications
+            # AI clarifications replace fallback/template clarifications for the draft result,
+            # but are canonicalized so reruns are more stable.
+            clarifications = _canonicalize_clarifications(ai_clarifications, source="ai")
 
     total_days = 0
     for m in milestones:

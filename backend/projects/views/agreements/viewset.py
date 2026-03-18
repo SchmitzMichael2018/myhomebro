@@ -13,8 +13,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from projects.models import Agreement, ProjectStatus
-from projects.serializers.agreement import AgreementSerializer
-
+from projects.serializers.agreement import (
+    AgreementSerializer,
+    _canonicalize_questions,
+    _normalize_answers_for_questions,
+)
 from projects.services.agreements.create import create_agreement_from_validated
 from projects.services.agreements.address import sync_project_address_from_agreement
 from projects.services.agreements.editability import enforce_editability, prepare_payload
@@ -44,7 +47,7 @@ from projects.services.agreements.pdf_actions import (
 )
 
 from projects.ai.agreement_milestone_writer import suggest_scope_and_milestones
-from projects.models_ai_scope import AgreementAIScope  # ✅ persisted Q/A model
+from projects.models_ai_scope import AgreementAIScope
 
 from projects.services.agreement_completion import (
     check_agreement_completion,
@@ -240,9 +243,6 @@ class AgreementViewSet(viewsets.ModelViewSet):
 
         return None
 
-    # ---------------------------------------------------------------------
-    # ✅ NEW: Auto finalize PDF once signature becomes satisfied
-    # ---------------------------------------------------------------------
     def _signature_satisfied(self, ag: Agreement) -> bool:
         try:
             return bool(getattr(ag, "signature_is_satisfied", False))
@@ -250,18 +250,12 @@ class AgreementViewSet(viewsets.ModelViewSet):
             return False
 
     def _auto_finalize_if_signature_satisfied_transition(self, *, before: bool, ag: Agreement) -> None:
-        """
-        If signature satisfaction transitions False -> True, finalize PDF once.
-        This creates AgreementPDFVersion history rows and sets Agreement.pdf_file/pdf_version.
-        """
         after = self._signature_satisfied(ag)
         if before or not after:
             return
 
-        # Address requirement is enforced by finalize_pdf endpoint; do the same here.
         addr_error = self._validate_required_addresses(ag)
         if addr_error is not None:
-            # Don't hard-fail the request; just skip finalize.
             print("Auto-finalize skipped: missing required address fields", file=sys.stderr)
             return
 
@@ -272,13 +266,11 @@ class AgreementViewSet(viewsets.ModelViewSet):
 
         try:
             finalize_agreement_pdf(ag, generate_full_agreement_pdf=gen_fn)
-            # Ensure caller sees updated pdf_version/pdf_file if they refresh
             try:
                 ag.refresh_from_db()
             except Exception:
                 pass
         except Exception as e:
-            # Don't block signing / updates if PDF generation fails
             print("Auto-finalize failed:", repr(e), file=sys.stderr)
             traceback.print_exc()
 
@@ -355,9 +347,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
             except Exception as e:
                 print("Warning: address sync failed on update:", repr(e), file=sys.stderr)
 
-        # ✅ Auto finalize if we just transitioned to satisfied due to waiver/policy change
         self._auto_finalize_if_signature_satisfied_transition(before=satisfied_before, ag=serializer.instance)
-
         return Response(serializer.data)
 
     def partial_update(self, request, *args, **kwargs):
@@ -378,17 +368,12 @@ class AgreementViewSet(viewsets.ModelViewSet):
             except Exception as e:
                 print("Warning: address sync failed on partial_update:", repr(e), file=sys.stderr)
 
-        # ✅ Auto finalize if we just transitioned to satisfied due to waiver/policy change
         self._auto_finalize_if_signature_satisfied_transition(before=satisfied_before, ag=serializer.instance)
-
         return Response(serializer.data)
 
     def perform_update(self, serializer):
         serializer.save()
 
-    # ---------------------------------------------------------------------
-    # Mark Complete (policy-aware, canonical)
-    # ---------------------------------------------------------------------
     @action(detail=True, methods=["post"], url_path="mark_complete")
     def mark_complete(self, request, pk=None):
         ag: Agreement = self.get_object()
@@ -444,9 +429,6 @@ class AgreementViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
-    # ---------------------------------------------------------------------
-    # Archive / Unarchive
-    # ---------------------------------------------------------------------
     @action(detail=True, methods=["post"], url_path="archive")
     def archive(self, request, pk=None):
         ag: Agreement = self.get_object()
@@ -547,9 +529,6 @@ class AgreementViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
-    # ---------------------------------------------------------------------
-    # AI / Refund / PDF / Signing
-    # ---------------------------------------------------------------------
     @action(detail=True, methods=["post"], url_path="ai/suggest-milestones")
     def ai_suggest_milestones(self, request, pk=None):
         ag: Agreement = self.get_object()
@@ -567,6 +546,9 @@ class AgreementViewSet(viewsets.ModelViewSet):
             if isinstance(request.data, dict):
                 notes = (request.data.get("notes") or "").strip()
                 ai_answers = request.data.get("ai_answers") or {}
+            else:
+                notes = (request.data.get("notes") or "").strip()
+                ai_answers = request.data.get("ai_answers") or {}
         except Exception:
             notes = ""
             ai_answers = {}
@@ -576,21 +558,35 @@ class AgreementViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        questions = out.get("questions", []) or []
-        scope_obj, _ = AgreementAIScope.objects.get_or_create(agreement=ag)
-        scope_obj.questions = questions
+        raw_questions = out.get("questions", []) or []
+        scope_text = out.get("scope_text", "") or ""
 
-        if isinstance(ai_answers, dict) and ai_answers:
-            merged = dict(scope_obj.answers or {})
-            merged.update(ai_answers)
-            scope_obj.answers = merged
+        # Canonicalize before persistence so reruns do not keep creating semantic duplicates.
+        questions = _canonicalize_questions(raw_questions)
+
+        scope_obj, _ = AgreementAIScope.objects.get_or_create(agreement=ag)
+
+        # Normalize old answers to the canonical question set first.
+        normalized_existing_answers = _normalize_answers_for_questions(scope_obj.answers or {}, questions)
+
+        incoming_answers = ai_answers if isinstance(ai_answers, dict) else {}
+        normalized_incoming_answers = _normalize_answers_for_questions(incoming_answers, questions)
+
+        merged_answers = dict(normalized_existing_answers or {})
+        merged_answers.update(normalized_incoming_answers or {})
+
+        scope_obj.questions = questions
+        scope_obj.answers = merged_answers
+
+        if scope_text:
+            scope_obj.scope_text = scope_text
 
         scope_obj.save()
 
         return Response(
             {
                 "detail": "OK",
-                "scope_text": out.get("scope_text", ""),
+                "scope_text": scope_text,
                 "milestones": out.get("milestones", []),
                 "questions": questions,
                 "_model": out.get("_model"),
@@ -610,7 +606,6 @@ class AgreementViewSet(viewsets.ModelViewSet):
         payload, code = execute_refund(request, ag, stripe)
         return Response(payload, status=code)
 
-    # ✅ FINAL-AWARE: if executed (waiver-aware), remove watermark by serving final PDF
     @action(detail=True, methods=["get"], url_path="preview_pdf")
     def preview_pdf(self, request, pk=None):
         stream = request.query_params.get("stream")
@@ -750,7 +745,6 @@ class AgreementViewSet(viewsets.ModelViewSet):
         ag: Agreement = self.get_object()
         require_contractor_sign_allowed(request.user, ag)
 
-        # Track transition
         satisfied_before = self._signature_satisfied(ag)
 
         addr_error = self._validate_required_addresses(ag)
@@ -774,7 +768,6 @@ class AgreementViewSet(viewsets.ModelViewSet):
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        # ✅ Auto finalize if this signature satisfies requirements (waiver-aware)
         self._auto_finalize_if_signature_satisfied_transition(before=satisfied_before, ag=ag)
 
         ser = self.get_serializer(ag)

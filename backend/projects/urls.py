@@ -23,7 +23,6 @@ from .views.milestone import (
 from .views.homeowner import HomeownerViewSet
 from .views.project import ProjectViewSet
 
-# ✅ Disputes (authenticated ViewSet + public token endpoints)
 from .views.dispute import (
     DisputeViewSet,
     public_dispute_detail,
@@ -42,7 +41,6 @@ from .views.contractors.public import ContractorPublicProfileView
 from .views.notifications import NotificationListView
 from .views.dispute_workorders import DisputeWorkOrderViewSet
 
-# ✅ Magic invoice endpoints (public)
 from .views.magic_invoice import (
     MagicInvoiceView,
     MagicInvoiceApproveView,
@@ -64,10 +62,25 @@ from .views.funding import (
     FundingReceiptView,
 )
 
+from .views_template import (
+    TemplateListCreateView,
+    TemplateDetailView,
+    ApplyTemplateToAgreementView,
+    SaveAgreementAsTemplateView,
+    TemplateGenerateMaterialsView,
+)
+
+from .views.template_views import (
+    TemplateSuggestPricingView,
+    TemplateApplyPricingView,
+    TemplateImproveDescriptionView,
+    TemplateSuggestTypeSubtypeView,
+    TemplateCreateFromScopeView,
+)
+
 from .views.agreements_amend import create_amendment
 from .views.refund import AgreementRefundCompatView
 
-# ✅ Employee assignment + employee dashboard views
 from .views.employee_assignments import (
     assign_agreement,
     unassign_agreement,
@@ -82,10 +95,8 @@ from .views.employee_milestones import (
     mark_milestone_complete,
 )
 
-# ✅ Employee profile
 from .views.employee_profile import EmployeeMeProfileView
 
-# ✅ Employee agreements
 from .views.employee_agreements import (
     my_agreements,
     agreement_detail as employee_agreement_detail,
@@ -103,44 +114,26 @@ from .views.subaccount_schedule import (
     delete_schedule_exception,
 )
 
-# ✅ Contractor Business Dashboard
 from .views.business_dashboard import BusinessDashboardSummaryAPIView
-
 from .views.expense_requests import ExpenseRequestViewSet
 
-# ✅ NEW: Agreement close-out / archive views
 from .views.agreement_closeout import (
     AgreementClosureStatusView,
     AgreementCloseAndArchiveView,
 )
 
-# ✅ NEW: Feature flags endpoint (Django settings → frontend gating)
 from .views.feature_flags import FeatureFlagsView
-
-# ✅ NEW: Direct Pay (subcontractor / no escrow) invoice pay link endpoint
 from .views.invoice_direct_pay import invoice_create_direct_pay_link
 
-# ✅ Agreement AI endpoints
 from projects.api.ai_agreement_views import (
     ai_agreement_description,
     ai_suggest_milestones,
     ai_draft_project,
 )
 
-# ✅ NEW: Void Agreement AI credit endpoint
 from projects.api.ai_void_credit_views import void_agreement_ai_credit
 
-# ✅ NEW: Template endpoints
-from .views_template import (
-    TemplateListCreateView,
-    TemplateDetailView,
-    ApplyTemplateToAgreementView,
-    SaveAgreementAsTemplateView,
-)
-
-# ✅ NEW: Template recommendation endpoint
 from .views_template_recommend import TemplateRecommendView
-
 from .views.project_taxonomy import ProjectTypeViewSet, ProjectSubtypeViewSet
 
 app_name = "projects_api"
@@ -160,7 +153,6 @@ router.register(r"dispute-workorders", DisputeWorkOrderViewSet, basename="disput
 router.register(r"project-types", ProjectTypeViewSet, basename="project-types")
 router.register(r"project-subtypes", ProjectSubtypeViewSet, basename="project-subtypes")
 
-
 milestone_router = NestedDefaultRouter(
     router, r"milestones", lookup="milestone", trailing_slash="/?"
 )
@@ -179,24 +171,51 @@ agreements_router.register(
 
 urlpatterns = [
     # -------------------------------------------------
-    # ✅ Admin Panel (API)
+    # Admin Panel
     # -------------------------------------------------
-    # Mounts: /api/admin/...
     path("admin/", include("adminpanel.urls")),
 
     # -------------------------------------------------
-    # ✅ AI Disputes (advisory endpoints)
+    # AI Disputes
     # -------------------------------------------------
-    # Mounts (under /api/projects/...):
-    #   POST /api/projects/disputes/<id>/ai/recommendation/
     path("", include("projects.api.disputes_ai_urls")),
 
     # -------------------------------------------------
-    # ✅ NEW: Project Templates
+    # Project Templates
     # -------------------------------------------------
     path("templates/", TemplateListCreateView.as_view(), name="template-list-create"),
     path("templates/recommend/", TemplateRecommendView.as_view(), name="template-recommend"),
     path("templates/<int:pk>/", TemplateDetailView.as_view(), name="template-detail"),
+    path(
+        "templates/<int:pk>/suggest_pricing/",
+        TemplateSuggestPricingView.as_view(),
+        name="template-suggest-pricing",
+    ),
+    path(
+        "templates/<int:pk>/apply_pricing/",
+        TemplateApplyPricingView.as_view(),
+        name="template-apply-pricing",
+    ),
+    path(
+        "templates/ai/improve-description/",
+        TemplateImproveDescriptionView.as_view(),
+        name="template-ai-improve-description",
+    ),
+    path(
+        "templates/ai/suggest-type-subtype/",
+        TemplateSuggestTypeSubtypeView.as_view(),
+        name="template-ai-suggest-type-subtype",
+    ),
+    path(
+        "templates/ai/create-from-scope/",
+        TemplateCreateFromScopeView.as_view(),
+        name="template-ai-create-from-scope",
+    ),
+    path(
+        "templates/ai/generate-materials/",
+        TemplateGenerateMaterialsView.as_view(),
+        name="template-ai-generate-materials",
+    ),
     path(
         "agreements/<int:agreement_id>/apply-template/",
         ApplyTemplateToAgreementView.as_view(),
@@ -209,7 +228,7 @@ urlpatterns = [
     ),
 
     # -------------------------------------------------
-    # ✅ Direct Pay (Subcontractor / no escrow)
+    # Direct Pay
     # -------------------------------------------------
     path("invoices/<int:pk>/direct_pay_link/", invoice_create_direct_pay_link),
     path("invoices/<int:pk>/direct_pay_email/", invoice_email_direct_pay_link),
@@ -223,32 +242,28 @@ urlpatterns = [
     path("agreements/public_pdf/", agreement_public_pdf),
 
     # -------------------------------------------------
-    # ✅ Agreement AI (1 credit = 1 agreement)
+    # Agreement AI
     # -------------------------------------------------
     path("agreements/ai/description/", ai_agreement_description),
     path("agreements/ai/draft/", ai_draft_project),
     path("agreements/<int:agreement_id>/ai/suggest-milestones/", ai_suggest_milestones),
-
-    # ✅ NEW: Void Agreement AI credit (draft-only refund)
     path("agreements/<int:agreement_id>/ai/void-credit/", void_agreement_ai_credit),
 
     path(
         "agreements/<int:agreement_id>/refund/",
         AgreementRefundCompatView.as_view(),
     ),
-
     path(
         "agreements/<int:agreement_id>/send_final_agreement_link/",
         send_final_agreement_link_view,
     ),
-
     path(
         "agreements/<int:pk>/create_amendment/",
         create_amendment,
     ),
 
     # -------------------------------------------------
-    # ✅ NEW: Agreement close-out / archive
+    # Agreement close-out / archive
     # -------------------------------------------------
     path(
         "agreements/<int:agreement_id>/closure_status/",
@@ -269,7 +284,7 @@ urlpatterns = [
     path("funding/receipt/", FundingReceiptView.as_view()),
 
     # -------------------------------------------------
-    # Public Intake (token-based, no auth)
+    # Public Intake
     # -------------------------------------------------
     path("public-intake/", PublicIntakeView.as_view()),
     path("public-intake/start/", PublicIntakeStartView.as_view()),
@@ -320,19 +335,19 @@ urlpatterns = [
     ),
 
     # -------------------------------------------------
-    # ✅ Feature Flags (Django settings → frontend gating)
+    # Feature Flags
     # -------------------------------------------------
     path("feature-flags/", FeatureFlagsView.as_view()),
 
     # -------------------------------------------------
-    # ✅ Public dispute decision (token-based, no auth)
+    # Public dispute decision
     # -------------------------------------------------
     path("disputes/public/<int:dispute_id>/", public_dispute_detail),
     path("disputes/public/<int:dispute_id>/accept/", public_dispute_accept),
     path("disputes/public/<int:dispute_id>/reject/", public_dispute_reject),
 
     # -------------------------------------------------
-    # Misc (order matters)
+    # Misc
     # -------------------------------------------------
     path("notifications/", NotificationListView.as_view()),
     path("contractors/me/", ContractorMeView.as_view()),
@@ -346,7 +361,7 @@ urlpatterns = [
     path("agreements/merge/", MergeAgreementsView.as_view()),
 
     # -------------------------------------------------
-    # Magic invoice (public)
+    # Magic invoice
     # -------------------------------------------------
     path("invoices/magic/<uuid:token>/", MagicInvoiceView.as_view()),
     path("invoices/magic/<uuid:token>/approve/", MagicInvoiceApproveView.as_view()),
@@ -365,23 +380,15 @@ urlpatterns = [
     path("", include("projects.urls_invites")),
 ]
 
-# ---------------------------------------------------------------------
-# ✅ Explicit endpoint hard-wires (works even if router/viewset is behind)
-# ---------------------------------------------------------------------
 urlpatterns += [
-    # Existing preview_pdf hard-wire
     re_path(
         r"^agreements/(?P<pk>\d+)/preview_pdf/?$",
         AgreementViewSet.as_view({"get": "preview_pdf"}),
     ),
-
-    # ✅ NEW: preview_link hard-wire (fixes production 404)
     re_path(
         r"^agreements/(?P<pk>\d+)/preview_link/?$",
         AgreementViewSet.as_view({"get": "preview_link"}),
     ),
-
-    # ✅ NEW: acknowledge hard-wire (persists Step 4 checkbox state)
     re_path(
         r"^agreements/(?P<pk>\d+)/acknowledge/?$",
         AgreementViewSet.as_view({"post": "acknowledge"}),

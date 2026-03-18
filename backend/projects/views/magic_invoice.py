@@ -1,27 +1,5 @@
 # backend/projects/views/magic_invoice.py
-# v2026-03-03 — ✅ Option A support: Agreement is source-of-truth for customer display
-# - Adds customer_name/customer_email aliases to response (derived from InvoiceSerializer)
-# - Adds milestone_number alias preferring milestone_order (per agreement), fallback to milestone_id
-#
-# v2026-02-23 — ✅ Auto-complete Agreement after invoice PAID/released (escrow paths)
-#
-# Endpoints:
-#   GET    /api/projects/invoices/magic/<token>/
-#   PATCH  /api/projects/invoices/magic/<token>/approve/
-#   PATCH  /api/projects/invoices/magic/<token>/dispute/
-#
-# Behavior:
-# - GET includes: agreement_id, agreement_status, escrow_funded
-# - approve:
-#     * if agreement escrow is funded:
-#         - release escrow via Stripe Transfer (net of platform fee)
-#         - ALWAYS set invoice.status = PAID when escrow released
-#         - ✅ NEW: recompute agreement completion after invoice becomes PAID/released
-#     * else:
-#         - fallback card PaymentIntent (legacy)
-#         - returns stripe_client_secret + mode="card_payment"
-#
-# Dispute hard-lock: NO approve / release if agreement has active dispute
+# v2026-03-15 — pricing observation hook added for escrow-paid invoice paths
 
 import logging
 from decimal import Decimal, ROUND_HALF_UP
@@ -37,8 +15,8 @@ from rest_framework.views import APIView
 from ..models import Invoice, InvoiceStatus
 from ..serializers.invoices import InvoiceSerializer
 
-# ✅ canonical agreement completion recompute
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
+from projects.services.pricing_observations import record_pricing_observation_for_invoice
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +37,7 @@ def _truthy(v) -> bool:
     if v in (1, "1"):
         return True
     if isinstance(v, str) and v.strip().lower() == "true":
-        return True
+            return True
     return False
 
 
@@ -71,11 +49,6 @@ def _agreement_status(agreement) -> str:
 
 
 def _agreement_has_active_dispute(agreement) -> bool:
-    """
-    HARD LOCK:
-    If ANY dispute exists on the agreement with status initiated/open/under_review,
-    we block approve/release/card-fallback.
-    """
     if not agreement:
         return False
     try:
@@ -84,20 +57,35 @@ def _agreement_has_active_dispute(agreement) -> bool:
         return False
 
 
+def _record_pricing_observation(invoice: Invoice) -> None:
+    """
+    Safe helper.
+    Creates a passive pricing observation once an invoice truly becomes paid/released.
+    """
+    try:
+        record_pricing_observation_for_invoice(
+            invoice,
+            paid_at=getattr(invoice, "escrow_released_at", None)
+            or getattr(invoice, "approved_at", None)
+            or timezone.now(),
+        )
+    except Exception as exc:
+        logger.warning(
+            "Pricing observation capture failed for invoice %s: %s",
+            getattr(invoice, "id", None),
+            exc,
+        )
+
+
 class MagicInvoiceView(APIView):
-    permission_classes = []  # AllowAny
+    permission_classes = []
 
     def get(self, request, token=None):
         invoice = get_object_or_404(Invoice, public_token=token)
 
         data = InvoiceSerializer(invoice, context={"request": request}).data
-
-        # ✅ Option A aliases (helps frontend standardize on "Customer")
-        # Serializer may return both homeowner_* and customer_* depending on version.
         data["customer_name"] = data.get("customer_name") or data.get("homeowner_name")
         data["customer_email"] = data.get("customer_email") or data.get("homeowner_email")
-
-        # ✅ Milestone number alias (prefer per-agreement order)
         data["milestone_number"] = data.get("milestone_order") or data.get("milestone_id")
 
         agreement = getattr(invoice, "agreement", None)
@@ -114,7 +102,7 @@ class MagicInvoiceView(APIView):
 
 
 class MagicInvoiceApproveView(APIView):
-    permission_classes = []  # AllowAny
+    permission_classes = []
 
     def patch(self, request, token=None):
         invoice = get_object_or_404(Invoice, public_token=token)
@@ -123,7 +111,6 @@ class MagicInvoiceApproveView(APIView):
         if not agreement:
             return Response({"detail": "Invoice is missing agreement."}, status=400)
 
-        # 🔒 HARD STOP if any active dispute exists
         if _agreement_has_active_dispute(agreement):
             return Response(
                 {
@@ -137,7 +124,6 @@ class MagicInvoiceApproveView(APIView):
         if "dispute" in status_lower:
             return Response({"detail": "This invoice is disputed."}, status=400)
 
-        # If escrow already released, treat as paid and return idempotently.
         if getattr(invoice, "escrow_released", False):
             with transaction.atomic():
                 invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
@@ -154,7 +140,8 @@ class MagicInvoiceApproveView(APIView):
                 if update_fields:
                     invoice.save(update_fields=update_fields)
 
-            # ✅ recompute agreement completion after confirming paid/released
+            _record_pricing_observation(invoice)
+
             try:
                 recompute_and_apply_agreement_completion(getattr(invoice, "agreement_id", None))
             except Exception as exc:
@@ -197,7 +184,6 @@ class MagicInvoiceApproveView(APIView):
         if amount_cents <= 0:
             return Response({"detail": "Invoice amount is invalid."}, status=400)
 
-        # Platform fee (tiered + $1 + cap rules)
         try:
             from payments.fees import calculate_platform_fee_cents_for_invoice  # type: ignore
 
@@ -221,18 +207,13 @@ class MagicInvoiceApproveView(APIView):
         ag_status = _agreement_status(agreement)
         escrow_funded = _truthy(getattr(agreement, "escrow_funded", False)) or ag_status == "funded"
 
-        # ==========================================================
-        # ✅ ESCROW FUNDED → RELEASE FUNDS (NO CARD)
-        # ==========================================================
         if escrow_funded:
             payout_cents = amount_cents - platform_fee_cents
 
-            # Idempotent transfer path: transfer already exists
             if getattr(invoice, "stripe_transfer_id", None):
                 with transaction.atomic():
                     invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
 
-                    # 🔒 Enforce invariant: escrow release => PAID
                     invoice.status = InvoiceStatus.PAID
                     invoice.escrow_released = True
                     invoice.escrow_released_at = invoice.escrow_released_at or timezone.now()
@@ -255,7 +236,8 @@ class MagicInvoiceApproveView(APIView):
 
                     invoice.save(update_fields=update_fields)
 
-                # ✅ recompute agreement completion after paid/released
+                _record_pricing_observation(invoice)
+
                 try:
                     recompute_and_apply_agreement_completion(getattr(invoice, "agreement_id", None))
                 except Exception as exc:
@@ -271,7 +253,6 @@ class MagicInvoiceApproveView(APIView):
                     status=200,
                 )
 
-            # Create Stripe Transfer
             try:
                 transfer = stripe.Transfer.create(
                     amount=int(payout_cents),
@@ -292,7 +273,6 @@ class MagicInvoiceApproveView(APIView):
                 logger.exception("Stripe Transfer failed for invoice %s: %s", invoice.id, exc)
                 return Response({"detail": "Unable to release escrow. Please try again."}, status=500)
 
-            # Persist release state
             with transaction.atomic():
                 invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
 
@@ -300,7 +280,6 @@ class MagicInvoiceApproveView(APIView):
                 invoice.escrow_released = True
                 invoice.escrow_released_at = timezone.now()
 
-                # 🔒 Enforce invariant: escrow release => PAID
                 invoice.status = InvoiceStatus.PAID
                 invoice.approved_at = invoice.approved_at or timezone.now()
 
@@ -328,7 +307,8 @@ class MagicInvoiceApproveView(APIView):
 
                 invoice.save(update_fields=update_fields)
 
-            # ✅ recompute agreement completion after paid/released
+            _record_pricing_observation(invoice)
+
             try:
                 recompute_and_apply_agreement_completion(getattr(invoice, "agreement_id", None))
             except Exception as exc:
@@ -346,11 +326,6 @@ class MagicInvoiceApproveView(APIView):
                 status=200,
             )
 
-        # ==========================================================
-        # ❗ NOT FUNDED → CARD PAYMENT (legacy)
-        # ==========================================================
-        # NOTE: We do NOT recompute agreement completion here because payment is not confirmed yet.
-        # Completion should be recomputed when the PaymentIntent actually succeeds (webhook / callback).
         try:
             with transaction.atomic():
                 invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
@@ -395,7 +370,7 @@ class MagicInvoiceApproveView(APIView):
 
 
 class MagicInvoiceDisputeView(APIView):
-    permission_classes = []  # AllowAny
+    permission_classes = []
 
     def patch(self, request, token=None):
         invoice = get_object_or_404(Invoice, public_token=token)

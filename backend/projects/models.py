@@ -751,12 +751,77 @@ class Milestone(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
+
     start_date = models.DateField(null=True, blank=True)
     completion_date = models.DateField(null=True, blank=True)
     duration = models.DurationField(
         null=True,
         blank=True,
         help_text="Estimated time to complete the milestone.",
+    )
+
+    # --- estimate assist snapshot fields ---
+    normalized_milestone_type = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Stable milestone category copied from template/AI guidance.",
+    )
+    template_suggested_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Original template-suggested amount snapshot.",
+    )
+    ai_suggested_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="AI or applied suggestion snapshot at milestone creation time.",
+    )
+    suggested_amount_low = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Low-end suggested price range snapshot.",
+    )
+    suggested_amount_high = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="High-end suggested price range snapshot.",
+    )
+    pricing_confidence = models.CharField(
+        max_length=16,
+        blank=True,
+        default="",
+        help_text="Confidence level for pricing guidance.",
+    )
+    pricing_source_note = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Short note describing pricing guidance source.",
+    )
+    recommended_days_from_start = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Suggested relative day offset from agreement start.",
+    )
+    recommended_duration_days = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Suggested duration in days copied from template/AI guidance.",
+    )
+    materials_hint = models.TextField(
+        blank=True,
+        default="",
+        help_text="Suggested materials or takeoff hint copied from template/AI guidance.",
     )
 
     is_invoiced = models.BooleanField(default=False)
@@ -782,6 +847,9 @@ class Milestone(models.Model):
     class Meta:
         ordering = ["order"]
         unique_together = [("agreement", "order")]
+        indexes = [
+            models.Index(fields=["normalized_milestone_type"]),
+        ]
         constraints = [
             models.CheckConstraint(
                 name="milestone_invoiced_requires_completed",
@@ -809,6 +877,7 @@ class Milestone(models.Model):
             and not self.completed
             and timezone.now().date() > self.completion_date
         )
+
 
 
 class MilestoneFile(models.Model):

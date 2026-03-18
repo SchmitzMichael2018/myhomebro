@@ -1,9 +1,5 @@
 # backend/projects/views/invoice.py
-# v2026-03-03 — ✅ Option A: Agreement is source-of-truth for Customer (invoice email + views)
-# - Invoice recipient now uses agreement.homeowner first (fallback to agreement.project.homeowner)
-# - select_related includes agreement__homeowner
-# - InvoicePDFView authorization checks agreement.homeowner user safely
-# - Email milestone line prefers milestone_order (per agreement) over milestone_id_snapshot (DB id)
+# v2026-03-15 — pricing observation hook added for direct-pay paid path
 
 import logging
 import os
@@ -31,6 +27,9 @@ from projects.services.direct_pay import create_direct_pay_checkout_for_invoice
 # ✅ canonical agreement completion recompute
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
 
+# ✅ passive pricing capture
+from projects.services.pricing_observations import record_pricing_observation_for_invoice
+
 logger = logging.getLogger(__name__)
 
 
@@ -52,12 +51,10 @@ def _get_customer(invoice: Invoice):
     if not agreement:
         return None
 
-    # ✅ preferred
     customer = getattr(agreement, "homeowner", None) or getattr(agreement, "customer", None)
     if customer:
         return customer
 
-    # fallback legacy
     project = getattr(agreement, "project", None)
     return getattr(project, "homeowner", None) if project else None
 
@@ -65,7 +62,6 @@ def _get_customer(invoice: Invoice):
 def _get_customer_email(invoice: Invoice) -> str | None:
     customer = _get_customer(invoice)
     email = getattr(customer, "email", None) if customer else None
-    # Keep invoice snapshot fallback for safety
     return email or getattr(invoice, "homeowner_email", None) or getattr(invoice, "customer_email", None) or None
 
 
@@ -76,7 +72,6 @@ def _get_customer_name(invoice: Invoice) -> str:
             val = getattr(customer, attr, None)
             if val:
                 return val
-        # final fallback
         if getattr(customer, "email", None):
             return str(getattr(customer, "email"))
     return getattr(invoice, "homeowner_name", None) or getattr(invoice, "customer_name", None) or "Customer"
@@ -207,7 +202,6 @@ def _send_invoice_email_postmark(invoice: Invoice) -> dict:
     project = getattr(agreement, "project", None) if agreement else None
     project_title = getattr(project, "title", None) or getattr(invoice, "project_title", None) or "Your Project"
 
-    # Prefer per-agreement milestone number if available via serializer (new)
     ser = InvoiceSerializer(invoice, context={"request": None}).data
     ms_order = ser.get("milestone_order")
     ms_id = ms_order or getattr(invoice, "milestone_id_snapshot", None) or getattr(invoice, "milestone_id", None) or ""
@@ -311,6 +305,24 @@ def _recompute_completion_for_invoice(invoice: Invoice) -> None:
         logger.warning("Agreement completion recompute failed for invoice %s: %s", getattr(invoice, "id", None), exc)
 
 
+def _record_pricing_observation_for_invoice(invoice: Invoice) -> None:
+    """
+    Safe helper.
+    Creates a passive pricing observation when an invoice truly becomes paid.
+    """
+    try:
+        record_pricing_observation_for_invoice(
+            invoice,
+            paid_at=getattr(invoice, "direct_pay_paid_at", None) or timezone.now(),
+        )
+    except Exception as exc:
+        logger.warning(
+            "Pricing observation capture failed for invoice %s: %s",
+            getattr(invoice, "id", None),
+            exc,
+        )
+
+
 class InvoiceViewSet(viewsets.ModelViewSet):
     serializer_class = InvoiceSerializer
     permission_classes = [IsAuthenticated]
@@ -343,15 +355,10 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             logger.exception("PDF generation for Invoice %s failed", getattr(invoice, "id", pk))
             return Response({"detail": "Failed to generate invoice PDF."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    # ------------------------------------------------------------------
-    # Manual agreement completion recompute (safe/idempotent)
-    # POST /api/projects/invoices/<id>/recompute_completion/
-    # ------------------------------------------------------------------
     @action(detail=True, methods=["post"], url_path="recompute_completion")
     def recompute_completion(self, request, pk=None):
         invoice = self.get_object()
 
-        # Ownership guard
         if request.user != invoice.agreement.project.contractor.user:
             raise PermissionDenied("Only the contractor can recompute agreement completion for this invoice.")
 
@@ -360,10 +367,6 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         invoice.refresh_from_db()
         return Response(self.get_serializer(invoice, context={"request": request}).data, status=status.HTTP_200_OK)
 
-    # ------------------------------------------------------------------
-    # Direct Pay — create Stripe Checkout link
-    # POST /api/projects/invoices/<id>/direct_pay_link/
-    # ------------------------------------------------------------------
     @action(detail=True, methods=["post"], url_path="direct_pay_link")
     def direct_pay_link(self, request, pk=None):
         invoice = self.get_object()
@@ -399,10 +402,10 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             logger.exception("Direct Pay link creation failed for invoice %s", getattr(invoice, "id", pk))
             return Response({"detail": "Failed to create Direct Pay link.", "error": str(e)}, status=400)
 
-        # If invoice became paid as part of service flow, recompute completion (safe)
         try:
             invoice.refresh_from_db()
             if str(getattr(invoice, "status", "") or "").lower() == "paid" or getattr(invoice, "direct_pay_paid_at", None):
+                _record_pricing_observation_for_invoice(invoice)
                 _recompute_completion_for_invoice(invoice)
         except Exception:
             pass
@@ -485,20 +488,15 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
 
 class InvoicePDFView(APIView):
-    """
-    Legacy authenticated PDF file view kept for urls.py compatibility.
-    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request, pk):
         invoice = get_object_or_404(Invoice, pk=pk)
         user = request.user
 
-        # ✅ Contractor can always view
         contractor_user = getattr(getattr(getattr(invoice, "agreement", None), "project", None), "contractor", None)
         contractor_user = getattr(contractor_user, "user", None)
 
-        # ✅ Customer can view if they have a linked auth user (optional)
         agreement = getattr(invoice, "agreement", None)
         customer = getattr(agreement, "homeowner", None) if agreement else None
         customer_user = getattr(customer, "user", None)
