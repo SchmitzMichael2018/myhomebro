@@ -750,49 +750,16 @@ export default function Step1Details({
     if (locked) return;
     if (!agreementId) return;
 
-    try {
-      await api.patch(`/projects/agreements/${agreementId}/`, {
-        selected_template: null,
-        selected_template_id: null,
-        selected_template_name_snapshot: "",
-        project_template_id: null,
-        template_id: null,
-      });
+    const templateName =
+      safeTrim(agreement?.selected_template?.name) ||
+      safeTrim(agreement?.selected_template_name_snapshot) ||
+      safeTrim(dLocal?.selected_template?.name) ||
+      safeTrim(dLocal?.selected_template_name_snapshot) ||
+      "this template";
 
-      setDLocal((prev) => ({
-        ...prev,
-        selected_template: null,
-        selected_template_id: null,
-        selected_template_name_snapshot: "",
-        project_template_id: null,
-        template_id: null,
-      }));
-
-      if (!isNewAgreement) {
-        writeCache({
-          selected_template: null,
-          selected_template_id: null,
-          selected_template_name_snapshot: "",
-          project_template_id: null,
-          template_id: null,
-        });
-      }
-
-      setSelectedTemplateId(null);
-      setTemplateSearch("");
-
-      toast.success("Template deselected.");
-
-      if (typeof refreshAgreement === "function") {
-        await refreshAgreement();
-      }
-    } catch (e) {
-      const msg =
-        e?.response?.data?.detail ||
-        e?.response?.data?.error ||
-        "Could not deselect template.";
-      toast.error(msg);
-    }
+    toast.error(
+      `Cannot deselect ${templateName} here because its scope, milestones, or clarifications may already be applied. Leaving the template attached prevents the agreement from silently remaining template-shaped with no template metadata.`
+    );
   }
 
   async function handleUpdateTemplateDays(templateId, payload = {}) {

@@ -201,7 +201,12 @@ class ApplyTemplateSerializer(serializers.Serializer):
         spread_enabled = bool(attrs.get("spread_enabled", False))
         spread_total = attrs.get("spread_total", None)
 
-        if spread_enabled and spread_total is not None and spread_total <= 0:
+        if spread_enabled and spread_total is None:
+            raise serializers.ValidationError(
+                {"spread_total": "Spread total is required when spread is enabled."}
+            )
+
+        if spread_enabled and spread_total <= 0:
             raise serializers.ValidationError(
                 {"spread_total": "Spread total must be greater than 0 when spread is enabled."}
             )

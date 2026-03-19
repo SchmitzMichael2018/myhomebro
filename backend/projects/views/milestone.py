@@ -21,7 +21,7 @@ from typing import List, Dict, Any, Optional
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
-from django.db.models import Max, Q
+from django.db.models import Max, Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
@@ -111,6 +111,25 @@ def _spread_total_equal(total: Decimal, n: int) -> List[Decimal]:
 
     cents = [base + (1 if i < rem else 0) for i in range(n)]
     return [Decimal(c) / Decimal(100) for c in cents]
+
+
+def _recompute_agreement_total_cost(agreement: Optional[Agreement]) -> Decimal:
+    if agreement is None:
+        return Decimal("0.00")
+
+    total = (
+        Milestone.objects.filter(agreement=agreement)
+        .aggregate(total=Sum("amount"))
+        .get("total")
+        or Decimal("0.00")
+    )
+    total = _quantize_money(_to_decimal_amount(total))
+
+    if getattr(agreement, "total_cost", None) != total:
+        agreement.total_cost = total
+        agreement.save(update_fields=["total_cost"])
+
+    return total
 
 
 def _stripe_init_or_raise():
@@ -310,8 +329,116 @@ def _collect_uploaded_files(request) -> List[Any]:
             if "files" in request.FILES:
                 uploaded_files.extend(request.FILES.getlist("files"))
     except Exception:
-        pass
+            pass
     return uploaded_files
+
+
+def _safe_list(value: Any) -> List[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _normalize_milestone_text(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    text = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in text)
+    return " ".join(text.split())
+
+
+def _milestone_title_description_signature(item: Any) -> tuple[str, str]:
+    title = _normalize_milestone_text(getattr(item, "title", None) if not isinstance(item, dict) else item.get("title"))
+    description = _normalize_milestone_text(
+        getattr(item, "description", None) if not isinstance(item, dict) else item.get("description")
+    )
+    return title, description
+
+
+def _text_token_overlap(left: str, right: str) -> float:
+    left_tokens = set(left.split())
+    right_tokens = set(right.split())
+    if not left_tokens or not right_tokens:
+        return 0.0
+    common = len(left_tokens & right_tokens)
+    denom = max(len(left_tokens), len(right_tokens))
+    if denom <= 0:
+        return 0.0
+    return common / denom
+
+
+def _looks_like_obvious_duplicate_milestone(incoming: Any, existing: Any) -> bool:
+    incoming_title, incoming_desc = _milestone_title_description_signature(incoming)
+    existing_title, existing_desc = _milestone_title_description_signature(existing)
+
+    if not incoming_title or not existing_title:
+        return False
+
+    if incoming_title != existing_title:
+        return False
+
+    if not incoming_desc or not existing_desc:
+        return True
+
+    if incoming_desc == existing_desc:
+        return True
+
+    if incoming_desc in existing_desc or existing_desc in incoming_desc:
+        return True
+
+    return _text_token_overlap(incoming_desc, existing_desc) >= 0.7
+
+
+def _find_append_duplicate_pairs(existing_rows: List[Milestone], incoming_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    duplicates: List[Dict[str, Any]] = []
+    for incoming in incoming_rows:
+        for existing in existing_rows:
+            if not _looks_like_obvious_duplicate_milestone(incoming, existing):
+                continue
+            duplicates.append(
+                {
+                    "existing_id": getattr(existing, "id", None),
+                    "title": getattr(existing, "title", "") or incoming.get("title") or "",
+                }
+            )
+            break
+    return duplicates
+
+
+def _incoming_set_closely_matches_existing(existing_rows: List[Milestone], incoming_rows: List[Dict[str, Any]]) -> bool:
+    if not existing_rows:
+        return True
+
+    if len(existing_rows) != len(incoming_rows):
+        return False
+
+    unmatched = list(incoming_rows)
+    for existing in existing_rows:
+        match_idx = None
+        for idx, incoming in enumerate(unmatched):
+            if _looks_like_obvious_duplicate_milestone(incoming, existing):
+                match_idx = idx
+                break
+        if match_idx is None:
+            return False
+        unmatched.pop(match_idx)
+
+    return not unmatched
+
+
+def _agreement_has_template_derived_state(agreement: Agreement) -> bool:
+    if getattr(agreement, "selected_template_id", None):
+        return True
+
+    if str(getattr(agreement, "selected_template_name_snapshot", "") or "").strip():
+        return True
+
+    scope_obj = getattr(agreement, "ai_scope", None)
+    questions = _safe_list(getattr(scope_obj, "questions", None))
+    for question in questions:
+        if not isinstance(question, dict):
+            continue
+        source = str(question.get("source", "") or "").strip().lower()
+        if source == "template":
+            return True
+
+    return False
 
 
 # ----------------------------- NEW: business rule gating ----------------------------- #
@@ -574,6 +701,9 @@ class MilestoneViewSet(viewsets.ModelViewSet):
 
         try:
             self.perform_create(serializer)
+            created_instance = getattr(serializer, "instance", None)
+            if created_instance is not None:
+                _recompute_agreement_total_cost(getattr(created_instance, "agreement", None))
         except IntegrityError as exc:
             logger.exception("IntegrityError creating milestone: %s", exc)
             return Response(
@@ -625,7 +755,9 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        return super().destroy(request, *args, **kwargs)
+        response = super().destroy(request, *args, **kwargs)
+        _recompute_agreement_total_cost(agreement)
+        return response
 
     # ---------------- HARDEN completion via PUT/PATCH + LOCK edits on signed ---------------- #
     def update(self, request, *args, **kwargs):
@@ -690,7 +822,9 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                 logger.exception("Failed to update+complete milestone %s: %s", getattr(instance, "id", None), exc)
                 return Response({"detail": "Unable to update/complete milestone."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        return super().update(request, *args, partial=partial, **kwargs)
+        response = super().update(request, *args, partial=partial, **kwargs)
+        _recompute_agreement_total_cost(getattr(instance, "agreement", None))
+        return response
 
     def partial_update(self, request, *args, **kwargs):
         kwargs["partial"] = True
@@ -796,6 +930,19 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         if not can_edit_milestones_under_agreement(agreement, allow_amendment=_is_amendment_request(request)):
             return _locked_response(agreement)
 
+        if _agreement_has_template_derived_state(agreement):
+            return Response(
+                {
+                    "detail": (
+                        "A template is already applied to this agreement. "
+                        "AI milestone bulk apply is disabled to avoid overwriting the template structure."
+                    ),
+                    "code": "TEMPLATE_APPLIED",
+                    "agreement_id": agreement.id,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
         contractor = get_contractor_for_user(request.user)
         if contractor is None:
             return Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
@@ -819,14 +966,47 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         next_order = 1 if mode == "replace" else (existing_max + 1)
 
         with transaction.atomic():
+            existing = list(Milestone.objects.select_for_update().filter(agreement_id=ag_id))
+
+            if mode == "append":
+                duplicates = _find_append_duplicate_pairs(existing, milestones_in)
+                if duplicates:
+                    duplicate_titles = [d.get("title") for d in duplicates if d.get("title")]
+                    return Response(
+                        {
+                            "detail": (
+                                "AI append was blocked because one or more suggested milestones "
+                                "already match existing milestones on this agreement."
+                            ),
+                            "code": "AI_APPEND_DUPLICATE",
+                            "duplicate_titles": duplicate_titles[:5],
+                            "duplicate_existing_ids": [d.get("existing_id") for d in duplicates if d.get("existing_id")],
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
+
             if mode == "replace":
-                existing = list(Milestone.objects.select_for_update().filter(agreement_id=ag_id))
                 started = [m.id for m in existing if _milestone_looks_started(m)]
                 if started:
                     return Response(
                         {"detail": f"Cannot replace milestones because some milestones are started/invoiced: {started}"},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
+
+                if existing and not _incoming_set_closely_matches_existing(existing, milestones_in):
+                    return Response(
+                        {
+                            "detail": (
+                                "AI replace was blocked because the current milestones appear manually edited "
+                                "or otherwise unsafe to wipe. Remove or update milestones manually before replacing them with AI."
+                            ),
+                            "code": "AI_REPLACE_UNSAFE_EXISTING",
+                            "existing_count": len(existing),
+                            "incoming_count": len(milestones_in),
+                        },
+                        status=status.HTTP_409_CONFLICT,
+                    )
+
                 Milestone.objects.filter(agreement_id=ag_id).delete()
                 next_order = 1
 
@@ -899,6 +1079,8 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                 ser.is_valid(raise_exception=True)
                 obj = ser.save()
                 created_objs.append(obj)
+
+            _recompute_agreement_total_cost(agreement)
 
         out = MilestoneSerializer(created_objs, many=True, context={"request": request}).data
         return Response({"created": out, "count": len(created_objs)}, status=status.HTTP_201_CREATED)

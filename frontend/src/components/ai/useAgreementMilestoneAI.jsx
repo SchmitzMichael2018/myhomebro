@@ -12,6 +12,7 @@
 // - Expose reusable loading/error/preview state
 
 import { useCallback, useState } from "react";
+import toast from "react-hot-toast";
 import api from "../../api";
 
 function safeStr(v) {
@@ -326,6 +327,87 @@ function deriveSelectedTemplateId(agreementData) {
   );
 }
 
+function hasTemplateDerivedQuestions(agreementData) {
+  const questions = Array.isArray(agreementData?.ai_scope?.questions)
+    ? agreementData.ai_scope.questions
+    : [];
+
+  return questions.some(
+    (q) => safeStr(q?.source).toLowerCase() === "template"
+  );
+}
+
+function hasTemplateDerivedState(agreementData) {
+  if (!agreementData || typeof agreementData !== "object") return false;
+
+  if (deriveSelectedTemplateId(agreementData)) return true;
+
+  if (
+    safeStr(
+      agreementData?.selected_template_name_snapshot ??
+        agreementData?.selected_template_name
+    )
+  ) {
+    return true;
+  }
+
+  if (hasTemplateDerivedQuestions(agreementData)) {
+    return true;
+  }
+
+  return false;
+}
+
+function friendlyAiMilestoneError(e) {
+  const code = safeStr(e?.response?.data?.code || e?.code).toUpperCase();
+  const duplicateTitles = Array.isArray(e?.response?.data?.duplicate_titles)
+    ? e.response.data.duplicate_titles.filter(Boolean).slice(0, 3)
+    : [];
+
+  if (code === "TEMPLATE_APPLIED") {
+    return "This agreement is template-driven. AI milestone apply is disabled here to avoid overwriting the template structure.";
+  }
+
+  if (code === "AI_APPEND_DUPLICATE") {
+    const suffix = duplicateTitles.length
+      ? ` Matching milestone(s): ${duplicateTitles.join(", ")}.`
+      : "";
+    return (
+      "AI append was blocked because the suggested milestones appear to duplicate milestones already on this agreement." +
+      suffix +
+      " Review the current milestones first, or use replace only after manual review."
+    );
+  }
+
+  if (code === "AI_REPLACE_UNSAFE_EXISTING") {
+    return "AI replace was blocked because the current milestones appear manually edited or otherwise unsafe to wipe. Review or clean up the existing milestones before retrying replace.";
+  }
+
+  return (
+    e?.response?.data?.detail ||
+    e?.message ||
+    "AI request failed."
+  );
+}
+
+function actionGuidanceForAiApplyError(e) {
+  const code = safeStr(e?.response?.data?.code || e?.code).toUpperCase();
+
+  if (code === "AI_APPEND_DUPLICATE") {
+    return "Review the current milestones first and avoid appending near-duplicates. Use append only for clearly new milestone groups.";
+  }
+
+  if (code === "AI_REPLACE_UNSAFE_EXISTING") {
+    return "Review or clean up the existing milestones manually before retrying AI replace. Replace is blocked while the current set looks unsafe to wipe.";
+  }
+
+  if (code === "TEMPLATE_APPLIED") {
+    return "This agreement is template-driven. Edit the milestone structure through the template/manual workflow instead of AI apply.";
+  }
+
+  return "";
+}
+
 export default function useAgreementMilestoneAI({
   agreementId,
   locked = false,
@@ -347,8 +429,7 @@ export default function useAgreementMilestoneAI({
 
   const ensureNoTemplateApplied = useCallback(async () => {
     const agreementData = await getAgreementSnapshot();
-    const selectedTemplateId = deriveSelectedTemplateId(agreementData);
-    if (selectedTemplateId) {
+    if (hasTemplateDerivedState(agreementData)) {
       const err = new Error(
         "A template is already applied to this agreement. AI milestone regeneration is disabled to avoid overwriting the template structure."
       );
@@ -454,10 +535,7 @@ export default function useAgreementMilestoneAI({
 
         return nextPreview;
       } catch (e) {
-        const msg =
-          e?.response?.data?.detail ||
-          e?.message ||
-          "AI suggestion failed.";
+        const msg = friendlyAiMilestoneError(e) || "AI suggestion failed.";
         setAiError(msg);
         throw e;
       } finally {
@@ -531,11 +609,12 @@ export default function useAgreementMilestoneAI({
           raw: res?.data || {},
         };
       } catch (e) {
-        const msg =
-          e?.response?.data?.detail ||
-          e?.message ||
-          "Bulk create failed.";
+        const msg = friendlyAiMilestoneError(e) || "Bulk create failed.";
         setAiError(msg);
+        const guidance = actionGuidanceForAiApplyError(e);
+        if (guidance) {
+          toast(guidance, { icon: "ℹ️" });
+        }
         throw e;
       } finally {
         setAiApplying(false);

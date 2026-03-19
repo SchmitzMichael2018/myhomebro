@@ -322,9 +322,13 @@ def _legacy_alias_keys_for_group(group_key: str) -> list[str]:
         ],
         "permits_responsibility": [
             "permits_responsibility",
+            "permit_acquisition",
             "who_obtains_permits",
             "who_obtains_necessary_building_permits",
             "who_is_responsible_for_obtaining_all_required_building_permits",
+            "permit_notes",
+            "permits",
+            "permits_inspections",
         ],
         "measurements_provided": [
             "measurements_provided",
@@ -337,6 +341,30 @@ def _legacy_alias_keys_for_group(group_key: str) -> list[str]:
         ],
     }
     return aliases.get(group_key, [])
+
+
+def _canonicalize_answers_for_questions(existing_answers: dict, canonical_questions: list) -> dict:
+    src = _safe_dict(existing_answers)
+    normalized = _normalize_answers_for_questions(src, canonical_questions)
+
+    canonical_keys = {
+        str(q.get("key") or "").strip()
+        for q in _safe_list(canonical_questions)
+        if str(q.get("key") or "").strip()
+    }
+
+    alias_keys = set()
+    for key in canonical_keys:
+        alias_keys.update(_legacy_alias_keys_for_group(key))
+
+    out: dict[str, Any] = {}
+
+    for key, value in normalized.items():
+        if key in alias_keys and key not in canonical_keys:
+            continue
+        out[key] = value
+
+    return out
 
 
 def _normalize_answers_for_questions(existing_answers: dict, canonical_questions: list) -> dict:
@@ -371,7 +399,7 @@ def _clean_stored_questions(questions: Any) -> list[dict]:
         if not isinstance(raw, dict):
             continue
 
-        key = str(raw.get("key") or "").strip()
+        key = str(_question_group(raw) or raw.get("key") or "").strip()
         if not key:
             continue
 
@@ -657,7 +685,7 @@ class AgreementSerializer(serializers.ModelSerializer):
 
     def _milestone_rollups(self, obj):
         if Milestone is None:
-            return {"sum_amount": Decimal("0"), "min_start": None, "max_end": None}
+            return {"sum_amount": Decimal("0"), "min_start": None, "max_end": None, "count": 0}
 
         qs = list(Milestone.objects.filter(agreement=obj))
 
@@ -684,12 +712,16 @@ class AgreementSerializer(serializers.ModelSerializer):
                     break
         max_end = max(end_candidates) if end_candidates else None
 
-        return {"sum_amount": total_amt, "min_start": min_start, "max_end": max_end}
+        return {"sum_amount": total_amt, "min_start": min_start, "max_end": max_end, "count": len(qs)}
 
     def get_display_milestone_total(self, obj):
         return self._milestone_rollups(obj)["sum_amount"]
 
     def get_total(self, obj):
+        rollups = self._milestone_rollups(obj)
+        if rollups["count"] > 0:
+            return rollups["sum_amount"]
+
         total_cost = getattr(obj, "total_cost", None)
 
         if total_cost in ("", None):
@@ -705,7 +737,7 @@ class AgreementSerializer(serializers.ModelSerializer):
         if normalized not in (None, Decimal("0"), Decimal("0.00")):
             return normalized
 
-        return self._milestone_rollups(obj)["sum_amount"]
+        return rollups["sum_amount"]
 
     def get_amount(self, obj):
         return self.get_total(obj)
@@ -1011,7 +1043,7 @@ class AgreementSerializer(serializers.ModelSerializer):
 
         incoming_questions_raw = _safe_list(ai_scope_payload.get("questions"))
         incoming_questions = (
-            _clean_stored_questions(incoming_questions_raw)
+            _clean_stored_questions(_canonicalize_questions(incoming_questions_raw))
             if incoming_questions_raw
             else []
         )
@@ -1028,11 +1060,11 @@ class AgreementSerializer(serializers.ModelSerializer):
             scope_obj.questions = incoming_questions
 
         if incoming_answers:
-            merged_existing_answers = _normalize_answers_for_questions(
+            merged_existing_answers = _canonicalize_answers_for_questions(
                 _safe_dict(scope_obj.answers),
                 effective_questions,
             )
-            merged_incoming_answers = _normalize_answers_for_questions(
+            merged_incoming_answers = _canonicalize_answers_for_questions(
                 incoming_answers,
                 effective_questions,
             )

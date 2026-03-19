@@ -247,12 +247,25 @@ export default function AgreementWizard() {
 
   const didInitialFetchRef = useRef(false);
 
-  const totals = useMemo(() => ({ totalAmt: sum(milestones, "amount") }), [milestones]);
-
   const agreementId = useMemo(
     () => deriveAgreementId(agreement, agreementIdParam),
     [agreement, agreementIdParam]
   );
+
+  const totals = useMemo(() => {
+    const agreementTotal =
+      agreement?.display_total ??
+      agreement?.total ??
+      agreement?.amount ??
+      agreement?.total_cost;
+
+    const normalizedAgreementTotal = Number(agreementTotal);
+    return {
+      totalAmt: Number.isFinite(normalizedAgreementTotal)
+        ? normalizedAgreementTotal
+        : sum(milestones, "amount"),
+    };
+  }, [agreement, milestones]);
 
   const setAgreement = useCallback(
     (nextPayload) => {
@@ -499,6 +512,25 @@ export default function AgreementWizard() {
     if (!agreementId) return;
     await fetchAgreement(agreementId);
   }, [agreementId, fetchAgreement]);
+
+  const warnRefreshAfterMutation = useCallback((actionLabel = "saved") => {
+    toast(`Milestone ${actionLabel}, but the latest agreement data could not be refreshed.`);
+  }, []);
+
+  const refreshAfterMilestoneMutation = useCallback(
+    async (actionLabel = "saved") => {
+      try {
+        await loadMilestones();
+        await refreshAgreement();
+        return true;
+      } catch (err) {
+        console.warn("refreshAfterMilestoneMutation failed:", err);
+        warnRefreshAfterMutation(actionLabel);
+        return false;
+      }
+    },
+    [loadMilestones, refreshAgreement, warnRefreshAfterMutation]
+  );
 
   const reloadPeople = async () => {
     try {
@@ -748,9 +780,9 @@ export default function AgreementWizard() {
     };
 
     const { data: created } = await api.post(`/projects/milestones/`, payload);
-    await loadMilestones();
     setMLocal({ ...EMPTY_MLOCAL });
-    return created;
+    const refreshed = await refreshAfterMilestoneMutation("saved");
+    return { milestone: created, refreshed };
   };
 
   const deleteMilestone = async (milestoneId) => {
@@ -764,7 +796,8 @@ export default function AgreementWizard() {
       }
     }
 
-    await loadMilestones();
+    const refreshed = await refreshAfterMilestoneMutation("deleted");
+    return { milestoneId, refreshed };
   };
 
   const updateMilestone = async (patchData) => {
@@ -788,8 +821,8 @@ export default function AgreementWizard() {
     }
 
     const { data: updated } = await api.patch(`/projects/milestones/${mid}/`, payload);
-    await loadMilestones();
-    return updated;
+    const refreshed = await refreshAfterMilestoneMutation("updated");
+    return { milestone: updated, refreshed };
   };
 
   const refreshAttachments = async () => {
@@ -1025,6 +1058,7 @@ export default function AgreementWizard() {
             onBack={() => goStep(1)}
             onNext={() => goStep(3)}
             reloadMilestones={loadMilestones}
+            refreshAgreement={refreshAgreement}
           />
         </div>
       ) : null}

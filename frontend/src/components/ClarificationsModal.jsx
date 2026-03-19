@@ -163,12 +163,12 @@ function semanticGroupForQuestion(q) {
   }
 
   if (text.includes("permit")) {
-    return "permit_acquisition";
+    return "permits_responsibility";
   }
 
   if (text.includes("measurement")) {
     if (text.includes("note")) return "measurement_notes";
-    return "measurements_needed";
+    return "measurements_provided";
   }
 
   if (text.includes("allowance") || text.includes("selection allowance") || text.includes("allowances")) {
@@ -206,8 +206,8 @@ function isInternalSemanticKey(k) {
 function friendlyLabelForCanonicalKey(key, fallback = "") {
   const labels = {
     materials_responsibility: "Who will purchase materials?",
-    permit_acquisition: "Who is responsible for permits?",
-    measurements_needed: "Are measurements needed?",
+    permits_responsibility: "Who obtains necessary building permits?",
+    measurements_provided: "Are detailed measurements provided?",
     measurement_notes: "Measurement notes",
     allowances_selections: "Allowances / selections",
     flooring_finishes_later: "Will finished flooring be installed later?",
@@ -227,8 +227,8 @@ function inferQuestionInputType(q) {
   const label = normalizeLabelForMatching(q?.label || "");
 
   if (group === "materials_responsibility") return "radio";
-  if (group === "permit_acquisition") return "radio";
-  if (group === "measurements_needed") return "radio";
+  if (group === "permits_responsibility") return "radio";
+  if (group === "measurements_provided") return "radio";
   if (group === "flooring_finishes_later") return "radio";
 
   if (
@@ -269,15 +269,15 @@ function inferQuestionOptions(q) {
     ];
   }
 
-  if (group === "permit_acquisition") {
+  if (group === "permits_responsibility") {
     return [
       { value: "Contractor", label: "Contractor" },
       { value: "Homeowner", label: "Homeowner" },
-      { value: "Split", label: "Shared responsibility" },
+      { value: "Split / depends", label: "Shared / depends" },
     ];
   }
 
-  if (group === "measurements_needed") {
+  if (group === "measurements_provided") {
     return [
       { value: "Yes", label: "Yes" },
       { value: "No", label: "No" },
@@ -430,6 +430,12 @@ function mergeAndCanonicalizeQuestions(list = []) {
 function normalizeAnswersForCanonicalKeys(answerMap = {}, questions = []) {
   const src = safeDict(answerMap);
   const out = {};
+  const aliasKeys = new Set([
+    "permit_acquisition",
+    "measurements_needed",
+    "who_purchases_materials",
+    "materials_purchasing",
+  ]);
 
   for (const q of questions) {
     const canonicalKey = String(q?.key || "");
@@ -453,6 +459,7 @@ function normalizeAnswersForCanonicalKeys(answerMap = {}, questions = []) {
   }
 
   for (const rawKey of Object.keys(src)) {
+    if (aliasKeys.has(rawKey)) continue;
     if (!Object.prototype.hasOwnProperty.call(out, rawKey)) {
       out[rawKey] = src[rawKey];
     }

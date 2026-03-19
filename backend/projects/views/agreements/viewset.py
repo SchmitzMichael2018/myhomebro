@@ -15,8 +15,6 @@ from rest_framework.response import Response
 from projects.models import Agreement, ProjectStatus
 from projects.serializers.agreement import (
     AgreementSerializer,
-    _canonicalize_questions,
-    _normalize_answers_for_questions,
 )
 from projects.services.agreements.create import create_agreement_from_validated
 from projects.services.agreements.address import sync_project_address_from_agreement
@@ -45,9 +43,6 @@ from projects.services.agreements.pdf_actions import (
     mark_agreement_previewed,
     finalize_agreement_pdf,
 )
-
-from projects.ai.agreement_milestone_writer import suggest_scope_and_milestones
-from projects.models_ai_scope import AgreementAIScope
 
 from projects.services.agreement_completion import (
     check_agreement_completion,
@@ -611,76 +606,6 @@ class AgreementViewSet(viewsets.ModelViewSet):
                 "contractor_ack_tos": bool(ag.contractor_ack_tos),
                 "contractor_ack_esign": bool(ag.contractor_ack_esign),
                 "contractor_ack_at": ag.contractor_ack_at,
-            },
-            status=status.HTTP_200_OK,
-        )
-
-    @action(detail=True, methods=["post"], url_path="ai/suggest-milestones")
-    def ai_suggest_milestones(self, request, pk=None):
-        ag: Agreement = self.get_object()
-        user = request.user
-        if not (user.is_staff or user.is_superuser):
-            contractor = resolve_contractor_for_user(user)
-            if contractor is None:
-                return Response({"detail": "Contractor only."}, status=status.HTTP_403_FORBIDDEN)
-            if getattr(getattr(ag, "project", None), "contractor_id", None) != contractor.id:
-                return Response(
-                    {"detail": "Not authorized for this agreement."},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-
-        notes = ""
-        ai_answers = {}
-        try:
-            if isinstance(request.data, dict):
-                notes = (request.data.get("notes") or "").strip()
-                ai_answers = request.data.get("ai_answers") or {}
-            else:
-                notes = (request.data.get("notes") or "").strip()
-                ai_answers = request.data.get("ai_answers") or {}
-        except Exception:
-            notes = ""
-            ai_answers = {}
-
-        try:
-            out = suggest_scope_and_milestones(agreement=ag, notes=notes)
-        except Exception as e:
-            return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-        raw_questions = out.get("questions", []) or []
-        scope_text = out.get("scope_text", "") or ""
-
-        questions = _canonicalize_questions(raw_questions)
-
-        scope_obj, _ = AgreementAIScope.objects.get_or_create(agreement=ag)
-
-        normalized_existing_answers = _normalize_answers_for_questions(
-            scope_obj.answers or {}, questions
-        )
-
-        incoming_answers = ai_answers if isinstance(ai_answers, dict) else {}
-        normalized_incoming_answers = _normalize_answers_for_questions(
-            incoming_answers, questions
-        )
-
-        merged_answers = dict(normalized_existing_answers or {})
-        merged_answers.update(normalized_incoming_answers or {})
-
-        scope_obj.questions = questions
-        scope_obj.answers = merged_answers
-
-        if scope_text:
-            scope_obj.scope_text = scope_text
-
-        scope_obj.save()
-
-        return Response(
-            {
-                "detail": "OK",
-                "scope_text": scope_text,
-                "milestones": out.get("milestones", []),
-                "questions": questions,
-                "_model": out.get("_model"),
             },
             status=status.HTTP_200_OK,
         )

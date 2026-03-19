@@ -195,6 +195,10 @@ class ApplyTemplateToAgreementView(APIView):
                 template=template,
                 overwrite_existing=overwrite_existing,
                 copy_text_fields=copy_text_fields,
+                estimated_days=serializer.validated_data.get("estimated_days"),
+                auto_schedule=serializer.validated_data.get("auto_schedule", False),
+                spread_enabled=serializer.validated_data.get("spread_enabled", False),
+                spread_total=serializer.validated_data.get("spread_total"),
             )
         except ValueError as exc:
             raise ValidationError(str(exc))

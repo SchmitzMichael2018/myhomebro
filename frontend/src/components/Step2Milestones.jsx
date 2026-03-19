@@ -279,6 +279,7 @@ export default function Step2Milestones({
   onBack,
   onNext,
   reloadMilestones,
+  refreshAgreement,
 }) {
   const [overlapConfirm, setOverlapConfirm] = useState(null);
 
@@ -332,6 +333,80 @@ export default function Step2Milestones({
   const [saveTemplateBusy, setSaveTemplateBusy] = useState(false);
   const [saveTemplateName, setSaveTemplateName] = useState("");
   const [saveTemplateDescription, setSaveTemplateDescription] = useState("");
+  const [fallbackMilestones, setFallbackMilestones] = useState(null);
+
+  const effectiveMilestones = useMemo(() => {
+    return Array.isArray(fallbackMilestones) ? fallbackMilestones : Array.isArray(milestones) ? milestones : [];
+  }, [fallbackMilestones, milestones]);
+
+  useEffect(() => {
+    setFallbackMilestones(null);
+  }, [milestones]);
+
+  function normalizeMilestoneForLocalFallback(milestone, fallbackOrder = null) {
+    if (!milestone || typeof milestone !== "object") return null;
+
+    const normalized = {
+      ...milestone,
+      id: milestone.id,
+      title: milestone.title || "",
+      description: milestone.description || "",
+      amount: milestone.amount != null ? Number(milestone.amount) : 0,
+      start_date: toDateOnly(milestone.start_date || milestone.start || ""),
+      completion_date: toDateOnly(milestone.completion_date || milestone.end_date || milestone.end || ""),
+      due_date: toDateOnly(milestone.due_date || ""),
+      order:
+        milestone.order != null
+          ? Number(milestone.order)
+          : Number.isFinite(fallbackOrder)
+          ? fallbackOrder
+          : null,
+    };
+
+    return normalized;
+  }
+
+  function sortFallbackMilestones(rows) {
+    return [...rows].sort((a, b) => {
+      const orderA = Number.isFinite(Number(a?.order)) ? Number(a.order) : Number.MAX_SAFE_INTEGER;
+      const orderB = Number.isFinite(Number(b?.order)) ? Number(b.order) : Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) return orderA - orderB;
+
+      const idA = Number.isFinite(Number(a?.id)) ? Number(a.id) : Number.MAX_SAFE_INTEGER;
+      const idB = Number.isFinite(Number(b?.id)) ? Number(b.id) : Number.MAX_SAFE_INTEGER;
+      return idA - idB;
+    });
+  }
+
+  function applyLocalMilestoneFallback(action, payload) {
+    setFallbackMilestones((prev) => {
+      const base = Array.isArray(prev) ? prev : Array.isArray(milestones) ? milestones : [];
+
+      if (action === "create") {
+        const nextOrder = base.reduce((max, row) => Math.max(max, Number(row?.order || 0)), 0) + 1;
+        const created = normalizeMilestoneForLocalFallback(payload, nextOrder);
+        if (!created?.id) return base;
+        return sortFallbackMilestones([...base.filter((row) => row?.id !== created.id), created]);
+      }
+
+      if (action === "update") {
+        const fallbackOrder = base.reduce((max, row) => Math.max(max, Number(row?.order || 0)), 0) + 1;
+        const updated = normalizeMilestoneForLocalFallback(payload, fallbackOrder);
+        if (!updated?.id) return base;
+        const exists = base.some((row) => row?.id === updated.id);
+        const nextRows = exists
+          ? base.map((row) => (row?.id === updated.id ? { ...row, ...updated } : row))
+          : [...base, updated];
+        return sortFallbackMilestones(nextRows);
+      }
+
+      if (action === "delete") {
+        return base.filter((row) => row?.id !== payload);
+      }
+
+      return base;
+    });
+  }
 
   const refreshAgreementMeta = useCallback(async () => {
     if (!agreementId) return null;
@@ -361,6 +436,21 @@ export default function Step2Milestones({
       await reloadMilestones();
     }
     await refreshAgreementMeta();
+    if (typeof refreshAgreement === "function") {
+      await refreshAgreement();
+    }
+    setFallbackMilestones(null);
+  }
+
+  async function refreshAfterAiBulkSuccess() {
+    try {
+      await refreshMilestonesSafe();
+      return true;
+    } catch (err) {
+      console.warn("refreshAfterAiBulkSuccess failed:", err);
+      toast("AI milestones were created, but the latest agreement data could not be refreshed.");
+      return false;
+    }
   }
 
   useEffect(() => {
@@ -391,7 +481,11 @@ export default function Step2Milestones({
           setMaterialsWho(mw);
         }
 
-        if (typeof answers.measurements_needed === "boolean") {
+        if (typeof answers.measurements_provided === "string") {
+          const normalized = String(answers.measurements_provided).trim().toLowerCase();
+          if (normalized === "yes") setNeedsMeasurements(true);
+          else if (normalized === "no") setNeedsMeasurements(false);
+        } else if (typeof answers.measurements_needed === "boolean") {
           setNeedsMeasurements(answers.measurements_needed);
         }
 
@@ -402,6 +496,7 @@ export default function Step2Milestones({
         else if (typeof answers.allowance_notes === "string") setAllowanceNotes(answers.allowance_notes);
 
         if (typeof answers.permit_notes === "string") setPermitNotes(answers.permit_notes);
+        else if (typeof answers.permits_responsibility === "string") setPermitNotes(answers.permits_responsibility);
         else if (typeof answers.permits === "string") setPermitNotes(answers.permits);
         else if (typeof answers.permits_inspections === "string") setPermitNotes(answers.permits_inspections);
         else if (typeof answers.permit_acquisition === "string") setPermitNotes(answers.permit_acquisition);
@@ -439,20 +534,15 @@ export default function Step2Milestones({
 
     if (permitNotes && String(permitNotes).trim()) {
       const v = String(permitNotes).trim();
-      answers.permit_acquisition = v;
-      answers.permits_inspections = v;
-      answers.permits = v;
-      answers.permit_notes = v;
+      answers.permits_responsibility = v;
     }
 
     if (materialsWho && String(materialsWho).trim()) {
       const v = String(materialsWho).trim();
-      answers.who_purchases_materials = v;
-      answers.materials_purchasing = v;
       answers.materials_responsibility = v;
     }
 
-    answers.measurements_needed = !!needsMeasurements;
+    answers.measurements_provided = needsMeasurements ? "Yes" : "No";
 
     if (measurementNotes && String(measurementNotes).trim()) {
       const v = String(measurementNotes).trim();
@@ -538,24 +628,24 @@ export default function Step2Milestones({
     onMilestonesReplaced: null,
   });
 
-  const total = milestones.reduce((s, m) => s + money(m.amount), 0);
+  const total = effectiveMilestones.reduce((s, m) => s + money(m.amount), 0);
 
   const minStart = useMemo(() => {
-    const s = milestones
+    const s = effectiveMilestones
       .map((m) => toDateOnly(m.start_date || m.start))
       .filter(Boolean)
       .sort()[0];
     return s || "";
-  }, [milestones]);
+  }, [effectiveMilestones]);
 
   const maxEnd = useMemo(() => {
-    const e = milestones
+    const e = effectiveMilestones
       .map((m) => toDateOnly(m.completion_date || m.end_date || m.end))
       .filter(Boolean)
       .sort()
       .slice(-1)[0];
     return e || "";
-  }, [milestones]);
+  }, [effectiveMilestones]);
 
   const clarificationsAgreementMeta = useMemo(() => {
     const base = agreementMeta || {};
@@ -601,8 +691,8 @@ export default function Step2Milestones({
     : "Review clarifications";
 
   function validateExistingMilestonesAmounts() {
-    for (let i = 0; i < (milestones || []).length; i++) {
-      const m = milestones[i];
+    for (let i = 0; i < effectiveMilestones.length; i++) {
+      const m = effectiveMilestones[i];
       const title = String(m?.title || `Milestone ${i + 1}`).trim();
       if (!amountIsValidPositive(m?.amount)) {
         return `Milestone "${title}" must have an amount greater than $0.`;
@@ -676,7 +766,7 @@ export default function Step2Milestones({
     });
 
     toast.success(`Created ${result?.count || 0} milestones via AI.`);
-    await refreshAgreementMeta();
+    await refreshAfterAiBulkSuccess();
   }
 
   function isOverlapError(err) {
@@ -697,8 +787,10 @@ export default function Step2Milestones({
     }
 
     try {
-      await saveMilestone(mLocal);
-      await refreshAgreementMeta();
+      const result = await saveMilestone(mLocal);
+      if (result?.refreshed === false) {
+        applyLocalMilestoneFallback("create", result?.milestone);
+      }
     } catch (e) {
       if (isOverlapError(e)) {
         setOverlapConfirm({ mode: "create", data: mLocal });
@@ -728,8 +820,10 @@ export default function Step2Milestones({
       }
 
       try {
-        await saveMilestone({ ...overlapConfirm.data, allow_overlap: true });
-        await refreshAgreementMeta();
+        const result = await saveMilestone({ ...overlapConfirm.data, allow_overlap: true });
+        if (result?.refreshed === false) {
+          applyLocalMilestoneFallback("create", result?.milestone);
+        }
       } finally {
         setOverlapConfirm(null);
       }
@@ -752,7 +846,7 @@ export default function Step2Milestones({
 
       setEditBusy(true);
       try {
-        await updateMilestone({
+        const result = await updateMilestone({
           id: d.id,
           title,
           description: safeStr(d.description),
@@ -761,13 +855,15 @@ export default function Step2Milestones({
           amount: Number(d.amount),
           allow_overlap: true,
         });
+        if (result?.refreshed === false) {
+          applyLocalMilestoneFallback("update", result?.milestone);
+        }
 
         toast.success("Milestone updated (overlap allowed).");
         setOverlapConfirm(null);
         setEditOpen(false);
         setEditMilestone(null);
         setEditAiPreview("");
-        await refreshMilestonesSafe();
       } catch (e) {
         toast.error(e?.response?.data?.detail || e?.message || "Update failed.");
       } finally {
@@ -786,8 +882,10 @@ export default function Step2Milestones({
       return;
     }
     try {
-      await deleteMilestone(id);
-      await refreshAgreementMeta();
+      const result = await deleteMilestone(id);
+      if (result?.refreshed === false) {
+        applyLocalMilestoneFallback("delete", result?.milestoneId ?? id);
+      }
     } catch (e) {
       toast.error(e?.response?.data?.detail || e?.message || "Delete failed.");
     }
@@ -845,7 +943,7 @@ export default function Step2Milestones({
 
     setEditBusy(true);
     try {
-      await updateMilestone({
+      const result = await updateMilestone({
         id: editForm.id,
         title,
         description: safeStr(editForm.description),
@@ -853,11 +951,13 @@ export default function Step2Milestones({
         completion_date: editForm.completion_date || null,
         amount: Number(editForm.amount),
       });
+      if (result?.refreshed === false) {
+        applyLocalMilestoneFallback("update", result?.milestone);
+      }
 
       toast.success("Milestone updated.");
       setEditOpen(false);
       setEditMilestone(null);
-      await refreshMilestonesSafe();
     } catch (e) {
       if (isOverlapError(e)) {
         setOverlapConfirm({
@@ -931,7 +1031,7 @@ export default function Step2Milestones({
       return;
     }
 
-    if (!milestones || milestones.length < 1) {
+    if (!effectiveMilestones.length) {
       toast.error("Add at least one milestone before saving a template.");
       return;
     }
@@ -981,7 +1081,7 @@ export default function Step2Milestones({
   }
 
   async function handleNext() {
-    if (!milestones || milestones.length < 1) {
+    if (!effectiveMilestones.length) {
       toast.error("Add at least one milestone before continuing.");
       return;
     }
@@ -1136,12 +1236,9 @@ export default function Step2Milestones({
         initialAgreement={clarificationsAgreementMeta}
         overrideQuestions={Array.isArray(aiPreview?.questions) ? aiPreview.questions : []}
         excludeKeys={[
-          "permit_acquisition",
-          "permits_inspections",
-          "who_purchases_materials",
-          "materials_purchasing",
+          "permits_responsibility",
           "materials_responsibility",
-          "measurements_needed",
+          "measurements_provided",
           "measurement_notes",
           "allowances_selections",
           "allowance_notes",
@@ -1395,7 +1492,7 @@ export default function Step2Milestones({
             </tr>
           </thead>
           <tbody>
-            {milestones.map((m, idx) => {
+            {effectiveMilestones.map((m, idx) => {
               const estimate = getEstimateAssistMeta(m);
 
               return (
@@ -1492,7 +1589,7 @@ export default function Step2Milestones({
               );
             })}
 
-            {!milestones.length ? (
+            {!effectiveMilestones.length ? (
               <tr>
                 <td colSpan={8} className="py-6 text-center text-gray-400">
                   No milestones yet.

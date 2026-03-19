@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Optional, Any
 
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 
 from projects.models import Agreement, Contractor, Milestone
@@ -56,6 +57,38 @@ def _resolve_agreement_total_amount(agreement: Agreement) -> Decimal:
     return _safe_decimal(getattr(agreement, "total_cost", None), Decimal("0.00"))
 
 
+def _milestone_sum(agreement: Agreement) -> Decimal:
+    total = (
+        Milestone.objects.filter(agreement=agreement)
+        .aggregate(total=Sum("amount"))
+        .get("total")
+        or Decimal("0.00")
+    )
+    return _safe_decimal(total, Decimal("0.00")).quantize(Decimal("0.01"))
+
+
+def _resolve_template_apply_pricing_basis(
+    agreement: Agreement,
+    *,
+    spread_enabled: bool = False,
+    spread_total: Optional[Any] = None,
+    milestone_total_override: Optional[Decimal] = None,
+) -> Decimal:
+    spread_total_decimal = _safe_decimal(spread_total, Decimal("0.00")).quantize(Decimal("0.01"))
+    if spread_enabled and spread_total_decimal > 0:
+        return spread_total_decimal
+
+    milestone_total = (
+        _safe_decimal(milestone_total_override, Decimal("0.00")).quantize(Decimal("0.01"))
+        if milestone_total_override is not None
+        else _milestone_sum(agreement)
+    )
+    if milestone_total > 0:
+        return milestone_total
+
+    return _resolve_agreement_total_amount(agreement).quantize(Decimal("0.01"))
+
+
 def _resolve_date_range(
     agreement: Agreement,
     template: ProjectTemplate,
@@ -76,6 +109,12 @@ def _resolve_date_range(
         end_date = start_date
 
     return DateRange(start_date=start_date, end_date=end_date)
+
+
+def _date_range_duration_days(date_range: DateRange) -> int:
+    if date_range.end_date < date_range.start_date:
+        return 1
+    return max((date_range.end_date - date_range.start_date).days + 1, 1)
 
 
 def distribute_milestone_dates(start_date: date, end_date: date, count: int) -> list[date]:
@@ -182,6 +221,14 @@ def _build_milestone_amounts_with_spread_total(
     diff = spread_total - sum(amounts)
     amounts[-1] = (amounts[-1] + diff).quantize(Decimal("0.01"))
     return [amt if amt >= 0 else Decimal("0.00") for amt in amounts]
+
+
+def _sync_agreement_total_cost(agreement: Agreement) -> Decimal:
+    total = _milestone_sum(agreement)
+    if getattr(agreement, "total_cost", None) != total:
+        agreement.total_cost = total
+        agreement.save(update_fields=["total_cost"])
+    return total
 
 
 def _safe_scope_text(template: ProjectTemplate) -> str:
@@ -491,6 +538,7 @@ def apply_template_to_agreement(
     if not template_rows:
         raise ValueError("Selected template has no milestone rows.")
 
+    preclear_milestone_total = _milestone_sum(agreement)
     deleted_count = 0
     if overwrite_existing:
         deleted_count = _clear_existing_milestones(agreement)
@@ -503,19 +551,24 @@ def apply_template_to_agreement(
     effective_estimated_days = _coerce_positive_int(estimated_days)
     spread_total_decimal = _safe_decimal(spread_total, Decimal("0.00"))
     use_spread_total = bool(spread_enabled and spread_total_decimal > 0)
-
-    agreement_total = _resolve_agreement_total_amount(agreement)
+    pricing_basis_total = _resolve_template_apply_pricing_basis(
+        agreement,
+        spread_enabled=spread_enabled,
+        spread_total=spread_total_decimal,
+        milestone_total_override=preclear_milestone_total,
+    )
 
     if use_spread_total:
         amounts = _build_milestone_amounts_with_spread_total(template, spread_total_decimal)
     else:
-        amounts = _build_milestone_amounts(template, agreement_total)
+        amounts = _build_milestone_amounts(template, pricing_basis_total)
 
     date_range = _resolve_date_range(
         agreement,
         template,
         estimated_days_override=effective_estimated_days,
     )
+    applied_estimated_days = _date_range_duration_days(date_range)
 
     distributed_dates = distribute_milestone_dates(
         date_range.start_date,
@@ -544,7 +597,7 @@ def apply_template_to_agreement(
 
         template_suggested_amount = _template_row_suggested_amount(
             row,
-            spread_total_decimal if use_spread_total else agreement_total,
+            spread_total_decimal if use_spread_total else pricing_basis_total,
         )
 
         milestone = Milestone.objects.create(
@@ -569,9 +622,12 @@ def apply_template_to_agreement(
         )
         created.append(milestone)
 
+    _sync_agreement_total_cost(agreement)
+    agreement.start = date_range.start_date
+    agreement.end = date_range.end_date
     agreement.milestone_count = len(created)
 
-    update_fields = ["milestone_count"]
+    update_fields = ["start", "end", "milestone_count"]
     if hasattr(agreement, "selected_template"):
         update_fields.append("selected_template")
     if hasattr(agreement, "selected_template_name_snapshot"):
@@ -589,7 +645,7 @@ def apply_template_to_agreement(
         "milestone_ids": [m.id for m in created],
         "start_date": date_range.start_date,
         "end_date": date_range.end_date,
-        "applied_estimated_days": effective_estimated_days or int(template.estimated_days or 1),
+        "applied_estimated_days": applied_estimated_days,
         "auto_schedule": bool(auto_schedule),
         "spread_enabled": bool(use_spread_total),
         "spread_total": str(spread_total_decimal.quantize(Decimal("0.01"))) if use_spread_total else None,
