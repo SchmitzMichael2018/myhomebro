@@ -302,14 +302,13 @@ export default function AgreementList() {
       }
 
       setHmIndex(index);
-      fetchStatsFor(list.slice(0, pageSize));
     } catch (e) {
       console.error(e);
       toast.error("Failed to load agreements.");
     } finally {
       setLoading(false);
     }
-  }, [fetchStatsFor, pageSize, showArchived]);
+  }, [showArchived]);
 
   useEffect(() => {
     load();
