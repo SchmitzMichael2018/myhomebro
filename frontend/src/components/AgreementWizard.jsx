@@ -513,25 +513,6 @@ export default function AgreementWizard() {
     await fetchAgreement(agreementId);
   }, [agreementId, fetchAgreement]);
 
-  const warnRefreshAfterMutation = useCallback((actionLabel = "saved") => {
-    toast(`Milestone ${actionLabel}, but the latest agreement data could not be refreshed.`);
-  }, []);
-
-  const refreshAfterMilestoneMutation = useCallback(
-    async (actionLabel = "saved") => {
-      try {
-        await loadMilestones();
-        await refreshAgreement();
-        return true;
-      } catch (err) {
-        console.warn("refreshAfterMilestoneMutation failed:", err);
-        warnRefreshAfterMutation(actionLabel);
-        return false;
-      }
-    },
-    [loadMilestones, refreshAgreement, warnRefreshAfterMutation]
-  );
-
   const reloadPeople = async () => {
     try {
       const candidates = ["/projects/homeowners/", "/projects/homeowners"];
@@ -757,6 +738,25 @@ export default function AgreementWizard() {
       console.warn("loadMilestones failed:", err);
     }
   }, [agreementId]);
+
+  const warnRefreshAfterMutation = useCallback((actionLabel = "saved") => {
+    toast(`Milestone ${actionLabel}, but the latest agreement data could not be refreshed.`);
+  }, []);
+
+  const refreshAfterMilestoneMutation = useCallback(
+    async (actionLabel = "saved") => {
+      try {
+        await loadMilestones();
+        await refreshAgreement();
+        return true;
+      } catch (err) {
+        console.warn("refreshAfterMilestoneMutation failed:", err);
+        warnRefreshAfterMutation(actionLabel);
+        return false;
+      }
+    },
+    [loadMilestones, refreshAgreement, warnRefreshAfterMutation]
+  );
 
   useEffect(() => {
     loadMilestones();
