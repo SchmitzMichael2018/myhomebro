@@ -6,6 +6,9 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 
+const MOBILE_SIDEBAR_DEBUG_PREFIX = "[MobileSidebarShellDebug]";
+let mobileSidebarShellInstanceSeq = 0;
+
 const MobileSidebarContext = createContext({
   isOpen: false,
   openSidebar: () => {},
@@ -34,9 +37,31 @@ export function useMobileSidebar() {
  *   children: ReactNode (your existing layout tree)
  */
 export default function MobileSidebarShell({ sidebar, children }) {
+  const instanceIdRef = useRef(++mobileSidebarShellInstanceSeq);
+  const instanceId = instanceIdRef.current;
   const [open, setOpen] = useState(false);
   const location = useLocation();
   const mobilePanelRef = useRef(null);
+
+  console.log(`${MOBILE_SIDEBAR_DEBUG_PREFIX} render`, {
+    instanceId,
+    path: location.pathname,
+    open,
+  });
+
+  useEffect(() => {
+    console.log(`${MOBILE_SIDEBAR_DEBUG_PREFIX} mount`, {
+      instanceId,
+      path: location.pathname,
+    });
+    return () => {
+      console.log(`${MOBILE_SIDEBAR_DEBUG_PREFIX} unmount`, {
+        instanceId,
+        path: location.pathname,
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Tracks whether the current page header provides its own hamburger (PageShell does).
   const [headerHamburgerPresent, setHeaderHamburgerPresent] = useState(false);

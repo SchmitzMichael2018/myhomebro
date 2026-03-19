@@ -5,9 +5,17 @@ import React from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
+const REQUIRE_AUTH_DEBUG_PREFIX = "[RequireAuthDebug]";
+
 export default function RequireAuth({ children }) {
   const { isAuthed, ready } = useAuth();
   const location = useLocation();
+
+  console.log(`${REQUIRE_AUTH_DEBUG_PREFIX} render`, {
+    path: location.pathname,
+    ready,
+    isAuthed,
+  });
 
   if (!ready) return null; // or a tiny splash
 

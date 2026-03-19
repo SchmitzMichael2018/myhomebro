@@ -2,13 +2,39 @@
 // v2026-02-17d — Mobile fix:
 // - Floating hamburger is now a fallback and auto-hides when PageShell registers its own hamburger
 
-import React from "react";
-import { Outlet } from "react-router-dom";
+import React, { useEffect, useRef } from "react";
+import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "../components/Sidebar.jsx";
 import ErrorBoundary from "../components/ErrorBoundary.jsx";
 import MobileSidebarShell from "../components/MobileSidebarShell.jsx";
 
+const AUTH_LAYOUT_DEBUG_PREFIX = "[AuthenticatedLayoutDebug]";
+let authenticatedLayoutInstanceSeq = 0;
+
 export default function AuthenticatedLayout() {
+  const instanceIdRef = useRef(++authenticatedLayoutInstanceSeq);
+  const instanceId = instanceIdRef.current;
+  const location = useLocation();
+
+  console.log(`${AUTH_LAYOUT_DEBUG_PREFIX} render`, {
+    instanceId,
+    path: location.pathname,
+  });
+
+  useEffect(() => {
+    console.log(`${AUTH_LAYOUT_DEBUG_PREFIX} mount`, {
+      instanceId,
+      path: location.pathname,
+    });
+    return () => {
+      console.log(`${AUTH_LAYOUT_DEBUG_PREFIX} unmount`, {
+        instanceId,
+        path: location.pathname,
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <MobileSidebarShell sidebar={<Sidebar variant="plain" />}>
       <div style={{ display: "flex", minHeight: "100vh" }}>

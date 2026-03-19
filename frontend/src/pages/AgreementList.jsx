@@ -162,8 +162,42 @@ function shortSha(s) {
   return v.length > 10 ? `${v.slice(0, 10)}…` : v;
 }
 
+const AGREEMENT_LIST_CACHE_TTL_MS = 15000;
+const MILESTONE_STATS_CACHE_TTL_MS = 15000;
+const AGREEMENT_LIST_DEBUG_PREFIX = "[AgreementListDebug]";
+let agreementListInstanceSeq = 0;
 const sharedAgreementListLoad = { key: null, promise: null };
+const sharedAgreementListCache = new Map();
 const sharedMilestoneStatsPromises = new Map();
+const sharedMilestoneStatsCache = new Map();
+
+function getFreshCachedAgreementList(key) {
+  const hit = sharedAgreementListCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.ts > AGREEMENT_LIST_CACHE_TTL_MS) {
+    sharedAgreementListCache.delete(key);
+    return null;
+  }
+  return hit.data;
+}
+
+function setCachedAgreementList(key, data) {
+  sharedAgreementListCache.set(key, { ts: Date.now(), data });
+}
+
+function getFreshCachedMilestoneStats(agreementId) {
+  const hit = sharedMilestoneStatsCache.get(agreementId);
+  if (!hit) return null;
+  if (Date.now() - hit.ts > MILESTONE_STATS_CACHE_TTL_MS) {
+    sharedMilestoneStatsCache.delete(agreementId);
+    return null;
+  }
+  return hit.data;
+}
+
+function setCachedMilestoneStats(agreementId, data) {
+  sharedMilestoneStatsCache.set(agreementId, { ts: Date.now(), data });
+}
 
 async function fetchAgreementListData(showArchived) {
   const { data } = await api.get("/projects/agreements/", {
@@ -199,6 +233,11 @@ async function fetchAgreementListData(showArchived) {
 }
 
 function fetchMilestoneStats(agreementId, isMsComplete) {
+  const cached = getFreshCachedMilestoneStats(agreementId);
+  if (cached) {
+    return Promise.resolve(cached);
+  }
+
   if (sharedMilestoneStatsPromises.has(agreementId)) {
     return sharedMilestoneStatsPromises.get(agreementId);
   }
@@ -213,7 +252,9 @@ function fetchMilestoneStats(agreementId, isMsComplete) {
       const total = list.length;
       const complete = list.filter(isMsComplete).length;
       const percent = total > 0 ? Math.round((complete / total) * 100) : 0;
-      return { total, complete, percent };
+      const stats = { total, complete, percent };
+      setCachedMilestoneStats(agreementId, stats);
+      return stats;
     })
     .finally(() => {
       sharedMilestoneStatsPromises.delete(agreementId);
@@ -224,6 +265,8 @@ function fetchMilestoneStats(agreementId, isMsComplete) {
 }
 
 export default function AgreementList() {
+  const instanceIdRef = useRef(++agreementListInstanceSeq);
+  const instanceId = instanceIdRef.current;
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -263,10 +306,43 @@ export default function AgreementList() {
   const pdfPopoverRef = useRef(null);
   const loadSeqRef = useRef(0);
   const msStatsRef = useRef({});
+  const rowsRef = useRef(rows);
+  const pageSizeRef = useRef(pageSize);
+
+  console.log(`${AGREEMENT_LIST_DEBUG_PREFIX} render`, {
+    instanceId,
+    path: location.pathname,
+    rowsLength: rows.length,
+    pageSize,
+    showArchived,
+    loading,
+  });
+
+  useEffect(() => {
+    console.log(`${AGREEMENT_LIST_DEBUG_PREFIX} mount`, {
+      instanceId,
+      path: location.pathname,
+    });
+    return () => {
+      console.log(`${AGREEMENT_LIST_DEBUG_PREFIX} unmount`, {
+        instanceId,
+        path: location.pathname,
+      });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     msStatsRef.current = msStats || {};
   }, [msStats]);
+
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
+
+  useEffect(() => {
+    pageSizeRef.current = pageSize;
+  }, [pageSize]);
 
   useEffect(() => {
     const onDown = (e) => {
@@ -302,7 +378,24 @@ export default function AgreementList() {
   };
 
   const fetchStatsFor = useCallback(async (subset) => {
-    const ids = subset.map((r) => r.id).filter((id) => !msStatsRef.current[id]);
+    const cachedStats = {};
+    const ids = [];
+
+    subset.forEach((r) => {
+      const id = r.id;
+      if (msStatsRef.current[id]) return;
+      const cached = getFreshCachedMilestoneStats(id);
+      if (cached) {
+        cachedStats[id] = cached;
+        return;
+      }
+      ids.push(id);
+    });
+
+    if (Object.keys(cachedStats).length) {
+      setMsStats((prev) => ({ ...cachedStats, ...prev }));
+    }
+
     if (ids.length === 0) return;
 
     const limit = 5;
@@ -326,21 +419,93 @@ export default function AgreementList() {
     await Promise.all(Array.from({ length: starters }, runOne));
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (options = {}) => {
+    const normalized = typeof options === "string" ? { source: options } : options === true ? { force: true } : options || {};
+    const force = !!normalized?.force;
+    const source = normalized?.source || "unknown";
     const key = showArchived ? "archived:1" : "archived:0";
+    const rowsBefore = rowsRef.current?.length || 0;
+    let cacheUsed = false;
+    let networkUsed = false;
+    let reusedInFlight = false;
+
+    if (force) {
+      sharedAgreementListCache.delete(key);
+      sharedMilestoneStatsCache.clear();
+      setMsStats({});
+    } else {
+      const cached = getFreshCachedAgreementList(key);
+      if (cached) {
+        cacheUsed = true;
+        const seq = ++loadSeqRef.current;
+        console.log(`${AGREEMENT_LIST_DEBUG_PREFIX} load:start`, {
+          instanceId,
+          seq,
+          source,
+          showArchived,
+          pageSize: pageSizeRef.current,
+          cacheUsed,
+          networkUsed,
+          reusedInFlight,
+          rowsBefore,
+        });
+        setLoading(true);
+        try {
+          if (seq !== loadSeqRef.current) return cached;
+          setRows(cached.list);
+          setHmIndex(cached.index);
+          console.log(`${AGREEMENT_LIST_DEBUG_PREFIX} load:end`, {
+            instanceId,
+            seq,
+            source,
+            cacheUsed,
+            networkUsed,
+            reusedInFlight,
+            rowsBefore,
+            rowsAfter: cached.list?.length || 0,
+          });
+          return cached;
+        } finally {
+          if (seq === loadSeqRef.current) {
+            setLoading(false);
+          }
+        }
+      }
+    }
+
     let promise = sharedAgreementListLoad.key === key ? sharedAgreementListLoad.promise : null;
     if (!promise) {
-      promise = fetchAgreementListData(showArchived).finally(() => {
-        if (sharedAgreementListLoad.key === key) {
-          sharedAgreementListLoad.key = null;
-          sharedAgreementListLoad.promise = null;
-        }
-      });
+      networkUsed = true;
+      promise = fetchAgreementListData(showArchived)
+        .then((data) => {
+          setCachedAgreementList(key, data);
+          return data;
+        })
+        .finally(() => {
+          if (sharedAgreementListLoad.key === key) {
+            sharedAgreementListLoad.key = null;
+            sharedAgreementListLoad.promise = null;
+          }
+        });
       sharedAgreementListLoad.key = key;
       sharedAgreementListLoad.promise = promise;
+    } else {
+      reusedInFlight = true;
     }
 
     const seq = ++loadSeqRef.current;
+
+    console.log(`${AGREEMENT_LIST_DEBUG_PREFIX} load:start`, {
+      instanceId,
+      seq,
+      source,
+      showArchived,
+      pageSize: pageSizeRef.current,
+      cacheUsed,
+      networkUsed,
+      reusedInFlight,
+      rowsBefore,
+    });
 
     setLoading(true);
     try {
@@ -348,6 +513,16 @@ export default function AgreementList() {
       if (seq !== loadSeqRef.current) return;
       setRows(list);
       setHmIndex(index);
+      console.log(`${AGREEMENT_LIST_DEBUG_PREFIX} load:end`, {
+        instanceId,
+        seq,
+        source,
+        cacheUsed,
+        networkUsed,
+        reusedInFlight,
+        rowsBefore,
+        rowsAfter: list?.length || 0,
+      });
     } catch (e) {
       console.error(e);
       toast.error("Failed to load agreements.");
@@ -360,11 +535,11 @@ export default function AgreementList() {
   }, [showArchived]);
 
   useEffect(() => {
-    load();
+    load({ source: "mount-effect" });
     const onStorage = (e) => {
       if (e.key === "agreements:refresh" && e.newValue === "1") {
         localStorage.removeItem("agreements:refresh");
-        load();
+        load({ force: true, source: "storage-refresh" });
       }
     };
     window.addEventListener("storage", onStorage);
@@ -372,8 +547,26 @@ export default function AgreementList() {
   }, [load]);
 
   useEffect(() => {
+    const visibleIds = rows.slice(0, pageSize).map((r) => r.id);
+    const cachedIds = [];
+    const fetchedIds = [];
+    visibleIds.forEach((id) => {
+      if (msStatsRef.current[id] || getFreshCachedMilestoneStats(id)) {
+        cachedIds.push(id);
+      } else {
+        fetchedIds.push(id);
+      }
+    });
+    console.log(`${AGREEMENT_LIST_DEBUG_PREFIX} stats-effect`, {
+      instanceId,
+      rowsLength: rows.length,
+      pageSize,
+      visibleAgreementIds: visibleIds,
+      cachedIds,
+      fetchedIds,
+    });
     fetchStatsFor(rows.slice(0, pageSize));
-  }, [rows, pageSize, fetchStatsFor]);
+  }, [rows, pageSize, fetchStatsFor, instanceId]);
 
   const homeownerDisplay = useCallback(
     (r) => {
@@ -473,7 +666,7 @@ export default function AgreementList() {
       toast.success("Agreements merged.");
       setSelected(new Set());
       setPrimaryId(null);
-      await load();
+      await load({ force: true, source: "merge-selected-primary" });
       return;
     } catch (e1) {
       const d1 = e1?.response?.data;
@@ -483,7 +676,7 @@ export default function AgreementList() {
         toast.success("Agreements merged.");
         setSelected(new Set());
         setPrimaryId(null);
-        await load();
+        await load({ force: true, source: "merge-selected-fallback" });
         return;
       } catch (e2) {
         const d2 = e2?.response?.data;
@@ -506,7 +699,7 @@ export default function AgreementList() {
       setBusyDeleteRow(row.id);
       await api.delete(`/projects/agreements/${row.id}/`);
       toast.success(`Agreement #${row.id} deleted.`);
-      await load();
+      await load({ force: true, source: "delete-draft" });
     } catch (e) {
       console.error(e);
       const detail =
@@ -639,7 +832,7 @@ export default function AgreementList() {
       );
 
       toast.success(`Agreement #${id} marked completed.`);
-      await load();
+      await load({ force: true, source: "mark-complete" });
     } catch (e) {
       console.error("mark_complete failed:", e?.response || e);
       const detail =
@@ -661,7 +854,7 @@ export default function AgreementList() {
       setBusyArchiveRow(id);
       await api.post(`/projects/agreements/${id}/archive/`, {});
       toast.success(`Agreement #${id} archived.`);
-      await load();
+      await load({ force: true, source: "archive-agreement" });
     } catch (e) {
       console.error("archive failed:", e?.response || e);
       toast.error(String(e?.response?.data?.detail || "Archive failed."));
@@ -678,7 +871,7 @@ export default function AgreementList() {
       setBusyArchiveRow(id);
       await api.post(`/projects/agreements/${id}/unarchive/`, {});
       toast.success(`Agreement #${id} unarchived.`);
-      await load();
+      await load({ force: true, source: "unarchive-agreement" });
     } catch (e) {
       console.error("unarchive failed:", e?.response || e);
       toast.error(String(e?.response?.data?.detail || "Unarchive failed."));
@@ -1083,7 +1276,7 @@ export default function AgreementList() {
         </select>
 
         <button
-          onClick={load}
+          onClick={() => load({ force: true, source: "refresh-button" })}
           className="inline-flex items-center gap-2 px-3 py-2 border rounded-lg hover:bg-gray-50"
           title="Refresh"
         >

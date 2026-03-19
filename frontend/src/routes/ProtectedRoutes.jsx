@@ -1,6 +1,6 @@
 // src/routes/ProtectedRoutes.jsx
 import React from "react";
-import { Route, Navigate, Outlet } from "react-router-dom";
+import { Route, Navigate, Outlet, useLocation } from "react-router-dom";
 
 import RequireAuth from "./RequireAuth.jsx";
 import AuthenticatedLayout from "../layouts/AuthenticatedLayout.jsx";
@@ -55,6 +55,8 @@ import TeamPage from "../pages/TeamPage.jsx";
 
 import { useWhoAmI } from "../hooks/useWhoAmI";
 
+const ROLE_GATE_DEBUG_PREFIX = "[ProtectedRoutesDebug]";
+
 function AppHomeRedirect() {
   const { data: identity, loading } = useWhoAmI();
   if (loading) return null;
@@ -73,10 +75,17 @@ function AppHomeRedirect() {
 
 function RoleGate({ allow }) {
   const { data: identity, loading } = useWhoAmI();
-  if (loading) return null;
-
+  const location = useLocation();
   const role = identity?.type || identity?.role || "none";
   const r = String(role).toLowerCase();
+  console.log(`${ROLE_GATE_DEBUG_PREFIX} RoleGate render`, {
+    path: location.pathname,
+    allow,
+    loading,
+    role: r,
+    hasIdentity: !!identity,
+  });
+  if (loading) return null;
 
   const allowNorm = allow.map((x) => String(x).toLowerCase());
 
