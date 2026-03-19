@@ -408,7 +408,7 @@ def _copy_template_text_fields(agreement: Agreement, template: ProjectTemplate) 
     incoming_scope_text = _safe_scope_text(template)
     incoming_questions = _safe_question_list(template)
 
-    if incoming_scope_text:
+    if incoming_scope_text and hasattr(scope_obj, "scope_text"):
         scope_obj.scope_text = incoming_scope_text
 
     scope_obj.questions, scope_obj.answers = _replace_questions_preserving_matching_answers(
@@ -417,7 +417,7 @@ def _copy_template_text_fields(agreement: Agreement, template: ProjectTemplate) 
     )
 
     scope_update_fields = ["questions", "answers"]
-    if incoming_scope_text:
+    if incoming_scope_text and hasattr(scope_obj, "scope_text"):
         scope_update_fields.append("scope_text")
 
     _save_model_if_needed(scope_obj, scope_update_fields)
