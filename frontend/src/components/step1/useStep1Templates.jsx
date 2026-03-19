@@ -117,12 +117,13 @@ function normalizeApplyOptions(options = {}, template = null) {
     spreadTotalRaw !== "" && Number.isFinite(Number(spreadTotalRaw))
       ? Number(spreadTotalRaw)
       : null;
+  const hasValidSpreadTotal = parsedSpreadTotal != null && parsedSpreadTotal > 0;
 
   return {
     estimated_days,
     auto_schedule: !!options?.auto_schedule,
-    spread_enabled: !!options?.spread_enabled,
-    spread_total: parsedSpreadTotal != null && parsedSpreadTotal > 0 ? parsedSpreadTotal : null,
+    spread_enabled: !!options?.spread_enabled && hasValidSpreadTotal,
+    spread_total: hasValidSpreadTotal ? parsedSpreadTotal : null,
   };
 }
 
