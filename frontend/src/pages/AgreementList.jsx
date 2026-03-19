@@ -162,6 +162,67 @@ function shortSha(s) {
   return v.length > 10 ? `${v.slice(0, 10)}…` : v;
 }
 
+const sharedAgreementListLoad = { key: null, promise: null };
+const sharedMilestoneStatsPromises = new Map();
+
+async function fetchAgreementListData(showArchived) {
+  const { data } = await api.get("/projects/agreements/", {
+    params: {
+      page_size: 250,
+      include_archived: showArchived ? 1 : 0,
+      _ts: Date.now(),
+    },
+    headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+  });
+
+  const list = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];
+  const index = {};
+  const mergeIntoIndex = (arr) => {
+    if (!Array.isArray(arr)) return;
+    for (const h of arr) {
+      const id = String(h.id ?? h.pk ?? "");
+      if (!id) continue;
+      const name = labelFromHomeownerObj(h);
+      const email = h.email || h.username || "";
+      index[id] = { name: name || email || "", email: email || "", raw: h };
+    }
+  };
+
+  try {
+    const { data: h1 } = await api.get("/projects/homeowners/", { params: { page_size: 1000 } });
+    mergeIntoIndex(h1?.results || h1);
+  } catch {
+    /* ignore */
+  }
+
+  return { list, index };
+}
+
+function fetchMilestoneStats(agreementId, isMsComplete) {
+  if (sharedMilestoneStatsPromises.has(agreementId)) {
+    return sharedMilestoneStatsPromises.get(agreementId);
+  }
+
+  const promise = api
+    .get(`/projects/agreements/${agreementId}/milestones/`, {
+      params: { _ts: Date.now() },
+      headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+    })
+    .then(({ data }) => {
+      const list = Array.isArray(data) ? data : Array.isArray(data?.results) ? data.results : [];
+      const total = list.length;
+      const complete = list.filter(isMsComplete).length;
+      const percent = total > 0 ? Math.round((complete / total) * 100) : 0;
+      return { total, complete, percent };
+    })
+    .finally(() => {
+      sharedMilestoneStatsPromises.delete(agreementId);
+    });
+
+  sharedMilestoneStatsPromises.set(agreementId, promise);
+  return promise;
+}
+
 export default function AgreementList() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -200,6 +261,12 @@ export default function AgreementList() {
   const [pdfLoadingForId, setPdfLoadingForId] = useState(null);
   const [pdfCache, setPdfCache] = useState({});
   const pdfPopoverRef = useRef(null);
+  const loadSeqRef = useRef(0);
+  const msStatsRef = useRef({});
+
+  useEffect(() => {
+    msStatsRef.current = msStats || {};
+  }, [msStats]);
 
   useEffect(() => {
     const onDown = (e) => {
@@ -234,8 +301,8 @@ export default function AgreementList() {
     );
   };
 
-  const fetchStatsFor = async (subset) => {
-    const ids = subset.map((r) => r.id).filter((id) => !msStats[id]);
+  const fetchStatsFor = useCallback(async (subset) => {
+    const ids = subset.map((r) => r.id).filter((id) => !msStatsRef.current[id]);
     if (ids.length === 0) return;
 
     const limit = 5;
@@ -246,15 +313,8 @@ export default function AgreementList() {
       if (i >= ids.length) return;
       const agreementId = ids[i];
       try {
-        const { data } = await api.get(`/projects/agreements/${agreementId}/milestones/`, {
-          params: { _ts: Date.now() },
-          headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-        });
-        const list = Array.isArray(data) ? data : Array.isArray(data?.results) ? data.results : [];
-        const total = list.length;
-        const complete = list.filter(isMsComplete).length;
-        const percent = total > 0 ? Math.round((complete / total) * 100) : 0;
-        setMsStats((prev) => ({ ...prev, [agreementId]: { total, complete, percent } }));
+        const stats = await fetchMilestoneStats(agreementId, isMsComplete);
+        setMsStats((prev) => (prev[agreementId] ? prev : { ...prev, [agreementId]: stats }));
       } catch (e) {
         console.warn("Milestone stats fetch failed for agreement", agreementId, e?.response?.status || e);
       } finally {
@@ -264,50 +324,39 @@ export default function AgreementList() {
 
     const starters = Math.min(limit, ids.length);
     await Promise.all(Array.from({ length: starters }, runOne));
-  };
+  }, []);
 
   const load = useCallback(async () => {
-    try {
-      setLoading(true);
-
-      const { data } = await api.get("/projects/agreements/", {
-        params: {
-          page_size: 250,
-          include_archived: showArchived ? 1 : 0,
-          _ts: Date.now(),
-        },
-        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-      });
-
-      const list = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];
-      setRows(list);
-
-      const index = {};
-      const mergeIntoIndex = (arr) => {
-        if (!Array.isArray(arr)) return;
-        for (const h of arr) {
-          const id = String(h.id ?? h.pk ?? "");
-          if (!id) continue;
-          const name = labelFromHomeownerObj(h);
-          const email = h.email || h.username || "";
-          index[id] = { name: name || email || "", email: email || "", raw: h };
+    const key = showArchived ? "archived:1" : "archived:0";
+    let promise = sharedAgreementListLoad.key === key ? sharedAgreementListLoad.promise : null;
+    if (!promise) {
+      promise = fetchAgreementListData(showArchived).finally(() => {
+        if (sharedAgreementListLoad.key === key) {
+          sharedAgreementListLoad.key = null;
+          sharedAgreementListLoad.promise = null;
         }
-      };
+      });
+      sharedAgreementListLoad.key = key;
+      sharedAgreementListLoad.promise = promise;
+    }
 
-      try {
-        const { data: h1 } = await api.get("/projects/homeowners/", { params: { page_size: 1000 } });
-        mergeIntoIndex(h1?.results || h1);
-      } catch {
-        /* ignore */
-      }
+    const seq = ++loadSeqRef.current;
 
+    setLoading(true);
+    try {
+      const { list, index } = await promise;
+      if (seq !== loadSeqRef.current) return;
+      setRows(list);
       setHmIndex(index);
     } catch (e) {
       console.error(e);
       toast.error("Failed to load agreements.");
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
+    return promise;
   }, [showArchived]);
 
   useEffect(() => {
@@ -324,8 +373,7 @@ export default function AgreementList() {
 
   useEffect(() => {
     fetchStatsFor(rows.slice(0, pageSize));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, pageSize]);
+  }, [rows, pageSize, fetchStatsFor]);
 
   const homeownerDisplay = useCallback(
     (r) => {
