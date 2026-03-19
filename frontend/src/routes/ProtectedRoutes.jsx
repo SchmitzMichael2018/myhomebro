@@ -22,10 +22,14 @@ import AgreementWizard from "../components/AgreementWizard.jsx";
 import AgreementEdit from "../components/AgreementEdit.jsx";
 import AgreementDetail from "../pages/AgreementDetail.jsx";
 import AgreementList from "../pages/AgreementList.jsx";
+import ProjectIntakeForm from "../components/intake/ProjectIntakeForm.jsx";
 
 /* Milestones */
 import MilestoneList from "../components/MilestoneList.jsx";
 import MilestoneDetail from "../pages/MilestoneDetail.jsx";
+
+/* Templates */
+import TemplatesPage from "../pages/TemplatesPage.jsx";
 
 /* Assignments */
 import AssignmentsPage from "../pages/AssignmentsPage.jsx";
@@ -60,9 +64,10 @@ function AppHomeRedirect() {
 
   if (r === "admin") return <Navigate to="/app/admin" replace />;
   if (r === "subaccount") return <Navigate to="/app/employee/dashboard" replace />;
-  if (r === "contractor") return <Navigate to="/app/dashboard" replace />;
+  if (r === "contractor" || r === "contractor_owner") {
+    return <Navigate to="/app/dashboard" replace />;
+  }
 
-  // Fallback if something unexpected happens
   return <Navigate to="/" replace />;
 }
 
@@ -73,11 +78,9 @@ function RoleGate({ allow }) {
   const role = identity?.type || identity?.role || "none";
   const r = String(role).toLowerCase();
 
-  // Normalize allow list comparisons
   const allowNorm = allow.map((x) => String(x).toLowerCase());
 
   if (!identity || !allowNorm.includes(r)) {
-    // ✅ Smart redirects based on actual identity
     if (r === "admin") return <Navigate to="/app/admin" replace />;
     if (r === "subaccount") return <Navigate to="/app/employee/dashboard" replace />;
     return <Navigate to="/app/dashboard" replace />;
@@ -97,32 +100,42 @@ export function protectedRoutes() {
           </RequireAuth>
         }
       >
-        {/* ✅ Default landing inside /app based on whoami */}
         <Route index element={<AppHomeRedirect />} />
 
         {/* ---------------- ADMIN ---------------- */}
         <Route element={<RoleGate allow={["admin"]} />}>
           <Route path="admin" element={<AdminDashboard />} />
-
-          {/* ✅ NEW: Dedicated admin disputes page (uses same DisputesPages.jsx) */}
           <Route path="admin/disputes" element={<Disputes />} />
         </Route>
 
         {/* ---------------- CONTRACTOR ---------------- */}
-        <Route element={<RoleGate allow={["contractor"]} />}>
+        <Route element={<RoleGate allow={["contractor", "contractor_owner"]} />}>
           <Route path="dashboard" element={<ContractorDashboard />} />
 
           <Route path="business" element={<BusinessDashboard />} />
-          <Route path="business-analysis" element={<Navigate to="/app/business" replace />} />
+          <Route
+            path="business-analysis"
+            element={<Navigate to="/app/business" replace />}
+          />
 
           <Route path="team-schedule" element={<TeamSchedule />} />
           <Route path="team" element={<TeamPage />} />
 
+          <Route path="intake/new" element={<ProjectIntakeForm />} />
+
           <Route path="agreements" element={<AgreementList />} />
-          <Route path="agreements/new" element={<AgreementWizard />} />
+
+          <Route
+            path="agreements/new"
+            element={<Navigate to="/app/agreements/new/wizard?step=1" replace />}
+          />
+          <Route path="agreements/new/wizard" element={<AgreementWizard />} />
+          <Route path="agreements/:id/wizard" element={<AgreementWizard />} />
+
           <Route path="agreements/:id" element={<AgreementDetail />} />
           <Route path="agreements/:id/edit" element={<AgreementEdit />} />
-          <Route path="agreements/:id/wizard" element={<AgreementWizard />} />
+
+          <Route path="templates" element={<TemplatesPage />} />
 
           <Route path="milestones" element={<MilestoneList />} />
           <Route path="milestones/:id" element={<MilestoneDetail />} />
@@ -153,13 +166,14 @@ export function protectedRoutes() {
           <Route path="employee/profile" element={<EmployeeProfile />} />
         </Route>
 
-        {/* ✅ Catch-all inside /app: send to the right home */}
         <Route path="*" element={<AppHomeRedirect />} />
       </Route>
 
-      {/* Legacy redirects */}
       <Route path="/dashboard" element={<Navigate to="/app/dashboard" replace />} />
-      <Route path="/employee" element={<Navigate to="/app/employee/dashboard" replace />} />
+      <Route
+        path="/employee"
+        element={<Navigate to="/app/employee/dashboard" replace />}
+      />
     </>
   );
 }

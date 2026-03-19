@@ -1,18 +1,33 @@
-// frontend/src/components/LoginForm.jsx
-// v2025-11-28 — Added Show/Hide Password toggle
+// src/components/LoginForm.jsx
+// v2026-02-09 — Invite token + Remember Me
+// - If URL includes ?invite=<token>, after successful login we call:
+//   POST /api/projects/invites/<token>/accept/
+// - Remember Me controls token persistence via setTokens(..., remember)
 
-import React, { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useRef, useState, useMemo } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import api, { setTokens } from "../api";
 import toast from "react-hot-toast";
 
 export default function LoginForm({ redirectTo = "/dashboard" }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const emailRef = useRef(null);
+
   const [loading, setLoading] = useState(false);
   const [showPw, setShowPw] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
 
   const [form, setForm] = useState({ email: "", password: "" });
+
+  const inviteToken = useMemo(() => {
+    try {
+      const sp = new URLSearchParams(location.search || "");
+      return (sp.get("invite") || "").trim();
+    } catch {
+      return "";
+    }
+  }, [location.search]);
 
   useEffect(() => {
     emailRef.current?.focus();
@@ -23,19 +38,61 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
     setForm((s) => ({ ...s, [name]: value }));
   };
 
+  const removeInviteFromUrl = () => {
+    try {
+      const sp = new URLSearchParams(location.search || "");
+      if (!sp.get("invite")) return;
+      sp.delete("invite");
+      const nextSearch = sp.toString() ? `?${sp.toString()}` : "";
+      navigate(`${location.pathname}${nextSearch}`, { replace: true });
+    } catch {}
+  };
+
+  const acceptInviteIfPresent = async (token) => {
+    const t = String(token || "").trim();
+    if (!t) return { ok: false, skipped: true };
+    try {
+      const endpoint = `/projects/invites/${encodeURIComponent(t)}/accept/`;
+      const { data } = await api.post(endpoint, {});
+      return { ok: true, data };
+    } catch (err) {
+      const msg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.error ||
+        "Invite acceptance failed (you are still signed in).";
+      toast.error(String(msg));
+      console.error("LoginForm invite accept error:", err);
+      return { ok: false, error: err };
+    }
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
       const { data } = await api.post("/auth/login/", {
-        email: form.email.trim(),
+        email: form.email.trim().toLowerCase(),
         password: form.password,
       });
+
       const access = data?.access || data?.access_token;
       const refresh = data?.refresh || data?.refresh_token;
       if (!access) throw new Error("Login succeeded but no tokens returned.");
-      setTokens(access, refresh || null, true);
-      toast.success("Welcome back!");
+
+      setTokens(access, refresh || null, !!rememberMe);
+
+      if (inviteToken) {
+        const result = await acceptInviteIfPresent(inviteToken);
+        if (result?.ok) {
+          toast.success("Invite accepted — homeowner imported into your client list.");
+          removeInviteFromUrl();
+        } else {
+          toast.success("Welcome back!");
+        }
+      } else {
+        toast.success("Welcome back!");
+      }
+
       navigate(redirectTo);
     } catch (err) {
       const msg = err?.response?.data?.detail || "Invalid email or password.";
@@ -78,6 +135,23 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
           {showPw ? "Hide" : "Show"}
         </button>
       </div>
+
+      {/* Remember Me */}
+      <label className="flex items-center gap-2 text-xs text-slate-600 select-none">
+        <input
+          type="checkbox"
+          checked={rememberMe}
+          onChange={(e) => setRememberMe(e.target.checked)}
+          disabled={loading}
+        />
+        Remember me
+      </label>
+
+      {inviteToken ? (
+        <div className="text-xs text-slate-600">
+          Sign in to accept the invite and import the homeowner as a client.
+        </div>
+      ) : null}
 
       <button
         type="submit"

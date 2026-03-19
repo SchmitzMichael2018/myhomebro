@@ -1,8 +1,9 @@
 // src/components/DashboardRouter.jsx
 // v2025-11-16 — Route switcher: Contractor vs Employee dashboard
+// v2026-02-24 — ✅ Add /app/agreements/:id/wizard routes so AgreementWizard renders (fix blank wizard page)
 
 import React from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, Routes, Route } from "react-router-dom";
 import { useWhoAmI } from "../hooks/useWhoAmI";
 import { useAuth } from "../context/AuthContext";
 
@@ -10,6 +11,9 @@ import { useAuth } from "../context/AuthContext";
 import ContractorDashboard from "../components/ContractorDashboard.jsx";
 // Employee dashboard under pages (adjust if yours is different)
 import EmployeeDashboard from "../pages/EmployeeDashboard.jsx";
+
+// ✅ Wizard
+import AgreementWizard from "../components/AgreementWizard.jsx";
 
 export default function DashboardRouter() {
   const { isAuthenticated } = useAuth();
@@ -40,12 +44,27 @@ export default function DashboardRouter() {
     );
   }
 
+  // ✅ Employee app routing (kept simple; extend if you have employee routes)
   if (isEmployee) {
-    return <EmployeeDashboard />;
+    return (
+      <Routes>
+        <Route path="*" element={<EmployeeDashboard />} />
+      </Routes>
+    );
   }
 
+  // ✅ Contractor app routing
   if (isContractor) {
-    return <ContractorDashboard />;
+    return (
+      <Routes>
+        {/* Agreement Wizard */}
+        <Route path="agreements/new" element={<AgreementWizard />} />
+        <Route path="agreements/:id/wizard" element={<AgreementWizard />} />
+
+        {/* Default contractor workspace (sidebar/dashboard) */}
+        <Route path="*" element={<ContractorDashboard />} />
+      </Routes>
+    );
   }
 
   return (

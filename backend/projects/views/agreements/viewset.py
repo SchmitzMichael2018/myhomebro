@@ -91,10 +91,14 @@ class AgreementViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
     serializer_class = AgreementSerializer
 
-    queryset = Agreement.objects.select_related("project", "contractor", "homeowner").order_by("-updated_at")
+    queryset = Agreement.objects.select_related(
+        "project", "contractor", "homeowner"
+    ).order_by("-updated_at")
 
     def get_queryset(self):
-        qs = Agreement.objects.select_related("project", "contractor", "homeowner").order_by("-updated_at")
+        qs = Agreement.objects.select_related(
+            "project", "contractor", "homeowner"
+        ).order_by("-updated_at")
 
         user = getattr(self.request, "user", None)
         if not user or not user.is_authenticated:
@@ -106,8 +110,14 @@ class AgreementViewSet(viewsets.ModelViewSet):
                 return qs.none()
             qs = qs.filter(contractor=contractor)
 
-        include_archived_param = (self.request.query_params.get("include_archived") or "").strip() == "1"
-        action_allows_archived = getattr(self, "action", None) in ("archive", "unarchive", "mark_complete")
+        include_archived_param = (
+            self.request.query_params.get("include_archived") or ""
+        ).strip() == "1"
+        action_allows_archived = getattr(self, "action", None) in (
+            "archive",
+            "unarchive",
+            "mark_complete",
+        )
         if not (include_archived_param or action_allows_archived):
             qs = qs.filter(is_archived=False)
 
@@ -171,7 +181,10 @@ class AgreementViewSet(viewsets.ModelViewSet):
         missing = {k: v for k, v in missing.items() if v}
         if missing:
             return Response(
-                {"detail": "Agreement is missing required address information.", "missing": missing},
+                {
+                    "detail": "Agreement is missing required address information.",
+                    "missing": missing,
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return None
@@ -188,6 +201,50 @@ class AgreementViewSet(viewsets.ModelViewSet):
             return str(step).strip() == "1"
         except Exception:
             return False
+
+    def _safe_str(self, value) -> str:
+        return "" if value is None else str(value).strip()
+
+    def _apply_step1_draft_defaults(self, payload: dict) -> dict:
+        """
+        Make Step 1 draft creation intentionally permissive so the user can:
+
+        - choose a homeowner if they want, but not be blocked by other fields
+        - create the draft first
+        - then apply a template that hydrates title/type/subtype/description
+
+        This avoids the "too many stop signs" flow at the beginning.
+        """
+        if not isinstance(payload, dict):
+            return payload
+
+        data = dict(payload)
+
+        data["is_draft"] = True
+        data["wizard_step"] = 1
+
+        title = self._safe_str(data.get("title") or data.get("project_title"))
+        description = self._safe_str(data.get("description"))
+
+        if not title:
+            data["title"] = "Draft Agreement"
+            data["project_title"] = "Draft Agreement"
+        else:
+            data["title"] = title
+            data["project_title"] = title
+
+        if not description:
+            data["description"] = "Draft agreement — template/details pending."
+
+        if data.get("project_type") is None:
+            data["project_type"] = ""
+        if data.get("project_subtype") is None:
+            data["project_subtype"] = ""
+
+        if not self._safe_str(data.get("payment_mode")):
+            data["payment_mode"] = "escrow"
+
+        return data
 
     def _extract_milestones_payload(self, payload: dict):
         if not isinstance(payload, dict):
@@ -214,8 +271,10 @@ class AgreementViewSet(viewsets.ModelViewSet):
         ms = self._extract_milestones_payload(payload)
         if not ms or not isinstance(ms, list) or len(ms) < 1:
             return Response(
-                {"detail": "At least one milestone is required to create an agreement.",
-                 "missing": {"milestones": "Provide at least one milestone item."}},
+                {
+                    "detail": "At least one milestone is required to create an agreement.",
+                    "missing": {"milestones": "Provide at least one milestone item."},
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -236,8 +295,10 @@ class AgreementViewSet(viewsets.ModelViewSet):
 
         if meaningful < 1:
             return Response(
-                {"detail": "Milestones cannot be empty. Add at least one milestone with a title and/or amount.",
-                 "missing": {"milestones": "Add a real milestone (title/amount)."}},
+                {
+                    "detail": "Milestones cannot be empty. Add at least one milestone with a title and/or amount.",
+                    "missing": {"milestones": "Add a real milestone (title/amount)."},
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -249,14 +310,19 @@ class AgreementViewSet(viewsets.ModelViewSet):
         except Exception:
             return False
 
-    def _auto_finalize_if_signature_satisfied_transition(self, *, before: bool, ag: Agreement) -> None:
+    def _auto_finalize_if_signature_satisfied_transition(
+        self, *, before: bool, ag: Agreement
+    ) -> None:
         after = self._signature_satisfied(ag)
         if before or not after:
             return
 
         addr_error = self._validate_required_addresses(ag)
         if addr_error is not None:
-            print("Auto-finalize skipped: missing required address fields", file=sys.stderr)
+            print(
+                "Auto-finalize skipped: missing required address fields",
+                file=sys.stderr,
+            )
             return
 
         build_fn, gen_fn = _get_pdf_services()
@@ -282,19 +348,26 @@ class AgreementViewSet(viewsets.ModelViewSet):
 
             if contractor is None and not (user.is_staff or user.is_superuser):
                 return Response(
-                    {"detail": "Authenticated user has no contractor profile linked. Create a Contractor for this user or log in as a contractor."},
+                    {
+                        "detail": "Authenticated user has no contractor profile linked. Create a Contractor for this user or log in as a contractor."
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
             payload, _created_project = ensure_project_for_agreement_payload(
-                payload=request.data.copy() if hasattr(request.data, "copy") else dict(request.data),
+                payload=request.data.copy()
+                if hasattr(request.data, "copy")
+                else dict(request.data),
                 contractor=contractor,
             )
 
             if contractor is not None:
                 payload["contractor"] = contractor.pk
 
-            if not self._is_step1_draft(payload):
+            is_step1_draft = self._is_step1_draft(payload)
+            if is_step1_draft:
+                payload = self._apply_step1_draft_defaults(payload)
+            else:
                 ms_err = self._require_milestones_on_create(payload)
                 if ms_err:
                     return ms_err
@@ -321,7 +394,9 @@ class AgreementViewSet(viewsets.ModelViewSet):
             print("AgreementViewSet.create() unexpected error:", repr(e), file=sys.stderr)
             traceback.print_exc()
             return Response(
-                {"detail": f"Unexpected error while creating agreement: {type(e).__name__}: {e}"},
+                {
+                    "detail": f"Unexpected error while creating agreement: {type(e).__name__}: {e}"
+                },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -347,7 +422,9 @@ class AgreementViewSet(viewsets.ModelViewSet):
             except Exception as e:
                 print("Warning: address sync failed on update:", repr(e), file=sys.stderr)
 
-        self._auto_finalize_if_signature_satisfied_transition(before=satisfied_before, ag=serializer.instance)
+        self._auto_finalize_if_signature_satisfied_transition(
+            before=satisfied_before, ag=serializer.instance
+        )
         return Response(serializer.data)
 
     def partial_update(self, request, *args, **kwargs):
@@ -366,9 +443,15 @@ class AgreementViewSet(viewsets.ModelViewSet):
             try:
                 sync_project_address_from_agreement(serializer.instance)
             except Exception as e:
-                print("Warning: address sync failed on partial_update:", repr(e), file=sys.stderr)
+                print(
+                    "Warning: address sync failed on partial_update:",
+                    repr(e),
+                    file=sys.stderr,
+                )
 
-        self._auto_finalize_if_signature_satisfied_transition(before=satisfied_before, ag=serializer.instance)
+        self._auto_finalize_if_signature_satisfied_transition(
+            before=satisfied_before, ag=serializer.instance
+        )
         return Response(serializer.data)
 
     def perform_update(self, serializer):
@@ -386,7 +469,10 @@ class AgreementViewSet(viewsets.ModelViewSet):
 
         if ag.status == ProjectStatus.CANCELLED:
             return Response(
-                {"detail": "Agreement is cancelled and cannot be completed.", "status": ag.status},
+                {
+                    "detail": "Agreement is cancelled and cannot be completed.",
+                    "status": ag.status,
+                },
                 status=status.HTTP_409_CONFLICT,
             )
 
@@ -538,7 +624,10 @@ class AgreementViewSet(viewsets.ModelViewSet):
             if contractor is None:
                 return Response({"detail": "Contractor only."}, status=status.HTTP_403_FORBIDDEN)
             if getattr(getattr(ag, "project", None), "contractor_id", None) != contractor.id:
-                return Response({"detail": "Not authorized for this agreement."}, status=status.HTTP_403_FORBIDDEN)
+                return Response(
+                    {"detail": "Not authorized for this agreement."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
 
         notes = ""
         ai_answers = {}
@@ -561,16 +650,18 @@ class AgreementViewSet(viewsets.ModelViewSet):
         raw_questions = out.get("questions", []) or []
         scope_text = out.get("scope_text", "") or ""
 
-        # Canonicalize before persistence so reruns do not keep creating semantic duplicates.
         questions = _canonicalize_questions(raw_questions)
 
         scope_obj, _ = AgreementAIScope.objects.get_or_create(agreement=ag)
 
-        # Normalize old answers to the canonical question set first.
-        normalized_existing_answers = _normalize_answers_for_questions(scope_obj.answers or {}, questions)
+        normalized_existing_answers = _normalize_answers_for_questions(
+            scope_obj.answers or {}, questions
+        )
 
         incoming_answers = ai_answers if isinstance(ai_answers, dict) else {}
-        normalized_incoming_answers = _normalize_answers_for_questions(incoming_answers, questions)
+        normalized_incoming_answers = _normalize_answers_for_questions(
+            incoming_answers, questions
+        )
 
         merged_answers = dict(normalized_existing_answers or {})
         merged_answers.update(normalized_incoming_answers or {})
@@ -703,9 +794,15 @@ class AgreementViewSet(viewsets.ModelViewSet):
         try:
             pdf_url = finalize_agreement_pdf(ag, generate_full_agreement_pdf=gen_fn)
         except RuntimeError as e:
-            return Response({"detail": str(e)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return Response(
+                {"detail": str(e)},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
         except Exception as e:
-            return Response({"detail": f"PDF generation failed: {e}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"detail": f"PDF generation failed: {e}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return Response({"ok": True, "pdf_url": pdf_url}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"])
@@ -721,8 +818,10 @@ class AgreementViewSet(viewsets.ModelViewSet):
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            return Response({"detail": f"Unexpected error: {type(e).__name__}: {e}"},
-                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"detail": f"Unexpected error: {type(e).__name__}: {e}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     @action(detail=True, methods=["post"], url_path="send_final_agreement_link")
     def send_final_agreement_link(self, request, pk=None):
@@ -737,8 +836,10 @@ class AgreementViewSet(viewsets.ModelViewSet):
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            return Response({"detail": f"Unexpected error: {type(e).__name__}: {e}"},
-                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"detail": f"Unexpected error: {type(e).__name__}: {e}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     @action(detail=True, methods=["post"])
     def contractor_sign(self, request, pk=None):
@@ -754,8 +855,10 @@ class AgreementViewSet(viewsets.ModelViewSet):
         name = (request.data.get("typed_name") or request.data.get("name") or "").strip()
         signature_file = request.FILES.get("signature")
         data_url = request.data.get("signature_data_url")
-        ip = (request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip()
-              or request.META.get("REMOTE_ADDR"))
+        ip = (
+            request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[0].strip()
+            or request.META.get("REMOTE_ADDR")
+        )
 
         try:
             ag = apply_contractor_signature(
@@ -768,7 +871,10 @@ class AgreementViewSet(viewsets.ModelViewSet):
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-        self._auto_finalize_if_signature_satisfied_transition(before=satisfied_before, ag=ag)
+        self._auto_finalize_if_signature_satisfied_transition(
+            before=satisfied_before,
+            ag=ag,
+        )
 
         ser = self.get_serializer(ag)
         return Response({"ok": True, "agreement": ser.data}, status=status.HTTP_200_OK)

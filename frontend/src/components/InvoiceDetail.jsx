@@ -1,9 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import api, {
-  getAgreementClosureStatus,
-  closeAndArchiveAgreement,
-} from "../api";
+import api, { getAgreementClosureStatus, closeAndArchiveAgreement } from "../api";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
 import SendInvoiceButton from "./SendInvoiceButton";
@@ -21,6 +18,7 @@ const statusStyles = {
   disputed: "bg-red-100 text-red-800",
   paid: "bg-green-100 text-green-800",
   incomplete: "bg-gray-100 text-gray-800",
+  sent: "bg-slate-100 text-slate-800",
 };
 
 function fmt(value) {
@@ -37,6 +35,35 @@ function fileNameFromPath(name) {
   return parts[parts.length - 1] || s;
 }
 
+async function copyToClipboard(text) {
+  const value = String(text || "");
+  if (!value) return false;
+
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    // fall through
+  }
+
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = value;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "absolute";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 export default function InvoiceDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -45,6 +72,8 @@ export default function InvoiceDetail() {
   const [invoice, setInvoice] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [directPayLoading, setDirectPayLoading] = useState(false);
+  const [directPayEmailLoading, setDirectPayEmailLoading] = useState(false);
 
   // ✅ Close-out modal state
   const [showCloseModal, setShowCloseModal] = useState(false);
@@ -78,6 +107,30 @@ export default function InvoiceDetail() {
   const rawStatus = String(invoice?.display_status || invoice?.status || "");
   const statusKey = rawStatus.toLowerCase();
 
+  const paymentMode =
+    invoice?.agreement?.payment_mode ??
+    invoice?.agreement?.paymentMode ??
+    invoice?.payment_mode ??
+    invoice?.paymentMode ??
+    invoice?.agreement_payment_mode ??
+    null;
+
+  const isDirectPay =
+    String(paymentMode || "").toLowerCase() === "direct" ||
+    String(paymentMode || "").toLowerCase().includes("direct");
+
+  const directPayCheckoutUrl = String(
+    invoice?.direct_pay_checkout_url || invoice?.directPayCheckoutUrl || ""
+  ).trim();
+
+  const directPayPaidAt =
+    invoice?.direct_pay_paid_at ||
+    invoice?.directPayPaidAt ||
+    invoice?.direct_pay_paid ||
+    null;
+
+  const directPayIsPaid = statusKey === "paid" || Boolean(directPayPaidAt);
+
   const agreementId =
     invoice?.agreement_id ??
     (typeof invoice?.agreement === "number"
@@ -85,9 +138,51 @@ export default function InvoiceDetail() {
       : invoice?.agreement?.id ?? null) ??
     null;
 
+  // ✅ Option A customer fields (prefer invoice.customer_*; fallback to homeowner_*)
+  const customerName =
+    invoice?.customer_name ||
+    invoice?.customerName ||
+    invoice?.homeowner_name ||
+    invoice?.homeownerName ||
+    "-";
+
+  const customerEmail =
+    invoice?.customer_email ||
+    invoice?.customerEmail ||
+    invoice?.homeowner_email ||
+    invoice?.homeownerEmail ||
+    "-";
+
+  // ✅ Milestone display: prefer per-agreement order, then label, then id
+  const milestoneOrder =
+    invoice?.milestone_order ??
+    invoice?.milestoneOrder ??
+    null;
+
+  const milestoneLabel =
+    invoice?.milestone_label ||
+    invoice?.milestoneLabel ||
+    null;
+
   const milestoneId = invoice?.milestone_id ?? null;
   const milestoneTitle = invoice?.milestone_title ?? "Milestone";
   const milestoneDescription = invoice?.milestone_description ?? "";
+
+  const milestoneDisplayNumber = (() => {
+    if (milestoneOrder !== null && milestoneOrder !== undefined && String(milestoneOrder).trim() !== "") {
+      return `#${milestoneOrder}`;
+    }
+    if (milestoneLabel) {
+      // milestone_label already like "Milestone #1" in backend; make it consistent inline
+      // We'll extract trailing number if present, otherwise show label
+      const s = String(milestoneLabel);
+      const m = s.match(/#\s*(\d+)/);
+      if (m && m[1]) return `#${m[1]}`;
+      return s;
+    }
+    if (milestoneId) return `#${milestoneId}`;
+    return "";
+  })();
 
   const completionNotes = (invoice?.milestone_completion_notes || "").trim();
   const attachments = Array.isArray(invoice?.milestone_attachments)
@@ -156,6 +251,78 @@ export default function InvoiceDetail() {
     }
   };
 
+  const handleDirectPayCreateOrCopy = async () => {
+    if (!invoice) return;
+
+    if (directPayIsPaid) {
+      toast("This invoice is already paid.");
+      return;
+    }
+
+    // If link already exists, just copy it.
+    if (directPayCheckoutUrl) {
+      const ok = await copyToClipboard(directPayCheckoutUrl);
+      toast.success(ok ? "Pay link copied." : "Could not copy link.");
+      return;
+    }
+
+    setDirectPayLoading(true);
+    try {
+      const { data } = await api.post(`/projects/invoices/${id}/direct_pay_link/`);
+      const url = String(data?.checkout_url || data?.checkoutUrl || "").trim();
+      if (!url) {
+        toast.error("No checkout URL returned.");
+      } else {
+        const ok = await copyToClipboard(url);
+        toast.success(ok ? "Pay link created & copied." : "Pay link created.");
+      }
+      // Refresh invoice to show SENT / URL fields
+      await fetchInvoice();
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        err?.response?.data?.detail ||
+          err?.response?.data?.error ||
+          "Failed to create Direct Pay link."
+      );
+    } finally {
+      setDirectPayLoading(false);
+    }
+  };
+
+  const handleDirectPayOpen = () => {
+    if (!directPayCheckoutUrl) {
+      toast.error("No Direct Pay link yet.");
+      return;
+    }
+    window.open(directPayCheckoutUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const handleDirectPayEmail = async () => {
+    if (!invoice) return;
+    if (!isDirectPay) return;
+    if (directPayIsPaid) {
+      toast("This invoice is already paid.");
+      return;
+    }
+
+    setDirectPayEmailLoading(true);
+    try {
+      const { data } = await api.post(`/projects/invoices/${id}/direct_pay_email/`, {});
+      toast.success(`Email sent to ${data?.emailed_to || "customer"}.`);
+      await fetchInvoice();
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        err?.response?.data?.detail ||
+          err?.response?.data?.error ||
+          "Failed to email Direct Pay link."
+      );
+    } finally {
+      setDirectPayEmailLoading(false);
+    }
+  };
+
   // Signed agreement (auth-safe): fetch as blob via api, then open in new tab
   const handleOpenSignedAgreement = async () => {
     if (!agreementId) {
@@ -190,12 +357,13 @@ export default function InvoiceDetail() {
     }
   };
 
+  // ✅ FIX: open milestone in READ-ONLY mode when coming from an invoice
   const handleMilestoneDetail = () => {
     if (!milestoneId) {
       toast.error("No milestone linked to this invoice.");
       return;
     }
-    navigate(`/app/milestones/${milestoneId}`);
+    navigate(`/app/milestones/${milestoneId}?readonly=1&from=invoice`);
   };
 
   if (loading)
@@ -228,7 +396,6 @@ export default function InvoiceDetail() {
               Would you like to <b>close and archive</b> this agreement now?
             </p>
 
-            {/* Optional debug totals if you want visibility */}
             {closeoutStatus?.totals ? (
               <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
                 <div className="font-semibold text-gray-800 mb-1">
@@ -292,7 +459,9 @@ export default function InvoiceDetail() {
                 <p className="text-gray-500 mt-1">
                   Milestone:{" "}
                   <span className="font-semibold text-gray-700">
-                    {milestoneId ? `#${milestoneId} — ${milestoneTitle}` : "—"}
+                    {milestoneTitle
+                      ? `${milestoneDisplayNumber ? `${milestoneDisplayNumber} — ` : ""}${milestoneTitle}`
+                      : "—"}
                   </span>
                 </p>
               </div>
@@ -309,7 +478,7 @@ export default function InvoiceDetail() {
               </div>
             </div>
 
-            {/* ✅ Button row: same send/resend logic as list via shared component */}
+            {/* ✅ Button row */}
             <div className="flex flex-wrap items-center gap-3">
               <button
                 type="button"
@@ -345,10 +514,78 @@ export default function InvoiceDetail() {
                 Download Invoice
               </button>
 
-              <SendInvoiceButton
-                invoice={invoice}
-                onUpdated={(updated) => setInvoice(updated)}
-              />
+              {isDirectPay && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleDirectPayCreateOrCopy}
+                    disabled={directPayLoading || directPayIsPaid}
+                    className={`rounded-lg px-4 py-2 font-semibold text-sm transition-colors ${
+                      directPayIsPaid
+                        ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                        : directPayCheckoutUrl
+                          ? "bg-white text-slate-800 border border-slate-200 hover:bg-slate-50"
+                          : "bg-slate-900 text-white hover:bg-slate-800"
+                    }`}
+                    title={
+                      directPayIsPaid
+                        ? "Invoice is paid"
+                        : directPayCheckoutUrl
+                          ? "Copy pay link"
+                          : "Create pay link"
+                    }
+                  >
+                    {directPayIsPaid
+                      ? "Paid"
+                      : directPayLoading
+                        ? "Working…"
+                        : directPayCheckoutUrl
+                          ? "Copy Pay Link"
+                          : "Create Pay Link"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDirectPayOpen}
+                    disabled={!directPayCheckoutUrl}
+                    className={`rounded-lg px-4 py-2 font-semibold text-sm transition-colors ${
+                      directPayCheckoutUrl
+                        ? "bg-slate-100 text-slate-800 hover:bg-slate-200"
+                        : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                    }`}
+                    title="Open pay link in a new tab"
+                  >
+                    Open Link
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDirectPayEmail}
+                    disabled={!directPayCheckoutUrl || directPayEmailLoading || directPayIsPaid}
+                    className={`rounded-lg px-4 py-2 font-semibold text-sm transition-colors ${
+                      !directPayCheckoutUrl || directPayIsPaid
+                        ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                        : "bg-white text-slate-800 border border-slate-200 hover:bg-slate-50"
+                    }`}
+                    title="Email the Direct Pay link to the customer"
+                  >
+                    {directPayEmailLoading ? "Emailing…" : "Email Link"}
+                  </button>
+
+                  {directPayPaidAt ? (
+                    <div className="text-xs font-semibold text-slate-600">
+                      Paid: {fmt(directPayPaidAt)}
+                    </div>
+                  ) : null}
+                </>
+              )}
+
+              {!isDirectPay && (
+                <SendInvoiceButton
+                  invoice={invoice}
+                  onUpdated={(updated) => setInvoice(updated)}
+                />
+              )}
             </div>
           </div>
         </div>
@@ -356,8 +593,8 @@ export default function InvoiceDetail() {
         <div className="grid grid-cols-1 gap-6 border-t pt-6 md:grid-cols-2">
           <div>
             <h3 className="font-semibold text-gray-600">Customer</h3>
-            <p>{invoice.homeowner_name || "-"}</p>
-            <p className="text-sm text-gray-500">{invoice.homeowner_email || "-"}</p>
+            <p>{customerName || "-"}</p>
+            <p className="text-sm text-gray-500">{customerEmail || "-"}</p>
           </div>
 
           <div>
@@ -378,7 +615,10 @@ export default function InvoiceDetail() {
             <h3 className="font-semibold text-gray-600">Milestone Details</h3>
             <div className="text-sm text-gray-700 mt-1">
               <div>
-                <b>Title:</b> {milestoneTitle || "—"}
+                <b>Title:</b>{" "}
+                {milestoneTitle
+                  ? `${milestoneDisplayNumber ? `${milestoneDisplayNumber} — ` : ""}${milestoneTitle}`
+                  : "—"}
               </div>
               <div className="mt-1 whitespace-pre-wrap">
                 <b>Description:</b> {milestoneDescription || "—"}

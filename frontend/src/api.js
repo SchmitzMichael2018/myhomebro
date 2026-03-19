@@ -4,8 +4,9 @@
 // UPDATED v2026-01-08 — add contractor Business Dashboard summary API
 // UPDATED v2026-01-10 — add agreement close & archive helpers
 // UPDATED v2026-01-23 — token key hardening (read legacy keys, stop writing them)
+// UPDATED v2026-02-18 — FIX refresh recursion + queued request retry (logout reliably on expired tokens)
 
-console.log("api.js v2026-01-23-token-hardening");
+console.log("api.js v2026-02-18-refresh-queue-fix");
 
 import axios from "axios";
 
@@ -29,8 +30,7 @@ const isBlob = (v) => typeof Blob !== "undefined" && v instanceof Blob;
 const isURLSearchParams = (v) =>
   typeof URLSearchParams !== "undefined" && v instanceof URLSearchParams;
 
-const SAME_ORIGIN =
-  (typeof window !== "undefined" && window.location?.origin) || "";
+const SAME_ORIGIN = (typeof window !== "undefined" && window.location?.origin) || "";
 
 // No-Auth header endpoints
 const NO_AUTH_HEADER_PATHS = new Set([
@@ -213,11 +213,6 @@ export function setAuthToken(access, refresh = null, remember = true) {
     if (access) {
       // ✅ canonical write ONLY
       store.setItem(TOK.access, access);
-
-      // ❌ do not write legacy keys anymore (prevents collisions/overwrites)
-      // store.setItem(TOK.legacyAccessTokenCamel, access);
-      // store.setItem(TOK.legacyAccessToken, access);
-      // store.setItem(TOK.legacyToken, access);
     }
     if (refresh) store.setItem(TOK.refresh, refresh);
 
@@ -323,11 +318,24 @@ function installInterceptors(instance) {
   });
 
   let isRefreshing = false;
+
+  // ✅ FIX: queue stores original request configs so we can retry them after refresh
   let queue = [];
 
   const flush = (err, token) => {
-    queue.forEach(({ resolve, reject }) => (err ? reject(err) : resolve(token)));
+    const q = queue;
     queue = [];
+
+    q.forEach(({ resolve, reject, config }) => {
+      if (err) return reject(err);
+      try {
+        config.headers = { ...(config.headers || {}) };
+        if (token) config.headers.Authorization = `Bearer ${token}`;
+        resolve(instance(config));
+      } catch (e) {
+        reject(e);
+      }
+    });
   };
 
   instance.interceptors.response.use(
@@ -340,12 +348,27 @@ function installInterceptors(instance) {
 
       if (status !== 401) return Promise.reject(error);
 
-      const config = error.config;
+      const config = error.config || {};
+      const reqPath = pathOnly(config.url || "");
+
+      // ✅ FIX: if refresh itself 401s, do NOT attempt refresh again
+      if (
+        reqPath === "/auth/refresh/" ||
+        reqPath === "/token/refresh/" ||
+        reqPath === "/accounts/token/refresh/" ||
+        reqPath === "/auth/jwt/refresh/"
+      ) {
+        clearAuth(true);
+        return Promise.reject(error);
+      }
+
       if (config._retry) return Promise.reject(error);
       config._retry = true;
 
       if (isRefreshing) {
-        return new Promise((resolve, reject) => queue.push({ resolve, reject }));
+        return new Promise((resolve, reject) => {
+          queue.push({ resolve, reject, config });
+        });
       }
 
       isRefreshing = true;
@@ -353,6 +376,7 @@ function installInterceptors(instance) {
 
       if (!refresh) {
         clearAuth(true);
+        isRefreshing = false;
         return Promise.reject(error);
       }
 
@@ -360,8 +384,14 @@ function installInterceptors(instance) {
         const resp = await instance.post("/auth/refresh/", { refresh });
         const access = resp.data?.access;
         if (!access) throw new Error("No access token");
+
         setAuthToken(access, refresh, inferRememberFromStorage());
+
+        // ✅ retry queued requests
         flush(null, access);
+
+        // ✅ retry original request
+        config.headers = { ...(config.headers || {}) };
         config.headers.Authorization = `Bearer ${access}`;
         return instance(config);
       } catch (err) {

@@ -192,7 +192,7 @@ export default function TeamSchedule() {
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold">Team Schedule</h1>
-          <div className="text-sm text-gray-500">
+          <div className="mhb-helper-text mt-4">
             Set weekly work days (Sun–Sat) and add exceptions (days off / extra work days).
           </div>
         </div>
@@ -233,7 +233,7 @@ export default function TeamSchedule() {
       </div>
 
       {!selectedId ? (
-        <div className="text-gray-500">Select an employee to edit their schedule.</div>
+        <div className="mhb-helper-text">Select an employee to edit their schedule.</div>
       ) : !schedule ? (
         <div className="text-gray-500">Loading schedule…</div>
       ) : (

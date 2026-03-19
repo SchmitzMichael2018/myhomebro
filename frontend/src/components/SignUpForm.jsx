@@ -1,5 +1,5 @@
 // src/components/SignUpForm.jsx
-// v2025-11-09 — contractor register → tokens (if active) → push to /onboarding
+// v2026-02-10b — fix signup 404 by using real backend routes under /accounts/auth/*
 
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -38,6 +38,29 @@ export default function SignUpForm() {
     return null;
   };
 
+  async function registerContractor(payload) {
+    const candidates = [
+      "/accounts/auth/contractor-register/",
+      "/accounts/auth/register/",
+      // fallback (if you later expose these)
+      "/auth/contractor-register/",
+      "/auth/register/",
+    ];
+
+    let last404 = null;
+    for (const url of candidates) {
+      try {
+        const res = await api.post(url, payload);
+        return { ...res, __used_url: url };
+      } catch (e) {
+        const st = e?.response?.status;
+        if (st === 404) { last404 = e; continue; }
+        throw { ...e, __used_url: url };
+      }
+    }
+    throw last404 || new Error("No registration endpoint found.");
+  }
+
   const submit = async (e) => {
     e.preventDefault();
     const err = validate();
@@ -45,25 +68,35 @@ export default function SignUpForm() {
 
     setLoading(true);
     try {
-      // Your backend mounts accounts at /api/, route is /auth/contractor-register/
       const payload = {
         email: form.email.trim(),
         password: form.password,
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
-        phone_number: form.phone, // serializer accepts phone_number
+        phone_number: form.phone,
       };
-      const { data } = await api.post("/auth/contractor-register/", payload);
 
-      // If email verification is OFF, backend includes tokens; else only message.
+      const { data, __used_url } = await registerContractor(payload);
+      // eslint-disable-next-line no-console
+      console.log("✅ Contractor register used endpoint:", __used_url);
+
       if (data?.access) {
         setTokens(data.access, data.refresh || null, true);
         toast.success("Account created!");
         return navigate("/onboarding");
       }
+
       toast.success(data?.message || "Registration successful. Check your email to verify.");
       navigate("/");
     } catch (err2) {
+      const status = err2?.response?.status;
+      if (status === 404) {
+        toast.error("Signup endpoint not found on the server.");
+        // eslint-disable-next-line no-console
+        console.error("SignUpForm 404:", err2);
+        return;
+      }
+
       const msg =
         err2?.response?.data?.detail ||
         err2?.response?.data?.email ||
@@ -86,17 +119,17 @@ export default function SignUpForm() {
         <form onSubmit={submit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4">
             <input ref={firstRef} name="first_name" value={form.first_name} onChange={onChange}
-                   placeholder="First Name" required className="input-field" />
+              placeholder="First Name" required className="input-field" />
             <input name="last_name" value={form.last_name} onChange={onChange}
-                   placeholder="Last Name" required className="input-field" />
+              placeholder="Last Name" required className="input-field" />
             <input type="email" name="email" value={form.email} onChange={onChange}
-                   placeholder="Email" required className="input-field" />
+              placeholder="Email" required className="input-field" />
             <input type="password" name="password" value={form.password} onChange={onChange}
-                   placeholder="Password" required className="input-field" />
+              placeholder="Password" required className="input-field" />
             <input type="password" name="passwordConfirm" value={form.passwordConfirm} onChange={onChange}
-                   placeholder="Confirm Password" required className="input-field" />
+              placeholder="Confirm Password" required className="input-field" />
             <input name="phone" value={form.phone} onChange={onChange}
-                   placeholder="Phone (10 digits)" pattern="^[0-9]{10}$" className="input-field" />
+              placeholder="Phone (10 digits)" pattern="^[0-9]{10}$" className="input-field" />
           </div>
 
           <label className="flex items-center gap-2 text-sm">
@@ -105,7 +138,7 @@ export default function SignUpForm() {
           </label>
 
           <button type="submit" disabled={loading}
-                  className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition">
+            className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition">
             {loading ? "Signing Up..." : "Sign Up"}
           </button>
         </form>

@@ -1,5 +1,7 @@
 // src/components/Sidebar.jsx
-// v2026-01-15a — admin disputes route now /app/admin/disputes (not query param)
+// v2026-03-15 — add Templates nav item
+// - Default export remains DESKTOP sidebar (hidden on mobile) to avoid desktop breakage
+// - Add `variant="plain"` to render sidebar CONTENT only (for mobile overlay shell)
 
 import React, { useCallback, useMemo, useState, useEffect } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
@@ -9,7 +11,18 @@ import { useWhoAmI } from "../hooks/useWhoAmI.js";
 import RefundEscrowModal from "./RefundEscrowModal";
 import StripeOnboardingStatus from "./StripeOnboardingStatus";
 
-export default function Sidebar() {
+/**
+ * Sidebar
+ *
+ * Props:
+ *   variant:
+ *     - "desktop" (default): renders the existing desktop sidebar wrapper (hidden on mobile)
+ *     - "plain": renders ONLY the inner sidebar content (no desktop-only <aside>)
+ *
+ * Why:
+ *   Desktop stays exactly the same. Mobile overlay can reuse the same content via variant="plain".
+ */
+export default function Sidebar({ variant = "desktop" }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { data, isContractor, isEmployee } = useWhoAmI();
@@ -76,6 +89,7 @@ export default function Sidebar() {
   const Item = ({ to, label, emoji, title }) => (
     <NavLink
       to={to}
+      data-close-sidebar="1"
       className={({ isActive }) =>
         [
           "flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition",
@@ -87,7 +101,9 @@ export default function Sidebar() {
       }
       title={title || (typeof label === "string" ? label : undefined)}
     >
-      <span className="text-base" aria-hidden="true">{emoji}</span>
+      <span className="text-base" aria-hidden="true">
+        {emoji}
+      </span>
       <span className="flex items-center">{label}</span>
     </NavLink>
   );
@@ -96,6 +112,7 @@ export default function Sidebar() {
   const SubItem = ({ to, label }) => (
     <NavLink
       to={to}
+      data-close-sidebar="1"
       className={({ isActive }) =>
         [
           "ml-6 flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition",
@@ -123,10 +140,7 @@ export default function Sidebar() {
               <SubItem to="/app/admin?view=contractors" label="Contractors" />
               <SubItem to="/app/admin?view=homeowners" label="Homeowners" />
               <SubItem to="/app/admin?view=agreements" label="Agreements" />
-
-              {/* ✅ UPDATED: disputes route */}
               <SubItem to="/app/admin/disputes" label="Disputes" />
-
               <SubItem to="/app/admin?view=geo" label="Geo / Map" />
               <SubItem to="/app/admin?view=fee_audit" label="Fee Audit" />
               <SubItem to="/app/admin?view=support" label="Support Tools" />
@@ -151,6 +165,7 @@ export default function Sidebar() {
       <>
         <Item to={`${APP_BASE}/dashboard`} label="Dashboard" emoji="🏠" />
         <Item to={`${APP_BASE}/agreements`} label="Agreements" emoji="📄" />
+        <Item to={`${APP_BASE}/templates`} label="Templates" emoji="🧱" />
         <Item to={`${APP_BASE}/milestones`} label="Milestones" emoji="🧩" />
         <Item to={`${APP_BASE}/assignments`} label="Assignments" emoji="🧭" />
         <Item to={`${APP_BASE}/team-schedule`} label="Team Schedule" emoji="🧑‍🏭" />
@@ -230,22 +245,35 @@ export default function Sidebar() {
     }
   };
 
-  return (
+  // --- Inner content (reused by both desktop and mobile overlay) ---
+  const inner = (
     <>
       {showCloseoutModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-extrabold text-gray-900">Agreement Complete</h3>
-            <p className="mt-2 text-sm text-gray-700">Agreement #{closeoutAgreementId} appears fully complete.</p>
+            <h3 className="text-lg font-extrabold text-gray-900">
+              Agreement Complete
+            </h3>
+            <p className="mt-2 text-sm text-gray-700">
+              Agreement #{closeoutAgreementId} appears fully complete.
+            </p>
 
             {closeoutStatus?.totals && (
               <div className="mt-3 rounded-lg border bg-gray-50 p-3 text-xs">
-                <div>Milestones: {closeoutStatus.totals.milestones_completed}/{closeoutStatus.totals.milestones_total}</div>
-                <div>Invoices: {closeoutStatus.totals.invoices_paid}/{closeoutStatus.totals.invoices_total}</div>
+                <div>
+                  Milestones: {closeoutStatus.totals.milestones_completed}/
+                  {closeoutStatus.totals.milestones_total}
+                </div>
+                <div>
+                  Invoices: {closeoutStatus.totals.invoices_paid}/
+                  {closeoutStatus.totals.invoices_total}
+                </div>
               </div>
             )}
 
-            <p className="mt-3 text-sm text-gray-700">Close and archive this agreement?</p>
+            <p className="mt-3 text-sm text-gray-700">
+              Close and archive this agreement?
+            </p>
 
             <div className="mt-4 flex justify-end gap-3">
               <button
@@ -266,65 +294,76 @@ export default function Sidebar() {
         </div>
       )}
 
-      <aside
-        className="hidden md:flex md:flex-col md:w-60 lg:w-64 border-r border-black/10"
-        style={{
-          minHeight: "100vh",
-          background: "rgba(255,255,255,0.72)",
-          backdropFilter: "blur(10px)",
-        }}
-      >
-        <div className="px-4 pt-4 pb-3 border-b border-black/10">
-          <div className="flex items-center gap-2">
-            <img
-              src={new URL("../assets/myhomebro_logo.png", import.meta.url).href}
-              alt="MyHomeBro"
-              className="h-8 w-8 rounded-md object-contain"
-            />
-            <div>
-              <div className="text-base font-extrabold tracking-tight text-slate-900">MyHomeBro</div>
-              <div className="text-xs text-slate-600">{consoleLabel}</div>
+      <div className="px-4 pt-4 pb-3 border-b border-black/10">
+        <div className="flex items-center gap-2">
+          <img
+            src={new URL("../assets/myhomebro_logo.png", import.meta.url).href}
+            alt="MyHomeBro"
+            className="h-8 w-8 rounded-md object-contain"
+          />
+          <div>
+            <div className="text-base font-extrabold tracking-tight text-slate-900">
+              MyHomeBro
             </div>
+            <div className="text-xs text-slate-600">{consoleLabel}</div>
           </div>
         </div>
+      </div>
 
-        <nav className="flex-1 overflow-auto px-3 py-4 space-y-6">
-          {showRefundContext && !isEmployee && (
-            <RefundEscrowModal
-              open={refundOpen}
-              onClose={() => setRefundOpen(false)}
-              agreementId={activeAgreementId}
-              agreementLabel={activeAgreementLabel}
-            />
-          )}
+      <nav className="flex-1 overflow-auto px-3 py-4 space-y-6">
+        {showRefundContext && !isEmployee && (
+          <RefundEscrowModal
+            open={refundOpen}
+            onClose={() => setRefundOpen(false)}
+            agreementId={activeAgreementId}
+            agreementLabel={activeAgreementLabel}
+          />
+        )}
 
-          <div>
-            <div className="px-2 text-xs font-extrabold uppercase tracking-wide text-slate-600 mb-2">
-              Main
-            </div>
-            <div className="space-y-2">{mainNav}</div>
+        <div>
+          <div className="px-2 text-xs font-extrabold uppercase tracking-wide text-slate-600 mb-2">
+            Main
           </div>
-
-          <div>
-            <div className="px-2 text-xs font-extrabold uppercase tracking-wide text-slate-600 mb-2">
-              Account
-            </div>
-            <div className="space-y-2">{accountNav}</div>
-          </div>
-        </nav>
-
-        <div className="px-4 py-3 border-t border-black/10">
-          <button
-            onClick={handleLogout}
-            className="w-full rounded-xl bg-rose-600 px-3 py-2 text-sm font-extrabold text-white hover:bg-rose-700"
-          >
-            Logout
-          </button>
-          <div className="mt-2 text-[11px] text-slate-600 text-center">
-            © {new Date().getFullYear()} MyHomeBro
-          </div>
+          <div className="space-y-2">{mainNav}</div>
         </div>
-      </aside>
+
+        <div>
+          <div className="px-2 text-xs font-extrabold uppercase tracking-wide text-slate-600 mb-2">
+            Account
+          </div>
+          <div className="space-y-2">{accountNav}</div>
+        </div>
+      </nav>
+
+      <div className="px-4 py-3 border-t border-black/10">
+        <button
+          onClick={handleLogout}
+          data-close-sidebar="1"
+          className="w-full rounded-xl bg-rose-600 px-3 py-2 text-sm font-extrabold text-white hover:bg-rose-700"
+        >
+          Logout
+        </button>
+        <div className="mt-2 text-[11px] text-slate-600 text-center">
+          © {new Date().getFullYear()} MyHomeBro
+        </div>
+      </div>
     </>
+  );
+
+  if (variant === "plain") {
+    return <div className="flex flex-col min-h-screen">{inner}</div>;
+  }
+
+  return (
+    <aside
+      className="hidden md:flex md:flex-col md:w-60 lg:w-64 border-r border-black/10"
+      style={{
+        minHeight: "100vh",
+        background: "rgba(255,255,255,0.72)",
+        backdropFilter: "blur(10px)",
+      }}
+    >
+      {inner}
+    </aside>
   );
 }

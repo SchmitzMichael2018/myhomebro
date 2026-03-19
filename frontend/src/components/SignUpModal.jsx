@@ -1,6 +1,5 @@
 // src/components/SignUpModal.jsx
-// v2025-11-09 — Contractor Sign Up modal with Show/Hide password
-// Links include a cache-buster (?v=timestamp) to avoid stale browser cache.
+// v2026-02-10b — Fix signup 404 by probing /accounts/auth/* endpoints (actual backend routes)
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import toast from "react-hot-toast";
@@ -29,7 +28,6 @@ export default function SignUpModal() {
     if (!loading) setVisible(false);
   };
 
-  // Global opener + event listener
   useEffect(() => {
     window.mhbOpenSignup = () => openSignup();
     const onEvt = () => openSignup();
@@ -64,13 +62,39 @@ export default function SignUpModal() {
     return null;
   };
 
+  async function registerContractor(payload) {
+    // ✅ Real backend routes are under /api/accounts/auth/...
+    const candidates = [
+      "/accounts/auth/contractor-register/",
+      "/accounts/auth/register/",
+      // fallback (if you later expose one)
+      "/auth/contractor-register/",
+      "/auth/register/",
+    ];
+
+    let last404 = null;
+
+    for (const url of candidates) {
+      try {
+        const res = await api.post(url, payload);
+        return { ...res, __used_url: url };
+      } catch (e) {
+        const st = e?.response?.status;
+        if (st === 404) {
+          last404 = e;
+          continue;
+        }
+        throw { ...e, __used_url: url };
+      }
+    }
+
+    throw last404 || new Error("No registration endpoint found.");
+  }
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     const err = validate();
-    if (err) {
-      toast.error(err);
-      return;
-    }
+    if (err) return toast.error(err);
 
     setLoading(true);
     try {
@@ -79,9 +103,12 @@ export default function SignUpModal() {
         password: form.password,
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
-        phone_number: form.phone.trim(),
+        phone_number: (form.phone || "").trim(),
       };
-      const { data } = await api.post("/auth/contractor-register/", payload);
+
+      const { data, __used_url } = await registerContractor(payload);
+      // eslint-disable-next-line no-console
+      console.log("✅ Contractor register used endpoint:", __used_url);
 
       if (data?.access) {
         setTokens(data.access, data.refresh || null, true);
@@ -96,6 +123,15 @@ export default function SignUpModal() {
       );
       setVisible(false);
     } catch (err2) {
+      // eslint-disable-next-line no-console
+      console.error("SignUpModal error:", err2);
+
+      const status = err2?.response?.status;
+      if (status === 404) {
+        toast.error("Signup endpoint not found on the server.");
+        return;
+      }
+
       const msg =
         err2?.response?.data?.detail ||
         err2?.response?.data?.email ||
@@ -105,7 +141,6 @@ export default function SignUpModal() {
         err2?.message ||
         "Registration failed.";
       toast.error(String(msg));
-      console.error("SignUpModal error:", err2);
     } finally {
       setLoading(false);
     }
@@ -122,13 +157,7 @@ export default function SignUpModal() {
     <div className="mhb-modal-overlay" role="dialog" aria-modal="true">
       <div className="mhb-modal-card" style={{ maxWidth: 520 }}>
         <div className="mhb-modal-header" style={{ justifyContent: "center" }}>
-          <div
-            style={{
-              display: "grid",
-              placeItems: "center",
-              width: "100%",
-            }}
-          >
+          <div style={{ display: "grid", placeItems: "center", width: "100%" }}>
             <div
               style={{
                 display: "grid",
@@ -145,31 +174,13 @@ export default function SignUpModal() {
                 overflow: "hidden",
               }}
             >
-              <img
-                src={logo}
-                alt="MyHomeBro"
-                style={{
-                  maxWidth: 72,
-                  maxHeight: 72,
-                  display: "block",
-                }}
-              />
+              <img src={logo} alt="MyHomeBro" style={{ maxWidth: 72, maxHeight: 72, display: "block" }} />
             </div>
-            <h2
-              style={{
-                margin: "10px 0 0",
-                fontSize: 20,
-                fontWeight: 900,
-              }}
-            >
+            <h2 style={{ margin: "10px 0 0", fontSize: 20, fontWeight: 900 }}>
               Contractor Sign Up
             </h2>
           </div>
-          <button
-            className="mhb-modal-close"
-            onClick={close}
-            aria-label="Close"
-          >
+          <button className="mhb-modal-close" onClick={close} aria-label="Close">
             ✕
           </button>
         </div>
@@ -177,112 +188,47 @@ export default function SignUpModal() {
         <div className="mhb-modal-body">
           <form onSubmit={handleSubmit} style={{ display: "grid", gap: 10 }}>
             <div style={{ display: "grid", gap: 10 }}>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 10,
-                }}
-              >
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <label>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "#64748b",
-                      marginBottom: 4,
-                    }}
-                  >
-                    First Name
-                  </div>
+                  <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>First Name</div>
                   <input
                     ref={firstRef}
                     name="first_name"
                     value={form.first_name}
                     onChange={onChange}
                     required
-                    style={{
-                      width: "100%",
-                      border: "1px solid #e5e7eb",
-                      borderRadius: 10,
-                      padding: "10px 12px",
-                    }}
+                    style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 12px" }}
                   />
                 </label>
                 <label>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "#64748b",
-                      marginBottom: 4,
-                    }}
-                  >
-                    Last Name
-                  </div>
+                  <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Last Name</div>
                   <input
                     name="last_name"
                     value={form.last_name}
                     onChange={onChange}
                     required
-                    style={{
-                      width: "100%",
-                      border: "1px solid #e5e7eb",
-                      borderRadius: 10,
-                      padding: "10px 12px",
-                    }}
+                    style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 12px" }}
                   />
                 </label>
               </div>
 
               <label>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: "#64748b",
-                    marginBottom: 4,
-                  }}
-                >
-                  Email
-                </div>
+                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Email</div>
                 <input
                   type="email"
                   name="email"
                   value={form.email}
                   onChange={onChange}
                   required
-                  style={{
-                    width: "100%",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: 10,
-                    padding: "10px 12px",
-                  }}
+                  style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 12px" }}
                   placeholder="you@company.com"
                 />
               </label>
 
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 10,
-                }}
-              >
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <label>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "#64748b",
-                      marginBottom: 4,
-                    }}
-                  >
-                    Password
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 8,
-                      alignItems: "center",
-                    }}
-                  >
+                  <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Password</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <input
                       type={showPw ? "text" : "password"}
                       name="password"
@@ -290,40 +236,18 @@ export default function SignUpModal() {
                       onChange={onChange}
                       required
                       minLength={8}
-                      style={{
-                        width: "100%",
-                        border: "1px solid #e5e7eb",
-                        borderRadius: 10,
-                        padding: "10px 12px",
-                      }}
+                      style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 12px" }}
                       placeholder="••••••••"
                     />
-                    <label
-                      style={{
-                        display: "inline-flex",
-                        gap: 6,
-                        fontSize: 12,
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={showPw}
-                        onChange={(e) => setShowPw(e.target.checked)}
-                      />
+                    <label style={{ display: "inline-flex", gap: 6, fontSize: 12 }}>
+                      <input type="checkbox" checked={showPw} onChange={(e) => setShowPw(e.target.checked)} />
                       Show
                     </label>
                   </div>
                 </label>
+
                 <label>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "#64748b",
-                      marginBottom: 4,
-                    }}
-                  >
-                    Confirm Password
-                  </div>
+                  <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Confirm Password</div>
                   <input
                     type="password"
                     name="confirm"
@@ -331,99 +255,44 @@ export default function SignUpModal() {
                     onChange={onChange}
                     required
                     minLength={8}
-                    style={{
-                      width: "100%",
-                      border: "1px solid #e5e7eb",
-                      borderRadius: 10,
-                      padding: "10px 12px",
-                    }}
+                    style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 12px" }}
                     placeholder="••••••••"
                   />
                 </label>
               </div>
 
               <label>
-                <div
-                  style={{
-                    fontSize: 12,
-                    color: "#64748b",
-                    marginBottom: 4,
-                  }}
-                >
-                  Phone (10 digits)
-                </div>
+                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Phone (10 digits)</div>
                 <input
                   name="phone"
                   value={form.phone}
                   onChange={onChange}
                   pattern="^[0-9]{10}$"
-                  style={{
-                    width: "100%",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: 10,
-                    padding: "10px 12px",
-                  }}
+                  style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 12px" }}
                   placeholder="2105551212"
                 />
               </label>
 
-              {/* Agree row with inline links that always fetch fresh HTML */}
-              <label
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 8,
-                  fontSize: 12,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  name="agree"
-                  checked={form.agree}
-                  onChange={onChange}
-                />
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                <input type="checkbox" name="agree" checked={form.agree} onChange={onChange} />
                 <span>
                   I agree to the{" "}
                   <span
-                    style={{
-                      fontWeight: 700,
-                      textDecoration: "underline",
-                      cursor: "pointer",
-                    }}
+                    style={{ fontWeight: 700, textDecoration: "underline", cursor: "pointer" }}
                     role="link"
                     tabIndex={0}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openFresh("/legal/terms-of-service/");
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.stopPropagation();
-                        openFresh("/legal/terms-of-service/");
-                      }
-                    }}
+                    onClick={(e) => { e.stopPropagation(); openFresh("/legal/terms-of-service/"); }}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openFresh("/legal/terms-of-service/"); } }}
                   >
                     Terms of Service
                   </span>{" "}
                   and{" "}
                   <span
-                    style={{
-                      fontWeight: 700,
-                      textDecoration: "underline",
-                      cursor: "pointer",
-                    }}
+                    style={{ fontWeight: 700, textDecoration: "underline", cursor: "pointer" }}
                     role="link"
                     tabIndex={0}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openFresh("/legal/privacy-policy/");
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.stopPropagation();
-                        openFresh("/legal/privacy-policy/");
-                      }
-                    }}
+                    onClick={(e) => { e.stopPropagation(); openFresh("/legal/privacy-policy/"); }}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openFresh("/legal/privacy-policy/"); } }}
                   >
                     Privacy Policy
                   </span>
@@ -431,12 +300,7 @@ export default function SignUpModal() {
                 </span>
               </label>
 
-              <button
-                type="submit"
-                className="mhb-btn primary"
-                disabled={loading}
-                style={{ justifyContent: "center" }}
-              >
+              <button type="submit" className="mhb-btn primary" disabled={loading} style={{ justifyContent: "center" }}>
                 {loading ? "Signing Up..." : "Sign Up"}
               </button>
             </div>

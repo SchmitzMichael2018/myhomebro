@@ -205,7 +205,7 @@ export default function TeamPage() {
       <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">Your Team</h1>
-          <p className="text-gray-500 text-sm">
+          <p className="mhb-helper-text mt-4">
             Create employee logins and manage access.
           </p>
           <p className="text-xs text-gray-400 mt-1">

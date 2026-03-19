@@ -36,7 +36,14 @@
 }
 
 /* Page header */
-.mhb-topbar{ display:flex; align-items:center; gap:16px; margin-bottom:12px; }
+.mhb-topbar{
+  display:flex;
+  align-items:center;
+  gap:16px;
+  margin-bottom:12px;
+  flex-wrap:wrap; /* ✅ allow wrap on small screens */
+  min-width:0;
+}
 .mhb-logo-lg{ width:88px; height:88px; }
 .mhb-logo-lg img{ max-width:72px; max-height:72px; display:block; }
 
@@ -62,8 +69,19 @@
 /* Helper note */
 .mhb-note{ padding:12px 14px; color:#334155; }
 
+/* ✅ Helper / footer text (for gradient backgrounds) */
+.mhb-helper-text{
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: rgba(238, 242, 255, 0.85); /* light indigo, readable on blue gradient */
+}
+
 /* Grid */
-.mhb-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap:18px; }
+.mhb-grid{
+  display:grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap:18px;
+}
 
 /* Quick actions */
 .mhb-actions{ display:flex; flex-wrap:wrap; gap:12px; }
@@ -77,29 +95,6 @@
 }
 .mhb-btn:hover{ transform:translateY(-1px); background:#fff; }
 .mhb-btn.primary{ border-color:#0ea5e9; box-shadow:0 8px 24px rgba(14,165,233,.25); }
-
-/* ---------------- Sidebar ---------------- */
-.mhb-sidebar{ width:260px; background:#0b1220; color:#e5e7eb; display:flex; flex-direction:column; }
-.mhb-sb-header{ display:flex; align-items:center; gap:12px; padding:18px 14px 14px; }
-.mhb-sb-logo{ width:64px; height:64px; }
-.mhb-sb-logo img{ max-width:54px; max-height:54px; display:block; }
-.mhb-sb-title{ font-weight:900; font-size:20px; letter-spacing:.2px; }
-.mhb-sb-badge{ font-size:11.5px; opacity:.75; margin-top:4px; }
-
-.mhb-sb-nav{ flex:1; padding:6px; overflow-y:auto; }
-.mhb-sb-link{
-  display:flex; align-items:center; gap:12px;
-  padding:11px 12px; margin:5px 6px;
-  border-radius:12px;
-  color:#e5e7eb; text-decoration:none; font-weight:800; font-size:15px;
-  border:1px solid transparent;
-  transition:background .15s, color .15s, border-color .15s, transform .1s;
-}
-.mhb-sb-link:hover{ background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.08); transform:translateX(1px); }
-.mhb-sb-link.active{ color:var(--mhb-accent); background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.15); }
-
-.mhb-sb-footer{ padding:14px; }
-.mhb-sb-logout{ width:100%; border:1px solid rgba(239,68,68,.35); background:#ef4444; color:#fff; padding:11px 12px; border-radius:12px; font-weight:900; cursor:pointer; }
 
 /* ========== Landing bottom horizontal scroller ========== */
 .mhb-hscroll{
@@ -181,3 +176,31 @@
 .mhb-hscroll::-webkit-scrollbar-track{ background: rgba(255,255,255,.25); border-radius: 8px; }
 .mhb-hscroll::-webkit-scrollbar-thumb{ background: rgba(255,255,255,.7); border-radius: 8px; }
 .mhb-hscroll{ scrollbar-color: rgba(255,255,255,.7) rgba(255,255,255,.25); scrollbar-width: thin; }
+
+/* ========================================================================== */
+/* ========================== Mobile Phase 3 tweaks ========================= */
+/* ========================================================================== */
+
+@media (max-width: 640px){
+  /* Container padding tighter on phones */
+  .mhb-container{ padding:16px 14px; }
+
+  /* Logo slightly smaller so title/subtitle fit */
+  .mhb-logo-lg{ width:64px; height:64px; }
+  .mhb-logo-lg img{ max-width:52px; max-height:52px; }
+
+  /* Title scales down on mobile */
+  .mhb-page-title{ font-size:26px; line-height:1.1; }
+  .mhb-page-subtitle{ font-size:13px; }
+
+  /* ✅ Force single-column grids */
+  .mhb-grid{ grid-template-columns: 1fr; gap:14px; }
+
+  /* Reduce card padding slightly */
+  .mhb-stat{ padding:16px 16px 14px; min-height:110px; }
+}
+
+/* Small tablets: 2 columns feels great */
+@media (min-width: 641px) and (max-width: 900px){
+  .mhb-grid{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

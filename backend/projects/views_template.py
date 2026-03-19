@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 from projects.ai.template_builder import generate_materials_from_scope
 from projects.models import Agreement
 from projects.models_templates import ProjectTemplate
+from projects.serializers.agreement import AgreementSerializer
 from projects.serializers_template import (
     ApplyTemplateSerializer,
     ProjectTemplateCreateUpdateSerializer,
@@ -165,9 +166,43 @@ class ApplyTemplateToAgreementView(APIView):
                 template=template,
                 overwrite_existing=overwrite_existing,
                 copy_text_fields=copy_text_fields,
+                estimated_days=serializer.validated_data.get("estimated_days"),
+                auto_schedule=serializer.validated_data.get("auto_schedule", False),
+                spread_enabled=serializer.validated_data.get("spread_enabled", False),
+                spread_total=serializer.validated_data.get("spread_total"),
             )
         except ValueError as exc:
             raise ValidationError(str(exc))
+
+        # Re-read after apply so serializer returns the fresh hydrated agreement:
+        # - selected_template / selected_template_id
+        # - project_type / project_subtype
+        # - project.title via project_title
+        # - description
+        # - ai_scope questions / answers
+        # - milestone totals and date rollups
+        agreement.refresh_from_db()
+
+        # Load common related objects for a complete response shape.
+        try:
+            agreement = (
+                Agreement.objects.select_related(
+                    "project",
+                    "homeowner",
+                    "selected_template",
+                    "project_type_ref",
+                    "project_subtype_ref",
+                )
+                .get(pk=agreement.pk)
+            )
+        except Exception:
+            # Fallback to the refreshed instance if select_related fails for any reason.
+            pass
+
+        agreement_payload = AgreementSerializer(
+            agreement,
+            context={"request": request},
+        ).data
 
         return Response(
             {
@@ -177,6 +212,8 @@ class ApplyTemplateToAgreementView(APIView):
                     "start_date": result["start_date"].isoformat() if result.get("start_date") else None,
                     "end_date": result["end_date"].isoformat() if result.get("end_date") else None,
                 },
+                "agreement": agreement_payload,
+                "template": ProjectTemplateDetailSerializer(template).data,
             },
             status=status.HTTP_200_OK,
         )

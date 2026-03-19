@@ -357,12 +357,51 @@ def _normalize_answers_for_questions(existing_answers: dict, canonical_questions
                 out[key] = src[alias]
                 break
 
-    # Keep unrelated answers too
     for raw_key, raw_val in src.items():
         if raw_key not in out:
             out[raw_key] = raw_val
 
     return out
+
+
+def _clean_stored_questions(questions: Any) -> list[dict]:
+    cleaned: list[dict] = []
+
+    for raw in _safe_list(questions):
+        if not isinstance(raw, dict):
+            continue
+
+        key = str(raw.get("key") or "").strip()
+        if not key:
+            continue
+
+        label = str(raw.get("label") or raw.get("question") or key.replace("_", " ").title()).strip()
+        qtype = str(raw.get("type") or "").strip() or "text"
+        help_text = "" if raw.get("help") is None else str(raw.get("help")).strip()
+        placeholder = "" if raw.get("placeholder") is None else str(raw.get("placeholder")).strip()
+        required = bool(raw.get("required", False))
+        options = raw.get("options", []) if isinstance(raw.get("options", []), list) else []
+        input_type = str(raw.get("inputType") or "").strip()
+
+        if not input_type:
+            input_type = _question_input_type(raw, key)
+
+        cleaned.append(
+            {
+                "key": key,
+                "label": label,
+                "question": str(raw.get("question") or label).strip(),
+                "help": help_text,
+                "placeholder": placeholder,
+                "required": required,
+                "inputType": input_type,
+                "type": qtype,
+                "options": options,
+                "source": raw.get("source") or "stored",
+            }
+        )
+
+    return cleaned
 
 
 class SelectedTemplateMiniSerializer(serializers.ModelSerializer):
@@ -474,6 +513,9 @@ class AgreementSerializer(serializers.ModelSerializer):
     class Meta:
         model = Agreement
         fields = "__all__"
+        extra_kwargs = {
+            "description": {"required": False, "allow_blank": True, "allow_null": False},
+        }
 
     def get_current_pdf_url(self, obj):
         return _safe_file_url(getattr(obj, "pdf_file", None))
@@ -717,11 +759,11 @@ class AgreementSerializer(serializers.ModelSerializer):
             if not scope:
                 return None
 
-            questions = _canonicalize_questions(scope.questions or [])
-            answers = _normalize_answers_for_questions(scope.answers or {}, questions)
+            stored_questions = _clean_stored_questions(getattr(scope, "questions", []) or [])
+            answers = _normalize_answers_for_questions(scope.answers or {}, stored_questions)
 
             return {
-                "questions": questions,
+                "questions": stored_questions,
                 "answers": answers,
                 "scope_text": getattr(scope, "scope_text", "") or "",
                 "updated_at": scope.updated_at.isoformat() if scope.updated_at else None,
@@ -817,6 +859,15 @@ class AgreementSerializer(serializers.ModelSerializer):
         except Exception:
             pass
 
+        # Force early draft-friendly behavior here too.
+        if "description" in data and data["description"] is None:
+            data["description"] = ""
+
+        if "project_title" in data and data["project_title"] is None:
+            data["project_title"] = ""
+        if "title" in data and data["title"] is None:
+            data["title"] = ""
+
         address_keys = {
             "project_address_line1",
             "project_address_line2",
@@ -839,6 +890,9 @@ class AgreementSerializer(serializers.ModelSerializer):
             "project_subtype",
             "external_contract_reference",
             "project_type",
+            "description",
+            "project_title",
+            "title",
         }
 
         for key, value in list(data.items()):
@@ -850,6 +904,9 @@ class AgreementSerializer(serializers.ModelSerializer):
 
         if data.get("project_type", None) is None and "project_type" in data:
             data["project_type"] = ""
+
+        if data.get("description", None) is None and "description" in data:
+            data["description"] = ""
 
         use_default = data.pop("use_default_warranty", None)
         custom_text = data.pop("custom_warranty_text", None)
@@ -952,7 +1009,12 @@ class AgreementSerializer(serializers.ModelSerializer):
         if not isinstance(ai_scope_payload, dict):
             return
 
-        incoming_questions = _canonicalize_questions(_safe_list(ai_scope_payload.get("questions")))
+        incoming_questions_raw = _safe_list(ai_scope_payload.get("questions"))
+        incoming_questions = (
+            _clean_stored_questions(incoming_questions_raw)
+            if incoming_questions_raw
+            else []
+        )
         incoming_answers = _safe_dict(ai_scope_payload.get("answers"))
         incoming_scope_text = ai_scope_payload.get("scope_text", None)
 
@@ -960,12 +1022,20 @@ class AgreementSerializer(serializers.ModelSerializer):
         if not scope_obj:
             scope_obj = AgreementAIScope.objects.create(agreement=agreement)
 
+        effective_questions = incoming_questions or _clean_stored_questions(_safe_list(scope_obj.questions))
+
         if incoming_questions:
             scope_obj.questions = incoming_questions
 
         if incoming_answers:
-            merged_existing_answers = _normalize_answers_for_questions(_safe_dict(scope_obj.answers), incoming_questions or _safe_list(scope_obj.questions))
-            merged_incoming_answers = _normalize_answers_for_questions(incoming_answers, incoming_questions or _safe_list(scope_obj.questions))
+            merged_existing_answers = _normalize_answers_for_questions(
+                _safe_dict(scope_obj.answers),
+                effective_questions,
+            )
+            merged_incoming_answers = _normalize_answers_for_questions(
+                incoming_answers,
+                effective_questions,
+            )
             scope_obj.answers = _merge_dict(merged_existing_answers, merged_incoming_answers)
 
         if incoming_scope_text is not None:
@@ -997,12 +1067,23 @@ class AgreementSerializer(serializers.ModelSerializer):
         instance.external_contract_attested_at = timezone.now()
         instance.external_contract_attested_by = user if user and getattr(user, "is_authenticated", False) else None
 
+    def validate(self, attrs):
+        attrs = dict(attrs)
+
+        if attrs.get("description", None) is None:
+            attrs["description"] = ""
+
+        return attrs
+
     def create(self, validated_data):
         ai_scope_payload = validated_data.pop("ai_scope_input", None)
         scope_clarifications_payload = validated_data.pop("scope_clarifications", None)
 
         validated_data = self._pop_non_model_fields(validated_data)
         validated_data = self._sync_taxonomy_snapshot_fields(validated_data)
+
+        if validated_data.get("description", None) is None:
+            validated_data["description"] = ""
 
         agreement = Agreement.objects.create(**validated_data)
 
@@ -1019,6 +1100,9 @@ class AgreementSerializer(serializers.ModelSerializer):
 
         validated_data = self._pop_non_model_fields(validated_data)
         validated_data = self._sync_taxonomy_snapshot_fields(validated_data)
+
+        if validated_data.get("description", None) is None and "description" in validated_data:
+            validated_data["description"] = ""
 
         instance = super().update(instance, validated_data)
 

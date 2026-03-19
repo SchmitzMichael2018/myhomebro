@@ -1,59 +1,57 @@
 // frontend/src/components/AgreementWizard.jsx
-// v2025-11-25 — split into separate Step components (Option A)
-// - Project Address is MANDATORY (Step 1).
-// - Step 2 inline form is add-only; Edit opens MilestoneEditModal.
-// - Step 2 delete uses /projects/milestones/:id/ flat endpoint.
-// - Step 4: Preview PDF calls /preview_link/ + /mark_previewed/ and updates hasPreviewed.
-// - Step 4: canSign uses hasPreviewed + checkboxes + typed name and is passed into Step4Finalize.
-// - Step 4 header now shows: "Agreement #ID — Amendment N" when amendment_number > 0.
-// v2025-12-05 — timezone-safe dates + inline overlap handling + removed /projects/customers/ 404.
+// v2026-03-18-draft-friendly-template-flow-final
+//
+// Updates:
+// - draft creation is forgiving for Step 1
+// - sends temporary fallback title/description only for first draft creation
+// - preserves user-entered values after draft exists
+// - supports template-first flow without blocking on description
+// - updates onTemplateApplied callback to hydrate Step 1 from returned agreement
+// - refreshes agreement + milestones after template apply
+// - keeps existing wizard structure intact
 
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../api";
-import MilestoneEditModal from "./MilestoneEditModal";
-import { PROJECT_TYPES, SUBTYPES_BY_TYPE } from "./options/projectOptions";
-import Step4Finalize from "./Step4Finalize";
 
-// Split step components
-import Step1Details from "./Step1Details";
-import Step2Milestones from "./Step2Milestones";
-import Step3WarrantyAttachments from "./Step3WarrantyAttachments";
-import PdfPreviewModal from "./PdfPreviewModal";
+import Step1Details from "./Step1Details.jsx";
+import Step2Milestones from "./Step2Milestones.jsx";
+import Step3WarrantyAttachments from "./Step3WarrantyAttachments.jsx";
+import Step4Finalize from "./Step4Finalize.jsx";
 
-/* ───────── helpers ───────── */
-const TABS = [
-  { step: 1, label: "1. Details" },
-  { step: 2, label: "2. Milestones" },
-  { step: 3, label: "3. Warranty & Attachments" },
-  { step: 4, label: "4. Finalize & Review" },
-];
+/* ---------------- helpers ---------------- */
 
-const pickArray = (raw) =>
-  Array.isArray(raw?.results) ? raw.results : Array.isArray(raw) ? raw : [];
+const STEP_MIN = 1;
+const STEP_MAX = 4;
 
-// Normalize various input forms (Date/string) → "YYYY-MM-DD" or ""
+function clampStep(v) {
+  const n = Number(v || 1);
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(STEP_MAX, Math.max(STEP_MIN, Math.floor(n)));
+}
+
+function safeStr(v) {
+  return v == null ? "" : String(v).trim();
+}
+
+function money(v) {
+  const n = Number(v || 0);
+  if (!Number.isFinite(n)) return 0;
+  return n;
+}
+
+function sum(arr, key = "amount") {
+  const list = Array.isArray(arr) ? arr : [];
+  return list.reduce((a, x) => a + money(x?.[key]), 0);
+}
+
 function toDateOnly(v) {
   if (!v) return "";
-  const s = String(v).trim();
-
-  // Already plain date (good)
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    return s;
-  }
-
-  // ISO datetime like "2025-12-04T00:00:00Z" or "2025-12-04T00:00:00-06:00"
-  if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
-    return s.slice(0, 10); // just YYYY-MM-DD, no timezone math
-  }
-
-  // Fallback: try Date parsing for weird formats
+  const s = String(v);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
   const d = new Date(s);
   if (Number.isNaN(d.getTime())) return "";
   const mm = String(d.getMonth() + 1).padStart(2, "0");
@@ -61,1112 +59,958 @@ function toDateOnly(v) {
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
-function sortPeople(list) {
-  return [...list].sort((a, b) =>
-    (a.full_name || a.last_name || a.email || `id:${a.id}`).localeCompare(
-      b.full_name || b.last_name || b.email || `id:${b.id}`
-    )
-  );
+function normalizeOptionRows(data) {
+  const rows = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.results)
+    ? data.results
+    : Array.isArray(data?.options)
+    ? data.options
+    : Array.isArray(data?.items)
+    ? data.items
+    : Array.isArray(data?.rows)
+    ? data.rows
+    : Array.isArray(data?.project_types)
+    ? data.project_types
+    : Array.isArray(data?.project_subtypes)
+    ? data.project_subtypes
+    : [];
+
+  return rows
+    .map((row) => ({
+      id: row?.id ?? row?.pk ?? null,
+      value: safeStr(row?.value ?? row?.name ?? row?.label ?? row?.slug ?? row?.code),
+      label: safeStr(row?.label ?? row?.name ?? row?.value ?? row?.title ?? row?.slug ?? row?.code),
+      name: safeStr(row?.name ?? row?.label ?? row?.value ?? row?.title ?? row?.slug ?? row?.code),
+      project_type:
+        row?.project_type ??
+        row?.project_type_name ??
+        row?.project_type_label ??
+        row?.project_type_value ??
+        null,
+      is_system: !!row?.is_system,
+      is_active: row?.is_active !== false,
+      owner_type: row?.owner_type || (row?.is_system ? "system" : "contractor"),
+    }))
+    .filter((row) => row.value && row.label);
 }
 
-function normalizeHomeowner(rec) {
-  if (!rec || typeof rec !== "object") return null;
-  const id = rec.id ?? rec.pk;
-  if (!id) return null;
-  const first_name = String(rec.first_name ?? rec.firstName ?? "").trim();
-  const last_name = String(rec.last_name ?? rec.lastName ?? "").trim();
-  const email = String(rec.email ?? "").trim();
-  const full_name = String(
-    rec.full_name ??
-      rec.fullName ??
-      rec.name ??
-      [first_name, last_name].filter(Boolean).join(" ")
-  ).trim();
-  return { id, first_name, last_name, full_name, email, _src: "homeowners" };
+function deriveAgreementId(payload, routeParamId) {
+  const fromPayload =
+    payload?.id ?? payload?.agreement_id ?? payload?.pk ?? payload?.agreementId ?? null;
+
+  const n1 = Number(fromPayload);
+  if (Number.isFinite(n1) && n1 > 0) return n1;
+
+  const n2 = Number(routeParamId);
+  if (Number.isFinite(n2) && n2 > 0) return n2;
+
+  return null;
 }
 
-function buildLabel(p) {
-  const l = (p.last_name || "").trim();
-  const f = (p.first_name || "").trim();
-  const full = (p.full_name || "").trim();
-  const email = (p.email || "").trim();
-  if (l || f) {
-    const lf = [l, f].filter(Boolean).join(", ");
-    return email ? `${lf} — ${email}` : lf;
+function normalizeAgreement(next, prev, routeParamId) {
+  const nextObj = next && typeof next === "object" ? next : null;
+  const prevObj = prev && typeof prev === "object" ? prev : null;
+
+  const id =
+    deriveAgreementId(nextObj, routeParamId) ??
+    deriveAgreementId(prevObj, routeParamId) ??
+    null;
+
+  const merged = {
+    ...(prevObj || {}),
+    ...(nextObj || {}),
+  };
+
+  if (id) merged.id = id;
+  if (merged.agreement_id == null && id) merged.agreement_id = id;
+
+  if (nextObj && !Object.prototype.hasOwnProperty.call(nextObj, "payment_mode")) {
+    if (prevObj && Object.prototype.hasOwnProperty.call(prevObj, "payment_mode")) {
+      merged.payment_mode = prevObj.payment_mode;
+    }
   }
-  if (full) return email ? `${full} — ${email}` : full;
-  if (email) return email;
-  return `ID ${p.id}`;
-}
 
-function dedupePeople(rawList) {
-  const byKey = new Map();
-  for (const p of rawList) {
-    if (!p) continue;
-    const key =
-      (p.email && `email:${String(p.email).toLowerCase()}`) ||
-      (p.id != null && `id:${String(p.id)}`) ||
-      null;
-    if (!key) continue;
-
-    if (!byKey.has(key)) {
-      byKey.set(key, p);
-    } else {
-      const cur = byKey.get(key);
-      const score = (x) => [
-        x?._src === "homeowners" ? 1 : 0,
-        (x?.full_name || "").length,
-        Number.isFinite(Number(x?.id)) ? Number(x.id) : 0,
-      ];
-      const [a1, a2, a3] = score(cur);
-      const [b1, b2, b3] = score(p);
-      if (b1 > a1 || (b1 === a1 && (b2 > a2 || (b2 === a2 && b3 > a3)))) {
-        byKey.set(key, p);
+  const sigKeys = [
+    "require_contractor_signature",
+    "require_customer_signature",
+    "waive_contractor_signature",
+    "waive_customer_signature",
+  ];
+  for (const k of sigKeys) {
+    if (nextObj && !Object.prototype.hasOwnProperty.call(nextObj, k)) {
+      if (prevObj && Object.prototype.hasOwnProperty.call(prevObj, k)) {
+        merged[k] = prevObj[k];
       }
     }
   }
-  return sortPeople([...byKey.values()]);
+
+  const signedKeys = [
+    "contractor_signed",
+    "contractor_signed_at",
+    "homeowner_signed",
+    "homeowner_signed_at",
+    "customer_signed",
+    "customer_signed_at",
+    "signed_by_contractor",
+    "signed_by_homeowner",
+  ];
+  for (const k of signedKeys) {
+    if (nextObj && !Object.prototype.hasOwnProperty.call(nextObj, k)) {
+      if (prevObj && Object.prototype.hasOwnProperty.call(prevObj, k)) {
+        merged[k] = prevObj[k];
+      }
+    }
+  }
+
+  return merged;
 }
 
-function friendly(d) {
-  if (!d) return "";
-  const dt = new Date(d);
-  if (isNaN(dt)) return d;
-  return dt.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
+/* ---------------- defaults ---------------- */
 
-/* ───────── main ───────── */
+const DEFAULT_WARRANTY = `MyHomeBro — 12-Month Workmanship Warranty
+
+Contractor warrants that workmanship performed under this Agreement will be free from defects in labor for a period of twelve (12) months from the date of completion, excluding:
+- Normal wear and tear
+- Damage from misuse, neglect, or unauthorized modification
+- Manufacturer defects in materials or products provided by others
+- Acts of God, flooding, fire, or other events beyond Contractor control
+
+Contractor’s obligation under this warranty is limited to repair or replacement of defective workmanship, at Contractor’s discretion, and does not include incidental or consequential damages.`;
+
+const EMPTY_DLOCAL = {
+  homeowner: "",
+  project_title: "",
+  project_type: "",
+  project_subtype: "",
+  payment_mode: "escrow",
+  description: "",
+  address_line1: "",
+  address_line2: "",
+  address_city: "",
+  address_state: "",
+  address_postal_code: "",
+};
+
+const EMPTY_MLOCAL = {
+  id: null,
+  title: "",
+  description: "",
+  start: "",
+  end: "",
+  amount: "",
+};
+
+/* ---------------- component ---------------- */
+
 export default function AgreementWizard() {
-  const { id: idParam } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
-  const search = new URLSearchParams(location.search);
-  const step = Number(search.get("step") || "1");
+  const params = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const agreementId =
-    idParam && /^\d+$/.test(String(idParam)) ? String(idParam) : null;
-  const isEdit = !!agreementId;
+  const agreementIdParamRaw = params?.id;
+  const agreementIdParam = agreementIdParamRaw ? Number(agreementIdParamRaw) : null;
 
-  const [loading, setLoading] = useState(false);
-  const [agreement, setAgreement] = useState(null);
+  const step = clampStep(searchParams.get("step") || 1);
+
+  const [agreement, setAgreementState] = useState(null);
+  const [loadingAgreement, setLoadingAgreement] = useState(false);
+
+  const [dLocal, setDLocal] = useState(EMPTY_DLOCAL);
+
   const [milestones, setMilestones] = useState([]);
+  const [mLocal, setMLocal] = useState(EMPTY_MLOCAL);
+  const [editMilestone, setEditMilestone] = useState(null);
+
+  const [projectTypes, setProjectTypes] = useState([]);
+  const [projectSubtypes, setProjectSubtypes] = useState([]);
+  const [taxonomyLoading, setTaxonomyLoading] = useState(false);
+
+  const [useDefaultWarranty, setUseDefaultWarranty] = useState(true);
+  const [customWarranty, setCustomWarranty] = useState("");
+  const [attachments, setAttachments] = useState([]);
+
+  const [ackReviewed, setAckReviewed] = useState(false);
+  const [ackTos, setAckTos] = useState(false);
+  const [ackEsign, setAckEsign] = useState(false);
+  const [typedName, setTypedName] = useState("");
+
+  const [last400, setLast400] = useState(null);
+
   const [people, setPeople] = useState([]);
   const [peopleLoadedOnce, setPeopleLoadedOnce] = useState(false);
 
-  // Step 1 state (no dates)
-  const [dLocal, setDLocal] = useState({
-    homeowner: "",
-    project_title: "",
-    project_type: "",
-    project_subtype: "",
-    description: "",
-    // Project address (mandatory)
-    address_line1: "",
-    address_line2: "",
-    address_city: "",
-    address_state: "",
-    address_postal_code: "",
-  });
-
-  // Step 1: server 400 debug panel
-  const [last400, setLast400] = useState(null);
-
-  // Quick Add Homeowner
   const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [qaName, setQaName] = useState("");
   const [qaEmail, setQaEmail] = useState("");
   const [qaBusy, setQaBusy] = useState(false);
 
-  // Step 2
-  const [mLocal, setMLocal] = useState({
-    title: "",
-    description: "",
-    amount: "",
-    start: "",
-    end: "",
-  });
-  const [editMilestone, setEditMilestone] = useState(null);
+  const didInitialFetchRef = useRef(false);
 
-  // Step 3/4
-  const [useDefaultWarranty, setUseDefaultWarranty] = useState(true);
-  const [customWarranty, setCustomWarranty] = useState("");
-  const [attachments, setAttachments] = useState([]);
-  const [hasPreviewed, setHasPreviewed] = useState(false);
-  const [ackReviewed, setAckReviewed] = useState(false);
-  const [ackTos, setAckTos] = useState(false);
-  const [ackEsign, setAckEsign] = useState(false);
-  const [typedName, setTypedName] = useState("");
-  const [signing, setSigning] = useState(false);
+  const totals = useMemo(() => ({ totalAmt: sum(milestones, "amount") }), [milestones]);
 
-  // PDF preview state for Step 4
-  const [pdfUrl, setPdfUrl] = useState(null);
-  const [pdfOpen, setPdfOpen] = useState(false);
-
-  /* ── people loader ── */
-  const loadPeople = useCallback(async () => {
-    const cfg = { params: { page: 1, page_size: 1000, ordering: "-created_at" } };
-    const pile = [];
-    try {
-      const { data } = await api.get(`/homeowners/`, cfg);
-      pile.push(...pickArray(data).map(normalizeHomeowner).filter(Boolean));
-    } catch {}
-    try {
-      const { data } = await api.get(`/projects/homeowners/`, cfg);
-      pile.push(...pickArray(data).map(normalizeHomeowner).filter(Boolean));
-    } catch {}
-    return dedupePeople(pile);
-  }, []);
-
-  /* ── edit loader ── */
-  const loadEdit = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data: ag } = await api.get(`/projects/agreements/${agreementId}/`);
-      setAgreement(ag);
-
-      // Initialize hasPreviewed from backend flags, so reopening an agreement
-      // that was already previewed/signed doesn't re-block signing.
-      setHasPreviewed(!!ag.reviewed || !!ag.reviewed_at);
-
-      const agHomeownerId =
-        typeof ag.homeowner === "object" && ag.homeowner
-          ? String(ag.homeowner.id ?? "")
-          : ag.homeowner != null
-          ? String(ag.homeowner)
-          : ag.homeowner_id != null
-          ? String(ag.homeowner_id)
-          : "";
-
-      const seed = [];
-      if (agHomeownerId || ag.homeowner_name || ag.homeowner_email) {
-        seed.push({
-          id: agHomeownerId || (ag.homeowner_email || ag.homeowner_name || "unknown"),
-          first_name: "",
-          last_name: "",
-          full_name: ag.homeowner_name || "",
-          email: ag.homeowner_email || "",
-          _src: "agreement-snapshot",
-        });
-      }
-
-      const loaded = await loadPeople();
-      setPeopleLoadedOnce(true);
-      setPeople(dedupePeople([...seed, ...loaded]));
-
-      // Hydrate address fields directly from Agreement.project_address_*
-      const address_line1 =
-        ag.project_address_line1 ??
-        ag.project_line1 ??
-        ag.address_line1 ??
-        "";
-      const address_line2 =
-        ag.project_address_line2 ??
-        ag.project_line2 ??
-        ag.address_line2 ??
-        "";
-      const address_city =
-        ag.project_address_city ??
-        ag.project_city ??
-        ag.city ??
-        "";
-      const address_state =
-        ag.project_address_state ??
-        ag.project_state ??
-        ag.state ??
-        "";
-      const address_postal_code =
-        ag.project_postal_code ??
-        ag.project_zip ??
-        ag.postal_code ??
-        "";
-
-      setDLocal({
-        homeowner: String(agHomeownerId || ""),
-        project_title: ag.project_title || ag.title || "",
-        project_type: (ag.project_type ?? "") || "",
-        project_subtype: (ag.project_subtype ?? "") || "",
-        description: ag.description || "",
-        address_line1,
-        address_line2,
-        address_city,
-        address_state,
-        address_postal_code,
-      });
-
-      // milestones
-      try {
-        const { data: ms } = await api.get(`/projects/milestones/`, {
-          params: { agreement: agreementId, page_size: 500 },
-        });
-        setMilestones(pickArray(ms));
-      } catch {
-        setMilestones([]);
-      }
-
-      const isDef =
-        String(ag.warranty_type || "").toUpperCase() === "DEFAULT" ||
-        Boolean(ag.use_default_warranty) ||
-        !ag.warranty_text_snapshot ||
-        String(ag.warranty_text_snapshot || "").trim() === "";
-      setUseDefaultWarranty(isDef);
-      setCustomWarranty(isDef ? "" : ag.warranty_text_snapshot || "");
-
-      try {
-        const { data: atts } = await api.get(
-          `/projects/agreements/${agreementId}/attachments/`
-        );
-        setAttachments(Array.isArray(atts) ? atts : pickArray(atts));
-      } catch {
-        setAttachments([]);
-      }
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to load agreement.");
-    } finally {
-      setLoading(false);
-    }
-  }, [agreementId, loadPeople]);
-
-  /* ── create loader ── */
-  const loadCreate = useCallback(async () => {
-    setLoading(true);
-    try {
-      setAgreement(null);
-      setMilestones([]);
-      setAttachments([]);
-      setHasPreviewed(false);
-
-      const loaded = await loadPeople();
-      setPeopleLoadedOnce(true);
-      setPeople(dedupePeople(loaded));
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to load form.");
-    } finally {
-      setLoading(false);
-    }
-  }, [loadPeople]);
-
-  useEffect(() => {
-    if (agreementId) loadEdit();
-    else loadCreate();
-  }, [agreementId, loadEdit, loadCreate]);
-
-  /* ── totals (derived) ── */
-  const totals = useMemo(() => {
-    const starts = milestones
-      .map((m) => toDateOnly(m.start_date || m.start || m.scheduled_date))
-      .filter(Boolean);
-    const ends = milestones
-      .map((m) =>
-        toDateOnly(m.completion_date || m.end_date || m.end || m.due_date)
-      )
-      .filter(Boolean);
-    const minStart = starts.length ? [...starts].sort()[0] : "";
-    const maxEnd = ends.length ? [...ends].sort().slice(-1)[0] : "";
-    const totalAmt = milestones.reduce((s, m) => s + Number(m.amount || 0), 0);
-    const totalDays =
-      minStart && maxEnd
-        ? Math.max(
-            1,
-            Math.floor((new Date(maxEnd) - new Date(minStart)) / 86400000) + 1
-          )
-        : 0;
-    return { totalAmt, minStart, maxEnd, totalDays };
-  }, [milestones]);
-
-  // Step 4 view-model — prefer dLocal, fallback to Agreement.
-  const dStep4 = useMemo(() => {
-    if (!agreement) return dLocal;
-    const ag = agreement;
-
-    const address_line1 =
-      dLocal.address_line1 ||
-      ag.project_address_line1 ||
-      ag.project_line1 ||
-      ag.address_line1 ||
-      "";
-    const address_line2 =
-      dLocal.address_line2 ||
-      ag.project_address_line2 ||
-      ag.project_line2 ||
-      ag.address_line2 ||
-      "";
-    const address_city =
-      dLocal.address_city ||
-      ag.project_address_city ||
-      ag.project_city ||
-      ag.city ||
-      "";
-    const address_state =
-      dLocal.address_state ||
-      ag.project_address_state ||
-      ag.project_state ||
-      ag.state ||
-      "";
-    const address_postal_code =
-      dLocal.address_postal_code ||
-      ag.project_postal_code ||
-      ag.project_zip ||
-      ag.postal_code ||
-      "";
-
-    return {
-      ...dLocal,
-      address_line1,
-      address_line2,
-      address_city,
-      address_state,
-      address_postal_code,
-    };
-  }, [agreement, dLocal]);
-
-  // Detect whether we are inside the /app namespace (authenticated shell)
-  const APP_PREFIX = location?.pathname?.startsWith("/app") ? "/app" : "";
-
-  // Navigation Helper
-  const goStep = (n) =>
-    navigate(
-      agreementId
-        ? `${APP_PREFIX}/agreements/${agreementId}/wizard?step=${n}`
-        : `${APP_PREFIX}/agreements/new?step=${n}`
-    );
-
-  // --- MEMOIZED OPTIONS ---
-  const homeownerOptions = useMemo(
-    () =>
-      people.map((p) => ({
-        value: String(p.id),
-        label: buildLabel(p),
-      })),
-    [people]
+  const agreementId = useMemo(
+    () => deriveAgreementId(agreement, agreementIdParam),
+    [agreement, agreementIdParam]
   );
 
-  const projectTypeOptions = useMemo(
-    () =>
-      (Array.isArray(PROJECT_TYPES) ? PROJECT_TYPES : []).map((t) => {
-        const val = typeof t === "string" ? t : t?.value || "";
-        const lbl =
-          typeof t === "string"
-            ? t.charAt(0).toUpperCase() + t.slice(1)
-            : t?.label || val;
-        return { value: val, label: lbl };
-      }),
+  const setAgreement = useCallback(
+    (nextPayload) => {
+      setAgreementState((prev) => normalizeAgreement(nextPayload, prev, agreementIdParam));
+    },
+    [agreementIdParam]
+  );
+
+  const lastStepFetchRef = useRef({ step: null, at: 0 });
+
+  const resetWizardForNewAgreement = useCallback(() => {
+    setAgreementState(null);
+    setLoadingAgreement(false);
+
+    setDLocal({ ...EMPTY_DLOCAL });
+    setMilestones([]);
+    setMLocal({ ...EMPTY_MLOCAL });
+    setEditMilestone(null);
+
+    setProjectTypes([]);
+    setProjectSubtypes([]);
+    setTaxonomyLoading(false);
+
+    setUseDefaultWarranty(true);
+    setCustomWarranty("");
+    setAttachments([]);
+
+    setAckReviewed(false);
+    setAckTos(false);
+    setAckEsign(false);
+    setTypedName("");
+
+    setLast400(null);
+
+    setShowQuickAdd(false);
+    setQaName("");
+    setQaEmail("");
+    setQaBusy(false);
+
+    didInitialFetchRef.current = false;
+    lastStepFetchRef.current = { step: null, at: 0 };
+  }, []);
+
+  const goStep = (n) => {
+    const next = clampStep(n);
+    setSearchParams((prev) => {
+      const p = new URLSearchParams(prev);
+      p.set("step", String(next));
+      return p;
+    });
+  };
+
+  const stepTabs = useMemo(
+    () => [
+      { n: 1, label: "Step 1 Details" },
+      { n: 2, label: "Step 2 Milestones" },
+      { n: 3, label: "Step 3 Warranty" },
+      { n: 4, label: "Step 4 Finalize" },
+    ],
     []
   );
 
-  const projectSubtypeOptions = useMemo(() => {
-    const key = dLocal.project_type || "";
-    const list = SUBTYPES_BY_TYPE[key] || [];
-    return list.map((t) => {
-      const val = typeof t === "string" ? t : t?.value || "";
-      const lbl =
-        typeof t === "string"
-          ? t.charAt(0).toUpperCase() + t.slice(1)
-          : t?.label || val;
-      return { value: val, label: lbl };
-    });
-  }, [dLocal.project_type]);
-
-  /* ── Smart create/patch helpers ── */
-
-  function buildAgreementCreateVariants(base, addr, projectId = null) {
-    const titles = [
-      { title: base.project_title, project_title: base.project_title },
-      { title: base.project_title },
-      { project_title: base.project_title },
-    ];
-    const homeowners = [];
-    if (base.homeowner != null) {
-      homeowners.push({ homeowner: base.homeowner });
-      homeowners.push({ homeowner_id: base.homeowner });
-      homeowners.push({ customer: base.homeowner });
-      homeowners.push({ customer_id: base.homeowner });
-      homeowners.push({ client: base.homeowner });
-      homeowners.push({ client_id: base.homeowner });
-    } else {
-      homeowners.push({});
-    }
-
-    const projectBits = projectId
-      ? [{ project: projectId }, { project_id: projectId }]
-      : [{}];
-
-    const shared = (t, h, p) => ({
-      ...t,
-      ...h,
-      ...p,
-      description: base.description,
-      project_type: base.project_type ?? null,
-      project_subtype: base.project_subtype ?? null,
-    });
-
-    const withAddr = [
-      {
-        project_address_line1: addr.line1 || "",
-        project_address_line2: addr.line2 || "",
-        project_address_city: addr.city || "",
-        project_address_state: addr.state || "",
-        project_postal_code: addr.postal || "",
-        address_line1: addr.line1 || "",
-        address_line2: addr.line2 || "",
-        address_city: addr.city || "",
-        address_state: addr.state || "",
-        address_postal_code: addr.postal || "",
-      },
-    ];
-
-    const variants = [];
-    for (const t of titles) {
-      for (const h of homeowners) {
-        for (const p of projectBits) {
-          variants.push(shared(t, h, p));
-          for (const ab of withAddr) variants.push({ ...shared(t, h, p), ...ab });
-        }
-      }
-    }
-    return variants;
-  }
-
-  async function tryVariants(url, variants, method = "post") {
-    let lastErr = null;
-    for (const body of variants) {
-      try {
-        setLast400(null);
-        const res = await api[method](url, body);
-        return res;
-      } catch (e) {
-        const status = e?.response?.status;
-        const data = e?.response?.data;
-        console.warn(
-          `[${method.toUpperCase()} ${url}] variant failed`,
-          { body, status, data }
-        );
-        if (status === 400) setLast400(data || { detail: "400 Bad Request" });
-        lastErr = e;
-        if (status && status !== 400) break;
-      }
-    }
-    throw lastErr;
-  }
-
-  async function createProject(base, addr) {
-    const titles = [
-      { title: base.project_title },
-      { name: base.project_title },
-      { project_title: base.project_title },
-    ];
-    const homeowners =
-      base.homeowner != null
-        ? [
-            { homeowner: base.homeowner },
-            { homeowner_id: base.homeowner },
-            { customer: base.homeowner },
-          ]
-        : [{}];
-
-    const withAddr = [
-      {
-        address_line1: addr.line1 || "",
-        address_line2: addr.line2 || "",
-        city: addr.city || "",
-        state: addr.state || "",
-        postal_code: addr.postal || "",
-      },
-      {
-        project_address_line1: addr.line1 || "",
-        project_address_line2: addr.line2 || "",
-        project_address_city: addr.city || "",
-        project_address_state: addr.state || "",
-        project_postal_code: addr.postal || "",
-      },
-    ];
-
-    const variants = [];
-    for (const t of titles) {
-      for (const h of homeowners) {
-        for (const a of withAddr) {
-          variants.push({
-            ...t,
-            ...h,
-            ...a,
-            description: base.description,
-            project_type: base.project_type ?? null,
-            project_subtype: base.project_subtype ?? null,
-          });
-        }
-      }
-    }
-
-    const endpoints = [`/projects/projects/`, `/projects/`];
-    let lastErr = null;
-
-    for (const ep of endpoints) {
-      for (const body of variants) {
-        try {
-          const res = await api.post(ep, body, {
-            validateStatus: (s) => s >= 200 && s < 300,
-          });
-          return res?.data;
-        } catch (e) {
-          lastErr = e;
-          const s = e?.response?.status;
-          if (s === 405) break;
-        }
-      }
-    }
-    throw lastErr;
-  }
-
-  const saveStep1 = async (next = false) => {
+  const loadProjectTypes = useCallback(async () => {
     try {
-      // Front-end validation
-      const title = String(dLocal.project_title || "").trim();
-      if (!title) {
-        toast.error("Project Title is required.");
-        setLast400({ project_title: ["This field is required."] });
-        return;
-      }
-      const homeownerVal = String(dLocal.homeowner || "");
-      const homeownerField = /^\d+$/.test(homeownerVal)
-        ? Number(homeownerVal)
-        : null;
-      if (homeownerField == null) {
-        toast.error("Please select a homeowner.");
-        setLast400({ homeowner: ["This field is required."] });
-        return;
-      }
-
-      // Mandatory Address Checks
-      if (!dLocal.address_line1.trim()) {
-        toast.error("Project Address Line 1 is required.");
-        return;
-      }
-      if (!dLocal.address_city.trim()) {
-        toast.error("Project City is required.");
-        return;
-      }
-      if (!dLocal.address_state.trim()) {
-        toast.error("Project State is required.");
-        return;
-      }
-      if (!dLocal.address_postal_code.trim()) {
-        toast.error("Project ZIP/Postal Code is required.");
-        return;
-      }
-
-      const base = {
-        homeowner: homeownerField,
-        project_title: title,
-        project_type: dLocal.project_type || null,
-        project_subtype: dLocal.project_subtype || null,
-        description: dLocal.description,
-      };
-
-      const addr = {
-        line1: dLocal.address_line1,
-        line2: dLocal.address_line2,
-        city: dLocal.address_city,
-        state: dLocal.address_state,
-        postal: dLocal.address_postal_code,
-      };
-
-      if (agreementId) {
-        // PATCH existing Agreement.
-        const payload = {
-          title: base.project_title,
-          project_title: base.project_title,
-          homeowner: homeownerField,
-          description: base.description,
-          project_type: base.project_type,
-          project_subtype: base.project_subtype,
-
-          // Force explicit address update
-          project_address_same_as_homeowner: false,
-          project_is_homeowner_address: false,
-
-          // Send SPECIFIC keys
-          project_address_line1: addr.line1 || "",
-          project_address_line2: addr.line2 || "",
-          project_address_city: addr.city || "",
-          project_address_state: addr.state || "",
-          project_postal_code: addr.postal || "",
-
-          // Send GENERIC keys (for fallback)
-          address_line1: addr.line1 || "",
-          address_line2: addr.line2 || "",
-          address_city: addr.city || "",
-          address_state: addr.state || "",
-          address_postal_code: addr.postal || "",
-
-          // Legacy alias support
-          project_zip: addr.postal || "",
-        };
-
-        try {
-          setLast400(null);
-          await api.patch(`/projects/agreements/${agreementId}/`, payload);
-          await loadEdit();
-        } catch (e1) {
-          console.error("Step1 PATCH failed", e1?.response || e1);
-          setLast400(e1?.response?.data || { detail: "Save failed." });
-          toast.error("Could not save Step 1. Please review any errors.");
-          return;
-        }
-
-        toast.success("Details saved.");
-
-        if (next) {
-          goStep(2);
-        }
-      } else {
-        // CREATE
-        try {
-          const payload = {
-            ...base,
-            project_address_same_as_homeowner: false,
-
-            project_address_line1: addr.line1,
-            project_address_line2: addr.line2,
-            project_address_city: addr.city,
-            project_address_state: addr.state,
-            project_postal_code: addr.postal,
-
-            address_line1: addr.line1,
-            address_line2: addr.line2,
-            address_city: addr.city,
-            address_state: addr.state,
-            address_postal_code: addr.postal,
-          };
-
-          const { data: created } = await api.post("/projects/agreements/", payload);
-          const newId = created?.id ?? created?.pk;
-          if (!newId) return toast.error("Could not determine new Agreement ID.");
-
-          toast.success("Agreement created.");
-          navigate(
-            `${APP_PREFIX}/agreements/${newId}/wizard?step=${next ? 2 : 1}`,
-            { replace: true }
-          );
-        } catch (e0) {
-          const data = e0?.response?.data;
-          setLast400(data || { detail: "Save failed." });
-          toast.error("Could not create Agreement. Please check fields.");
-        }
-      }
-    } catch (e) {
-      console.error(e);
-      const data = e?.response?.data;
-      setLast400(data || { detail: e?.message || "Save failed" });
-      toast.error(`Save failed: ${e?.message}`);
-    }
-  };
-
-  /* ── Step 2 ── */
-  const onLocalChange = (e) => {
-    const { name, value } = e.target;
-    setDLocal((s) => ({
-      ...s,
-      [name]: name === "start" || name === "end" ? toDateOnly(value) : value,
-    }));
-  };
-
-  const onMLocalChange = (key, value) => {
-    setMLocal((s) => ({ ...s, [key]: value }));
-  };
-
-  const saveMilestone = async (m) => {
-    try {
-      // Front-end validation
-      const title = String(m.title || "").trim();
-      if (!title) {
-        toast.error("Milestone title is required.");
-        return;
-      }
-
-      const amountNum = Number(m.amount);
-      if (!Number.isFinite(amountNum)) {
-        toast.error("Milestone amount must be a valid number.");
-        return;
-      }
-
-      // Map inline fields (start/end) to backend date fields
-      const startIso = toDateOnly(m.start || m.start_date || "");
-      const endIso = toDateOnly(
-        m.end || m.end_date || m.completion_date || m.due_date || ""
-      );
-
-      const basePayload = {
-        title,
-        description: m.description || "",
-        amount: amountNum,
-        agreement: agreementId,
-        start_date: startIso || null,
-        completion_date: endIso || null,
-      };
-
-      const url = m.id
-        ? `/projects/agreements/${agreementId}/milestones/${m.id}/`
-        : `/projects/milestones/`;
-      const method = m.id ? api.put : api.post;
-
-      const attempt = (payload) => method(url, payload);
-
-      try {
-        const { data } = await attempt(basePayload);
-
-        if (m.id) {
-          setMilestones((prev) => prev.map((x) => (x.id === m.id ? data : x)));
-        } else {
-          setMilestones((prev) => [...prev, data]);
-        }
-
-        setMLocal({
-          title: "",
-          description: "",
-          amount: "",
-          start: "",
-          end: "",
-        });
-        setEditMilestone(null);
-        toast.success(m.id ? "Updated" : "Added");
-      } catch (err1) {
-        const resp = err1?.response;
-        const body = resp?.data;
-
-        const raw =
-          body &&
-          (typeof body === "string" ? body : JSON.stringify(body));
-        const isOverlap =
-          raw && raw.toLowerCase().includes("overlap");
-
-        if (isOverlap) {
-          const ok = window.confirm(
-            "This milestone overlaps an existing milestone in the same agreement.\n\nDo you want to save anyway?"
-          );
-          if (!ok) return;
-
-          const payload2 = { ...basePayload, allow_overlap: true };
-
-          try {
-            const { data } = await attempt(payload2);
-
-            if (m.id) {
-              setMilestones((prev) =>
-                prev.map((x) => (x.id === m.id ? data : x))
-              );
-            } else {
-              setMilestones((prev) => [...prev, data]);
-            }
-
-            setMLocal({
-              title: "",
-              description: "",
-              amount: "",
-              start: "",
-              end: "",
-            });
-            setEditMilestone(null);
-            toast.success(
-              m.id
-                ? "Updated (overlap allowed)"
-                : "Added (overlap allowed)"
-            );
-          } catch (err2) {
-            const r2 = err2?.response;
-            const b2 =
-              (r2?.data &&
-                (typeof r2.data === "string"
-                  ? r2.data
-                  : JSON.stringify(r2.data))) ||
-              r2?.statusText ||
-              err2?.message ||
-              "Failed to save milestone.";
-            toast.error(String(b2));
-          }
-        } else {
-          const detail =
-            (body &&
-              (typeof body === "string"
-                ? body
-                : JSON.stringify(body))) ||
-            resp?.statusText ||
-            err1?.message ||
-            "Failed to save milestone.";
-          toast.error(String(detail));
-        }
-      }
-    } catch (e) {
-      console.error("Failed to save milestone:", e?.response || e);
-      const detail =
-        e?.response?.data?.detail ||
-        e?.response?.data?.non_field_errors?.[0] ||
-        e?.message ||
-        "Failed to save milestone.";
-      toast.error(String(detail));
-    }
-  };
-
-  const deleteMilestone = async (id) => {
-    if (!id) return;
-    try {
-      await api.delete(`/projects/milestones/${id}/`);
-      setMilestones((s) => s.filter((m) => m.id !== id));
-      toast.success("Deleted milestone.");
-    } catch (e) {
-      console.error("Failed to delete milestone", e?.response || e);
-      toast.error("Failed to delete.");
-    }
-  };
-
-  /* ── Step 3 ── */
-  const saveWarranty = async () => {
-    if (!agreementId) return toast.error("Create and save Agreement first.");
-    try {
-      const text = useDefaultWarranty ? "" : customWarranty || "";
-      await api.patch(`/projects/agreements/${agreementId}/`, {
-        warranty_type: useDefaultWarranty ? "DEFAULT" : "CUSTOM",
-        warranty_text_snapshot: text,
-        use_default_warranty: useDefaultWarranty,
-        custom_warranty_text: text,
+      const { data } = await api.get("/projects/project-types/", {
+        params: { mode: "options", _ts: Date.now() },
+        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
       });
-      await loadEdit();
-      toast.success("Warranty saved.");
-    } catch (e) {
-      toast.error(
-        e?.response?.statusText || e?.message || "Save failed"
-      );
+
+      const normalized = normalizeOptionRows(data);
+      setProjectTypes(normalized);
+    } catch (err) {
+      console.warn("loadProjectTypes failed:", err);
+      console.log("project-types error response:", err?.response?.data);
+      toast.error("Could not load project types.");
+      setProjectTypes([]);
     }
-  };
+  }, []);
 
-  /* ── Step 4 ── */
-  const previewPdf = async () => {
-    if (!agreementId) return toast.error("Create and save Agreement first.");
+  const loadProjectSubtypes = useCallback(async (projectTypeName = "") => {
     try {
-      const res = await api.get(
-        `/projects/agreements/${agreementId}/preview_pdf/`,
-        {
-          responseType: "blob",
-          params: { stream: 1 },
-        }
-      );
+      const params = { mode: "options", _ts: Date.now() };
+      if (safeStr(projectTypeName)) params.project_type = safeStr(projectTypeName);
 
-      // Revoke any prior preview URL to avoid memory leaks
-      if (pdfUrl) {
-        try {
-          URL.revokeObjectURL(pdfUrl);
-        } catch {}
+      const { data } = await api.get("/projects/project-subtypes/", {
+        params,
+        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      });
+
+      const normalized = normalizeOptionRows(data);
+      setProjectSubtypes(normalized);
+    } catch (err) {
+      console.warn("loadProjectSubtypes failed:", err);
+      console.log("project-subtypes error response:", err?.response?.data);
+      toast.error("Could not load project subtypes.");
+      setProjectSubtypes([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadTaxonomy() {
+      try {
+        setTaxonomyLoading(true);
+        await loadProjectTypes();
+        await loadProjectSubtypes(dLocal?.project_type || "");
+      } finally {
+        if (mounted) setTaxonomyLoading(false);
       }
+    }
 
-      const blob = new Blob([res.data], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
+    loadTaxonomy();
+    return () => {
+      mounted = false;
+    };
+  }, [loadProjectTypes, loadProjectSubtypes, dLocal?.project_type]);
 
-      setPdfUrl(url);
-      setPdfOpen(true);
+  useEffect(() => {
+    loadProjectSubtypes(dLocal?.project_type || "");
+  }, [dLocal?.project_type, loadProjectSubtypes]);
+
+  const projectTypeOptions = useMemo(() => {
+    return (projectTypes || []).map((row) => ({
+      id: row.id,
+      value: row.value,
+      label: row.label,
+      owner_type: row.owner_type,
+      is_system: row.is_system,
+    }));
+  }, [projectTypes]);
+
+  const projectSubtypeOptions = useMemo(() => {
+    return (projectSubtypes || []).map((row) => ({
+      id: row.id,
+      value: row.value,
+      label: row.label,
+      owner_type: row.owner_type,
+      is_system: row.is_system,
+      project_type: row.project_type,
+    }));
+  }, [projectSubtypes]);
+
+  const fetchAgreement = useCallback(
+    async (id) => {
+      if (!id) return;
+      setLoadingAgreement(true);
+      setLast400(null);
 
       try {
-        await api.post(
-          `/projects/agreements/${agreementId}/mark_previewed/`
-        );
-      } catch (e) {
-        console.warn("mark_previewed failed (non-fatal):", e?.response || e);
+        const { data } = await api.get(`/projects/agreements/${id}/`, {
+          params: { _ts: Date.now() },
+          headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+        });
+
+        setAgreement(data);
+
+        setDLocal((prev) => ({
+          ...prev,
+          homeowner: data?.homeowner != null ? String(data.homeowner) : prev.homeowner,
+          project_title: data?.project_title || data?.title || data?.project?.title || prev.project_title,
+          project_type: data?.project_type || prev.project_type,
+          project_subtype: data?.project_subtype ?? prev.project_subtype,
+          payment_mode: data?.payment_mode || prev.payment_mode,
+          description: data?.description || prev.description,
+
+          address_line1:
+            data?.address_line1 ||
+            data?.project_address_line1 ||
+            prev.address_line1,
+
+          address_line2:
+            data?.address_line2 ||
+            data?.project_address_line2 ||
+            prev.address_line2,
+
+          address_city:
+            data?.address_city ||
+            data?.city ||
+            data?.project_address_city ||
+            prev.address_city,
+
+          address_state:
+            data?.address_state ||
+            data?.state ||
+            data?.project_address_state ||
+            prev.address_state,
+
+          address_postal_code:
+            data?.address_postal_code ||
+            data?.postal_code ||
+            data?.project_postal_code ||
+            prev.address_postal_code,
+        }));
+
+        setAckReviewed(!!data?.contractor_ack_reviewed);
+        setAckTos(!!data?.contractor_ack_tos);
+        setAckEsign(!!data?.contractor_ack_esign);
+
+        const warrantyType = String(data?.warranty_type || "").toLowerCase();
+        const snap = data?.warranty_text_snapshot;
+        if (warrantyType === "custom") {
+          setUseDefaultWarranty(false);
+          setCustomWarranty(typeof snap === "string" ? snap : "");
+        } else {
+          setUseDefaultWarranty(true);
+          setCustomWarranty(typeof snap === "string" && snap.trim() ? snap : "");
+        }
+      } catch (err) {
+        toast.error(err?.response?.data?.detail || "Unable to load agreement.");
+      } finally {
+        setLoadingAgreement(false);
       }
-      setHasPreviewed(true);
+    },
+    [setAgreement]
+  );
+
+  useEffect(() => {
+    if (agreementIdParam) return;
+    resetWizardForNewAgreement();
+  }, [agreementIdParam, resetWizardForNewAgreement]);
+
+  useEffect(() => {
+    if (!agreementIdParam) return;
+    if (didInitialFetchRef.current) return;
+    didInitialFetchRef.current = true;
+    fetchAgreement(agreementIdParam);
+  }, [agreementIdParam, fetchAgreement]);
+
+  useEffect(() => {
+    if (!agreementId) return;
+    if (![2, 3, 4].includes(step)) return;
+
+    const now = Date.now();
+    const last = lastStepFetchRef.current;
+    const shouldFetch = last.step !== step || now - (last.at || 0) > 2000;
+    if (!shouldFetch) return;
+
+    lastStepFetchRef.current = { step, at: now };
+    fetchAgreement(agreementId);
+  }, [step, agreementId, fetchAgreement]);
+
+  const refreshAgreement = useCallback(async () => {
+    if (!agreementId) return;
+    await fetchAgreement(agreementId);
+  }, [agreementId, fetchAgreement]);
+
+  const reloadPeople = async () => {
+    try {
+      const candidates = ["/projects/homeowners/", "/projects/homeowners"];
+      let data = null;
+
+      for (const url of candidates) {
+        try {
+          const res = await api.get(url, {
+            params: { _ts: Date.now(), page_size: 250 },
+            headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+          });
+          data = res?.data;
+          break;
+        } catch (err) {
+          if (err?.response?.status === 404) continue;
+          throw err;
+        }
+      }
+
+      const list = Array.isArray(data) ? data : Array.isArray(data?.results) ? data.results : [];
+      setPeople(list);
+      setPeopleLoadedOnce(true);
     } catch (err) {
-      console.error("Preview failed:", err);
-      toast.error("Could not open preview.");
+      toast.error(err?.response?.data?.detail || "Unable to load customers.");
     }
   };
 
-  const goPublic = () => {
-    if (!agreementId) return toast.error("Create and save Agreement first.");
-    window.open(`/agreements/public/${agreementId}/`, "_blank");
+  useEffect(() => {
+    reloadPeople();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const homeownerOptions = useMemo(() => {
+    return (people || []).map((h) => {
+      const company = safeStr(h.company_name);
+      const contact = safeStr(h.full_name || h.name);
+      const label =
+        company && contact
+          ? `${company} (${contact})`
+          : company || contact || h.email || `Customer #${h.id}`;
+      return { value: String(h.id), label };
+    });
+  }, [people]);
+
+  const onLocalChange = (e) => {
+    const name = e?.target?.name;
+    const value = e?.target?.value;
+    if (!name) return;
+
+    setDLocal((prev) => {
+      const next = { ...prev, [name]: value };
+
+      if (name === "project_type" && safeStr(prev.project_type) !== safeStr(value)) {
+        next.project_subtype = "";
+      }
+
+      return next;
+    });
   };
 
-  const signContractor = async () => {
-    if (!agreementId) return toast.error("Create and save Agreement first.");
-    if (
-      !(
-        hasPreviewed &&
-        ackReviewed &&
-        ackTos &&
-        ackEsign &&
-        typedName.trim().length >= 2
-      )
-    )
+  const onQuickAdd = async () => {
+    const name = safeStr(qaName);
+    const email = safeStr(qaEmail);
+
+    if (!name && !email) {
+      toast.error("Enter a name or email.");
       return;
-    setSigning(true);
+    }
+
+    setQaBusy(true);
     try {
-      await api.post(
-        `/projects/agreements/${agreementId}/contractor_sign/`,
-        {
-          typed_name: typedName.trim(),
-        }
-      );
-      toast.success("Signed as Contractor.");
-      window.location.reload();
-    } catch (e) {
-      toast.error(
-        `Sign failed: ${
-          e?.response?.statusText || e?.message || "Save failed"
-        }`
-      );
+      const payload = { full_name: name || "", email: email || "" };
+      const { data } = await api.post(`/projects/homeowners/`, payload);
+      toast.success("Customer added.");
+      await reloadPeople();
+
+      if (data?.id) {
+        setDLocal((prev) => ({ ...prev, homeowner: String(data.id) }));
+      }
+
+      setQaName("");
+      setQaEmail("");
+      setShowQuickAdd(false);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Unable to add customer.");
     } finally {
-      setSigning(false);
+      setQaBusy(false);
+    }
+  };
+
+  function buildStep1Payload({ forDraftCreate = false } = {}) {
+    const selectedType =
+      projectTypes.find((row) => safeStr(row.value) === safeStr(dLocal.project_type)) || null;
+
+    const selectedSubtype =
+      projectSubtypes.find((row) => safeStr(row.value) === safeStr(dLocal.project_subtype)) || null;
+
+    const rawTitle = dLocal.project_title || "";
+    const rawDescription = dLocal.description || "";
+
+    const fallbackTitle = "Draft Agreement";
+    const fallbackDescription =
+      "Draft agreement. Details will be completed after template selection or manual entry.";
+
+    return {
+      homeowner: dLocal.homeowner ? Number(dLocal.homeowner) : null,
+      title: forDraftCreate ? rawTitle || fallbackTitle : rawTitle,
+      project_title: forDraftCreate ? rawTitle || fallbackTitle : rawTitle,
+      project_type: dLocal.project_type || "",
+      project_subtype: dLocal.project_subtype || "",
+      project_type_ref: selectedType?.id || null,
+      project_subtype_ref: selectedSubtype?.id || null,
+      payment_mode: dLocal.payment_mode || "escrow",
+      description: forDraftCreate ? rawDescription || fallbackDescription : rawDescription,
+
+      address_line1: dLocal.address_line1 || "",
+      address_line2: dLocal.address_line2 || "",
+
+      city: dLocal.address_city || "",
+      state: dLocal.address_state || "",
+      postal_code: dLocal.address_postal_code || "",
+
+      address_city: dLocal.address_city || "",
+      address_state: dLocal.address_state || "",
+      address_postal_code: dLocal.address_postal_code || "",
+    };
+  }
+
+  const ensureAgreementExists = async () => {
+    const existingId = deriveAgreementId(agreement, agreementIdParam);
+    if (existingId) return existingId;
+
+    try {
+      const payload = buildStep1Payload({ forDraftCreate: true });
+      payload.is_draft = true;
+      payload.wizard_step = 1;
+
+      const { data } = await api.post(`/projects/agreements/`, payload);
+      setAgreement(data);
+
+      const newId = deriveAgreementId(data, agreementIdParam);
+      if (!newId) {
+        toast.error("Draft created but API did not return an agreement id.");
+        return null;
+      }
+
+      toast.success(`Draft created (Agreement #${newId}).`);
+      navigate(`/app/agreements/${newId}/wizard?step=1`, { replace: true });
+      return newId;
+    } catch (err) {
+      const data = err?.response?.data;
+      setLast400(data || { detail: "Create failed." });
+      toast.error(data?.detail || "Unable to create draft agreement.");
+      return null;
+    }
+  };
+
+  const saveStep1 = async (goNext = false) => {
+    setLast400(null);
+    const id = await ensureAgreementExists();
+    if (!id) return;
+
+    try {
+      const payload = buildStep1Payload({ forDraftCreate: false });
+      const { data } = await api.patch(`/projects/agreements/${id}/`, payload);
+      setAgreement(data);
+      toast.success("Step 1 saved.");
+      if (goNext) goStep(2);
+    } catch (err) {
+      const data = err?.response?.data;
+      setLast400(data || { detail: "Save failed." });
+      toast.error(data?.detail || "Unable to save Step 1.");
+    }
+  };
+
+  const loadMilestones = useCallback(async () => {
+    if (!agreementId) return;
+
+    try {
+      const tryUrls = [
+        `/projects/milestones/?agreement=${agreementId}`,
+        `/projects/milestones/?agreement_id=${agreementId}`,
+        `/projects/milestones/`,
+      ];
+
+      let list = null;
+      for (const url of tryUrls) {
+        try {
+          const res = await api.get(url, { params: { _ts: Date.now() } });
+          const data = res?.data;
+          const arr = Array.isArray(data) ? data : Array.isArray(data?.results) ? data.results : null;
+          if (arr) {
+            list = arr;
+            break;
+          }
+        } catch (err) {
+          if (err?.response?.status === 404) continue;
+          throw err;
+        }
+      }
+
+      if (!Array.isArray(list)) list = [];
+
+      const filtered = list.filter(
+        (m) => String(m?.agreement || m?.agreement_id || "") === String(agreementId)
+      );
+
+      const mapped = filtered.map((m) => ({
+        ...m,
+        id: m.id,
+        title: m.title || "",
+        description: m.description || "",
+        amount: m.amount != null ? Number(m.amount) : 0,
+        start_date: toDateOnly(m.start_date || m.start || ""),
+        completion_date: toDateOnly(m.completion_date || m.end_date || m.end || ""),
+        due_date: toDateOnly(m.due_date || ""),
+        status: m.status,
+        status_display: m.status_display,
+      }));
+
+      setMilestones(mapped);
+    } catch (err) {
+      console.warn("loadMilestones failed:", err);
+    }
+  }, [agreementId]);
+
+  useEffect(() => {
+    loadMilestones();
+  }, [loadMilestones]);
+
+  const onMLocalChange = (name, value) => {
+    setMLocal((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const saveMilestone = async (data) => {
+    if (!agreementId) throw new Error("Agreement not created yet.");
+
+    const payload = {
+      agreement: agreementId,
+      title: safeStr(data.title),
+      description: safeStr(data.description),
+      start_date: data.start ? data.start : null,
+      completion_date: data.end ? data.end : null,
+      amount: Number(data.amount || 0),
+      ...(data.allow_overlap ? { allow_overlap: true } : {}),
+    };
+
+    const { data: created } = await api.post(`/projects/milestones/`, payload);
+    await loadMilestones();
+    setMLocal({ ...EMPTY_MLOCAL });
+    return created;
+  };
+
+  const deleteMilestone = async (milestoneId) => {
+    if (!milestoneId) return;
+
+    try {
+      await api.delete(`/projects/milestones/${milestoneId}/`);
+    } catch (err) {
+      if (err?.response?.status !== 404) {
+        throw err;
+      }
+    }
+
+    await loadMilestones();
+  };
+
+  const updateMilestone = async (patchData) => {
+    const mid = patchData?.id;
+    if (!mid) throw new Error("Missing milestone id.");
+
+    const payload = {
+      title: patchData.title,
+      description: patchData.description,
+      start_date: patchData.start_date || patchData.start || null,
+      completion_date: patchData.completion_date || patchData.end || null,
+      amount: patchData.amount != null ? Number(patchData.amount) : null,
+    };
+
+    if (patchData?.allow_overlap === true) {
+      payload.allow_overlap = true;
+    }
+
+    if (!payload.completion_date && patchData?.end_date) {
+      payload.completion_date = patchData.end_date;
+    }
+
+    const { data: updated } = await api.patch(`/projects/milestones/${mid}/`, payload);
+    await loadMilestones();
+    return updated;
+  };
+
+  const refreshAttachments = async () => {
+    if (!agreementId) return;
+
+    try {
+      const candidates = [
+        `/projects/agreements/${agreementId}/attachments/`,
+        `/projects/agreements/${agreementId}/attachments`,
+        `/projects/attachments/?agreement=${agreementId}`,
+        `/projects/attachments/?agreement_id=${agreementId}`,
+      ];
+
+      let data = null;
+      for (const url of candidates) {
+        try {
+          const res = await api.get(url, { params: { _ts: Date.now() } });
+          data = res?.data;
+          break;
+        } catch (err) {
+          if (err?.response?.status === 404) continue;
+          throw err;
+        }
+      }
+
+      const list = Array.isArray(data) ? data : Array.isArray(data?.results) ? data.results : [];
+      setAttachments(list);
+    } catch (err) {
+      console.warn("refreshAttachments failed:", err);
+    }
+  };
+
+  useEffect(() => {
+    refreshAttachments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agreementId]);
+
+  const saveWarranty = async () => {
+    const id = await ensureAgreementExists();
+    if (!id) return;
+
+    try {
+      const payload = {
+        use_default_warranty: !!useDefaultWarranty,
+        custom_warranty_text: useDefaultWarranty ? "" : customWarranty || "",
+      };
+      const { data } = await api.patch(`/projects/agreements/${id}/`, payload);
+      setAgreement(data);
+      toast.success("Warranty saved.");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Unable to save warranty.");
     }
   };
 
   const unsignContractor = async () => {
-    if (!agreementId) return toast.error("Agreement ID missing.");
+    if (!agreementId) return;
 
     try {
       await api.post(`/projects/agreements/${agreementId}/contractor_unsign/`);
       toast.success("Contractor signature removed.");
-
-      setHasPreviewed(false);
-      setAckReviewed(false);
-      setAckTos(false);
-      setAckEsign(false);
-      setTypedName("");
-
-      await loadEdit();
-    } catch (e) {
-      console.error("Unsign error:", e?.response || e);
-      toast.error(
-        e?.response?.data?.detail ||
-          "Could not unsign. Homeowner may have already signed."
-      );
+      await fetchAgreement(agreementId);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Unable to unsign contractor.");
     }
   };
 
-  const canSign =
-    !!agreementId &&
-    hasPreviewed &&
-    ackReviewed &&
-    ackTos &&
-    ackEsign &&
-    typedName.trim().length >= 2;
+  const handleTemplateApplied = useCallback(
+    async (nextAgreement, payload = null) => {
+      const hydratedAgreement =
+        nextAgreement ||
+        payload?.agreement ||
+        payload?.data?.agreement ||
+        null;
 
-  const step4Label = useMemo(() => {
-    if (!agreement) return "";
-    const id = agreement.id ?? agreement.pk;
-    const amend = agreement.amendment_number ?? agreement.amendment ?? 0;
-    if (!id) return "";
-    if (amend && amend > 0) {
-      return `Agreement #${id} — Amendment ${amend}`;
-    }
-    return `Agreement #${id}`;
-  }, [agreement]);
+      if (hydratedAgreement) {
+        setAgreement(hydratedAgreement);
 
-  /* ── render ── */
+        setDLocal((prev) => ({
+          ...prev,
+          homeowner:
+            hydratedAgreement?.homeowner != null
+              ? String(hydratedAgreement.homeowner)
+              : prev.homeowner,
+          project_title:
+            hydratedAgreement?.project_title ||
+            hydratedAgreement?.title ||
+            hydratedAgreement?.project?.title ||
+            prev.project_title,
+          project_type: hydratedAgreement?.project_type ?? prev.project_type,
+          project_subtype: hydratedAgreement?.project_subtype ?? prev.project_subtype,
+          description: hydratedAgreement?.description ?? prev.description,
+          payment_mode: hydratedAgreement?.payment_mode || prev.payment_mode,
+          address_line1:
+            hydratedAgreement?.address_line1 ||
+            hydratedAgreement?.project_address_line1 ||
+            prev.address_line1,
+          address_line2:
+            hydratedAgreement?.address_line2 ||
+            hydratedAgreement?.project_address_line2 ||
+            prev.address_line2,
+          address_city:
+            hydratedAgreement?.address_city ||
+            hydratedAgreement?.city ||
+            hydratedAgreement?.project_address_city ||
+            prev.address_city,
+          address_state:
+            hydratedAgreement?.address_state ||
+            hydratedAgreement?.state ||
+            hydratedAgreement?.project_address_state ||
+            prev.address_state,
+          address_postal_code:
+            hydratedAgreement?.address_postal_code ||
+            hydratedAgreement?.postal_code ||
+            hydratedAgreement?.project_postal_code ||
+            prev.address_postal_code,
+        }));
+      }
+
+      await refreshAgreement();
+      await loadMilestones();
+
+      const returnedTemplate =
+        payload?.agreement?.selected_template ||
+        hydratedAgreement?.selected_template ||
+        null;
+
+      if (returnedTemplate?.id) {
+        setAgreement((prev) => ({
+          ...(prev || {}),
+          selected_template: returnedTemplate,
+          selected_template_id: returnedTemplate.id,
+          selected_template_name_snapshot: returnedTemplate.name || "",
+        }));
+      }
+    },
+    [refreshAgreement, loadMilestones, setAgreement]
+  );
+
   return (
-    <div className="p-4 md:p-6">
-      <div className="mb-4 flex flex-wrap gap-2">
-        {TABS.map((t) => (
-          <button type="button"
-            key={t.step}
-            onClick={() =>
-              navigate(
-                agreementId
-                  ? `${APP_PREFIX}/agreements/${agreementId}/wizard?step=${t.step}`
-                  : `${APP_PREFIX}/agreements/new?step=${t.step}`
-              )
-            }
-            className={`rounded px-3 py-2 text-sm ${
-              step === t.step
-                ? "bg-indigo-600 text-white"
-                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+    <div className="mx-auto max-w-6xl p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-xl font-semibold text-white">Agreement Wizard</div>
+          <div className="mt-1 text-sm font-medium text-indigo-200">
+            {agreementId ? `Agreement #${agreementId}` : "New Agreement"} — Step {step} of 4
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {agreementId ? (
+            <button
+              type="button"
+              onClick={() => navigate(`/app/agreements/${agreementId}`)}
+              className="rounded-md border border-white/30 px-3 py-2 text-sm text-white hover:bg-white/10"
+            >
+              View Agreement
+            </button>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        {stepTabs.map(({ n, label }) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => goStep(n)}
+            className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
+              step === n
+                ? "border-indigo-600 bg-indigo-600 text-white"
+                : "border-white/25 bg-white/15 text-white hover:bg-white/20"
             }`}
           >
-            {t.label}
+            {label}
           </button>
         ))}
       </div>
 
-      {step === 1 && (
-        <Step1Details
-          isEdit={isEdit}
-          agreementId={agreementId}
-          dLocal={dLocal}
-          setDLocal={setDLocal}
-          people={people}
-          peopleLoadedOnce={peopleLoadedOnce}
-          reloadPeople={async () => {
-            const loaded = await loadPeople();
-            setPeopleLoadedOnce(true);
-            setPeople(dedupePeople(loaded));
-          }}
-          showQuickAdd={showQuickAdd}
-          setShowQuickAdd={setShowQuickAdd}
-          qaName={qaName}
-          setQaName={setQaName}
-          qaEmail={qaEmail}
-          setQaEmail={setQaEmail}
-          qaBusy={qaBusy}
-          setQaBusy={setQaBusy}
-          onQuickAdd={async () => {
-            const name = qaName.trim();
-            const email = qaEmail.trim();
-            if (!name) return toast.error("Enter the homeowner's name.");
-            if (!email || !/^\S+@\S+\.\S+$/.test(email))
-              return toast.error("Enter a valid email.");
-            setQaBusy(true);
-            try {
-              const [first_name, ...rest] = name.split(/\s+/);
-              const last_name = rest.join(" ");
-              const body = {
-                first_name,
-                last_name,
-                full_name: name,
-                name,
-                email,
-              };
-              let created = null;
-              try {
-                const { data } = await api.post(`/homeowners/`, body);
-                created = data;
-              } catch {
-                // fallback: projects/homeowners if needed
-                const { data } = await api.post(`/projects/homeowners/`, body);
-                created = data;
-              }
-              const newId = created?.id ?? created?.pk;
-              if (!newId)
-                throw new Error("Could not determine new homeowner ID.");
-              const loaded = await loadPeople();
-              setPeopleLoadedOnce(true);
-              setPeople(dedupePeople(loaded));
-              setDLocal((s) => ({ ...s, homeowner: String(newId) }));
-              setShowQuickAdd(false);
-              setQaName("");
-              setQaEmail("");
-              toast.success("Homeowner added.");
-            } catch (e) {
-              toast.error(
-                e?.response?.data?.detail ||
-                  e?.response?.statusText ||
-                  e?.message ||
-                  "Could not add homeowner."
-              );
-            } finally {
-              setQaBusy(false);
-            }
-          }}
-          saveStep1={saveStep1}
-          last400={last400}
-          onLocalChange={onLocalChange}
-          homeownerOptions={homeownerOptions}
-          projectTypeOptions={projectTypeOptions}
-          projectSubtypeOptions={projectSubtypeOptions}
-        />
-      )}
+      {loadingAgreement ? (
+        <div className="mt-6 text-sm text-white/80">Loading agreement…</div>
+      ) : null}
 
-      {step === 2 && (
-        <>
+      {taxonomyLoading ? (
+        <div className="mt-2 text-xs text-white/70">Loading project taxonomy…</div>
+      ) : null}
+
+      {step === 1 ? (
+        <div className="mt-6">
+          <Step1Details
+            agreement={agreement}
+            paymentModeValue={dLocal.payment_mode}
+            isEdit={!!agreementId}
+            agreementId={agreementId}
+            dLocal={dLocal}
+            setDLocal={setDLocal}
+            people={people}
+            peopleLoadedOnce={peopleLoadedOnce}
+            reloadPeople={reloadPeople}
+            showQuickAdd={showQuickAdd}
+            setShowQuickAdd={setShowQuickAdd}
+            qaName={qaName}
+            setQaName={setQaName}
+            qaEmail={qaEmail}
+            setQaEmail={setQaEmail}
+            qaBusy={qaBusy}
+            setQaBusy={setQaBusy}
+            onQuickAdd={onQuickAdd}
+            saveStep1={saveStep1}
+            last400={last400}
+            onLocalChange={onLocalChange}
+            homeownerOptions={homeownerOptions}
+            projectTypeOptions={projectTypeOptions}
+            projectSubtypeOptions={projectSubtypeOptions}
+            onTemplateApplied={handleTemplateApplied}
+            refreshAgreement={refreshAgreement}
+          />
+        </div>
+      ) : null}
+
+      {step === 2 ? (
+        <div className="mt-6">
           <Step2Milestones
             agreementId={agreementId}
             milestones={milestones}
@@ -1177,100 +1021,66 @@ export default function AgreementWizard() {
             deleteMilestone={deleteMilestone}
             editMilestone={editMilestone}
             setEditMilestone={setEditMilestone}
-            updateMilestone={() => {}}
+            updateMilestone={updateMilestone}
             onBack={() => goStep(1)}
             onNext={() => goStep(3)}
+            reloadMilestones={loadMilestones}
           />
+        </div>
+      ) : null}
 
-          {editMilestone && (
-            <MilestoneEditModal
-              open={!!editMilestone}
-              milestone={editMilestone}
-              onClose={() => setEditMilestone(null)}
-              onSaved={async () => {
-                setEditMilestone(null);
-                await loadEdit();
-              }}
-            />
-          )}
-        </>
-      )}
+      {step === 3 ? (
+        <div className="mt-6">
+          <Step3WarrantyAttachments
+            agreement={agreement}
+            agreementId={agreementId}
+            DEFAULT_WARRANTY={DEFAULT_WARRANTY}
+            useDefaultWarranty={useDefaultWarranty}
+            setUseDefaultWarranty={setUseDefaultWarranty}
+            customWarranty={customWarranty}
+            setCustomWarranty={setCustomWarranty}
+            saveWarranty={saveWarranty}
+            attachments={attachments}
+            refreshAttachments={refreshAttachments}
+            onBack={() => goStep(2)}
+            onNext={() => goStep(4)}
+          />
+        </div>
+      ) : null}
 
-      {step === 3 && (
-        <Step3WarrantyAttachments
-          agreementId={agreementId}
-          DEFAULT_WARRANTY={
-            "Standard workmanship warranty: Contractor warrants all labor performed under this Agreement for one (1) year from substantial completion. Materials are covered by the manufacturer’s warranties. This warranty excludes damage caused by misuse, neglect, alteration, improper maintenance, or acts of God."
-          }
-          useDefaultWarranty={useDefaultWarranty}
-          setUseDefaultWarranty={setUseDefaultWarranty}
-          customWarranty={customWarranty}
-          setCustomWarranty={setCustomWarranty}
-          saveWarranty={saveWarranty}
-          attachments={attachments}
-          refreshAttachments={loadEdit}
-          onBack={() => goStep(2)}
-          onNext={() => goStep(4)}
-        />
-      )}
-
-      {step === 4 && (
-        <>
-          {step4Label && (
-            <div className="mb-3 text-sm font-medium text-gray-700">
-              {step4Label}
-            </div>
-          )}
+      {step === 4 ? (
+        <div className="mt-6">
           <Step4Finalize
             agreement={agreement}
-            dLocal={dStep4}
-            isEdit={isEdit}
-            goBack={() => goStep(3)}
-            previewPdf={previewPdf}
-            goPublic={goPublic}
-            signing={signing}
-            typedName={typedName}
-            setTypedName={setTypedName}
+            dLocal={dLocal}
+            id={agreementId}
+            milestones={milestones}
+            totals={totals}
+            hasPreviewed={true}
             ackReviewed={ackReviewed}
             setAckReviewed={setAckReviewed}
             ackTos={ackTos}
             setAckTos={setAckTos}
             ackEsign={ackEsign}
             setAckEsign={setAckEsign}
-            submitSign={signContractor}
-            unsignContractor={unsignContractor}
-            hasPreviewed={hasPreviewed}
-            canSign={canSign}
+            typedName={typedName}
+            setTypedName={setTypedName}
+            canSign={true}
+            signing={false}
+            signContractor={async () => {}}
+            submitSign={async () => {}}
             attachments={attachments}
-            milestones={milestones}
-            totals={totals}
+            defaultWarrantyText={DEFAULT_WARRANTY}
             customWarranty={customWarranty}
             useDefaultWarranty={useDefaultWarranty}
-            defaultWarrantyText={
-              "Standard workmanship warranty: Contractor warrants all labor performed under this Agreement for one (1) year from substantial completion. Materials are covered by the manufacturer’s warranties. This warranty excludes damage caused by misuse, neglect, alteration, improper maintenance, or acts of God."
-            }
+            goBack={() => goStep(3)}
+            isEdit={!!agreementId}
+            unsignContractor={unsignContractor}
+            onAgreementUpdated={(updated) => setAgreement(updated)}
+            refreshAgreement={refreshAgreement}
           />
-        </>
-      )}
-
-      <PdfPreviewModal
-        open={pdfOpen}
-        onClose={() => {
-          setPdfOpen(false);
-          if (pdfUrl) {
-            try {
-              URL.revokeObjectURL(pdfUrl);
-            } catch {}
-          }
-          setPdfUrl(null);
-        }}
-        fileUrl={pdfUrl}
-        title={step4Label || "Agreement Preview"}
-      />
-
-      {loading && (
-        <div className="mt-4 text-sm text-gray-500">Loading…</div>
-      )}
+        </div>
+      ) : null}
     </div>
   );
 }

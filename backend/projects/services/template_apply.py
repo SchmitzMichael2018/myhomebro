@@ -56,15 +56,21 @@ def _resolve_agreement_total_amount(agreement: Agreement) -> Decimal:
     return _safe_decimal(getattr(agreement, "total_cost", None), Decimal("0.00"))
 
 
-def _resolve_date_range(agreement: Agreement, template: ProjectTemplate) -> DateRange:
+def _resolve_date_range(
+    agreement: Agreement,
+    template: ProjectTemplate,
+    *,
+    estimated_days_override: Optional[int] = None,
+) -> DateRange:
     today = timezone.localdate()
 
     start_date = agreement.start or today
     end_date = agreement.end
 
     if end_date is None:
-        estimated_days = max(int(template.estimated_days or 1), 1)
-        end_date = start_date + timedelta(days=max(estimated_days - 1, 0))
+        effective_estimated_days = estimated_days_override or int(template.estimated_days or 1)
+        effective_estimated_days = max(int(effective_estimated_days), 1)
+        end_date = start_date + timedelta(days=max(effective_estimated_days - 1, 0))
 
     if end_date < start_date:
         end_date = start_date
@@ -139,8 +145,8 @@ def _build_milestone_amounts(template: ProjectTemplate, agreement_total: Decimal
                 amounts[unresolved_indexes[0]] = remaining.quantize(Decimal("0.01"))
             else:
                 split = (remaining / Decimal(len(unresolved_indexes))).quantize(Decimal("0.01"))
-                for idx in unresolved_indexes[:-1]:
-                    amounts[idx] = split
+                for unresolved_idx in unresolved_indexes[:-1]:
+                    amounts[unresolved_idx] = split
                     remaining -= split
                 amounts[unresolved_indexes[-1]] = remaining.quantize(Decimal("0.01"))
 
@@ -156,8 +162,34 @@ def _build_milestone_amounts(template: ProjectTemplate, agreement_total: Decimal
     return [Decimal("0.00") for _ in rows]
 
 
+def _build_milestone_amounts_with_spread_total(
+    template: ProjectTemplate,
+    spread_total: Decimal,
+) -> list[Decimal]:
+    rows = list(template.milestones.all().order_by("sort_order", "id"))
+    if not rows:
+        return []
+
+    row_count = len(rows)
+    if row_count == 0:
+        return []
+
+    if spread_total <= 0:
+        return [Decimal("0.00") for _ in rows]
+
+    equal = (spread_total / Decimal(row_count)).quantize(Decimal("0.01"))
+    amounts = [equal for _ in rows]
+    diff = spread_total - sum(amounts)
+    amounts[-1] = (amounts[-1] + diff).quantize(Decimal("0.01"))
+    return [amt if amt >= 0 else Decimal("0.00") for amt in amounts]
+
+
 def _safe_scope_text(template: ProjectTemplate) -> str:
-    return (getattr(template, "default_scope", None) or getattr(template, "description", None) or "").strip()
+    return (
+        getattr(template, "default_scope", None)
+        or getattr(template, "description", None)
+        or ""
+    ).strip()
 
 
 def _safe_question_list(template: ProjectTemplate) -> list[dict]:
@@ -176,7 +208,11 @@ def _safe_question_list(template: ProjectTemplate) -> list[dict]:
         required = bool(item.get("required", False))
         help_text = "" if item.get("help") is None else str(item.get("help")).strip()
         options_raw = item.get("options", [])
-        options = [str(x).strip() for x in options_raw if str(x).strip()] if isinstance(options_raw, list) else []
+        options = (
+            [str(x).strip() for x in options_raw if str(x).strip()]
+            if isinstance(options_raw, list)
+            else []
+        )
 
         if not key:
             continue
@@ -194,35 +230,49 @@ def _safe_question_list(template: ProjectTemplate) -> list[dict]:
     return out
 
 
-def _merge_questions_preserving_answers(existing_questions: list[Any], incoming_questions: list[Any]) -> list[dict]:
-    """
-    Keep existing order first, then append new keys.
-    This protects answers already stored against stable keys.
-    """
-    out: list[dict] = []
+def _replace_questions_preserving_matching_answers(
+    existing_answers: Any,
+    incoming_questions: list[dict],
+) -> tuple[list[dict], dict]:
+    cleaned_questions: list[dict] = []
     seen: set[str] = set()
 
-    for source in (existing_questions or [], incoming_questions or []):
-        if not isinstance(source, list):
+    for item in incoming_questions or []:
+        if not isinstance(item, dict):
             continue
-        for item in source:
-            if not isinstance(item, dict):
-                continue
-            key = str(item.get("key") or "").strip()
-            if not key or key in seen:
-                continue
-            seen.add(key)
-            out.append(
-                {
-                    "key": key,
-                    "label": str(item.get("label") or key.replace("_", " ").title()).strip(),
-                    "type": str(item.get("type") or "text").strip() or "text",
-                    "required": bool(item.get("required", False)),
-                    "help": "" if item.get("help") is None else str(item.get("help")).strip(),
-                    "options": item.get("options", []) if isinstance(item.get("options", []), list) else [],
-                }
-            )
-    return out
+
+        key = str(item.get("key") or "").strip()
+        if not key or key in seen:
+            continue
+
+        seen.add(key)
+        cleaned_questions.append(
+            {
+                "key": key,
+                "label": str(item.get("label") or key.replace("_", " ").title()).strip(),
+                "type": str(item.get("type") or "text").strip() or "text",
+                "required": bool(item.get("required", False)),
+                "help": "" if item.get("help") is None else str(item.get("help")).strip(),
+                "options": item.get("options", []) if isinstance(item.get("options", []), list) else [],
+            }
+        )
+
+    src_answers = existing_answers if isinstance(existing_answers, dict) else {}
+    preserved_answers = {
+        str(k): v for k, v in src_answers.items() if str(k) in seen
+    }
+
+    return cleaned_questions, preserved_answers
+
+
+def _save_model_if_needed(instance, update_fields: list[str]) -> None:
+    if instance is None or not update_fields:
+        return
+
+    if hasattr(instance, "updated_at") and "updated_at" not in update_fields:
+        update_fields.append("updated_at")
+
+    instance.save(update_fields=update_fields)
 
 
 def _persist_selected_template(agreement: Agreement, template: ProjectTemplate) -> None:
@@ -239,34 +289,69 @@ def _persist_selected_template(agreement: Agreement, template: ProjectTemplate) 
         agreement.selected_template_name_snapshot = template.name
         update_fields.append("selected_template_name_snapshot")
 
-    if update_fields:
-        update_fields.append("updated_at")
-        agreement.save(update_fields=update_fields)
+    _save_model_if_needed(agreement, update_fields)
+
+
+def _hydrate_agreement_core_fields(
+    agreement: Agreement,
+    template: ProjectTemplate,
+) -> None:
+    """
+    Copy template-level fields onto the agreement and linked project.
+
+    Important:
+    - Agreement model stores project_type/project_subtype snapshots.
+    - Project title lives on agreement.project.title, not on Agreement directly.
+    """
+    agreement_update_fields: list[str] = []
+    project_update_fields: list[str] = []
+
+    template_type = (getattr(template, "project_type", None) or "").strip()
+    template_subtype = (getattr(template, "project_subtype", None) or "").strip()
+    template_description = (getattr(template, "description", None) or "").strip()
+    template_name = (getattr(template, "name", None) or "").strip()
+
+    if template_type and getattr(agreement, "project_type", "") != template_type:
+      agreement.project_type = template_type
+      agreement_update_fields.append("project_type")
+
+    if template_subtype and (getattr(agreement, "project_subtype", "") or "") != template_subtype:
+        agreement.project_subtype = template_subtype
+        agreement_update_fields.append("project_subtype")
+
+    if hasattr(agreement, "selected_template"):
+        agreement.selected_template = template
+        if "selected_template" not in agreement_update_fields:
+            agreement_update_fields.append("selected_template")
+
+    if hasattr(agreement, "selected_template_name_snapshot"):
+        agreement.selected_template_name_snapshot = template.name
+        if "selected_template_name_snapshot" not in agreement_update_fields:
+            agreement_update_fields.append("selected_template_name_snapshot")
+
+    if template_description and getattr(agreement, "description", "") != template_description:
+        agreement.description = template_description
+        agreement_update_fields.append("description")
+
+    _save_model_if_needed(agreement, agreement_update_fields)
+
+    project = getattr(agreement, "project", None)
+    if project is not None and template_name:
+        current_title = str(getattr(project, "title", "") or "").strip()
+        if not current_title or current_title.lower() in {"untitled project", "draft agreement"}:
+            if current_title != template_name:
+                project.title = template_name
+                project_update_fields.append("title")
+
+    _save_model_if_needed(project, project_update_fields)
 
 
 def _copy_template_text_fields(agreement: Agreement, template: ProjectTemplate) -> None:
     """
     Copy template scope/description into the agreement and persist clarification
-    questions into AgreementAIScope while preserving any existing answers.
+    questions into AgreementAIScope while preserving only matching answers.
     """
-    update_fields: list[str] = []
-
-    next_description = (template.description or "").strip()
-    if next_description:
-        agreement.description = next_description
-        update_fields.append("description")
-
-    if hasattr(agreement, "selected_template"):
-        agreement.selected_template = template
-        update_fields.append("selected_template")
-
-    if hasattr(agreement, "selected_template_name_snapshot"):
-        agreement.selected_template_name_snapshot = template.name
-        update_fields.append("selected_template_name_snapshot")
-
-    if update_fields:
-        update_fields.append("updated_at")
-        agreement.save(update_fields=update_fields)
+    _hydrate_agreement_core_fields(agreement, template)
 
     if AgreementAIScope is None:
         return
@@ -279,13 +364,16 @@ def _copy_template_text_fields(agreement: Agreement, template: ProjectTemplate) 
     if incoming_scope_text:
         scope_obj.scope_text = incoming_scope_text
 
-    existing_questions = scope_obj.questions if isinstance(scope_obj.questions, list) else []
-    scope_obj.questions = _merge_questions_preserving_answers(existing_questions, incoming_questions)
+    scope_obj.questions, scope_obj.answers = _replace_questions_preserving_matching_answers(
+        getattr(scope_obj, "answers", {}),
+        incoming_questions,
+    )
 
-    existing_answers = scope_obj.answers if isinstance(scope_obj.answers, dict) else {}
-    scope_obj.answers = existing_answers  # preserve, do not wipe answers
+    scope_update_fields = ["questions", "answers"]
+    if incoming_scope_text:
+        scope_update_fields.append("scope_text")
 
-    scope_obj.save()
+    _save_model_if_needed(scope_obj, scope_update_fields)
 
 
 def _extract_agreement_scope_text(agreement: Agreement) -> str:
@@ -394,6 +482,10 @@ def apply_template_to_agreement(
     *,
     overwrite_existing: bool = True,
     copy_text_fields: bool = True,
+    estimated_days: Optional[int] = None,
+    auto_schedule: bool = False,
+    spread_enabled: bool = False,
+    spread_total: Optional[Any] = None,
 ) -> dict:
     template_rows = list(template.milestones.all().order_by("sort_order", "id"))
     if not template_rows:
@@ -403,34 +495,57 @@ def apply_template_to_agreement(
     if overwrite_existing:
         deleted_count = _clear_existing_milestones(agreement)
 
-    # Always persist the selected template relation
     _persist_selected_template(agreement, template)
 
     if copy_text_fields:
         _copy_template_text_fields(agreement, template)
 
+    effective_estimated_days = _coerce_positive_int(estimated_days)
+    spread_total_decimal = _safe_decimal(spread_total, Decimal("0.00"))
+    use_spread_total = bool(spread_enabled and spread_total_decimal > 0)
+
     agreement_total = _resolve_agreement_total_amount(agreement)
-    date_range = _resolve_date_range(agreement, template)
+
+    if use_spread_total:
+        amounts = _build_milestone_amounts_with_spread_total(template, spread_total_decimal)
+    else:
+        amounts = _build_milestone_amounts(template, agreement_total)
+
+    date_range = _resolve_date_range(
+        agreement,
+        template,
+        estimated_days_override=effective_estimated_days,
+    )
+
     distributed_dates = distribute_milestone_dates(
         date_range.start_date,
         date_range.end_date,
         len(template_rows),
     )
-    amounts = _build_milestone_amounts(template, agreement_total)
 
     created = []
     for idx, row in enumerate(template_rows, start=1):
         fallback_due = distributed_dates[idx - 1]
         fallback_start = distributed_dates[idx - 2] if idx > 1 else date_range.start_date
 
-        row_start, due_date, duration_delta, hinted_offset, hinted_duration = _resolve_row_schedule(
-            agreement_start=date_range.start_date,
-            fallback_start=fallback_start,
-            fallback_due=fallback_due,
-            row=row,
-        )
+        if auto_schedule:
+            row_start, due_date, duration_delta, hinted_offset, hinted_duration = _resolve_row_schedule(
+                agreement_start=date_range.start_date,
+                fallback_start=fallback_start,
+                fallback_due=fallback_due,
+                row=row,
+            )
+        else:
+            hinted_offset = _coerce_positive_int(getattr(row, "recommended_days_from_start", None))
+            hinted_duration = _coerce_positive_int(getattr(row, "recommended_duration_days", None))
+            row_start = None
+            due_date = None
+            duration_delta = None
 
-        template_suggested_amount = _template_row_suggested_amount(row, agreement_total)
+        template_suggested_amount = _template_row_suggested_amount(
+            row,
+            spread_total_decimal if use_spread_total else agreement_total,
+        )
 
         milestone = Milestone.objects.create(
             agreement=agreement,
@@ -456,13 +571,13 @@ def apply_template_to_agreement(
 
     agreement.milestone_count = len(created)
 
-    update_fields = ["milestone_count", "updated_at"]
+    update_fields = ["milestone_count"]
     if hasattr(agreement, "selected_template"):
         update_fields.append("selected_template")
     if hasattr(agreement, "selected_template_name_snapshot"):
         update_fields.append("selected_template_name_snapshot")
 
-    agreement.save(update_fields=update_fields)
+    _save_model_if_needed(agreement, update_fields)
 
     return {
         "template_id": template.id,
@@ -474,6 +589,10 @@ def apply_template_to_agreement(
         "milestone_ids": [m.id for m in created],
         "start_date": date_range.start_date,
         "end_date": date_range.end_date,
+        "applied_estimated_days": effective_estimated_days or int(template.estimated_days or 1),
+        "auto_schedule": bool(auto_schedule),
+        "spread_enabled": bool(use_spread_total),
+        "spread_total": str(spread_total_decimal.quantize(Decimal("0.01"))) if use_spread_total else None,
     }
 
 

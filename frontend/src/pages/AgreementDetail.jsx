@@ -1,4 +1,15 @@
 // src/pages/AgreementDetail.jsx
+// v2026-03-02 — ✅ PDF Versions UI:
+// - Reads agreement.current_pdf_url + agreement.pdf_versions (AgreementPDFVersion history)
+// - Adds "PDF Versions" panel with Open/Download for each version
+// - Uses credentialed fetch() for downloads so /media files work with auth cookies
+//
+// v2026-02-15 — ✅ Direct Pay aware:
+// - Detect agreement.payment_mode ("escrow" vs "direct")
+// - Hide escrow-only actions/modals for Direct Pay agreements
+// - Adjust status display + show Payment Mode badge
+// - Skip funding_preview (escrow fee summary) when Direct Pay
+
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
@@ -20,7 +31,8 @@ import {
   unassignMilestone,
 } from "../api/assignments";
 
-const pick = (...vals) => vals.find((v) => v !== undefined && v !== null && v !== "") ?? "";
+const pick = (...vals) =>
+  vals.find((v) => v !== undefined && v !== null && v !== "") ?? "";
 
 const toMoney = (v) => {
   const n = typeof v === "number" ? v : parseFloat(String(v ?? 0));
@@ -48,11 +60,80 @@ const milestoneStatusLabel = (m) => {
 };
 
 const isRefundedMilestone = (m) =>
-  String(pick(m?.descope_status, m?.descopeStatus) || "").toLowerCase() === "refunded";
+  String(pick(m?.descope_status, m?.descopeStatus) || "").toLowerCase() ===
+  "refunded";
+
+function normalizePaymentMode(val) {
+  const s = String(val || "").trim().toLowerCase();
+  if (!s) return "escrow";
+  if (s.includes("direct")) return "direct";
+  return "escrow";
+}
+
+function paymentModeLabel(mode) {
+  const m = normalizePaymentMode(mode);
+  return m === "direct" ? "Direct Pay" : "Escrow (Protected)";
+}
+
+function PaymentModeBadge({ mode }) {
+  const m = normalizePaymentMode(mode);
+  const cls =
+    m === "direct"
+      ? "border-slate-200 bg-slate-50 text-slate-800"
+      : "border-emerald-200 bg-emerald-50 text-emerald-800";
+  const text = m === "direct" ? "⚡ Direct Pay" : "🛡️ Escrow";
+  return (
+    <span
+      className={`ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${cls}`}
+      title={
+        m === "direct"
+          ? "Direct Pay: invoices are paid via Stripe pay links (no escrow hold)."
+          : "Escrow: homeowner funds escrow; milestone approvals release funds."
+      }
+    >
+      {text}
+    </span>
+  );
+}
+
+function fmtDateTime(val) {
+  if (!val) return "";
+  try {
+    const d = new Date(val);
+    if (!Number.isFinite(d.getTime())) return String(val);
+    return d.toLocaleString();
+  } catch {
+    return String(val);
+  }
+}
+
+function shortSha(sha) {
+  const s = String(sha || "").trim();
+  if (!s) return "";
+  return s.length > 12 ? `${s.slice(0, 12)}…` : s;
+}
 
 function normalizeAgreement(raw) {
   if (!raw || typeof raw !== "object")
     return { id: null, title: "—", invoices: [], milestones: [] };
+
+  const payment_mode = normalizePaymentMode(
+    pick(raw.payment_mode, raw.paymentMode, raw.raw?.payment_mode)
+  );
+
+  const isDirectPay = payment_mode === "direct";
+
+  const pdf_versions = Array.isArray(raw.pdf_versions) ? raw.pdf_versions : [];
+  // Sort descending by version_number first, then created_at
+  const pdfVersionsSorted = [...pdf_versions].sort((a, b) => {
+    const av = Number(a?.version_number ?? a?.version ?? 0);
+    const bv = Number(b?.version_number ?? b?.version ?? 0);
+    if (bv !== av) return bv - av;
+    const at = new Date(a?.created_at || 0).getTime();
+    const bt = new Date(b?.created_at || 0).getTime();
+    return bt - at;
+  });
+
   return {
     id: raw.id ?? null,
     title: raw.title || raw.project_title || raw.project?.title || "—",
@@ -62,11 +143,58 @@ function normalizeAgreement(raw) {
     isSigned:
       !!raw.is_fully_signed ||
       (!!raw.signed_by_contractor && !!raw.signed_by_homeowner),
+
+    payment_mode,
+    isDirectPay,
+
+    // Escrow-only
     escrowFunded: !!raw.escrow_funded,
+
     invoices: raw.invoices || raw.invoice_set || [],
     milestones: raw.milestones || raw.milestone_set || [],
+
+    // ✅ PDF versioning
+    currentPdfUrl: pick(raw.current_pdf_url, raw.pdf_file_url, raw.pdf_url, ""),
+    currentPdfVersion:
+      raw.pdf_version != null ? Number(raw.pdf_version) : null,
+    pdfVersions: pdfVersionsSorted,
+
     raw,
   };
+}
+
+// Download helper for /media URLs that may require cookies.
+// Uses fetch() directly (NOT axios api instance) so "/media/..." doesn't get prefixed with "/api".
+async function downloadWithCredentials(url, filename) {
+  if (!url) throw new Error("Missing URL");
+  const abs =
+    String(url).startsWith("http")
+      ? String(url)
+      : `${window.location.origin}${String(url).startsWith("/") ? "" : "/"}${url}`;
+
+  const res = await fetch(abs, { credentials: "include" });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`Download failed (${res.status}). ${txt?.slice(0, 200) || ""}`);
+  }
+  const blob = await res.blob();
+  const objectUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename || "file.pdf";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(objectUrl);
+}
+
+function openInNewTab(url) {
+  if (!url) return;
+  const abs =
+    String(url).startsWith("http")
+      ? String(url)
+      : `${window.location.origin}${String(url).startsWith("/") ? "" : "/"}${url}`;
+  window.open(abs, "_blank", "noopener,noreferrer");
 }
 
 export default function AgreementDetail() {
@@ -90,6 +218,9 @@ export default function AgreementDetail() {
 
   // Refund modal state
   const [refundOpen, setRefundOpen] = useState(false);
+
+  // ✅ PDF Versions panel
+  const [versionsOpen, setVersionsOpen] = useState(true);
 
   const norm = useMemo(() => normalizeAgreement(agreement), [agreement]);
 
@@ -136,13 +267,25 @@ export default function AgreementDetail() {
     }
   }, [norm?.id, norm?.title]);
 
+  // Funding preview (escrow only)
   useEffect(() => {
     const fetchFundingPreview = async () => {
       if (!id) return;
+
+      // ✅ Direct Pay: do not load escrow funding preview
+      if (norm.isDirectPay) {
+        setFundingPreview(null);
+        setFundingError("");
+        setFundingLoading(false);
+        return;
+      }
+
       setFundingLoading(true);
       setFundingError("");
       try {
-        const { data } = await api.get(`/projects/agreements/${id}/funding_preview/`);
+        const { data } = await api.get(
+          `/projects/agreements/${id}/funding_preview/`
+        );
         setFundingPreview(data);
       } catch (err) {
         console.error("funding_preview error:", err);
@@ -158,13 +301,18 @@ export default function AgreementDetail() {
 
     fetchFundingPreview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, norm.isDirectPay]);
 
   const handleSigned = async () => {
     await fetchAgreement();
   };
 
   const startEscrow = async () => {
+    if (norm.isDirectPay) {
+      toast("This agreement is Direct Pay (no escrow funding).");
+      return;
+    }
+
     try {
       const { data } = await api.post(`/projects/agreements/${id}/fund_escrow/`);
       if (data?.client_secret) {
@@ -181,6 +329,7 @@ export default function AgreementDetail() {
 
   const downloadPDF = async () => {
     try {
+      // Keep your existing endpoint-based download (works even if media auth is tricky)
       const res = await api.get(`/projects/agreements/${id}/pdf/`, {
         responseType: "blob",
       });
@@ -238,14 +387,30 @@ export default function AgreementDetail() {
   if (loading) return <div className="p-6">Loading…</div>;
   if (!norm.id) return <div className="p-6">Agreement not found.</div>;
 
+  const statusText = norm.isDirectPay
+    ? norm.isSigned
+      ? "✅ Signed — Direct Pay"
+      : "❌ Not Signed — Direct Pay"
+    : norm.escrowFunded
+    ? "✅ Escrow Funded"
+    : norm.isSigned
+    ? "❌ Awaiting Funding"
+    : "❌ Not Signed";
+
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
-      <button onClick={() => navigate("/agreements")} className="text-blue-600 hover:underline">
+      <button
+        onClick={() => navigate("/agreements")}
+        className="text-blue-600 hover:underline"
+      >
         ← Back
       </button>
 
       <div className="bg-blue-50 border-l-4 border-blue-600 p-4 rounded shadow-sm">
-        <h2 className="text-2xl font-bold mb-1">{norm.title}</h2>
+        <h2 className="text-2xl font-bold mb-1">
+          {norm.title}
+          <PaymentModeBadge mode={norm.payment_mode} />
+        </h2>
         <p>
           <strong>Homeowner:</strong> {norm.homeownerName}{" "}
           <span className="text-gray-500">({norm.homeownerEmail})</span>
@@ -254,9 +419,19 @@ export default function AgreementDetail() {
           <strong>Total Cost:</strong> ${norm.totalCost.toFixed(2)}
         </p>
         <p>
-          <strong>Status:</strong>{" "}
-          {norm.escrowFunded ? "✅ Escrow Funded" : norm.isSigned ? "❌ Awaiting Funding" : "❌ Not Signed"}
+          <strong>Payment Mode:</strong> {paymentModeLabel(norm.payment_mode)}
         </p>
+        <p>
+          <strong>Status:</strong> {statusText}
+        </p>
+
+        {norm.isDirectPay && (
+          <div className="mt-2 text-xs text-slate-700">
+            Direct Pay agreements don&apos;t use escrow. When milestones are
+            invoiced, you&apos;ll create a Stripe pay link for each invoice in
+            the <b>Invoices</b> section.
+          </div>
+        )}
       </div>
 
       {/* ✅ NEW: Agreement assignment selector */}
@@ -280,17 +455,25 @@ export default function AgreementDetail() {
           </button>
         )}
 
-        {isContractor && norm.isSigned && !norm.escrowFunded && (
-          <SendFundingLinkButton agreementId={norm.id} isFullySigned={norm.isSigned} className="mr-2" />
+        {/* Escrow-only actions */}
+        {!norm.isDirectPay && isContractor && norm.isSigned && !norm.escrowFunded && (
+          <SendFundingLinkButton
+            agreementId={norm.id}
+            isFullySigned={norm.isSigned}
+            className="mr-2"
+          />
         )}
 
-        {norm.isSigned && !norm.escrowFunded && (
-          <button onClick={startEscrow} className="px-4 py-2 rounded bg-yellow-500 text-white hover:bg-yellow-600">
+        {!norm.isDirectPay && norm.isSigned && !norm.escrowFunded && (
+          <button
+            onClick={startEscrow}
+            className="px-4 py-2 rounded bg-yellow-500 text-white hover:bg-yellow-600"
+          >
             Fund Escrow
           </button>
         )}
 
-        {norm.escrowFunded && (
+        {!norm.isDirectPay && norm.escrowFunded && (
           <button
             onClick={() => setRefundOpen(true)}
             className="px-4 py-2 rounded bg-rose-600 text-white hover:bg-rose-700"
@@ -300,13 +483,181 @@ export default function AgreementDetail() {
           </button>
         )}
 
-        <button onClick={previewPdf} className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700">
+        <button
+          onClick={previewPdf}
+          className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700"
+        >
           Preview PDF
         </button>
 
-        <button onClick={downloadPDF} className="px-4 py-2 rounded bg-blue-700 text-white hover:bg-blue-800">
+        <button
+          onClick={downloadPDF}
+          className="px-4 py-2 rounded bg-blue-700 text-white hover:bg-blue-800"
+        >
           Download PDF
         </button>
+      </div>
+
+      {/* ✅ PDF Versions */}
+      <div className="bg-white rounded shadow p-6 space-y-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h3 className="text-lg font-semibold">PDF Versions</h3>
+          <button
+            className="text-sm text-blue-700 hover:underline"
+            onClick={() => setVersionsOpen((v) => !v)}
+          >
+            {versionsOpen ? "Hide" : "Show"}
+          </button>
+        </div>
+
+        {versionsOpen && (
+          <>
+            <div className="rounded border bg-gray-50 p-3">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <div className="text-sm font-medium text-gray-900">
+                    Current PDF{" "}
+                    {norm.currentPdfVersion != null ? (
+                      <span className="text-xs text-gray-500">
+                        (v{norm.currentPdfVersion})
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Uses Agreement.pdf_file (latest). If version history exists, it is listed below.
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    className="px-3 py-1.5 rounded bg-slate-800 text-white hover:bg-slate-900 text-sm"
+                    onClick={() => {
+                      if (!norm.currentPdfUrl) {
+                        toast("No current PDF URL available yet.");
+                        return;
+                      }
+                      openInNewTab(norm.currentPdfUrl);
+                    }}
+                  >
+                    Open
+                  </button>
+                  <button
+                    className="px-3 py-1.5 rounded bg-blue-700 text-white hover:bg-blue-800 text-sm"
+                    onClick={async () => {
+                      if (!norm.currentPdfUrl) {
+                        toast("No current PDF URL available yet.");
+                        return;
+                      }
+                      try {
+                        await downloadWithCredentials(
+                          norm.currentPdfUrl,
+                          `agreement_${norm.id}_current.pdf`
+                        );
+                        toast.success("Downloaded.");
+                      } catch (e) {
+                        console.error(e);
+                        toast.error("Download failed.");
+                      }
+                    }}
+                  >
+                    Download
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {(!norm.pdfVersions || norm.pdfVersions.length === 0) ? (
+              <div className="text-sm text-gray-500">
+                No historical PDF versions found yet. (This will populate after the new PDF generator writes AgreementPDFVersion rows.)
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {norm.pdfVersions.map((v) => {
+                  const verNum = Number(v?.version_number ?? 0);
+                  const kind = String(v?.kind || "").toLowerCase();
+                  const fileUrl = v?.file_url || v?.fileUrl || "";
+                  const sigLine = [
+                    v?.signed_by_contractor ? "Contractor signed" : "Contractor not signed",
+                    v?.signed_by_homeowner ? "Customer signed" : "Customer not signed",
+                  ].join(" • ");
+
+                  return (
+                    <div
+                      key={v.id ?? `${verNum}-${v.created_at ?? ""}`}
+                      className="rounded border p-3 bg-white"
+                    >
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <div className="min-w-[240px]">
+                          <div className="text-sm font-semibold text-gray-900">
+                            v{verNum || "—"}{" "}
+                            {kind ? (
+                              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border border-slate-200 bg-slate-50 text-slate-800">
+                                {kind}
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Created: {fmtDateTime(v?.created_at) || "—"}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            SHA: {shortSha(v?.sha256) || "—"}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {sigLine}
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <button
+                            className="px-3 py-1.5 rounded bg-slate-800 text-white hover:bg-slate-900 text-sm"
+                            onClick={() => {
+                              if (!fileUrl) {
+                                toast("No file URL for this version.");
+                                return;
+                              }
+                              openInNewTab(fileUrl);
+                            }}
+                          >
+                            Open
+                          </button>
+                          <button
+                            className="px-3 py-1.5 rounded bg-blue-700 text-white hover:bg-blue-800 text-sm"
+                            onClick={async () => {
+                              if (!fileUrl) {
+                                toast("No file URL for this version.");
+                                return;
+                              }
+                              try {
+                                await downloadWithCredentials(
+                                  fileUrl,
+                                  `agreement_${norm.id}_v${verNum || "x"}_${kind || "pdf"}.pdf`
+                                );
+                                toast.success("Downloaded.");
+                              } catch (e) {
+                                console.error(e);
+                                toast.error("Download failed.");
+                              }
+                            }}
+                          >
+                            Download
+                          </button>
+                        </div>
+                      </div>
+
+                      {(v?.contractor_signature_name || v?.homeowner_signature_name) && (
+                        <div className="mt-2 text-xs text-gray-600">
+                          <span className="font-semibold">Names:</span>{" "}
+                          {v?.contractor_signature_name ? `Contractor: ${v.contractor_signature_name}` : "Contractor: —"}{" "}
+                          |{" "}
+                          {v?.homeowner_signature_name ? `Customer: ${v.homeowner_signature_name}` : "Customer: —"}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Attachments */}
@@ -332,7 +683,8 @@ export default function AgreementDetail() {
               return (
                 <div key={m.id} className="border rounded-lg p-3 bg-gray-50">
                   <div className="text-sm">
-                    <span className="font-semibold">{m.title}</span> — ${toMoney(m.amount).toFixed(2)}
+                    <span className="font-semibold">{m.title}</span> — $
+                    {toMoney(m.amount).toFixed(2)}
                     {refunded ? <RefundedBadge /> : null}
                     <span className="text-gray-500"> ({label})</span>
                   </div>
@@ -356,52 +708,74 @@ export default function AgreementDetail() {
       </div>
 
       {/* Project Totals & Fee Summary (Contractor View) */}
-      <div className="bg-white rounded shadow p-6 border border-dashed border-gray-300 bg-gray-50">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-base font-semibold text-gray-900">Project Totals &amp; Fee Summary (Contractor View)</h3>
-          {fundingPreview && (
-            <div className="text-[11px] text-gray-500 text-right space-y-0.5">
-              {tierLabel && <div>{tierLabel}</div>}
-              {ratePercent && <div>Current platform rate: {ratePercent}% + $1</div>}
-              {fundingPreview.high_risk_applied && (
-                <div className="text-[11px] text-amber-700">High-risk surcharge applied for this project type.</div>
-              )}
+      {!norm.isDirectPay && (
+        <div className="bg-white rounded shadow p-6 border border-dashed border-gray-300 bg-gray-50">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-base font-semibold text-gray-900">
+              Project Totals &amp; Fee Summary (Contractor View)
+            </h3>
+            {fundingPreview && (
+              <div className="text-[11px] text-gray-500 text-right space-y-0.5">
+                {tierLabel && <div>{tierLabel}</div>}
+                {ratePercent && (
+                  <div>Current platform rate: {ratePercent}% + $1</div>
+                )}
+                {fundingPreview.high_risk_applied && (
+                  <div className="text-[11px] text-amber-700">
+                    High-risk surcharge applied for this project type.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {fundingLoading ? (
+            <div className="text-xs text-gray-500">
+              Loading fee &amp; escrow summary…
+            </div>
+          ) : fundingError ? (
+            <div className="text-xs text-red-600">{fundingError}</div>
+          ) : fundingPreview ? (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <SummaryCard
+                  label="Project Price (Homeowner Pays)"
+                  value={formatMoney(fundingPreview.project_amount)}
+                />
+                <SummaryCard
+                  label="MyHomeBro Platform Fee"
+                  value={
+                    ratePercent
+                      ? `${formatMoney(
+                          fundingPreview.platform_fee
+                        )} @ ${ratePercent}% + $1`
+                      : formatMoney(fundingPreview.platform_fee)
+                  }
+                />
+                <SummaryCard
+                  label="Your Estimated Take-Home (Before Stripe)"
+                  value={formatMoney(fundingPreview.contractor_payout)}
+                />
+                <SummaryCard
+                  label="Total Escrow Deposit"
+                  value={formatMoney(fundingPreview.homeowner_escrow)}
+                />
+              </div>
+              <p className="mt-2 text-[11px] text-gray-500">
+                This summary shows your estimated take-home after the MyHomeBro
+                platform fee. Stripe processing fees (card/ACH) may slightly
+                adjust the final payout. If these numbers don&apos;t look right,
+                update your milestone amounts or total project price before
+                sending for signature.
+              </p>
+            </>
+          ) : (
+            <div className="text-xs text-gray-500">
+              Fee summary not available yet.
             </div>
           )}
         </div>
-
-        {fundingLoading ? (
-          <div className="text-xs text-gray-500">Loading fee &amp; escrow summary…</div>
-        ) : fundingError ? (
-          <div className="text-xs text-red-600">{fundingError}</div>
-        ) : fundingPreview ? (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-              <SummaryCard label="Project Price (Homeowner Pays)" value={formatMoney(fundingPreview.project_amount)} />
-              <SummaryCard
-                label="MyHomeBro Platform Fee"
-                value={
-                  ratePercent
-                    ? `${formatMoney(fundingPreview.platform_fee)} @ ${ratePercent}% + $1`
-                    : formatMoney(fundingPreview.platform_fee)
-                }
-              />
-              <SummaryCard
-                label="Your Estimated Take-Home (Before Stripe)"
-                value={formatMoney(fundingPreview.contractor_payout)}
-              />
-              <SummaryCard label="Total Escrow Deposit" value={formatMoney(fundingPreview.homeowner_escrow)} />
-            </div>
-            <p className="mt-2 text-[11px] text-gray-500">
-              This summary shows your estimated take-home after the MyHomeBro platform fee. Stripe processing fees
-              (card/ACH) may slightly adjust the final payout. If these numbers don&apos;t look right, update your
-              milestone amounts or total project price before sending for signature.
-            </p>
-          </>
-        ) : (
-          <div className="text-xs text-gray-500">Fee summary not available yet.</div>
-        )}
-      </div>
+      )}
 
       {/* Invoices */}
       <div className="bg-white rounded shadow p-6">
@@ -427,15 +801,30 @@ export default function AgreementDetail() {
         onSigned={handleSigned}
       />
 
-      <EscrowPromptModal
-        visible={escrowOpen}
-        onClose={() => setEscrowOpen(false)}
-        stripeClientSecret={clientSecret}
-        onSuccess={() => {
-          setEscrowOpen(false);
-          fetchAgreement();
-        }}
-      />
+      {/* Escrow-only modals */}
+      {!norm.isDirectPay && (
+        <>
+          <EscrowPromptModal
+            visible={escrowOpen}
+            onClose={() => setEscrowOpen(false)}
+            stripeClientSecret={clientSecret}
+            onSuccess={() => {
+              setEscrowOpen(false);
+              fetchAgreement();
+            }}
+          />
+
+          <RefundEscrowModal
+            open={refundOpen}
+            onClose={() => setRefundOpen(false)}
+            agreementId={norm.id}
+            agreementLabel={norm.title}
+            onRefunded={() => {
+              fetchAgreement();
+            }}
+          />
+        </>
+      )}
 
       <PdfPreviewModal
         open={pdfOpen}
@@ -446,16 +835,6 @@ export default function AgreementDetail() {
         fileUrl={pdfUrl}
         title={`Agreement #${id} — Preview`}
       />
-
-      <RefundEscrowModal
-        open={refundOpen}
-        onClose={() => setRefundOpen(false)}
-        agreementId={norm.id}
-        agreementLabel={norm.title}
-        onRefunded={() => {
-          fetchAgreement();
-        }}
-      />
     </div>
   );
 }
@@ -464,7 +843,9 @@ function SummaryCard({ label, value, className = "" }) {
   return (
     <div className={`rounded border bg-gray-50 px-3 py-2 h-full ${className}`}>
       <div className="text-xs text-gray-500">{label}</div>
-      <div className="text-sm font-medium whitespace-pre-wrap text-gray-900 break-words">{value}</div>
+      <div className="text-sm font-medium whitespace-pre-wrap text-gray-900 break-words">
+        {value}
+      </div>
     </div>
   );
 }

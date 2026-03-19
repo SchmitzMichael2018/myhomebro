@@ -1,5 +1,6 @@
 // src/components/LandingPage.jsx
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Lock,
   Zap,
@@ -21,6 +22,8 @@ import logo from "../assets/myhomebro_logo.png";
  * - Buttons trigger your existing login modal hooks
  */
 export default function LandingPage() {
+  const navigate = useNavigate();
+
   const openLogin = (mode = "login") => {
     let handled = false;
     try {
@@ -29,6 +32,7 @@ export default function LandingPage() {
         handled = true;
       }
     } catch {}
+
     try {
       if (!handled) {
         window.dispatchEvent(new CustomEvent("mhb:open-login", { detail: { mode } }));
@@ -37,8 +41,11 @@ export default function LandingPage() {
   };
 
   const openSignup = () => {
-    if (typeof window.mhbOpenSignup === "function") window.mhbOpenSignup();
-    else window.dispatchEvent(new CustomEvent("mhb:open-signup"));
+    if (typeof window.mhbOpenSignup === "function") {
+      window.mhbOpenSignup();
+    } else {
+      window.dispatchEvent(new CustomEvent("mhb:open-signup"));
+    }
   };
 
   return (
@@ -46,12 +53,7 @@ export default function LandingPage() {
       {/* Hero */}
       <div style={S.rail}>
         <div style={S.logoFrame}>
-          <img
-            src={logo}
-            alt="MyHomeBro"
-            style={S.logo}
-            draggable={false}
-          />
+          <img src={logo} alt="MyHomeBro" style={S.logo} draggable={false} />
         </div>
 
         <h1 style={S.title}>Welcome to</h1>
@@ -63,19 +65,42 @@ export default function LandingPage() {
         <p style={S.subhead}>Secure Escrow Payments for Contractors and Homeowners.</p>
         <p style={S.subheadTiny}>The easiest way to pay and get paid for home projects.</p>
 
+        <div style={S.pricingWrap}>
+          <div style={S.pricingPill}>
+            <span style={S.pricingStrong}>Intro (first 60 days):</span>
+            <span style={S.pricingValue}>3% + $1</span>
+          </div>
+
+          <div style={S.pricingNote}>
+            After intro, pricing starts at <b>4.5% + $1</b> with volume discounts.
+          </div>
+        </div>
+
         <div style={S.badges}>
           <Badge icon={Lock} text="Escrow-secured payments for true peace of mind." />
           <Badge icon={Zap} text="Quick contractor sign-up — get paid faster." />
-          <Badge icon={MessagesSquare} text="Direct chat between homeowners and contractors." />
-          <Badge icon={UsersRound} text="Bring your own clients, or get matched (coming soon)." />
+          <Badge icon={MessagesSquare} text="Clear communication via secure email and SMS updates." />
+          <Badge
+            icon={UsersRound}
+            text="Bring your own clients — contractor-led projects today. (client matching coming later.)"
+          />
         </div>
 
         <div style={S.ctas}>
           <button onClick={openSignup} style={{ ...S.btn, ...S.btnPrimary }} type="button">
             Contractor Sign Up
           </button>
+
           <button onClick={() => openLogin("login")} style={S.btn} type="button">
             Sign In
+          </button>
+
+          <button
+            onClick={() => navigate("/start-project")}
+            style={S.btn}
+            type="button"
+          >
+            Start Project Intake
           </button>
         </div>
       </div>
@@ -96,7 +121,7 @@ export default function LandingPage() {
           <Tile
             icon={Scale}
             title="Dispute Resolution"
-            text="Structured workflow with evidence, mediation, and third-party arbitration options."
+            text="Structured dispute resolution with evidence review, AI-guided recommendations, and escalation options."
           />
           <Tile
             icon={Camera}
@@ -106,27 +131,16 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ✅ Added footer with Terms & Privacy links */}
       <footer style={S.footer}>
         <span>&copy; {new Date().getFullYear()} MyHomeBro</span>
 
-        <a
-          href="/legal/terms-of-service/"
-          target="_blank"
-          rel="noreferrer"
-          style={S.footerLink}
-        >
+        <a href="/legal/terms-of-service/" target="_blank" rel="noreferrer" style={S.footerLink}>
           Terms of Service
         </a>
 
         <span style={{ margin: "0 6px" }}>&middot;</span>
 
-        <a
-          href="/legal/privacy-policy/"
-          target="_blank"
-          rel="noreferrer"
-          style={S.footerLink}
-        >
+        <a href="/legal/privacy-policy/" target="_blank" rel="noreferrer" style={S.footerLink}>
           Privacy Policy
         </a>
       </footer>
@@ -210,6 +224,43 @@ const S = {
   subhead: { marginTop: 12, fontSize: 18, opacity: 0.95 },
   subheadTiny: { marginTop: 4, fontSize: 14, opacity: 0.88 },
 
+  pricingWrap: {
+    marginTop: 14,
+    display: "grid",
+    gap: 8,
+    justifyItems: "center",
+  },
+  pricingPill: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "10px 14px",
+    borderRadius: 999,
+    background: "rgba(255,255,255,.94)",
+    color: "#0f172a",
+    boxShadow: "0 6px 18px rgba(0,0,0,.12)",
+    fontWeight: 800,
+    maxWidth: 760,
+  },
+  pricingStrong: {
+    opacity: 0.9,
+  },
+  pricingValue: {
+    padding: "4px 10px",
+    borderRadius: 999,
+    background: "linear-gradient(135deg, #0d47ff 0%, #6b86ff 60%)",
+    color: "#fff",
+    fontWeight: 900,
+    letterSpacing: 0.2,
+  },
+  pricingNote: {
+    fontSize: 13,
+    opacity: 0.92,
+    textShadow: "0 1px 2px rgba(0,0,0,.18)",
+    maxWidth: 760,
+    lineHeight: 1.35,
+  },
+
   badges: {
     marginTop: 18,
     display: "grid",
@@ -235,8 +286,7 @@ const S = {
     display: "grid",
     placeItems: "center",
     borderRadius: 10,
-    background:
-      "linear-gradient(135deg, rgba(255,255,255,.8), rgba(255,255,255,.25))",
+    background: "linear-gradient(135deg, rgba(255,255,255,.8), rgba(255,255,255,.25))",
     border: "1px solid rgba(255,255,255,.6)",
     color: "#0f172a",
   },
@@ -288,7 +338,6 @@ const S = {
     display: "grid",
     gridTemplateColumns: "auto 1fr",
     gridTemplateAreas: `"icon title" "icon text"`,
-
     columnGap: 12,
     rowGap: 8,
     alignItems: "start",
@@ -306,7 +355,6 @@ const S = {
   tileTitle: { gridArea: "title", fontSize: 20, fontWeight: 800 },
   tileText: { gridArea: "text", color: "#0f172a", opacity: 0.85 },
 
-  /* Footer added */
   footer: {
     marginTop: "40px",
     padding: "16px 0",

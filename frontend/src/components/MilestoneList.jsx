@@ -1,11 +1,8 @@
 // src/components/MilestoneList.jsx
-// v2026-01-19 — Option 1: Rework Work Orders + origin milestone link + focus scroll
-// - Adds tab "Rework Work Orders" (filter=rework deep link)
-// - Shows ONLY rework milestones when tab=rework
-// - Excludes rework milestones from ALL other tabs (fixes leakage into Paid/Completed/etc.)
-// - Adds "Original milestone: #X — View" link using milestone.rework_origin_milestone_id
-// - Supports ?focus=ID (scroll + highlight)
-// - Keeps unified refund modal + existing actions intact
+// v2026-03-03 — FIX: Tab filtering now filters milestone rows inside expanded agreements
+// - Previously: Paid/Late/etc only filtered which AGREEMENTS showed, but expanded rows still showed ALL milestones
+// - Now: When filtering (tab !== "all" OR search active), expanded agreement shows ONLY matching milestones
+// - Also: Clicking tabs updates ?filter=... in the URL for correct deep-links / refresh behavior
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../api";
@@ -23,10 +20,7 @@ const money = (n) => {
   if (n === null || n === undefined || n === "") return "—";
   const v = Number(n);
   return Number.isFinite(v)
-    ? `$${v.toLocaleString(undefined, {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      })}`
+    ? `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     : String(n);
 };
 
@@ -62,22 +56,57 @@ const getAgreementStatus = (a) =>
 
 const isAgreementDraft = (a) => getAgreementStatus(a) === "draft";
 
+/**
+ * IMPORTANT:
+ * "Signed" != "Fully Signed" in your workflow.
+ * This function tries several common shapes. If your API has a canonical field, add it here.
+ */
+const isAgreementFullySigned = (a) => {
+  if (!a) return false;
+
+  // Explicit booleans (preferred)
+  if (a.is_fully_signed === true) return true;
+  if (a.fully_signed === true) return true;
+  if (a.both_signed === true) return true;
+
+  // Signature components (common)
+  const contractorSigned = a.contractor_signed === true || !!a.contractor_signed_at;
+  const customerSigned = a.customer_signed === true || !!a.customer_signed_at;
+  if (contractorSigned && customerSigned) return true;
+
+  // Fallback to status only if you don't have signature flags
+  // (keep conservative: treat "funded" as fully signed, but NOT "signed" by itself)
+  const st = getAgreementStatus(a);
+  if (["funded", "in_progress", "active", "executed"].includes(st)) return true;
+
+  return false;
+};
+
+/**
+ * "Signed-ish" can stay for other UI bits, but completion uses FULLY SIGNED.
+ */
 const isAgreementSigned = (a) =>
   ["signed", "executed", "active", "approved", "funded", "in_progress"].includes(getAgreementStatus(a));
 
+const getPaymentMode = (a) => String(pick(a?.payment_mode, a?.paymentMode, a?.mode) || "escrow").toLowerCase();
+
+const isDirectPay = (a) => getPaymentMode(a) === "direct";
+
 const isEscrowFunded = (a) => {
-  const flag = !!pick(a?.escrow_funded, a?.escrowFunded, a?.escrowFundedBool);
+  const flag = !!pick(a?.escrow_funded, a?.escrowFunded, a?.escrowFundedBool, a?.is_escrow_funded);
   if (flag) return true;
   const st = getAgreementStatus(a);
   return st === "funded";
 };
 
-const getAgreementNumber = (m) => pick(m.agreement_number, m.agreement_no, m.agreement_id, m.agreement);
-const getProjectTitle = (m, a) => pick(m.project_title, m.projectTitle, a?.project_title, a?.projectTitle);
-const getHomeownerName = (m, a) => pick(m.homeowner_name, m.homeownerName, a?.homeowner_name, a?.homeownerName);
+const getAgreementNumber = (m, a, agId) =>
+  pick(m?.agreement_number, m?.agreement_no, a?.id, a?.agreement_id, agId, m?.agreement_id, m?.agreement);
+
+const getProjectTitle = (m, a) => pick(m?.project_title, m?.projectTitle, a?.project_title, a?.projectTitle, a?.title);
+const getHomeownerName = (m, a) => pick(m?.homeowner_name, m?.homeownerName, a?.homeowner_name, a?.homeownerName);
 
 const getDueDateRaw = (m) =>
-  pick(m.due_date, m.scheduled_for, m.date_due, m.date, m.end_date, m.completion_date, m.endDate);
+  pick(m?.due_date, m?.scheduled_for, m?.date_due, m?.date, m?.end_date, m?.completion_date, m?.endDate);
 
 const computeIsLate = (m) => {
   if (m.completed === true) return false;
@@ -106,17 +135,10 @@ const getInvoiceIdFromMilestone = (m) => {
   return pick(m?.invoice_id, m?.invoiceId, m?.invoice, null);
 };
 
-/**
- * ✅ Determine "Paid" by looking up invoice status in invoicesMap (or nested invoice object)
- */
 const isPaidFromInvoice = (m, invoicesMap) => {
-  // 1) milestone may contain nested invoice object
   const invObj = m?.invoice && typeof m.invoice === "object" ? m.invoice : null;
-
-  // 2) or milestone has invoice_id to look up
   const invoiceId = getInvoiceIdFromMilestone(m);
   const inv = invObj || (invoiceId ? invoicesMap[String(invoiceId)] : null);
-
   if (!inv) return false;
 
   const statusRaw = String(pick(inv.status, inv.invoice_status, inv.state) || "").toLowerCase();
@@ -127,7 +149,6 @@ const isPaidFromInvoice = (m, invoicesMap) => {
 };
 
 const deriveMilestonePhaseLabel = (m, invoicesMap) => {
-  // ✅ Paid overrides everything else
   if (isPaidFromInvoice(m, invoicesMap)) return "Paid";
 
   const completed = m.completed === true;
@@ -139,8 +160,6 @@ const deriveMilestonePhaseLabel = (m, invoicesMap) => {
 };
 
 function getRefundBlockReason(m) {
-  // We unify on agreement refund endpoints, but we still hide the button unless escrow funded & not started.
-  // Final eligibility is determined by refund_preview.
   if (!m?._escrowFunded) return "Escrow is not funded for this agreement.";
   if (isRefundedMilestone(m)) return "This milestone was already refunded.";
   if (m.completed === true) return "Milestone is completed (work started).";
@@ -152,6 +171,24 @@ function getRefundBlockReason(m) {
 function canOpenRefundModalFromRow(m) {
   return getRefundBlockReason(m) === "";
 }
+
+const getAgreementTotal = (a, allMilestonesForAgreement = []) => {
+  const direct =
+    pick(a?.total_cost, a?.total_amount, a?.total, a?.agreement_total, a?.amount_total, a?.total_price) ?? null;
+
+  const cents = pick(a?.total_cost_cents, a?.total_amount_cents, a?.total_cents, a?.amount_cents) ?? null;
+
+  if (cents !== null && cents !== undefined && cents !== "" && Number.isFinite(Number(cents))) {
+    return money(Number(cents) / 100);
+  }
+
+  if (direct !== null && direct !== undefined && direct !== "" && Number.isFinite(Number(direct))) {
+    return money(Number(direct));
+  }
+
+  const sum = allMilestonesForAgreement.reduce((acc, m) => acc + Number(m?.amount || 0), 0);
+  return money(sum);
+};
 
 /* ---------------- API base ---------------- */
 const API = {
@@ -180,21 +217,7 @@ export default function MilestoneList() {
   const [tab, setTab] = useState("all");
   const [q, setQ] = useState("");
 
-  // ✅ Support deep-link filters from dashboard cards
-  useEffect(() => {
-    if (!urlFilter) return;
-    const allowed = new Set([
-      "all",
-      "late",
-      "incomplete",
-      "complete_not_invoiced",
-      "invoiced",
-      "paid",
-      "rework",
-    ]);
-    if (allowed.has(urlFilter)) setTab(urlFilter);
-  }, [urlFilter]);
-
+  const [openAgreements, setOpenAgreements] = useState(() => new Set());
   const [busy, setBusy] = useState(new Set());
 
   const [editOpen, setEditOpen] = useState(false);
@@ -203,11 +226,43 @@ export default function MilestoneList() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailItem, setDetailItem] = useState(null);
 
-  // ✅ Unified refund modal state
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundAgreementId, setRefundAgreementId] = useState(null);
   const [refundAgreementLabel, setRefundAgreementLabel] = useState("");
   const [refundPreselected, setRefundPreselected] = useState([]);
+
+  const allowedFilters = useMemo(
+    () => new Set(["all", "late", "incomplete", "complete_not_invoiced", "invoiced", "paid", "rework"]),
+    []
+  );
+
+  // Deep-link filters (URL -> tab)
+  useEffect(() => {
+    if (!urlFilter) return;
+    if (allowedFilters.has(urlFilter)) setTab(urlFilter);
+  }, [urlFilter, allowedFilters]);
+
+  // Keep URL in sync (tab -> URL)
+  const syncUrlFilter = useCallback(
+    (nextTab) => {
+      const t = String(nextTab || "").toLowerCase();
+      const params = new URLSearchParams(window.location.search);
+
+      if (!t || t === "all") params.delete("filter");
+      else params.set("filter", t);
+
+      // Preserve focus param (and any other params), just update filter
+      const next = `${window.location.pathname}?${params.toString()}`;
+      window.history.replaceState({}, "", next);
+    },
+    []
+  );
+
+  // When tab changes, update URL (but only for known tabs)
+  useEffect(() => {
+    if (!allowedFilters.has(tab)) return;
+    syncUrlFilter(tab);
+  }, [tab, allowedFilters, syncUrlFilter]);
 
   const markBusy = (id, on = true) =>
     setBusy((prev) => {
@@ -216,8 +271,7 @@ export default function MilestoneList() {
       return n;
     });
 
-  const updateLocal = (id, patch) =>
-    setRows((list) => list.map((m) => (m.id === id ? { ...m, ...patch } : m)));
+  const updateLocal = (id, patch) => setRows((list) => list.map((m) => (m.id === id ? { ...m, ...patch } : m)));
 
   /* ---------------- Load ---------------- */
   const reload = useCallback(async () => {
@@ -236,17 +290,13 @@ export default function MilestoneList() {
       const amap = {};
       for (const a of aList) {
         const id = a?.id ?? a?.agreement_id ?? null;
-        if (id !== null && id !== undefined && id !== "") {
-          amap[String(id)] = a;
-        }
+        if (id !== null && id !== undefined && id !== "") amap[String(id)] = a;
       }
 
       const imap = {};
       for (const inv of iList) {
         const id = inv?.id ?? inv?.invoice_id ?? inv?.pk ?? null;
-        if (id !== null && id !== undefined && id !== "") {
-          imap[String(id)] = inv;
-        }
+        if (id !== null && id !== undefined && id !== "") imap[String(id)] = inv;
       }
 
       setRows(mList);
@@ -264,17 +314,7 @@ export default function MilestoneList() {
     reload();
   }, [reload]);
 
-  // ✅ Scroll to a focused milestone if ?focus=ID is present
-  useEffect(() => {
-    if (!focusId) return;
-    if (loading) return;
-    const el = document.getElementById(`mhb-milestone-row-${focusId}`);
-    if (el && el.scrollIntoView) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-  }, [focusId, loading, rows.length]);
-
-  /* ---------------- Enrich + Filter ---------------- */
+  /* ---------------- Enrich ---------------- */
   const enriched = useMemo(() => {
     return rows.map((m) => {
       const agId = getAgreementId(m);
@@ -282,28 +322,35 @@ export default function MilestoneList() {
       const late = computeIsLate(m);
       const phaseLabel = deriveMilestonePhaseLabel(m, invoicesMap);
 
+      const paymentMode = getPaymentMode(ag);
+      const requiresEscrow = paymentMode !== "direct";
+      const escrowFunded = requiresEscrow ? isEscrowFunded(ag) : true;
+
       return {
         ...m,
         _ag: ag,
         _agId: agId,
-        _escrowFunded: isEscrowFunded(ag),
+        _paymentMode: paymentMode,
+        _requiresEscrow: requiresEscrow,
+        _escrowFunded: escrowFunded,
         _agStatus: getAgreementStatus(ag),
-        _agreementNumber: getAgreementNumber(m),
+        _agreementNumber: getAgreementNumber(m, ag, agId),
         _projectTitle: getProjectTitle(m, ag),
         _homeownerName: getHomeownerName(m, ag),
         _dueRaw: getDueDateRaw(m),
         _late: late,
         _phaseLabel: phaseLabel,
         _refunded: isRefundedMilestone(m),
+        _fullySigned: isAgreementFullySigned(ag),
+        _signedLike: isAgreementSigned(ag),
       };
     });
   }, [rows, agreementsMap, invoicesMap]);
 
-  const filtered = useMemo(() => {
+  /* ---------------- Filter milestones (produces MATCHES) ---------------- */
+  const matchingMilestones = useMemo(() => {
     let r = enriched;
 
-    // ✅ Fix: rework milestones ONLY show in the rework tab.
-    // All other tabs explicitly exclude rework milestones.
     switch (tab) {
       case "rework":
         r = r.filter((m) => isReworkMilestone(m));
@@ -312,17 +359,11 @@ export default function MilestoneList() {
       default:
         r = r.filter((m) => !isReworkMilestone(m));
 
-        if (tab === "late") {
-          r = r.filter((m) => m._late && m._phaseLabel !== "Paid");
-        } else if (tab === "incomplete") {
-          r = r.filter((m) => m._phaseLabel === "Incomplete");
-        } else if (tab === "complete_not_invoiced") {
-          r = r.filter((m) => m._phaseLabel === "Completed (Not Invoiced)");
-        } else if (tab === "invoiced") {
-          r = r.filter((m) => m._phaseLabel === "Invoiced");
-        } else if (tab === "paid") {
-          r = r.filter((m) => m._phaseLabel === "Paid");
-        }
+        if (tab === "late") r = r.filter((m) => m._late && m._phaseLabel !== "Paid");
+        else if (tab === "incomplete") r = r.filter((m) => m._phaseLabel === "Incomplete");
+        else if (tab === "complete_not_invoiced") r = r.filter((m) => m._phaseLabel === "Completed (Not Invoiced)");
+        else if (tab === "invoiced") r = r.filter((m) => m._phaseLabel === "Invoiced");
+        else if (tab === "paid") r = r.filter((m) => m._phaseLabel === "Paid");
         break;
     }
 
@@ -340,17 +381,141 @@ export default function MilestoneList() {
     return r;
   }, [enriched, tab, q]);
 
+  /* ---------------- All milestones by agreement ---------------- */
+  const allMilestonesByAgreement = useMemo(() => {
+    const map = new Map();
+    for (const m of enriched) {
+      const agId = m._agId || "unknown";
+      if (!map.has(agId)) map.set(agId, []);
+      map.get(agId).push(m);
+    }
+    for (const [agId, list] of map.entries()) {
+      list.sort((a, b) => {
+        const da = toDateOnly(a._dueRaw)?.getTime() ?? 9e15;
+        const db = toDateOnly(b._dueRaw)?.getTime() ?? 9e15;
+        if (da !== db) return da - db;
+        return String(a.title || "").localeCompare(String(b.title || ""));
+      });
+      map.set(agId, list);
+    }
+    return map;
+  }, [enriched]);
+
+  /* ---------------- Matching set per agreement ---------------- */
+  const matchSetByAgreement = useMemo(() => {
+    const map = new Map();
+    for (const m of matchingMilestones) {
+      const agId = m._agId || "unknown";
+      if (!map.has(agId)) map.set(agId, new Set());
+      map.get(agId).add(String(m.id));
+    }
+    return map;
+  }, [matchingMilestones]);
+
+  /* ---------------- Agreement list ---------------- */
+  const agreementGroups = useMemo(() => {
+    const hasFiltering = tab !== "all" || q.trim().length > 0;
+    const agIds = hasFiltering ? Array.from(matchSetByAgreement.keys()) : Array.from(allMilestonesByAgreement.keys());
+
+    const out = agIds.map((agId) => {
+      const listAll = allMilestonesByAgreement.get(agId) || [];
+      const any = listAll[0] || {};
+      const ag = agreementsMap[String(agId)] || any._ag || {};
+
+      const agreementNumber = getAgreementNumber(any, ag, agId);
+      const projectTitle = getProjectTitle(any, ag) || "—";
+      const homeownerName = getHomeownerName(any, ag) || "—";
+      const matchCount = (matchSetByAgreement.get(agId) || new Set()).size;
+
+      return {
+        agId: String(agId),
+        ag,
+        agreementNumber,
+        projectTitle,
+        homeownerName,
+        matchCount,
+        allMilestones: listAll,
+      };
+    });
+
+    out.sort((a, b) => {
+      const an = Number(String(a.agId).replace(/[^\d]/g, "")) || 0;
+      const bn = Number(String(b.agId).replace(/[^\d]/g, "")) || 0;
+      return bn - an;
+    });
+
+    return out;
+  }, [tab, q, matchSetByAgreement, allMilestonesByAgreement, agreementsMap]);
+
+  /* ---------------- Auto-expand behavior ---------------- */
+  useEffect(() => {
+    if (!focusId) return;
+    if (loading) return;
+
+    const m = enriched.find((x) => String(x.id) === String(focusId));
+    if (!m?._agId) return;
+
+    setOpenAgreements((prev) => {
+      const next = new Set(prev);
+      next.add(String(m._agId));
+      return next;
+    });
+  }, [focusId, loading, enriched]);
+
+  useEffect(() => {
+    const isFiltering = tab !== "all" || q.trim().length > 0;
+    if (!isFiltering) return;
+
+    setOpenAgreements(() => {
+      const next = new Set();
+      for (const g of agreementGroups) next.add(String(g.agId));
+      return next;
+    });
+  }, [tab, q, agreementGroups]);
+
+  useEffect(() => {
+    if (!focusId) return;
+    if (loading) return;
+
+    const t = setTimeout(() => {
+      const el = document.getElementById(`mhb-milestone-row-${focusId}`);
+      if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
+
+    return () => clearTimeout(t);
+  }, [focusId, loading, openAgreements]);
+
   /* ---------------- Rules ---------------- */
   const canEditDelete = (m) => isAgreementDraft(m._ag);
 
-  const canComplete = (m) => {
-    if (!(isAgreementSigned(m._ag) && m._escrowFunded === true)) return false;
-    if (m.completed === true) return false;
-    if (m.is_invoiced === true) return false;
-    return true;
+  const getCompleteBlockReason = (m) => {
+    if (!m?._agId) return "Missing agreement id.";
+    if (m._fullySigned !== true) return "Agreement must be fully signed first.";
+    if (m._requiresEscrow && m._escrowFunded !== true) return "Escrow must be funded before completing milestones.";
+    if (m.completed === true) return "Already completed.";
+    if (m.is_invoiced === true || hasInvoiceLink(m)) return "Already invoiced.";
+    return "";
   };
 
-  const isCompletedNotInvoiced = (m) => m.completed === true && m.is_invoiced !== true;
+  const canComplete = (m) => getCompleteBlockReason(m) === "";
+
+  const isCompletedNotInvoiced = (m) => m.completed === true && !(m.is_invoiced === true || hasInvoiceLink(m));
+
+  const getInvoiceBlockReason = (m) => {
+    if (!m?._agId) return "Missing agreement id.";
+    if (m._requiresEscrow && m._escrowFunded !== true) return "Escrow must be funded before invoicing milestones.";
+    if (!(m.completed === true)) return "Milestone must be completed before invoicing.";
+    if (m.is_invoiced === true || hasInvoiceLink(m)) return "Already invoiced.";
+    return "";
+  };
+
+  const ensureEscrowOrRoute = (m, reason) => {
+    toast(reason);
+    if (!m?._agId) return;
+    if (m._requiresEscrow && m._escrowFunded !== true) {
+      navigate(`/app/agreements/${m._agId}/wizard?step=4`);
+    }
+  };
 
   /* ---------------- Actions ---------------- */
   const openEdit = (m) => {
@@ -387,35 +552,47 @@ export default function MilestoneList() {
 
   const uploadEvidenceFiles = async (milestoneId, files) => {
     if (!files?.length) return;
-
     for (const f of files) {
       const fd = new FormData();
       fd.append("milestone", milestoneId);
       fd.append("file", f, f.name);
-
-      await api.post(API.milestoneFiles, fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      await api.post(API.milestoneFiles, fd, { headers: { "Content-Type": "multipart/form-data" } });
     }
   };
 
   const submitComplete = async ({ id, notes, files }) => {
     if (!id) return;
 
-    markBusy(id, true);
+    const m = enriched.find((x) => String(x.id) === String(id));
+    if (m) {
+      const reason = getCompleteBlockReason(m);
+      if (reason) {
+        ensureEscrowOrRoute(m, reason);
+        return;
+      }
+    }
 
+    markBusy(id, true);
     try {
       await uploadEvidenceFiles(id, files || []);
       await api.post(API.completeToReview(id), { completion_notes: notes || "" });
-
       toast.success("Milestone submitted for review.");
       setDetailOpen(false);
       setDetailItem(null);
       await reload();
     } catch (err) {
       console.error(err);
+
+      const code = err?.response?.data?.code;
       const msg = err?.response?.data?.detail || "Could not submit milestone for review.";
       toast.error(msg);
+
+      // If backend enforces escrow/signature, route to correct place
+      if (code === "escrow_required" || String(msg).toLowerCase().includes("escrow")) {
+        const m2 = enriched.find((x) => String(x.id) === String(id));
+        if (m2?._agId) navigate(`/app/agreements/${m2._agId}/wizard?step=4`);
+      }
+
       await reload();
     } finally {
       markBusy(id, false);
@@ -425,6 +602,12 @@ export default function MilestoneList() {
   const createInvoiceAndGo = async (m) => {
     const milestoneId = m?.id;
     if (!milestoneId) return;
+
+    const reason = getInvoiceBlockReason(m);
+    if (reason) {
+      ensureEscrowOrRoute(m, reason);
+      return;
+    }
 
     markBusy(milestoneId, true);
     try {
@@ -441,14 +624,18 @@ export default function MilestoneList() {
       }
     } catch (e) {
       console.error(e);
+      const code = e?.response?.data?.code;
       const msg = e?.response?.data?.detail || "Unable to create invoice for this milestone.";
       toast.error(msg);
+
+      if (code === "escrow_required" || String(msg).toLowerCase().includes("escrow")) {
+        if (m?._agId) navigate(`/app/agreements/${m._agId}/wizard?step=4`);
+      }
     } finally {
       markBusy(milestoneId, false);
     }
   };
 
-  // ✅ Unified refund entry: opens the agreement refund modal with this milestone preselected
   const openRefundForMilestone = (m) => {
     const block = getRefundBlockReason(m);
     if (block) {
@@ -466,19 +653,40 @@ export default function MilestoneList() {
     setRefundOpen(true);
   };
 
+  const toggleAgreement = (agId) => {
+    setOpenAgreements((prev) => {
+      const next = new Set(prev);
+      const k = String(agId);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  };
+
+  const filterTabs = [
+    { key: "all", label: "All" },
+    { key: "late", label: "Late" },
+    { key: "incomplete", label: "Incomplete" },
+    { key: "complete_not_invoiced", label: "Completed (Not Invoiced)" },
+    { key: "invoiced", label: "Invoiced" },
+    { key: "paid", label: "Paid" },
+    { key: "rework", label: "Rework Work Orders" },
+  ];
+
+  // Common header cell classes (clean column separation)
+  const thBase =
+    "px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-slate-700 border-r border-slate-200 last:border-r-0";
+  const tdBase = "px-4 py-3 border-r border-slate-100 last:border-r-0";
+
+  // 🔑 Determines whether we should show ONLY matching rows inside expanded agreements
+  const isFiltering = tab !== "all" || q.trim().length > 0;
+
   return (
     <div className="p-4 md:p-6">
-      <div className="flex items-center justify-between mb-3 gap-3">
+      {/* Header: filters + search */}
+      <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
         <div className="flex flex-wrap gap-2">
-          {[
-            { key: "all", label: "All" },
-            { key: "late", label: "Late" },
-            { key: "incomplete", label: "Incomplete" },
-            { key: "complete_not_invoiced", label: "Completed (Not Invoiced)" },
-            { key: "invoiced", label: "Invoiced" },
-            { key: "paid", label: "Paid" },
-            { key: "rework", label: "Rework Work Orders" },
-          ].map((t) => (
+          {filterTabs.map((t) => (
             <button
               key={t.key}
               type="button"
@@ -494,12 +702,12 @@ export default function MilestoneList() {
           ))}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Search title, project, customer."
-            className="px-3 py-2 rounded border border-white/30 bg-white/90 text-gray-900 w-72"
+            className="px-3 py-2 rounded border border-white/30 bg-white/90 text-gray-900 w-72 max-w-full"
           />
           <button
             type="button"
@@ -511,228 +719,336 @@ export default function MilestoneList() {
         </div>
       </div>
 
-      <div className="rounded-lg overflow-hidden shadow border border-white/20 bg-white/70">
-        <table className="min-w-full text-sm">
-          <thead className="bg-white/60">
-            <tr>
-              <th className="text-left px-4 py-3">Title</th>
-              <th className="text-left px-4 py-3">Agreement #</th>
-              <th className="text-left px-4 py-3">Project</th>
-              <th className="text-left px-4 py-3">Customer</th>
-              <th className="text-left px-4 py-3">Due / Date</th>
-              <th className="text-right px-4 py-3">Amount</th>
-              <th className="text-left px-4 py-3">Status</th>
-              <th className="text-left px-4 py-3">Actions</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {loading ? (
-              <tr>
-                <td className="px-4 py-6 text-center text-gray-600" colSpan={8}>
-                  Loading milestones…
-                </td>
+      {/* Agreement-first table */}
+      <div className="rounded-xl overflow-hidden shadow border border-slate-200 bg-white">
+        <div className="overflow-x-auto">
+          <table className="min-w-[860px] w-full text-sm">
+            <thead className="bg-slate-100">
+              <tr className="border-b border-slate-200">
+                <th className={`${thBase} text-left w-[140px]`}>Agreement #</th>
+                <th className={`${thBase} text-left`}>Project</th>
+                <th className={`${thBase} text-left w-[200px]`}>Customer</th>
+                <th className={`${thBase} text-right w-[160px]`}>Agreement Total</th>
+                <th className={`${thBase} text-center w-[180px]`}>Matches</th>
+                <th className={`${thBase} text-center w-[90px]`}>Open</th>
               </tr>
-            ) : filtered.length === 0 ? (
-              <tr>
-                <td className="px-4 py-6 text-center text-gray-600" colSpan={8}>
-                  No milestones found.
-                </td>
-              </tr>
-            ) : (
-              filtered.map((m) => {
-                const allowED = canEditDelete(m);
-                const allowComplete = canComplete(m);
-                const isRowBusy = busy.has(m.id);
+            </thead>
 
-                // ✅ Status priority: Paid > Late > phase
-                const statusPill = m._phaseLabel === "Paid" ? "Paid" : m._late ? "Late" : m._phaseLabel;
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td className="px-4 py-6 text-center text-slate-600" colSpan={6}>
+                    Loading milestones…
+                  </td>
+                </tr>
+              ) : agreementGroups.length === 0 ? (
+                <tr>
+                  <td className="px-4 py-6 text-center text-slate-600" colSpan={6}>
+                    No milestones found.
+                  </td>
+                </tr>
+              ) : (
+                agreementGroups.map((g) => {
+                  const agId = String(g.agId);
+                  const isOpen = openAgreements.has(agId);
+                  const totalLabel = getAgreementTotal(g.ag, g.allMilestones);
 
-                const canRefund = canOpenRefundModalFromRow(m);
-                const refundReason = getRefundBlockReason(m);
+                  const agreementNum = g.agreementNumber ? `#${g.agreementNumber}` : `#${agId}`;
+                  const matchCount = Number(g.matchCount || 0);
 
-                return (
-                  <tr
-                    id={`mhb-milestone-row-${m.id}`}
-                    key={m.id}
-                    className={`odd:bg-white/50 even:bg-white/30 hover:bg-white cursor-pointer ${isRowBusy ? "opacity-70" : ""} ${
-                      focusId && String(m.id) === String(focusId) ? "ring-2 ring-amber-300" : ""
-                    }`}
-                    title="Click to view milestone details"
-                    onClick={() => {
-                      setDetailItem(m);
-                      setDetailOpen(true);
-                    }}
-                  >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium">{m.title}</span>
-                        {m.rework_origin_milestone_id ? (
-                          <div className="text-xs text-slate-600">
-                            Original milestone:{" "}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                navigate(`/app/milestones?focus=${m.rework_origin_milestone_id}`);
-                              }}
-                              className="font-extrabold text-blue-700 hover:underline"
-                              title="View the original disputed milestone"
-                            >
-                              #{m.rework_origin_milestone_id} — View
-                            </button>
-                          </div>
-                        ) : null}
-                        {m._late && statusPill !== "Paid" && (
-                          <span className="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700">late</span>
-                        )}
-                        {m._refunded && (
-                          <span className="px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">✅ refunded</span>
-                        )}
-                      </div>
-                    </td>
+                  // ✅ NEW: compute which milestones should be shown when expanded
+                  const matchSet = matchSetByAgreement.get(agId) || new Set();
+                  const milestonesToShow = isFiltering ? g.allMilestones.filter((m) => matchSet.has(String(m.id))) : g.allMilestones;
 
-                    <td className="px-4 py-3">#{m._agreementNumber || "-"}</td>
-                    <td className="px-4 py-3">{m._projectTitle || "—"}</td>
-                    <td className="px-4 py-3">{m._homeownerName || "—"}</td>
-                    <td className="px-4 py-3">{m._dueRaw || "—"}</td>
-                    <td className="px-4 py-3 text-right">{money(m.amount)}</td>
-
-                    <td className="px-4 py-3">
-                      <span
-                        className={`px-2 py-0.5 rounded text-xs ${
-                          statusPill === "Paid"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : statusPill === "Late"
-                            ? "bg-red-100 text-red-700"
-                            : statusPill === "Completed (Not Invoiced)"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : statusPill === "Invoiced"
-                            ? "bg-blue-100 text-blue-700"
-                            : "bg-gray-100 text-gray-700"
-                        }`}
+                  return (
+                    <React.Fragment key={`ag-${agId}`}>
+                      <tr
+                        className="odd:bg-white even:bg-slate-50 hover:bg-slate-100 cursor-pointer border-b border-slate-100"
+                        onClick={() => toggleAgreement(agId)}
+                        title="Click to expand / collapse milestones for this agreement"
                       >
-                        {statusPill}
-                      </span>
-                    </td>
+                        <td className={`${tdBase} font-extrabold text-slate-900 whitespace-nowrap`}>{agreementNum}</td>
 
-                    <td className="px-4 py-3">
-                      <div className="flex gap-2 flex-wrap">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDetailItem(m);
-                            setDetailOpen(true);
-                          }}
-                          className="px-3 py-2 text-xs rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold"
-                        >
-                          View
-                        </button>
+                        <td className={tdBase}>
+                          <div className="font-semibold text-slate-900">{g.projectTitle || "—"}</div>
+                        </td>
 
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (canRefund) openRefundForMilestone(m);
-                          }}
-                          disabled={!canRefund}
-                          className={`px-3 py-2 text-xs rounded-md border font-semibold ${
-                            canRefund
-                              ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
-                              : "border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed"
-                          }`}
-                          title={canRefund ? "Refund via agreement refund tool (preselected milestone)." : refundReason}
-                        >
-                          Refund
-                        </button>
+                        <td className={tdBase}>{g.homeownerName || "—"}</td>
 
-                        {allowComplete ? (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDetailItem(m);
-                              setDetailOpen(true);
-                            }}
-                            className="px-3 py-2 text-xs rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold"
-                            title="Complete → Review"
+                        <td className={`${tdBase} text-right font-extrabold text-slate-900`}>{totalLabel}</td>
+
+                        <td className={`${tdBase} text-center`}>
+                          <span
+                            className={`inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-extrabold ${
+                              matchCount > 0
+                                ? "bg-amber-100 text-amber-900 border border-amber-200"
+                                : "bg-slate-100 text-slate-700 border border-slate-200"
+                            }`}
                           >
-                            ✓ Complete
-                          </button>
-                        ) : isCompletedNotInvoiced(m) ? (
-                          <>
-                            <button
-                              type="button"
-                              disabled
-                              className="px-3 py-2 text-xs rounded-md border border-gray-200 bg-gray-100 text-gray-500 font-semibold cursor-default"
-                              title="Already completed"
-                            >
-                              ✓ Completed
-                            </button>
+                            {matchCount}
+                          </span>
+                        </td>
 
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                createInvoiceAndGo(m);
-                              }}
-                              className="px-3 py-2 text-xs rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-semibold"
-                              title="Create invoice for this completed milestone"
-                            >
-                              Invoice
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled
-                            className="px-3 py-2 text-xs rounded-md border border-gray-200 bg-gray-100 text-gray-400 font-semibold cursor-not-allowed"
-                            title="Not eligible to complete"
-                          >
-                            ✓ Complete
-                          </button>
-                        )}
+                        <td className={`${tdBase} text-center`}>
+                          <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-200 bg-white text-slate-700 font-extrabold shadow-sm">
+                            {isOpen ? "▾" : "▸"}
+                          </span>
+                        </td>
+                      </tr>
 
-                        {allowED ? (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openEdit(m);
-                            }}
-                            className="px-3 py-2 text-xs rounded-md border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 font-semibold"
-                          >
-                            Edit
-                          </button>
-                        ) : (
-                          <span className="text-xs text-gray-400 self-center">Edit (locked)</span>
-                        )}
+                      {isOpen ? (
+                        <tr className="bg-slate-50/60">
+                          <td colSpan={6} className="px-4 py-4">
+                            <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+                              <div className="overflow-x-auto">
+                                <table className="min-w-[900px] w-full text-sm">
+                                  <thead className="bg-slate-100">
+                                    <tr className="border-b border-slate-200">
+                                      <th className={`${thBase} text-left`}>Milestone Title</th>
+                                      <th className={`${thBase} text-left w-[140px]`}>Due</th>
+                                      <th className={`${thBase} text-left w-[160px]`}>Status</th>
+                                      <th className={`${thBase} text-right w-[140px]`}>Amount</th>
+                                      <th className={`${thBase} text-left w-[420px]`}>Actions</th>
+                                    </tr>
+                                  </thead>
 
-                        {allowED ? (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              removeItem(m);
-                            }}
-                            className="px-3 py-2 text-xs rounded-md border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 font-semibold"
-                          >
-                            Delete
-                          </button>
-                        ) : (
-                          <span className="text-xs text-gray-400 self-center">Delete (locked)</span>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+                                  <tbody>
+                                    {milestonesToShow.length === 0 ? (
+                                      <tr>
+                                        <td className="px-4 py-6 text-center text-slate-600" colSpan={5}>
+                                          No matching milestones for this agreement.
+                                        </td>
+                                      </tr>
+                                    ) : (
+                                      milestonesToShow.map((m) => {
+                                        const allowED = canEditDelete(m);
+                                        const allowComplete = canComplete(m);
+                                        const isRowBusy = busy.has(m.id);
+
+                                        const completeReason = getCompleteBlockReason(m);
+                                        const invoiceReason = getInvoiceBlockReason(m);
+
+                                        const statusPill = m._phaseLabel === "Paid" ? "Paid" : m._late ? "Late" : m._phaseLabel;
+
+                                        const canRefund = canOpenRefundModalFromRow(m);
+                                        const refundReason = getRefundBlockReason(m);
+
+                                        return (
+                                          <tr
+                                            id={`mhb-milestone-row-${m.id}`}
+                                            key={`m-${m.id}`}
+                                            className={[
+                                              "border-b border-slate-100 last:border-b-0",
+                                              "hover:bg-slate-100",
+                                              "odd:bg-white even:bg-slate-50",
+                                              isRowBusy ? "opacity-70" : "",
+                                              focusId && String(m.id) === String(focusId) ? "ring-2 ring-amber-300" : "",
+                                            ].join(" ")}
+                                            title="Click to view milestone details"
+                                            onClick={() => {
+                                              setDetailItem(m);
+                                              setDetailOpen(true);
+                                            }}
+                                          >
+                                            <td className={tdBase}>
+                                              <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="font-semibold text-slate-900">{m.title}</span>
+
+                                                {m.rework_origin_milestone_id ? (
+                                                  <div className="text-xs text-slate-600">
+                                                    Original milestone:{" "}
+                                                    <button
+                                                      type="button"
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        navigate(`/app/milestones?focus=${m.rework_origin_milestone_id}`);
+                                                      }}
+                                                      className="font-extrabold text-blue-700 hover:underline"
+                                                      title="View the original disputed milestone"
+                                                    >
+                                                      #{m.rework_origin_milestone_id} — View
+                                                    </button>
+                                                  </div>
+                                                ) : null}
+
+                                                {m._late && statusPill !== "Paid" && (
+                                                  <span className="px-2 py-0.5 rounded text-xs bg-red-100 text-red-700 border border-red-200">
+                                                    late
+                                                  </span>
+                                                )}
+                                                {m._refunded && (
+                                                  <span className="px-2 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700 border border-emerald-200">
+                                                    ✅ refunded
+                                                  </span>
+                                                )}
+                                              </div>
+
+                                              {/* Small agreement gates hint */}
+                                              <div className="mt-1 text-[11px] text-slate-500">
+                                                {m._paymentMode === "direct" ? "Direct Pay" : "Escrow"} •{" "}
+                                                {m._fullySigned ? "Fully signed" : "Not fully signed"}{" "}
+                                                {m._requiresEscrow ? `• ${m._escrowFunded ? "Escrow funded" : "Escrow NOT funded"}` : ""}
+                                              </div>
+                                            </td>
+
+                                            <td className={tdBase}>{m._dueRaw || "—"}</td>
+
+                                            <td className={tdBase}>
+                                              <span
+                                                className={`px-2 py-0.5 rounded text-xs border ${
+                                                  statusPill === "Paid"
+                                                    ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+                                                    : statusPill === "Late"
+                                                    ? "bg-red-100 text-red-700 border-red-200"
+                                                    : statusPill === "Completed (Not Invoiced)"
+                                                    ? "bg-emerald-100 text-emerald-700 border-emerald-200"
+                                                    : statusPill === "Invoiced"
+                                                    ? "bg-blue-100 text-blue-700 border-blue-200"
+                                                    : "bg-gray-100 text-gray-700 border-gray-200"
+                                                }`}
+                                              >
+                                                {statusPill}
+                                              </span>
+                                            </td>
+
+                                            <td className={`${tdBase} text-right font-extrabold text-slate-900`}>{money(m.amount)}</td>
+
+                                            <td className={tdBase}>
+                                              <div className="flex gap-2 flex-wrap">
+                                                <button
+                                                  type="button"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setDetailItem(m);
+                                                    setDetailOpen(true);
+                                                  }}
+                                                  className="px-3 py-2 text-xs rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold"
+                                                >
+                                                  View
+                                                </button>
+
+                                                <button
+                                                  type="button"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (canRefund) openRefundForMilestone(m);
+                                                  }}
+                                                  disabled={!canRefund}
+                                                  className={`px-3 py-2 text-xs rounded-md border font-semibold ${
+                                                    canRefund
+                                                      ? "border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+                                                      : "border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed"
+                                                  }`}
+                                                  title={canRefund ? "Refund via agreement refund tool (preselected milestone)." : refundReason}
+                                                >
+                                                  Refund
+                                                </button>
+
+                                                {allowComplete ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      // open detail; submit happens inside modal, but gating is enforced in submitComplete too
+                                                      setDetailItem(m);
+                                                      setDetailOpen(true);
+                                                    }}
+                                                    className="px-3 py-2 text-xs rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold"
+                                                    title="Complete → Review"
+                                                  >
+                                                    ✓ Complete
+                                                  </button>
+                                                ) : isCompletedNotInvoiced(m) ? (
+                                                  <>
+                                                    <button
+                                                      type="button"
+                                                      disabled
+                                                      className="px-3 py-2 text-xs rounded-md border border-gray-200 bg-gray-100 text-gray-500 font-semibold cursor-default"
+                                                      title="Already completed"
+                                                    >
+                                                      ✓ Completed
+                                                    </button>
+
+                                                    <button
+                                                      type="button"
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const reason = getInvoiceBlockReason(m);
+                                                        if (reason) {
+                                                          ensureEscrowOrRoute(m, reason);
+                                                          return;
+                                                        }
+                                                        createInvoiceAndGo(m);
+                                                      }}
+                                                      className="px-3 py-2 text-xs rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-semibold"
+                                                      title={invoiceReason || "Create invoice for this completed milestone"}
+                                                    >
+                                                      Invoice
+                                                    </button>
+                                                  </>
+                                                ) : (
+                                                  <button
+                                                    type="button"
+                                                    disabled
+                                                    className="px-3 py-2 text-xs rounded-md border border-gray-200 bg-gray-100 text-gray-400 font-semibold cursor-not-allowed"
+                                                    title={completeReason || "Not eligible to complete"}
+                                                  >
+                                                    ✓ Complete
+                                                  </button>
+                                                )}
+
+                                                {allowED ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      openEdit(m);
+                                                    }}
+                                                    className="px-3 py-2 text-xs rounded-md border border-gray-200 bg-white text-gray-800 hover:bg-gray-50 font-semibold"
+                                                  >
+                                                    Edit
+                                                  </button>
+                                                ) : (
+                                                  <span className="text-xs text-gray-400 self-center">Edit (locked)</span>
+                                                )}
+
+                                                {allowED ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      removeItem(m);
+                                                    }}
+                                                    className="px-3 py-2 text-xs rounded-md border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 font-semibold"
+                                                  >
+                                                    Delete
+                                                  </button>
+                                                ) : (
+                                                  <span className="text-xs text-gray-400 self-center">Delete (locked)</span>
+                                                )}
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        );
+                                      })
+                                    )}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : null}
+                    </React.Fragment>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
+      {/* Modals */}
       {editOpen && editItem && (
         <MilestoneEditModal
           open={editOpen}
@@ -759,6 +1075,21 @@ export default function MilestoneList() {
           open={detailOpen}
           milestone={detailItem}
           agreement={detailItem._ag}
+          // Optional: modal can show gate reasons if you wire it
+          completionGate={{
+            canComplete: (() => {
+              // safe compute from latest enriched object if possible
+              const live = enriched.find((x) => String(x.id) === String(detailItem.id));
+              return live ? canComplete(live) : canComplete(detailItem);
+            })(),
+            reason: (() => {
+              const live = enriched.find((x) => String(x.id) === String(detailItem.id));
+              return live ? getCompleteBlockReason(live) : getCompleteBlockReason(detailItem);
+            })(),
+            routeToEscrow: () => {
+              if (detailItem?._agId) navigate(`/app/agreements/${detailItem._agId}/wizard?step=4`);
+            },
+          }}
           onClose={() => {
             setDetailOpen(false);
             setDetailItem(null);

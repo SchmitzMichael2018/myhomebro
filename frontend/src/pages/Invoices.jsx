@@ -4,6 +4,10 @@
 // - Falls back to /invoices/ if needed
 // - Auto-create from milestone navigates to /app/invoices/:id (protected)
 // v2026-01-19 — NEW: supports ?filter=disputed to show ONLY disputed invoices
+// v2026-02-15 — ✅ Direct Pay aware:
+// - supports ?filter=direct (or direct_pay) to show ONLY Direct Pay invoices
+// - supports ?filter=escrow to show ONLY escrow invoices
+// Note: InvoiceList already renders Direct Pay actions (Create/Copy Link) when payment_mode is direct.
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -45,8 +49,34 @@ async function createInvoiceForMilestone({ milestoneId, agreementId }) {
 }
 
 function isDisputedInvoice(inv) {
-  const s = String(inv?.display_status ?? inv?.status_label ?? inv?.status ?? "").toLowerCase();
+  const s = String(
+    inv?.display_status ?? inv?.status_label ?? inv?.status ?? ""
+  ).toLowerCase();
   return s.includes("dispute");
+}
+
+function isDirectPayInvoice(inv) {
+  const mode =
+    inv?.agreement?.payment_mode ??
+    inv?.agreement?.paymentMode ??
+    inv?.payment_mode ??
+    inv?.paymentMode ??
+    inv?.agreement_payment_mode ??
+    "";
+  return String(mode || "").toLowerCase().includes("direct");
+}
+
+function isEscrowInvoice(inv) {
+  const mode =
+    inv?.agreement?.payment_mode ??
+    inv?.agreement?.paymentMode ??
+    inv?.payment_mode ??
+    inv?.paymentMode ??
+    inv?.agreement_payment_mode ??
+    "";
+  const s = String(mode || "").toLowerCase();
+  if (!s) return true; // default to escrow when missing
+  return s.includes("escrow") || !s.includes("direct");
 }
 
 export default function Invoices() {
@@ -56,12 +86,15 @@ export default function Invoices() {
   const milestoneId = query.get("milestone");
   const agreementId = query.get("agreement");
 
-  // ✅ NEW: filter=disputed support
+  // filter support
   const filterKey = query.get("filter") || "";
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [autoCreateState, setAutoCreateState] = useState({ running: false, error: "" });
+  const [autoCreateState, setAutoCreateState] = useState({
+    running: false,
+    error: "",
+  });
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
@@ -131,17 +164,42 @@ export default function Invoices() {
     });
   }, [items, milestoneId]);
 
-  // ✅ NEW: disputed scope (applies when filter=disputed and no milestone auto-scope)
+  // Filter support (applies when no milestone auto-scope)
   const finalInvoices = useMemo(() => {
     // If milestone scope is active, keep that behavior exactly.
     if (milestoneId) return scopedInvoices;
 
-    if (String(filterKey).toLowerCase() === "disputed") {
+    const fk = String(filterKey || "").toLowerCase();
+
+    if (fk === "disputed") {
       return items.filter(isDisputedInvoice);
+    }
+
+    if (fk === "direct" || fk === "direct_pay" || fk === "directpay") {
+      return items.filter(isDirectPayInvoice);
+    }
+
+    if (fk === "escrow") {
+      return items.filter(isEscrowInvoice);
     }
 
     return items;
   }, [items, filterKey, milestoneId, scopedInvoices]);
+
+  const filterBanner = useMemo(() => {
+    const fk = String(filterKey || "").toLowerCase();
+    if (milestoneId) return null;
+    if (fk === "disputed") {
+      return { title: "Filtered: Disputed Invoices", text: "Showing only invoices currently in dispute." };
+    }
+    if (fk === "direct" || fk === "direct_pay" || fk === "directpay") {
+      return { title: "Filtered: Direct Pay Invoices", text: "Showing only invoices for Direct Pay agreements." };
+    }
+    if (fk === "escrow") {
+      return { title: "Filtered: Escrow Invoices", text: "Showing only invoices for Escrow (Protected) agreements." };
+    }
+    return null;
+  }, [filterKey, milestoneId]);
 
   return (
     <div className="p-0">
@@ -155,6 +213,13 @@ export default function Invoices() {
               ? `Auto-create failed: ${autoCreateState.error}`
               : "If an invoice already exists, it will appear below."}
           </div>
+        </div>
+      )}
+
+      {filterBanner && (
+        <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 p-4">
+          <div className="font-semibold">{filterBanner.title}</div>
+          <div className="text-sm mt-1 opacity-90">{filterBanner.text}</div>
         </div>
       )}
 

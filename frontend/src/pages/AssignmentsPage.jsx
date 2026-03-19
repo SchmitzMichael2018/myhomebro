@@ -1,6 +1,7 @@
 // frontend/src/pages/AssignmentsPage.jsx
 // v2026-01-09 — Assignments Option A (ROW DENSITY UPDATE)
 // Goal: compact row layout so it scales cleanly to 10+ agreements (no big blocks)
+// v2026-02-09 — remove "UI v2026-01-09 (Row Density)" label
 
 import React, { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
@@ -390,10 +391,10 @@ export default function AssignmentsPage() {
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold">Assignments</h1>
-          <div className="text-sm text-gray-500">
+          <div className="mhb-helper-text mt-4">
             Compact rows + milestone drawer. Overlaps can be enforced later; this UI is designed to scale.
           </div>
-          <div className="text-xs text-gray-400 mt-1">UI v2026-01-09 (Row Density)</div>
+          {/* ✅ Removed: UI v2026-01-09 (Row Density) */}
         </div>
 
         <Btn tone="secondary" onClick={loadAll} disabled={busy || loading} title="Reload">
@@ -523,9 +524,7 @@ export default function AssignmentsPage() {
                       </Btn>
                     </div>
 
-                    <div className="text-[11px] text-gray-400 text-right">
-                      Use drawer for milestone overrides.
-                    </div>
+                    <div className="mhb-helper-text">Use drawer for milestone overrides.</div>
                   </div>
                 </div>
               );

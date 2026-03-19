@@ -1,34 +1,23 @@
 // frontend/src/components/Step4Finalize.jsx
-// v2026-01-30 — Step4 clarifications carry-forward + de-duplication + hide empty optional fields
-//
-// Fixes in this version:
-// 1) Yellow “Assumptions/Responsibilities” fields now ALWAYS render in Step 4
-//    (even if they’re saved outside agreement.ai_scope).
-// 2) Step 4 de-duplicates overlapping meanings (e.g., Permits Inspections vs Permits vs Permit Notes).
-// 3) ClarificationsModal can now edit ALL clarification fields (no longer hides the yellow keys).
-// 4) Bug fix: Step4 now maintains a local agreement state so ClarificationsModal onSaved can update UI.
-//
-// Notes:
-// - This is a full file replacement.
-// - It preserves your current UX (rework banner, dispute summary, funding preview, signatures, etc.).
+// v2026-03-15-step4-dedupe-clarifications-cleanup
+// Changes:
+// - Dedupe clarification rows by canonical concept
+// - Hide internal/system-only clarification keys
+// - Collapse legacy Step 2 alias keys (materials, permits, measurements, allowances)
+// - Improve clarification label/value formatting
+// - Prevent duplicate/repeat clarification cards in Step 4 summary
 
-import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import api from "../api";
 import toast from "react-hot-toast";
+import Modal from "react-modal";
 import SignatureModal from "./SignatureModal";
 import SendFundingLinkButton from "./SendFundingLinkButton";
 import ClarificationsModal from "./ClarificationsModal";
 
-function toDateOnly(v) {
-  if (!v) return "";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return "";
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${mm}-${dd}`;
-}
+Modal.setAppElement("#root");
+
+/* ---------- helpers ---------- */
 
 function formatPhone(phoneStr) {
   if (!phoneStr) return "—";
@@ -53,7 +42,6 @@ function buildCityStateZip(city, state, postal) {
   const cityClean = (city || "").trim();
   const stateClean = (state || "").trim();
   const postalClean = (postal || "").trim();
-
   const cs = [cityClean, stateClean].filter(Boolean).join(", ");
   const tail = [cs, postalClean].filter(Boolean).join(" ");
   return tail.trim();
@@ -64,37 +52,22 @@ function getHomeownerAddressFromAgreement(agreement, homeownerObj) {
   const a = agreement;
 
   const snapSingle =
-    (typeof a.homeowner_address_snapshot === "string" &&
-      a.homeowner_address_snapshot.trim()) ||
-    (typeof a.homeowner_address_text === "string" &&
-      a.homeowner_address_text.trim());
+    (typeof a.homeowner_address_snapshot === "string" && a.homeowner_address_snapshot.trim()) ||
+    (typeof a.homeowner_address_text === "string" && a.homeowner_address_text.trim());
 
-  if (snapSingle) {
-    return snapSingle;
-  }
+  if (snapSingle) return snapSingle;
 
   const ho =
-    homeownerObj ||
-    (typeof a.homeowner === "object" ? a.homeowner : null) ||
-    null;
+    homeownerObj || (typeof a.homeowner === "object" ? a.homeowner : null) || null;
+
   if (ho && typeof ho === "object") {
     const hoLine1 =
-      (ho.address_line1 ||
-        ho.address1 ||
-        ho.street_address ||
-        ho.address ||
-        "").trim();
+      (ho.address_line1 || ho.address1 || ho.street_address || ho.address || "").trim();
     const hoLine2 =
-      (ho.address_line2 ||
-        ho.address2 ||
-        ho.unit ||
-        ho.apt ||
-        ho.suite ||
-        "").trim();
+      (ho.address_line2 || ho.address2 || ho.unit || ho.apt || ho.suite || "").trim();
     const hoCity = (ho.city || "").trim();
     const hoState = (ho.state || ho.region || ho.state_code || "").trim();
-    const hoPostal =
-      (ho.zip_code || ho.zip || ho.postal_code || ho.postcode || "").trim();
+    const hoPostal = (ho.zip_code || ho.zip || ho.postal_code || ho.postcode || "").trim();
 
     const hoLines = [];
     if (hoLine1) hoLines.push(hoLine1);
@@ -115,20 +88,17 @@ function getProjectAddressFromAgreement(agreement) {
   if (!agreement) return "—";
   const a = agreement;
 
-  const line1 = (a.project_address_line1 || "").trim();
-  const line2 = (a.project_address_line2 || "").trim();
-  const city = (a.project_address_city || "").trim();
-  const state = (a.project_address_state || "").trim();
-  const postal = (a.project_postal_code || "").trim();
+  const line1 = (a.project_address_line1 || a.address_line1 || "").trim();
+  const line2 = (a.project_address_line2 || a.address_line2 || "").trim();
+  const city = (a.project_address_city || a.address_city || "").trim();
+  const state = (a.project_address_state || a.address_state || "").trim();
+  const postal = (a.project_postal_code || a.address_postal_code || "").trim();
 
-  if (!line1 && !line2 && !city && !state && !postal) {
-    return "—";
-  }
+  if (!line1 && !line2 && !city && !state && !postal) return "—";
 
   const parts = [];
   if (line1) parts.push(line1);
   if (line2) parts.push(line2);
-
   const lastLine = buildCityStateZip(city, state, postal);
   if (lastLine) parts.push(lastLine);
 
@@ -136,22 +106,6 @@ function getProjectAddressFromAgreement(agreement) {
 }
 
 const norm = (s) => (s || "").toString().toLowerCase();
-
-function looksLikeReworkMilestone(m) {
-  if (!m) return false;
-  if (m.is_rework === true || m.rework === true) return true;
-  if (m.rework_of_dispute || m.rework_of_dispute_id) return true;
-  if (m.dispute_id && norm(m.title).includes("rework")) return true;
-
-  const t = norm(m.title);
-  if (!t) return false;
-  if (t.startsWith("rework")) return true;
-  if (t.includes("rework — dispute") || t.includes("rework - dispute"))
-    return true;
-  if (t.includes("rework") && t.includes("dispute")) return true;
-
-  return false;
-}
 
 function formatDisputeSummary(agreement, displayMilestones) {
   const a = agreement || {};
@@ -174,8 +128,6 @@ function formatDisputeSummary(agreement, displayMilestones) {
     a.dispute?.state ||
     a.latest_dispute?.status ||
     a.latest_dispute?.state ||
-    a.dispute?.display_status ||
-    a.latest_dispute?.display_status ||
     "";
 
   const rawDisplay =
@@ -225,222 +177,370 @@ function formatDisputeSummary(agreement, displayMilestones) {
   return pieces.join(" — ");
 }
 
-/**
- * Normalize "Assumptions/Responsibilities" (the yellow fields) for Step 4 display.
- * We intentionally pull from BOTH:
- * - agreement.ai_scope.answers (if present)
- * - top-level agreement fields (if your backend stores them there)
- * And we de-duplicate values so you don’t see: Permits Inspections = X, Permits = X, Permit Notes = X.
- */
-function normalizeAssumptions(a) {
-  if (!a) return null;
-
-  const answers = (a.ai_scope && a.ai_scope.answers) || {};
-
-  const pick = (...vals) => {
-    for (const v of vals) {
-      if (v === null || v === undefined) continue;
-      if (typeof v === "string" && v.trim() === "") continue;
-      return v;
-    }
-    return "";
-  };
-
-  const toBool = (v) => {
-    if (v === true) return true;
-    if (v === false) return false;
-    if (v === "true") return true;
-    if (v === "false") return false;
-    if (typeof v === "string") {
-      const s = v.trim().toLowerCase();
-      if (s === "yes" || s === "y") return true;
-      if (s === "no" || s === "n") return false;
-    }
-    return !!v;
-  };
-
-  // Materials responsibility
-  const whoPurchasesMaterials = pick(
-    answers.who_purchases_materials,
-    answers.materials_purchasing,
-    answers.materials_responsibility,
-    a.who_purchases_materials,
-    a.materials_purchasing,
-    a.materials_responsibility
-  );
-
-  // Measurements
-  const measurementsNeededRaw = pick(
-    answers.measurements_needed,
-    answers.measurementsRequired,
-    a.measurements_needed,
-    a.measurementsRequired
-  );
-  const measurementsNeeded = toBool(measurementsNeededRaw);
-
-  const measurementDetails = pick(
-    answers.measurement_notes,
-    answers.measurements_notes,
-    answers.measurementDetails,
-    a.measurement_notes,
-    a.measurements_notes,
-    a.measurementDetails
-  );
-
-  // Permits
-  const permitsValue = pick(
-    answers.permits_inspections,
-    answers.permits,
-    answers.permit_acquisition,
-    a.permits_inspections,
-    a.permits,
-    a.permit_acquisition
-  );
-
-  const permitDetailsRaw = pick(
-    answers.permit_notes,
-    answers.permits_notes,
-    answers.permitDetails,
-    a.permit_notes,
-    a.permits_notes,
-    a.permitDetails
-  );
-
-  // Allowances
-  const allowancesValue = pick(
-    answers.allowances_selections,
-    answers.allowances,
-    answers.allowance_selections,
-    a.allowances_selections,
-    a.allowances,
-    a.allowance_selections
-  );
-
-  const allowanceRulesRaw = pick(
-    answers.allowance_notes,
-    answers.allowances_notes,
-    answers.allowanceRules,
-    a.allowance_notes,
-    a.allowances_notes,
-    a.allowanceRules
-  );
-
-  // De-duplication: if "details" equals the main value, hide the details.
-  const dedupe = (main, details) => {
-    const m = (main || "").toString().trim();
-    const d = (details || "").toString().trim();
-    if (!d) return "";
-    if (!m) return d;
-    if (m.toLowerCase() === d.toLowerCase()) return "";
-    return d;
-  };
-
-  const permitDetails = dedupe(permitsValue, permitDetailsRaw);
-  const allowanceRules = dedupe(allowancesValue, allowanceRulesRaw);
-
-  // Determine if we should render the block (any signal at all)
-  const hasAny =
-    !!whoPurchasesMaterials ||
-    !!measurementDetails ||
-    !!permitsValue ||
-    !!permitDetails ||
-    !!allowancesValue ||
-    !!allowanceRules ||
-    measurementsNeeded === true; // show if explicitly needed
-
-  return {
-    hasAny,
-    whoPurchasesMaterials: whoPurchasesMaterials ? String(whoPurchasesMaterials) : "",
-    measurementsNeeded,
-    measurementDetails: measurementDetails ? String(measurementDetails) : "",
-    permitsValue: permitsValue ? String(permitsValue) : "",
-    permitDetails: permitDetails ? String(permitDetails) : "",
-    allowancesValue: allowancesValue ? String(allowancesValue) : "",
-    allowanceRules: allowanceRules ? String(allowanceRules) : "",
-  };
+function parseMoneyNumber(v) {
+  if (v === null || v === undefined) return NaN;
+  if (typeof v === "number") return v;
+  const s = String(v).trim().replace(/,/g, "");
+  if (!s) return NaN;
+  const n = Number(s);
+  if (!Number.isFinite(n)) return NaN;
+  return n;
 }
 
-function hasText(v) {
-  if (v === null || v === undefined) return false;
-  const s = String(v).trim();
-  if (!s) return false;
-  if (s === "—") return false;
+function firstInvalidMilestoneAmount(arr) {
+  const list = Array.isArray(arr) ? arr : [];
+  for (let i = 0; i < list.length; i++) {
+    const m = list[i] || {};
+    const amt = parseMoneyNumber(m.amount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      return { idx: i, milestone: m, amount: amt };
+    }
+  }
+  return null;
+}
+
+function normalizeRequireBool(v, defaultValue = true) {
+  if (v === true) return true;
+  if (v === false) return false;
+  if (v === 1) return true;
+  if (v === 0) return false;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    if (s === "true" || s === "yes" || s === "1") return true;
+    if (s === "false" || s === "no" || s === "0") return false;
+  }
+  return defaultValue;
+}
+
+function normalizePaymentMode(v) {
+  const raw = v == null ? "" : String(v);
+  const s = raw.trim().toLowerCase();
+  if (!s) return "";
+  if (s.includes("direct")) return "direct";
+  if (s.includes("escrow")) return "escrow";
+  return "";
+}
+
+function formatMoney(v) {
+  return `$${Number(v || 0).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+function sumMilestones(milestones) {
+  const arr = Array.isArray(milestones) ? milestones : [];
+  return arr.reduce((sum, m) => sum + Number(m?.amount || 0), 0);
+}
+
+function formatMilestoneDate(m) {
+  const raw = m?.due_date || m?.dueDate || m?.target_date || m?.date || m?.scheduled_for;
+  if (!raw) return "—";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString();
+}
+
+function mergeAgreement(prev, next, fallbackId) {
+  const p = prev && typeof prev === "object" ? prev : {};
+  const n = next && typeof next === "object" ? next : {};
+  const id = n.id ?? n.agreement_id ?? n.pk ?? p.id ?? p.agreement_id ?? p.pk ?? fallbackId ?? null;
+
+  const merged = { ...p, ...n };
+  if (id) merged.id = id;
+  if (merged.agreement_id == null && id) merged.agreement_id = id;
+
+  if (!Object.prototype.hasOwnProperty.call(n, "payment_mode") && Object.prototype.hasOwnProperty.call(p, "payment_mode")) {
+    merged.payment_mode = p.payment_mode;
+  }
+  if (!Object.prototype.hasOwnProperty.call(n, "paymentMode") && Object.prototype.hasOwnProperty.call(p, "paymentMode")) {
+    merged.paymentMode = p.paymentMode;
+  }
+
+  const keepKeys = [
+    "require_contractor_signature",
+    "require_customer_signature",
+    "contractor_signed",
+    "contractor_signed_at",
+    "homeowner_signed",
+    "homeowner_signed_at",
+    "signed_by_contractor",
+    "signed_by_homeowner",
+    "homeowner_signature_name",
+    "contractor_signature_name",
+    "signed_at_contractor",
+    "signed_at_homeowner",
+    "homeowner_signed_ip",
+    "contractor_signed_ip",
+  ];
+  for (const k of keepKeys) {
+    if (!Object.prototype.hasOwnProperty.call(n, k) && Object.prototype.hasOwnProperty.call(p, k)) {
+      merged[k] = p[k];
+    }
+  }
+
+  return merged;
+}
+
+function safeArray(v) {
+  return Array.isArray(v) ? v : [];
+}
+
+function safeObject(v) {
+  return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+}
+
+function isAnsweredClarificationValue(value) {
+  if (value === false) return true;
+  if (value === 0) return true;
+  if (value == null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.keys(value).length > 0;
   return true;
 }
 
+function prettifyClarificationValue(value) {
+  if (value === true) return "Yes";
+  if (value === false) return "No";
+  if (value == null) return "—";
 
-function isAnsweredValue(v) {
-  // IMPORTANT: boolean false is a valid "answered" value (explicit No).
-  if (v === false) return true;
-  if (v === 0) return true;
-  if (v === null || v === undefined) return false;
-  if (typeof v === "string") return v.trim() !== "";
-  return true;
+  if (Array.isArray(value)) {
+    if (!value.length) return "—";
+    return value
+      .map((item) => {
+        if (item == null) return "";
+        if (typeof item === "string" || typeof item === "number" || typeof item === "boolean") {
+          return String(item);
+        }
+        if (typeof item === "object") {
+          return (
+            item.label ||
+            item.name ||
+            item.value ||
+            item.title ||
+            JSON.stringify(item)
+          );
+        }
+        return String(item);
+      })
+      .filter(Boolean)
+      .join(", ");
+  }
+
+  if (typeof value === "object") {
+    if ("label" in value && value.label) return String(value.label);
+    if ("name" in value && value.name) return String(value.name);
+    if ("value" in value && value.value != null) return String(value.value);
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return String(value);
+    }
+  }
+
+  const s = String(value).trim();
+  return s || "—";
 }
 
-function resolveClarificationAnswer(a, key) {
-  // Prefer direct match, then fall back to canonical assumptions/responsibilities.
-  const answers = (a?.ai_scope && a.ai_scope.answers) ? a.ai_scope.answers : {};
-  const direct = answers ? answers[key] : undefined;
-  if (isAnsweredValue(direct)) return direct;
+function prettifyLabelFromKey(key) {
+  const raw = String(key || "").trim();
+  if (!raw) return "Clarification";
 
-  const assumptions = normalizeAssumptions(a) || {};
-  const nk = String(key || "").toLowerCase();
+  const friendlyOverrides = {
+    who_purchases_materials: "Who will purchase materials?",
+    materials_purchasing: "Who will purchase materials?",
+    materials_responsibility: "Who will purchase materials?",
+    measurements_needed: "Are measurements needed?",
+    measurement_notes: "Measurement notes",
+    measurements_notes: "Measurement notes",
+    permit_acquisition: "Who is responsible for permits?",
+    permits_inspections: "Permits / inspections",
+    permits: "Permits / inspections",
+    permit_notes: "Permit notes",
+    allowances_selections: "Allowances / selections",
+    allowance_notes: "Allowances / selections",
+    unforeseen_conditions_change_orders: "Unforeseen conditions / change orders",
+    material_delivery_coordination: "Material delivery coordination",
+    waste_debris_removal: "Waste / debris removal",
+    clarifications_reviewed_step2: "Clarifications reviewed",
+    clarifications_reviewed: "Clarifications reviewed",
+  };
 
-  // Materials responsibility synonyms
-  if (nk.includes("material") && (nk.includes("purchas") || nk.includes("buy") || nk.includes("respons"))) {
-    const v = assumptions.whoPurchasesMaterials;
-    return isAnsweredValue(v) ? v : direct;
-  }
+  if (friendlyOverrides[raw]) return friendlyOverrides[raw];
 
-  // Measurements synonyms
-  if (nk.includes("measure")) {
-    if (nk.includes("note") || nk.includes("detail") || nk.includes("clarif")) {
-      const v = assumptions.measurementDetails;
-      return isAnsweredValue(v) ? v : direct;
-    }
-    // boolean
-    if (typeof assumptions.measurementsNeeded === "boolean") return assumptions.measurementsNeeded;
-    return direct;
-  }
+  return raw
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
 
-  // Permits synonyms
-  if (nk.includes("permit")) {
-    if (nk.includes("note") || nk.includes("detail")) {
-      const v = assumptions.permitDetails;
-      return isAnsweredValue(v) ? v : direct;
-    }
-    const v = assumptions.permitsValue;
-    return isAnsweredValue(v) ? v : direct;
-  }
-
-  // Allowances synonyms
-  if (nk.includes("allow")) {
-    if (nk.includes("rule") || nk.includes("note") || nk.includes("detail") || nk.includes("select")) {
-      const v = assumptions.allowanceRules;
-      return isAnsweredValue(v) ? v : direct;
-    }
-    const v = assumptions.allowancesValue;
-    return isAnsweredValue(v) ? v : direct;
-  }
-
-  // Last resort: normalized key match
-  try {
-    const target = nk.replace(/[^a-z0-9_]/g, "");
-    for (const ak of Object.keys(answers || {})) {
-      const nak = String(ak).toLowerCase();
-      if (nak === nk || nak.replace(/[^a-z0-9_]/g, "") === target) {
-        const v = answers[ak];
-        if (isAnsweredValue(v)) return v;
+function normalizeQuestionOptions(options) {
+  const arr = safeArray(options);
+  return arr
+    .map((opt) => {
+      if (opt == null) return "";
+      if (typeof opt === "string" || typeof opt === "number" || typeof opt === "boolean") {
+        return String(opt);
       }
-    }
-  } catch (e) {
-    // ignore
-  }
-
-  return direct;
+      if (typeof opt === "object") {
+        return String(opt.label || opt.name || opt.value || opt.title || "").trim();
+      }
+      return "";
+    })
+    .filter(Boolean);
 }
 
+function normalizeClarificationKey(rawKey) {
+  const key = String(rawKey || "").trim().toLowerCase();
+  if (!key) return "";
+
+  const aliasMap = {
+    who_purchases_materials: "materials_responsibility",
+    materials_purchasing: "materials_responsibility",
+    materials_responsibility: "materials_responsibility",
+
+    measurements_needed: "measurements_needed",
+    measurement_notes: "measurement_notes",
+    measurements_notes: "measurement_notes",
+
+    permit_acquisition: "permit_acquisition",
+    permits_inspections: "permit_acquisition",
+    permits: "permit_acquisition",
+    permit_notes: "permit_acquisition",
+
+    allowances_selections: "allowances_selections",
+    allowance_notes: "allowances_selections",
+
+    clarifications_reviewed_step2: "__internal__clarifications_reviewed",
+    clarifications_reviewed: "__internal__clarifications_reviewed",
+  };
+
+  return aliasMap[key] || key;
+}
+
+function isInternalClarificationKey(rawKey) {
+  const canonical = normalizeClarificationKey(rawKey);
+  if (!canonical) return true;
+  if (canonical.startsWith("__internal__")) return true;
+
+  const hiddenKeys = new Set([
+    "clarifications_reviewed_step2",
+    "clarifications_reviewed",
+  ]);
+
+  return hiddenKeys.has(String(rawKey || "").trim().toLowerCase());
+}
+
+function normalizeClarificationQuestions(aiScope) {
+  const questions = safeArray(aiScope?.questions);
+  const byKey = new Map();
+
+  questions.forEach((q, idx) => {
+    const rawKey = String(q?.key || "").trim();
+    if (!rawKey) return;
+
+    if (isInternalClarificationKey(rawKey)) return;
+
+    const canonicalKey = normalizeClarificationKey(rawKey);
+    if (!canonicalKey) return;
+
+    const normalized = {
+      key: canonicalKey,
+      rawKey,
+      label: String(q?.label || prettifyLabelFromKey(canonicalKey) || `Question ${idx + 1}`).trim(),
+      help: String(q?.help || "").trim(),
+      type: String(q?.type || "text").trim(),
+      required: !!q?.required,
+      options: normalizeQuestionOptions(q?.options),
+    };
+
+    const prev = byKey.get(canonicalKey);
+    if (!prev) {
+      byKey.set(canonicalKey, normalized);
+      return;
+    }
+
+    const nextScore =
+      (normalized.required ? 5 : 0) +
+      (normalized.help ? 2 : 0) +
+      (normalized.options.length ? 2 : 0) +
+      (normalized.label ? 1 : 0);
+
+    const prevScore =
+      (prev.required ? 5 : 0) +
+      (prev.help ? 2 : 0) +
+      (prev.options.length ? 2 : 0) +
+      (prev.label ? 1 : 0);
+
+    if (nextScore > prevScore) {
+      byKey.set(canonicalKey, normalized);
+    }
+  });
+
+  return Array.from(byKey.values());
+}
+
+function normalizeClarificationRows(aiScope) {
+  const answers = safeObject(aiScope?.answers);
+  const questions = normalizeClarificationQuestions(aiScope);
+
+  const questionMap = new Map();
+  questions.forEach((q) => questionMap.set(q.key, q));
+
+  const groupedAnswers = new Map();
+
+  Object.entries(answers).forEach(([rawKey, value]) => {
+    if (isInternalClarificationKey(rawKey)) return;
+
+    const canonicalKey = normalizeClarificationKey(rawKey);
+    if (!canonicalKey) return;
+
+    const prev = groupedAnswers.get(canonicalKey);
+
+    const nextAnswered = isAnsweredClarificationValue(value);
+    const prevAnswered = prev ? isAnsweredClarificationValue(prev.value) : false;
+
+    if (!prev) {
+      groupedAnswers.set(canonicalKey, { rawKey, value });
+      return;
+    }
+
+    if (!prevAnswered && nextAnswered) {
+      groupedAnswers.set(canonicalKey, { rawKey, value });
+      return;
+    }
+
+    if (!prevAnswered && !nextAnswered) {
+      groupedAnswers.set(canonicalKey, { rawKey, value });
+    }
+  });
+
+  const keys = new Set([
+    ...questions.map((q) => q.key),
+    ...Array.from(groupedAnswers.keys()),
+  ]);
+
+  return Array.from(keys).map((key) => {
+    const q = questionMap.get(key);
+    const answerEntry = groupedAnswers.get(key);
+    const value = answerEntry?.value;
+
+    return {
+      key,
+      rawKey: answerEntry?.rawKey || q?.rawKey || key,
+      label: q?.label || prettifyLabelFromKey(key),
+      help: q?.help || "",
+      type: q?.type || "text",
+      required: !!q?.required,
+      options: q?.options || [],
+      value,
+      answered: isAnsweredClarificationValue(value),
+      displayValue: prettifyClarificationValue(value),
+    };
+  });
+}
+
+/* ---------------- component ---------------- */
 
 export default function Step4Finalize({
   agreement: agreementProp,
@@ -470,95 +570,159 @@ export default function Step4Finalize({
   goBack,
   isEdit,
   unsignContractor,
+  onAgreementUpdated,
+  refreshAgreement: refreshAgreementProp,
 }) {
-  const navigate = useNavigate();
-
-  // ✅ Local agreement state so modal saves reflect immediately in Step 4
   const [agreement, setAgreement] = useState(agreementProp || null);
+  const [showAllClarifications, setShowAllClarifications] = useState(false);
+
   useEffect(() => {
-    setAgreement(agreementProp || null);
-  }, [agreementProp]);
+    setAgreement((prev) => mergeAgreement(prev, agreementProp || null, id));
+  }, [agreementProp, id]);
 
-  const [loadingHomeowner, setLoadingHomeowner] = useState(false);
+  const agreementId = useMemo(() => {
+    const a = agreement || {};
+    return a.id || a.agreement_id || a.pk || id || null;
+  }, [agreement, id]);
+
+  const syncUp = (nextAgreement) => {
+    if (typeof onAgreementUpdated === "function" && nextAgreement && typeof nextAgreement === "object") {
+      onAgreementUpdated(nextAgreement);
+    }
+  };
+
+  const setAgreementAndSync = (updater) => {
+    setAgreement((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      const merged = mergeAgreement(prev, next, agreementId);
+      syncUp(merged);
+      return merged;
+    });
+  };
+
+  const patchingRef = useRef(false);
+  const patchAgreement = async (fields) => {
+    if (!agreementId) return { ok: false, data: null };
+    if (!fields || Object.keys(fields).length === 0) return { ok: false, data: null };
+    if (patchingRef.current) return { ok: false, data: null };
+    patchingRef.current = true;
+    try {
+      const { data } = await api.patch(`/projects/agreements/${agreementId}/`, fields);
+      if (data) setAgreementAndSync((prev) => mergeAgreement(prev, data, agreementId));
+      return { ok: true, data: data || null };
+    } catch (err) {
+      const msg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.error ||
+        "Unable to save changes.";
+      toast.error(msg);
+      return { ok: false, data: null };
+    } finally {
+      patchingRef.current = false;
+    }
+  };
+
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewErr, setPreviewErr] = useState("");
+  const [pdfBlobUrl, setPdfBlobUrl] = useState("");
+  const [pdfFilename, setPdfFilename] = useState("");
+  const [localHasPreviewed, setLocalHasPreviewed] = useState(!!hasPreviewed);
+
+  useEffect(() => {
+    setLocalHasPreviewed(!!hasPreviewed);
+  }, [hasPreviewed]);
+
+  useEffect(() => {
+    const maybe =
+      agreement?.has_previewed ??
+      agreement?.previewed ??
+      agreement?.pdf_previewed ??
+      agreement?.contractor_previewed ??
+      null;
+    if (maybe === true) setLocalHasPreviewed(true);
+  }, [
+    agreementId,
+    agreement?.has_previewed,
+    agreement?.previewed,
+    agreement?.pdf_previewed,
+    agreement?.contractor_previewed,
+  ]);
+
+  const cleanupBlob = () => {
+    try {
+      if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl);
+    } catch {}
+  };
+
+  useEffect(() => () => cleanupBlob(), []); // eslint-disable-line
+
+  const closePreview = () => {
+    setPreviewOpen(false);
+    setPreviewErr("");
+    setPreviewLoading(false);
+    cleanupBlob();
+    setPdfBlobUrl("");
+  };
+
+  const downloadPreview = () => {
+    if (!pdfBlobUrl) return;
+    const a = document.createElement("a");
+    a.href = pdfBlobUrl;
+    a.download = pdfFilename || "agreement.pdf";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
   const [homeownerObj, setHomeownerObj] = useState(null);
-
   const [sendingLink, setSendingLink] = useState(false);
   const [sendError, setSendError] = useState(null);
-
-  // Resend final signed agreement link (view-only)
   const [resendingFinal, setResendingFinal] = useState(false);
   const [resendFinalError, setResendFinalError] = useState(null);
-
   const [showSignatureModal, setShowSignatureModal] = useState(false);
   const [showClarificationsModal, setShowClarificationsModal] = useState(false);
-
   const [fundingPreview, setFundingPreview] = useState(null);
   const [fundingLoading, setFundingLoading] = useState(false);
   const [fundingError, setFundingError] = useState("");
+  const [unsigning, setUnsigning] = useState(false);
 
-  // ─────────────────────────────────────────────────────────────
-  // Homeowner fetch
-  // ─────────────────────────────────────────────────────────────
+  const paymentMode = useMemo(() => {
+    const rawAgreementMode = agreement?.payment_mode || agreement?.paymentMode || "";
+    const fromAgreement = normalizePaymentMode(rawAgreementMode);
+    if (fromAgreement) return fromAgreement;
+
+    const fromLocal = normalizePaymentMode(dLocal?.payment_mode);
+    if (fromLocal) return fromLocal;
+
+    return "escrow";
+  }, [agreement?.payment_mode, agreement?.paymentMode, dLocal?.payment_mode]);
+
+  const isDirectPay = paymentMode === "direct";
+
   useEffect(() => {
     const fetchHomeowner = async () => {
       if (!agreement) return;
       const candidate = agreement.homeowner;
 
-      if (
-        agreement.homeowner_snapshot &&
-        typeof agreement.homeowner_snapshot === "object"
-      ) {
+      if (agreement.homeowner_snapshot && typeof agreement.homeowner_snapshot === "object") {
         setHomeownerObj(agreement.homeowner_snapshot);
         return;
       }
 
       if (!candidate) return;
-      const idVal =
-        typeof candidate === "number" ? candidate : parseInt(candidate, 10);
+      const idVal = typeof candidate === "number" ? candidate : parseInt(candidate, 10);
       if (!idVal || Number.isNaN(idVal)) return;
 
-      setLoadingHomeowner(true);
       try {
         const { data } = await api.get(`/projects/homeowners/${idVal}/`);
         setHomeownerObj(data);
       } catch {
         // ignore
-      } finally {
-        setLoadingHomeowner(false);
       }
     };
-
     fetchHomeowner();
   }, [agreement]);
-
-  // ─────────────────────────────────────────────────────────────
-  // Totals / milestone key for preview refresh
-  // ─────────────────────────────────────────────────────────────
-  const totalAmount =
-    totals?.totalAmt ??
-    agreement?.display_milestone_total ??
-    agreement?.total_cost ??
-    agreement?.total ??
-    0;
-
-  const milestoneKey = useMemo(() => {
-    const arr = Array.isArray(milestones) ? milestones : [];
-    // Include amount + due + title to refresh fee preview on edits
-    return arr
-      .map((m, idx) => {
-        const idPart = m?.id ?? m?.pk ?? m?.order ?? idx;
-        const amt = m?.amount ?? "";
-        const due =
-          m?.due_date ??
-          m?.start_date ??
-          m?.end_date ??
-          m?.completion_date ??
-          "";
-        const title = m?.title ?? "";
-        return `${idPart}:${amt}:${due}:${title}`;
-      })
-      .join("|");
-  }, [milestones]);
 
   const amendmentNumber =
     agreement?.amendment_number != null
@@ -567,28 +731,173 @@ export default function Step4Finalize({
       ? Number(agreement.amendment)
       : 0;
 
-  // ─────────────────────────────────────────────────────────────
-  // Funding preview fetch (REFRESH when milestones change)
-  // ─────────────────────────────────────────────────────────────
+  const displayMilestones = milestones || agreement?.milestones || [];
+  const milestoneTotal = useMemo(() => sumMilestones(displayMilestones), [displayMilestones]);
+
+  const totalAmount = Number(totals?.totalAmt ?? totals?.total ?? totals?.amount ?? NaN);
+  const projectAmount =
+    Number.isFinite(totalAmount) && totalAmount > 0 ? totalAmount : Number(milestoneTotal || 0);
+
+  const invalidAmountInfo = useMemo(() => firstInvalidMilestoneAmount(displayMilestones), [displayMilestones]);
+  const hasInvalidMilestoneAmounts = !!invalidAmountInfo;
+
+  const firstInvalidTitle = useMemo(() => {
+    if (!invalidAmountInfo) return "";
+    const m = invalidAmountInfo.milestone || {};
+    return (m.title || `Milestone #${(invalidAmountInfo.idx ?? 0) + 1}`).toString();
+  }, [invalidAmountInfo]);
+
+  const aiScope = useMemo(() => safeObject(agreement?.ai_scope), [agreement?.ai_scope]);
+  const clarificationRows = useMemo(() => normalizeClarificationRows(aiScope), [aiScope]);
+  const answeredClarificationRows = useMemo(
+    () => clarificationRows.filter((row) => row.answered),
+    [clarificationRows]
+  );
+  const visibleClarificationRows = useMemo(
+    () => (showAllClarifications ? clarificationRows : answeredClarificationRows),
+    [showAllClarifications, clarificationRows, answeredClarificationRows]
+  );
+  const recommendedClarificationCount = useMemo(
+    () => clarificationRows.filter((row) => row.required).length,
+    [clarificationRows]
+  );
+  const unansweredClarificationCount = useMemo(
+    () => clarificationRows.filter((row) => !row.answered).length,
+    [clarificationRows]
+  );
+
+  const handleGateToast = (actionLabel = "continue") => {
+    if (!hasInvalidMilestoneAmounts) return false;
+    const base = `Cannot ${actionLabel}. All milestones must have an amount greater than $0.`;
+    const extra = firstInvalidTitle ? ` First missing price: "${firstInvalidTitle}".` : "";
+    toast.error(`${base}${extra}`);
+    return true;
+  };
+
+  const refreshAgreement = async () => {
+    if (typeof refreshAgreementProp === "function") {
+      await refreshAgreementProp();
+      return;
+    }
+    if (!agreementId) return;
+    try {
+      const { data } = await api.get(`/projects/agreements/${agreementId}/`, {
+        params: { _ts: Date.now() },
+        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      });
+      if (data) setAgreementAndSync((prev) => mergeAgreement(prev, data, agreementId));
+    } catch {
+      // ignore
+    }
+  };
+
+  const openPreviewModal = async () => {
+    if (!agreementId) {
+      toast.error("Missing agreement ID.");
+      return;
+    }
+    if (handleGateToast("preview")) return;
+
+    setPreviewOpen(true);
+    setPreviewLoading(true);
+    setPreviewErr("");
+
+    cleanupBlob();
+    setPdfBlobUrl("");
+
+    const base = `/projects/agreements/${agreementId}`;
+    const candidates = [
+      `${base}/preview_link/`,
+      `${base}/preview_link`,
+      `${base}/preview_pdf/`,
+      `${base}/preview_pdf`,
+    ];
+
+    try {
+      let streamUrl = null;
+
+      for (const url of candidates) {
+        try {
+          const { data } = await api.get(url, {
+            timeout: 30000,
+            params: { _ts: Date.now() },
+            headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+          });
+          const outUrl = data?.url || data?.preview_url || data?.link;
+          if (outUrl) {
+            streamUrl = outUrl;
+            break;
+          }
+        } catch (err) {
+          if (err?.response?.status === 404) continue;
+          throw err;
+        }
+      }
+
+      if (!streamUrl) throw new Error("Preview endpoint not found on server.");
+
+      const res = await api.get(streamUrl, {
+        responseType: "blob",
+        timeout: 120000,
+        params: { _ts: Date.now() },
+        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      });
+
+      const blob = new Blob([res.data], { type: "application/pdf" });
+      const blobUrl = URL.createObjectURL(blob);
+
+      const titleHint =
+        amendmentNumber > 0
+          ? `agreement-${agreementId}-amendment-${amendmentNumber}.pdf`
+          : `agreement-${agreementId}.pdf`;
+
+      setPdfFilename(titleHint);
+      setPdfBlobUrl(blobUrl);
+      setPreviewLoading(false);
+
+      try {
+        await api.post(`/projects/agreements/${agreementId}/mark_previewed/`);
+      } catch {
+        try {
+          await api.post(`/projects/agreements/${agreementId}/mark_previewed`);
+        } catch {}
+      }
+      setLocalHasPreviewed(true);
+    } catch (err) {
+      const statusCode = err?.response?.status;
+      const detail = err?.response?.data?.detail || err?.response?.data?.error;
+      const msg =
+        statusCode === 401
+          ? "You are not authenticated. Please log in again."
+          : detail || err?.message || "Preview failed. Check backend logs.";
+      setPreviewErr(msg);
+      setPreviewLoading(false);
+    }
+  };
+
   useEffect(() => {
     const fetchFundingPreview = async () => {
-      if (!agreement?.id) {
+      if (!agreementId) {
         setFundingPreview(null);
         return;
       }
+
+      if (isDirectPay) {
+        setFundingPreview(null);
+        setFundingError("");
+        setFundingLoading(false);
+        return;
+      }
+
       setFundingLoading(true);
       setFundingError("");
       try {
-        const { data } = await api.get(
-          `/projects/agreements/${agreement.id}/funding_preview/`,
-          {
-            params: { _ts: Date.now() }, // cache bust
-            headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-          }
-        );
+        const { data } = await api.get(`/projects/agreements/${agreementId}/funding_preview/`, {
+          params: { _ts: Date.now() },
+          headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+        });
         setFundingPreview(data);
       } catch (err) {
-        console.error("funding_preview error:", err);
         const msg =
           err?.response?.data?.detail ||
           "Unable to load fee & escrow summary. Totals are still valid, but rate info is unavailable.";
@@ -598,14 +907,10 @@ export default function Step4Finalize({
         setFundingLoading(false);
       }
     };
-
     fetchFundingPreview();
-  }, [agreement?.id, amendmentNumber, milestoneKey, totalAmount]);
+  }, [agreementId, amendmentNumber, projectAmount, isDirectPay]);
 
-  const homeownerAddressDisplay = getHomeownerAddressFromAgreement(
-    agreement,
-    homeownerObj
-  );
+  const homeownerAddressDisplay = getHomeownerAddressFromAgreement(agreement, homeownerObj);
   const projectAddressDisplay = getProjectAddressFromAgreement(agreement);
 
   const homeownerName =
@@ -613,170 +918,228 @@ export default function Step4Finalize({
     homeownerObj?.full_name ||
     agreement?.homeowner?.full_name ||
     "—";
-  const homeownerEmail =
-    agreement?.homeowner_email ||
-    homeownerObj?.email ||
-    agreement?.homeowner?.email ||
-    "—";
+
+  const companyName = (homeownerObj?.company_name || agreement?.homeowner?.company_name || "")
+    .toString()
+    .trim();
+  const customerNameDisplay = companyName ? `${companyName} (${homeownerName})` : homeownerName;
+
+  const homeownerEmail = agreement?.homeowner_email || homeownerObj?.email || agreement?.homeowner?.email || "—";
   const homeownerPhone =
     homeownerObj?.phone_number ||
     agreement?.homeowner?.phone_number ||
     agreement?.homeowner?.phone ||
     "—";
 
-  const status = agreement?.status || "DRAFT";
-  const displayMilestones = milestones || agreement?.milestones || [];
+  const status = agreement?.status || "draft";
 
-  const amendmentLabel =
-    amendmentNumber > 0 ? `Amendment ${amendmentNumber}` : "Original Agreement";
-
-  const pdfVersion =
-    agreement?.pdf_version != null ? Number(agreement.pdf_version) : null;
-
-  // Signature truth (robust)
-  const backendContractorSigned =
+  const signedByContractor =
     !!agreement?.signed_by_contractor ||
     !!agreement?.contractor_signed ||
     !!agreement?.contractor_signature_name ||
     !!agreement?.signed_at_contractor ||
-    !!agreement?.contractor_signed_at ||
-    agreement?.is_fully_signed === true ||
-    String(agreement?.status || "").toLowerCase() === "signed";
+    !!agreement?.contractor_signed_at;
 
-  const backendHomeownerSigned =
+  const signedByHomeowner =
     !!agreement?.signed_by_homeowner ||
     !!agreement?.homeowner_signed ||
     !!agreement?.homeowner_signature_name ||
     !!agreement?.signed_at_homeowner ||
-    !!agreement?.homeowner_signed_at ||
-    agreement?.is_fully_signed === true ||
-    String(agreement?.status || "").toLowerCase() === "signed";
+    !!agreement?.homeowner_signed_at;
 
-  const signedByContractor = backendContractorSigned;
-  const signedByHomeowner = backendHomeownerSigned;
+  const contractorSignedAt =
+    agreement?.contractor_signed_at || agreement?.signed_at_contractor || agreement?.contractor_signed_timestamp || "";
 
-  const fullySignedBackend = backendContractorSigned && backendHomeownerSigned;
+  const homeownerSignedAt =
+    agreement?.homeowner_signed_at || agreement?.signed_at_homeowner || agreement?.homeowner_signed_timestamp || "";
 
-  const isFullySigned = fullySignedBackend;
+  const contractorSignedIp =
+    agreement?.contractor_signed_ip || agreement?.contractor_ip || "";
 
-  // IMPORTANT: Prefer funding preview escrow flag if present
+  const homeownerSignedIp =
+    agreement?.homeowner_signed_ip || agreement?.homeowner_ip || "";
+
   const escrowFunded =
-    fundingPreview?.escrow_funded != null
-      ? !!fundingPreview.escrow_funded
-      : !!agreement?.escrow_funded;
+    !isDirectPay &&
+    (fundingPreview?.escrow_funded != null ? !!fundingPreview.escrow_funded : !!agreement?.escrow_funded);
 
-  const canUnsign = backendContractorSigned && !backendHomeownerSigned;
+  const initialReqContr = useMemo(() => {
+    return normalizeRequireBool(
+      agreement?.require_contractor_signature ??
+        agreement?.requireContractorSignature ??
+        agreement?.signature_require_contractor ??
+        agreement?.signature_requirements?.contractor,
+      true
+    );
+  }, [agreement]);
 
-  const waitingOnHomeowner = signedByContractor && !signedByHomeowner;
-  const waitingOnEscrow = isFullySigned && !escrowFunded;
+  const initialReqCust = useMemo(() => {
+    return normalizeRequireBool(
+      agreement?.require_customer_signature ??
+        agreement?.requireCustomerSignature ??
+        agreement?.signature_require_customer ??
+        agreement?.signature_requirements?.customer,
+      true
+    );
+  }, [agreement]);
 
-  // Poll while waiting
+  const [reqContr, setReqContr] = useState(initialReqContr);
+  const [reqCust, setReqCust] = useState(initialReqCust);
+
+  const reqDirtyRef = useRef(false);
   useEffect(() => {
-    if (!agreement?.id) return;
-    if (!waitingOnHomeowner && !waitingOnEscrow) return;
+    reqDirtyRef.current = false;
+    setReqContr(initialReqContr);
+    setReqCust(initialReqCust);
+  }, [initialReqContr, initialReqCust]);
 
-    let cancelled = false;
+  const contractorSignatureSatisfied = !reqContr || signedByContractor;
+  const customerSignatureSatisfied = !reqCust || signedByHomeowner;
+  const isFullySigned = contractorSignatureSatisfied && customerSignatureSatisfied;
 
-    const pollOnce = async () => {
-      try {
-        const { data } = await api.get(`/projects/agreements/${agreement.id}/`, {
-          params: { _ts: Date.now() },
-          headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-        });
-        if (cancelled) return;
+  const requirementsLocked = signedByHomeowner || escrowFunded;
 
-        const newContractorSigned =
-          !!data?.signed_by_contractor ||
-          !!data?.contractor_signed ||
-          !!data?.contractor_signature_name ||
-          !!data?.signed_at_contractor ||
-          !!data?.contractor_signed_at ||
-          data?.is_fully_signed === true ||
-          String(data?.status || "").toLowerCase() === "signed";
+  const canUnsignContractor = signedByContractor && !signedByHomeowner;
 
-        const newHomeownerSigned =
-          !!data?.signed_by_homeowner ||
-          !!data?.homeowner_signed ||
-          !!data?.homeowner_signature_name ||
-          !!data?.signed_at_homeowner ||
-          !!data?.homeowner_signed_at ||
-          data?.is_fully_signed === true ||
-          String(data?.status || "").toLowerCase() === "signed";
+  const pdfVersion = agreement?.pdf_version != null ? Number(agreement.pdf_version) : null;
+  const previewButtonLabel = localHasPreviewed ? "View Agreement PDF" : "Preview PDF (Required)";
 
-        const newEscrowFunded = !!data?.escrow_funded;
+  const escrowRate = fundingPreview?.rate != null ? Number(fundingPreview.rate) : 0.05;
+  const escrowFlat = fundingPreview?.flat_fee != null ? Number(fundingPreview.flat_fee) : 1;
 
-        if (waitingOnHomeowner && newHomeownerSigned) {
-          toast.success("Homeowner signed — updating…");
-          window.location.reload();
-          return;
-        }
+  const escrowPlatformFee =
+    fundingPreview?.platform_fee != null
+      ? Number(fundingPreview.platform_fee)
+      : Math.max(0, Math.round((projectAmount * escrowRate + escrowFlat) * 100) / 100);
 
-        if (waitingOnEscrow && newEscrowFunded !== escrowFunded) {
-          toast.success("Escrow status updated — updating…");
-          window.location.reload();
-          return;
-        }
+  const escrowContractorTakeHome =
+    fundingPreview?.contractor_payout != null
+      ? Number(fundingPreview.contractor_payout)
+      : Math.max(0, Math.round((projectAmount - escrowPlatformFee) * 100) / 100);
 
-        if (newContractorSigned !== signedByContractor) {
-          window.location.reload();
-          return;
-        }
-      } catch {
-        // ignore
-      }
-    };
+  const homeownerEscrow =
+    fundingPreview?.homeowner_escrow != null ? Number(fundingPreview.homeowner_escrow) : projectAmount;
 
-    pollOnce();
-    const intervalId = setInterval(pollOnce, 10000);
-    return () => {
-      cancelled = true;
-      clearInterval(intervalId);
-    };
-  }, [
-    agreement?.id,
-    waitingOnHomeowner,
-    waitingOnEscrow,
-    escrowFunded,
-    signedByContractor,
-  ]);
+  const fundedSoFar = Number(
+    fundingPreview?.escrow_funded_amount ??
+      fundingPreview?.escrow_funded_so_far ??
+      agreement?.escrow_funded_amount ??
+      0
+  );
+  const remainingToFund = Math.max(0, Math.round((homeownerEscrow - fundedSoFar) * 100) / 100);
+
+  const DIRECT_RATE = 0.02;
+  const DIRECT_FLAT = 1;
+
+  const directPlatformFee = Math.max(0, Math.round((projectAmount * DIRECT_RATE + DIRECT_FLAT) * 100) / 100);
+  const directContractorTakeHome = Math.max(0, Math.round((projectAmount - directPlatformFee) * 100) / 100);
+
+  const handleToggleRequirement = async (key, value) => {
+    if (!agreementId) return;
+    if (requirementsLocked) {
+      toast.error("Signature requirements are locked after the customer signs (or escrow is funded).");
+      return;
+    }
+
+    reqDirtyRef.current = true;
+
+    if (key === "require_contractor_signature") setReqContr(!!value);
+    if (key === "require_customer_signature") setReqCust(!!value);
+
+    const { ok, data } = await patchAgreement({ [key]: !!value });
+
+    if (ok) {
+      if (data) syncUp(mergeAgreement(agreement, data, agreementId));
+      await refreshAgreement();
+      toast.success("Signature requirements updated.");
+    } else {
+      reqDirtyRef.current = false;
+      setReqContr(initialReqContr);
+      setReqCust(initialReqCust);
+    }
+  };
 
   const handleOpenContractorModal = () => {
-    if (!hasPreviewed) {
+    if (handleGateToast("sign")) return;
+
+    if (!reqContr) {
+      toast.success("Contractor signature is waived for this agreement.");
+      return;
+    }
+    if (!localHasPreviewed) {
       toast.error("You must preview the PDF before signing.");
       return;
     }
-    if (!ackReviewed || !ackTos || !ackEsign) {
-      toast.error(
-        "Please confirm you have reviewed the agreement, agree to the Terms & Privacy Policy, and consent to e-sign."
-      );
-      return;
-    }
+
     if (!typedName.trim()) {
       toast.error("Please type your full legal name.");
       return;
     }
+
     setShowSignatureModal(true);
   };
 
-  const handleContractorSigned = () => {
+  const handleContractorSigned = async (updatedAgreement) => {
     setShowSignatureModal(false);
-    window.location.reload();
+
+    if (updatedAgreement && typeof updatedAgreement === "object") {
+      setAgreementAndSync((prev) => mergeAgreement(prev, updatedAgreement, agreementId));
+    }
+
+    await refreshAgreement();
+    toast.success("Signature captured.");
+  };
+
+  const handleUnsignContractor = async () => {
+    if (!agreementId) return;
+    if (!canUnsignContractor) {
+      toast.error("You can only unsign if the customer has not signed yet.");
+      return;
+    }
+
+    setUnsigning(true);
+    try {
+      if (typeof unsignContractor === "function") {
+        await unsignContractor();
+      } else {
+        const base = `/projects/agreements/${agreementId}/contractor_unsign`;
+        const candidates = [`${base}/`, `${base}`];
+        let ok = false;
+        for (const url of candidates) {
+          try {
+            await api.post(url);
+            ok = true;
+            break;
+          } catch (err) {
+            if (err?.response?.status === 404) continue;
+            throw err;
+          }
+        }
+        if (!ok) throw new Error("Unsign endpoint not found on server.");
+      }
+
+      toast.success("Contractor signature removed.");
+      await refreshAgreement();
+    } catch (err) {
+      const msg = err?.response?.data?.detail || err?.message || "Unable to unsign contractor.";
+      toast.error(msg);
+    } finally {
+      setUnsigning(false);
+    }
   };
 
   const handleSendHomeownerLink = async () => {
-    if (!agreement?.id) return;
+    if (!agreementId) return;
+    if (handleGateToast("send the customer signing link")) return;
+
     setSendingLink(true);
     setSendError(null);
     try {
-      await api.post(
-        `/projects/agreements/${agreement.id}/send_signature_request/`
-      );
-      toast.success("Homeowner signing link sent.");
+      await api.post(`/projects/agreements/${agreementId}/send_signature_request/`);
+      toast.success("Customer signing link sent.");
+      await refreshAgreement();
     } catch (err) {
-      console.error("send_signature_request error:", err);
-      const msg =
-        err?.response?.data?.detail ||
-        "Unable to send homeowner signing link.";
+      const msg = err?.response?.data?.detail || "Unable to send customer signing link.";
       setSendError(msg);
       toast.error(msg);
     } finally {
@@ -785,30 +1148,24 @@ export default function Step4Finalize({
   };
 
   const handleResendFinalLink = async () => {
-    if (!agreement?.id) return;
-
+    if (!agreementId) return;
     setResendingFinal(true);
     setResendFinalError(null);
 
-    // Try with and without trailing slash to match backend router settings
-    const base = `/projects/agreements/${agreement.id}/send_final_agreement_link`;
+    const base = `/projects/agreements/${agreementId}/send_final_agreement_link`;
     const candidates = [`${base}/`, `${base}`];
 
     try {
       for (const url of candidates) {
         try {
           const { data } = await api.post(url);
-          toast.success("Final agreement link sent to homeowner.");
-
+          toast.success("Final agreement link sent to customer.");
           if (data?.view_url) {
             try {
               await navigator.clipboard.writeText(data.view_url);
               toast.success("Link copied to clipboard.");
-            } catch {
-              // ignore clipboard errors
-            }
+            } catch {}
           }
-
           setResendingFinal(false);
           return;
         } catch (err) {
@@ -816,17 +1173,11 @@ export default function Step4Finalize({
           throw err;
         }
       }
-
-      const msg =
-        "Endpoint not found (404). The backend route may not be deployed or the app may need a reload.";
+      const msg = "Endpoint not found (404). Backend route may not be deployed.";
       setResendFinalError(msg);
       toast.error(msg);
     } catch (err) {
-      console.error("send_final_agreement_link error:", err);
-      const msg =
-        err?.response?.data?.detail ||
-        err?.message ||
-        "Unable to send final agreement link.";
+      const msg = err?.response?.data?.detail || err?.message || "Unable to send final agreement link.";
       setResendFinalError(msg);
       toast.error(msg);
     } finally {
@@ -834,572 +1185,453 @@ export default function Step4Finalize({
     }
   };
 
-  const formatMoney = (v) =>
-    `$${Number(v || 0).toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}`;
+  const openPreview = openPreviewModal;
 
-  const rate = fundingPreview?.rate != null ? Number(fundingPreview.rate) : null;
-  const ratePercent = rate != null ? (rate * 100).toFixed(2) : null;
-
-  let tierLabel = "";
-  if (fundingPreview) {
-    if (fundingPreview.tier_label) {
-      tierLabel = fundingPreview.tier_label;
-    } else if (fundingPreview.tier_name) {
-      tierLabel = `Current tier: ${String(
-        fundingPreview.tier_name
-      ).toUpperCase()}`;
-    }
-  }
-
-  // Prefer total_required (new backend). Fallback to project_amount/homeowner_escrow.
-  const rawTotalRequired = Number(
-    fundingPreview?.total_required ??
-      fundingPreview?.project_amount ??
-      fundingPreview?.homeowner_escrow ??
-      0
-  );
-
-  // Prefer backend-required if it looks valid; else use current milestone total
-  const projectAmount =
-    rawTotalRequired > 0 ? rawTotalRequired : Number(totalAmount || 0);
-
-  let platformFee =
-    fundingPreview && fundingPreview.platform_fee != null
-      ? Number(fundingPreview.platform_fee)
-      : 0;
-
-  if (!rawTotalRequired && rate != null) {
-    platformFee = projectAmount * rate + 1;
-  }
-
-  let contractorPayout =
-    fundingPreview && fundingPreview.contractor_payout != null
-      ? Number(fundingPreview.contractor_payout)
-      : null;
-
-  if (!rawTotalRequired || contractorPayout == null) {
-    contractorPayout = projectAmount - (platformFee || 0);
-  }
-
-  let homeownerEscrow =
-    fundingPreview && fundingPreview.homeowner_escrow != null
-      ? Number(fundingPreview.homeowner_escrow)
-      : null;
-
-  if (!homeownerEscrow) homeownerEscrow = projectAmount;
-
-  // Prefer backend escrow numbers if present
-  const escrowFundedAmountFromPreview = Number(
-    fundingPreview?.escrow_funded_amount ??
-      fundingPreview?.escrow_funded_so_far ??
-      0
-  );
-
-  const escrowFundedAmountFromAgreement = Number(
-    agreement?.escrow_funded_amount ??
-      agreement?.escrow_funded_total ??
-      agreement?.escrow_paid_amount ??
-      agreement?.escrow_amount_funded ??
-      agreement?.funded_amount ??
-      0
-  );
-
-  const escrowFundedAmountSafe = Number.isFinite(escrowFundedAmountFromPreview)
-    ? Math.max(0, Math.round(escrowFundedAmountFromPreview * 100) / 100)
-    : Math.max(0, Math.round(escrowFundedAmountFromAgreement * 100) / 100);
-
-  const escrowTotalRequiredSafe = Number.isFinite(homeownerEscrow)
-    ? Math.max(0, Math.round(homeownerEscrow * 100) / 100)
-    : Math.max(0, Math.round(projectAmount * 100) / 100);
-
-  const remainingToFundFromPreview = Number(
-    fundingPreview?.remaining_to_fund ?? fundingPreview?.remaining ?? NaN
-  );
-
-  const remainingToFund = Number.isFinite(remainingToFundFromPreview)
-    ? Math.max(0, Math.round(remainingToFundFromPreview * 100) / 100)
-    : Math.max(
-        0,
-        Math.round((escrowTotalRequiredSafe - escrowFundedAmountSafe) * 100) /
-          100
-      );
-
-  let previewButtonLabel = isFullySigned
-    ? "View Signed Agreement"
-    : "Preview PDF";
-  if (amendmentNumber > 0) previewButtonLabel += ` — Amendment ${amendmentNumber}`;
-  if (!signedByContractor) previewButtonLabel += " (Required)";
-
-  // ✅ Rework milestone detection (best effort)
-  const reworkMilestones = useMemo(() => {
-    const arr = Array.isArray(displayMilestones) ? displayMilestones : [];
-    const list = arr.filter(looksLikeReworkMilestone);
-    // prefer newest by created_at/updated_at, else highest id
-    return list.sort((a, b) => {
-      const da = new Date(a?.created_at || a?.updated_at || 0).getTime();
-      const db = new Date(b?.created_at || b?.updated_at || 0).getTime();
-      if (db !== da) return db - da;
-      return (b?.id || 0) - (a?.id || 0);
-    });
-  }, [displayMilestones]);
-
-  const latestRework = reworkMilestones[0] || null;
-
-  const handleViewRework = () => {
-    if (!latestRework?.id) return;
-    // We route to milestone list with focus hint (safe even if detail route doesn’t exist)
-    navigate(`/app/milestones?focus=${latestRework.id}`);
-  };
-
-  const disputeSummary = useMemo(
-    () => formatDisputeSummary(agreement, displayMilestones),
-    [agreement, displayMilestones]
-  );
-
-  // ✅ Assumptions/Responsibilities (yellow fields)
-  const assumptions = useMemo(() => normalizeAssumptions(agreement), [agreement]);
-
-  
-
-  // Hide optional cards unless they contain real values (Step 2 doesn't collect these today)
-  const showMeasurementDetails = hasText(assumptions?.measurementDetails);
-  const showPermitDetails = hasText(assumptions?.permitDetails);
-  const showAllowanceRules = hasText(assumptions?.allowanceRules);
-return (
+  return (
     <div className="mt-4 space-y-6">
-      {/* ✅ Rework milestone banner */}
-      {latestRework?.id ? (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-          <div className="leading-snug">
-            <span className="font-semibold">✅ Rework milestone created:</span>{" "}
-            <span className="font-semibold">Milestone #{latestRework.id}</span>
-            {latestRework?.title ? (
-              <>
-                {" "}
-                — <span>{latestRework.title}</span>
-              </>
-            ) : null}
-            {latestRework?.due_date ? (
-              <>
-                {" "}
-                <span className="text-emerald-800">
-                  (due {toDateOnly(latestRework.due_date)})
-                </span>
-              </>
+      <Modal
+        isOpen={previewOpen}
+        onRequestClose={closePreview}
+        contentLabel="Agreement PDF Preview"
+        overlayClassName="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+        className="bg-white rounded-xl shadow-xl w-full max-w-6xl h-[88vh] outline-none flex flex-col"
+      >
+        <div className="flex items-center justify-between gap-3 p-3 border-b border-slate-200">
+          <div className="text-sm font-semibold text-slate-900">
+            Agreement PDF Preview
+            {pdfFilename ? (
+              <span className="ml-2 text-xs font-normal text-slate-500">{pdfFilename}</span>
             ) : null}
           </div>
-          <button
-            type="button"
-            onClick={handleViewRework}
-            className="rounded bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800"
-            title="View the rework milestone"
-          >
-            View
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={downloadPreview}
+              disabled={!pdfBlobUrl}
+              className="px-3 py-1.5 rounded-md bg-slate-900 text-white text-sm hover:bg-slate-800 disabled:opacity-60"
+            >
+              Download PDF
+            </button>
+            <button
+              type="button"
+              onClick={closePreview}
+              className="px-3 py-1.5 rounded-md border border-slate-300 text-sm hover:bg-slate-50"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 bg-slate-100">
+          {previewLoading ? (
+            <div className="h-full w-full flex items-center justify-center text-sm text-slate-700">
+              Generating preview…
+            </div>
+          ) : previewErr ? (
+            <div className="h-full w-full flex items-center justify-center p-6">
+              <div className="max-w-xl w-full bg-white border border-rose-200 rounded-lg p-4">
+                <div className="text-sm font-semibold text-rose-700">Preview failed</div>
+                <div className="text-sm text-slate-700 mt-2">{previewErr}</div>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={openPreview}
+                    className="px-3 py-2 rounded-md bg-indigo-600 text-white text-sm hover:bg-indigo-700"
+                  >
+                    Retry
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closePreview}
+                    className="px-3 py-2 rounded-md border border-slate-300 text-sm hover:bg-slate-50"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : pdfBlobUrl ? (
+            <iframe title="Agreement PDF" src={pdfBlobUrl} className="w-full h-full" />
+          ) : (
+            <div className="h-full w-full flex items-center justify-center text-sm text-slate-600">
+              No preview loaded.
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {hasInvalidMilestoneAmounts ? (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="font-semibold">Pricing required</div>
+          <div className="mt-1 text-[12px] text-amber-800">
+            All milestones must be priced (amount greater than $0) before you can preview,
+            sign, send links, or fund escrow.
+            {firstInvalidTitle ? <> First missing price: &quot;{firstInvalidTitle}&quot;.</> : null}
+          </div>
         </div>
       ) : null}
 
-      {amendmentNumber > 0 && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          <div className="font-semibold">
-            Amendment Mode — Amendment {amendmentNumber}
-          </div>
-          <div className="text-xs mt-1">
-            You are editing an amended version of this agreement. Any changes to milestones,
-            schedule, or warranty will be captured in Amendment {amendmentNumber}. After previewing
-            the updated PDF, both you and the homeowner will need to sign again before escrow can be
-            funded.
-          </div>
-        </div>
-      )}
-
-      {/* Top Summary Card */}
       <div className="rounded-lg border bg-white p-4 shadow">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">
-          Agreement &amp; Homeowner Details
-        </h3>
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">Agreement &amp; Customer Details</h3>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <SummaryCard
-            label="Project Title"
-            value={agreement?.project_title || agreement?.title || "Untitled Project"}
-          />
-          <SummaryCard
-            label="Agreement ID"
-            value={
-              agreement?.id
-                ? amendmentNumber > 0
-                  ? `#${agreement.id} — Amendment ${amendmentNumber}`
-                  : `#${agreement.id}`
-                : "New"
-            }
-          />
-          <SummaryCard
-            label="Project Type"
-            value={agreement?.project_type || agreement?.project?.project_type || "—"}
-          />
+          <SummaryCard label="Project Title" value={agreement?.project_title || agreement?.title || "Untitled Project"} />
+          <SummaryCard label="Agreement ID" value={agreementId ? `#${agreementId}` : "New"} />
+          <SummaryCard label="Project Type" value={agreement?.project_type || agreement?.project?.project_type || "—"} />
           <SummaryCard label="Status" value={status} />
         </div>
 
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-4">
-          <SummaryCard label="Agreement Version" value={amendmentLabel} />
-          <SummaryCard
-            label="PDF Version"
-            value={pdfVersion != null ? `v${pdfVersion}` : "Will be generated on next preview/sign"}
-          />
-          <SummaryCard label="Escrow Funded?" value={escrowFunded ? "Yes" : "No"} />
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-5 gap-4">
+          <SummaryCard label="Agreement Version" value={amendmentNumber > 0 ? `Amendment ${amendmentNumber}` : "Original Agreement"} />
+          <SummaryCard label="PDF Version" value={pdfVersion != null ? `v${pdfVersion}` : "—"} />
+          <SummaryCard label="Payment Mode" value={isDirectPay ? "Direct Pay" : "Escrow (Protected)"} />
+          <SummaryCard label="Escrow Funded?" value={isDirectPay ? "N/A" : escrowFunded ? "Yes" : "No"} />
           <SummaryCard label="Fully Signed?" value={isFullySigned ? "Yes" : "No"} />
         </div>
 
-        {/* ✅ Dispute summary row */}
         <div className="mt-3 grid grid-cols-1 md:grid-cols-4 gap-4">
-          <SummaryCard
-            label="Dispute Status"
-            value={disputeSummary}
-            className={
-              norm(disputeSummary).includes("open") ||
-              norm(disputeSummary).includes("review") ||
-              norm(disputeSummary).includes("dispute")
-                ? "border-amber-200 bg-amber-50"
-                : ""
-            }
-          />
-          <SummaryCard label="Homeowner Name" value={homeownerName} />
-          <SummaryCard label="Homeowner Email" value={homeownerEmail} />
-          <SummaryCard label="Homeowner Phone" value={formatPhone(homeownerPhone)} />
+          <SummaryCard label="Customer Name" value={customerNameDisplay} />
+          <SummaryCard label="Customer Email" value={homeownerEmail} />
+          <SummaryCard label="Customer Phone" value={formatPhone(homeownerPhone)} />
+          <SummaryCard label="Dispute Status" value={formatDisputeSummary(agreement, displayMilestones)} />
         </div>
 
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-5 gap-3">
-          <SummaryCard
-            label="Agreement Version Note"
-            value={
-              amendmentNumber > 0
-                ? `This agreement has been amended ${amendmentNumber} time(s). The PDF preview will show the original terms plus all current amendments.`
-                : "This is the original version of the agreement."
-            }
-            className="md:col-span-2"
-          />
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={openPreviewModal}
+            className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+            disabled={hasInvalidMilestoneAmounts}
+          >
+            {previewButtonLabel}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowClarificationsModal(true)}
+            className="rounded bg-white border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Review Scope Clarifications
+          </button>
         </div>
       </div>
 
-      {/* Addresses */}
       <section className="rounded-lg border bg-white p-4 shadow">
         <h3 className="text-lg font-semibold text-gray-900 mb-2">Addresses</h3>
-
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <h4 className="font-semibold text-sm text-gray-800 mb-1">Homeowner Address</h4>
-            <div className="text-sm text-gray-800 whitespace-pre-wrap">
-              {homeownerAddressDisplay}
-            </div>
+            <h4 className="font-semibold text-sm text-gray-800 mb-1">Customer Address</h4>
+            <div className="text-sm text-gray-800 whitespace-pre-wrap">{homeownerAddressDisplay}</div>
           </div>
           <div>
             <h4 className="font-semibold text-sm text-gray-800 mb-1">Project Address</h4>
-            <div className="text-sm text-gray-800 whitespace-pre-wrap">
-              {projectAddressDisplay}
+            <div className="text-sm text-gray-800 whitespace-pre-wrap">{projectAddressDisplay}</div>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-lg border bg-white p-4 shadow">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Scope Clarifications</h3>
+            <div className="text-xs text-slate-500 mt-1">
+              These answers come from Step 2 clarifications and AI-generated project questions.
             </div>
           </div>
-        </div>
-      </section>
 
-      {/* Project Scope */}
-      <section className="rounded-lg border bg-white p-4 shadow">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">
-          Project Scope &amp; Description
-        </h3>
-        <div className="whitespace-pre-wrap text-sm text-gray-700">
-          {agreement?.description || "No project description provided."}
-        </div>
-      </section>
-
-      {/* ✅ Scope Clarifications (Included in Agreement) */}
-      {agreement?.ai_scope ? (
-        <section className="rounded-lg border bg-white p-4 shadow">
-          <div className="flex items-start justify-between gap-3">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Scope Clarifications{" "}
-              <span className="text-xs font-normal text-gray-500">
-                (Included in Agreement)
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-700">
+              {clarificationRows.length} total
+            </span>
+            {recommendedClarificationCount > 0 ? (
+              <span className="rounded-full bg-blue-50 px-2 py-1 text-[11px] font-medium text-blue-800 border border-blue-200">
+                {recommendedClarificationCount} recommended
               </span>
-            </h3>
-
-            <button
-              type="button"
-              onClick={() => setShowClarificationsModal(true)}
-              className="rounded border px-3 py-2 text-sm font-medium hover:bg-gray-50"
-              title="Edit scope clarifications"
-            >
-              Edit Clarifications
-            </button>
+            ) : null}
+            {unansweredClarificationCount > 0 ? (
+              <span className="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800 border border-amber-200">
+                {unansweredClarificationCount} unanswered
+              </span>
+            ) : null}
           </div>
+        </div>
 
-          {Array.isArray(agreement.ai_scope.questions) &&
-          agreement.ai_scope.questions.length ? (
-            <div className="space-y-2 text-sm text-gray-800">
-              {agreement.ai_scope.questions.map((q) => {
-                const key = q?.key;
-                if (!key) return null;
-                const label =
-                  q?.label ||
-                  key
-                    .replace(/_/g, " ")
-                    .replace(/\b\w/g, (c) => c.toUpperCase());
+        {clarificationRows.length ? (
+          <>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={showAllClarifications}
+                  onChange={(e) => setShowAllClarifications(e.target.checked)}
+                />
+                Show unanswered clarifications
+              </label>
 
-                const required = !!q?.required;
-                const answer = resolveClarificationAnswer(agreement, key);
-                const hasAnswer = isAnsweredValue(answer);
+              <button
+                type="button"
+                onClick={() => setShowClarificationsModal(true)}
+                className="rounded border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Edit Clarifications
+              </button>
+            </div>
 
-                // Only show answered questions (or required ones) to avoid noise.
-                if (!hasAnswer && !required) return null;
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+              {visibleClarificationRows.length ? (
+                visibleClarificationRows.map((row) => (
+                  <div key={row.key} className="rounded border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex flex-wrap items-start gap-2">
+                      <div className="text-sm font-semibold text-slate-900">{row.label}</div>
 
-                return (
-                  <div key={key} className="flex flex-col">
-                    <div>
-                      <span className="font-semibold">{label}:</span>{" "}
-                      {hasAnswer ? (
-                        <span>{String(answer)}</span>
+                      {row.required ? (
+                        <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-800 border border-blue-200">
+                          Recommended
+                        </span>
                       ) : (
-                        <span className="text-red-600">
-                          Required — Not Provided
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                          Optional
                         </span>
                       )}
+
+                      {!row.answered ? (
+                        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800 border border-amber-200">
+                          Unanswered
+                        </span>
+                      ) : null}
                     </div>
-                    {q?.help ? (
-                      <div className="text-[11px] text-gray-500">{q.help}</div>
+
+                    {row.help ? (
+                      <div className="mt-1 text-[11px] text-slate-500">{row.help}</div>
+                    ) : null}
+
+                    <div className="mt-2 rounded border bg-white px-3 py-2 text-sm text-slate-800 whitespace-pre-wrap break-words">
+                      {row.displayValue}
+                    </div>
+
+                    {Array.isArray(row.options) && row.options.length ? (
+                      <div className="mt-2 text-[11px] text-slate-500">
+                        Options: {row.options.join(", ")}
+                      </div>
                     ) : null}
                   </div>
-                );
-              })}
-            </div>
-          ) : agreement.ai_scope?.answers &&
-            Object.keys(agreement.ai_scope.answers).length ? (
-            <div className="space-y-2 text-sm text-gray-800">
-              {Object.entries(agreement.ai_scope.answers).map(([k, v]) => {
-                if (v == null || String(v).trim() === "") return null;
-                return (
-                  <div key={k}>
-                    <span className="font-semibold">
-                      {k
-                        .replace(/_/g, " ")
-                        .replace(/\b\w/g, (c) => c.toUpperCase())}
-                      :
-                    </span>{" "}
-                    <span>{String(v)}</span>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="text-sm text-gray-500">
-              No scope clarifications were provided.
-            </div>
-          )}
-
-          {agreement.ai_scope?.updated_at ? (
-            <div className="mt-3 text-[11px] text-gray-500">
-              Last updated:{" "}
-              {new Date(agreement.ai_scope.updated_at).toLocaleString()}
-            </div>
-          ) : null}
-        </section>
-      ) : null}
-
-      {/* ✅ Assumptions & Responsibilities (Yellow fields) */}
-      
-
-      {/* Milestones & Totals */}
-      <section className="rounded-lg border bg-white p-4 shadow">
-        <div className="text-lg font-semibold mb-2">
-          Milestones &amp; Total ({displayMilestones.length})
-        </div>
-        <div className="text-[12px] text-gray-500 mb-1">
-          Milestone statuses begin updating after the agreement is signed and escrow is funded.
-        </div>
-        <div className="mb-3 text-sm font-medium text-gray-700">
-          Total Project Cost: {formatMoney(totalAmount || 0)}
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-sm divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  #
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Title
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Due
-                </th>
-                <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Amount
-                </th>
-                <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {displayMilestones.map((m, i) => {
-                const isRework = looksLikeReworkMilestone(m);
-                const s = norm(m.status_display || m.status);
-                const isDisputeLike =
-                  s.includes("dispute") || s.includes("under_review");
-
-                return (
-                  <tr key={m.id || i} className="border-t">
-                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
-                      {i + 1}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-sm font-medium text-gray-900">
-                      <div className="flex items-center gap-2">
-                        <span>{m.title || "Untitled"}</span>
-                        {isRework ? (
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 border border-emerald-200">
-                            REWORK
-                          </span>
-                        ) : null}
-                        {isDisputeLike ? (
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200">
-                            DISPUTE
-                          </span>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-500">
-                      {toDateOnly(m.due_date || m.completion_date || m.end_date) || "—"}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-right text-sm text-gray-500">
-                      {typeof m.amount === "number"
-                        ? `$${m.amount.toFixed(2)}`
-                        : m.amount || "—"}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap text-center text-sm text-gray-500">
-                      {m.status_display || m.status || "Pending"}
-                    </td>
-                  </tr>
-                );
-              })}
-              {!displayMilestones.length && (
-                <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center text-gray-500">
-                    No milestones.
-                  </td>
-                </tr>
+                ))
+              ) : (
+                <div className="md:col-span-2 rounded border border-dashed border-slate-300 bg-white px-4 py-4 text-sm text-slate-500">
+                  No answered clarifications yet. Turn on “Show unanswered clarifications” or click “Edit Clarifications.”
+                </div>
               )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Fee summary */}
-        <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-3">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-sm font-semibold text-gray-900">
-              Project Totals &amp; Fee Summary (Contractor View)
             </div>
-            {fundingPreview && (
-              <div className="text-[11px] text-gray-500 text-right space-y-0.5">
-                {tierLabel && <div>{tierLabel}</div>}
-                {ratePercent && <div>Current platform rate: {ratePercent}% + $1</div>}
-                {fundingPreview.high_risk_applied && (
-                  <div className="text-[11px] text-amber-700">
-                    High-risk surcharge applied for this project type.
-                  </div>
-                )}
-              </div>
-            )}
+          </>
+        ) : (
+          <div className="mt-3 rounded border border-dashed border-slate-300 bg-white px-4 py-4 text-sm text-slate-500">
+            No scope clarifications have been saved yet.
           </div>
-
-          {fundingLoading ? (
-            <div className="text-xs text-gray-500">Loading fee &amp; escrow summary…</div>
-          ) : fundingError ? (
-            <div className="text-xs text-red-600">{fundingError}</div>
-          ) : fundingPreview ? (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <SummaryCard label="Project Price (Homeowner Pays)" value={formatMoney(projectAmount)} />
-                <SummaryCard
-                  label="MyHomeBro Platform Fee"
-                  value={
-                    ratePercent
-                      ? `${formatMoney(platformFee)} @ ${ratePercent}% + $1`
-                      : formatMoney(platformFee)
-                  }
-                />
-                <SummaryCard
-                  label="Your Estimated Take-Home (Before Stripe)"
-                  value={formatMoney(contractorPayout)}
-                />
-                <SummaryCard label="Total Escrow Deposit" value={formatMoney(homeownerEscrow)} />
-              </div>
-
-              <p className="mt-2 text-[11px] text-gray-500">
-                This summary shows your estimated take-home after the MyHomeBro platform fee. Stripe processing
-                fees (card/ACH) may slightly adjust the final payout. If these numbers don't look right,
-                update your milestone amounts or total project price before sending for signature.
-              </p>
-            </>
-          ) : (
-            <div className="text-xs text-gray-500">Fee summary not available yet.</div>
-          )}
-        </div>
+        )}
       </section>
 
-      {/* Signatures & Escrow */}
       <section className="rounded-lg border bg-white p-4 shadow">
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">Signatures &amp; Escrow</h3>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-lg font-semibold text-gray-900">Milestone Summary</h3>
+          <div className="text-sm text-slate-600">
+            Total: <span className="font-semibold text-slate-900">{formatMoney(projectAmount)}</span>
+          </div>
+        </div>
+
+        {Array.isArray(displayMilestones) && displayMilestones.length > 0 ? (
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-sm border border-slate-200">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="text-left p-2 border-b border-slate-200 w-[64px]">#</th>
+                  <th className="text-left p-2 border-b border-slate-200">Milestone</th>
+                  <th className="text-left p-2 border-b border-slate-200 w-[160px]">Due Date</th>
+                  <th className="text-right p-2 border-b border-slate-200 w-[140px]">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {displayMilestones.map((m, idx) => (
+                  <tr key={m?.id || `m-${idx}`} className="hover:bg-slate-50">
+                    <td className="p-2 border-b border-slate-200">{idx + 1}</td>
+                    <td className="p-2 border-b border-slate-200">
+                      <div className="font-medium text-slate-900">{m?.title || `Milestone ${idx + 1}`}</div>
+                      {m?.description ? (
+                        <div className="text-xs text-slate-500 mt-0.5 whitespace-pre-wrap">{m.description}</div>
+                      ) : null}
+                    </td>
+                    <td className="p-2 border-b border-slate-200">{formatMilestoneDate(m)}</td>
+                    <td className="p-2 border-b border-slate-200 text-right tabular-nums">
+                      {formatMoney(m?.amount || 0)}
+                    </td>
+                  </tr>
+                ))}
+
+                <tr className="bg-slate-50 font-semibold">
+                  <td className="p-2 border-t border-slate-200" colSpan={3}>
+                    Totals
+                  </td>
+                  <td className="p-2 border-t border-slate-200 text-right tabular-nums">
+                    {formatMoney(projectAmount)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div className="mt-2 text-[11px] text-slate-500">
+              Tip: If any amount is missing or $0, Step 4 will block preview/sign/funding until pricing is complete.
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3 text-sm text-slate-500">No milestones defined.</div>
+        )}
+      </section>
+
+      <section className="rounded-lg border bg-white p-4 shadow">
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">Totals &amp; Fees</h3>
+
+        {isDirectPay ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span>Total Due (Customer Pays)</span>
+                <span className="font-medium tabular-nums">{formatMoney(projectAmount)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Platform Fee (2% + $1)</span>
+                <span className="font-medium tabular-nums">-{formatMoney(directPlatformFee)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Contractor Take-Home (Before Stripe Fees)</span>
+                <span className="font-semibold tabular-nums">{formatMoney(directContractorTakeHome)}</span>
+              </div>
+            </div>
+
+            <div className="rounded border bg-slate-50 p-3 text-[12px] text-slate-700">
+              <div className="font-semibold mb-1">Direct Pay</div>
+              <div>Customer pays invoices via Stripe links. No escrow deposit is required.</div>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span>Total Project Amount</span>
+                <span className="font-medium tabular-nums">{formatMoney(projectAmount)}</span>
+              </div>
+
+              <div className="flex justify-between">
+                <span>Platform Fee</span>
+                <span className="font-medium tabular-nums">-{formatMoney(escrowPlatformFee)}</span>
+              </div>
+
+              <div className="flex justify-between">
+                <span>Contractor Take-Home (Before Stripe Fees)</span>
+                <span className="font-semibold tabular-nums">{formatMoney(escrowContractorTakeHome)}</span>
+              </div>
+
+              <div className="flex justify-between text-indigo-700">
+                <span>Total Escrow Deposit</span>
+                <span className="font-semibold tabular-nums">{formatMoney(homeownerEscrow)}</span>
+              </div>
+
+              {fundingError ? <div className="text-[11px] text-amber-700">{fundingError}</div> : null}
+            </div>
+
+            <div className="rounded border bg-slate-50 p-3 text-[12px] text-slate-700">
+              <div className="font-semibold mb-1">Escrow (Protected)</div>
+              <div>Funds are held until milestones are approved. Disputes can freeze funds until resolved.</div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-lg border bg-white p-4 shadow">
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+          {isDirectPay ? "Signatures & Payment" : "Signatures & Escrow"}
+        </h3>
+
+        <div className="mb-4 rounded border bg-slate-50 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Signature Requirements</div>
+              <div className="text-[11px] text-slate-600 mt-0.5">
+                Use waivers for warranty work, subcontracted jobs (big box stores), or situations where signatures are not obtainable.
+              </div>
+            </div>
+            {requirementsLocked ? <div className="text-[11px] font-semibold text-amber-700">Locked</div> : null}
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+            <label className={`flex items-center gap-2 ${requirementsLocked ? "opacity-60" : ""}`}>
+              <input
+                type="checkbox"
+                checked={!!reqContr}
+                disabled={requirementsLocked}
+                onChange={(e) => handleToggleRequirement("require_contractor_signature", e.target.checked)}
+              />
+              <span>Require Contractor Signature</span>
+            </label>
+
+            <label className={`flex items-center gap-2 ${requirementsLocked ? "opacity-60" : ""}`}>
+              <input
+                type="checkbox"
+                checked={!!reqCust}
+                disabled={requirementsLocked}
+                onChange={(e) => handleToggleRequirement("require_customer_signature", e.target.checked)}
+              />
+              <span>Require Customer Signature</span>
+            </label>
+          </div>
+
+          <div className="mt-2 text-[11px] text-slate-600">
+            If unchecked, that party is treated as <b>Waived</b> in execution logic and PDF signatures.
+          </div>
+        </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Contractor column */}
           <div className="space-y-2">
-            <div className="text-sm font-semibold text-gray-800">Contractor Signature</div>
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-800">Contractor Signature</div>
+              {signedByContractor ? (
+                <span className="text-xs font-semibold text-emerald-700">Signed ✅</span>
+              ) : reqContr ? (
+                <span className="text-xs font-semibold text-slate-500">Not signed</span>
+              ) : (
+                <span className="text-xs font-semibold text-slate-500">Waived</span>
+              )}
+            </div>
 
             {signedByContractor ? (
-              <div className="flex items-center gap-2 text-xs text-green-700">
-                <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-600 text-white text-[10px]">
-                  ✓
-                </span>
-                <span>Contractor signature on file.</span>
-              </div>
-            ) : (
-              <div className="text-xs text-gray-600">
-                You will sign this agreement electronically using your typed name plus a drawn signature.
-              </div>
-            )}
+              <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                <div className="font-semibold">{agreement?.contractor_signature_name || typedName || "Contractor"}</div>
+                <div className="mt-1">{contractorSignedAt ? <>Signed: {String(contractorSignedAt)}</> : "Signed: —"}</div>
+                <div className="mt-1">{contractorSignedIp ? <>IP: {contractorSignedIp}</> : null}</div>
 
-            {signedByContractor ? (
-              <>
-                {canUnsign ? (
-                  <button
-                    type="button"
-                    onClick={unsignContractor}
-                    className="mt-1 rounded bg-white border border-red-300 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50"
-                  >
-                    Remove Contractor Signature
-                  </button>
-                ) : fullySignedBackend ? (
-                  <div className="mt-2 text-[11px] text-gray-600 bg-yellow-50 border border-yellow-200 rounded px-3 py-2">
-                    This agreement has been signed by both you and the homeowner. To change scope, dates,
-                    or amounts, use the <strong>Amend</strong> button on the Agreement List to create a new
-                    Amendment version, then re-sign.
+                {canUnsignContractor ? (
+                  <div className="mt-2">
+                    <button
+                      type="button"
+                      onClick={handleUnsignContractor}
+                      disabled={unsigning}
+                      className="rounded border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                      title="Allowed only if the customer has not signed yet."
+                    >
+                      {unsigning ? "Removing…" : "Unsign Contractor"}
+                    </button>
+                    <div className="mt-1 text-[11px] text-emerald-900/80">
+                      Unsign is allowed only while the customer has not signed yet.
+                    </div>
                   </div>
                 ) : (
-                  <div className="mt-2 text-[11px] text-gray-600 bg-yellow-50 border border-yellow-200 rounded px-3 py-2">
-                    Contractor signature is locked by backend rules. If changes are required, create a new
-                    Amendment or contact support.
+                  <div className="mt-2 text-[11px] text-emerald-900/80">
+                    Unsign is disabled once the customer has signed.
                   </div>
                 )}
-              </>
-            ) : (
+              </div>
+            ) : reqContr ? (
               <>
                 <div className="space-y-2 mt-2">
-                  <label className="block text-xs font-semibold text-gray-700">
-                    Type Your Full Legal Name
-                  </label>
+                  <label className="block text-xs font-semibold text-gray-700">Type Your Full Legal Name</label>
                   <input
                     type="text"
                     className="w-full rounded border px-3 py-2 text-sm"
@@ -1407,209 +1639,137 @@ return (
                     onChange={(e) => setTypedName(e.target.value)}
                     placeholder="e.g. Jane Contractor"
                   />
-                </div>
-
-                <div className="mt-2 space-y-1 text-xs text-gray-700">
-                  <label className="inline-flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={ackReviewed}
-                      onChange={(e) => setAckReviewed(e.target.checked)}
-                    />
-                    <span>
-                      I have reviewed the agreement and confirm the scope, milestones, and totals (including any amendments).
-                    </span>
-                  </label>
-
-                  <label className="inline-flex items-start gap-2">
-                    <input
-                      type="checkbox"
-                      checked={ackTos}
-                      onChange={(e) => setAckTos(e.target.checked)}
-                      className="mt-[2px]"
-                    />
-                    <span>
-                      I agree to the MyHomeBro{" "}
-                      <a
-                        href="/legal/terms-of-service/"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-indigo-600 underline"
-                      >
-                        Terms of Service
-                      </a>{" "}
-                      &amp;{" "}
-                      <a
-                        href="/legal/privacy-policy/"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-indigo-600 underline"
-                      >
-                        Privacy Policy
-                      </a>
-                      .
-                    </span>
-                  </label>
-
-                  <label className="inline-flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={ackEsign}
-                      onChange={(e) => setAckEsign(e.target.checked)}
-                    />
-                    <span>
-                      I consent to sign this agreement electronically and understand this is legally binding.
-                    </span>
-                  </label>
+                  <div className="text-[11px] text-gray-500">
+                    Legal acknowledgements (reviewed, Terms, Privacy, e-sign consent) are confirmed in the signing modal.
+                  </div>
                 </div>
 
                 <button
                   type="button"
                   onClick={handleOpenContractorModal}
-                  disabled={signing}
+                  disabled={signing || hasInvalidMilestoneAmounts}
                   className="mt-3 rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
                 >
                   {signing ? "Signing…" : "Sign as Contractor"}
                 </button>
               </>
+            ) : (
+              <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                <div className="font-semibold">Waived</div>
+                <div className="mt-1">Contractor signature is not required for this agreement.</div>
+              </div>
             )}
           </div>
 
-          {/* Homeowner column */}
           <div className="space-y-2">
-            <div className="text-sm font-semibold text-gray-800">Homeowner Signature</div>
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold text-gray-800">Customer Signature</div>
+              {signedByHomeowner ? (
+                <span className="text-xs font-semibold text-emerald-700">Signed ✅</span>
+              ) : reqCust ? (
+                <span className="text-xs font-semibold text-slate-500">Not signed</span>
+              ) : (
+                <span className="text-xs font-semibold text-slate-500">Waived</span>
+              )}
+            </div>
 
             {signedByHomeowner ? (
-              <div className="flex items-center gap-2 text-xs text-green-700">
-                <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-600 text-white text-[10px]">
-                  ✓
-                </span>
-                <span>Homeowner signature on file.</span>
+              <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                <div className="font-semibold">{agreement?.homeowner_signature_name || homeownerName || "Customer"}</div>
+                <div className="mt-1">{homeownerSignedAt ? <>Signed: {String(homeownerSignedAt)}</> : "Signed: —"}</div>
+                <div className="mt-1">{homeownerSignedIp ? <>IP: {homeownerSignedIp}</> : null}</div>
               </div>
-            ) : (
-              <div className="text-xs text-gray-600">
-                MyHomeBro will email a secure signing link to the homeowner once you send the request.
-                They can sign from any device, and we capture their typed name, IP, and timestamp.
-              </div>
-            )}
-
-            {!signedByHomeowner && (
+            ) : reqCust ? (
               <>
                 <button
                   type="button"
                   onClick={handleSendHomeownerLink}
-                  disabled={sendingLink}
+                  disabled={sendingLink || hasInvalidMilestoneAmounts}
                   className="mt-2 rounded bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
                 >
-                  {sendingLink ? "Sending link…" : "Send Homeowner Signing Link"}
+                  {sendingLink ? "Sending link…" : "Send Customer Signing Link"}
                 </button>
-
-                {sendError && (
-                  <div className="mt-1 text-[11px] text-red-600">{sendError}</div>
-                )}
+                {sendError ? <div className="mt-1 text-[11px] text-red-600">{sendError}</div> : null}
               </>
+            ) : (
+              <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                <div className="font-semibold">Waived</div>
+                <div className="mt-1">Customer signature is not required for this agreement.</div>
+              </div>
             )}
 
-            <div className="mt-4 border-t pt-2">
-              <div className="text-xs text-gray-700 mb-1">Escrow Funding</div>
+            {!isDirectPay ? (
+              <div className="mt-4 border-t pt-2">
+                <div className="text-xs text-gray-700 mb-1">Escrow Funding</div>
 
-              {isFullySigned ? (
-                <div className="space-y-2">
-                  <div className="text-[11px] text-gray-600">
-                    Once both you and the homeowner have signed, MyHomeBro emails the homeowner a secure link to
-                    fund escrow. For amendments, this will send only the remaining amount needed to top-up escrow.
+                {hasInvalidMilestoneAmounts ? (
+                  <div className="text-[11px] text-amber-700">
+                    Escrow funding is disabled until all milestone amounts are greater than $0.
                   </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <SummaryCard label="Escrow Total Required" value={formatMoney(escrowTotalRequiredSafe)} />
-                    <SummaryCard label="Escrow Funded So Far" value={formatMoney(escrowFundedAmountSafe)} />
-                    <SummaryCard
-                      label="Remaining to Fund"
-                      value={formatMoney(remainingToFund)}
-                      className={
-                        remainingToFund > 0
-                          ? "border-indigo-200 bg-indigo-50"
-                          : "border-green-200 bg-green-50"
-                      }
-                    />
-                  </div>
-
-                  {remainingToFund > 0 ? (
-                    <SendFundingLinkButton
-                      agreementId={agreement?.id}
-                      isFullySigned={isFullySigned}
-                      amount={remainingToFund}
-                      disabled={!isFullySigned}
-                      variant="success"
-                      label={`Send Escrow Funding Link (${formatMoney(remainingToFund)})`}
-                    />
-                  ) : (
-                    <div className="text-[11px] text-green-700">
-                      Escrow appears fully funded for this agreement version. No additional deposit is required.
+                ) : isFullySigned ? (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <SummaryCard label="Escrow Total Required" value={formatMoney(homeownerEscrow)} />
+                      <SummaryCard label="Escrow Funded So Far" value={formatMoney(fundedSoFar)} />
+                      <SummaryCard label="Remaining to Fund" value={formatMoney(remainingToFund)} />
                     </div>
-                  )}
-                </div>
-              ) : (
-                <div className="text-[11px] text-gray-500">
-                  After both you and the homeowner have signed, MyHomeBro will email the homeowner a secure link to fund
-                  escrow. If needed, you can later use the funding button that appears here once both signatures are in.
-                </div>
-              )}
-            </div>
+
+                    {remainingToFund > 0 ? (
+                      <SendFundingLinkButton
+                        agreementId={agreementId}
+                        isFullySigned={isFullySigned}
+                        amount={remainingToFund}
+                        disabled={!isFullySigned}
+                        variant="success"
+                        label={`Send Escrow Funding Link (${formatMoney(remainingToFund)})`}
+                      />
+                    ) : (
+                      <div className="text-[11px] text-green-700">
+                        Escrow appears fully funded. No additional deposit is required.
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-gray-500">
+                    Escrow funding becomes available once required signatures are satisfied.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="mt-4 text-[11px] text-gray-600">
+                Direct Pay: invoices are paid via Stripe links. No escrow deposit required.
+              </div>
+            )}
           </div>
         </div>
       </section>
 
-      {/* Footer */}
       <div className="flex flex-wrap gap-3 justify-between pt-4 border-t border-gray-200">
         <button
           type="button"
           onClick={goBack}
           className="rounded bg-white border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          title="Back to previous step"
         >
           Back
         </button>
 
         <div className="flex gap-3">
-          {isFullySigned && (
+          {isFullySigned ? (
             <button
               type="button"
               onClick={handleResendFinalLink}
               disabled={resendingFinal}
               className="rounded bg-white border border-emerald-300 px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
-              title="Send the homeowner a fresh link to view/download the final signed agreement"
             >
               {resendingFinal ? "Sending…" : "Resend Final Agreement Link"}
             </button>
-          )}
-
-          <button
-            type="button"
-            onClick={previewPdf}
-            className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 shadow-sm"
-            title={
-              isFullySigned
-                ? amendmentNumber > 0
-                  ? "Open the signed agreement PDF (this amendment version)"
-                  : "Open the signed agreement PDF"
-                : amendmentNumber > 0
-                ? "Open preview PDF for this amendment version"
-                : "Open preview PDF"
-            }
-          >
-            {previewButtonLabel}
-          </button>
-
-          {resendFinalError && (
-            <div className="w-full text-right text-[11px] text-red-600">
-              {resendFinalError}
-            </div>
-          )}
+          ) : null}
         </div>
       </div>
 
-      {agreement && (
+      {resendFinalError ? <div className="text-[12px] text-red-600">{resendFinalError}</div> : null}
+
+      {agreement && reqContr ? (
         <SignatureModal
           isOpen={showSignatureModal}
           onClose={() => setShowSignatureModal(false)}
@@ -1617,23 +1777,23 @@ return (
           signingRole="contractor"
           defaultName={typedName}
           compact={true}
-          onSigned={handleContractorSigned}
+          onSigned={(data) => handleContractorSigned(data)}
         />
-      )}
+      ) : null}
 
-      {/* Clarifications Modal */}
       <ClarificationsModal
         open={showClarificationsModal}
-        agreementId={agreement?.id || id}
+        agreementId={agreementId}
         initialAgreement={agreement}
-        // ✅ Do NOT hide the yellow fields — they must persist and be editable from Step 4 too
         excludeKeys={[]}
         onClose={() => setShowClarificationsModal(false)}
-        onSaved={(updated) => {
+        onSaved={async (updated) => {
           if (updated) {
-            setAgreement(updated);
-            toast.success("Clarifications saved.");
+            setAgreementAndSync((prev) => mergeAgreement(prev, updated, agreementId));
           }
+          toast.success("Clarifications saved.");
+          await refreshAgreement();
+          setShowClarificationsModal(false);
         }}
       />
     </div>

@@ -2,6 +2,11 @@
 // v2026-01-14a — Magic invoice dispute now redirects to public dispute thread when dispute_id returned.
 // Based on your v2025-12-30c file.
 //
+// v2026-02-15 — ✅ Direct Pay aware:
+// - Detect invoice/agreement payment_mode ("direct" vs "escrow")
+// - For Direct Pay invoices: show Stripe Checkout link (no escrow approve/release, no CardElement flow here)
+// - Hide escrow-funded release panel and Stripe card panel for Direct Pay
+//
 // Backend expectation (recommended):
 // PATCH /api/projects/invoices/magic/<token>/dispute/
 // returns: { dispute_id: number, public_token?: string }
@@ -12,7 +17,7 @@ import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../api";
 
-// ✅ Stripe
+// ✅ Stripe (used ONLY for escrow/card payment path)
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
 
@@ -33,6 +38,8 @@ const statusPill = (status) => {
   if (s.includes("approved")) return "bg-blue-100 text-blue-800";
   if (s.includes("dispute")) return "bg-red-100 text-red-800";
   if (s.includes("pending")) return "bg-yellow-100 text-yellow-800";
+  if (s.includes("sent")) return "bg-slate-100 text-slate-800";
+  if (s.includes("incomplete")) return "bg-gray-100 text-gray-800";
   return "bg-gray-100 text-gray-800";
 };
 
@@ -41,6 +48,53 @@ function fmt(value) {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return String(value);
   return d.toLocaleString();
+}
+
+function normalizePaymentMode(v) {
+  const s = String(v || "").trim().toLowerCase();
+  if (!s) return "escrow";
+  if (s.includes("direct")) return "direct";
+  return "escrow";
+}
+
+function pickPaymentMode(invoice) {
+  return normalizePaymentMode(
+    invoice?.agreement?.payment_mode ??
+      invoice?.agreement?.paymentMode ??
+      invoice?.agreement_payment_mode ??
+      invoice?.payment_mode ??
+      invoice?.paymentMode ??
+      ""
+  );
+}
+
+async function copyToClipboard(text) {
+  const value = String(text || "");
+  if (!value) return false;
+
+  try {
+    if (navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    // fall through
+  }
+
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = value;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "absolute";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
 }
 
 function DisputeForm({ open, submitting, onCancel, onSubmit }) {
@@ -168,7 +222,7 @@ function EscrowReleasePanel({ token, invoice, actionLoading, setActionLoading, o
 }
 
 /* ─────────────────────────────────────────────
-   Stripe Payment Panel (keeps your UI intact)
+   Stripe Payment Panel (escrow/card pay path)
    ───────────────────────────────────────────── */
 function StripePaymentPanel({ token, invoice, actionLoading, setActionLoading, onPaid }) {
   const stripe = useStripe();
@@ -245,6 +299,68 @@ function StripePaymentPanel({ token, invoice, actionLoading, setActionLoading, o
       <div className="mt-2 text-xs text-slate-500">
         After payment completes, a receipt will be emailed to {invoice?.homeowner_email || "you"}.
       </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
+   ✅ Direct Pay Panel (Checkout link)
+   ───────────────────────────────────────────── */
+function DirectPayPanel({ invoice }) {
+  const checkoutUrl = String(invoice?.direct_pay_checkout_url || invoice?.directPayCheckoutUrl || "").trim();
+  const paidAt = invoice?.direct_pay_paid_at || invoice?.directPayPaidAt || null;
+
+  const openCheckout = () => {
+    if (!checkoutUrl) {
+      toast.error("No pay link is available yet. Please contact your contractor.");
+      return;
+    }
+    window.open(checkoutUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const copyLink = async () => {
+    if (!checkoutUrl) {
+      toast.error("No pay link is available yet. Please contact your contractor.");
+      return;
+    }
+    const ok = await copyToClipboard(checkoutUrl);
+    toast.success(ok ? "Pay link copied." : "Could not copy link.");
+  };
+
+  return (
+    <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-sm font-extrabold text-slate-800">Direct Pay</div>
+      <div className="mt-2 text-sm text-slate-600">
+        This invoice is paid using a secure Stripe Checkout link.
+      </div>
+
+      {paidAt ? (
+        <div className="mt-3 rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-900">
+          ✅ Payment recorded on <b>{fmt(paidAt)}</b>.
+        </div>
+      ) : checkoutUrl ? (
+        <>
+          <button
+            onClick={openCheckout}
+            className="mt-4 w-full rounded-xl bg-slate-900 px-5 py-3 font-extrabold text-white hover:bg-slate-800"
+          >
+            Pay Now
+          </button>
+          <button
+            onClick={copyLink}
+            className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-5 py-3 font-extrabold text-slate-800 hover:bg-slate-50"
+          >
+            Copy Pay Link
+          </button>
+          <div className="mt-2 text-xs text-slate-500">
+            You’ll complete payment on Stripe’s secure checkout page.
+          </div>
+        </>
+      ) : (
+        <div className="mt-3 rounded-lg border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900">
+          No payment link is available yet. Please contact your contractor to request the pay link.
+        </div>
+      )}
     </div>
   );
 }
@@ -347,6 +463,32 @@ function InnerMagicInvoice() {
   const escrowFundedFlag =
     invoice?.escrow_funded === true || invoice?.escrow_funded === 1 || agreementStatus === "funded";
 
+  const paymentMode = useMemo(() => pickPaymentMode(invoice), [invoice]);
+  const isDirectPay = paymentMode === "direct";
+
+  const isPaidLike = useMemo(() => {
+    const s = String(invoice?.status || "").toLowerCase();
+    if (s.includes("paid") || s.includes("released")) return true;
+    if (invoice?.direct_pay_paid_at || invoice?.directPayPaidAt) return true;
+    return false;
+  }, [invoice]);
+
+  // For Direct Pay we show the pay panel when not paid, regardless of "pending" status naming.
+  const showPaymentArea = useMemo(() => {
+    if (!invoice) return false;
+    if (isPaidLike) return false;
+    if (isDirectPay) return true;
+    return isPendingish(status);
+  }, [invoice, isPaidLike, isDirectPay, status]);
+
+  // Dispute should be possible while invoice is unresolved.
+  const canDispute = useMemo(() => {
+    if (!invoice) return false;
+    if (isPaidLike) return false;
+    // allow disputes in pending-ish OR direct invoices before paid
+    return isDirectPay ? true : isPendingish(status);
+  }, [invoice, isPaidLike, isDirectPay, status]);
+
   if (loading) return <div className="p-8 text-center text-gray-600">Loading Invoice…</div>;
 
   if (error) {
@@ -378,6 +520,9 @@ function InnerMagicInvoice() {
             </div>
             <div className="mt-1 text-sm text-slate-600">
               Homeowner: <b>{invoice.homeowner_name || "—"}</b>
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Payment mode: <b>{isDirectPay ? "Direct Pay" : "Escrow (Protected)"}</b>
             </div>
           </div>
 
@@ -458,7 +603,7 @@ function InnerMagicInvoice() {
             View / Download PDF
           </button>
 
-          {isPendingish(status) && (
+          {canDispute && (
             <button
               onClick={() => setShowDispute((v) => !v)}
               disabled={actionLoading}
@@ -471,9 +616,11 @@ function InnerMagicInvoice() {
           )}
         </div>
 
-        {/* ✅ escrow funded = release panel; not funded = Stripe panel */}
-        {isPendingish(status) ? (
-          escrowFundedFlag ? (
+        {/* ✅ Payment area */}
+        {showPaymentArea ? (
+          isDirectPay ? (
+            <DirectPayPanel invoice={invoice} />
+          ) : escrowFundedFlag ? (
             <EscrowReleasePanel
               token={token}
               invoice={invoice}
@@ -497,13 +644,13 @@ function InnerMagicInvoice() {
         ) : null}
 
         <DisputeForm
-          open={showDispute && isPendingish(status)}
+          open={showDispute && canDispute}
           submitting={actionLoading}
           onCancel={() => setShowDispute(false)}
           onSubmit={handleDispute}
         />
 
-        {!isPendingish(status) && (
+        {isPaidLike && (
           <div className="mt-8 rounded-xl bg-blue-50 p-4 text-center text-blue-900">
             This invoice has already been processed. No further actions are required.
           </div>
@@ -518,6 +665,8 @@ function InnerMagicInvoice() {
 }
 
 export default function MagicInvoice() {
+  // Only mount Stripe Elements when we might need card payments (escrow path).
+  // For Direct Pay invoices, the invoice will be paid via Stripe Checkout URL.
   if (!stripePromise) return <InnerMagicInvoice />;
   return (
     <Elements stripe={stripePromise}>

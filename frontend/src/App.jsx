@@ -1,5 +1,6 @@
 // src/App.jsx
-// v2026-01-16 — mounts PublicRoutes correctly (fixes dispute decision links)
+// v2026-02-09 — Redirect legacy /customers routes into /app to avoid landing fallback.
+// v2026-02-24 — ✅ Fix /app routing: remove DashboardRouter shadow route so ProtectedRoutes / AgreementWizard render
 
 import React from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
@@ -22,11 +23,9 @@ import PublicFund from "./components/PublicFund";
 import InvoicePage from "./pages/InvoicePage.jsx";
 import MagicInvoice from "./pages/MagicInvoice.jsx";
 
-import DashboardRouter from "./components/DashboardRouter.jsx";
-import TeamPage from "./pages/TeamPage.jsx";
+// ✅ App routes live under protectedRoutes() (/app + AuthenticatedLayout + RoleGate)
 import { protectedRoutes } from "./routes/ProtectedRoutes.jsx";
 
-// ✅ NEW: Public routes bundle
 import PublicRoutes from "./routes/PublicRoutes.jsx";
 
 import "./styles/ui.css";
@@ -37,9 +36,9 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-
-          {/* 🔓 ALL public routes (landing, magic links, disputes, decisions) */}
-          <Route path="/*" element={<PublicRoutes />} />
+          {/* ✅ Legacy redirects (pre-/app routing) */}
+          <Route path="/customers" element={<Navigate to="/app/customers" replace />} />
+          <Route path="/customers/:id/edit" element={<Navigate to="/app/customers/:id/edit" replace />} />
 
           {/* 🔐 Public password reset */}
           <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -60,18 +59,14 @@ export default function App() {
           <Route path="/onboarding" element={<StripeOnboarding />} />
           <Route path="/onboarding/profile" element={<ContractorOnboardingForm />} />
 
-          {/* 🔐 Contractor app */}
-          <Route path="/app/*" element={<DashboardRouter />} />
-
-          {/* Contractor team */}
-          <Route path="/team" element={<TeamPage />} />
-
-          {/* Auth-protected routes */}
+          {/* ✅ Auth-protected /app routes */}
           {protectedRoutes()}
+
+          {/* 🔓 Public routes bundle (landing, magic links, disputes, decisions) */}
+          <Route path="/*" element={<PublicRoutes />} />
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
-
         </Routes>
 
         {/* Global modals */}

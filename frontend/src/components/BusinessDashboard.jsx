@@ -1,6 +1,7 @@
 // frontend/src/components/BusinessDashboard.jsx
 // Contractor Business Dashboard (aggregated endpoint)
 // Uses backend route: /api/projects/business/contractor/summary/?range=...
+// v2026-02-16 — ✅ Add Plan & Savings card (AI Pro visibility + Direct Pay rate)
 
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../api";
@@ -55,12 +56,45 @@ function Stat({ label, value, sub, tone = "default" }) {
   );
 }
 
+function normalizeTierName(tier) {
+  const s = String(tier || "").trim().toLowerCase();
+  if (!s) return "free";
+  if (s.includes("ai") && s.includes("pro")) return "ai_pro";
+  if (s === "pro") return "ai_pro";
+  return s;
+}
+
+function isAiProActive(meData) {
+  const bp = meData?.billing_profile || meData?.billingProfile || null;
+
+  if (bp && bp.ai_subscription_active === true) return true;
+  if (meData?.ai_subscription_active === true) return true;
+
+  const tier = normalizeTierName(bp?.ai_subscription_tier || meData?.ai_subscription_tier);
+  if (tier === "ai_pro") return true;
+
+  return false;
+}
+
+function planLabel(meData) {
+  return isAiProActive(meData) ? "AI Pro" : "Free";
+}
+
+function directPayRateLabel(meData) {
+  // LOCKED: Free=2%+1, AI Pro=1%+1
+  return isAiProActive(meData) ? "1% + $1" : "2% + $1";
+}
+
 export default function BusinessDashboard() {
   const [range, setRange] = useState("90"); // backend supports: 30 | 90 | ytd | all
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const [payload, setPayload] = useState(null);
+
+  // ✅ NEW: plan/billing data
+  const [meData, setMeData] = useState(null);
+  const [meLoading, setMeLoading] = useState(true);
 
   const snapshot = payload?.snapshot || {};
   const byCategory = payload?.by_category || [];
@@ -75,6 +109,22 @@ export default function BusinessDashboard() {
       total_revenue: Number(r.total_revenue || 0),
     }));
   }, [byCategory]);
+
+  const fetchMe = async () => {
+    setMeLoading(true);
+    try {
+      const res = await api.get(`/projects/contractors/me/`, {
+        params: { _ts: Date.now() },
+        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      });
+      setMeData(res?.data || null);
+    } catch (e) {
+      // non-fatal: dashboard can still load
+      setMeData(null);
+    } finally {
+      setMeLoading(false);
+    }
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -93,6 +143,11 @@ export default function BusinessDashboard() {
   };
 
   useEffect(() => {
+    fetchMe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range]);
@@ -105,13 +160,17 @@ export default function BusinessDashboard() {
     return <div className="p-6 text-center text-red-600 font-semibold">{error}</div>;
   }
 
+  const plan = planLabel(meData);
+  const dpRate = directPayRateLabel(meData);
+  const aiActive = isAiProActive(meData);
+
   return (
     <div className="p-6">
       {/* Header */}
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-2xl font-extrabold text-gray-900">Business Dashboard</h2>
-          <p className="mt-1 text-sm text-gray-600">
+          <p className="mhb-helper-text mt-4">
             Business health snapshot: jobs, revenue, categories, timing, escrow, fees.
           </p>
         </div>
@@ -135,6 +194,60 @@ export default function BusinessDashboard() {
           >
             Refresh
           </button>
+        </div>
+      </div>
+
+      {/* ✅ NEW: Plan & Savings card */}
+      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="text-sm font-extrabold text-slate-900">Plan & Savings</div>
+
+            <div className="mt-2 text-sm text-slate-700">
+              <b>Current Plan:</b>{" "}
+              {meLoading ? "Loading…" : plan}
+              <span
+                className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                  aiActive ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-800"
+                }`}
+              >
+                {aiActive ? "AI PRO ACTIVE" : "FREE"}
+              </span>
+            </div>
+
+            <div className="mt-2 text-sm text-slate-700">
+              <b>Direct Pay Rate:</b> {meLoading ? "—" : dpRate}
+            </div>
+
+            <div className="mt-2 text-xs text-slate-600">
+              Locked pricing: Free plan Direct Pay is <b>2% + $1</b>. AI Pro Direct Pay is <b>1% + $1</b>. Escrow pricing remains tiered.
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const subject = encodeURIComponent("Request: AI Pro Subscription");
+                const body = encodeURIComponent(
+                  "Hi MyHomeBro,\n\nI would like to enable AI Pro on my contractor account.\n\nThanks!"
+                );
+                window.location.href = `mailto:support@myhomebro.com?subject=${subject}&body=${body}`;
+              }}
+              className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+              title="Request AI Pro (Stripe checkout can replace this later)"
+            >
+              Upgrade to AI Pro
+            </button>
+
+            <button
+              type="button"
+              onClick={fetchMe}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
+            >
+              Refresh Plan
+            </button>
+          </div>
         </div>
       </div>
 
@@ -270,7 +383,7 @@ export default function BusinessDashboard() {
       </div>
 
       {/* Footer note */}
-      <div className="mt-6 text-xs text-gray-500">
+      <div className="mhb-helper-text mt-4">
         Data reflects your completed agreements and paid invoices within the selected range.
       </div>
     </div>

@@ -16,6 +16,7 @@ from projects.ai.template_builder import (
 )
 from projects.models import Agreement
 from projects.models_templates import ProjectTemplate, ProjectTemplateMilestone
+from projects.serializers.agreement import AgreementSerializer
 from projects.serializers_template import (
     ApplyTemplateSerializer,
     ProjectTemplateCreateUpdateSerializer,
@@ -174,8 +175,11 @@ class ApplyTemplateToAgreementView(APIView):
         serializer.is_valid(raise_exception=True)
 
         template_id = serializer.validated_data["template_id"]
-        overwrite_existing = serializer.validated_data["overwrite_existing"]
-        copy_text_fields = serializer.validated_data["copy_text_fields"]
+
+        # Force full template application so agreement fields and milestones
+        # stay in sync with the selected template.
+        overwrite_existing = True
+        copy_text_fields = True
 
         try:
             template = ProjectTemplate.objects.get(pk=template_id)
@@ -195,6 +199,21 @@ class ApplyTemplateToAgreementView(APIView):
         except ValueError as exc:
             raise ValidationError(str(exc))
 
+        agreement.refresh_from_db()
+
+        agreement = (
+            Agreement.objects.select_related(
+                "project",
+                "homeowner",
+                "contractor",
+                "selected_template",
+                "project_type_ref",
+                "project_subtype_ref",
+            )
+            .prefetch_related("milestones")
+            .get(pk=agreement.id)
+        )
+
         return Response(
             {
                 "detail": "Template applied successfully.",
@@ -207,6 +226,10 @@ class ApplyTemplateToAgreementView(APIView):
                     if result.get("end_date")
                     else None,
                 },
+                "agreement": AgreementSerializer(
+                    agreement,
+                    context={"request": request},
+                ).data,
             },
             status=status.HTTP_200_OK,
         )

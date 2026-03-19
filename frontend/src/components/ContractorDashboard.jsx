@@ -19,10 +19,13 @@ import {
   CalendarDays,
   AlertTriangle,
   Wrench,
+  X,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 
 console.log(
-  "ContractorDashboard.jsx v2026-01-19 — invoice disputed + milestone rework workorders"
+  "ContractorDashboard.jsx v2026-03-10 — added + New Intake quick action"
 );
 
 /* Ensure react-modal knows the root */
@@ -30,17 +33,117 @@ Modal.setAppElement("#root");
 
 /* ---------- small helpers ---------- */
 const money = (n) => Number(n || 0);
-const sum = (arr, key = "amount") => arr.reduce((a, x) => a + money(x[key]), 0);
-
+const sum = (arr, key = "amount") => arr.reduce((a, x) => a + money(x?.[key]), 0);
 const norm = (s) => (s || "").toString().toLowerCase();
 
-const isIncomplete = (m) =>
-  norm(m.status || (m.completed ? "completed" : "incomplete")) === "incomplete";
+function parseDateAny(v) {
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+function startOfMonth(d) {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+function startOfYear(d) {
+  return new Date(d.getFullYear(), 0, 1);
+}
+function daysAgo(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d;
+}
+function inRange(dateObj, from, to) {
+  if (!dateObj) return false;
+  const t = dateObj.getTime();
+  if (from && t < from.getTime()) return false;
+  if (to && t > to.getTime()) return false;
+  return true;
+}
+const currency = (n) =>
+  Number(n || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-const isCompleted = (m) =>
-  ["completed", "complete"].includes(
-    norm(m.status || (m.completed ? "completed" : ""))
-  );
+/* ========================================================================== */
+/* ============================ Milestone helpers ============================ */
+/* ========================================================================== */
+
+const getInvoiceIdFromMilestone = (m) => {
+  const inv = m?.invoice;
+  if (inv && typeof inv === "object") return inv?.id ?? inv?.invoice_id ?? inv?.pk ?? null;
+  return m?.invoice_id ?? m?.invoiceId ?? m?.invoice ?? null;
+};
+
+const milestoneStatus = (m) => norm(m?.status || m?.milestone_status || m?.state || "");
+
+// robust “completed” detection (matches your newer MilestoneList behavior)
+const isMilestoneCompleted = (m) => {
+  if (!m) return false;
+
+  if (m.completed === true) return true;
+  if (m.is_completed === true) return true;
+
+  if (!!m.completed_at || !!m.completed_on || !!m.completed_date) return true;
+  if (!!m.submitted_at || !!m.submitted_on || !!m.completion_submitted_at) return true;
+
+  const st = milestoneStatus(m);
+
+  if (["completed", "complete", "done", "finished"].includes(st)) return true;
+
+  if (
+    [
+      "review",
+      "in_review",
+      "pending_review",
+      "submitted",
+      "pending_approval",
+      "awaiting_approval",
+      "approval_pending",
+    ].includes(st)
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
+const isMilestoneIncomplete = (m) => !isMilestoneCompleted(m);
+
+// Paid milestone = invoice is paid OR escrow released (via invoices list or embedded invoice object)
+const isMilestonePaid = (m, invoicesById) => {
+  if (!m) return false;
+
+  const invObj = m?.invoice && typeof m.invoice === "object" ? m.invoice : null;
+  const invoiceId = getInvoiceIdFromMilestone(m);
+  const inv = invObj || (invoiceId ? invoicesById[String(invoiceId)] : null);
+  if (!inv) return false;
+
+  const s = norm(inv?.status || inv?.invoice_status || inv?.state || "");
+  const display = norm(inv?.display_status || "");
+
+  const escrowReleased =
+    inv?.escrow_released === true ||
+    inv?.escrow_released === 1 ||
+    inv?.escrow_released === "true" ||
+    !!inv?.escrow_released_at;
+
+  if (escrowReleased) return true;
+  if (display === "paid") return true;
+  if (s === "paid" || s === "earned" || s === "released") return true;
+  if (s.includes("paid")) return true;
+
+  return false;
+};
+
+// Ready to invoice = completed AND NOT invoiced AND NOT paid
+const isMilestoneReadyToInvoice = (m, invoicesById) => {
+  if (!isMilestoneCompleted(m)) return false;
+  if (isMilestonePaid(m, invoicesById)) return false;
+
+  const hasInv =
+    m?.is_invoiced === true ||
+    !!getInvoiceIdFromMilestone(m);
+
+  return !hasInv;
+};
 
 // ✅ Rework milestone detection (best-effort)
 const isReworkMilestone = (m) => {
@@ -74,12 +177,7 @@ const isDisputedInvoice = (inv) => {
       ""
   );
 
-  const openFlag =
-    inv?.dispute_is_open ??
-    inv?.has_open_dispute ??
-    inv?.dispute_open ??
-    null;
-
+  const openFlag = inv?.dispute_is_open ?? inv?.has_open_dispute ?? inv?.dispute_open ?? null;
   if (openFlag === false) return false;
 
   if (
@@ -108,11 +206,10 @@ const invBucket = (inv) => {
     inv?.escrow_released === "true";
 
   if (escrowReleased || display === "paid") return "earned";
+  if (["paid", "earned", "released"].includes(s)) return "earned";
 
   if (["pending", "pending_approval", "sent", "awaiting_approval"].includes(s))
     return "pending";
-
-  if (["paid", "earned", "released"].includes(s)) return "earned";
 
   if (["approved", "ready_to_pay"].includes(s)) return "approved";
 
@@ -124,6 +221,39 @@ const fmtRate = (rateDecimal) => {
   if (!Number.isFinite(r)) return null;
   return `${(r * 100).toFixed(2)}%`;
 };
+
+// ✅ pricing labels (keep in sync with backend/backend/payments/fees.py)
+const INTRO_RATE_LABEL = "3.00%";
+const STANDARD_START_RATE_LABEL = "4.50%";
+
+// ✅ Direct Pay pricing (LOCKED)
+const DIRECT_PAY_FREE_LABEL = "2% + $1";
+const DIRECT_PAY_AI_PRO_LABEL = "1% + $1";
+
+function normalizeTierName(tier) {
+  const s = String(tier || "").trim().toLowerCase();
+  if (!s) return "free";
+  if (s.includes("ai") && s.includes("pro")) return "ai_pro";
+  if (s === "pro") return "ai_pro";
+  return s;
+}
+
+function isAiProActive(me) {
+  const bp = me?.billing_profile || me?.billingProfile || null;
+  if (bp?.ai_subscription_active === true) return true;
+  if (me?.ai_subscription_active === true) return true;
+
+  const t = normalizeTierName(bp?.ai_subscription_tier || me?.ai_subscription_tier);
+  return t === "ai_pro";
+}
+
+function planLabel(me) {
+  return isAiProActive(me) ? "AI Pro" : "Free";
+}
+
+function directPayLabel(me) {
+  return isAiProActive(me) ? DIRECT_PAY_AI_PRO_LABEL : DIRECT_PAY_FREE_LABEL;
+}
 
 /* ---------- quick action button ---------- */
 function ActionButton({ icon: Icon, label, onClick, primary }) {
@@ -143,144 +273,6 @@ function ActionButton({ icon: Icon, label, onClick, primary }) {
       {Icon ? <Icon size={18} /> : null}
       <span style={{ marginLeft: 8, fontWeight: 900 }}>{label}</span>
     </button>
-  );
-}
-
-/* ========================================================================== */
-/* ================  INLINE: ExpenseRequestsPanel (no import)  ============== */
-/* ========================================================================== */
-function ExpenseRequestsPanel() {
-  const [loading, setLoading] = useState(true);
-  const [rows, setRows] = useState([]);
-
-  const load = async () => {
-    try {
-      setLoading(true);
-      const { data } = await api.get("/projects/expenses/");
-      const list = Array.isArray(data?.results)
-        ? data.results
-        : Array.isArray(data)
-        ? data
-        : [];
-      setRows(list);
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to load expenses.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    load();
-  }, []);
-
-  const statusBadge = (s) => {
-    const base = "px-2 py-0.5 rounded text-xs font-semibold";
-    switch (String(s || "").toLowerCase()) {
-      case "draft":
-        return <span className={`${base} bg-gray-200 text-gray-800`}>Draft</span>;
-      case "contractor_signed":
-        return (
-          <span className={`${base} bg-indigo-100 text-indigo-800`}>Signed</span>
-        );
-      case "pending":
-        return <span className={`${base} bg-amber-100 text-amber-800`}>Sent</span>;
-      case "approved":
-        return (
-          <span className={`${base} bg-green-100 text-green-800`}>Accepted</span>
-        );
-      case "rejected":
-        return <span className={`${base} bg-red-100 text-red-800`}>Rejected</span>;
-      case "paid":
-        return (
-          <span className={`${base} bg-emerald-200 text-emerald-900`}>Paid</span>
-        );
-      case "disputed":
-        return (
-          <span className={`${base} bg-red-100 text-red-800`}>Disputed</span>
-        );
-      default:
-        return <span className={`${base} bg-gray-100 text-gray-800`}>{s}</span>;
-    }
-  };
-
-  const moneyFmt = (n) => {
-    const v = Number(n);
-    return Number.isFinite(v) ? `$${v.toFixed(2)}` : n ?? "—";
-  };
-
-  return (
-    <div className="rounded-xl border bg-white shadow-sm">
-      <div className="px-5 py-4 border-b bg-gradient-to-r from-blue-50 to-white rounded-t-xl">
-        <h3 className="text-lg font-semibold">Expense Requests</h3>
-        <p className="text-sm text-gray-600 mt-1">
-          Track expenses you’ve sent to homeowners.
-        </p>
-      </div>
-
-      <div className="p-5">
-        {loading ? (
-          <div className="text-gray-600">Loading…</div>
-        ) : rows.length === 0 ? (
-          <div className="text-gray-500 text-sm">No expenses yet.</div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm border rounded">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="p-2 border text-left text-xs font-semibold text-gray-600">
-                    Created
-                  </th>
-                  <th className="p-2 border text-left text-xs font-semibold text-gray-600">
-                    Agreement
-                  </th>
-                  <th className="p-2 border text-left text-xs font-semibold text-gray-600">
-                    Description
-                  </th>
-                  <th className="p-2 border text-right text-xs font-semibold text-gray-600">
-                    Amount
-                  </th>
-                  <th className="p-2 border text-left text-xs font-semibold text-gray-600">
-                    Status
-                  </th>
-                  <th className="p-2 border text-center text-xs font-semibold text-gray-600">
-                    Receipt
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.id} className="odd:bg-white even:bg-gray-50">
-                    <td className="p-2 border">
-                      {r.created_at ? new Date(r.created_at).toLocaleString() : "—"}
-                    </td>
-                    <td className="p-2 border">{r.agreement || "—"}</td>
-                    <td className="p-2 border">{r.description}</td>
-                    <td className="p-2 border text-right">{moneyFmt(r.amount)}</td>
-                    <td className="p-2 border">{statusBadge(r.status)}</td>
-                    <td className="p-2 border text-center">
-                      {r.receipt_url ? (
-                        <a
-                          className="text-blue-700 underline"
-                          href={r.receipt_url}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          Open
-                        </a>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
   );
 }
 
@@ -332,8 +324,7 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
       fd.append("description", form.description.trim());
       fd.append("amount", form.amount);
       if (form.incurred_date) fd.append("incurred_date", form.incurred_date);
-      if (form.notes_to_homeowner)
-        fd.append("notes_to_homeowner", form.notes_to_homeowner);
+      if (form.notes_to_homeowner) fd.append("notes_to_homeowner", form.notes_to_homeowner);
       if (form.file) fd.append("receipt", form.file);
 
       const createRes = await api.post("/projects/expenses/", fd, {
@@ -363,11 +354,7 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
     >
       <div className="flex items-start justify-between mb-4">
         <h2 className="text-xl font-semibold">New Expense</h2>
-        <button
-          onClick={() => onClose(false)}
-          className="px-3 py-1.5 rounded-lg border"
-          type="button"
-        >
+        <button onClick={() => onClose(false)} className="px-3 py-1.5 rounded-lg border" type="button">
           Close
         </button>
       </div>
@@ -375,9 +362,7 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
       <form onSubmit={submit} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-gray-700 mb-1">
-              Agreement (optional)
-            </label>
+            <label className="block text-sm text-gray-700 mb-1">Agreement (optional)</label>
             <select
               name="agreement"
               value={form.agreement}
@@ -394,9 +379,7 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700 mb-1">
-              Incurred Date
-            </label>
+            <label className="block text-sm text-gray-700 mb-1">Incurred Date</label>
             <input
               type="date"
               name="incurred_date"
@@ -431,22 +414,13 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700 mb-1">
-              Receipt (PDF or Image)
-            </label>
-            <input
-              type="file"
-              accept="image/*,pdf"
-              onChange={onFile}
-              className="w-full"
-            />
+            <label className="block text-sm text-gray-700 mb-1">Receipt (PDF or Image)</label>
+            <input type="file" accept="image/*,pdf" onChange={onFile} className="w-full" />
           </div>
         </div>
 
         <div>
-          <label className="block text-sm text-gray-700 mb-1">
-            Notes to Homeowner (optional)
-          </label>
+          <label className="block text-sm text-gray-700 mb-1">Notes to Homeowner (optional)</label>
           <textarea
             name="notes_to_homeowner"
             value={form.notes_to_homeowner}
@@ -457,11 +431,7 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
         </div>
 
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={() => onClose(false)}
-            className="px-4 py-2 rounded-lg border"
-          >
+          <button type="button" onClick={() => onClose(false)} className="px-4 py-2 rounded-lg border">
             Cancel
           </button>
           <button
@@ -480,6 +450,339 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
 }
 
 /* ========================================================================== */
+/* ======================= Earned Drilldown Modal =========================== */
+/* ========================================================================== */
+
+function agreementKeyFromItem(item, fallbackPrefix) {
+  const agId =
+    item?.agreement_id ??
+    item?.agreement ??
+    item?.agreement?.id ??
+    item?.agreementId ??
+    null;
+
+  if (agId != null && String(agId).trim() !== "") return `ag-${agId}`;
+  return `${fallbackPrefix}-no-agreement`;
+}
+
+function agreementTitleFromItem(item, fallbackTitle = "Other (No Agreement)") {
+  const t =
+    item?.agreement_title ||
+    item?.agreementTitle ||
+    item?.agreement?.title ||
+    item?.agreement?.project_title ||
+    item?.project_title ||
+    item?.projectTitle ||
+    "";
+
+  const agId =
+    item?.agreement_id ??
+    item?.agreement ??
+    item?.agreement?.id ??
+    item?.agreementId ??
+    null;
+
+  if (t && String(t).trim()) return String(t);
+  if (agId != null && String(agId).trim() !== "") return `Agreement #${agId}`;
+  return fallbackTitle;
+}
+
+// Best-effort "earned timestamp"
+function dateForInvoice(inv) {
+  return (
+    parseDateAny(inv?.escrow_released_at) ||
+    parseDateAny(inv?.paid_at) ||
+    parseDateAny(inv?.direct_pay_paid_at) ||
+    parseDateAny(inv?.updated_at) ||
+    parseDateAny(inv?.created_at) ||
+    null
+  );
+}
+function dateForExpense(ex) {
+  return (
+    parseDateAny(ex?.paid_at) ||
+    parseDateAny(ex?.updated_at) ||
+    parseDateAny(ex?.created_at) ||
+    null
+  );
+}
+
+function EarnedBreakdownModal({ isOpen, onClose, invoices, expenses, loading }) {
+  const [range, setRange] = useState("30d"); // 30d | month | year | all
+  const [openAgreements, setOpenAgreements] = useState({});
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setOpenAgreements({});
+    setRange("30d");
+  }, [isOpen]);
+
+  const { fromDate, toDate, rangeLabel } = useMemo(() => {
+    const now = new Date();
+    if (range === "month") return { fromDate: startOfMonth(now), toDate: null, rangeLabel: "This Month" };
+    if (range === "year") return { fromDate: startOfYear(now), toDate: null, rangeLabel: "This Year" };
+    if (range === "all") return { fromDate: null, toDate: null, rangeLabel: "All Time" };
+    return { fromDate: daysAgo(30), toDate: null, rangeLabel: "Last 30 Days" };
+  }, [range]);
+
+  const filtered = useMemo(() => {
+    const invList = Array.isArray(invoices) ? invoices : [];
+    const expList = Array.isArray(expenses) ? expenses : [];
+
+    const escrow = invList.filter(
+      (inv) => inv?.escrow_released === true || inv?.escrow_released === 1 || inv?.escrow_released === "true"
+    );
+
+    const directPay = invList.filter((inv) => {
+      const st = norm(inv?.status);
+      const hasDirectPayStamp =
+        !!inv?.direct_pay_paid_at ||
+        !!inv?.direct_pay_payment_intent_id ||
+        !!inv?.direct_pay_checkout_session_id ||
+        !!inv?.direct_pay_checkout_url;
+      const looksPaid = st === "paid" || st.includes("paid") || norm(inv?.display_status) === "paid";
+      return hasDirectPayStamp && looksPaid;
+    });
+
+    const escrowR = escrow.filter((inv) => inRange(dateForInvoice(inv), fromDate, toDate));
+    const directR = directPay.filter((inv) => inRange(dateForInvoice(inv), fromDate, toDate));
+    const expR = expList.filter(
+      (ex) => (norm(ex?.status) === "paid" || !!ex?.paid_at) && inRange(dateForExpense(ex), fromDate, toDate)
+    );
+
+    return { escrow: escrowR, directPay: directR, expenses: expR };
+  }, [invoices, expenses, fromDate, toDate]);
+
+  const grouped = useMemo(() => {
+    const map = new Map();
+
+    function ensureGroup(key, title) {
+      if (!map.has(key)) {
+        map.set(key, { key, title, escrow: [], directPay: [], expenses: [] });
+      }
+      return map.get(key);
+    }
+
+    for (const inv of filtered.escrow) {
+      const k = agreementKeyFromItem(inv, "inv");
+      const title = agreementTitleFromItem(inv);
+      ensureGroup(k, title).escrow.push(inv);
+    }
+    for (const inv of filtered.directPay) {
+      const k = agreementKeyFromItem(inv, "inv");
+      const title = agreementTitleFromItem(inv);
+      ensureGroup(k, title).directPay.push(inv);
+    }
+    for (const ex of filtered.expenses) {
+      const k = agreementKeyFromItem(ex, "exp");
+      const title = agreementTitleFromItem(ex, "Other (No Agreement)");
+      ensureGroup(k, title).expenses.push(ex);
+    }
+
+    const arr = Array.from(map.values()).map((g) => {
+      const escrowAmt = sum(g.escrow);
+      const directAmt = sum(g.directPay);
+      const expAmt = sum(g.expenses);
+      return { ...g, escrowAmt, directAmt, expAmt, totalAmt: escrowAmt + directAmt + expAmt };
+    });
+
+    arr.sort((a, b) => (b.totalAmt || 0) - (a.totalAmt || 0));
+    return arr;
+  }, [filtered]);
+
+  const totals = useMemo(() => {
+    const escrowAmt = sum(filtered.escrow);
+    const directAmt = sum(filtered.directPay);
+    const expAmt = sum(filtered.expenses);
+    return {
+      escrowAmt,
+      directAmt,
+      expAmt,
+      totalAmt: escrowAmt + directAmt + expAmt,
+      escrowCount: filtered.escrow.length,
+      directCount: filtered.directPay.length,
+      expCount: filtered.expenses.length,
+    };
+  }, [filtered]);
+
+  const toggleAgreement = (key) => setOpenAgreements((prev) => ({ ...prev, [key]: !prev[key] }));
+
+  const rowStyle = {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 12,
+    padding: "8px 0",
+    borderBottom: "1px solid #f1f5f9",
+    fontSize: 13,
+  };
+
+  const renderInvoiceRow = (inv) => {
+    const label = inv?.invoice_number ? `Invoice ${inv.invoice_number}` : inv?.id ? `Invoice #${inv.id}` : "Invoice";
+    const sub = inv?.title || inv?.milestone_title || inv?.description || "";
+    return (
+      <div key={`inv-${inv.id || Math.random()}`} style={rowStyle}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 800, color: "#0f172a" }}>{label}</div>
+          {sub ? (
+            <div style={{ color: "#64748b", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {sub}
+            </div>
+          ) : null}
+        </div>
+        <div style={{ fontWeight: 900 }}>{currency(inv?.amount || 0)}</div>
+      </div>
+    );
+  };
+
+  const renderExpenseRow = (ex) => {
+    const label = ex?.id ? `Expense #${ex.id}` : "Expense";
+    const sub = ex?.description || "";
+    return (
+      <div key={`ex-${ex.id || Math.random()}`} style={rowStyle}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 800, color: "#0f172a" }}>{label}</div>
+          {sub ? (
+            <div style={{ color: "#64748b", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {sub}
+            </div>
+          ) : null}
+        </div>
+        <div style={{ fontWeight: 900 }}>{currency(ex?.amount || 0)}</div>
+      </div>
+    );
+  };
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onRequestClose={() => onClose()}
+      className="max-w-4xl w-[94vw] bg-white rounded-xl shadow-2xl p-6 mx-auto mt-16 outline-none"
+      overlayClassName="fixed inset-0 bg-black/50 flex items-start justify-center"
+    >
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <div className="text-xl font-semibold">Earned Breakdown</div>
+          <div className="text-sm text-slate-600">
+            {rangeLabel} • Total: {currency(totals.totalAmt)}
+          </div>
+        </div>
+
+        <button onClick={() => onClose()} type="button" className="px-3 py-2 rounded-lg border flex items-center gap-2">
+          <X size={16} />
+          Close
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-2 items-center mb-4">
+        <div className="text-sm text-slate-700 font-semibold">Range:</div>
+        <select value={range} onChange={(e) => setRange(e.target.value)} className="border rounded-lg px-3 py-2 text-sm">
+          <option value="30d">Last 30 Days</option>
+          <option value="month">This Month</option>
+          <option value="year">This Year</option>
+          <option value="all">All Time</option>
+        </select>
+
+        <div className="text-xs text-slate-500" style={{ marginLeft: 8 }}>
+          Escrow: {totals.escrowCount} • {currency(totals.escrowAmt)} &nbsp;|&nbsp;
+          Direct Pay: {totals.directCount} • {currency(totals.directAmt)} &nbsp;|&nbsp;
+          Expenses: {totals.expCount} • {currency(totals.expAmt)}
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="text-sm text-slate-600">Loading earned items…</div>
+      ) : grouped.length ? (
+        <div style={{ maxHeight: "70vh", overflow: "auto", paddingRight: 4 }}>
+          {grouped.map((g) => {
+            const open = !!openAgreements[g.key];
+            const totalCount = (g.escrow?.length || 0) + (g.directPay?.length || 0) + (g.expenses?.length || 0);
+
+            return (
+              <div
+                key={g.key}
+                style={{
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 14,
+                  padding: 12,
+                  marginBottom: 12,
+                  background: "#fff",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => toggleAgreement(g.key)}
+                  style={{
+                    width: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    background: "transparent",
+                    border: "none",
+                    padding: 0,
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                    {open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 900, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {g.title}
+                      </div>
+                      <div style={{ color: "#64748b", fontSize: 12 }}>
+                        {totalCount} item{totalCount === 1 ? "" : "s"} • Total {currency(g.totalAmt)}
+                        {g.escrow?.length ? ` • Escrow ${g.escrow.length} (${currency(g.escrowAmt)})` : ""}
+                        {g.directPay?.length ? ` • Direct ${g.directPay.length} (${currency(g.directAmt)})` : ""}
+                        {g.expenses?.length ? ` • Expenses ${g.expenses.length} (${currency(g.expAmt)})` : ""}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ fontWeight: 900, color: "#111827" }}>{currency(g.totalAmt)}</div>
+                </button>
+
+                {open ? (
+                  <div style={{ marginTop: 10 }}>
+                    {g.escrow?.length ? (
+                      <div style={{ marginBottom: 10 }}>
+                        <div style={{ fontWeight: 900, fontSize: 13, color: "#0f172a", marginBottom: 4 }}>
+                          Escrow Releases • {g.escrow.length} • {currency(g.escrowAmt)}
+                        </div>
+                        <div style={{ borderTop: "1px solid #f1f5f9" }}>{g.escrow.map((inv) => renderInvoiceRow(inv))}</div>
+                      </div>
+                    ) : null}
+
+                    {g.directPay?.length ? (
+                      <div style={{ marginBottom: 10 }}>
+                        <div style={{ fontWeight: 900, fontSize: 13, color: "#0f172a", marginBottom: 4 }}>
+                          Direct Pay • {g.directPay.length} • {currency(g.directAmt)}
+                        </div>
+                        <div style={{ borderTop: "1px solid #f1f5f9" }}>{g.directPay.map((inv) => renderInvoiceRow(inv))}</div>
+                      </div>
+                    ) : null}
+
+                    {g.expenses?.length ? (
+                      <div style={{ marginBottom: 2 }}>
+                        <div style={{ fontWeight: 900, fontSize: 13, color: "#0f172a", marginBottom: 4 }}>
+                          Expenses Paid • {g.expenses.length} • {currency(g.expAmt)}
+                        </div>
+                        <div style={{ borderTop: "1px solid #f1f5f9" }}>{g.expenses.map((ex) => renderExpenseRow(ex))}</div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="text-sm text-slate-500">No earned items in this range.</div>
+      )}
+    </Modal>
+  );
+}
+
+/* ========================================================================== */
 /* =============================== MAIN VIEW ================================= */
 /* ========================================================================== */
 export default function ContractorDashboard() {
@@ -489,7 +792,12 @@ export default function ContractorDashboard() {
   const [invoices, setInvoices] = useState([]);
 
   const [showExpenseModal, setShowExpenseModal] = useState(false);
-  const [expensesRefreshKey, setExpensesRefreshKey] = useState(0);
+
+  // Earned modal + paid expenses cache
+  const [showEarnedModal, setShowEarnedModal] = useState(false);
+  const [earnedLoading, setEarnedLoading] = useState(false);
+  const [earnedExpenses, setEarnedExpenses] = useState([]);
+  const [earnedExpensesLoading, setEarnedExpensesLoading] = useState(false);
 
   const navigate = useNavigate();
 
@@ -507,15 +815,27 @@ export default function ContractorDashboard() {
     error: "",
   });
 
+  // plan/billing snapshot + AI credits
+  const [planInfo, setPlanInfo] = useState({
+    loading: true,
+    planLabel: "Free",
+    directPayLabel: DIRECT_PAY_FREE_LABEL,
+    aiProActive: false,
+    aiCreditsRemaining: null,
+    aiCreditsTotal: null,
+    aiCreditsUsed: null,
+    aiCreditsEnabled: false,
+  });
+
   const role = who?.role || "";
   const isEmployee = role && String(role).startsWith("employee_");
 
-  // ✅ Route bases
+  // Route bases
   const APP_BASE = "/app";
   const EMP_BASE = "/app/employee";
   const BASE = isEmployee ? EMP_BASE : APP_BASE;
 
-  /* ----- load whoami first ----- */
+  /* ----- whoami ----- */
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -532,7 +852,7 @@ export default function ContractorDashboard() {
     return () => (mounted = false);
   }, []);
 
-  /* ----- load dashboard data (role-aware) ----- */
+  /* ----- load dashboard data ----- */
   useEffect(() => {
     let mounted = true;
 
@@ -540,20 +860,15 @@ export default function ContractorDashboard() {
       if (!who) return;
 
       try {
-        // EMPLOYEE
         if (isEmployee) {
           const mRes = await api.get("/projects/employee/milestones/");
           if (!mounted) return;
-
-          const list = Array.isArray(mRes.data?.milestones)
-            ? mRes.data.milestones
-            : [];
+          const list = Array.isArray(mRes.data?.milestones) ? mRes.data.milestones : [];
           setMilestones(list);
           setInvoices([]);
           return;
         }
 
-        // CONTRACTOR
         const [mRes, iRes] = await Promise.allSettled([
           api.get("/projects/milestones/"),
           api.get("/projects/invoices/"),
@@ -562,9 +877,7 @@ export default function ContractorDashboard() {
         if (!mounted) return;
 
         if (mRes.status === "fulfilled") {
-          const list = Array.isArray(mRes.value.data)
-            ? mRes.value.data
-            : mRes.value.data?.results || [];
+          const list = Array.isArray(mRes.value.data) ? mRes.value.data : mRes.value.data?.results || [];
           setMilestones(list);
         } else {
           console.error(mRes.reason);
@@ -572,9 +885,7 @@ export default function ContractorDashboard() {
         }
 
         if (iRes.status === "fulfilled") {
-          const list = Array.isArray(iRes.value.data)
-            ? iRes.value.data
-            : iRes.value.data?.results || [];
+          const list = Array.isArray(iRes.value.data) ? iRes.value.data : iRes.value.data?.results || [];
           setInvoices(list);
         } else {
           console.error(iRes.reason);
@@ -589,13 +900,95 @@ export default function ContractorDashboard() {
     return () => (mounted = false);
   }, [who, isEmployee]);
 
-  // Intro pricing countdown (contractor-only)
+  // ✅ Load PAID expenses in background so Earned card can show YTD total
+  useEffect(() => {
+    let mounted = true;
+
+    const loadPaidExpenses = async () => {
+      if (!who || isEmployee) return;
+
+      setEarnedExpensesLoading(true);
+      try {
+        // Preferred endpoint
+        const res = await api.get("/projects/expense-requests/", { params: { include_archived: 1 } });
+        const list = Array.isArray(res.data) ? res.data : res.data?.results || [];
+        const paidOnly = (list || []).filter((x) => norm(x?.status) === "paid" || !!x?.paid_at);
+
+        if (!mounted) return;
+        setEarnedExpenses(paidOnly);
+      } catch (e) {
+        console.error(e);
+        try {
+          // Fallback endpoint
+          const res2 = await api.get("/projects/expenses/", { params: { include_archived: 1 } });
+          const list2 = Array.isArray(res2.data) ? res2.data : res2.data?.results || [];
+          const paidOnly2 = (list2 || []).filter((x) => norm(x?.status) === "paid" || !!x?.paid_at);
+
+          if (!mounted) return;
+          setEarnedExpenses(paidOnly2);
+        } catch (e2) {
+          console.error(e2);
+          if (!mounted) return;
+          setEarnedExpenses([]);
+        }
+      } finally {
+        if (mounted) setEarnedExpensesLoading(false);
+      }
+    };
+
+    loadPaidExpenses();
+    return () => {
+      mounted = false;
+    };
+  }, [who, isEmployee]);
+
+  // Intro pricing + plan + credits
   useEffect(() => {
     const fetchIntroCountdown = async () => {
       if (isEmployee) return;
 
       try {
         const { data } = await api.get("/projects/contractors/me/");
+        const aiPro = isAiProActive(data);
+
+        const aw = data?.ai?.agreement_writer || data?.ai_agreement_writer || data?.aiAgreementWriter || null;
+
+        const creditsRemaining =
+          data?.ai?.credits_remaining ??
+          data?.ai?.creditsRemaining ??
+          aw?.free_remaining ??
+          aw?.freeRemaining ??
+          null;
+
+        const creditsTotal =
+          data?.ai?.credits_total ??
+          data?.ai?.creditsTotal ??
+          aw?.free_total ??
+          aw?.freeTotal ??
+          null;
+
+        const creditsUsed =
+          aw?.free_used ??
+          aw?.freeUsed ??
+          (creditsTotal != null && creditsRemaining != null
+            ? Math.max(0, Number(creditsTotal) - Number(remaining = creditsRemaining))
+            : null);
+
+        const creditsEnabled =
+          aw?.enabled === true ||
+          data?.ai?.enabled === true ||
+          (creditsRemaining != null && Number(creditsRemaining) > 0);
+
+        setPlanInfo({
+          loading: false,
+          planLabel: planLabel(data),
+          directPayLabel: directPayLabel(data),
+          aiProActive: aiPro,
+          aiCreditsRemaining: creditsRemaining == null ? null : Number(creditsRemaining),
+          aiCreditsTotal: creditsTotal == null ? null : Number(creditsTotal),
+          aiCreditsUsed: creditsUsed == null ? null : Number(creditsUsed),
+          aiCreditsEnabled: !!creditsEnabled,
+        });
 
         const createdRaw =
           data.created_at ||
@@ -618,19 +1011,18 @@ export default function ContractorDashboard() {
         }
 
         const INTRO_DAYS = 60;
-        const now = new Date();
+        const nowDt = new Date();
         const msPerDay = 1000 * 60 * 60 * 24;
-        const daysActive = Math.floor(
-          (now.getTime() - createdDate.getTime()) / msPerDay
-        );
-        const remaining = INTRO_DAYS - daysActive;
+        const daysActive = Math.floor((nowDt.getTime() - createdDate.getTime()) / msPerDay);
+        const remainingDays = INTRO_DAYS - daysActive;
 
-        setIntroActive(remaining > 0);
-        setIntroDaysRemaining(Math.max(0, remaining));
+        setIntroActive(remainingDays > 0);
+        setIntroDaysRemaining(Math.max(0, remainingDays));
       } catch (err) {
         console.error("Failed to load contractor profile for intro countdown", err);
         setIntroActive(false);
         setIntroDaysRemaining(null);
+        setPlanInfo((p) => ({ ...p, loading: false }));
       }
     };
 
@@ -643,14 +1035,7 @@ export default function ContractorDashboard() {
 
     const loadPricing = async () => {
       if (isEmployee) {
-        setPricing({
-          loading: false,
-          rate: null,
-          fixed_fee: 1,
-          is_intro: null,
-          tier_name: null,
-          error: "",
-        });
+        setPricing({ loading: false, rate: null, fixed_fee: 1, is_intro: null, tier_name: null, error: "" });
         return;
       }
 
@@ -658,22 +1043,11 @@ export default function ContractorDashboard() {
         setPricing((p) => ({ ...p, loading: true, error: "" }));
 
         const { data } = await api.get("/projects/agreements/");
-        const list = Array.isArray(data?.results)
-          ? data.results
-          : Array.isArray(data)
-          ? data
-          : [];
+        const list = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];
 
         if (!list.length) {
           if (!mounted) return;
-          setPricing({
-            loading: false,
-            rate: null,
-            fixed_fee: 1,
-            is_intro: null,
-            tier_name: null,
-            error: "Create an agreement to display your exact rate here.",
-          });
+          setPricing({ loading: false, rate: null, fixed_fee: 1, is_intro: null, tier_name: null, error: "" });
           return;
         }
 
@@ -682,21 +1056,11 @@ export default function ContractorDashboard() {
 
         if (!agreementId) {
           if (!mounted) return;
-          setPricing({
-            loading: false,
-            rate: null,
-            fixed_fee: 1,
-            is_intro: null,
-            tier_name: null,
-            error: "Unable to determine your current rate.",
-          });
+          setPricing({ loading: false, rate: null, fixed_fee: 1, is_intro: null, tier_name: null, error: "" });
           return;
         }
 
-        const { data: fp } = await api.get(
-          `/projects/agreements/${agreementId}/funding_preview/`
-        );
-
+        const { data: fp } = await api.get(`/projects/agreements/${agreementId}/funding_preview/`);
         if (!mounted) return;
 
         setPricing({
@@ -710,14 +1074,7 @@ export default function ContractorDashboard() {
       } catch (err) {
         console.error("Failed to load pricing (funding_preview)", err);
         if (!mounted) return;
-        setPricing({
-          loading: false,
-          rate: null,
-          fixed_fee: 1,
-          is_intro: null,
-          tier_name: null,
-          error: "Unable to load your rate right now.",
-        });
+        setPricing({ loading: false, rate: null, fixed_fee: 1, is_intro: null, tier_name: null, error: "" });
       }
     };
 
@@ -727,34 +1084,54 @@ export default function ContractorDashboard() {
     };
   }, [isEmployee]);
 
-  /* ----- milestone stats ----- */
+  // Build invoice lookup map (so milestones can compute Paid)
+  const invoicesById = useMemo(() => {
+    const map = {};
+    for (const inv of Array.isArray(invoices) ? invoices : []) {
+      const id = inv?.id ?? inv?.invoice_id ?? inv?.pk ?? null;
+      if (id != null && String(id).trim() !== "") map[String(id)] = inv;
+    }
+    return map;
+  }, [invoices]);
+
+  /* ----- milestone stats (aligned with MilestoneList filters) ----- */
   const mStats = useMemo(() => {
-    const all = milestones;
+    const all = Array.isArray(milestones) ? milestones : [];
     const allAmt = sum(all);
 
-    const incomp = all.filter(isIncomplete);
-    const incompAmt = sum(incomp);
-
-    const comp = all.filter(isCompleted);
-    const compAmt = sum(comp);
-
-    // ✅ Rework Work Orders (milestones created from disputes)
     const rework = all.filter(isReworkMilestone);
     const reworkAmt = sum(rework);
+
+    const nonRework = all.filter((m) => !isReworkMilestone(m));
+
+    const incomp = nonRework.filter(isMilestoneIncomplete);
+    const incompAmt = sum(incomp);
+
+    const ready = nonRework.filter((m) => isMilestoneReadyToInvoice(m, invoicesById));
+    const readyAmt = sum(ready);
+
+    const paid = nonRework.filter((m) => isMilestonePaid(m, invoicesById));
+    const paidAmt = sum(paid);
 
     return {
       totalCount: all.length,
       totalAmount: allAmt,
+
       incompleteCount: incomp.length,
       incompleteAmount: incompAmt,
-      completedCount: comp.length,
-      completedAmount: compAmt,
+
+      readyCount: ready.length,
+      readyAmount: readyAmt,
+
+      paidCount: paid.length,
+      paidAmount: paidAmt,
+
       reworkCount: rework.length,
       reworkAmount: reworkAmt,
     };
-  }, [milestones]);
+  }, [milestones, invoicesById]);
 
-  /* ----- invoice stats (contractor only) ----- */
+  /* ----- invoice stats ----- */
   const iStats = useMemo(() => {
     const buckets = { pending: [], approved: [], earned: [], disputed: [] };
     for (const inv of invoices) {
@@ -774,71 +1151,117 @@ export default function ContractorDashboard() {
     };
   }, [invoices]);
 
+  // ✅ Earned YTD (Jan 1 -> today) for the stat card
+  const earnedYtdAmount = useMemo(() => {
+    const from = startOfYear(new Date());
+    const to = new Date();
+
+    const invList = Array.isArray(invoices) ? invoices : [];
+    const expList = Array.isArray(earnedExpenses) ? earnedExpenses : [];
+
+    // escrow released invoices
+    const escrowInv = invList.filter(
+      (inv) => inv?.escrow_released === true || inv?.escrow_released === 1 || inv?.escrow_released === "true"
+    );
+
+    // direct pay invoices
+    const directInv = invList.filter((inv) => {
+      const st = norm(inv?.status);
+      const hasDirectPayStamp =
+        !!inv?.direct_pay_paid_at ||
+        !!inv?.direct_pay_payment_intent_id ||
+        !!inv?.direct_pay_checkout_session_id ||
+        !!inv?.direct_pay_checkout_url;
+      const looksPaid = st === "paid" || st.includes("paid") || norm(inv?.display_status) === "paid";
+      return hasDirectPayStamp && looksPaid;
+    });
+
+    const escrowYtd = escrowInv.filter((inv) => inRange(dateForInvoice(inv), from, to));
+    const directYtd = directInv.filter((inv) => inRange(dateForInvoice(inv), from, to));
+    const expYtd = expList.filter((ex) => inRange(dateForExpense(ex), from, to));
+
+    return sum(escrowYtd) + sum(directYtd) + sum(expYtd);
+  }, [invoices, earnedExpenses]);
+
   /* ----- navigation handlers ----- */
-  const goNewAgreement = () => navigate(`${BASE}/agreements`);
-  const goNewMilestone = () => navigate(`${BASE}/milestones?new=1`);
-  const goInvoices = () => navigate(`${BASE}/invoices`);
-  const goInvoicesDisputed = () => navigate(`${BASE}/invoices?filter=disputed`);
-  const goCalendar = () => navigate(`${BASE}/calendar`);
-  const goDisputes = () => navigate(`${BASE}/disputes`); // keep sidebar disputes as case management
-  const goReworkMilestones = () => navigate(`${BASE}/milestones?filter=rework`);
+  const goNewAgreement = () => navigate(`/app/agreements`);
+  const goNewIntake = () => navigate(`/app/intake/new`);
+  const goNewMilestone = () => navigate(`/app/milestones?new=1`);
+  const goInvoices = () => navigate(`/app/invoices`);
+  const goInvoicesDisputed = () => navigate(`/app/invoices?filter=disputed`);
+  const goCalendar = () => navigate(`/app/calendar`);
+  const goDisputes = () => navigate(`/app/disputes`);
+  const goReworkMilestones = () => navigate(`/app/milestones?filter=rework`);
+  const goExpenses = () => navigate(`/app/expenses`);
 
   const openNewExpense = () => setShowExpenseModal(true);
-  const onExpenseModalClose = (didChange) => {
-    setShowExpenseModal(false);
-    if (didChange) setExpensesRefreshKey((k) => k + 1);
+  const onExpenseModalClose = () => setShowExpenseModal(false);
+
+  const openEarnedModal = async () => {
+    setShowEarnedModal(true);
+    // We already loaded paid expenses in background; keep UX snappy.
+    setEarnedLoading(earnedExpensesLoading);
   };
 
-  // Build display text for Pricing card
-  const ratePercent = pricing.rate != null ? fmtRate(pricing.rate) : null;
+  const closeEarnedModal = () => setShowEarnedModal(false);
+
+  /* =======================================================================
+   * Pricing Card
+   * ======================================================================= */
   const fixedFeeLabel = `+ $${Number(pricing.fixed_fee || 1).toFixed(0)}`;
+  const ratePercentFromBackend = pricing.rate != null ? fmtRate(pricing.rate) : null;
+  const isIntroTierBackend = pricing.is_intro === true || String(pricing.tier_name || "").toUpperCase() === "INTRO";
 
-  const isIntroTier =
-    pricing.is_intro === true ||
-    String(pricing.tier_name || "").toUpperCase() === "INTRO";
+  const currentRatePercent = ratePercentFromBackend
+    ? ratePercentFromBackend
+    : introActive
+    ? INTRO_RATE_LABEL
+    : STANDARD_START_RATE_LABEL;
 
-  const titleText = pricing.loading
-    ? "Checking your rate…"
-    : ratePercent
-    ? `${isIntroTier ? "Intro Rate" : "Standard Tiered Rate"}: ${ratePercent} ${fixedFeeLabel}`
-    : "MyHomeBro Pricing";
+  const currentRateTitle = pricing.loading ? "Checking your rate…" : `Current Rate: ${currentRatePercent} ${fixedFeeLabel}`;
 
-  const baseSubtitle =
-    pricing.loading
-      ? "Loading your pricing details."
-      : pricing.error
-      ? pricing.error
-      : isIntroTier
-      ? "Your current introductory pricing for new agreements."
-      : "Your current pricing for new agreements.";
+  const daysLeftText =
+    introDaysRemaining !== null
+      ? `${introDaysRemaining} day${introDaysRemaining === 1 ? "" : "s"} remaining`
+      : null;
 
-  const subtitleText =
-    isIntroTier && introActive && introDaysRemaining !== null
-      ? `${baseSubtitle} ${introDaysRemaining} day${
-          introDaysRemaining === 1 ? "" : "s"
-        } remaining in your intro period.`
-      : baseSubtitle;
+  const subtitleParts = [];
+  if (!planInfo.loading) {
+    subtitleParts.push(`Plan: ${planInfo.planLabel}. Direct Pay: ${directPayLabel(who)}.`);
+    if (planInfo.aiCreditsRemaining != null) {
+      subtitleParts.push(`AI Credits: ${planInfo.aiCreditsRemaining} remaining. (1 credit = 1 agreement.)`);
+    }
+  }
 
-  // Employee header
-  const headerSubtitle = isEmployee
-    ? "Here are the milestones assigned to you."
-    : "Milestones and invoices at a glance.";
+  if (pricing.loading) {
+    subtitleParts.push("Loading pricing…");
+  } else {
+    if (introActive) {
+      subtitleParts.push(`Intro pricing is active (${daysLeftText || "days remaining"}).`);
+      subtitleParts.push("Intro (first 60 days): 3.00% + $1.");
+    } else {
+      subtitleParts.push("Intro pricing window has ended.");
+      subtitleParts.push("Standard escrow pricing is tiered by monthly volume.");
+    }
+
+    if (ratePercentFromBackend) {
+      subtitleParts.push(isIntroTierBackend ? "This rate is based on your current intro tier." : "This rate is based on your current tier.");
+    } else {
+      subtitleParts.push("Create your first agreement to lock in tier calculations and previews.");
+    }
+  }
+
+  const pricingSubtitle = subtitleParts.join(" ");
+
+  const headerSubtitle = isEmployee ? "Here are the milestones assigned to you." : "Milestones and invoices at a glance.";
 
   return (
     <PageShell title="Dashboard" subtitle={headerSubtitle} showLogo>
-      {/* CONTRACTOR: pricing card only */}
       {!isEmployee ? (
         <>
           <div className="mhb-kicker">MyHomeBro Pricing</div>
           <div className="mhb-grid" style={{ marginBottom: 6 }}>
-            <StatCard
-              icon={BadgeDollarSign}
-              title={titleText}
-              subtitle={subtitleText}
-              count={null}
-              amount={null}
-              onClick={null}
-            />
+            <StatCard icon={BadgeDollarSign} title={currentRateTitle} subtitle={pricingSubtitle} count={null} amount={null} onClick={null} />
           </div>
         </>
       ) : null}
@@ -848,33 +1271,52 @@ export default function ContractorDashboard() {
         <StatCard
           icon={Target}
           title={isEmployee ? "My Assigned Milestones" : "All Milestones"}
-          subtitle={
-            isEmployee
-              ? "Only milestones assigned to you."
-              : "Across your active agreements."
-          }
+          subtitle={isEmployee ? "Only milestones assigned to you." : "Across your active agreements."}
           count={mStats.totalCount}
           amount={mStats.totalAmount}
-          onClick={() => navigate(`${BASE}/milestones`)}
+          onClick={() => navigate(`/app/milestones`)}
         />
+
         <StatCard
           icon={ListTodo}
           title="Incomplete"
           subtitle="Not yet completed."
           count={mStats.incompleteCount}
           amount={mStats.incompleteAmount}
-          onClick={() => navigate(`${BASE}/milestones?filter=incomplete`)}
-        />
-        <StatCard
-          icon={CheckCircle2}
-          title="Completed"
-          subtitle={isEmployee ? "Completed by you." : "Completed (Not Invoiced)"}
-          count={mStats.completedCount}
-          amount={mStats.completedAmount}
-          onClick={() => navigate(`${BASE}/milestones?filter=completed`)}
+          onClick={() => navigate(`/app/milestones?filter=incomplete`)}
         />
 
-        {/* ✅ NEW: Rework Work Orders (instead of Milestone Disputed) */}
+        {!isEmployee ? (
+          <>
+            <StatCard
+              icon={CheckCircle2}
+              title="Ready to Invoice"
+              subtitle="Completed (Not Invoiced)."
+              count={mStats.readyCount}
+              amount={mStats.readyAmount}
+              onClick={() => navigate(`/app/milestones?filter=complete_not_invoiced`)}
+            />
+
+            <StatCard
+              icon={BadgeDollarSign}
+              title="Paid"
+              subtitle="Escrow released / paid."
+              count={mStats.paidCount}
+              amount={mStats.paidAmount}
+              onClick={() => navigate(`/app/milestones?filter=paid`)}
+            />
+          </>
+        ) : (
+          <StatCard
+            icon={CheckCircle2}
+            title="Completed"
+            subtitle="Completed by you."
+            count={0}
+            amount={0}
+            onClick={() => navigate(`/app/milestones`)}
+          />
+        )}
+
         <StatCard
           icon={Wrench}
           title="Rework Work Orders"
@@ -885,7 +1327,6 @@ export default function ContractorDashboard() {
         />
       </div>
 
-      {/* CONTRACTOR: invoices section only */}
       {!isEmployee ? (
         <>
           <div className="mhb-kicker" style={{ marginTop: 14 }}>
@@ -898,7 +1339,7 @@ export default function ContractorDashboard() {
               subtitle="Sent to homeowner — awaiting approval."
               count={iStats.pendingCount}
               amount={iStats.pendingAmount}
-              onClick={() => navigate(`${BASE}/invoices`)}
+              onClick={goInvoices}
             />
             <StatCard
               icon={BadgeCheck}
@@ -906,10 +1347,8 @@ export default function ContractorDashboard() {
               subtitle="Approved — ready for payout."
               count={iStats.approvedCount}
               amount={iStats.approvedAmount}
-              onClick={() => navigate(`${BASE}/invoices`)}
+              onClick={goInvoices}
             />
-
-            {/* ✅ Keep disputed ONLY under invoices, and route to invoices list */}
             <StatCard
               icon={AlertTriangle}
               title="Disputed"
@@ -918,14 +1357,13 @@ export default function ContractorDashboard() {
               amount={iStats.disputedAmount}
               onClick={goInvoicesDisputed}
             />
-
             <StatCard
               icon={WalletMinimal}
-              title="Earned"
-              subtitle="Paid/released to your account."
-              count={iStats.earnedCount}
-              amount={iStats.earnedAmount}
-              onClick={() => navigate(`${BASE}/invoices`)}
+              title="Earned (YTD)"
+              subtitle="Jan 1 → today. Click for breakdown."
+              count={null}
+              amount={earnedYtdAmount}
+              onClick={openEarnedModal}
             />
           </div>
         </>
@@ -938,29 +1376,13 @@ export default function ContractorDashboard() {
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
           {!isEmployee ? (
             <>
-              <ActionButton
-                icon={FilePlus2}
-                label="+ New Agreement"
-                primary
-                onClick={goNewAgreement}
-              />
-              <ActionButton
-                icon={ListPlus}
-                label="+ New Milestone"
-                onClick={goNewMilestone}
-              />
-              <ActionButton
-                icon={Receipt}
-                label="+ New Expense"
-                onClick={openNewExpense}
-              />
+              <ActionButton icon={FilePlus2} label="+ New Agreement" primary onClick={goNewAgreement} />
+              <ActionButton icon={ListPlus} label="+ New Intake" onClick={goNewIntake} />
+              <ActionButton icon={ListPlus} label="+ New Milestone" onClick={goNewMilestone} />
+              <ActionButton icon={Receipt} label="+ New Expense" onClick={openNewExpense} />
+              <ActionButton icon={Receipt} label="Expenses" onClick={goExpenses} />
               <ActionButton icon={Receipt} label="Invoices" onClick={goInvoices} />
-              {/* Disputes stays as case management */}
-              <ActionButton
-                icon={AlertTriangle}
-                label="Disputes"
-                onClick={goDisputes}
-              />
+              <ActionButton icon={AlertTriangle} label="Disputes" onClick={goDisputes} />
             </>
           ) : null}
 
@@ -968,21 +1390,16 @@ export default function ContractorDashboard() {
         </div>
       </div>
 
-      {/* CONTRACTOR: expenses section only */}
-      {!isEmployee ? (
-        <>
-          <div className="mhb-kicker" style={{ marginTop: 18 }}>
-            Expense Requests
-          </div>
-          <div key={expensesRefreshKey}>
-            <ExpenseRequestsPanel />
-          </div>
+      {!isEmployee ? <ExpenseRequestModal isOpen={showExpenseModal} onClose={onExpenseModalClose} /> : null}
 
-          <ExpenseRequestModal
-            isOpen={showExpenseModal}
-            onClose={onExpenseModalClose}
-          />
-        </>
+      {!isEmployee ? (
+        <EarnedBreakdownModal
+          isOpen={showEarnedModal}
+          onClose={closeEarnedModal}
+          invoices={invoices}
+          expenses={earnedExpenses}
+          loading={earnedLoading}
+        />
       ) : null}
     </PageShell>
   );

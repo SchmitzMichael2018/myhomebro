@@ -183,6 +183,31 @@ class ApplyTemplateSerializer(serializers.Serializer):
     overwrite_existing = serializers.BooleanField(default=True)
     copy_text_fields = serializers.BooleanField(default=True)
 
+    # Frontend already sends these during apply; keep serializer aligned
+    # so the view layer can safely accept them now and the service layer can
+    # use them later without dropping them at validation time.
+    estimated_days = serializers.IntegerField(required=False, min_value=1, allow_null=True)
+    auto_schedule = serializers.BooleanField(required=False, default=False)
+    spread_enabled = serializers.BooleanField(required=False, default=False)
+    spread_total = serializers.DecimalField(
+        required=False,
+        allow_null=True,
+        max_digits=12,
+        decimal_places=2,
+        min_value=0,
+    )
+
+    def validate(self, attrs):
+        spread_enabled = bool(attrs.get("spread_enabled", False))
+        spread_total = attrs.get("spread_total", None)
+
+        if spread_enabled and spread_total is not None and spread_total <= 0:
+            raise serializers.ValidationError(
+                {"spread_total": "Spread total must be greater than 0 when spread is enabled."}
+            )
+
+        return attrs
+
 
 class SaveAgreementAsTemplateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=255)
