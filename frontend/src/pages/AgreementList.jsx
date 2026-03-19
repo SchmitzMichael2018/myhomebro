@@ -219,51 +219,6 @@ export default function AgreementList() {
     };
   }, [pdfOpenForId]);
 
-  const load = useCallback(async () => {
-    try {
-      setLoading(true);
-
-      const { data } = await api.get("/projects/agreements/", {
-        params: {
-          page_size: 250,
-          include_archived: showArchived ? 1 : 0,
-          _ts: Date.now(),
-        },
-        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
-      });
-
-      const list = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];
-      setRows(list);
-
-      const index = {};
-      const mergeIntoIndex = (arr) => {
-        if (!Array.isArray(arr)) return;
-        for (const h of arr) {
-          const id = String(h.id ?? h.pk ?? "");
-          if (!id) continue;
-          const name = labelFromHomeownerObj(h);
-          const email = h.email || h.username || "";
-          index[id] = { name: name || email || "", email: email || "", raw: h };
-        }
-      };
-
-      try {
-        const { data: h1 } = await api.get("/projects/homeowners/", { params: { page_size: 1000 } });
-        mergeIntoIndex(h1?.results || h1);
-      } catch {
-        /* ignore */
-      }
-
-      setHmIndex(index);
-      fetchStatsFor(list.slice(0, pageSize));
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to load agreements.");
-    } finally {
-      setLoading(false);
-    }
-  }, [pageSize, showArchived]);
-
   const isMsComplete = (m) => {
     const sv = (x) => String(x || "").trim().toLowerCase();
     const yes = (v) => v === true || v === "true" || v === 1 || v === "1";
@@ -310,6 +265,51 @@ export default function AgreementList() {
     const starters = Math.min(limit, ids.length);
     await Promise.all(Array.from({ length: starters }, runOne));
   };
+
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      const { data } = await api.get("/projects/agreements/", {
+        params: {
+          page_size: 250,
+          include_archived: showArchived ? 1 : 0,
+          _ts: Date.now(),
+        },
+        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      });
+
+      const list = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];
+      setRows(list);
+
+      const index = {};
+      const mergeIntoIndex = (arr) => {
+        if (!Array.isArray(arr)) return;
+        for (const h of arr) {
+          const id = String(h.id ?? h.pk ?? "");
+          if (!id) continue;
+          const name = labelFromHomeownerObj(h);
+          const email = h.email || h.username || "";
+          index[id] = { name: name || email || "", email: email || "", raw: h };
+        }
+      };
+
+      try {
+        const { data: h1 } = await api.get("/projects/homeowners/", { params: { page_size: 1000 } });
+        mergeIntoIndex(h1?.results || h1);
+      } catch {
+        /* ignore */
+      }
+
+      setHmIndex(index);
+      fetchStatsFor(list.slice(0, pageSize));
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load agreements.");
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchStatsFor, pageSize, showArchived]);
 
   useEffect(() => {
     load();
