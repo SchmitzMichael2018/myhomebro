@@ -95,63 +95,57 @@ export default function MobileSidebarShell({ sidebar, children }) {
   return (
     <MobileSidebarContext.Provider value={ctx}>
       <div className="min-h-screen bg-slate-50">
-        {/* Desktop */}
-        <div className="hidden md:block">{children}</div>
+        {/* ✅ Floating hamburger fallback (mobile only, only if header did NOT register one) */}
+        {!headerHamburgerPresent ? (
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            aria-label="Open menu"
+            className="fixed top-4 left-4 z-50 inline-flex items-center justify-center rounded-lg bg-white/90 backdrop-blur px-3 py-2 shadow border border-slate-200 active:scale-[0.99] md:hidden"
+          >
+            <span className="text-xl leading-none">☰</span>
+          </button>
+        ) : null}
 
-        {/* Mobile */}
-        <div className="md:hidden min-h-screen">
-          {/* ✅ Floating hamburger fallback (only shows if header did NOT register one) */}
-          {!headerHamburgerPresent ? (
-            <button
-              type="button"
-              onClick={() => setOpen(true)}
-              aria-label="Open menu"
-              className="fixed top-4 left-4 z-50 inline-flex items-center justify-center rounded-lg bg-white/90 backdrop-blur px-3 py-2 shadow border border-slate-200 active:scale-[0.99]"
+        {/* Render app content exactly once */}
+        {children}
+
+        {/* Mobile overlay */}
+        {open && (
+          <div className="fixed inset-0 z-40 md:hidden">
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-black/40"
+              onClick={() => setOpen(false)}
+            />
+
+            {/* Slide-in panel */}
+            <div
+              ref={mobilePanelRef}
+              className="absolute left-0 top-0 h-full w-[84vw] max-w-[340px] bg-white shadow-xl border-r border-slate-200"
+              role="dialog"
+              aria-modal="true"
             >
-              <span className="text-xl leading-none">☰</span>
-            </button>
-          ) : null}
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+                <div className="text-sm font-semibold text-slate-700">Menu</div>
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  aria-label="Close menu"
+                  className="rounded-md px-2 py-1 text-slate-600 hover:bg-slate-100"
+                >
+                  ✕
+                </button>
+              </div>
 
-          {/* Render app content */}
-          {children}
-
-          {/* Overlay */}
-          {open && (
-            <div className="fixed inset-0 z-40">
-              {/* Backdrop */}
-              <div
-                className="absolute inset-0 bg-black/40"
-                onClick={() => setOpen(false)}
-              />
-
-              {/* Slide-in panel */}
-              <div
-                ref={mobilePanelRef}
-                className="absolute left-0 top-0 h-full w-[84vw] max-w-[340px] bg-white shadow-xl border-r border-slate-200"
-                role="dialog"
-                aria-modal="true"
-              >
-                {/* Header */}
-                <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-                  <div className="text-sm font-semibold text-slate-700">Menu</div>
-                  <button
-                    type="button"
-                    onClick={() => setOpen(false)}
-                    aria-label="Close menu"
-                    className="rounded-md px-2 py-1 text-slate-600 hover:bg-slate-100"
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                {/* Body */}
-                <div className="h-[calc(100%-49px)] overflow-y-auto">
-                  {sidebar}
-                </div>
+              {/* Body */}
+              <div className="h-[calc(100%-49px)] overflow-y-auto">
+                {sidebar}
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </MobileSidebarContext.Provider>
   );
