@@ -20,7 +20,7 @@ def _normalize_pricing_mode(materials_responsibility) -> str:
     raw = str(materials_responsibility or "").strip().lower()
     if not raw:
         return "full_service"
-    if "split" in raw or "hybrid" in raw:
+    if "split" in raw or "hybrid" in raw or "shared" in raw or "depend" in raw:
         return "hybrid"
     if "homeowner" in raw or "customer" in raw or "owner" in raw or "client" in raw:
         return "labor_only"

@@ -396,7 +396,7 @@ def _derive_pricing_mode_from_answers(answers: Any) -> str:
     if not raw:
         return "full_service"
 
-    if "split" in raw or "hybrid" in raw:
+    if "split" in raw or "hybrid" in raw or "shared" in raw or "depend" in raw:
         return "hybrid"
 
     if (

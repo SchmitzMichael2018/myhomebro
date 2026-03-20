@@ -150,6 +150,27 @@ function normalizeLabelForMatching(v) {
     .trim();
 }
 
+function normalizeMaterialsResponsibilityValue(v) {
+  const raw = normStr(v);
+  const lowered = raw.toLowerCase();
+  if (!lowered) return "";
+  if (lowered.includes("split") || lowered.includes("shared") || lowered.includes("hybrid") || lowered.includes("depend")) {
+    return "Split";
+  }
+  if (
+    lowered.includes("homeowner") ||
+    lowered.includes("customer") ||
+    lowered.includes("owner") ||
+    lowered.includes("client")
+  ) {
+    return "Homeowner";
+  }
+  if (lowered.includes("contractor")) {
+    return "Contractor";
+  }
+  return raw;
+}
+
 function semanticGroupForQuestion(q) {
   const rawKey = normalizeKeyish(q?.key || "");
   const rawLabel = normalizeLabelForMatching(q?.label || q?.question || "");
@@ -445,7 +466,10 @@ function normalizeAnswersForCanonicalKeys(answerMap = {}, questions = []) {
     if (!canonicalKey) continue;
 
     if (src[canonicalKey] !== undefined) {
-      out[canonicalKey] = src[canonicalKey];
+      out[canonicalKey] =
+        canonicalKey === "materials_responsibility"
+          ? normalizeMaterialsResponsibilityValue(src[canonicalKey])
+          : src[canonicalKey];
       continue;
     }
 
@@ -455,7 +479,10 @@ function normalizeAnswersForCanonicalKeys(answerMap = {}, questions = []) {
       if (isInternalSemanticKey(rawKey)) continue;
       const rawGroup = semanticGroupForQuestion({ key: rawKey, label: rawKey });
       if (rawGroup === qGroup) {
-        out[canonicalKey] = src[rawKey];
+        out[canonicalKey] =
+          canonicalKey === "materials_responsibility"
+            ? normalizeMaterialsResponsibilityValue(src[rawKey])
+            : src[rawKey];
         break;
       }
     }
@@ -633,9 +660,13 @@ export default function ClarificationsModal({
   }, [open, agreementId]); // intentionally narrow dependencies
 
   function setAnswer(key, value) {
+    const nextValue =
+      key === "materials_responsibility"
+        ? normalizeMaterialsResponsibilityValue(value)
+        : value;
     setAnswers((prev) => ({
       ...(prev || {}),
-      [key]: value,
+      [key]: nextValue,
     }));
   }
 
@@ -679,6 +710,12 @@ export default function ClarificationsModal({
         ...normalizedExistingAnswers,
         ...(answers || {}),
       };
+
+      if (Object.prototype.hasOwnProperty.call(mergedAnswers, "materials_responsibility")) {
+        mergedAnswers.materials_responsibility = normalizeMaterialsResponsibilityValue(
+          mergedAnswers.materials_responsibility
+        );
+      }
 
       const payload = {
         ai_scope: {

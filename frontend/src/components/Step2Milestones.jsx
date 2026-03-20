@@ -379,14 +379,40 @@ const PRICING_IMPACT_KEYS = [
   "roof_pitch",
   "roofing_material_type",
   "decking_condition",
+  "materials_responsibility",
   "measurements_provided",
   "measurement_notes",
   "measurements_notes",
 ];
 
+function normalizeMaterialsResponsibilityValue(v) {
+  const raw = safeStr(v);
+  const lowered = raw.toLowerCase();
+  if (!lowered) return "";
+  if (lowered.includes("split") || lowered.includes("shared") || lowered.includes("hybrid") || lowered.includes("depend")) {
+    return "Split";
+  }
+  if (
+    lowered.includes("homeowner") ||
+    lowered.includes("customer") ||
+    lowered.includes("owner") ||
+    lowered.includes("client")
+  ) {
+    return "Homeowner";
+  }
+  if (lowered.includes("contractor")) {
+    return "Contractor";
+  }
+  return raw;
+}
+
 function normalizeAnswerValue(v) {
   if (v == null) return "";
   if (typeof v === "boolean") return v ? "true" : "false";
+  if (typeof v === "string") {
+    const normalizedMaterials = normalizeMaterialsResponsibilityValue(v);
+    if (normalizedMaterials) return normalizedMaterials;
+  }
   return String(v).trim();
 }
 
@@ -632,8 +658,9 @@ export default function Step2Milestones({
           (typeof answers.materials_responsibility === "string" && answers.materials_responsibility.trim()) ||
           "";
 
-        if (mw === "Homeowner" || mw === "Contractor" || mw === "Split") {
-          setMaterialsWho(mw);
+        const normalizedMaterialsWho = normalizeMaterialsResponsibilityValue(mw);
+        if (normalizedMaterialsWho === "Homeowner" || normalizedMaterialsWho === "Contractor" || normalizedMaterialsWho === "Split") {
+          setMaterialsWho(normalizedMaterialsWho);
         }
 
         if (typeof answers.measurements_provided === "string") {
@@ -706,7 +733,7 @@ export default function Step2Milestones({
     }
 
     if (materialsWho && String(materialsWho).trim()) {
-      const v = String(materialsWho).trim();
+      const v = normalizeMaterialsResponsibilityValue(materialsWho);
       answers.materials_responsibility = v;
     }
 
@@ -727,10 +754,11 @@ export default function Step2Milestones({
     return answers;
   }
 
-  async function persistAnswersToAgreement(extraAnswers = null) {
+  async function persistAnswersToAgreement(extraAnswers = null, options = null) {
     if (!agreementId) return;
 
-    const step2Answers = buildStep2Answers();
+    const includeStep2Answers = options?.includeStep2Answers !== false;
+    const step2Answers = includeStep2Answers ? buildStep2Answers() : {};
     const mergedLocal = { ...(step2Answers || {}), ...(extraAnswers || {}) };
     if (!mergedLocal || Object.keys(mergedLocal).length === 0) return;
 
@@ -1505,10 +1533,26 @@ export default function Step2Milestones({
           }
           if (updatedAgreement) {
             setAgreementMeta(updatedAgreement);
+            const normalizedMaterialsWho = normalizeMaterialsResponsibilityValue(
+              nextAnswers?.materials_responsibility ||
+              nextAnswers?.materials_purchasing ||
+              nextAnswers?.who_purchases_materials
+            );
+            if (normalizedMaterialsWho) {
+              setMaterialsWho(normalizedMaterialsWho);
+            }
           } else {
             await refreshAgreementMeta();
           }
-          await persistAnswersToAgreement({ clarifications_reviewed_step2: true });
+          await persistAnswersToAgreement(
+            { clarifications_reviewed_step2: true },
+            { includeStep2Answers: false }
+          );
+          try {
+            await refreshMilestonesSafe();
+          } catch (err) {
+            console.warn("refreshAfterClarificationsSave failed:", err);
+          }
           setClarReviewed(true);
           if (pendingNextRef.current) {
             pendingNextRef.current = false;
