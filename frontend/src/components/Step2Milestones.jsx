@@ -60,6 +60,38 @@ function parseAmountStrict(v) {
   return n;
 }
 
+function roundSuggestedAmount(n) {
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (n < 100) return Math.max(1, Math.round(n));
+  return Math.max(5, Math.round(n / 5) * 5);
+}
+
+function midpointIfValid(low, high) {
+  const lo = parseAmountStrict(low);
+  const hi = parseAmountStrict(high);
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo <= 0 || hi <= 0 || hi < lo) return null;
+  return (lo + hi) / 2;
+}
+
+function deriveSuggestedPriceAmount(m) {
+  if (!m || typeof m !== "object") return null;
+  const mode = safeStr(m?.pricing_mode).toLowerCase();
+  const laborMid = midpointIfValid(m?.labor_estimate_low, m?.labor_estimate_high);
+  const totalMid = midpointIfValid(m?.suggested_amount_low, m?.suggested_amount_high);
+
+  const base =
+    mode === "labor_only" || mode === "hybrid"
+      ? laborMid ?? totalMid
+      : totalMid ?? laborMid;
+
+  return roundSuggestedAmount(base);
+}
+
+function formatSuggestedAmountInput(n) {
+  if (!Number.isFinite(n) || n <= 0) return "";
+  return String(Number(n.toFixed(2)));
+}
+
 function amountIsValidPositive(v) {
   const n = parseAmountStrict(v);
   return Number.isFinite(n) && n > 0;
@@ -238,7 +270,6 @@ function getEstimateAssistMeta(m) {
   const materialsHigh = m?.materials_estimate_high;
   const confidence = safeStr(m?.pricing_confidence);
   const pricingMode = safeStr(m?.pricing_mode).toLowerCase();
-  const sourceNote = safeStr(m?.pricing_source_note);
   const materials = safeStr(m?.materials_hint);
   const type = safeStr(m?.normalized_milestone_type);
   const durationDays =
@@ -275,7 +306,6 @@ function getEstimateAssistMeta(m) {
     materialsHigh,
     confidence,
     pricingMode,
-    sourceNote,
     pricingModeLabel:
       pricingMode === "labor_only"
         ? "Labor Only"
@@ -284,27 +314,58 @@ function getEstimateAssistMeta(m) {
         : pricingMode === "full_service"
         ? "Full Service"
         : "",
-    combinedRangeLabel: pricingMode === "labor_only" ? "Combined project context" : "Combined estimate",
-    modeHelper:
+    primaryLabel:
+      pricingMode === "labor_only" || pricingMode === "hybrid" ? "Labor" : "Total",
+    primaryLow:
+      pricingMode === "labor_only" || pricingMode === "hybrid"
+        ? laborLow ?? low
+        : low,
+    primaryHigh:
+      pricingMode === "labor_only" || pricingMode === "hybrid"
+        ? laborHigh ?? high
+        : high,
+    hasPrimaryRange:
+      pricingMode === "labor_only" || pricingMode === "hybrid"
+        ? laborLow !== null &&
+          laborLow !== undefined &&
+          laborLow !== "" &&
+          laborHigh !== null &&
+          laborHigh !== undefined &&
+          laborHigh !== ""
+        : low !== null &&
+          low !== undefined &&
+          low !== "" &&
+          high !== null &&
+          high !== undefined &&
+          high !== "",
+    materialsLine:
       pricingMode === "labor_only"
-        ? "Labor guidance is primary. Materials are customer-supplied context, not contractor-billed scope."
-        : pricingMode === "hybrid"
-        ? "Labor and materials responsibility appears shared. Review the split as guidance only."
-        : pricingMode === "full_service"
-        ? "Combined guidance reflects a full-service estimate with labor and materials context."
+        ? "Materials: customer supplied"
+        : materialsLow !== null &&
+          materialsLow !== undefined &&
+          materialsLow !== "" &&
+          materialsHigh !== null &&
+          materialsHigh !== undefined &&
+          materialsHigh !== ""
+        ? `Materials: ${formatCurrency(materialsLow)} – ${formatCurrency(materialsHigh)}`
         : "",
     confidenceLabel: formatEstimateConfidence(confidence),
     materials,
     type,
     durationDays,
     durationLabel: formatDurationDays(durationDays),
+    suggestedAmount: deriveSuggestedPriceAmount(m),
     hasAnything:
       !!safeStr(type) ||
       !!safeStr(materials) ||
-      !!safeStr(sourceNote) ||
       !!safeStr(confidence) ||
-      (low !== null && low !== undefined && low !== "") ||
-      (high !== null && high !== undefined && high !== "") ||
+      (
+        (pricingMode === "labor_only" || pricingMode === "hybrid")
+          ? (laborLow !== null && laborLow !== undefined && laborLow !== "") ||
+            (laborHigh !== null && laborHigh !== undefined && laborHigh !== "")
+          : (low !== null && low !== undefined && low !== "") ||
+            (high !== null && high !== undefined && high !== "")
+      ) ||
       (laborLow !== null && laborLow !== undefined && laborLow !== "") ||
       (laborHigh !== null && laborHigh !== undefined && laborHigh !== "") ||
       (materialsLow !== null && materialsLow !== undefined && materialsLow !== "") ||
@@ -1021,7 +1082,7 @@ export default function Step2Milestones({
     }
   }
 
-  function handleEditClick(m, idx) {
+  function handleEditClick(m, idx, options = {}) {
     if (milestonesLocked) {
       lockToast();
       return;
@@ -1032,6 +1093,8 @@ export default function Step2Milestones({
     }
 
     const orderNum = m?.order != null ? Number(m.order) : idx != null ? idx + 1 : null;
+    const suggestedAmount = deriveSuggestedPriceAmount(m);
+    const useSuggestedPrice = !!options?.useSuggestedPrice && Number.isFinite(suggestedAmount) && suggestedAmount > 0;
 
     setEditMilestone(m);
     setEditForm({
@@ -1041,7 +1104,11 @@ export default function Step2Milestones({
       description: safeStr(m.description),
       start_date: toDateOnly(m.start_date || m.start),
       completion_date: toDateOnly(m.completion_date || m.end_date || m.end),
-      amount: m.amount != null ? String(m.amount) : "",
+      amount: useSuggestedPrice
+        ? formatSuggestedAmountInput(suggestedAmount)
+        : m.amount != null
+        ? String(m.amount)
+        : "",
       normalized_milestone_type: safeStr(m.normalized_milestone_type),
       suggested_amount_low: m.suggested_amount_low ?? "",
       suggested_amount_high: m.suggested_amount_high ?? "",
@@ -1058,6 +1125,19 @@ export default function Step2Milestones({
     setEditAiErr("");
     setEditAiPreview("");
     setEditOpen(true);
+    if (useSuggestedPrice) {
+      toast.success("Suggested price loaded into the editable amount field.");
+    }
+  }
+
+  function applySuggestedPriceToEditForm() {
+    const suggestedAmount = deriveSuggestedPriceAmount(editForm);
+    if (!Number.isFinite(suggestedAmount) || suggestedAmount <= 0) return;
+    setEditForm((s) => ({
+      ...s,
+      amount: formatSuggestedAmountInput(suggestedAmount),
+    }));
+    toast.success("Suggested price loaded into the editable amount field.");
   }
 
   async function saveEdit() {
@@ -1713,45 +1793,17 @@ export default function Step2Milestones({
                           </div>
                         ) : null}
 
-                        {estimate.modeHelper ? (
-                          <div className="text-gray-500">{estimate.modeHelper}</div>
-                        ) : null}
-
-                        {estimate.hasRange ? (
+                        {estimate.hasPrimaryRange ? (
                           <div className="text-gray-700">
-                            {estimate.combinedRangeLabel}:{" "}
+                            {estimate.primaryLabel}:{" "}
                             <span className="font-medium">
-                              {formatCurrency(estimate.low)} – {formatCurrency(estimate.high)}
+                              {formatCurrency(estimate.primaryLow)} – {formatCurrency(estimate.primaryHigh)}
                             </span>
                           </div>
                         ) : null}
 
-                        {estimate.hasLaborRange ? (
-                          <div className="text-gray-600">
-                            Labor:{" "}
-                            <span className="font-medium text-gray-700">
-                              {formatCurrency(estimate.laborLow)} – {formatCurrency(estimate.laborHigh)}
-                            </span>
-                          </div>
-                        ) : null}
-
-                        {estimate.hasMaterialsRange && estimate.pricingMode !== "labor_only" ? (
-                          <div className="text-gray-600">
-                            Materials guidance:{" "}
-                            <span className="font-medium text-gray-700">
-                              {formatCurrency(estimate.materialsLow)} – {formatCurrency(estimate.materialsHigh)}
-                            </span>
-                          </div>
-                        ) : null}
-
-                        {estimate.hasMaterialsRange && estimate.pricingMode === "labor_only" ? (
-                          <div className="text-gray-500">
-                            Materials context is shown separately from the customer-supplied scope.
-                          </div>
-                        ) : null}
-
-                        {estimate.sourceNote ? (
-                          <div className="text-gray-500">{estimate.sourceNote}</div>
+                        {estimate.materialsLine ? (
+                          <div className="text-gray-500">{estimate.materialsLine}</div>
                         ) : null}
 
                         {estimate.confidenceLabel ? (
@@ -1780,9 +1832,18 @@ export default function Step2Milestones({
                           </div>
                         ) : null}
 
-                        <div className="text-[11px] text-slate-500">
-                          Estimate guidance only. Actual billed amount stays in the Amount column.
-                        </div>
+                        {Number.isFinite(estimate.suggestedAmount) && estimate.suggestedAmount > 0 ? (
+                          <div>
+                            <button
+                              type="button"
+                              className="rounded border px-2 py-1 text-[11px] font-medium hover:bg-gray-50 disabled:opacity-60"
+                              onClick={() => handleEditClick(m, idx, { useSuggestedPrice: true })}
+                              disabled={milestonesLocked}
+                            >
+                              Use Suggested Price
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
                     ) : (
                       <span className="text-xs text-gray-400">—</span>
@@ -2022,16 +2083,11 @@ export default function Step2Milestones({
                 editForm.labor_estimate_high !== "" ||
                 editForm.materials_estimate_low !== "" ||
                 editForm.materials_estimate_high !== "" ||
-                safeStr(editForm.pricing_source_note) ||
                 safeStr(editForm.materials_hint) ||
                 editForm.recommended_duration_days !== "") ? (
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
                   <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-700">
                     Estimate Assist
-                  </div>
-
-                  <div className="mb-2 text-[11px] text-slate-500">
-                    Advisory only. This does not change the milestone amount or agreement total.
                   </div>
 
                   <div className="space-y-2 text-sm">
@@ -2055,55 +2111,40 @@ export default function Step2Milestones({
                       </div>
                     ) : null}
 
-                    {safeStr(editForm.pricing_mode) ? (
-                      <div className="text-slate-500">
-                        {safeStr(editForm.pricing_mode).toLowerCase() === "labor_only"
-                          ? "Labor guidance is primary. Materials are customer-supplied context."
-                          : safeStr(editForm.pricing_mode).toLowerCase() === "hybrid"
-                          ? "Shared labor/material responsibility guidance."
-                          : "Combined guidance reflects full-service labor and materials context."}
-                      </div>
-                    ) : null}
-
-                    {(editForm.suggested_amount_low !== "" || editForm.suggested_amount_high !== "") ? (
+                    {((safeStr(editForm.pricing_mode).toLowerCase() === "labor_only" ||
+                      safeStr(editForm.pricing_mode).toLowerCase() === "hybrid")
+                      ? (editForm.labor_estimate_low !== "" || editForm.labor_estimate_high !== "")
+                      : (editForm.suggested_amount_low !== "" || editForm.suggested_amount_high !== "")) ? (
                       <div>
                         <span className="font-medium text-slate-800">
-                          {safeStr(editForm.pricing_mode).toLowerCase() === "labor_only"
-                            ? "Combined project context:"
-                            : "Combined estimate:"}
+                          {safeStr(editForm.pricing_mode).toLowerCase() === "labor_only" ||
+                          safeStr(editForm.pricing_mode).toLowerCase() === "hybrid"
+                            ? "Labor:"
+                            : "Total:"}
                         </span>{" "}
                         <span className="text-slate-700">
-                          {formatCurrency(editForm.suggested_amount_low)} – {formatCurrency(editForm.suggested_amount_high)}
+                          {safeStr(editForm.pricing_mode).toLowerCase() === "labor_only" ||
+                          safeStr(editForm.pricing_mode).toLowerCase() === "hybrid"
+                            ? `${formatCurrency(editForm.labor_estimate_low)} – ${formatCurrency(editForm.labor_estimate_high)}`
+                            : `${formatCurrency(editForm.suggested_amount_low)} – ${formatCurrency(editForm.suggested_amount_high)}`}
                         </span>
                       </div>
                     ) : null}
 
-                    {(editForm.labor_estimate_low !== "" || editForm.labor_estimate_high !== "") ? (
+                    {safeStr(editForm.pricing_mode).toLowerCase() === "labor_only" ? (
                       <div>
-                        <span className="font-medium text-slate-800">Labor estimate:</span>{" "}
-                        <span className="text-slate-700">
-                          {formatCurrency(editForm.labor_estimate_low)} – {formatCurrency(editForm.labor_estimate_high)}
-                        </span>
+                        <span className="font-medium text-slate-800">Materials:</span>{" "}
+                        <span className="text-slate-700">customer supplied</span>
                       </div>
                     ) : null}
 
-                    {(editForm.materials_estimate_low !== "" || editForm.materials_estimate_high !== "") ? (
+                    {safeStr(editForm.pricing_mode).toLowerCase() !== "labor_only" &&
+                    (editForm.materials_estimate_low !== "" || editForm.materials_estimate_high !== "") ? (
                       <div>
-                        <span className="font-medium text-slate-800">
-                          {safeStr(editForm.pricing_mode).toLowerCase() === "labor_only"
-                            ? "Materials context:"
-                            : "Materials guidance:"}
-                        </span>{" "}
+                        <span className="font-medium text-slate-800">Materials:</span>{" "}
                         <span className="text-slate-700">
                           {formatCurrency(editForm.materials_estimate_low)} – {formatCurrency(editForm.materials_estimate_high)}
                         </span>
-                      </div>
-                    ) : null}
-
-                    {safeStr(editForm.pricing_source_note) ? (
-                      <div>
-                        <span className="font-medium text-slate-800">Pricing note:</span>{" "}
-                        <span className="text-slate-700">{editForm.pricing_source_note}</span>
                       </div>
                     ) : null}
 
@@ -2153,7 +2194,19 @@ export default function Step2Milestones({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-semibold text-gray-700">Amount</label>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="block text-xs font-semibold text-gray-700">Amount</label>
+                    {Number.isFinite(deriveSuggestedPriceAmount(editForm)) && deriveSuggestedPriceAmount(editForm) > 0 ? (
+                      <button
+                        type="button"
+                        onClick={applySuggestedPriceToEditForm}
+                        disabled={editBusy}
+                        className="rounded border px-2 py-1 text-[11px] font-medium hover:bg-gray-50 disabled:opacity-60"
+                      >
+                        Use Suggested Price
+                      </button>
+                    ) : null}
+                  </div>
                   <input
                     type="number"
                     min="0.01"
