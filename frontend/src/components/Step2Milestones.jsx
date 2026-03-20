@@ -10,6 +10,7 @@
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import toast from "react-hot-toast";
+import { unstable_useBlocker as useBlocker } from "react-router-dom";
 import api from "../api";
 import ClarificationsModal from "./ClarificationsModal.jsx";
 import useAgreementMilestoneAI from "./ai/useAgreementMilestoneAI.jsx";
@@ -521,6 +522,7 @@ export default function Step2Milestones({
   const [saveTemplateName, setSaveTemplateName] = useState("");
   const [saveTemplateDescription, setSaveTemplateDescription] = useState("");
   const [fallbackMilestones, setFallbackMilestones] = useState(null);
+  const [stagedSuggestedMilestoneIds, setStagedSuggestedMilestoneIds] = useState([]);
   const [pricingEstimateStale, setPricingEstimateStale] = useState(false);
   const [dismissedPricingReviewSignature, setDismissedPricingReviewSignature] = useState("");
   const pricingFreshSignatureRef = useRef("");
@@ -570,10 +572,79 @@ export default function Step2Milestones({
     pricingReviewState.count > 0 &&
     pricingReviewState.signature &&
     pricingReviewState.signature !== dismissedPricingReviewSignature;
+  const hasStagedSuggestedAmountChanges = useMemo(() => {
+    if (!Array.isArray(stagedSuggestedMilestoneIds) || !stagedSuggestedMilestoneIds.length) return false;
+    const fallbackById = new Map(
+      (Array.isArray(fallbackMilestones) ? fallbackMilestones : [])
+        .filter((row) => row?.id != null)
+        .map((row) => [row.id, row])
+    );
+    const savedById = new Map(
+      (Array.isArray(milestones) ? milestones : [])
+        .filter((row) => row?.id != null)
+        .map((row) => [row.id, row])
+    );
+    return stagedSuggestedMilestoneIds.some((id) => {
+      const fallbackRow = fallbackById.get(id);
+      const savedRow = savedById.get(id);
+      if (!fallbackRow || !savedRow) return false;
+      return amountsDifferMeaningfully(savedRow?.amount, parseAmountStrict(fallbackRow?.amount));
+    });
+  }, [fallbackMilestones, milestones, stagedSuggestedMilestoneIds]);
+  const isCreateDraftDirty = useMemo(() => {
+    const title = safeStr(mLocal?.title);
+    const description = safeStr(mLocal?.description);
+    const startDate = toDateOnly(mLocal?.start_date || mLocal?.start);
+    const completionDate = toDateOnly(mLocal?.completion_date || mLocal?.end_date || mLocal?.end);
+    const amount = safeStr(mLocal?.amount);
+    return !!(title || description || startDate || completionDate || amount);
+  }, [mLocal]);
+  const isEditDraftDirty = useMemo(() => {
+    if (!editOpen || !editForm?.id) return false;
+    const base = editMilestone || effectiveMilestones.find((row) => row?.id === editForm.id);
+    if (!base) return false;
+    return (
+      safeStr(editForm.title) !== safeStr(base?.title) ||
+      safeStr(editForm.description) !== safeStr(base?.description) ||
+      toDateOnly(editForm.start_date) !== toDateOnly(base?.start_date || base?.start) ||
+      toDateOnly(editForm.completion_date) !== toDateOnly(base?.completion_date || base?.end_date || base?.end) ||
+      amountIsValidPositive(editForm.amount) !== amountIsValidPositive(base?.amount) ||
+      (amountIsValidPositive(editForm.amount) &&
+        amountsDifferMeaningfully(base?.amount, parseAmountStrict(editForm.amount)))
+    );
+  }, [editForm, editMilestone, editOpen, effectiveMilestones]);
+  const hasUnsavedStep2Changes =
+    hasStagedSuggestedAmountChanges || isCreateDraftDirty || isEditDraftDirty;
+  const step2UnsavedMessage = "You have unsaved pricing or milestone changes. Leave without saving?";
+  const blocker = useBlocker(hasUnsavedStep2Changes);
 
   useEffect(() => {
     setFallbackMilestones(null);
   }, [milestones]);
+
+  useEffect(() => {
+    if (!Array.isArray(stagedSuggestedMilestoneIds) || !stagedSuggestedMilestoneIds.length) return;
+    if (hasStagedSuggestedAmountChanges) return;
+    setStagedSuggestedMilestoneIds([]);
+  }, [hasStagedSuggestedAmountChanges, stagedSuggestedMilestoneIds]);
+
+  useEffect(() => {
+    if (blocker.state !== "blocked") return;
+    const shouldLeave = window.confirm(step2UnsavedMessage);
+    if (shouldLeave) blocker.proceed();
+    else blocker.reset();
+  }, [blocker, step2UnsavedMessage]);
+
+  useEffect(() => {
+    if (!hasUnsavedStep2Changes) return undefined;
+    const beforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = "";
+      return "";
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  }, [hasUnsavedStep2Changes]);
 
   function normalizeMilestoneForLocalFallback(milestone, fallbackOrder = null) {
     if (!milestone || typeof milestone !== "object") return null;
@@ -672,6 +743,7 @@ export default function Step2Milestones({
       await refreshAgreement();
     }
     setFallbackMilestones(null);
+    setStagedSuggestedMilestoneIds([]);
   }
 
   async function refreshAfterAiBulkSuccess() {
@@ -1045,13 +1117,23 @@ export default function Step2Milestones({
       return;
     }
 
+    const savedById = new Map(
+      (Array.isArray(milestones) ? milestones : [])
+        .filter((row) => row?.id != null)
+        .map((row) => [row.id, row])
+    );
     let appliedCount = 0;
+    const stagedIds = [];
     const nextRows = effectiveMilestones.map((row, idx) => {
       const suggestedAmount = deriveSuggestedPriceAmount(row);
       if (!Number.isFinite(suggestedAmount) || suggestedAmount <= 0) {
         return { ...row };
       }
       appliedCount += 1;
+      const savedRow = savedById.get(row?.id);
+      if (savedRow && amountsDifferMeaningfully(savedRow?.amount, suggestedAmount)) {
+        stagedIds.push(row.id);
+      }
       return {
         ...row,
         order: row?.order != null ? row.order : idx + 1,
@@ -1065,6 +1147,7 @@ export default function Step2Milestones({
     }
 
     setFallbackMilestones(sortFallbackMilestones(nextRows));
+    setStagedSuggestedMilestoneIds(stagedIds);
 
     if (editOpen && editForm?.id) {
       const editedRow = nextRows.find((row) => row?.id === editForm.id);
@@ -1501,6 +1584,14 @@ export default function Step2Milestones({
     }
 
     if (typeof onNext === "function") onNext();
+  }
+
+  function handleBackClick() {
+    if (hasUnsavedStep2Changes) {
+      const shouldLeave = window.confirm(step2UnsavedMessage);
+      if (!shouldLeave) return;
+    }
+    if (typeof onBack === "function") onBack();
   }
 
   return (
@@ -2149,7 +2240,7 @@ export default function Step2Milestones({
       </div>
 
       <div className="mt-4 flex items-center justify-between">
-        <button type="button" onClick={onBack} className="rounded border px-3 py-2 text-sm">
+        <button type="button" onClick={handleBackClick} className="rounded border px-3 py-2 text-sm">
           Back
         </button>
         <button
