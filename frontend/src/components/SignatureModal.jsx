@@ -170,7 +170,7 @@ export default function SignatureModal({
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError] = useState("");
 
-  const roleLabel = signingRole === "contractor" ? "Contractor" : "Homeowner";
+  const roleLabel = signingRole === "contractor" ? "Contractor" : "Customer";
   const title =
     agreement?.title ||
     agreement?.project_title ||

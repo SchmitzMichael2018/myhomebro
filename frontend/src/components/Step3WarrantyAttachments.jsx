@@ -310,7 +310,7 @@ export default function Step3WarrantyAttachments({
                   onChange={(e) => !locked && setVisible(e.target.checked)}
                   disabled={locked}
                 />
-                <span className="text-sm">Visible to homeowner</span>
+                <span className="text-sm">Visible to customer</span>
               </label>
             </div>
           </div>

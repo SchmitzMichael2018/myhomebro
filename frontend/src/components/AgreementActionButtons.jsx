@@ -108,7 +108,7 @@ export default function AgreementActionButtons({
             onClick={onCopyLink}
             disabled={isLoading}
             className="flex items-center px-4 py-2 bg-purple-100 text-purple-800 rounded-md hover:bg-purple-200 disabled:opacity-60"
-            title="Copy homeowner signing link"
+            title="Copy customer signing link"
           >
             <Link2 size={18} className="mr-2" /> Copy Sign Link
           </button>

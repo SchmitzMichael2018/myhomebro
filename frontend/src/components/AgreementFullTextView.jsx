@@ -42,7 +42,7 @@ export default function AgreementFullTextView({ agreement, onOpenLegal, onUpdate
             <section>
                 <h2>1. Parties to this Agreement</h2>
                 <p><strong>Contractor:</strong> {project.contractor.name} (<em>{project.contractor.email}</em>)</p>
-                <p><strong>Homeowner:</strong> {project.homeowner.full_name} (<em>{project.homeowner.email}</em>)</p>
+                <p><strong>Customer:</strong> {project.homeowner.full_name} (<em>{project.homeowner.email}</em>)</p>
             </section>
 
             <section>

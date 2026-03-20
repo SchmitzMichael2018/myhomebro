@@ -128,6 +128,7 @@ from .views.invoice_direct_pay import invoice_create_direct_pay_link
 from projects.api.ai_agreement_views import (
     ai_agreement_description,
     ai_suggest_milestones,
+    ai_refresh_pricing_estimate,
     ai_draft_project,
 )
 
@@ -247,6 +248,7 @@ urlpatterns = [
     path("agreements/ai/description/", ai_agreement_description),
     path("agreements/ai/draft/", ai_draft_project),
     path("agreements/<int:agreement_id>/ai/suggest-milestones/", ai_suggest_milestones),
+    path("agreements/<int:agreement_id>/ai/refresh-pricing-estimate/", ai_refresh_pricing_estimate),
     path("agreements/<int:agreement_id>/ai/void-credit/", void_agreement_ai_credit),
 
     path(

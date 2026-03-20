@@ -39,7 +39,7 @@ export default function ReviewInvoiceModal({ visible, onClose, milestoneId }) {
     <Modal visible={visible} title="Finalize Milestone & Send Invoice" onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <p className="text-sm text-gray-600">
-          Optionally add a file or receipt and a short note before finalizing this milestone and sending the invoice to the homeowner.
+          Optionally add a file or receipt and a short note before finalizing this milestone and sending the invoice to the customer.
         </p>
 
         <div>

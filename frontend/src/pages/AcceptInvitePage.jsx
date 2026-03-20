@@ -112,7 +112,7 @@ export default function AcceptInvitePage({ apiBaseUrl = "/api" }) {
       <div className="w-full max-w-lg bg-white rounded-2xl shadow p-6">
         <h1 className="text-2xl font-bold text-gray-900">You’ve been invited</h1>
         <p className="text-sm text-gray-600 mt-2">
-          A homeowner wants to use MyHomeBro for secure escrow payments and milestone approvals.
+          A customer wants to use MyHomeBro for secure escrow payments and milestone approvals.
         </p>
 
         <div className="mt-5 border rounded-xl p-4 bg-gray-50">
@@ -129,8 +129,8 @@ export default function AcceptInvitePage({ apiBaseUrl = "/api" }) {
           ) : (
             <>
               <div className="text-sm text-gray-800">
-                <div className="font-semibold">Homeowner</div>
-                <div className="mt-1">{invite.homeowner_name || "Homeowner"}</div>
+                <div className="font-semibold">Customer</div>
+                <div className="mt-1">{invite.homeowner_name || "Customer"}</div>
               </div>
 
               {invite.message ? (
@@ -167,7 +167,7 @@ export default function AcceptInvitePage({ apiBaseUrl = "/api" }) {
         </div>
 
         <div className="mt-4 text-xs text-gray-500">
-          Contractors stay in control — homeowners don’t need accounts.
+          Contractors stay in control — customers don’t need accounts.
         </div>
       </div>
     </div>

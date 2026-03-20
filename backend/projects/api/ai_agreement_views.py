@@ -14,6 +14,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
+
 from django.conf import settings
 from django.http import JsonResponse
 from rest_framework.decorators import api_view, permission_classes
@@ -21,8 +23,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.status import HTTP_200_OK, HTTP_400_BAD_REQUEST, HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND
 
 from projects.ai.agreement_description_writer import generate_or_improve_description
-from projects.ai.agreement_milestone_writer import suggest_scope_and_milestones
-from projects.models import Agreement
+from projects.ai.agreement_milestone_writer import (
+    suggest_scope_and_milestones,
+    suggest_pricing_refresh,
+)
+from projects.models import Agreement, Milestone
 from projects.services.ai_credits import consume_agreement_bundle_credit_if_needed
 from projects.services.ai.project_drafter import draft_project_structure
 
@@ -185,6 +190,154 @@ def ai_suggest_milestones(request, agreement_id: int):
         "scope_text": out["scope_text"],
         "milestones": out["milestones"],
         "questions": out.get("questions", []),
+        "_model": out.get("_model"),
+        "agreement_ai_credit_consumed": True,
+        "charged_now": bool(charged_now),
+        **_ai_credits_payload(ai_credits),
+    }
+
+
+def _to_nullable_decimal(value):
+    if value in (None, "", []):
+        return None
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+def _persist_pricing_estimates(agreement: Agreement, pricing_estimates: list[dict]) -> int:
+    if not isinstance(pricing_estimates, list) or not pricing_estimates:
+        return 0
+
+    milestone_ids = [
+        int(item.get("milestone_id"))
+        for item in pricing_estimates
+        if item.get("milestone_id") not in (None, "", [])
+    ]
+    milestones = {
+        m.id: m
+        for m in Milestone.objects.filter(agreement_id=agreement.id, id__in=milestone_ids)
+    }
+
+    persisted = 0
+
+    for item in pricing_estimates:
+        milestone_id = item.get("milestone_id")
+        if milestone_id in (None, "", []):
+            continue
+
+        try:
+            milestone = milestones.get(int(milestone_id))
+        except Exception:
+            milestone = None
+        if milestone is None:
+            continue
+
+        update_fields = []
+
+        low = _to_nullable_decimal(item.get("suggested_amount_low"))
+        if low != getattr(milestone, "suggested_amount_low", None):
+            milestone.suggested_amount_low = low
+            update_fields.append("suggested_amount_low")
+
+        high = _to_nullable_decimal(item.get("suggested_amount_high"))
+        if high != getattr(milestone, "suggested_amount_high", None):
+            milestone.suggested_amount_high = high
+            update_fields.append("suggested_amount_high")
+
+        labor_low = _to_nullable_decimal(item.get("labor_estimate_low"))
+        if labor_low != getattr(milestone, "labor_estimate_low", None):
+            milestone.labor_estimate_low = labor_low
+            update_fields.append("labor_estimate_low")
+
+        labor_high = _to_nullable_decimal(item.get("labor_estimate_high"))
+        if labor_high != getattr(milestone, "labor_estimate_high", None):
+            milestone.labor_estimate_high = labor_high
+            update_fields.append("labor_estimate_high")
+
+        materials_low = _to_nullable_decimal(item.get("materials_estimate_low"))
+        if materials_low != getattr(milestone, "materials_estimate_low", None):
+            milestone.materials_estimate_low = materials_low
+            update_fields.append("materials_estimate_low")
+
+        materials_high = _to_nullable_decimal(item.get("materials_estimate_high"))
+        if materials_high != getattr(milestone, "materials_estimate_high", None):
+            milestone.materials_estimate_high = materials_high
+            update_fields.append("materials_estimate_high")
+
+        confidence = str(item.get("pricing_confidence") or "").strip().lower()
+        if confidence != (getattr(milestone, "pricing_confidence", "") or "").strip().lower():
+            milestone.pricing_confidence = confidence
+            update_fields.append("pricing_confidence")
+
+        source_note = str(item.get("pricing_source_note") or "").strip()[:255]
+        if source_note != (getattr(milestone, "pricing_source_note", "") or "").strip():
+            milestone.pricing_source_note = source_note
+            update_fields.append("pricing_source_note")
+
+        duration = item.get("recommended_duration_days", None)
+        try:
+            duration = max(int(duration), 1) if duration not in (None, "", []) else None
+        except Exception:
+            duration = None
+        if duration != getattr(milestone, "recommended_duration_days", None):
+            milestone.recommended_duration_days = duration
+            update_fields.append("recommended_duration_days")
+
+        materials_hint = str(item.get("materials_hint") or "").strip()
+        if materials_hint != (getattr(milestone, "materials_hint", "") or "").strip():
+            milestone.materials_hint = materials_hint
+            update_fields.append("materials_hint")
+
+        if update_fields:
+            milestone.save(update_fields=update_fields)
+            persisted += 1
+
+    return persisted
+    return JsonResponse(payload, status=HTTP_200_OK)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def ai_refresh_pricing_estimate(request, agreement_id: int):
+    """
+    POST /api/projects/agreements/<id>/ai/refresh-pricing-estimate/
+    Returns refreshed estimate-assist guidance only.
+    """
+    if not _ai_enabled():
+        return _deny("AI is disabled.", "AI_DISABLED")
+
+    contractor = _get_contractor_for_user(request.user)
+    if not contractor:
+        return _deny("Contractor only.", "CONTRACTOR_ONLY")
+
+    agreement = _get_agreement_or_404(int(agreement_id))
+    if not agreement:
+        return _deny("Agreement not found.", "AGREEMENT_NOT_FOUND", status=HTTP_404_NOT_FOUND)
+
+    if agreement.contractor_id and agreement.contractor_id != contractor.id:
+        return _deny("Not your agreement.", "FORBIDDEN")
+
+    try:
+        charged_now, ai_credits = _charge_once(contractor, agreement)
+    except ValueError as e:
+        msg = str(e) or "AI not available."
+        if "No AI credits remaining" in msg:
+            return _deny("No Agreement AI credits remaining.", "AI_CREDITS_EXHAUSTED")
+        return _deny(msg, "AI_ERROR")
+
+    try:
+        out = suggest_pricing_refresh(agreement=agreement)
+    except Exception as e:
+        return JsonResponse({"detail": str(e)}, status=HTTP_400_BAD_REQUEST)
+
+    persisted_count = _persist_pricing_estimates(agreement, out.get("pricing_estimates", []))
+
+    payload = {
+        "detail": "OK",
+        "pricing_estimates": out.get("pricing_estimates", []),
+        "persisted_count": persisted_count,
         "_model": out.get("_model"),
         "agreement_ai_credit_consumed": True,
         "charged_now": bool(charged_now),

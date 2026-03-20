@@ -19,6 +19,14 @@ function safeStr(v) {
   return v == null ? "" : String(v).trim();
 }
 
+function normalizePricingMode(v) {
+  const raw = safeStr(v).toLowerCase();
+  if (raw === "labor_only" || raw === "hybrid" || raw === "full_service") {
+    return raw;
+  }
+  return "full_service";
+}
+
 function toDateOnly(v) {
   if (!v) return "";
   const s = String(v);
@@ -49,7 +57,13 @@ function normalizeCreatedMilestones(list) {
     normalized_milestone_type: safeStr(m?.normalized_milestone_type),
     suggested_amount_low: m?.suggested_amount_low ?? "",
     suggested_amount_high: m?.suggested_amount_high ?? "",
+    labor_estimate_low: m?.labor_estimate_low ?? "",
+    labor_estimate_high: m?.labor_estimate_high ?? "",
+    materials_estimate_low: m?.materials_estimate_low ?? "",
+    materials_estimate_high: m?.materials_estimate_high ?? "",
     pricing_confidence: safeStr(m?.pricing_confidence),
+    pricing_mode: normalizePricingMode(m?.pricing_mode),
+    pricing_source_note: safeStr(m?.pricing_source_note),
     recommended_duration_days: m?.recommended_duration_days ?? "",
     materials_hint: safeStr(m?.materials_hint),
   }));
@@ -327,6 +341,26 @@ function deriveSelectedTemplateId(agreementData) {
   );
 }
 
+function normalizePricingEstimates(list) {
+  if (!Array.isArray(list)) return [];
+  return list.map((m, idx) => ({
+    milestone_id: m?.milestone_id ?? null,
+    order: m?.order ?? idx + 1,
+    title: safeStr(m?.title) || `Milestone ${idx + 1}`,
+    suggested_amount_low: m?.suggested_amount_low ?? "",
+    suggested_amount_high: m?.suggested_amount_high ?? "",
+    labor_estimate_low: m?.labor_estimate_low ?? "",
+    labor_estimate_high: m?.labor_estimate_high ?? "",
+    materials_estimate_low: m?.materials_estimate_low ?? "",
+    materials_estimate_high: m?.materials_estimate_high ?? "",
+    pricing_confidence: safeStr(m?.pricing_confidence),
+    pricing_mode: normalizePricingMode(m?.pricing_mode),
+    pricing_source_note: safeStr(m?.pricing_source_note),
+    recommended_duration_days: m?.recommended_duration_days ?? "",
+    materials_hint: safeStr(m?.materials_hint),
+  }));
+}
+
 function hasTemplateDerivedQuestions(agreementData) {
   const questions = Array.isArray(agreementData?.ai_scope?.questions)
     ? agreementData.ai_scope.questions
@@ -418,6 +452,7 @@ export default function useAgreementMilestoneAI({
 }) {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiApplying, setAiApplying] = useState(false);
+  const [pricingRefreshing, setPricingRefreshing] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiPreview, setAiPreview] = useState(null);
 
@@ -632,24 +667,85 @@ export default function useAgreementMilestoneAI({
     ]
   );
 
+  const refreshPricingEstimate = useCallback(async () => {
+    if (locked) return null;
+    if (!agreementId) {
+      throw new Error("Save draft first.");
+    }
+
+    setAiError("");
+    setPricingRefreshing(true);
+
+    try {
+      const res = await api.post(`/projects/agreements/${agreementId}/ai/refresh-pricing-estimate/`, {});
+
+      const pricingEstimates = normalizePricingEstimates(res?.data?.pricing_estimates || []);
+
+      const remainingFromAi =
+        res?.data?.remaining_credits ??
+        res?.data?.ai_credits?.free_remaining ??
+        res?.data?.ai_credits?.remaining ??
+        res?.data?.ai_credits_remaining ??
+        null;
+
+      const totalFromAi =
+        res?.data?.ai_credits?.free_total ??
+        res?.data?.ai_credits?.total ??
+        null;
+
+      const usedFromAi =
+        res?.data?.ai_credits?.free_used ??
+        res?.data?.ai_credits?.used ??
+        null;
+
+      if (typeof onCreditsUpdate === "function" && remainingFromAi != null) {
+        onCreditsUpdate({
+          remaining: Number(remainingFromAi),
+          total: totalFromAi != null ? Number(totalFromAi) : null,
+          used: usedFromAi != null ? Number(usedFromAi) : null,
+          enabled: Number(remainingFromAi) > 0,
+          loading: false,
+        });
+      }
+
+      return {
+        pricing_estimates: pricingEstimates,
+        raw: res?.data || {},
+      };
+    } catch (e) {
+      const msg =
+        e?.response?.data?.detail ||
+        e?.message ||
+        "Pricing refresh failed.";
+      setAiError(msg);
+      throw e;
+    } finally {
+      setPricingRefreshing(false);
+    }
+  }, [agreementId, locked, onCreditsUpdate]);
+
   return {
     aiLoading,
     aiApplying,
+    pricingRefreshing,
     aiError,
     aiPreview,
     setAiPreview,
 
     runAiSuggest,
     applyAiMilestones,
+    refreshPricingEstimate,
     replaceAiQuestionsOnAgreement,
 
     helpers: {
       safeStr,
       normalizeAiMilestones,
       normalizeAiQuestions,
+      normalizePricingEstimates,
       canonicalizeQuestions,
       normalizeAnswersForCanonicalQuestions,
       normalizeCreatedMilestones,
+      normalizePricingMode,
       deriveSelectedTemplateId,
     },
   };

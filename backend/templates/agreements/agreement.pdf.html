@@ -60,7 +60,7 @@
 <body>
   <h1>Agreement: {{ agreement.project.title }}</h1>
   
-  <p><strong>Homeowner:</strong> {{ agreement.homeowner.name }} ({{ agreement.homeowner.email }})</p>
+  <p><strong>Customer:</strong> {{ agreement.homeowner.name }} ({{ agreement.homeowner.email }})</p>
   <p><strong>Contractor:</strong> {{ agreement.contractor.get_full_name }} ({{ agreement.contractor.email }})</p>
   <p><strong>Description:</strong> {{ agreement.project.description|linebreaksbr }}</p>
   <p><strong>Total Cost:</strong> ${{ agreement.total_cost }}</p>
@@ -111,10 +111,10 @@
         {% endif %}
     </div>
     <div class="signature-block">
-        <p><strong>Homeowner:</strong></p>
+        <p><strong>Customer:</strong></p>
         {% if agreement.signed_by_homeowner %}
             {% if agreement.homeowner_signature %}
-                <img src="{{ agreement.homeowner_signature.url }}" alt="Homeowner signature" />
+                <img src="{{ agreement.homeowner_signature.url }}" alt="Customer signature" />
             {% endif %}
             <p><strong>Signed:</strong> {{ agreement.homeowner_signature_name }}</p>
             <p><small>On: {{ agreement.signed_at_homeowner|date:"M d, Y, P" }}</small></p>

@@ -253,7 +253,7 @@ export default function ExpenseRequestsPanel() {
           <div>
             <h3 className="text-lg font-semibold">Expense Requests</h3>
             <p className="text-sm text-gray-600 mt-1">
-              Track expenses you’ve sent to homeowners. Upload receipts and send emails.
+              Track expenses you’ve sent to customers. Upload receipts and send emails.
             </p>
           </div>
 

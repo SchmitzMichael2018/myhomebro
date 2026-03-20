@@ -197,11 +197,11 @@ export default function AttachmentSection({ agreementId, onChange }) {
             checked={visible}
             onChange={(e) => setVisible(e.target.checked)}
           />
-          <span>Visible to Homeowner</span>
+          <span>Visible to Customer</span>
         </label>
       </div>
       <div className="text-xs text-gray-500 -mt-2">
-        “Visible to Homeowner” means the homeowner can see and download this file in their portal. If unchecked, the file is private to the contractor.
+        “Visible to Customer” means the customer can see and download this file in their portal. If unchecked, the file is private to the contractor.
       </div>
 
       <div

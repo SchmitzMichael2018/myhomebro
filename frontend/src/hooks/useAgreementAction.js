@@ -69,7 +69,7 @@ export const useAgreementActions = (agreement, setAgreement) => {
   const handleSendInvite = () => {
     return performAction(
         () => api.post(`/agreements/${agreement.id}/email-invite/`),
-        "Invite sent to homeowner."
+        "Invite sent to customer."
     );
   };
 

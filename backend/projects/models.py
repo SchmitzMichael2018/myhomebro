@@ -796,6 +796,34 @@ class Milestone(models.Model):
         blank=True,
         help_text="High-end suggested price range snapshot.",
     )
+    labor_estimate_low = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Advisory labor-only low-end estimate snapshot.",
+    )
+    labor_estimate_high = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Advisory labor-only high-end estimate snapshot.",
+    )
+    materials_estimate_low = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Advisory materials-only low-end estimate snapshot.",
+    )
+    materials_estimate_high = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Advisory materials-only high-end estimate snapshot.",
+    )
     pricing_confidence = models.CharField(
         max_length=16,
         blank=True,

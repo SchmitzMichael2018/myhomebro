@@ -379,6 +379,166 @@ def _normalize_milestones(raw: Any) -> List[Dict[str, Any]]:
     return out
 
 
+def _agreement_answers_snapshot(agreement: Any) -> Dict[str, Any]:
+    try:
+        scope_obj = getattr(agreement, "ai_scope", None)
+        answers = getattr(scope_obj, "answers", None) if scope_obj else None
+        return answers if isinstance(answers, dict) else {}
+    except Exception:
+        return {}
+
+
+def _derive_pricing_mode_from_answers(answers: Any) -> str:
+    if not isinstance(answers, dict):
+        return "full_service"
+
+    raw = _safe_str(answers.get("materials_responsibility")).lower()
+    if not raw:
+        return "full_service"
+
+    if "split" in raw or "hybrid" in raw:
+        return "hybrid"
+
+    if (
+        "homeowner" in raw
+        or "customer" in raw
+        or "owner" in raw
+        or "client" in raw
+    ):
+        return "labor_only"
+
+    return "full_service"
+
+
+def _current_milestones_snapshot(agreement: Any) -> List[Dict[str, Any]]:
+    answers = _agreement_answers_snapshot(agreement)
+    pricing_mode = _derive_pricing_mode_from_answers(answers)
+    try:
+        qs = getattr(agreement, "milestones", None)
+        rows = list(qs.all().order_by("order", "id")) if qs is not None else []
+    except Exception:
+        rows = []
+
+    out: List[Dict[str, Any]] = []
+    for idx, m in enumerate(rows, start=1):
+        out.append(
+            {
+                "milestone_id": getattr(m, "id", None),
+                "order": getattr(m, "order", None) or idx,
+                "title": _safe_str(getattr(m, "title", "")) or f"Milestone {idx}",
+                "description": _safe_str(getattr(m, "description", "")),
+                "amount": _safe_float(getattr(m, "amount", 0), 0.0),
+                "normalized_milestone_type": _safe_str(getattr(m, "normalized_milestone_type", "")),
+                "suggested_amount_low": _safe_float(getattr(m, "suggested_amount_low", 0), 0.0),
+                "suggested_amount_high": _safe_float(getattr(m, "suggested_amount_high", 0), 0.0),
+                "labor_estimate_low": _safe_float(getattr(m, "labor_estimate_low", 0), 0.0),
+                "labor_estimate_high": _safe_float(getattr(m, "labor_estimate_high", 0), 0.0),
+                "materials_estimate_low": _safe_float(getattr(m, "materials_estimate_low", 0), 0.0),
+                "materials_estimate_high": _safe_float(getattr(m, "materials_estimate_high", 0), 0.0),
+                "pricing_confidence": _safe_str(getattr(m, "pricing_confidence", "")),
+                "pricing_source_note": _safe_str(getattr(m, "pricing_source_note", "")),
+                "recommended_duration_days": _safe_int(getattr(m, "recommended_duration_days", 0), 0),
+                "materials_hint": _safe_str(getattr(m, "materials_hint", "")),
+                "pricing_mode": pricing_mode,
+            }
+        )
+    return out
+
+
+def _normalize_pricing_estimates(
+    raw: Any,
+    fallback_milestones: List[Dict[str, Any]],
+    *,
+    default_pricing_mode: str = "full_service",
+) -> List[Dict[str, Any]]:
+    if not isinstance(raw, list):
+        raw = []
+
+    fallback_by_order = {
+        int(row.get("order") or idx): row
+        for idx, row in enumerate(fallback_milestones, start=1)
+    }
+
+    out: List[Dict[str, Any]] = []
+    for idx, item in enumerate(raw, start=1):
+        if not isinstance(item, dict):
+            continue
+
+        order = _safe_int(item.get("order"), idx)
+        base = fallback_by_order.get(order, fallback_milestones[idx - 1] if idx - 1 < len(fallback_milestones) else {})
+        amount = _safe_float(base.get("amount"), 0.0)
+        low = max(_safe_float(item.get("suggested_amount_low"), 0.0), 0.0)
+        high = max(_safe_float(item.get("suggested_amount_high"), 0.0), 0.0)
+        labor_low = max(_safe_float(item.get("labor_estimate_low"), 0.0), 0.0)
+        labor_high = max(_safe_float(item.get("labor_estimate_high"), 0.0), 0.0)
+        materials_low = max(_safe_float(item.get("materials_estimate_low"), 0.0), 0.0)
+        materials_high = max(_safe_float(item.get("materials_estimate_high"), 0.0), 0.0)
+
+        if high <= 0 and amount > 0:
+            high = amount
+        if low <= 0 and amount > 0:
+            low = round(amount * 0.9, 2)
+        if high > 0 and low > high:
+            low = high
+        if labor_high > 0 and labor_low > labor_high:
+            labor_low = labor_high
+        if materials_high > 0 and materials_low > materials_high:
+            materials_low = materials_high
+
+        out.append(
+            {
+                "milestone_id": item.get("milestone_id") or base.get("milestone_id"),
+                "order": order,
+                "title": _safe_str(item.get("title")) or _safe_str(base.get("title")) or f"Milestone {order}",
+                "suggested_amount_low": low or None,
+                "suggested_amount_high": high or None,
+                "labor_estimate_low": labor_low or None,
+                "labor_estimate_high": labor_high or None,
+                "materials_estimate_low": materials_low or None,
+                "materials_estimate_high": materials_high or None,
+                "pricing_confidence": _safe_str(item.get("pricing_confidence")).lower() or "low",
+                "pricing_source_note": (
+                    _safe_str(item.get("pricing_source_note"))
+                    or "AI pricing preview refreshed from current clarification answers."
+                )[:255],
+                "recommended_duration_days": max(_safe_int(item.get("recommended_duration_days"), 0), 1),
+                "materials_hint": _safe_str(item.get("materials_hint")) or _safe_str(base.get("materials_hint")),
+                "pricing_mode": default_pricing_mode,
+            }
+        )
+
+    if out:
+        return out
+
+    fallback_out: List[Dict[str, Any]] = []
+    for idx, base in enumerate(fallback_milestones, start=1):
+        amount = _safe_float(base.get("amount"), 0.0)
+        low = round(amount * 0.9, 2) if amount > 0 else 0.0
+        high = round(amount * 1.1, 2) if amount > 0 else 0.0
+        fallback_out.append(
+            {
+                "milestone_id": base.get("milestone_id"),
+                "order": base.get("order") or idx,
+                "title": _safe_str(base.get("title")) or f"Milestone {idx}",
+                "suggested_amount_low": low or None,
+                "suggested_amount_high": high or None,
+                "labor_estimate_low": _safe_float(base.get("labor_estimate_low"), 0.0) or None,
+                "labor_estimate_high": _safe_float(base.get("labor_estimate_high"), 0.0) or None,
+                "materials_estimate_low": _safe_float(base.get("materials_estimate_low"), 0.0) or None,
+                "materials_estimate_high": _safe_float(base.get("materials_estimate_high"), 0.0) or None,
+                "pricing_confidence": _safe_str(base.get("pricing_confidence")).lower() or "low",
+                "pricing_source_note": (
+                    _safe_str(base.get("pricing_source_note"))
+                    or "AI pricing preview refreshed from current clarification answers."
+                )[:255],
+                "recommended_duration_days": max(_safe_int(base.get("recommended_duration_days"), 1), 1),
+                "materials_hint": _safe_str(base.get("materials_hint")),
+                "pricing_mode": default_pricing_mode,
+            }
+        )
+    return fallback_out
+
+
 def suggest_scope_and_milestones(*, agreement: Any, notes: str = "") -> Dict[str, Any]:
     client = _require_openai_client()
     model = _model_name()
@@ -543,5 +703,139 @@ def suggest_scope_and_milestones(*, agreement: Any, notes: str = "") -> Dict[str
         "scope_text": scope_text,
         "milestones": milestones,
         "questions": questions,
+        "_model": model,
+    }
+
+
+def suggest_pricing_refresh(*, agreement: Any) -> Dict[str, Any]:
+    client = _require_openai_client()
+    model = _model_name()
+
+    milestones = _current_milestones_snapshot(agreement)
+    if not milestones:
+        return {
+            "pricing_estimates": [],
+            "_model": model,
+        }
+
+    answers = _agreement_answers_snapshot(agreement)
+    pricing_mode = _derive_pricing_mode_from_answers(answers)
+
+    system = (
+        "You are a construction pricing assistant.\n"
+        "Refresh pricing guidance for the CURRENT milestone list using the current agreement details and clarification answers.\n"
+        "Do NOT create, remove, split, or rename milestones.\n"
+        "Do NOT change actual milestone amounts.\n"
+        "Return only pricing guidance preview fields for each milestone.\n"
+        "Use realistic U.S. residential contractor pricing patterns.\n"
+        "Respect pricing_mode:\n"
+        "- full_service: guidance includes labor + materials\n"
+        "- labor_only: guidance should emphasize contractor labor while treating materials as customer-supplied context\n"
+        "- hybrid: guidance should reflect mixed/shared material responsibility\n"
+        "Use suggested_amount_low/high as the combined total estimate guidance.\n"
+        "When possible, also return labor_estimate_low/high and materials_estimate_low/high as advisory breakdowns.\n"
+        "If pricing_mode is labor_only, labor estimates should be primary and materials estimates may be omitted or de-emphasized.\n"
+        "pricing_source_note should briefly explain the pricing mode and the main labor/material drivers.\n"
+        "If clarification answers increase uncertainty, widen ranges and reduce confidence.\n"
+        "If materials, size, pitch, or decking condition imply higher complexity, increase ranges accordingly.\n"
+        "Return only JSON that matches the schema.\n"
+    )
+
+    user_json = {
+        "agreement_id": getattr(agreement, "id", None),
+        "project_title": getattr(getattr(agreement, "project", None), "title", "") or "",
+        "project_type": getattr(agreement, "project_type", "") or "",
+        "project_subtype": getattr(agreement, "project_subtype", "") or "",
+        "description": getattr(agreement, "description", "") or "",
+        "total_budget": _safe_float(getattr(agreement, "total_cost", 0), 0.0),
+        "pricing_mode": pricing_mode,
+        "clarification_answers": answers,
+        "milestones": milestones,
+    }
+
+    schema = {
+        "name": "agreement_pricing_refresh",
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "pricing_estimates": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "milestone_id": {"type": ["integer", "null"]},
+                            "order": {"type": "integer"},
+                            "title": {"type": "string"},
+                            "suggested_amount_low": {"type": "number"},
+                            "suggested_amount_high": {"type": "number"},
+                            "labor_estimate_low": {"type": "number"},
+                            "labor_estimate_high": {"type": "number"},
+                            "materials_estimate_low": {"type": "number"},
+                            "materials_estimate_high": {"type": "number"},
+                            "pricing_confidence": {"type": "string"},
+                            "pricing_source_note": {"type": "string"},
+                            "recommended_duration_days": {"type": "integer"},
+                            "materials_hint": {"type": "string"},
+                            "pricing_mode": {"type": "string"},
+                        },
+                        "required": [
+                            "milestone_id",
+                            "order",
+                            "title",
+                            "suggested_amount_low",
+                            "suggested_amount_high",
+                            "labor_estimate_low",
+                            "labor_estimate_high",
+                            "materials_estimate_low",
+                            "materials_estimate_high",
+                            "pricing_confidence",
+                            "pricing_source_note",
+                            "recommended_duration_days",
+                            "materials_hint",
+                            "pricing_mode",
+                        ],
+                    },
+                }
+            },
+            "required": ["pricing_estimates"],
+        },
+    }
+
+    try:
+        resp = client.responses.create(
+            model=model,
+            input=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(user_json, ensure_ascii=False)},
+            ],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": schema["name"],
+                    "schema": schema["schema"],
+                    "strict": True,
+                }
+            },
+        )
+    except Exception as e:
+        logger.exception("OpenAI call failed for agreement pricing refresh.")
+        raise RuntimeError(f"AI pricing refresh failed: {e}") from e
+
+    raw = getattr(resp, "output_text", "") or ""
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        raise RuntimeError("AI pricing refresh returned invalid JSON.")
+
+    pricing_estimates = _normalize_pricing_estimates(
+        payload.get("pricing_estimates"),
+        milestones,
+        default_pricing_mode=pricing_mode,
+    )
+
+    return {
+        "pricing_estimates": pricing_estimates,
         "_model": model,
     }

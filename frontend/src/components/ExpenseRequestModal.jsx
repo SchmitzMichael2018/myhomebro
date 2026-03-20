@@ -227,7 +227,7 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
       // Email send toggle
       if (form.send_now) {
         await sendExpenseToHomeowner(created.id);
-        toast.success("Expense sent to homeowner.");
+        toast.success("Expense sent to customer.");
       } else {
         toast.success("Expense created (not sent).");
       }
@@ -374,7 +374,7 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
         </div>
 
         <div>
-          <label className="block text-sm text-gray-700 mb-1">Notes to Homeowner (optional)</label>
+          <label className="block text-sm text-gray-700 mb-1">Notes to Customer (optional)</label>
           <textarea
             name="notes_to_homeowner"
             value={form.notes_to_homeowner}

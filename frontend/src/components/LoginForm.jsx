@@ -1,5 +1,5 @@
 // src/components/LoginForm.jsx
-// v2026-02-09 — Invite token + Remember Me
+// v2026-02-09 Invite token + Remember Me
 // - If URL includes ?invite=<token>, after successful login we call:
 //   POST /api/projects/invites/<token>/accept/
 // - Remember Me controls token persistence via setTokens(..., remember)
@@ -84,7 +84,7 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
       if (inviteToken) {
         const result = await acceptInviteIfPresent(inviteToken);
         if (result?.ok) {
-          toast.success("Invite accepted — homeowner imported into your client list.");
+          toast.success("Invite accepted - customer imported into your client list.");
           removeInviteFromUrl();
         } else {
           toast.success("Welcome back!");
@@ -149,7 +149,7 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
 
       {inviteToken ? (
         <div className="text-xs text-slate-600">
-          Sign in to accept the invite and import the homeowner as a client.
+          Sign in to accept the invite and import the customer as a client.
         </div>
       ) : null}
 
@@ -158,7 +158,7 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
         disabled={loading}
         className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition"
       >
-        {loading ? "Signing In…" : "Sign In"}
+        {loading ? "Signing In..." : "Sign In"}
       </button>
     </form>
   );

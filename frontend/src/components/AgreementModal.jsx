@@ -16,16 +16,13 @@ const AgreementModal = ({ agreement, onClose, onSigned }) => {
     setLoading(true);
     setErrorMessage("");
     try {
-      const { status } = await api.patch(
-        `/projects/agreements/${agreement.id}/sign/`,
-        {
-          signature_type: signatureType,     // backend may ignore if not needed
-          typed_name: typedName || null,
-          drawn_signature: drawnSignature || null,
-          accepted: true,
-          signed_at: new Date().toISOString(),
-        }
-      );
+      const { status } = await api.patch(`/projects/agreements/${agreement.id}/sign/`, {
+        signature_type: signatureType, // backend may ignore if not needed
+        typed_name: typedName || null,
+        drawn_signature: drawnSignature || null,
+        accepted: true,
+        signed_at: new Date().toISOString(),
+      });
       if (status === 200) {
         setSigned(true);
         onSigned?.();
@@ -45,8 +42,8 @@ const AgreementModal = ({ agreement, onClose, onSigned }) => {
     <div className="fixed inset-0 flex items-center justify-center bg-black/50" role="dialog" aria-modal="true">
       <div className="bg-white p-6 rounded-lg shadow-lg max-w-md w-full relative">
         <h3 className="text-xl font-bold mb-2">{agreement.project_title || agreement.project_name}</h3>
-        <p>Homeowner: {agreement.homeowner_name || "—"}</p>
-        <p>Contractor: {agreement.contractor_name || "—"}</p>
+        <p>Customer: {agreement.homeowner_name || "-"}</p>
+        <p>Contractor: {agreement.contractor_name || "-"}</p>
 
         {!signed && (
           <>
@@ -67,7 +64,8 @@ const AgreementModal = ({ agreement, onClose, onSigned }) => {
                   className="text-blue-500 underline"
                 >
                   E-SIGN Act
-                </a>.
+                </a>
+                .
               </label>
             </div>
 
@@ -97,16 +95,14 @@ const AgreementModal = ({ agreement, onClose, onSigned }) => {
 
         {showSignaturePad && <SignatureCanvas onSave={handleSaveSignature} />}
 
-        {signed && (
-          <p className="text-green-600 font-bold mt-4">✅ Agreement Signed Successfully</p>
-        )}
+        {signed && <p className="text-green-600 font-bold mt-4">Agreement Signed Successfully</p>}
 
         <button
           onClick={onClose}
           className="absolute top-2 right-2 text-gray-500 hover:text-gray-700"
           aria-label="Close"
         >
-          ✖
+          x
         </button>
       </div>
     </div>

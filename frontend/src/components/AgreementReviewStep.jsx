@@ -138,9 +138,9 @@ export default function AgreementReviewStep({ data, onBack, onSubmit }) {
       </div>
 
       <div ref={printRef} className="space-y-4 text-gray-700">
-        {/* Homeowner */}
+        {/* Customer */}
         <div className="border-b pb-4">
-          <h3 className="text-lg font-semibold">Homeowner Information</h3>
+          <h3 className="text-lg font-semibold">Customer Information</h3>
           <p><strong>Name:</strong> {homeownerName}</p>
           <p><strong>Email:</strong> {homeownerEmail}</p>
         </div>

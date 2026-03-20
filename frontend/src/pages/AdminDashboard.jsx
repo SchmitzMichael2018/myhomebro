@@ -579,7 +579,7 @@ export default function AdminDashboard() {
 
                   <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
                     <StatCard label="Contractors" value={fmtNumber(counts.contractors || 0)} sub="Total profiles" onClick={() => goTo("contractors")} />
-                    <StatCard label="Homeowners" value={fmtNumber(counts.homeowners || 0)} sub="Captured" onClick={() => goTo("homeowners")} />
+                    <StatCard label="Customers" value={fmtNumber(counts.homeowners || 0)} sub="Captured" onClick={() => goTo("homeowners")} />
                     <StatCard label="Disputes" value={fmtNumber(counts.disputes || 0)} sub="Risk queue" tone={disputeCount > 0 ? "warn" : "good"} onClick={() => goTo("disputes")} />
                   </div>
                 </BorderedSection>

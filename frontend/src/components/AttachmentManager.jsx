@@ -180,7 +180,7 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
           <div className="flex gap-4">
             <label className="inline-flex items-center gap-2">
               <input type="checkbox" checked={visible} onChange={(e) => setVisible(e.target.checked)} />
-              <span>Visible to Homeowner</span>
+              <span>Visible to Customer</span>
             </label>
             <label className="inline-flex items-center gap-2">
               <input type="checkbox" checked={ackReq} onChange={(e) => setAckReq(e.target.checked)} />

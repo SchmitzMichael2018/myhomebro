@@ -110,7 +110,7 @@ export default function SendFundingLinkButton({
 
       if (onSuccess) onSuccess(data);
       // eslint-disable-next-line no-alert
-      alert(data?.detail || "Funding link sent to homeowner.");
+      alert(data?.detail || "Funding link sent to customer.");
     } catch (err) {
       const msg = err?.message || "Unexpected error while sending funding link.";
       setLastError(msg);

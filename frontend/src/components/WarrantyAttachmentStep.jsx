@@ -292,7 +292,7 @@ export default function WarrantyAttachmentsStep({
                   checked={visible}
                   onChange={(e) => setVisible(e.target.checked)}
                 />
-                <span className="text-sm">Visible to homeowner</span>
+                <span className="text-sm">Visible to customer</span>
               </label>
               <label className="inline-flex items-center gap-2">
                 <input

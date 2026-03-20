@@ -138,7 +138,7 @@ export default function Sidebar({ variant = "desktop" }) {
               <SubItem to="/app/admin" label="Overview" />
               <SubItem to="/app/admin?view=goals" label="Goals (CEO)" />
               <SubItem to="/app/admin?view=contractors" label="Contractors" />
-              <SubItem to="/app/admin?view=homeowners" label="Homeowners" />
+              <SubItem to="/app/admin?view=homeowners" label="Customers" />
               <SubItem to="/app/admin?view=agreements" label="Agreements" />
               <SubItem to="/app/admin/disputes" label="Disputes" />
               <SubItem to="/app/admin?view=geo" label="Geo / Map" />

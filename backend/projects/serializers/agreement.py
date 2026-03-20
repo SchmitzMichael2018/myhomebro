@@ -262,8 +262,21 @@ def _question_score(question: dict) -> int:
     return score
 
 
-def _canonicalize_questions(questions: list) -> list:
+def _canonicalize_questions(questions: list, existing_questions: Any = None) -> list:
     out: dict[str, dict[str, Any]] = {}
+    existing_source_by_key: dict[str, str] = {}
+
+    for raw in _safe_list(existing_questions):
+        if not isinstance(raw, dict):
+            continue
+
+        key = _question_group(raw)
+        if not key:
+            continue
+
+        source = str(raw.get("source") or "").strip()
+        if source and key not in existing_source_by_key:
+            existing_source_by_key[key] = source
 
     for raw in _safe_list(questions):
         if not isinstance(raw, dict):
@@ -276,6 +289,7 @@ def _canonicalize_questions(questions: list) -> list:
         label = raw.get("label") or raw.get("question") or key.replace("_", " ").title()
         input_type = _question_input_type(raw, key)
         options = _question_options(key, raw)
+        source = str(raw.get("source") or "").strip() or existing_source_by_key.get(key, "") or "unknown"
 
         normalized = {
             "key": key,
@@ -287,7 +301,7 @@ def _canonicalize_questions(questions: list) -> list:
             "inputType": input_type,
             "type": raw.get("type") or ("boolean" if input_type == "radio" and options == ["Yes", "No"] else "text"),
             "options": options,
-            "source": raw.get("source") or "unknown",
+            "source": source,
         }
 
         if key not in out:
@@ -1042,17 +1056,17 @@ class AgreementSerializer(serializers.ModelSerializer):
             return
 
         incoming_questions_raw = _safe_list(ai_scope_payload.get("questions"))
+        scope_obj = getattr(agreement, "ai_scope", None)
+        if not scope_obj:
+            scope_obj = AgreementAIScope.objects.create(agreement=agreement)
+
         incoming_questions = (
-            _clean_stored_questions(_canonicalize_questions(incoming_questions_raw))
+            _clean_stored_questions(_canonicalize_questions(incoming_questions_raw, _safe_list(scope_obj.questions)))
             if incoming_questions_raw
             else []
         )
         incoming_answers = _safe_dict(ai_scope_payload.get("answers"))
         incoming_scope_text = ai_scope_payload.get("scope_text", None)
-
-        scope_obj = getattr(agreement, "ai_scope", None)
-        if not scope_obj:
-            scope_obj = AgreementAIScope.objects.create(agreement=agreement)
 
         effective_questions = incoming_questions or _clean_stored_questions(_safe_list(scope_obj.questions))
 

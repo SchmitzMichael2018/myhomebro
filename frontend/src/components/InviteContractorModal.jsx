@@ -11,7 +11,7 @@ import toast from "react-hot-toast";
  *   GET  /api/projects/invites/<token>/      (public)
  *   POST /api/projects/invites/<token>/accept/ (auth)
  *
- * This modal is the public homeowner form (no account).
+ * This modal is the public customer form (no account).
  */
 export default function InviteContractorModal({
   isOpen,
@@ -99,7 +99,7 @@ export default function InviteContractorModal({
         <p className="text-sm text-gray-600">
           Invite your contractor to use MyHomeBro for secure escrow payments and project tracking.
           <br />
-          <span className="font-medium">No homeowner account required.</span>
+          <span className="font-medium">No customer account required.</span>
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

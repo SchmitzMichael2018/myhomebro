@@ -67,7 +67,7 @@ export default function AgreementStatus({ agreement }) {
       <div className="space-y-2">
         <p className="flex items-center text-gray-800">
           <Dot ok={signedByHomeowner} />
-          Homeowner: {signedByHomeowner ? "Signed" : "Pending"}
+          Customer: {signedByHomeowner ? "Signed" : "Pending"}
           {signedByHomeowner && prettyDate(homeownerDate) && (
             <span className="text-xs text-gray-500 ml-2">{prettyDate(homeownerDate)}</span>
           )}

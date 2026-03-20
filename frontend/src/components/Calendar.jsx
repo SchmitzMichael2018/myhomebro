@@ -213,7 +213,7 @@ export default function Calendar() {
         const cleanMilestoneTitle = stripAgreementPrefix(m.title || "Milestone", agreementNo);
 
         const tooltipLines = [
-          `Homeowner: ${m.homeowner_name || "N/A"}`,
+          `Customer: ${m.homeowner_name || "N/A"}`,
           `Milestone: ${cleanMilestoneTitle || "N/A"}`,
           `Amount: ${formatCurrency(m.amount)}`,
           `Status: ${statusKey.replaceAll("_", " ")}`,

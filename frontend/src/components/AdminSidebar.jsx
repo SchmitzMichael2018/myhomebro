@@ -71,7 +71,7 @@ export default function AdminSidebar({
           />
           <Item
             active={activeTab === "homeowners"}
-            label="Homeowners"
+            label="Customers"
             onClick={() => setActiveTab("homeowners")}
             badge={isLoading ? "…" : (counts.homeowners ?? 0)}
           />

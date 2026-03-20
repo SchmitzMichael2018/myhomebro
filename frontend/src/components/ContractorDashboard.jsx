@@ -335,7 +335,7 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
       await api.post(`/projects/expenses/${created.id}/contractor_sign/`);
       await api.post(`/projects/expenses/${created.id}/send_to_homeowner/`);
 
-      toast.success("Expense sent to homeowner.");
+      toast.success("Expense sent to customer.");
       onClose(true);
     } catch (e) {
       console.error(e);
@@ -420,7 +420,7 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
         </div>
 
         <div>
-          <label className="block text-sm text-gray-700 mb-1">Notes to Homeowner (optional)</label>
+          <label className="block text-sm text-gray-700 mb-1">Notes to Customer (optional)</label>
           <textarea
             name="notes_to_homeowner"
             value={form.notes_to_homeowner}
@@ -441,7 +441,7 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
               sub ? "bg-gray-500" : "bg-blue-600 hover:bg-blue-700"
             }`}
           >
-            {sub ? "Sending…" : "Sign & Send to Homeowner"}
+            {sub ? "Sending…" : "Sign & Send to Customer"}
           </button>
         </div>
       </form>

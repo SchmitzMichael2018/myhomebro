@@ -16,6 +16,17 @@ from projects.services.agreement_locking import (
 )
 
 
+def _normalize_pricing_mode(materials_responsibility) -> str:
+    raw = str(materials_responsibility or "").strip().lower()
+    if not raw:
+        return "full_service"
+    if "split" in raw or "hybrid" in raw:
+        return "hybrid"
+    if "homeowner" in raw or "customer" in raw or "owner" in raw or "client" in raw:
+        return "labor_only"
+    return "full_service"
+
+
 def _today() -> date:
     try:
         from django.utils.timezone import now
@@ -111,6 +122,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
     agreement_payment_mode = serializers.SerializerMethodField()
     agreement_escrow_funded = serializers.SerializerMethodField()
     agreement_signature_is_satisfied = serializers.SerializerMethodField()
+    pricing_mode = serializers.SerializerMethodField()
 
     is_rework = serializers.SerializerMethodField()
     origin_milestone = serializers.SerializerMethodField()
@@ -136,6 +148,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "agreement_payment_mode",
             "agreement_escrow_funded",
             "agreement_signature_is_satisfied",
+            "pricing_mode",
         )
 
     # ------------------------ helpers (read) ------------------------ #
@@ -295,6 +308,14 @@ class MilestoneSerializer(serializers.ModelSerializer):
             return bool(getattr(ag, "signature_is_satisfied"))
         except Exception:
             return bool(getattr(ag, "signed_by_contractor", False) and getattr(ag, "signed_by_homeowner", False))
+
+    def get_pricing_mode(self, obj: Milestone) -> str:
+        ag = self._get_agreement(obj)
+        scope = getattr(ag, "ai_scope", None) if ag else None
+        answers = getattr(scope, "answers", None) if scope else None
+        if isinstance(answers, dict):
+            return _normalize_pricing_mode(answers.get("materials_responsibility"))
+        return "full_service"
 
     # ------------------------ rework/origin helpers (read) ------------------------ #
     def get_is_rework(self, obj: Milestone) -> bool:
@@ -471,5 +492,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
         data["agreement_payment_mode"] = self.get_agreement_payment_mode(instance)
         data["agreement_escrow_funded"] = self.get_agreement_escrow_funded(instance)
         data["agreement_signature_is_satisfied"] = self.get_agreement_signature_is_satisfied(instance)
+        data["pricing_mode"] = self.get_pricing_mode(instance)
 
         return data

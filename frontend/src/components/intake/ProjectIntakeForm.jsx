@@ -297,7 +297,7 @@ export default function ProjectIntakeForm() {
       toast.success(
         data?.email
           ? `Intake email sent to ${data.email}.`
-          : "Intake email sent to homeowner."
+          : "Intake email sent to customer."
       );
     } catch (e) {
       toast.error(
@@ -322,7 +322,7 @@ export default function ProjectIntakeForm() {
       <div className="mb-6 rounded-xl border bg-white p-4 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900">Intake Mode</h2>
         <p className="mt-1 text-sm text-gray-600">
-          Complete the intake now, or save it and send it to the homeowner to finish.
+          Complete the intake now, or save it and send it to the customer to finish.
         </p>
 
         <div className="mt-4 flex flex-wrap gap-3">
@@ -343,7 +343,7 @@ export default function ProjectIntakeForm() {
               checked={intakeMode === "send_to_homeowner"}
               onChange={() => setIntakeMode("send_to_homeowner")}
             />
-            Send to homeowner to complete
+            Send to customer to complete
           </label>
         </div>
       </div>
@@ -603,7 +603,7 @@ export default function ProjectIntakeForm() {
                 disabled={sending || saving}
                 className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
               >
-                {sending ? "Sending..." : "Send to Homeowner"}
+                {sending ? "Sending..." : "Send to Customer"}
               </button>
             ) : null}
 

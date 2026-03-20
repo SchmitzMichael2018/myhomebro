@@ -12,7 +12,7 @@ export default function HomeownerPicker({ onSelect }) {
 
     getHomeownersOnce({ signal: ac.signal })
       .then((data) => { if (mounted) setList(data); })
-      .catch((e) => { if (e.name !== "CanceledError") setErr("Failed to load homeowners."); });
+      .catch((e) => { if (e.name !== "CanceledError") setErr("Failed to load customers."); });
 
     return () => { mounted = false; ac.abort(); };
   }, []);
@@ -20,7 +20,7 @@ export default function HomeownerPicker({ onSelect }) {
   if (err) return <div className="text-red-500">{err}</div>;
   return (
     <select onChange={e => onSelect(list.find(h => h.id === Number(e.target.value)))}>
-      <option value="">Select homeowner…</option>
+      <option value="">Select customer…</option>
       {list.map(h => <option key={h.id} value={h.id}>{h.name || h.full_name}</option>)}
     </select>
   );

@@ -160,7 +160,7 @@ export default function AttachmentSection({ agreementId, onChange }) {
             <div className="col-md-12 d-flex gap-4 pt-2">
               <label className="form-check">
                 <input className="form-check-input" type="checkbox" checked={visible} onChange={(e) => setVisible(e.target.checked)} />
-                <span className="form-check-label">Visible to Homeowner</span>
+                <span className="form-check-label">Visible to Customer</span>
               </label>
               <label className="form-check">
                 <input className="form-check-input" type="checkbox" checked={ackReq} onChange={(e) => setAckReq(e.target.checked)} />

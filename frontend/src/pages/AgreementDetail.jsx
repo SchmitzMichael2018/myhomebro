@@ -88,7 +88,7 @@ function PaymentModeBadge({ mode }) {
       title={
         m === "direct"
           ? "Direct Pay: invoices are paid via Stripe pay links (no escrow hold)."
-          : "Escrow: homeowner funds escrow; milestone approvals release funds."
+          : "Escrow: customer funds escrow; milestone approvals release funds."
       }
     >
       {text}
@@ -412,7 +412,7 @@ export default function AgreementDetail() {
           <PaymentModeBadge mode={norm.payment_mode} />
         </h2>
         <p>
-          <strong>Homeowner:</strong> {norm.homeownerName}{" "}
+          <strong>Customer:</strong> {norm.homeownerName}{" "}
           <span className="text-gray-500">({norm.homeownerEmail})</span>
         </p>
         <p>
@@ -739,7 +739,7 @@ export default function AgreementDetail() {
             <>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <SummaryCard
-                  label="Project Price (Homeowner Pays)"
+                  label="Project Price (Customer Pays)"
                   value={formatMoney(fundingPreview.project_amount)}
                 />
                 <SummaryCard

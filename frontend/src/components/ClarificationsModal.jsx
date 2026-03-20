@@ -325,6 +325,7 @@ function enrichQuestion(q) {
   const canonicalKey = semanticGroupForQuestion(q) || normalizeKeyish(q?.key || q?.label || "");
   const inputType = inferQuestionInputType(q);
   let options = inferQuestionOptions(q);
+  const source = String(q?.source || "").trim();
 
   if (inputType === "radio" && (!options || options.length === 0)) {
     options = [
@@ -344,6 +345,7 @@ function enrichQuestion(q) {
     required: !!q?.required,
     inputType,
     options,
+    ...(source ? { source } : {}),
   };
 }
 
@@ -418,9 +420,10 @@ function mergeAndCanonicalizeQuestions(list = []) {
           ? winner.options
           : Array.isArray(prev.options) && prev.options.length
           ? prev.options
-          : Array.isArray(enriched.options) && enriched.options.length
-          ? enriched.options
-          : [],
+        : Array.isArray(enriched.options) && enriched.options.length
+        ? enriched.options
+        : [],
+      source: winner.source || prev.source || enriched.source || "",
     });
   }
 

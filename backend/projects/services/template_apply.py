@@ -272,6 +272,7 @@ def _safe_question_list(template: ProjectTemplate) -> list[dict]:
                 "required": required,
                 "help": help_text,
                 "options": options,
+                "source": "template",
             }
         )
     return out
@@ -301,6 +302,7 @@ def _replace_questions_preserving_matching_answers(
                 "required": bool(item.get("required", False)),
                 "help": "" if item.get("help") is None else str(item.get("help")).strip(),
                 "options": item.get("options", []) if isinstance(item.get("options", []), list) else [],
+                "source": str(item.get("source") or "").strip() or "template",
             }
         )
 

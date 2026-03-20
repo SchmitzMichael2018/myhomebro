@@ -232,7 +232,13 @@ function mergeQuestionsByCanonicalKey(existing = [], incoming = []) {
 function getEstimateAssistMeta(m) {
   const low = m?.suggested_amount_low;
   const high = m?.suggested_amount_high;
+  const laborLow = m?.labor_estimate_low;
+  const laborHigh = m?.labor_estimate_high;
+  const materialsLow = m?.materials_estimate_low;
+  const materialsHigh = m?.materials_estimate_high;
   const confidence = safeStr(m?.pricing_confidence);
+  const pricingMode = safeStr(m?.pricing_mode).toLowerCase();
+  const sourceNote = safeStr(m?.pricing_source_note);
   const materials = safeStr(m?.materials_hint);
   const type = safeStr(m?.normalized_milestone_type);
   const durationDays =
@@ -244,12 +250,49 @@ function getEstimateAssistMeta(m) {
       low !== null &&
       low !== undefined &&
       low !== "" &&
-      high !== null &&
-      high !== undefined &&
-      high !== "",
+    high !== null &&
+    high !== undefined &&
+    high !== "",
+    hasLaborRange:
+      laborLow !== null &&
+      laborLow !== undefined &&
+      laborLow !== "" &&
+      laborHigh !== null &&
+      laborHigh !== undefined &&
+      laborHigh !== "",
+    hasMaterialsRange:
+      materialsLow !== null &&
+      materialsLow !== undefined &&
+      materialsLow !== "" &&
+      materialsHigh !== null &&
+      materialsHigh !== undefined &&
+      materialsHigh !== "",
     low,
     high,
+    laborLow,
+    laborHigh,
+    materialsLow,
+    materialsHigh,
     confidence,
+    pricingMode,
+    sourceNote,
+    pricingModeLabel:
+      pricingMode === "labor_only"
+        ? "Labor Only"
+        : pricingMode === "hybrid"
+        ? "Hybrid"
+        : pricingMode === "full_service"
+        ? "Full Service"
+        : "",
+    combinedRangeLabel: pricingMode === "labor_only" ? "Combined project context" : "Combined estimate",
+    modeHelper:
+      pricingMode === "labor_only"
+        ? "Labor guidance is primary. Materials are customer-supplied context, not contractor-billed scope."
+        : pricingMode === "hybrid"
+        ? "Labor and materials responsibility appears shared. Review the split as guidance only."
+        : pricingMode === "full_service"
+        ? "Combined guidance reflects a full-service estimate with labor and materials context."
+        : "",
     confidenceLabel: formatEstimateConfidence(confidence),
     materials,
     type,
@@ -258,11 +301,49 @@ function getEstimateAssistMeta(m) {
     hasAnything:
       !!safeStr(type) ||
       !!safeStr(materials) ||
+      !!safeStr(sourceNote) ||
       !!safeStr(confidence) ||
       (low !== null && low !== undefined && low !== "") ||
       (high !== null && high !== undefined && high !== "") ||
+      (laborLow !== null && laborLow !== undefined && laborLow !== "") ||
+      (laborHigh !== null && laborHigh !== undefined && laborHigh !== "") ||
+      (materialsLow !== null && materialsLow !== undefined && materialsLow !== "") ||
+      (materialsHigh !== null && materialsHigh !== undefined && materialsHigh !== "") ||
       !!durationDays,
   };
+}
+
+const PRICING_IMPACT_KEYS = [
+  "roof_area",
+  "roof_pitch",
+  "roofing_material_type",
+  "decking_condition",
+  "measurements_provided",
+  "measurement_notes",
+  "measurements_notes",
+];
+
+function normalizeAnswerValue(v) {
+  if (v == null) return "";
+  if (typeof v === "boolean") return v ? "true" : "false";
+  return String(v).trim();
+}
+
+function pricingImpactAnswersChanged(prevAnswers = {}, nextAnswers = {}) {
+  return PRICING_IMPACT_KEYS.some(
+    (key) => normalizeAnswerValue(prevAnswers?.[key]) !== normalizeAnswerValue(nextAnswers?.[key])
+  );
+}
+
+function buildMilestonePricingSignature(rows = []) {
+  return JSON.stringify(
+    (Array.isArray(rows) ? rows : []).map((row, idx) => ({
+      id: row?.id ?? null,
+      order: row?.order ?? idx + 1,
+      title: safeStr(row?.title),
+      description: safeStr(row?.description),
+    }))
+  );
 }
 
 export default function Step2Milestones({
@@ -318,7 +399,13 @@ export default function Step2Milestones({
     normalized_milestone_type: "",
     suggested_amount_low: "",
     suggested_amount_high: "",
+    labor_estimate_low: "",
+    labor_estimate_high: "",
+    materials_estimate_low: "",
+    materials_estimate_high: "",
     pricing_confidence: "",
+    pricing_mode: "",
+    pricing_source_note: "",
     recommended_duration_days: "",
     materials_hint: "",
   });
@@ -334,10 +421,17 @@ export default function Step2Milestones({
   const [saveTemplateName, setSaveTemplateName] = useState("");
   const [saveTemplateDescription, setSaveTemplateDescription] = useState("");
   const [fallbackMilestones, setFallbackMilestones] = useState(null);
+  const [pricingEstimateStale, setPricingEstimateStale] = useState(false);
+  const pricingFreshSignatureRef = useRef("");
+  const didInitPricingSignatureRef = useRef(false);
 
   const effectiveMilestones = useMemo(() => {
     return Array.isArray(fallbackMilestones) ? fallbackMilestones : Array.isArray(milestones) ? milestones : [];
   }, [fallbackMilestones, milestones]);
+  const milestonePricingSignature = useMemo(
+    () => buildMilestonePricingSignature(effectiveMilestones),
+    [effectiveMilestones]
+  );
 
   useEffect(() => {
     setFallbackMilestones(null);
@@ -513,6 +607,19 @@ export default function Step2Milestones({
     };
   }, [agreementId, refreshAgreementMeta]);
 
+  useEffect(() => {
+    if (!didInitPricingSignatureRef.current) {
+      pricingFreshSignatureRef.current = milestonePricingSignature;
+      didInitPricingSignatureRef.current = true;
+      return;
+    }
+
+    if (!pricingFreshSignatureRef.current) return;
+    if (milestonePricingSignature === pricingFreshSignatureRef.current) return;
+
+    setPricingEstimateStale(true);
+  }, [milestonePricingSignature]);
+
   const selectedTemplateMeta = useMemo(() => deriveSelectedTemplateMeta(agreementMeta), [agreementMeta]);
   const templateApplied = !!selectedTemplateMeta;
 
@@ -571,6 +678,7 @@ export default function Step2Milestones({
       const current = await api.get(`/projects/agreements/${agreementId}/`);
       const data = current?.data || {};
       const ai_scope = data.ai_scope || {};
+      const previousAnswers = ai_scope.answers || {};
       const mergedAnswers = { ...(ai_scope.answers || {}), ...mergedLocal };
 
       const patchPayload = { ai_scope: { ...ai_scope, answers: mergedAnswers } };
@@ -581,6 +689,9 @@ export default function Step2Milestones({
       }
 
       await api.patch(`/projects/agreements/${agreementId}/`, patchPayload);
+      if (pricingImpactAnswersChanged(previousAnswers, mergedAnswers)) {
+        setPricingEstimateStale(true);
+      }
       setAgreementMeta((prev) => {
         const next = { ...(prev || data || {}) };
         next.ai_scope = {
@@ -615,11 +726,13 @@ export default function Step2Milestones({
   const {
     aiLoading,
     aiApplying,
+    pricingRefreshing,
     aiError,
     aiPreview,
     setAiPreview,
     runAiSuggest,
     applyAiMilestones,
+    refreshPricingEstimate,
   } = useAgreementMilestoneAI({
     agreementId,
     locked: milestonesLocked || templateApplied,
@@ -769,6 +882,23 @@ export default function Step2Milestones({
     await refreshAfterAiBulkSuccess();
   }
 
+  async function handleRefreshPricingEstimate() {
+    if (!agreementId || !effectiveMilestones.length) return;
+
+    const result = await refreshPricingEstimate();
+    pricingFreshSignatureRef.current = milestonePricingSignature;
+    setPricingEstimateStale(false);
+    try {
+      await refreshMilestonesSafe();
+    } catch (err) {
+      console.warn("refreshAfterPricingEstimate failed:", err);
+      toast("Pricing guidance was refreshed, but the latest milestone data could not be reloaded.");
+    }
+    toast.success(
+      `Pricing estimate guidance refreshed${result?.raw?.persisted_count ? ` for ${result.raw.persisted_count} milestone(s)` : ""}.`
+    );
+  }
+
   function isOverlapError(err) {
     const msg = err?.response?.data?.non_field_errors?.[0];
     return !!(msg && String(msg).toLowerCase().includes("overlap"));
@@ -915,7 +1045,13 @@ export default function Step2Milestones({
       normalized_milestone_type: safeStr(m.normalized_milestone_type),
       suggested_amount_low: m.suggested_amount_low ?? "",
       suggested_amount_high: m.suggested_amount_high ?? "",
+      labor_estimate_low: m.labor_estimate_low ?? "",
+      labor_estimate_high: m.labor_estimate_high ?? "",
+      materials_estimate_low: m.materials_estimate_low ?? "",
+      materials_estimate_high: m.materials_estimate_high ?? "",
       pricing_confidence: safeStr(m.pricing_confidence),
+      pricing_mode: safeStr(m.pricing_mode),
+      pricing_source_note: safeStr(m.pricing_source_note),
       recommended_duration_days: m.recommended_duration_days ?? "",
       materials_hint: safeStr(m.materials_hint),
     });
@@ -1211,6 +1347,28 @@ export default function Step2Milestones({
               Save as Template
             </button>
 
+            {effectiveMilestones.length && pricingEstimateStale ? (
+              <button
+                type="button"
+                onClick={() =>
+                  handleRefreshPricingEstimate().catch((e) =>
+                    toast.error(e?.response?.data?.detail || e?.message || "Pricing refresh failed.")
+                  )
+                }
+                disabled={pricingRefreshing}
+                className="rounded border px-3 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-60"
+                title="Refresh estimate-assist guidance from current clarification answers without changing milestone amounts."
+              >
+                {pricingRefreshing ? "Refreshing Pricing…" : "Refresh Pricing Estimate"}
+              </button>
+            ) : null}
+
+            {pricingEstimateStale ? (
+              <span className="text-xs text-amber-700">
+                Pricing inputs changed. Refresh estimate guidance to see updated ranges.
+              </span>
+            ) : null}
+
             {!clarReviewed ? (
               <span className="text-xs text-gray-500">
                 {hasRecommendedClarifications
@@ -1260,6 +1418,11 @@ export default function Step2Milestones({
           }
         }}
         onSaved={async (updatedAgreement) => {
+          const previousAnswers = agreementMeta?.ai_scope?.answers || {};
+          const nextAnswers = updatedAgreement?.ai_scope?.answers || {};
+          if (updatedAgreement && pricingImpactAnswersChanged(previousAnswers, nextAnswers)) {
+            setPricingEstimateStale(true);
+          }
           if (updatedAgreement) {
             setAgreementMeta(updatedAgreement);
           } else {
@@ -1487,7 +1650,16 @@ export default function Step2Milestones({
               <th>Start</th>
               <th>Due</th>
               <th>Amount</th>
-              <th>Estimate Assist</th>
+              <th>
+                <div className="flex items-center gap-2">
+                  <span>Estimate Assist</span>
+                  {pricingEstimateStale ? (
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                      Stale
+                    </span>
+                  ) : null}
+                </div>
+              </th>
               <th />
             </tr>
           </thead>
@@ -1525,13 +1697,61 @@ export default function Step2Milestones({
                   <td className="px-3 py-2">
                     {estimate.hasAnything ? (
                       <div className="space-y-1 text-xs">
+                        {pricingEstimateStale ? (
+                          <div>
+                            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                              Stale — refresh pricing
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {estimate.pricingModeLabel ? (
+                          <div>
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
+                              {estimate.pricingModeLabel}
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {estimate.modeHelper ? (
+                          <div className="text-gray-500">{estimate.modeHelper}</div>
+                        ) : null}
+
                         {estimate.hasRange ? (
                           <div className="text-gray-700">
-                            Range:{" "}
+                            {estimate.combinedRangeLabel}:{" "}
                             <span className="font-medium">
                               {formatCurrency(estimate.low)} – {formatCurrency(estimate.high)}
                             </span>
                           </div>
+                        ) : null}
+
+                        {estimate.hasLaborRange ? (
+                          <div className="text-gray-600">
+                            Labor:{" "}
+                            <span className="font-medium text-gray-700">
+                              {formatCurrency(estimate.laborLow)} – {formatCurrency(estimate.laborHigh)}
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {estimate.hasMaterialsRange && estimate.pricingMode !== "labor_only" ? (
+                          <div className="text-gray-600">
+                            Materials guidance:{" "}
+                            <span className="font-medium text-gray-700">
+                              {formatCurrency(estimate.materialsLow)} – {formatCurrency(estimate.materialsHigh)}
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {estimate.hasMaterialsRange && estimate.pricingMode === "labor_only" ? (
+                          <div className="text-gray-500">
+                            Materials context is shown separately from the customer-supplied scope.
+                          </div>
+                        ) : null}
+
+                        {estimate.sourceNote ? (
+                          <div className="text-gray-500">{estimate.sourceNote}</div>
                         ) : null}
 
                         {estimate.confidenceLabel ? (
@@ -1559,6 +1779,10 @@ export default function Step2Milestones({
                             <span className="font-medium text-gray-700">Materials:</span> {estimate.materials}
                           </div>
                         ) : null}
+
+                        <div className="text-[11px] text-slate-500">
+                          Estimate guidance only. Actual billed amount stays in the Amount column.
+                        </div>
                       </div>
                     ) : (
                       <span className="text-xs text-gray-400">—</span>
@@ -1794,11 +2018,20 @@ export default function Step2Milestones({
                 safeStr(editForm.pricing_confidence) ||
                 editForm.suggested_amount_low !== "" ||
                 editForm.suggested_amount_high !== "" ||
+                editForm.labor_estimate_low !== "" ||
+                editForm.labor_estimate_high !== "" ||
+                editForm.materials_estimate_low !== "" ||
+                editForm.materials_estimate_high !== "" ||
+                safeStr(editForm.pricing_source_note) ||
                 safeStr(editForm.materials_hint) ||
                 editForm.recommended_duration_days !== "") ? (
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
                   <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-700">
                     Estimate Assist
+                  </div>
+
+                  <div className="mb-2 text-[11px] text-slate-500">
+                    Advisory only. This does not change the milestone amount or agreement total.
                   </div>
 
                   <div className="space-y-2 text-sm">
@@ -1809,12 +2042,68 @@ export default function Step2Milestones({
                       </div>
                     ) : null}
 
+                    {safeStr(editForm.pricing_mode) ? (
+                      <div>
+                        <span className="font-medium text-slate-800">Pricing mode:</span>{" "}
+                        <span className="text-slate-700">
+                          {safeStr(editForm.pricing_mode).toLowerCase() === "labor_only"
+                            ? "Labor Only"
+                            : safeStr(editForm.pricing_mode).toLowerCase() === "hybrid"
+                            ? "Hybrid"
+                            : "Full Service"}
+                        </span>
+                      </div>
+                    ) : null}
+
+                    {safeStr(editForm.pricing_mode) ? (
+                      <div className="text-slate-500">
+                        {safeStr(editForm.pricing_mode).toLowerCase() === "labor_only"
+                          ? "Labor guidance is primary. Materials are customer-supplied context."
+                          : safeStr(editForm.pricing_mode).toLowerCase() === "hybrid"
+                          ? "Shared labor/material responsibility guidance."
+                          : "Combined guidance reflects full-service labor and materials context."}
+                      </div>
+                    ) : null}
+
                     {(editForm.suggested_amount_low !== "" || editForm.suggested_amount_high !== "") ? (
                       <div>
-                        <span className="font-medium text-slate-800">Suggested range:</span>{" "}
+                        <span className="font-medium text-slate-800">
+                          {safeStr(editForm.pricing_mode).toLowerCase() === "labor_only"
+                            ? "Combined project context:"
+                            : "Combined estimate:"}
+                        </span>{" "}
                         <span className="text-slate-700">
                           {formatCurrency(editForm.suggested_amount_low)} – {formatCurrency(editForm.suggested_amount_high)}
                         </span>
+                      </div>
+                    ) : null}
+
+                    {(editForm.labor_estimate_low !== "" || editForm.labor_estimate_high !== "") ? (
+                      <div>
+                        <span className="font-medium text-slate-800">Labor estimate:</span>{" "}
+                        <span className="text-slate-700">
+                          {formatCurrency(editForm.labor_estimate_low)} – {formatCurrency(editForm.labor_estimate_high)}
+                        </span>
+                      </div>
+                    ) : null}
+
+                    {(editForm.materials_estimate_low !== "" || editForm.materials_estimate_high !== "") ? (
+                      <div>
+                        <span className="font-medium text-slate-800">
+                          {safeStr(editForm.pricing_mode).toLowerCase() === "labor_only"
+                            ? "Materials context:"
+                            : "Materials guidance:"}
+                        </span>{" "}
+                        <span className="text-slate-700">
+                          {formatCurrency(editForm.materials_estimate_low)} – {formatCurrency(editForm.materials_estimate_high)}
+                        </span>
+                      </div>
+                    ) : null}
+
+                    {safeStr(editForm.pricing_source_note) ? (
+                      <div>
+                        <span className="font-medium text-slate-800">Pricing note:</span>{" "}
+                        <span className="text-slate-700">{editForm.pricing_source_note}</span>
                       </div>
                     ) : null}
 

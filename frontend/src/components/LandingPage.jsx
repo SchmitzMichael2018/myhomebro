@@ -62,7 +62,7 @@ export default function LandingPage() {
           <span style={S.brandSub}>Bro</span>
         </div>
 
-        <p style={S.subhead}>Secure Escrow Payments for Contractors and Homeowners.</p>
+        <p style={S.subhead}>Secure Escrow Payments for Contractors and Customers.</p>
         <p style={S.subheadTiny}>The easiest way to pay and get paid for home projects.</p>
 
         <div style={S.pricingWrap}>
