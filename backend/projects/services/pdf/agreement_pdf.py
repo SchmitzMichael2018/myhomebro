@@ -534,6 +534,37 @@ def _normalize_payment_mode(v) -> str:
   return "escrow"
 
 
+def _advisory_money_line(label: str, low, high) -> str:
+  try:
+    lo = float(low)
+    hi = float(high)
+    if lo <= 0 or hi <= 0:
+      return ""
+    return f"{label}: {_currency(lo)} – {_currency(hi)}"
+  except Exception:
+    return ""
+
+
+def _milestone_advisory_lines(m) -> list[str]:
+  mode = _s(getattr(m, "pricing_mode", None)).strip().lower()
+  labor_line = _advisory_money_line(
+    "Labor guidance",
+    getattr(m, "labor_estimate_low", None),
+    getattr(m, "labor_estimate_high", None),
+  )
+  if mode == "labor_only":
+    materials_line = "Materials: customer supplied"
+  else:
+    materials_line = _advisory_money_line(
+      "Materials guidance",
+      getattr(m, "materials_estimate_low", None),
+      getattr(m, "materials_estimate_high", None),
+    )
+  materials_hint = _s(getattr(m, "materials_hint", None)).strip()
+  hint_line = f"Materials context: {materials_hint}" if materials_hint else ""
+  return [line for line in (labor_line, materials_line, hint_line) if line]
+
+
 def _boolish(v, default: bool = True) -> bool:
   if v is True:
     return True
@@ -860,7 +891,7 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
       Paragraph("#", s_table_center),
       Paragraph("Milestone", s_table),
       Paragraph("Due Date", s_table_center),
-      Paragraph("Amount", s_table_center),
+      Paragraph("Milestone Amount", s_table_center),
     ]]
 
     total_amt = Decimal("0.00")
@@ -884,6 +915,8 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
       milestone_html = f"<b>{_escape_html(title)}</b>"
       if desc_html:
         milestone_html += f"<br/>{desc_html}"
+      for advisory_line in _milestone_advisory_lines(m):
+        milestone_html += f"<br/><font color='#4B5563'>{_escape_html(advisory_line)}</font>"
 
       rows.append([
         Paragraph(str(order_num), s_table_center),

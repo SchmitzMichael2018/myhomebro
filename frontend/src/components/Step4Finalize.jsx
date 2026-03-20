@@ -241,6 +241,40 @@ function formatMilestoneDate(m) {
   return d.toLocaleDateString();
 }
 
+function safeMilestoneStr(v) {
+  return (v == null ? "" : String(v)).trim();
+}
+
+function hasValue(v) {
+  return v !== null && v !== undefined && v !== "";
+}
+
+function advisoryMoneyLine(label, low, high) {
+  if (!hasValue(low) || !hasValue(high)) return "";
+  const lo = Number(low);
+  const hi = Number(high);
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || lo <= 0 || hi <= 0) return "";
+  return `${label}: ${formatMoney(lo)} – ${formatMoney(hi)}`;
+}
+
+function milestoneAdvisoryPricingMeta(m) {
+  const mode = safeMilestoneStr(m?.pricing_mode).toLowerCase();
+  const laborLine = advisoryMoneyLine("Labor guidance", m?.labor_estimate_low, m?.labor_estimate_high);
+  const materialsLine =
+    mode === "labor_only"
+      ? "Materials: customer supplied"
+      : advisoryMoneyLine("Materials guidance", m?.materials_estimate_low, m?.materials_estimate_high);
+  const materialsHint = safeMilestoneStr(m?.materials_hint);
+
+  return {
+    mode,
+    laborLine,
+    materialsLine,
+    materialsHint: materialsHint ? `Materials context: ${materialsHint}` : "",
+    hasAny: !!laborLine || !!materialsLine || !!materialsHint,
+  };
+}
+
 function mergeAgreement(prev, next, fallbackId) {
   const p = prev && typeof prev === "object" ? prev : {};
   const n = next && typeof next === "object" ? next : {};
@@ -1446,7 +1480,7 @@ export default function Step4Finalize({
                   <th className="text-left p-2 border-b border-slate-200 w-[64px]">#</th>
                   <th className="text-left p-2 border-b border-slate-200">Milestone</th>
                   <th className="text-left p-2 border-b border-slate-200 w-[160px]">Due Date</th>
-                  <th className="text-right p-2 border-b border-slate-200 w-[140px]">Amount</th>
+                  <th className="text-right p-2 border-b border-slate-200 w-[140px]">Milestone Amount</th>
                 </tr>
               </thead>
               <tbody>
@@ -1458,10 +1492,22 @@ export default function Step4Finalize({
                       {m?.description ? (
                         <div className="text-xs text-slate-500 mt-0.5 whitespace-pre-wrap">{m.description}</div>
                       ) : null}
+                      {(() => {
+                        const advisory = milestoneAdvisoryPricingMeta(m);
+                        if (!advisory.hasAny) return null;
+                        return (
+                          <div className="mt-2 space-y-1 text-[11px] text-slate-600">
+                            {advisory.laborLine ? <div>{advisory.laborLine}</div> : null}
+                            {advisory.materialsLine ? <div>{advisory.materialsLine}</div> : null}
+                            {advisory.materialsHint ? <div>{advisory.materialsHint}</div> : null}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="p-2 border-b border-slate-200">{formatMilestoneDate(m)}</td>
                     <td className="p-2 border-b border-slate-200 text-right tabular-nums">
-                      {formatMoney(m?.amount || 0)}
+                      <div className="font-semibold text-slate-900">{formatMoney(m?.amount || 0)}</div>
+                      <div className="text-[11px] text-slate-500">Milestone amount</div>
                     </td>
                   </tr>
                 ))}
