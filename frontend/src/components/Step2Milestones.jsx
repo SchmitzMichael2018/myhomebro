@@ -1090,6 +1090,45 @@ export default function Step2Milestones({
     handleEditClick(firstChanged.milestone, firstChanged.idx);
   }
 
+  async function persistStagedMilestoneAmounts() {
+    if (!Array.isArray(fallbackMilestones) || !fallbackMilestones.length) return 0;
+
+    const baseById = new Map(
+      (Array.isArray(milestones) ? milestones : [])
+        .filter((row) => row?.id != null)
+        .map((row) => [row.id, row])
+    );
+
+    const stagedAmountRows = fallbackMilestones.filter((row) => {
+      if (!row?.id) return false;
+      const base = baseById.get(row.id);
+      if (!base) return false;
+      return amountsDifferMeaningfully(base?.amount, parseAmountStrict(row?.amount));
+    });
+
+    if (!stagedAmountRows.length) return 0;
+
+    for (const row of stagedAmountRows) {
+      await updateMilestone({
+        id: row.id,
+        title: safeStr(row.title),
+        description: safeStr(row.description),
+        start_date: row.start_date || null,
+        completion_date: row.completion_date || null,
+        amount: Number(row.amount),
+      });
+    }
+
+    try {
+      await refreshMilestonesSafe();
+    } catch (err) {
+      console.warn("persistStagedMilestoneAmounts refresh failed:", err);
+      toast("Milestone amounts were saved, but the latest agreement data could not be fully reloaded.");
+    }
+
+    return stagedAmountRows.length;
+  }
+
   function isOverlapError(err) {
     const msg = err?.response?.data?.non_field_errors?.[0];
     return !!(msg && String(msg).toLowerCase().includes("overlap"));
@@ -1436,6 +1475,13 @@ export default function Step2Milestones({
     if (amtErr) {
       toast.error(amtErr);
       return;
+    }
+
+    const persistedCount = await persistStagedMilestoneAmounts();
+    if (persistedCount > 0) {
+      toast.success(
+        `Saved suggested pricing for ${persistedCount} milestone${persistedCount === 1 ? "" : "s"}.`
+      );
     }
 
     await persistAnswersToAgreement();
