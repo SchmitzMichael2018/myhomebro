@@ -267,11 +267,12 @@ function advisoryMoneyLine(label, low, high) {
 
 function milestoneAdvisoryPricingMeta(m) {
   const mode = safeMilestoneStr(m?.pricing_mode).toLowerCase();
-  const laborLine = advisoryMoneyLine("Labor guidance", m?.labor_estimate_low, m?.labor_estimate_high);
+  const laborLine = advisoryMoneyLine("Labor", m?.labor_estimate_low, m?.labor_estimate_high);
+  const materialRangeLine = advisoryMoneyLine("Materials", m?.materials_estimate_low, m?.materials_estimate_high);
   const materialsLine =
     mode === "labor_only"
       ? "Materials: customer supplied"
-      : advisoryMoneyLine("Materials guidance", m?.materials_estimate_low, m?.materials_estimate_high);
+      : materialRangeLine || (mode === "hybrid" ? "Materials: shared responsibility" : "");
   const materialsHint = safeMilestoneStr(m?.materials_hint);
 
   return {
@@ -1506,6 +1507,9 @@ export default function Step4Finalize({
                         if (!advisory.hasAny) return null;
                         return (
                           <div className="mt-2 space-y-1 text-[11px] text-slate-600">
+                            <div className="font-semibold uppercase tracking-wide text-[10px] text-slate-500">
+                              Estimate guidance
+                            </div>
                             {advisory.laborLine ? <div>{advisory.laborLine}</div> : null}
                             {advisory.materialsLine ? <div>{advisory.materialsLine}</div> : null}
                             {advisory.materialsHint ? <div>{advisory.materialsHint}</div> : null}
