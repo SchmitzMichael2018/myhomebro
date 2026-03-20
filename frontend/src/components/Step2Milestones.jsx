@@ -97,6 +97,12 @@ function amountIsValidPositive(v) {
   return Number.isFinite(n) && n > 0;
 }
 
+function amountsDifferMeaningfully(currentAmount, suggestedAmount) {
+  const current = parseAmountStrict(currentAmount);
+  if (!Number.isFinite(current) || !Number.isFinite(suggestedAmount) || suggestedAmount <= 0) return false;
+  return Math.abs(current - suggestedAmount) >= 0.01;
+}
+
 function truthy(v) {
   return v === true || v === 1 || v === "1" || v === "true" || v === "True" || v === "yes";
 }
@@ -516,16 +522,54 @@ export default function Step2Milestones({
   const [saveTemplateDescription, setSaveTemplateDescription] = useState("");
   const [fallbackMilestones, setFallbackMilestones] = useState(null);
   const [pricingEstimateStale, setPricingEstimateStale] = useState(false);
+  const [dismissedPricingReviewSignature, setDismissedPricingReviewSignature] = useState("");
   const pricingFreshSignatureRef = useRef("");
   const didInitPricingSignatureRef = useRef(false);
 
   const effectiveMilestones = useMemo(() => {
     return Array.isArray(fallbackMilestones) ? fallbackMilestones : Array.isArray(milestones) ? milestones : [];
   }, [fallbackMilestones, milestones]);
+  const pricingReviewState = useMemo(() => {
+    const changed = effectiveMilestones
+      .map((row, idx) => {
+        const suggestedAmount = deriveSuggestedPriceAmount(row);
+        if (!Number.isFinite(suggestedAmount) || suggestedAmount <= 0) return null;
+        if (!amountsDifferMeaningfully(row?.amount, suggestedAmount)) return null;
+        return {
+          milestone: row,
+          idx,
+          currentAmount: Number(row?.amount || 0),
+          suggestedAmount,
+        };
+      })
+      .filter(Boolean);
+
+    const currentTotal = changed.reduce((sum, item) => sum + Number(item.currentAmount || 0), 0);
+    const suggestedTotal = changed.reduce((sum, item) => sum + Number(item.suggestedAmount || 0), 0);
+    const signature = JSON.stringify(
+      changed.map((item) => ({
+        id: item.milestone?.id ?? null,
+        current: item.currentAmount,
+        suggested: item.suggestedAmount,
+      }))
+    );
+
+    return {
+      changed,
+      count: changed.length,
+      currentTotal,
+      suggestedTotal,
+      signature,
+    };
+  }, [effectiveMilestones]);
   const milestonePricingSignature = useMemo(
     () => buildMilestonePricingSignature(effectiveMilestones),
     [effectiveMilestones]
   );
+  const showPricingReviewPrompt =
+    pricingReviewState.count > 0 &&
+    pricingReviewState.signature &&
+    pricingReviewState.signature !== dismissedPricingReviewSignature;
 
   useEffect(() => {
     setFallbackMilestones(null);
@@ -1035,6 +1079,15 @@ export default function Step2Milestones({
     toast.success(
       `Suggested prices applied to ${appliedCount} milestone${appliedCount === 1 ? "" : "s"}. Review before saving.`
     );
+  }
+
+  function handleReviewSuggestedPricing() {
+    const firstChanged = pricingReviewState.changed[0];
+    if (!firstChanged?.milestone) {
+      toast("No suggested pricing changes are available to review.");
+      return;
+    }
+    handleEditClick(firstChanged.milestone, firstChanged.idx);
   }
 
   function isOverlapError(err) {
@@ -1556,6 +1609,49 @@ export default function Step2Milestones({
           </div>
         </div>
       </div>
+
+      {showPricingReviewPrompt ? (
+        <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-indigo-900">Pricing suggestions updated</div>
+              <div className="text-xs text-indigo-800">
+                {pricingReviewState.count} milestone{pricingReviewState.count === 1 ? "" : "s"} have new suggested amount{pricingReviewState.count === 1 ? "" : "s"}.
+                {pricingReviewState.count > 0 ? (
+                  <>
+                    {" "}Current {formatCurrency(pricingReviewState.currentTotal)} → Suggested {formatCurrency(pricingReviewState.suggestedTotal)}
+                  </>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleReviewSuggestedPricing}
+                className="rounded border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-900 hover:bg-indigo-100"
+              >
+                Review Changes
+              </button>
+              <button
+                type="button"
+                onClick={applySuggestedPricesToAll}
+                disabled={milestonesLocked}
+                className="rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+              >
+                Apply Suggested Price to All
+              </button>
+              <button
+                type="button"
+                onClick={() => setDismissedPricingReviewSignature(pricingReviewState.signature)}
+                className="rounded border px-3 py-2 text-sm font-medium hover:bg-white"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <ClarificationsModal
         open={clarOpen}
