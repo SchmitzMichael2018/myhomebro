@@ -388,6 +388,159 @@ def _agreement_answers_snapshot(agreement: Any) -> Dict[str, Any]:
         return {}
 
 
+def _answer_text(answers: Dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        raw = answers.get(key)
+        txt = _safe_str(raw)
+        if txt:
+            return txt
+    return ""
+
+
+def _parse_first_number(text: str) -> float:
+    raw = _safe_str(text)
+    if not raw:
+        return 0.0
+    match = re.search(r"(\d[\d,]*(?:\.\d+)?)", raw)
+    if not match:
+        return 0.0
+    try:
+        return float(match.group(1).replace(",", ""))
+    except Exception:
+        return 0.0
+
+
+def _extract_quantity_signal(answers: Dict[str, Any]) -> tuple[str, float]:
+    direct_specs = [
+        ("sqft", ("roof_area", "project_size_sqft", "square_feet", "sqft", "area_sqft", "floor_area_sqft", "wall_area_sqft")),
+        ("linear_feet", ("linear_feet", "lf", "fence_length", "run_length_feet")),
+        ("rooms", ("room_count", "rooms")),
+        ("fixtures", ("fixture_count", "fixtures_count", "device_count", "outlet_count", "window_count", "door_count", "gate_count")),
+    ]
+    for unit, keys in direct_specs:
+        for key in keys:
+            value = _parse_first_number(answers.get(key))
+            if value > 0:
+                return unit, value
+
+    note_blob = " ".join(
+        _safe_str(answers.get(key))
+        for key in ("measurement_notes", "measurements_notes", "allowances_selections")
+    )
+    patterns = [
+        ("sqft", r"(\d[\d,]*(?:\.\d+)?)\s*(?:sq\.?\s*ft|square\s*feet|sqft)\b"),
+        ("linear_feet", r"(\d[\d,]*(?:\.\d+)?)\s*(?:linear\s*feet|linear\s*ft|lf)\b"),
+        ("rooms", r"(\d+(?:\.\d+)?)\s*rooms?\b"),
+        ("fixtures", r"(\d+(?:\.\d+)?)\s*(?:fixtures?|windows?|doors?|gates?|outlets?|switches?)\b"),
+    ]
+    for unit, pattern in patterns:
+        match = re.search(pattern, note_blob, re.I)
+        if match:
+            try:
+                return unit, float(match.group(1).replace(",", ""))
+            except Exception:
+                continue
+    return "", 0.0
+
+
+def _quantity_reason(unit: str, value: float) -> str:
+    if value <= 0:
+        return ""
+    if unit == "sqft":
+        if value >= 1800:
+            return "larger project size"
+        if value <= 500:
+            return "smaller project size"
+    if unit == "linear_feet" and value >= 180:
+        return "longer project run"
+    if unit == "rooms" and value >= 4:
+        return "multi-room scope"
+    if unit == "fixtures" and value >= 6:
+        return "higher item count"
+    return ""
+
+
+def _material_reason(answers: Dict[str, Any]) -> str:
+    material = _answer_text(
+        answers,
+        "roofing_material_type",
+        "material_type",
+        "materials_type",
+        "finish_material",
+        "paint_type",
+        "flooring_type",
+        "tile_type",
+        "fence_material",
+        "fixture_type",
+    ).lower()
+    if not material:
+        return ""
+    if any(token in material for token in ("premium", "designer", "custom", "luxury", "high end", "tile", "metal", "slate", "copper", "hardwood")):
+        return "premium material selection"
+    if any(token in material for token in ("builder grade", "standard", "basic", "economy")):
+        return "basic material selection"
+    return "selected material type"
+
+
+def _access_reason(answers: Dict[str, Any]) -> str:
+    text = " ".join(
+        _safe_str(answers.get(key)).lower()
+        for key in ("site_access_working_hours", "access_upper_floor_construction", "material_delivery_coordination")
+    )
+    if any(token in text for token in ("limited", "restricted", "narrow", "tight", "ladder", "stairs", "upper floor", "second floor", "occupied")):
+        return "access difficulty"
+    return ""
+
+
+def _condition_reason(answers: Dict[str, Any]) -> str:
+    text = " ".join(
+        _safe_str(answers.get(key)).lower()
+        for key in ("decking_condition", "unforeseen_conditions_change_orders", "measurement_notes", "measurements_notes")
+    )
+    if any(token in text for token in ("rot", "rotten", "replace", "replacement", "soft", "damaged", "damage", "water damage", "mold", "repair", "patch", "subfloor")):
+        return "repair risk"
+    return ""
+
+
+def _uncertainty_reason(answers: Dict[str, Any], quantity_value: float) -> str:
+    measurements = _answer_text(answers, "measurements_provided").lower()
+    if measurements in {"no", "pending", "false"} or quantity_value <= 0:
+        return "project details are still limited"
+    return ""
+
+
+def _short_pricing_reason(answers: Dict[str, Any], pricing_mode: str) -> str:
+    unit, quantity_value = _extract_quantity_signal(answers)
+    quantity = _quantity_reason(unit, quantity_value)
+    material = _material_reason(answers)
+    access = _access_reason(answers)
+    condition = _condition_reason(answers)
+    uncertainty = _uncertainty_reason(answers, quantity_value)
+
+    if uncertainty:
+        return "Estimate range widened because project details are still limited."
+
+    labor_drivers = [reason for reason in (access, condition, quantity) if reason][:2]
+    if pricing_mode == "labor_only":
+        if labor_drivers:
+            return f"Higher labor due to {' and '.join(labor_drivers)}."
+        return "Lower materials exposure because customer supplies materials."
+
+    if material and any(token in material for token in ("premium", "selected material type")):
+        return f"Materials estimate reflects {material}."
+
+    if labor_drivers:
+        return f"Higher labor due to {' and '.join(labor_drivers)}."
+
+    if material:
+        return f"Materials estimate reflects {material}."
+
+    if pricing_mode == "hybrid":
+        return "Estimate reflects shared materials responsibility."
+
+    return ""
+
+
 def _derive_pricing_mode_from_answers(answers: Any) -> str:
     if not isinstance(answers, dict):
         return "full_service"
@@ -450,6 +603,7 @@ def _normalize_pricing_estimates(
     fallback_milestones: List[Dict[str, Any]],
     *,
     default_pricing_mode: str = "full_service",
+    default_pricing_reason: str = "",
 ) -> List[Dict[str, Any]]:
     if not isinstance(raw, list):
         raw = []
@@ -499,6 +653,7 @@ def _normalize_pricing_estimates(
                 "pricing_confidence": _safe_str(item.get("pricing_confidence")).lower() or "low",
                 "pricing_source_note": (
                     _safe_str(item.get("pricing_source_note"))
+                    or default_pricing_reason
                     or "AI pricing preview refreshed from current clarification answers."
                 )[:255],
                 "recommended_duration_days": max(_safe_int(item.get("recommended_duration_days"), 0), 1),
@@ -529,6 +684,7 @@ def _normalize_pricing_estimates(
                 "pricing_confidence": _safe_str(base.get("pricing_confidence")).lower() or "low",
                 "pricing_source_note": (
                     _safe_str(base.get("pricing_source_note"))
+                    or default_pricing_reason
                     or "AI pricing preview refreshed from current clarification answers."
                 )[:255],
                 "recommended_duration_days": max(_safe_int(base.get("recommended_duration_days"), 1), 1),
@@ -720,6 +876,7 @@ def suggest_pricing_refresh(*, agreement: Any) -> Dict[str, Any]:
 
     answers = _agreement_answers_snapshot(agreement)
     pricing_mode = _derive_pricing_mode_from_answers(answers)
+    pricing_reason = _short_pricing_reason(answers, pricing_mode)
 
     system = (
         "You are a construction pricing assistant.\n"
@@ -833,6 +990,7 @@ def suggest_pricing_refresh(*, agreement: Any) -> Dict[str, Any]:
         payload.get("pricing_estimates"),
         milestones,
         default_pricing_mode=pricing_mode,
+        default_pricing_reason=pricing_reason,
     )
 
     return {

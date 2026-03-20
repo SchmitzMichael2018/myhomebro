@@ -270,6 +270,7 @@ function getEstimateAssistMeta(m) {
   const materialsHigh = m?.materials_estimate_high;
   const confidence = safeStr(m?.pricing_confidence);
   const pricingMode = safeStr(m?.pricing_mode).toLowerCase();
+  const pricingReason = safeStr(m?.pricing_source_note);
   const materials = safeStr(m?.materials_hint);
   const type = safeStr(m?.normalized_milestone_type);
   const durationDays =
@@ -305,6 +306,11 @@ function getEstimateAssistMeta(m) {
     materialsLow,
     materialsHigh,
     confidence,
+    pricingReason:
+      pricingReason &&
+      pricingReason !== "AI pricing preview refreshed from current clarification answers."
+        ? pricingReason
+        : "",
     pricingMode,
     pricingModeLabel:
       pricingMode === "labor_only"
@@ -358,6 +364,7 @@ function getEstimateAssistMeta(m) {
     hasAnything:
       !!safeStr(type) ||
       !!safeStr(materials) ||
+      !!safeStr(pricingReason) ||
       !!safeStr(confidence) ||
       (
         (pricingMode === "labor_only" || pricingMode === "hybrid")
@@ -1848,6 +1855,10 @@ export default function Step2Milestones({
 
                         {estimate.materialsLine ? (
                           <div className="text-gray-500">{estimate.materialsLine}</div>
+                        ) : null}
+
+                        {estimate.pricingReason ? (
+                          <div className="text-gray-500">{estimate.pricingReason}</div>
                         ) : null}
 
                         {estimate.confidenceLabel ? (
