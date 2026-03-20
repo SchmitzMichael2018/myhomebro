@@ -314,30 +314,15 @@ function getEstimateAssistMeta(m) {
         : pricingMode === "full_service"
         ? "Full Service"
         : "",
-    primaryLabel:
-      pricingMode === "labor_only" || pricingMode === "hybrid" ? "Labor" : "Total",
-    primaryLow:
-      pricingMode === "labor_only" || pricingMode === "hybrid"
-        ? laborLow ?? low
-        : low,
-    primaryHigh:
-      pricingMode === "labor_only" || pricingMode === "hybrid"
-        ? laborHigh ?? high
-        : high,
-    hasPrimaryRange:
-      pricingMode === "labor_only" || pricingMode === "hybrid"
-        ? laborLow !== null &&
-          laborLow !== undefined &&
-          laborLow !== "" &&
-          laborHigh !== null &&
-          laborHigh !== undefined &&
-          laborHigh !== ""
-        : low !== null &&
-          low !== undefined &&
-          low !== "" &&
-          high !== null &&
-          high !== undefined &&
-          high !== "",
+    laborLine:
+      laborLow !== null &&
+      laborLow !== undefined &&
+      laborLow !== "" &&
+      laborHigh !== null &&
+      laborHigh !== undefined &&
+      laborHigh !== ""
+        ? `Labor: ${formatCurrency(laborLow)} – ${formatCurrency(laborHigh)}`
+        : "",
     materialsLine:
       pricingMode === "labor_only"
         ? "Materials: customer supplied"
@@ -348,6 +333,19 @@ function getEstimateAssistMeta(m) {
           materialsHigh !== undefined &&
           materialsHigh !== ""
         ? `Materials: ${formatCurrency(materialsLow)} – ${formatCurrency(materialsHigh)}`
+        : pricingMode === "hybrid"
+        ? "Materials: shared responsibility"
+        : "",
+    totalLine:
+      low !== null &&
+      low !== undefined &&
+      low !== "" &&
+      high !== null &&
+      high !== undefined &&
+      high !== ""
+        ? `${
+            pricingMode === "full_service" ? "Estimated total" : "Total project context"
+          }: ${formatCurrency(low)} – ${formatCurrency(high)}`
         : "",
     confidenceLabel: formatEstimateConfidence(confidence),
     materials,
@@ -360,11 +358,8 @@ function getEstimateAssistMeta(m) {
       !!safeStr(materials) ||
       !!safeStr(confidence) ||
       (
-        (pricingMode === "labor_only" || pricingMode === "hybrid")
-          ? (laborLow !== null && laborLow !== undefined && laborLow !== "") ||
-            (laborHigh !== null && laborHigh !== undefined && laborHigh !== "")
-          : (low !== null && low !== undefined && low !== "") ||
-            (high !== null && high !== undefined && high !== "")
+        (low !== null && low !== undefined && low !== "") ||
+        (high !== null && high !== undefined && high !== "")
       ) ||
       (laborLow !== null && laborLow !== undefined && laborLow !== "") ||
       (laborHigh !== null && laborHigh !== undefined && laborHigh !== "") ||
@@ -1837,17 +1832,18 @@ export default function Step2Milestones({
                           </div>
                         ) : null}
 
-                        {estimate.hasPrimaryRange ? (
-                          <div className="text-gray-700">
-                            {estimate.primaryLabel}:{" "}
-                            <span className="font-medium">
-                              {formatCurrency(estimate.primaryLow)} – {formatCurrency(estimate.primaryHigh)}
-                            </span>
-                          </div>
+                        {estimate.laborLine ? (
+                          <div className="text-gray-700">{estimate.laborLine}</div>
                         ) : null}
-
                         {estimate.materialsLine ? (
                           <div className="text-gray-500">{estimate.materialsLine}</div>
+                        ) : null}
+                        {estimate.totalLine ? (
+                          <div className="text-gray-700">
+                            <span className={estimate.pricingMode === "full_service" ? "font-medium" : ""}>
+                              {estimate.totalLine}
+                            </span>
+                          </div>
                         ) : null}
 
                         {estimate.confidenceLabel ? (
@@ -2155,22 +2151,11 @@ export default function Step2Milestones({
                       </div>
                     ) : null}
 
-                    {((safeStr(editForm.pricing_mode).toLowerCase() === "labor_only" ||
-                      safeStr(editForm.pricing_mode).toLowerCase() === "hybrid")
-                      ? (editForm.labor_estimate_low !== "" || editForm.labor_estimate_high !== "")
-                      : (editForm.suggested_amount_low !== "" || editForm.suggested_amount_high !== "")) ? (
+                    {(editForm.labor_estimate_low !== "" || editForm.labor_estimate_high !== "") ? (
                       <div>
-                        <span className="font-medium text-slate-800">
-                          {safeStr(editForm.pricing_mode).toLowerCase() === "labor_only" ||
-                          safeStr(editForm.pricing_mode).toLowerCase() === "hybrid"
-                            ? "Labor:"
-                            : "Total:"}
-                        </span>{" "}
+                        <span className="font-medium text-slate-800">Labor:</span>{" "}
                         <span className="text-slate-700">
-                          {safeStr(editForm.pricing_mode).toLowerCase() === "labor_only" ||
-                          safeStr(editForm.pricing_mode).toLowerCase() === "hybrid"
-                            ? `${formatCurrency(editForm.labor_estimate_low)} – ${formatCurrency(editForm.labor_estimate_high)}`
-                            : `${formatCurrency(editForm.suggested_amount_low)} – ${formatCurrency(editForm.suggested_amount_high)}`}
+                          {formatCurrency(editForm.labor_estimate_low)} – {formatCurrency(editForm.labor_estimate_high)}
                         </span>
                       </div>
                     ) : null}
@@ -2188,6 +2173,19 @@ export default function Step2Milestones({
                         <span className="font-medium text-slate-800">Materials:</span>{" "}
                         <span className="text-slate-700">
                           {formatCurrency(editForm.materials_estimate_low)} – {formatCurrency(editForm.materials_estimate_high)}
+                        </span>
+                      </div>
+                    ) : null}
+
+                    {(editForm.suggested_amount_low !== "" || editForm.suggested_amount_high !== "") ? (
+                      <div>
+                        <span className="font-medium text-slate-800">
+                          {safeStr(editForm.pricing_mode).toLowerCase() === "full_service"
+                            ? "Estimated total:"
+                            : "Total project context:"}
+                        </span>{" "}
+                        <span className="text-slate-700">
+                          {formatCurrency(editForm.suggested_amount_low)} – {formatCurrency(editForm.suggested_amount_high)}
                         </span>
                       </div>
                     ) : null}

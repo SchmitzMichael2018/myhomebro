@@ -548,7 +548,7 @@ def _advisory_money_line(label: str, low, high) -> str:
 def _milestone_advisory_lines(m) -> list[str]:
   mode = _s(getattr(m, "pricing_mode", None)).strip().lower()
   labor_line = _advisory_money_line(
-    "Labor guidance",
+    "Labor",
     getattr(m, "labor_estimate_low", None),
     getattr(m, "labor_estimate_high", None),
   )
@@ -556,13 +556,18 @@ def _milestone_advisory_lines(m) -> list[str]:
     materials_line = "Materials: customer supplied"
   else:
     materials_line = _advisory_money_line(
-      "Materials guidance",
+      "Materials",
       getattr(m, "materials_estimate_low", None),
       getattr(m, "materials_estimate_high", None),
-    )
+    ) or ("Materials: shared responsibility" if mode == "hybrid" else "")
+  total_line = _advisory_money_line(
+    "Estimated total" if mode == "full_service" else "Total project context",
+    getattr(m, "suggested_amount_low", None),
+    getattr(m, "suggested_amount_high", None),
+  )
   materials_hint = _s(getattr(m, "materials_hint", None)).strip()
   hint_line = f"Materials context: {materials_hint}" if materials_hint else ""
-  return [line for line in (labor_line, materials_line, hint_line) if line]
+  return [line for line in (labor_line, materials_line, total_line, hint_line) if line]
 
 
 def _boolish(v, default: bool = True) -> bool:

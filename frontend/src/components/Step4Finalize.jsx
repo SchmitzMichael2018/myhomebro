@@ -267,19 +267,26 @@ function advisoryMoneyLine(label, low, high) {
 
 function milestoneAdvisoryPricingMeta(m) {
   const mode = safeMilestoneStr(m?.pricing_mode).toLowerCase();
-  const laborLine = advisoryMoneyLine("Labor guidance", m?.labor_estimate_low, m?.labor_estimate_high);
+  const laborLine = advisoryMoneyLine("Labor", m?.labor_estimate_low, m?.labor_estimate_high);
   const materialsLine =
     mode === "labor_only"
       ? "Materials: customer supplied"
-      : advisoryMoneyLine("Materials guidance", m?.materials_estimate_low, m?.materials_estimate_high);
+      : advisoryMoneyLine("Materials", m?.materials_estimate_low, m?.materials_estimate_high) ||
+        (mode === "hybrid" ? "Materials: shared responsibility" : "");
+  const totalLine = advisoryMoneyLine(
+    mode === "full_service" ? "Estimated total" : "Total project context",
+    m?.suggested_amount_low,
+    m?.suggested_amount_high
+  );
   const materialsHint = safeMilestoneStr(m?.materials_hint);
 
   return {
     mode,
     laborLine,
     materialsLine,
+    totalLine,
     materialsHint: materialsHint ? `Materials context: ${materialsHint}` : "",
-    hasAny: !!laborLine || !!materialsLine || !!materialsHint,
+    hasAny: !!laborLine || !!materialsLine || !!totalLine || !!materialsHint,
   };
 }
 
@@ -1508,6 +1515,7 @@ export default function Step4Finalize({
                           <div className="mt-2 space-y-1 text-[11px] text-slate-600">
                             {advisory.laborLine ? <div>{advisory.laborLine}</div> : null}
                             {advisory.materialsLine ? <div>{advisory.materialsLine}</div> : null}
+                            {advisory.totalLine ? <div>{advisory.totalLine}</div> : null}
                             {advisory.materialsHint ? <div>{advisory.materialsHint}</div> : null}
                           </div>
                         );
