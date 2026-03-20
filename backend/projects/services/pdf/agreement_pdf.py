@@ -890,6 +890,7 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
     rows = [[
       Paragraph("#", s_table_center),
       Paragraph("Milestone", s_table),
+      Paragraph("Start Date", s_table_center),
       Paragraph("Due Date", s_table_center),
       Paragraph("Milestone Amount", s_table_center),
     ]]
@@ -908,7 +909,9 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
       amt = Decimal(str(getattr(m, "amount", 0) or 0))
       total_amt += amt
 
+      start_raw = _start_of(m)
       due_raw = _due_of(m)
+      start = _fmt_date_friendly(start_raw) if start_raw else "TBD"
       due = _fmt_date_friendly(due_raw) if due_raw else "TBD"
 
       desc_html = _desc_to_html(desc)
@@ -921,6 +924,7 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
       rows.append([
         Paragraph(str(order_num), s_table_center),
         Paragraph(milestone_html, s_table_sub),
+        Paragraph(start, s_table_center),
         Paragraph(due, s_table_center),
         Paragraph(_currency(float(amt)), s_table_center),
       ])
@@ -929,21 +933,23 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
       "",
       Paragraph("<b>Totals</b>", s_table),
       "",
+      "",
       Paragraph(f"<b>{_currency(float(total_amt))}</b>", s_table_center),
     ])
 
     c1 = 0.55 * inch
-    c3 = 1.35 * inch
-    c4 = 1.20 * inch
-    c2 = doc.width - (c1 + c3 + c4)
+    c3 = 1.05 * inch
+    c4 = 1.05 * inch
+    c5 = 1.20 * inch
+    c2 = doc.width - (c1 + c3 + c4 + c5)
 
-    t = Table(rows, colWidths=[c1, c2, c3, c4], repeatRows=1)
+    t = Table(rows, colWidths=[c1, c2, c3, c4, c5], repeatRows=1)
     t.setStyle(TableStyle([
       ("BACKGROUND", (0, 0), (-1, 0), "#F3F4F6"),
       ("GRID", (0, 0), (-1, -1), 0.25, "#E5E7EB"),
       ("ALIGN", (0, 1), (0, -2), "CENTER"),
-      ("ALIGN", (2, 1), (2, -2), "CENTER"),
-      ("ALIGN", (3, 1), (3, -2), "RIGHT"),
+      ("ALIGN", (2, 1), (3, -2), "CENTER"),
+      ("ALIGN", (4, 1), (4, -2), "RIGHT"),
       ("VALIGN", (0, 0), (-1, -1), "TOP"),
       ("BACKGROUND", (0, -1), (-1, -1), "#FAFAFA"),
       ("LINEABOVE", (0, -1), (-1, -1), 0.5, "#E5E7EB"),
@@ -967,6 +973,10 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
       "workmanlike manner consistent with industry standards, excluding minor punch-list items that do not "
       "materially impair use.",
       s_just,
+    ))
+    story.append(Paragraph(
+      "Estimated schedule; dates may change. Materials listed are estimated project context and may change.",
+      s_small,
     ))
     story.append(Spacer(1, 12))
   else:

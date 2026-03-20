@@ -241,6 +241,14 @@ function formatMilestoneDate(m) {
   return d.toLocaleDateString();
 }
 
+function formatMilestoneStartDate(m) {
+  const raw = m?.start_date || m?.startDate || m?.start || m?.scheduled_start;
+  if (!raw) return "—";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString();
+}
+
 function safeMilestoneStr(v) {
   return (v == null ? "" : String(v)).trim();
 }
@@ -1479,7 +1487,8 @@ export default function Step4Finalize({
                 <tr>
                   <th className="text-left p-2 border-b border-slate-200 w-[64px]">#</th>
                   <th className="text-left p-2 border-b border-slate-200">Milestone</th>
-                  <th className="text-left p-2 border-b border-slate-200 w-[160px]">Due Date</th>
+                  <th className="text-left p-2 border-b border-slate-200 w-[140px]">Start Date</th>
+                  <th className="text-left p-2 border-b border-slate-200 w-[140px]">Due Date</th>
                   <th className="text-right p-2 border-b border-slate-200 w-[140px]">Milestone Amount</th>
                 </tr>
               </thead>
@@ -1504,6 +1513,7 @@ export default function Step4Finalize({
                         );
                       })()}
                     </td>
+                    <td className="p-2 border-b border-slate-200">{formatMilestoneStartDate(m)}</td>
                     <td className="p-2 border-b border-slate-200">{formatMilestoneDate(m)}</td>
                     <td className="p-2 border-b border-slate-200 text-right tabular-nums">
                       <div className="font-semibold text-slate-900">{formatMoney(m?.amount || 0)}</div>
@@ -1513,7 +1523,7 @@ export default function Step4Finalize({
                 ))}
 
                 <tr className="bg-slate-50 font-semibold">
-                  <td className="p-2 border-t border-slate-200" colSpan={3}>
+                  <td className="p-2 border-t border-slate-200" colSpan={4}>
                     Totals
                   </td>
                   <td className="p-2 border-t border-slate-200 text-right tabular-nums">
@@ -1524,7 +1534,7 @@ export default function Step4Finalize({
             </table>
 
             <div className="mt-2 text-[11px] text-slate-500">
-              Tip: If any amount is missing or $0, Step 4 will block preview/sign/funding until pricing is complete.
+              Estimated schedule; dates may change. Materials listed are estimated project context and may change.
             </div>
           </div>
         ) : (

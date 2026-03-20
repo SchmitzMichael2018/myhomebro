@@ -475,18 +475,24 @@ function buildSessionQuestions({
   overrideQuestions,
   hasOverrideQuestions,
   aiScopeQuestions,
+  aiScopeAnswers,
   recommendedQuestions,
   excludeKeys = [],
 }) {
   const storedQuestions = mergeAndCanonicalizeQuestions(aiScopeQuestions);
+  const answerDerivedQuestions = mergeAndCanonicalizeQuestions(
+    Object.keys(safeDict(aiScopeAnswers)).map((rawKey) => ({ key: rawKey }))
+  );
+  const storedQuestionKeys = new Set(storedQuestions.map((q) => String(q?.key || "")).filter(Boolean));
+  const answerDerivedKeys = new Set(answerDerivedQuestions.map((q) => String(q?.key || "")).filter(Boolean));
   const overrideMerged = hasOverrideQuestions ? mergeAndCanonicalizeQuestions(overrideQuestions) : [];
   const recommendedMerged = mergeAndCanonicalizeQuestions(recommendedQuestions);
 
   const baseQuestions = storedQuestions.length
-    ? mergeAndCanonicalizeQuestions([...storedQuestions, ...overrideMerged])
+    ? mergeAndCanonicalizeQuestions([...storedQuestions, ...answerDerivedQuestions, ...overrideMerged])
     : hasOverrideQuestions
-    ? mergeAndCanonicalizeQuestions([...overrideMerged, ...recommendedMerged])
-    : mergeAndCanonicalizeQuestions([...recommendedMerged]);
+    ? mergeAndCanonicalizeQuestions([...answerDerivedQuestions, ...overrideMerged, ...recommendedMerged])
+    : mergeAndCanonicalizeQuestions([...answerDerivedQuestions, ...recommendedMerged]);
 
   const excluded = new Set(
     safeList(excludeKeys).map((k) => semanticGroupForQuestion({ key: String(k) }))
@@ -498,7 +504,7 @@ function buildSessionQuestions({
     if (isInternalSemanticKey(canonicalKey)) return false;
 
     if (excluded.has(canonicalKey)) {
-      return !!q?.required;
+      return !!q?.required || storedQuestionKeys.has(canonicalKey) || answerDerivedKeys.has(canonicalKey);
     }
 
     return true;
@@ -558,6 +564,7 @@ export default function ClarificationsModal({
       overrideQuestions,
       hasOverrideQuestions,
       aiScopeQuestions: aiScope?.questions || [],
+      aiScopeAnswers: aiScope?.answers || {},
       recommendedQuestions,
       excludeKeys,
     });
@@ -658,6 +665,7 @@ export default function ClarificationsModal({
               overrideQuestions,
               hasOverrideQuestions,
               aiScopeQuestions: aiScope.questions || [],
+              aiScopeAnswers: aiScope.answers || {},
               recommendedQuestions,
               excludeKeys,
             });
