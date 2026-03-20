@@ -995,6 +995,48 @@ export default function Step2Milestones({
     );
   }
 
+  function applySuggestedPricesToAll() {
+    if (!effectiveMilestones.length) {
+      toast("No milestones are available to update.");
+      return;
+    }
+
+    let appliedCount = 0;
+    const nextRows = effectiveMilestones.map((row, idx) => {
+      const suggestedAmount = deriveSuggestedPriceAmount(row);
+      if (!Number.isFinite(suggestedAmount) || suggestedAmount <= 0) {
+        return { ...row };
+      }
+      appliedCount += 1;
+      return {
+        ...row,
+        order: row?.order != null ? row.order : idx + 1,
+        amount: suggestedAmount,
+      };
+    });
+
+    if (!appliedCount) {
+      toast("No milestones have valid suggested pricing guidance yet.");
+      return;
+    }
+
+    setFallbackMilestones(sortFallbackMilestones(nextRows));
+
+    if (editOpen && editForm?.id) {
+      const editedRow = nextRows.find((row) => row?.id === editForm.id);
+      if (editedRow) {
+        setEditForm((state) => ({
+          ...state,
+          amount: String(editedRow.amount),
+        }));
+      }
+    }
+
+    toast.success(
+      `Suggested prices applied to ${appliedCount} milestone${appliedCount === 1 ? "" : "s"}. Review before saving.`
+    );
+  }
+
   function isOverlapError(err) {
     const msg = err?.response?.data?.non_field_errors?.[0];
     return !!(msg && String(msg).toLowerCase().includes("overlap"));
@@ -1475,6 +1517,18 @@ export default function Step2Milestones({
                 title="Refresh estimate-assist guidance from current clarification answers without changing milestone amounts."
               >
                 {pricingRefreshing ? "Refreshing Pricing…" : "Refresh Pricing Estimate"}
+              </button>
+            ) : null}
+
+            {effectiveMilestones.length ? (
+              <button
+                type="button"
+                onClick={applySuggestedPricesToAll}
+                disabled={milestonesLocked}
+                className="rounded border px-3 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-60"
+                title="Apply suggested prices to all eligible milestone amounts locally for review."
+              >
+                Apply Suggested Price to All
               </button>
             ) : null}
 
