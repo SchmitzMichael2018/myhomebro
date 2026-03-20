@@ -116,6 +116,93 @@ CANONICAL_CLARIFICATION_KEYS: Dict[str, Dict[str, Any]] = {
 }
 
 
+BASELINE_PRICING_BY_TYPE: Dict[str, Dict[str, Any]] = {
+    "default": {
+        "labor_ratio": 0.65,
+        "materials_ratio": 0.35,
+        "low_factor": 0.90,
+        "high_factor": 1.15,
+    },
+    "roofing": {
+        "labor_ratio": 0.42,
+        "materials_ratio": 0.58,
+        "low_factor": 0.92,
+        "high_factor": 1.18,
+        "subtypes": {
+            "repair": {"labor_ratio": 0.62, "materials_ratio": 0.38, "low_factor": 0.88, "high_factor": 1.14},
+            "replacement": {"labor_ratio": 0.40, "materials_ratio": 0.60, "low_factor": 0.95, "high_factor": 1.20},
+        },
+    },
+    "flooring": {
+        "labor_ratio": 0.55,
+        "materials_ratio": 0.45,
+        "low_factor": 0.90,
+        "high_factor": 1.17,
+        "subtypes": {
+            "hardwood": {"labor_ratio": 0.58, "materials_ratio": 0.42},
+            "lvp": {"labor_ratio": 0.50, "materials_ratio": 0.50},
+            "tile": {"labor_ratio": 0.60, "materials_ratio": 0.40, "high_factor": 1.18},
+        },
+    },
+    "painting": {
+        "labor_ratio": 0.74,
+        "materials_ratio": 0.26,
+        "low_factor": 0.88,
+        "high_factor": 1.14,
+        "subtypes": {
+            "interior": {"labor_ratio": 0.76, "materials_ratio": 0.24},
+            "exterior": {"labor_ratio": 0.70, "materials_ratio": 0.30, "high_factor": 1.16},
+        },
+    },
+    "tile": {
+        "labor_ratio": 0.62,
+        "materials_ratio": 0.38,
+        "low_factor": 0.92,
+        "high_factor": 1.18,
+    },
+    "drywall": {
+        "labor_ratio": 0.70,
+        "materials_ratio": 0.30,
+        "low_factor": 0.90,
+        "high_factor": 1.15,
+    },
+    "fencing": {
+        "labor_ratio": 0.50,
+        "materials_ratio": 0.50,
+        "low_factor": 0.91,
+        "high_factor": 1.16,
+        "subtypes": {
+            "repair": {"labor_ratio": 0.68, "materials_ratio": 0.32, "low_factor": 0.87, "high_factor": 1.12},
+            "install": {"labor_ratio": 0.48, "materials_ratio": 0.52},
+        },
+    },
+    "plumbing": {
+        "labor_ratio": 0.80,
+        "materials_ratio": 0.20,
+        "low_factor": 0.89,
+        "high_factor": 1.16,
+    },
+    "electrical": {
+        "labor_ratio": 0.82,
+        "materials_ratio": 0.18,
+        "low_factor": 0.90,
+        "high_factor": 1.16,
+    },
+    "remodel": {
+        "labor_ratio": 0.64,
+        "materials_ratio": 0.36,
+        "low_factor": 0.92,
+        "high_factor": 1.18,
+    },
+    "handyman": {
+        "labor_ratio": 0.86,
+        "materials_ratio": 0.14,
+        "low_factor": 0.88,
+        "high_factor": 1.12,
+    },
+}
+
+
 def _require_openai_client():
     try:
         from openai import OpenAI  # type: ignore
@@ -156,6 +243,134 @@ def _safe_int(v: Any, default: int = 0) -> int:
 
 def _safe_str(v: Any) -> str:
     return (v or "").__str__().strip()
+
+
+def _normalize_baseline_key(value: Any) -> str:
+    s = _safe_str(value).lower()
+    s = s.replace("&", " and ")
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _baseline_pricing_profile(project_type: Any, project_subtype: Any) -> Dict[str, float]:
+    normalized_type = _normalize_baseline_key(project_type)
+    normalized_subtype = _normalize_baseline_key(project_subtype)
+
+    selected_key = "default"
+    for key in BASELINE_PRICING_BY_TYPE.keys():
+        if key == "default":
+            continue
+        if key in normalized_type or key in normalized_subtype:
+            selected_key = key
+            break
+
+    base = dict(BASELINE_PRICING_BY_TYPE["default"])
+    type_profile = BASELINE_PRICING_BY_TYPE.get(selected_key, {})
+    base.update({k: v for k, v in type_profile.items() if k != "subtypes"})
+
+    subtype_profiles = type_profile.get("subtypes", {}) if isinstance(type_profile.get("subtypes"), dict) else {}
+    for key, subtype_profile in subtype_profiles.items():
+        if key in normalized_subtype:
+            base.update(subtype_profile)
+            break
+
+    labor_ratio = float(base.get("labor_ratio", 0.65))
+    materials_ratio = float(base.get("materials_ratio", 0.35))
+    total_ratio = labor_ratio + materials_ratio
+    if total_ratio <= 0:
+        labor_ratio, materials_ratio = 0.65, 0.35
+        total_ratio = 1.0
+
+    return {
+        "type_key": selected_key,
+        "labor_ratio": round(labor_ratio / total_ratio, 4),
+        "materials_ratio": round(materials_ratio / total_ratio, 4),
+        "low_factor": float(base.get("low_factor", 0.90)),
+        "high_factor": float(base.get("high_factor", 1.15)),
+    }
+
+
+def _refine_baseline_with_template(
+    agreement: Any,
+    base_profile: Dict[str, float],
+    fallback_milestones: List[Dict[str, Any]],
+) -> Dict[str, float]:
+    profile = dict(base_profile or {})
+
+    template_name = _safe_str(getattr(agreement, "selected_template_name_snapshot", ""))
+    selected_template = getattr(agreement, "selected_template", None)
+    template_bits = [
+        template_name,
+        _safe_str(getattr(selected_template, "name", "")) if selected_template is not None else "",
+        _safe_str(getattr(selected_template, "description", "")) if selected_template is not None else "",
+        _safe_str(getattr(selected_template, "default_scope", "")) if selected_template is not None else "",
+    ]
+    milestone_type_bits = [
+        _safe_str(row.get("normalized_milestone_type"))
+        for row in (fallback_milestones or [])
+        if _safe_str(row.get("normalized_milestone_type"))
+    ]
+    template_text = " ".join(bit for bit in [*template_bits, *milestone_type_bits] if bit).lower()
+
+    has_template_anchor = any(_safe_float(row.get("template_suggested_amount"), 0.0) > 0 for row in (fallback_milestones or []))
+    if not template_text and not has_template_anchor:
+        return profile
+
+    labor_ratio = float(profile.get("labor_ratio", 0.65))
+    materials_ratio = float(profile.get("materials_ratio", 0.35))
+    low_factor = float(profile.get("low_factor", 0.90))
+    high_factor = float(profile.get("high_factor", 1.15))
+
+    if any(token in template_text for token in ("premium", "designer", "custom", "luxury", "high end", "architectural")):
+        materials_ratio += 0.04
+        high_factor += 0.02
+
+    if any(token in template_text for token in ("repair", "patch", "service", "troubleshoot")):
+        labor_ratio += 0.05
+        materials_ratio -= 0.03
+        low_factor -= 0.01
+        high_factor -= 0.01
+
+    if any(token in template_text for token in ("replace", "replacement", "install", "installation", "new build")):
+        materials_ratio += 0.03
+        high_factor += 0.01
+
+    if any(token in template_text for token in ("demo", "demolition", "tear out", "tear-out", "prep", "skim", "texture")):
+        labor_ratio += 0.04
+        high_factor += 0.01
+
+    if any(token in template_text for token in ("exterior", "weather", "weatherproof", "sealant")):
+        labor_ratio += 0.02
+        high_factor += 0.01
+
+    if has_template_anchor:
+        high_factor += 0.01
+
+    total_ratio = max(labor_ratio + materials_ratio, 0.01)
+    profile["labor_ratio"] = round(max(labor_ratio, 0.05) / total_ratio, 4)
+    profile["materials_ratio"] = round(max(materials_ratio, 0.05) / total_ratio, 4)
+    profile["low_factor"] = max(round(low_factor, 4), 0.82)
+    profile["high_factor"] = min(max(round(high_factor, 4), profile["low_factor"] + 0.05), 1.28)
+    return profile
+
+
+def _anchor_range(anchor: float, profile: Dict[str, float]) -> tuple[float, float]:
+    low = round(anchor * float(profile.get("low_factor", 0.90)), 2)
+    high = round(anchor * float(profile.get("high_factor", 1.15)), 2)
+    if high < low:
+        low = high
+    return low, high
+
+
+def _blend_values(primary: float, baseline: float, *, primary_weight: float = 0.7) -> float:
+    if primary > 0 and baseline > 0:
+        return round((primary * primary_weight) + (baseline * (1 - primary_weight)), 2)
+    if primary > 0:
+        return round(primary, 2)
+    if baseline > 0:
+        return round(baseline, 2)
+    return 0.0
 
 
 def _normalize_keyish(value: Any) -> str:
@@ -581,6 +796,7 @@ def _current_milestones_snapshot(agreement: Any) -> List[Dict[str, Any]]:
                 "title": _safe_str(getattr(m, "title", "")) or f"Milestone {idx}",
                 "description": _safe_str(getattr(m, "description", "")),
                 "amount": _safe_float(getattr(m, "amount", 0), 0.0),
+                "template_suggested_amount": _safe_float(getattr(m, "template_suggested_amount", 0), 0.0),
                 "normalized_milestone_type": _safe_str(getattr(m, "normalized_milestone_type", "")),
                 "suggested_amount_low": _safe_float(getattr(m, "suggested_amount_low", 0), 0.0),
                 "suggested_amount_high": _safe_float(getattr(m, "suggested_amount_high", 0), 0.0),
@@ -604,6 +820,7 @@ def _normalize_pricing_estimates(
     *,
     default_pricing_mode: str = "full_service",
     default_pricing_reason: str = "",
+    baseline_profile: Dict[str, float] | None = None,
 ) -> List[Dict[str, Any]]:
     if not isinstance(raw, list):
         raw = []
@@ -621,12 +838,26 @@ def _normalize_pricing_estimates(
         order = _safe_int(item.get("order"), idx)
         base = fallback_by_order.get(order, fallback_milestones[idx - 1] if idx - 1 < len(fallback_milestones) else {})
         amount = _safe_float(base.get("amount"), 0.0)
+        template_anchor = _safe_float(base.get("template_suggested_amount"), 0.0)
+        anchor_amount = template_anchor or amount
         low = max(_safe_float(item.get("suggested_amount_low"), 0.0), 0.0)
         high = max(_safe_float(item.get("suggested_amount_high"), 0.0), 0.0)
         labor_low = max(_safe_float(item.get("labor_estimate_low"), 0.0), 0.0)
         labor_high = max(_safe_float(item.get("labor_estimate_high"), 0.0), 0.0)
         materials_low = max(_safe_float(item.get("materials_estimate_low"), 0.0), 0.0)
         materials_high = max(_safe_float(item.get("materials_estimate_high"), 0.0), 0.0)
+
+        baseline_low = baseline_high = 0.0
+        baseline_labor_low = baseline_labor_high = 0.0
+        baseline_materials_low = baseline_materials_high = 0.0
+        if anchor_amount > 0 and baseline_profile:
+            baseline_low, baseline_high = _anchor_range(anchor_amount, baseline_profile)
+            labor_ratio = float(baseline_profile.get("labor_ratio", 0.65))
+            materials_ratio = float(baseline_profile.get("materials_ratio", 0.35))
+            baseline_labor_low = round(baseline_low * labor_ratio, 2)
+            baseline_labor_high = round(baseline_high * labor_ratio, 2)
+            baseline_materials_low = round(baseline_low * materials_ratio, 2)
+            baseline_materials_high = round(baseline_high * materials_ratio, 2)
 
         if high <= 0 and amount > 0:
             high = amount
@@ -638,6 +869,13 @@ def _normalize_pricing_estimates(
             labor_low = labor_high
         if materials_high > 0 and materials_low > materials_high:
             materials_low = materials_high
+
+        low = _blend_values(low, baseline_low)
+        high = _blend_values(high, baseline_high)
+        labor_low = _blend_values(labor_low, baseline_labor_low)
+        labor_high = _blend_values(labor_high, baseline_labor_high)
+        materials_low = _blend_values(materials_low, baseline_materials_low)
+        materials_high = _blend_values(materials_high, baseline_materials_high)
 
         out.append(
             {
@@ -668,8 +906,23 @@ def _normalize_pricing_estimates(
     fallback_out: List[Dict[str, Any]] = []
     for idx, base in enumerate(fallback_milestones, start=1):
         amount = _safe_float(base.get("amount"), 0.0)
-        low = round(amount * 0.9, 2) if amount > 0 else 0.0
-        high = round(amount * 1.1, 2) if amount > 0 else 0.0
+        template_anchor = _safe_float(base.get("template_suggested_amount"), 0.0)
+        anchor_amount = template_anchor or amount
+        if anchor_amount > 0 and baseline_profile:
+            low, high = _anchor_range(anchor_amount, baseline_profile)
+            labor_ratio = float(baseline_profile.get("labor_ratio", 0.65))
+            materials_ratio = float(baseline_profile.get("materials_ratio", 0.35))
+            labor_low = round(low * labor_ratio, 2)
+            labor_high = round(high * labor_ratio, 2)
+            materials_low = round(low * materials_ratio, 2)
+            materials_high = round(high * materials_ratio, 2)
+        else:
+            low = round(anchor_amount * 0.9, 2) if anchor_amount > 0 else 0.0
+            high = round(anchor_amount * 1.1, 2) if anchor_amount > 0 else 0.0
+            labor_low = _safe_float(base.get("labor_estimate_low"), 0.0)
+            labor_high = _safe_float(base.get("labor_estimate_high"), 0.0)
+            materials_low = _safe_float(base.get("materials_estimate_low"), 0.0)
+            materials_high = _safe_float(base.get("materials_estimate_high"), 0.0)
         fallback_out.append(
             {
                 "milestone_id": base.get("milestone_id"),
@@ -677,10 +930,10 @@ def _normalize_pricing_estimates(
                 "title": _safe_str(base.get("title")) or f"Milestone {idx}",
                 "suggested_amount_low": low or None,
                 "suggested_amount_high": high or None,
-                "labor_estimate_low": _safe_float(base.get("labor_estimate_low"), 0.0) or None,
-                "labor_estimate_high": _safe_float(base.get("labor_estimate_high"), 0.0) or None,
-                "materials_estimate_low": _safe_float(base.get("materials_estimate_low"), 0.0) or None,
-                "materials_estimate_high": _safe_float(base.get("materials_estimate_high"), 0.0) or None,
+                "labor_estimate_low": labor_low or None,
+                "labor_estimate_high": labor_high or None,
+                "materials_estimate_low": materials_low or None,
+                "materials_estimate_high": materials_high or None,
                 "pricing_confidence": _safe_str(base.get("pricing_confidence")).lower() or "low",
                 "pricing_source_note": (
                     _safe_str(base.get("pricing_source_note"))
@@ -877,6 +1130,11 @@ def suggest_pricing_refresh(*, agreement: Any) -> Dict[str, Any]:
     answers = _agreement_answers_snapshot(agreement)
     pricing_mode = _derive_pricing_mode_from_answers(answers)
     pricing_reason = _short_pricing_reason(answers, pricing_mode)
+    baseline_profile = _baseline_pricing_profile(
+        getattr(agreement, "project_type", ""),
+        getattr(agreement, "project_subtype", ""),
+    )
+    baseline_profile = _refine_baseline_with_template(agreement, baseline_profile, milestones)
 
     system = (
         "You are a construction pricing assistant.\n"
@@ -893,6 +1151,7 @@ def suggest_pricing_refresh(*, agreement: Any) -> Dict[str, Any]:
         "When possible, also return labor_estimate_low/high and materials_estimate_low/high as advisory breakdowns.\n"
         "If pricing_mode is labor_only, labor estimates should be primary and materials estimates may be omitted or de-emphasized.\n"
         "pricing_source_note should briefly explain the pricing mode and the main labor/material drivers.\n"
+        "Use project_type/project_subtype as the primary baseline and treat template context as a secondary refinement, not the final answer.\n"
         "If clarification answers increase uncertainty, widen ranges and reduce confidence.\n"
         "If materials, size, pitch, or decking condition imply higher complexity, increase ranges accordingly.\n"
         "Return only JSON that matches the schema.\n"
@@ -903,9 +1162,11 @@ def suggest_pricing_refresh(*, agreement: Any) -> Dict[str, Any]:
         "project_title": getattr(getattr(agreement, "project", None), "title", "") or "",
         "project_type": getattr(agreement, "project_type", "") or "",
         "project_subtype": getattr(agreement, "project_subtype", "") or "",
+        "selected_template_name": getattr(agreement, "selected_template_name_snapshot", "") or "",
         "description": getattr(agreement, "description", "") or "",
         "total_budget": _safe_float(getattr(agreement, "total_cost", 0), 0.0),
         "pricing_mode": pricing_mode,
+        "baseline_profile": baseline_profile,
         "clarification_answers": answers,
         "milestones": milestones,
     }
@@ -991,6 +1252,7 @@ def suggest_pricing_refresh(*, agreement: Any) -> Dict[str, Any]:
         milestones,
         default_pricing_mode=pricing_mode,
         default_pricing_reason=pricing_reason,
+        baseline_profile=baseline_profile,
     )
 
     return {
