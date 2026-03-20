@@ -388,6 +388,458 @@ def _agreement_answers_snapshot(agreement: Any) -> Dict[str, Any]:
         return {}
 
 
+def _answer_text(answers: Dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        raw = answers.get(key)
+        text = _safe_str(raw)
+        if text:
+            return text
+    return ""
+
+
+def _parse_numeric(text: str) -> float:
+    if not text:
+        return 0.0
+    try:
+        cleaned = text.replace(",", " ")
+        match = re.search(r"(\d+(?:\.\d+)?)", cleaned)
+        return float(match.group(1)) if match else 0.0
+    except Exception:
+        return 0.0
+
+
+def _material_multipliers(material_type: str) -> tuple[float, float, str]:
+    raw = _safe_str(material_type).lower()
+    if not raw:
+        return 1.0, 1.0, ""
+    if any(token in raw for token in ("economy", "builder grade", "standard", "basic")):
+        return 0.97, 0.94, _safe_str(material_type)
+    if any(token in raw for token in ("premium", "designer", "custom", "luxury", "high end")):
+        return 1.08, 1.16, _safe_str(material_type)
+    if any(token in raw for token in ("slate", "tile", "clay", "copper")):
+        return 1.10, 1.22, _safe_str(material_type)
+    if any(token in raw for token in ("metal", "standing seam")):
+        return 1.08, 1.16, _safe_str(material_type)
+    if any(token in raw for token in ("cedar", "shake", "wood")):
+        return 1.07, 1.14, _safe_str(material_type)
+    if any(token in raw for token in ("architectural", "laminate", "composite", "designer")):
+        return 1.04, 1.08, _safe_str(material_type)
+    if any(token in raw for token in ("asphalt", "shingle")):
+        return 1.0, 1.0, _safe_str(material_type)
+    return 1.03, 1.06, _safe_str(material_type)
+
+
+def _collect_answer_text(answers: Dict[str, Any], *preferred_keys: str) -> str:
+    parts: List[str] = []
+    for key in preferred_keys:
+        txt = _answer_text(answers, key)
+        if txt:
+            parts.append(txt)
+    for key, value in answers.items():
+        if key in preferred_keys:
+            continue
+        txt = _safe_str(value)
+        if txt:
+            parts.append(txt)
+    return " ".join(parts).lower()
+
+
+def _extract_quantity_context(answers: Dict[str, Any], project_label: str) -> Dict[str, Any]:
+    direct_specs = [
+        ("sqft", ("roof_area", "project_size_sqft", "square_feet", "sqft", "area_sqft", "wall_area_sqft", "floor_area_sqft")),
+        ("linear_feet", ("linear_feet", "lf", "fence_length", "run_length_feet")),
+        ("rooms", ("room_count", "rooms")),
+        ("fixtures", ("fixture_count", "fixtures_count", "device_count", "outlet_count", "window_count", "door_count", "gate_count")),
+    ]
+    for unit, keys in direct_specs:
+        for key in keys:
+            value = _safe_float(answers.get(key), 0.0)
+            if value > 0:
+                return {"unit": unit, "value": value}
+
+    text = _collect_answer_text(answers, "measurement_notes", "measurements_notes", "allowances_selections")
+    patterns = [
+        ("sqft", r"(\d[\d,]*(?:\.\d+)?)\s*(?:sq\.?\s*ft|square\s*feet|sqft)\b"),
+        ("linear_feet", r"(\d[\d,]*(?:\.\d+)?)\s*(?:linear\s*feet|linear\s*ft|lf)\b"),
+        ("rooms", r"(\d+(?:\.\d+)?)\s*rooms?\b"),
+        ("fixtures", r"(\d+(?:\.\d+)?)\s*(?:fixtures?|windows?|doors?|gates?|outlets?|switches?)\b"),
+    ]
+    for unit, pattern in patterns:
+        match = re.search(pattern, text, re.I)
+        if match:
+            try:
+                return {"unit": unit, "value": float(match.group(1).replace(",", ""))}
+            except Exception:
+                continue
+
+    if "fence" in project_label:
+        gates = _parse_numeric(text)
+        if gates > 0:
+            return {"unit": "fixtures", "value": gates}
+    return {"unit": "", "value": 0.0}
+
+
+def _quantity_factor(quantity: Dict[str, Any]) -> tuple[float, List[str]]:
+    value = _safe_float(quantity.get("value"), 0.0)
+    unit = _safe_str(quantity.get("unit")).lower()
+    notes: List[str] = []
+    if value <= 0 or not unit:
+        return 1.0, notes
+
+    if unit == "sqft":
+        if value < 500:
+            factor = 0.92
+        elif value < 1200:
+            factor = 1.0
+        elif value < 2200:
+            factor = 1.08
+        elif value < 3500:
+            factor = 1.16
+        else:
+            factor = 1.24
+        notes.append(f"~{int(round(value))} sqft")
+        return factor, notes
+
+    if unit == "linear_feet":
+        if value < 80:
+            factor = 0.95
+        elif value < 180:
+            factor = 1.0
+        elif value < 320:
+            factor = 1.08
+        else:
+            factor = 1.16
+        notes.append(f"~{int(round(value))} linear ft")
+        return factor, notes
+
+    if unit == "rooms":
+        if value <= 1:
+            factor = 0.95
+        elif value <= 3:
+            factor = 1.0
+        elif value <= 6:
+            factor = 1.1
+        else:
+            factor = 1.18
+        notes.append(f"{int(round(value))} rooms")
+        return factor, notes
+
+    if unit == "fixtures":
+        if value <= 2:
+            factor = 0.96
+        elif value <= 6:
+            factor = 1.0
+        elif value <= 12:
+            factor = 1.1
+        else:
+            factor = 1.2
+        notes.append(f"{int(round(value))} fixtures/items")
+        return factor, notes
+
+    return 1.0, notes
+
+
+def _material_type_from_answers(answers: Dict[str, Any], project_label: str) -> str:
+    explicit = _answer_text(
+        answers,
+        "roofing_material_type",
+        "material_type",
+        "materials_type",
+        "finish_material",
+        "paint_type",
+        "flooring_type",
+        "tile_type",
+        "fence_material",
+        "fixture_type",
+    )
+    if explicit:
+        return explicit
+
+    text = _collect_answer_text(answers, "allowances_selections", "material_delivery_coordination", "measurement_notes")
+    keywords = [
+        "asphalt shingle",
+        "metal",
+        "tile",
+        "hardwood",
+        "laminate",
+        "lvp",
+        "vinyl",
+        "epoxy",
+        "copper",
+        "pvc",
+        "wood",
+        "cedar",
+        "chain link",
+        "wrought iron",
+        "premium paint",
+    ]
+    for keyword in keywords:
+        if keyword in text:
+            return keyword
+    return ""
+
+
+def _generic_complexity_factor(answers: Dict[str, Any], project_label: str) -> tuple[float, List[str]]:
+    factor = 1.0
+    notes: List[str] = []
+    text = _collect_answer_text(
+        answers,
+        "site_access_working_hours",
+        "access_upper_floor_construction",
+        "material_delivery_coordination",
+        "measurement_notes",
+        "measurements_notes",
+        "allowances_selections",
+    )
+
+    if any(token in text for token in ("limited", "restricted", "narrow", "tight", "ladder", "upper floor", "second floor", "stairs", "occupied", "furnished")):
+        factor *= 1.08
+        notes.append("access constraints")
+    if any(token in text for token in ("demo", "demolition", "tear out", "tear-out", "removal", "prep", "skim", "patch", "texture", "multi coat", "two coat", "three coat")):
+        factor *= 1.07
+        notes.append("prep/demo complexity")
+    if any(token in text for token in ("custom", "detail", "pattern", "mosaic", "trim", "finish carpentry", "layout", "code upgrade", "reroute")):
+        factor *= 1.08
+        notes.append("specialty labor")
+
+    pitch_raw = _answer_text(answers, "roof_pitch")
+    pitch_lower = pitch_raw.lower()
+    numeric_pitch = _parse_numeric(pitch_lower)
+    if "roof" in project_label:
+        if "steep" in pitch_lower or numeric_pitch >= 8:
+            factor *= 1.12
+            notes.append("steep pitch")
+        elif "medium" in pitch_lower or numeric_pitch >= 6:
+            factor *= 1.06
+            notes.append("moderate pitch")
+
+    if "painting" in project_label and any(token in text for token in ("exterior", "high ceiling", "vaulted", "scaffold")):
+        factor *= 1.07
+        notes.append("painting access complexity")
+    if "fence" in project_label and any(token in text for token in ("slope", "terrain", "rocky", "uneven")):
+        factor *= 1.08
+        notes.append("terrain complexity")
+
+    return factor, notes
+
+
+def _condition_factor(answers: Dict[str, Any], project_label: str) -> tuple[float, List[str]]:
+    factor = 1.0
+    notes: List[str] = []
+    combined = _collect_answer_text(
+        answers,
+        "decking_condition",
+        "unforeseen_conditions_change_orders",
+        "measurement_notes",
+        "measurements_notes",
+        "allowances_selections",
+    )
+
+    if any(token in combined for token in ("rot", "rotten", "replace", "replacement", "soft", "damaged", "damage", "bad", "water damage", "mold")):
+        factor *= 1.14
+        notes.append("repair/condition risk")
+    elif any(token in combined for token in ("repair", "patch", "worn", "aging", "crack", "uneven", "subfloor", "settlement")):
+        factor *= 1.08
+        notes.append("condition risk")
+
+    if "floor" in project_label and "subfloor" in combined:
+        factor *= 1.05
+        if "subfloor condition" not in notes:
+            notes.append("subfloor condition")
+
+    return factor, notes
+
+
+def _urgency_factor(answers: Dict[str, Any]) -> tuple[float, List[str]]:
+    text = _collect_answer_text(
+        answers,
+        "site_access_working_hours",
+        "material_delivery_coordination",
+        "unforeseen_conditions_change_orders",
+        "measurement_notes",
+        "measurements_notes",
+    )
+    factor = 1.0
+    notes: List[str] = []
+    if any(token in text for token in ("urgent", "rush", "asap", "expedite", "quick turnaround", "weekend only", "after hours")):
+        factor *= 1.06
+        notes.append("schedule pressure")
+    return factor, notes
+
+
+def _uncertainty_widening(answers: Dict[str, Any], quantity: Dict[str, Any]) -> tuple[float, List[str]]:
+    widen = 1.0
+    notes: List[str] = []
+    measurements = _answer_text(answers, "measurements_provided").lower()
+    if measurements in {"no", "pending", "false"}:
+        widen = max(widen, 1.14)
+        notes.append("measurement uncertainty")
+    if _safe_float(quantity.get("value"), 0.0) <= 0:
+        widen = max(widen, 1.08)
+        notes.append("quantity unverified")
+    return widen, notes
+
+
+def _build_pricing_context(agreement: Any, answers: Dict[str, Any], pricing_mode: str) -> Dict[str, Any]:
+    project_type = _safe_str(getattr(agreement, "project_type", ""))
+    project_subtype = _safe_str(getattr(agreement, "project_subtype", ""))
+    project_label = f"{project_type} {project_subtype}".strip().lower()
+
+    quantity = _extract_quantity_context(answers, project_label)
+    quantity_factor, quantity_notes = _quantity_factor(quantity)
+    material_type = _material_type_from_answers(answers, project_label)
+    labor_material_factor, materials_material_factor, material_label = _material_multipliers(material_type)
+    complexity_factor, complexity_notes = _generic_complexity_factor(answers, project_label)
+    condition_factor, condition_notes = _condition_factor(answers, project_label)
+    urgency_factor, urgency_notes = _urgency_factor(answers)
+    uncertainty_widening, uncertainty_notes = _uncertainty_widening(answers, quantity)
+
+    labor_multiplier = quantity_factor * labor_material_factor * complexity_factor * condition_factor * urgency_factor
+    materials_multiplier = quantity_factor * materials_material_factor * max(condition_factor, 1.0)
+    if pricing_mode == "labor_only":
+        total_multiplier = (labor_multiplier * 0.7) + (materials_multiplier * 0.3)
+    elif pricing_mode == "hybrid":
+        total_multiplier = (labor_multiplier * 0.6) + (materials_multiplier * 0.4)
+    else:
+        total_multiplier = (labor_multiplier * 0.5) + (materials_multiplier * 0.5)
+
+    notes = []
+    if project_type:
+        notes.append(project_type)
+    if project_subtype:
+        notes.append(project_subtype)
+    notes.extend(quantity_notes)
+    if material_label:
+        notes.append(material_label)
+    notes.extend(complexity_notes)
+    notes.extend(condition_notes)
+    notes.extend(urgency_notes)
+    notes.extend(uncertainty_notes)
+
+    return {
+        "project_type": project_type,
+        "project_subtype": project_subtype,
+        "quantity_unit": _safe_str(quantity.get("unit")),
+        "quantity_value": int(round(_safe_float(quantity.get("value"), 0.0))) if _safe_float(quantity.get("value"), 0.0) > 0 else None,
+        "material_type": material_label or "",
+        "measurements_provided": _answer_text(answers, "measurements_provided"),
+        "roof_pitch": _answer_text(answers, "roof_pitch"),
+        "decking_condition": _answer_text(answers, "decking_condition"),
+        "site_access": _answer_text(answers, "site_access_working_hours", "access_upper_floor_construction"),
+        "materials_responsibility": _answer_text(answers, "materials_responsibility"),
+        "labor_multiplier": round(labor_multiplier, 4),
+        "materials_multiplier": round(materials_multiplier, 4),
+        "total_multiplier": round(total_multiplier, 4),
+        "uncertainty_widening": round(uncertainty_widening, 4),
+        "context_notes": notes[:5],
+    }
+
+
+def _clamp_multiplier(value: float, low: float = 0.85, high: float = 1.45) -> float:
+    return max(low, min(high, value))
+
+
+def _scale_range(low: Any, high: Any, multiplier: float, *, widen: float = 1.0) -> tuple[float | None, float | None]:
+    lo = _safe_float(low, 0.0)
+    hi = _safe_float(high, 0.0)
+    if lo <= 0 and hi <= 0:
+        return None, None
+    if lo <= 0:
+        lo = hi
+    if hi <= 0:
+        hi = lo
+    if hi < lo:
+        lo, hi = hi, lo
+
+    center = ((lo + hi) / 2.0) * _clamp_multiplier(multiplier)
+    base_width = max((hi - lo) / 2.0, center * 0.04)
+    width = base_width * max(widen, 1.0)
+    scaled_low = max(center - width, 0.0)
+    scaled_high = max(center + width, scaled_low)
+    return round(scaled_low, 2), round(scaled_high, 2)
+
+
+def _downgrade_confidence(confidence: str, widen: float, risky: bool) -> str:
+    order = ["low", "medium", "high"]
+    normalized = _safe_str(confidence).lower() or "medium"
+    if normalized not in order:
+        normalized = "medium"
+    steps = 0
+    if widen >= 1.12:
+        steps += 1
+    if risky:
+        steps += 1
+    idx = max(0, order.index(normalized) - steps)
+    return order[idx]
+
+
+def _merge_pricing_source_note(base_note: str, context_notes: List[str]) -> str:
+    base = _safe_str(base_note) or "AI pricing preview refreshed from current clarification answers."
+    if not context_notes:
+        return base[:255]
+    extra = f"Adjusted for {', '.join(context_notes[:4])}."
+    if extra.lower() in base.lower():
+        return base[:255]
+    merged = f"{base.rstrip('.')}." + f" {extra}"
+    return merged[:255]
+
+
+def _apply_pricing_context_adjustments(
+    pricing_estimates: List[Dict[str, Any]],
+    pricing_context: Dict[str, Any],
+    *,
+    pricing_mode: str,
+) -> List[Dict[str, Any]]:
+    if not pricing_estimates:
+        return pricing_estimates
+
+    labor_multiplier = _clamp_multiplier(_safe_float(pricing_context.get("labor_multiplier"), 1.0))
+    materials_multiplier = _clamp_multiplier(_safe_float(pricing_context.get("materials_multiplier"), 1.0))
+    total_multiplier = _clamp_multiplier(_safe_float(pricing_context.get("total_multiplier"), 1.0))
+    widen = max(_safe_float(pricing_context.get("uncertainty_widening"), 1.0), 1.0)
+    context_notes = pricing_context.get("context_notes") if isinstance(pricing_context.get("context_notes"), list) else []
+    risky = any("risk" in _safe_str(note).lower() for note in context_notes)
+    material_label = _safe_str(pricing_context.get("material_type"))
+
+    adjusted: List[Dict[str, Any]] = []
+    for item in pricing_estimates:
+        next_item = dict(item)
+
+        labor_low, labor_high = _scale_range(
+            item.get("labor_estimate_low"),
+            item.get("labor_estimate_high"),
+            labor_multiplier,
+            widen=widen,
+        )
+        materials_low, materials_high = _scale_range(
+            item.get("materials_estimate_low"),
+            item.get("materials_estimate_high"),
+            materials_multiplier,
+            widen=widen,
+        )
+        total_low, total_high = _scale_range(
+            item.get("suggested_amount_low"),
+            item.get("suggested_amount_high"),
+            total_multiplier,
+            widen=widen,
+        )
+
+        next_item["labor_estimate_low"] = labor_low
+        next_item["labor_estimate_high"] = labor_high
+        next_item["materials_estimate_low"] = materials_low
+        next_item["materials_estimate_high"] = materials_high
+        next_item["suggested_amount_low"] = total_low
+        next_item["suggested_amount_high"] = total_high
+        next_item["pricing_confidence"] = _downgrade_confidence(item.get("pricing_confidence", ""), widen, risky)
+        next_item["pricing_source_note"] = _merge_pricing_source_note(item.get("pricing_source_note", ""), context_notes)
+        if not _safe_str(next_item.get("materials_hint")) and material_label:
+            next_item["materials_hint"] = material_label
+        next_item["pricing_mode"] = pricing_mode
+        adjusted.append(next_item)
+
+    return adjusted
+
+
 def _derive_pricing_mode_from_answers(answers: Any) -> str:
     if not isinstance(answers, dict):
         return "full_service"
@@ -720,6 +1172,7 @@ def suggest_pricing_refresh(*, agreement: Any) -> Dict[str, Any]:
 
     answers = _agreement_answers_snapshot(agreement)
     pricing_mode = _derive_pricing_mode_from_answers(answers)
+    pricing_context = _build_pricing_context(agreement, answers, pricing_mode)
 
     system = (
         "You are a construction pricing assistant.\n"
@@ -738,6 +1191,11 @@ def suggest_pricing_refresh(*, agreement: Any) -> Dict[str, Any]:
         "pricing_source_note should briefly explain the pricing mode and the main labor/material drivers.\n"
         "If clarification answers increase uncertainty, widen ranges and reduce confidence.\n"
         "If materials, size, pitch, or decking condition imply higher complexity, increase ranges accordingly.\n"
+        "Use pricing_context as the primary structured signal for normalized pricing factors.\n"
+        "Treat quantity/size, material profile, labor complexity, access difficulty, condition risk, scheduling pressure, and materials responsibility as the main drivers.\n"
+        "When project-specific context exists, layer it in without assuming the project is roofing-only.\n"
+        "Scale labor estimates with quantity, install complexity, access, urgency, and condition risk.\n"
+        "Scale materials estimates with quantity, material profile, and condition risk.\n"
         "Return only JSON that matches the schema.\n"
     )
 
@@ -749,6 +1207,7 @@ def suggest_pricing_refresh(*, agreement: Any) -> Dict[str, Any]:
         "description": getattr(agreement, "description", "") or "",
         "total_budget": _safe_float(getattr(agreement, "total_cost", 0), 0.0),
         "pricing_mode": pricing_mode,
+        "pricing_context": pricing_context,
         "clarification_answers": answers,
         "milestones": milestones,
     }
@@ -833,6 +1292,11 @@ def suggest_pricing_refresh(*, agreement: Any) -> Dict[str, Any]:
         payload.get("pricing_estimates"),
         milestones,
         default_pricing_mode=pricing_mode,
+    )
+    pricing_estimates = _apply_pricing_context_adjustments(
+        pricing_estimates,
+        pricing_context,
+        pricing_mode=pricing_mode,
     )
 
     return {
