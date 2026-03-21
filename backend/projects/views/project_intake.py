@@ -125,7 +125,23 @@ class ProjectIntakeViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        agreement = convert_intake_to_agreement(intake=intake)
+        use_recommended_template = request.data.get("use_recommended_template", True)
+        if isinstance(use_recommended_template, str):
+            use_recommended_template = use_recommended_template.strip().lower() not in {"false", "0", "no"}
+        else:
+            use_recommended_template = bool(use_recommended_template)
+
+        template_id_override = request.data.get("template_id_override")
+        try:
+            template_id_override = int(template_id_override) if template_id_override not in (None, "", False) else None
+        except Exception:
+            template_id_override = None
+
+        agreement = convert_intake_to_agreement(
+            intake=intake,
+            use_recommended_template=use_recommended_template,
+            template_id_override=template_id_override,
+        )
 
         return Response(
             {

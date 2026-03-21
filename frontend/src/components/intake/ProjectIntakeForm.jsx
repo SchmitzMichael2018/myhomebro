@@ -67,6 +67,8 @@ export default function ProjectIntakeForm() {
   const [converting, setConverting] = useState(false);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState(null);
+  const [selectedTemplateMode, setSelectedTemplateMode] = useState("none");
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
 
   const [intakeMode, setIntakeMode] = useState("complete_now"); // complete_now | send_to_homeowner
 
@@ -158,6 +160,32 @@ export default function ProjectIntakeForm() {
     return !!intakeId && !!result;
   }, [intakeId, result]);
 
+  useEffect(() => {
+    if (!result) {
+      setSelectedTemplateMode("none");
+      setSelectedTemplateId(null);
+      return;
+    }
+
+    const recommendedId = result?.template_id || null;
+    const strongMatch = result?.has_strong_template_match === true;
+
+    if (recommendedId && strongMatch) {
+      setSelectedTemplateMode("recommended");
+      setSelectedTemplateId(recommendedId);
+      return;
+    }
+
+    if (recommendedId) {
+      setSelectedTemplateMode("none");
+      setSelectedTemplateId(recommendedId);
+      return;
+    }
+
+    setSelectedTemplateMode("none");
+    setSelectedTemplateId(null);
+  }, [result]);
+
   function setField(name, value) {
     setForm((prev) => ({
       ...prev,
@@ -187,6 +215,47 @@ export default function ProjectIntakeForm() {
   function clearCustomerSelection() {
     setSelectedHomeownerId("");
     setCustomerSearch("");
+  }
+
+  function buildTemplateDraftPrefill() {
+    const milestones = Array.isArray(result?.milestones) ? result.milestones : [];
+    const clarificationQuestions = Array.isArray(result?.clarification_questions)
+      ? result.clarification_questions
+      : [];
+
+    return {
+      source: "intake",
+      source_intake_id: intakeId || null,
+      header: {
+        name:
+          String(result?.project_title || "").trim() ||
+          String(form.accomplishment_text || "").trim().slice(0, 80) ||
+          "New Intake Template",
+        project_type: result?.project_type || "",
+        project_subtype: result?.project_subtype || "",
+        description: result?.description || form.accomplishment_text || "",
+        default_scope: result?.description || form.accomplishment_text || "",
+        default_clarifications: clarificationQuestions,
+        estimated_days: 1,
+        project_materials_hint: "",
+        is_active: true,
+      },
+      milestones: milestones.map((m, idx) => ({
+        title: m?.title || `Milestone ${idx + 1}`,
+        description: m?.description || "",
+        sort_order: Number(m?.sort_order || m?.order || idx + 1) || idx + 1,
+        normalized_milestone_type: m?.normalized_milestone_type || "",
+        suggested_amount_fixed: m?.suggested_amount_fixed ?? "",
+        suggested_amount_low: m?.suggested_amount_low ?? "",
+        suggested_amount_high: m?.suggested_amount_high ?? "",
+        pricing_confidence: m?.pricing_confidence ?? "",
+        pricing_source_note: m?.pricing_source_note ?? "",
+        recommended_days_from_start: m?.recommended_days_from_start ?? (idx === 0 ? 0 : ""),
+        recommended_duration_days: m?.recommended_duration_days ?? "",
+        materials_hint: m?.materials_hint ?? "",
+        is_optional: !!m?.is_optional,
+      })),
+    };
   }
 
   async function saveIntake(showToast = true) {
@@ -253,7 +322,18 @@ export default function ProjectIntakeForm() {
 
     try {
       setConverting(true);
-      const { data } = await api.post(`/projects/intakes/${intakeId}/convert-to-agreement/`);
+      const payload = {};
+      if (selectedTemplateMode === "none") {
+        payload.use_recommended_template = false;
+      } else if (
+        selectedTemplateMode === "selected" &&
+        selectedTemplateId &&
+        String(selectedTemplateId) !== String(result?.template_id || "")
+      ) {
+        payload.template_id_override = selectedTemplateId;
+      }
+
+      const { data } = await api.post(`/projects/intakes/${intakeId}/convert-to-agreement/`, payload);
       toast.success("Agreement created.");
       if (data?.agreement_id) {
         navigate(`/app/agreements/${data.agreement_id}/wizard?step=1`);
@@ -624,6 +704,28 @@ export default function ProjectIntakeForm() {
             onConvert={handleConvert}
             canAnalyze={canAnalyze}
             canConvert={canConvert}
+            selectedTemplateMode={selectedTemplateMode}
+            selectedTemplateId={selectedTemplateId}
+            onChooseRecommendedTemplate={() => {
+              if (!result?.template_id) return;
+              setSelectedTemplateMode("recommended");
+              setSelectedTemplateId(result.template_id);
+            }}
+            onChooseAlternativeTemplate={(tpl) => {
+              if (!tpl?.id) return;
+              setSelectedTemplateMode("selected");
+              setSelectedTemplateId(tpl.id);
+            }}
+            onContinueWithoutTemplate={() => {
+              setSelectedTemplateMode("none");
+            }}
+            onCreateTemplateFromIntake={() => {
+              navigate("/app/templates", {
+                state: {
+                  templateDraftPrefill: buildTemplateDraftPrefill(),
+                },
+              });
+            }}
           />
         </div>
       </div>

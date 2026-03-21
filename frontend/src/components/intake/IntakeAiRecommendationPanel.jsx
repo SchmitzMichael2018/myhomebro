@@ -10,11 +10,23 @@ export default function IntakeAiRecommendationPanel({
   onConvert,
   canAnalyze = true,
   canConvert = false,
+  selectedTemplateMode = "none",
+  selectedTemplateId = null,
+  onChooseRecommendedTemplate,
+  onChooseAlternativeTemplate,
+  onContinueWithoutTemplate,
+  onCreateTemplateFromIntake,
 }) {
   const milestones = Array.isArray(result?.milestones) ? result.milestones : [];
   const clarifications = Array.isArray(result?.clarification_questions)
     ? result.clarification_questions
     : [];
+  const templateMatches = Array.isArray(result?.template_matches) ? result.template_matches : [];
+  const hasStrongMatch = result?.has_strong_template_match === true;
+
+  function isSelectedTemplate(templateId) {
+    return selectedTemplateMode !== "none" && String(selectedTemplateId || "") === String(templateId || "");
+  }
 
   return (
     <div className="rounded-xl border bg-white p-4 shadow-sm">
@@ -94,6 +106,107 @@ export default function IntakeAiRecommendationPanel({
             {result.reason ? (
               <div className="mt-3 text-sm text-gray-700">{result.reason}</div>
             ) : null}
+
+            <div className="mt-4 space-y-3 rounded-md border bg-white p-3">
+              <div className="text-sm font-semibold text-gray-900">Template Recommendation</div>
+
+              {result.template_name ? (
+                <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">{result.template_name}</div>
+                      <div className="mt-1 text-xs text-gray-600">
+                        {hasStrongMatch ? "Best match based on this intake." : "Possible match based on this intake."}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={onChooseRecommendedTemplate}
+                      className={`rounded px-3 py-1.5 text-xs font-medium ${
+                        selectedTemplateMode !== "none" && String(selectedTemplateId || "") === String(result.template_id || "")
+                          ? "bg-emerald-600 text-white"
+                          : "border border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-100"
+                      }`}
+                    >
+                      {selectedTemplateMode !== "none" && String(selectedTemplateId || "") === String(result.template_id || "")
+                        ? "Selected"
+                        : "Use This Template"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                  No strong template was found for this intake.
+                </div>
+              )}
+
+              {templateMatches.length > 1 ? (
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    Closest alternatives
+                  </div>
+                  <div className="mt-2 space-y-2">
+                    {templateMatches
+                      .filter((tpl) => String(tpl?.id || "") !== String(result?.template_id || ""))
+                      .map((tpl) => (
+                        <div key={tpl.id} className="rounded-md border bg-gray-50 p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">{tpl.name}</div>
+                              <div className="mt-1 text-xs text-gray-600">
+                                {tpl.project_type || "Type not set"}
+                                {tpl.project_subtype ? ` • ${tpl.project_subtype}` : ""}
+                                {tpl.match_quality ? ` • ${tpl.match_quality} match` : ""}
+                              </div>
+                              {tpl.reason ? (
+                                <div className="mt-1 text-xs text-gray-500">{tpl.reason}</div>
+                              ) : null}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => onChooseAlternativeTemplate?.(tpl)}
+                              className={`rounded px-3 py-1.5 text-xs font-medium ${
+                                isSelectedTemplate(tpl.id)
+                                  ? "bg-indigo-600 text-white"
+                                  : "border border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50"
+                              }`}
+                            >
+                              {isSelectedTemplate(tpl.id) ? "Selected" : "Choose"}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-3">
+                <div className="text-sm font-medium text-gray-900">No-template fallback</div>
+                <div className="mt-1 text-xs text-gray-600">
+                  Continue without a template and use the generated project structure. You can save a new template from Step 2 later if needed.
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={onContinueWithoutTemplate}
+                    className={`rounded px-3 py-1.5 text-xs font-medium ${
+                      selectedTemplateMode === "none"
+                        ? "bg-slate-700 text-white"
+                        : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                    }`}
+                  >
+                    {selectedTemplateMode === "none" ? "Continuing Without Template" : "Continue Without Template"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onCreateTemplateFromIntake}
+                    className="rounded border border-indigo-200 bg-white px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
+                  >
+                    Create Template From Intake
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="rounded-lg border bg-white p-4">

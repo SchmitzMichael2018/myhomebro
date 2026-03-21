@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from projects.models_project_intake import ProjectIntake
+from projects.services.intake_analysis import analyze_project_intake
 
 
 class PublicIntakeView(APIView):
@@ -132,6 +133,35 @@ class PublicIntakeView(APIView):
         if intake.status == "draft":
             intake.status = "submitted"
             changed.append("status")
+
+        if accomplishment:
+            result = analyze_project_intake(intake=intake)
+            intake.ai_project_title = result.get("project_title", "")
+            intake.ai_project_type = result.get("project_type", "")
+            intake.ai_project_subtype = result.get("project_subtype", "")
+            intake.ai_description = result.get("description", "")
+            intake.ai_recommended_template_id = result.get("template_id")
+            intake.ai_recommendation_confidence = result.get("confidence", "none")
+            intake.ai_recommendation_reason = result.get("reason", "")
+            intake.ai_milestones = result.get("milestones", [])
+            intake.ai_clarification_questions = result.get("clarification_questions", [])
+            intake.ai_analysis_payload = result
+            intake.analyzed_at = timezone.now()
+            changed.extend(
+                [
+                    "ai_project_title",
+                    "ai_project_type",
+                    "ai_project_subtype",
+                    "ai_description",
+                    "ai_recommended_template_id",
+                    "ai_recommendation_confidence",
+                    "ai_recommendation_reason",
+                    "ai_milestones",
+                    "ai_clarification_questions",
+                    "ai_analysis_payload",
+                    "analyzed_at",
+                ]
+            )
 
         intake.save(update_fields=changed + ["updated_at"])
 

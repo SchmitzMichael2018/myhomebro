@@ -102,6 +102,46 @@ def _score_template(template: ProjectTemplate, intake: ProjectIntake) -> tuple[i
     return score, reasons
 
 
+def _match_quality(score: int | None) -> str:
+    if score is None or score < 20:
+        return "none"
+    if score >= 70:
+        return "strong"
+    if score >= 35:
+        return "medium"
+    return "weak"
+
+
+def _confidence_from_score(score: int | None) -> str:
+    if score is None or score < 20:
+        return "none"
+    if score >= 70:
+        return "recommended"
+    return "possible"
+
+
+def _template_match_payload(
+    template: ProjectTemplate,
+    *,
+    score: int,
+    reasons: list[str],
+) -> dict[str, Any]:
+    reason = "; ".join(reasons) if reasons else "Template match found."
+    return {
+        "id": template.id,
+        "name": _safe_str(getattr(template, "name", "")),
+        "project_type": _safe_str(getattr(template, "project_type", "")),
+        "project_subtype": _safe_str(getattr(template, "project_subtype", "")),
+        "description": _safe_str(getattr(template, "description", "")),
+        "score": score,
+        "confidence": _confidence_from_score(score),
+        "match_quality": _match_quality(score),
+        "reason": reason,
+        "milestone_count": template.milestones.count(),
+        "is_system": bool(getattr(template, "is_system", False)),
+    }
+
+
 def _recommend_template(intake: ProjectIntake):
     contractor = getattr(intake, "contractor", None)
     accomplishment = _safe_str(intake.accomplishment_text)
@@ -116,29 +156,39 @@ def _recommend_template(intake: ProjectIntake):
         .order_by("-is_system", "name")
     )
 
-    best_template = None
-    best_score = -1
-    best_reasons: list[str] = []
+    ranked: list[tuple[int, ProjectTemplate, list[str]]] = []
 
     for template in qs:
         score, reasons = _score_template(template, intake)
-        if score > best_score:
-            best_score = score
-            best_template = template
-            best_reasons = reasons
+        ranked.append((score, template, reasons))
+
+    ranked.sort(
+        key=lambda item: (
+            item[0],
+            1 if getattr(item[1], "project_subtype", None) else 0,
+            1 if getattr(item[1], "project_type", None) else 0,
+        ),
+        reverse=True,
+    )
+
+    candidates = [
+        _template_match_payload(template, score=score, reasons=reasons)
+        for score, template, reasons in ranked[:3]
+        if score > 0
+    ]
+
+    if not ranked:
+        return None, "none", "", None, []
+
+    best_score, best_template, best_reasons = ranked[0]
 
     if best_template is None or best_score < 20:
-        return None, "none", "No matching template found.", best_score if best_score >= 0 else None
+        return None, "none", "No matching template found.", best_score if best_score >= 0 else None, candidates
 
-    if best_score >= 70:
-        confidence = "recommended"
-    elif best_score >= 35:
-        confidence = "possible"
-    else:
-        confidence = "none"
+    confidence = _confidence_from_score(best_score)
 
     reason = "; ".join(best_reasons) if best_reasons else "Template match found."
-    return best_template, confidence, reason, best_score
+    return best_template, confidence, reason, best_score, candidates
 
 
 def _infer_type_and_subtype(accomplishment: str) -> tuple[str, str]:
@@ -293,7 +343,12 @@ def _generate_default_clarifications(project_type: str, project_subtype: str) ->
 def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
     accomplishment = _safe_str(intake.accomplishment_text)
 
-    template, confidence, reason, score = _recommend_template(intake)
+    template, confidence, reason, score, template_matches = _recommend_template(intake)
+    match_quality = _match_quality(score)
+    fallback_options = {
+        "continue_without_template": True,
+        "create_template_draft_later": True,
+    }
 
     if template is not None and confidence in {"recommended", "possible"}:
         project_title = _build_title(
@@ -308,7 +363,11 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
             "template_name": _safe_str(template.name),
             "confidence": confidence,
             "score": score,
+            "match_quality": match_quality,
+            "has_strong_template_match": match_quality == "strong",
             "reason": reason,
+            "template_matches": template_matches,
+            "fallback_options": fallback_options,
             "project_type": _safe_str(template.project_type),
             "project_subtype": _safe_str(template.project_subtype),
             "description": _safe_str(template.description) or accomplishment,
@@ -331,7 +390,11 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
         "template_name": "",
         "confidence": "none",
         "score": score,
+        "match_quality": match_quality,
+        "has_strong_template_match": False,
         "reason": "No matching template found; generated a suggested project structure.",
+        "template_matches": template_matches,
+        "fallback_options": fallback_options,
         "project_type": project_type,
         "project_subtype": project_subtype,
         "description": description,

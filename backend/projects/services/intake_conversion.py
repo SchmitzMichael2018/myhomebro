@@ -134,7 +134,12 @@ def _apply_ai_milestones(*, agreement: Agreement, milestones_payload: list[dict[
 
 
 @transaction.atomic
-def convert_intake_to_agreement(*, intake: ProjectIntake) -> Agreement:
+def convert_intake_to_agreement(
+    *,
+    intake: ProjectIntake,
+    use_recommended_template: bool = True,
+    template_id_override: int | None = None,
+) -> Agreement:
     if intake.agreement_id:
         return intake.agreement
 
@@ -158,7 +163,9 @@ def convert_intake_to_agreement(*, intake: ProjectIntake) -> Agreement:
         status="draft",
     )
 
-    template_id = intake.ai_recommended_template_id
+    template_id = template_id_override if template_id_override else (
+        intake.ai_recommended_template_id if use_recommended_template else None
+    )
     if template_id:
         try:
             template = ProjectTemplate.objects.prefetch_related("milestones").get(id=template_id)

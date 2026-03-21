@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
 
@@ -264,6 +264,7 @@ function buildTemplatePayload(header, milestones) {
 
 export default function TemplatesPage() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -286,6 +287,7 @@ export default function TemplatesPage() {
 
   const [aiBusy, setAiBusy] = useState(false);
   const [materialsRefreshing, setMaterialsRefreshing] = useState(false);
+  const appliedPrefillRef = React.useRef("");
 
   async function loadTemplates() {
     try {
@@ -437,6 +439,44 @@ export default function TemplatesPage() {
     setEditMode(true);
     setActiveTab("setup");
   }
+
+  useEffect(() => {
+    const prefill = location.state?.templateDraftPrefill;
+    if (!prefill || typeof prefill !== "object") return;
+
+    const signature = JSON.stringify(prefill);
+    if (appliedPrefillRef.current === signature) return;
+    appliedPrefillRef.current = signature;
+
+    const header = prefill?.header || {};
+    const milestoneRows = Array.isArray(prefill?.milestones) ? prefill.milestones : [];
+
+    setSelectedId(null);
+    setSelectedDetail(null);
+    setDetailErr("");
+    setCreatingNew(true);
+    setEditMode(true);
+    setActiveTab("setup");
+    setEditHeader({
+      ...buildBlankHeader(),
+      ...header,
+      name: safeTrim(header?.name) || "New Intake Template",
+      project_type: header?.project_type ?? "",
+      project_subtype: header?.project_subtype ?? "",
+      description: header?.description ?? "",
+      default_scope: header?.default_scope ?? header?.description ?? "",
+      default_clarifications: Array.isArray(header?.default_clarifications)
+        ? header.default_clarifications
+        : [],
+      project_materials_hint: header?.project_materials_hint ?? "",
+      is_active: header?.is_active !== false,
+    });
+    setEditMilestones(
+      milestoneRows.length
+        ? milestoneRows.map((m, idx) => normalizeMilestoneForEdit(m, idx))
+        : [buildBlankMilestone(1)]
+    );
+  }, [location.state]);
 
   function startEditMode() {
     if (!selectedDetail || isSelectedBuiltIn) return;
