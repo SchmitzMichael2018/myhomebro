@@ -10,7 +10,6 @@
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import toast from "react-hot-toast";
-import { unstable_useBlocker as useBlocker } from "react-router-dom";
 import api from "../api";
 import ClarificationsModal from "./ClarificationsModal.jsx";
 import useAgreementMilestoneAI from "./ai/useAgreementMilestoneAI.jsx";
@@ -653,7 +652,6 @@ export default function Step2Milestones({
   const hasUnsavedStep2Changes =
     hasStagedSuggestedAmountChanges || isCreateDraftDirty || isEditDraftDirty;
   const step2UnsavedMessage = "You have unsaved pricing or milestone changes. Leave without saving?";
-  const blocker = useBlocker(hasUnsavedStep2Changes);
 
   useEffect(() => {
     setFallbackMilestones(null);
@@ -664,13 +662,6 @@ export default function Step2Milestones({
     if (hasStagedSuggestedAmountChanges) return;
     setStagedSuggestedMilestoneIds([]);
   }, [hasStagedSuggestedAmountChanges, stagedSuggestedMilestoneIds]);
-
-  useEffect(() => {
-    if (blocker.state !== "blocked") return;
-    const shouldLeave = window.confirm(step2UnsavedMessage);
-    if (shouldLeave) blocker.proceed();
-    else blocker.reset();
-  }, [blocker, step2UnsavedMessage]);
 
   useEffect(() => {
     if (!hasUnsavedStep2Changes) return undefined;
