@@ -6,7 +6,6 @@ import {
   Zap,
   MessagesSquare,
   UsersRound,
-  ShieldCheck,
   Handshake,
   Scale,
   Camera,
@@ -56,33 +55,22 @@ export default function LandingPage() {
           <img src={logo} alt="MyHomeBro" style={S.logo} draggable={false} />
         </div>
 
-        <h1 style={S.title}>Welcome to</h1>
+        <h1 style={S.title}>AI-Powered Agreements. Secure Payments. Faster Payouts.</h1>
         <div style={S.brand}>
           <span style={S.brandMain}>MyHome</span>
           <span style={S.brandSub}>Bro</span>
         </div>
 
-        <p style={S.subhead}>Secure Escrow Payments for Contractors and Customers.</p>
-        <p style={S.subheadTiny}>The easiest way to pay and get paid for home projects.</p>
-
-        <div style={S.pricingWrap}>
-          <div style={S.pricingPill}>
-            <span style={S.pricingStrong}>Intro (first 60 days):</span>
-            <span style={S.pricingValue}>3% + $1</span>
-          </div>
-
-          <div style={S.pricingNote}>
-            After intro, pricing starts at <b>4.5% + $1</b> with volume discounts.
-          </div>
-        </div>
+        <p style={S.subhead}>Create project scope, milestone pricing, and payment-ready agreements in one place.</p>
+        <p style={S.subheadTiny}>No subscription required. Start for free.</p>
 
         <div style={S.badges}>
-          <Badge icon={Lock} text="Escrow-secured payments for true peace of mind." />
-          <Badge icon={Zap} text="Quick contractor sign-up — get paid faster." />
-          <Badge icon={MessagesSquare} text="Clear communication via secure email and SMS updates." />
+          <Badge icon={Zap} text="AI-powered pricing and milestone generation tailored to your project." />
+          <Badge icon={Lock} text="Escrow-secured payments for peace of mind." />
+          <Badge icon={MessagesSquare} text="Clear communication with secure updates." />
           <Badge
             icon={UsersRound}
-            text="Bring your own clients — contractor-led projects today. (client matching coming later.)"
+            text="Bring your own clients — no marketplace required."
           />
         </div>
 
@@ -103,20 +91,31 @@ export default function LandingPage() {
             Start Project Intake
           </button>
         </div>
+
+        <div style={S.pricingWrap}>
+          <div style={S.pricingPill}>
+            <span style={S.pricingStrong}>Simple, transparent pricing</span>
+            <span style={S.pricingValue}>Escrow: 3% + $1</span>
+          </div>
+
+          <div style={S.pricingNote}>
+            Direct Pay: <b>2% + $1</b>. You only pay when you get paid. Intro rate for first 60 days. Volume discounts available.
+          </div>
+        </div>
       </div>
 
       {/* Features */}
       <section style={S.featuresWrap}>
         <div style={S.featuresGrid}>
           <Tile
-            icon={ShieldCheck}
-            title="Secure Escrow"
-            text="Funds are held safely until milestones are approved — no more payment risk."
+            icon={Zap}
+            title="AI Pricing & Milestones"
+            text="Build your scope, pricing, and milestones in seconds with AI tailored to your project."
           />
           <Tile
             icon={Handshake}
             title="Bring Your Clients"
-            text="Use MyHomeBro with your existing customers to keep payments organized."
+            text="Work with your existing customers and keep agreements, updates, and payments in one place."
           />
           <Tile
             icon={Scale}
