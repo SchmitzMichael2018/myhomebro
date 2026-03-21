@@ -288,6 +288,7 @@ export default function TemplatesPage() {
   const [aiBusy, setAiBusy] = useState(false);
   const [materialsRefreshing, setMaterialsRefreshing] = useState(false);
   const appliedPrefillRef = React.useRef("");
+  const intakePrefillMeta = location.state?.templateDraftPrefill || null;
 
   async function loadTemplates() {
     try {
@@ -416,6 +417,9 @@ export default function TemplatesPage() {
   const previewClarifications = normalizeClarifications(
     currentHeader?.default_clarifications
   );
+  const showIntakePrefillBanner =
+    creatingNew &&
+    intakePrefillMeta?.source === "intake";
 
   const pricingTotals = useMemo(() => {
     return currentMilestones.reduce(
@@ -851,6 +855,15 @@ export default function TemplatesPage() {
       {err ? (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {err}
+        </div>
+      ) : null}
+
+      {showIntakePrefillBanner ? (
+        <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3">
+          <div className="text-sm font-semibold text-indigo-900">Template Draft From Intake</div>
+          <div className="mt-1 text-sm text-indigo-800">
+            This draft was prefilled from intake analysis. Review the template details, milestones, and clarifications before saving it to your template library.
+          </div>
         </div>
       ) : null}
 

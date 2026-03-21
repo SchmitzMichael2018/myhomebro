@@ -284,6 +284,66 @@ function milestoneAdvisoryPricingMeta(m) {
   };
 }
 
+function normalizeMaterialsResponsibilityValue(v) {
+  const raw = safeMilestoneStr(v);
+  const lowered = raw.toLowerCase();
+  if (!lowered) return "";
+  if (lowered.includes("split") || lowered.includes("shared") || lowered.includes("hybrid") || lowered.includes("depend")) {
+    return "Split";
+  }
+  if (
+    lowered.includes("homeowner") ||
+    lowered.includes("customer") ||
+    lowered.includes("owner") ||
+    lowered.includes("client")
+  ) {
+    return "Homeowner";
+  }
+  if (lowered.includes("contractor")) {
+    return "Contractor";
+  }
+  return raw;
+}
+
+function toCompactLine(value, maxLen = 140) {
+  const text = safeMilestoneStr(value).replace(/\s+/g, " ");
+  if (!text) return "";
+  if (text.length <= maxLen) return text;
+  return `${text.slice(0, maxLen - 1).trim()}…`;
+}
+
+function extractQuantitySignals(answers = {}) {
+  const entries = [
+    ["roof_area", "Roof area"],
+    ["square_footage", "Square footage"],
+    ["sqft", "Square footage"],
+    ["linear_feet", "Linear feet"],
+    ["lf", "Linear feet"],
+    ["room_count", "Rooms"],
+    ["rooms", "Rooms"],
+    ["fixture_count", "Fixtures"],
+    ["fixtures", "Fixtures"],
+    ["gate_count", "Gates"],
+  ];
+
+  const signals = [];
+  for (const [key, label] of entries) {
+    const value = safeMilestoneStr(answers?.[key]);
+    if (!value) continue;
+    signals.push({ label, value });
+    if (signals.length >= 2) return signals;
+  }
+
+  const measurementNotes =
+    safeMilestoneStr(answers?.measurement_notes) ||
+    safeMilestoneStr(answers?.measurements_notes);
+  if (measurementNotes) {
+    signals.push({ label: "Measurements", value: toCompactLine(measurementNotes, 60) });
+  }
+
+  return signals.slice(0, 2);
+}
+
 function mergeAgreement(prev, next, fallbackId) {
   const p = prev && typeof prev === "object" ? prev : {};
   const n = next && typeof next === "object" ? next : {};
@@ -791,6 +851,55 @@ export default function Step4Finalize({
   }, [invalidAmountInfo]);
 
   const aiScope = useMemo(() => safeObject(agreement?.ai_scope), [agreement?.ai_scope]);
+  const projectContextSummary = useMemo(() => {
+    const answers = safeObject(aiScope?.answers);
+    const projectType =
+      safeMilestoneStr(agreement?.project_type) ||
+      safeMilestoneStr(agreement?.project?.project_type) ||
+      safeMilestoneStr(agreement?.selected_template?.project_type);
+    const projectSubtype =
+      safeMilestoneStr(agreement?.project_subtype) ||
+      safeMilestoneStr(agreement?.project?.project_subtype) ||
+      safeMilestoneStr(agreement?.selected_template?.project_subtype);
+    const templateName =
+      safeMilestoneStr(agreement?.selected_template?.name) ||
+      safeMilestoneStr(agreement?.selected_template_name_snapshot);
+    const materialsResponsibility = normalizeMaterialsResponsibilityValue(
+      answers?.materials_responsibility ||
+      answers?.materials_purchasing ||
+      answers?.who_purchases_materials
+    );
+    const quantitySignals = extractQuantitySignals(answers);
+    const scopeSummary = toCompactLine(
+      agreement?.description ||
+      aiScope?.scope_text ||
+      agreement?.project?.description ||
+      ""
+    );
+
+    return {
+      projectType,
+      projectSubtype,
+      templateName,
+      materialsResponsibility:
+        materialsResponsibility === "Contractor"
+          ? "Contractor supplied"
+          : materialsResponsibility === "Homeowner"
+          ? "Customer supplied"
+          : materialsResponsibility === "Split"
+          ? "Shared responsibility"
+          : "",
+      quantitySignals,
+      scopeSummary,
+      hasAny:
+        !!projectType ||
+        !!projectSubtype ||
+        !!templateName ||
+        !!materialsResponsibility ||
+        quantitySignals.length > 0 ||
+        !!scopeSummary,
+    };
+  }, [agreement, aiScope]);
   const clarificationRows = useMemo(() => normalizeClarificationRows(aiScope), [aiScope]);
   const answeredClarificationRows = useMemo(
     () => clarificationRows.filter((row) => row.answered),
@@ -1358,6 +1467,47 @@ export default function Step4Finalize({
           </button>
         </div>
       </div>
+
+      {projectContextSummary.hasAny ? (
+        <section className="rounded-lg border bg-white p-4 shadow">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">Project Context</h3>
+          <div className="flex flex-wrap gap-2 text-xs">
+            {projectContextSummary.projectType ? (
+              <span className="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-700">
+                Type: {projectContextSummary.projectType}
+              </span>
+            ) : null}
+            {projectContextSummary.projectSubtype ? (
+              <span className="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-700">
+                Subtype: {projectContextSummary.projectSubtype}
+              </span>
+            ) : null}
+            {projectContextSummary.templateName ? (
+              <span className="rounded-full bg-indigo-50 px-2 py-1 font-medium text-indigo-700">
+                Template: {projectContextSummary.templateName}
+              </span>
+            ) : null}
+            {projectContextSummary.materialsResponsibility ? (
+              <span className="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-700">
+                Materials: {projectContextSummary.materialsResponsibility}
+              </span>
+            ) : null}
+            {projectContextSummary.quantitySignals.map((signal) => (
+              <span
+                key={`${signal.label}:${signal.value}`}
+                className="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-700"
+              >
+                {signal.label}: {signal.value}
+              </span>
+            ))}
+          </div>
+          {projectContextSummary.scopeSummary ? (
+            <div className="mt-2 text-xs text-slate-600">
+              Scope: {projectContextSummary.scopeSummary}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="rounded-lg border bg-white p-4 shadow">
         <h3 className="text-lg font-semibold text-gray-900 mb-2">Addresses</h3>

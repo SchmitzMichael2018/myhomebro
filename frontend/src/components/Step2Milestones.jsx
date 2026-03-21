@@ -388,6 +388,43 @@ function getEstimateAssistMeta(m) {
   };
 }
 
+function toCompactLine(value, maxLen = 140) {
+  const text = safeStr(value).replace(/\s+/g, " ");
+  if (!text) return "";
+  if (text.length <= maxLen) return text;
+  return `${text.slice(0, maxLen - 1).trim()}…`;
+}
+
+function projectContextQuantitySignals(answers = {}, measurementNotes = "") {
+  const entries = [
+    ["roof_area", "Roof area"],
+    ["square_footage", "Square footage"],
+    ["sqft", "Square footage"],
+    ["linear_feet", "Linear feet"],
+    ["lf", "Linear feet"],
+    ["room_count", "Rooms"],
+    ["rooms", "Rooms"],
+    ["fixture_count", "Fixtures"],
+    ["fixtures", "Fixtures"],
+    ["gate_count", "Gates"],
+  ];
+
+  const signals = [];
+  for (const [key, label] of entries) {
+    const value = safeStr(answers?.[key]);
+    if (!value) continue;
+    signals.push({ label, value });
+    if (signals.length >= 2) return signals;
+  }
+
+  const notes = safeStr(measurementNotes);
+  if (notes) {
+    signals.push({ label: "Measurements", value: toCompactLine(notes, 60) });
+  }
+
+  return signals.slice(0, 2);
+}
+
 const PRICING_IMPACT_KEYS = [
   "roof_area",
   "roof_pitch",
@@ -833,6 +870,51 @@ export default function Step2Milestones({
 
   const selectedTemplateMeta = useMemo(() => deriveSelectedTemplateMeta(agreementMeta), [agreementMeta]);
   const templateApplied = !!selectedTemplateMeta;
+  const projectContextSummary = useMemo(() => {
+    const agreementAnswers = agreementMeta?.ai_scope?.answers || {};
+    const projectType =
+      safeStr(agreementMeta?.project_type) ||
+      safeStr(selectedTemplateMeta?.project_type);
+    const projectSubtype =
+      safeStr(agreementMeta?.project_subtype) ||
+      safeStr(selectedTemplateMeta?.project_subtype);
+    const materialsResponsibility = normalizeMaterialsResponsibilityValue(
+      agreementAnswers?.materials_responsibility ||
+      agreementAnswers?.materials_purchasing ||
+      agreementAnswers?.who_purchases_materials ||
+      materialsWho
+    );
+    const quantitySignals = projectContextQuantitySignals(agreementAnswers, measurementNotes);
+    const scopeSummary = toCompactLine(
+      agreementMeta?.description ||
+      agreementMeta?.ai_scope?.scope_text ||
+      agreementMeta?.project?.description ||
+      ""
+    );
+
+    return {
+      projectType,
+      projectSubtype,
+      templateName: safeStr(selectedTemplateMeta?.name),
+      materialsResponsibility:
+        materialsResponsibility === "Contractor"
+          ? "Contractor supplied"
+          : materialsResponsibility === "Homeowner"
+          ? "Customer supplied"
+          : materialsResponsibility === "Split"
+          ? "Shared responsibility"
+          : "",
+      quantitySignals,
+      scopeSummary,
+      hasAny:
+        !!projectType ||
+        !!projectSubtype ||
+        !!safeStr(selectedTemplateMeta?.name) ||
+        !!materialsResponsibility ||
+        quantitySignals.length > 0 ||
+        !!scopeSummary,
+    };
+  }, [agreementMeta, materialsWho, measurementNotes, selectedTemplateMeta]);
 
   useEffect(() => {
     if (!saveTemplateOpen) return;
@@ -1624,6 +1706,49 @@ export default function Step2Milestones({
           <div className="mt-1 text-xs text-indigo-800/90">
             These milestones were generated from a selected template. AI milestone regeneration is disabled here to avoid overwriting the template structure.
           </div>
+        </div>
+      ) : null}
+
+      {projectContextSummary.hasAny ? (
+        <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+            Project Context
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+            {projectContextSummary.projectType ? (
+              <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700">
+                Type: {projectContextSummary.projectType}
+              </span>
+            ) : null}
+            {projectContextSummary.projectSubtype ? (
+              <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700">
+                Subtype: {projectContextSummary.projectSubtype}
+              </span>
+            ) : null}
+            {projectContextSummary.templateName ? (
+              <span className="rounded-full bg-indigo-50 px-2 py-1 font-medium text-indigo-700">
+                Template: {projectContextSummary.templateName}
+              </span>
+            ) : null}
+            {projectContextSummary.materialsResponsibility ? (
+              <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700">
+                Materials: {projectContextSummary.materialsResponsibility}
+              </span>
+            ) : null}
+            {projectContextSummary.quantitySignals.map((signal) => (
+              <span
+                key={`${signal.label}:${signal.value}`}
+                className="rounded-full bg-white px-2 py-1 font-medium text-slate-700"
+              >
+                {signal.label}: {signal.value}
+              </span>
+            ))}
+          </div>
+          {projectContextSummary.scopeSummary ? (
+            <div className="mt-2 text-xs text-slate-600">
+              Scope: {projectContextSummary.scopeSummary}
+            </div>
+          ) : null}
         </div>
       ) : null}
 

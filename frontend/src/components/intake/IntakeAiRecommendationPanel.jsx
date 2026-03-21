@@ -23,6 +23,34 @@ export default function IntakeAiRecommendationPanel({
     : [];
   const templateMatches = Array.isArray(result?.template_matches) ? result.template_matches : [];
   const hasStrongMatch = result?.has_strong_template_match === true;
+  const matchQuality = String(result?.match_quality || "").trim().toLowerCase();
+
+  function confidenceLabel(value) {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (normalized === "recommended") return "Strong match";
+    if (normalized === "possible") return "Possible match";
+    return "No strong match";
+  }
+
+  function recommendationLead() {
+    if (hasStrongMatch && result?.template_name) {
+      return "Best match based on project type, scope, and milestones.";
+    }
+    if (result?.template_name) {
+      return "This is a close match, but you may want to review it.";
+    }
+    return "No strong template match was found. You can continue without a template or create a new one from this intake.";
+  }
+
+  function nextStepText() {
+    if (hasStrongMatch && result?.template_name) {
+      return "Recommended next step: use this template and continue to agreement creation.";
+    }
+    if (result?.template_name) {
+      return "Recommended next step: review the suggested template, or continue without one if this job is different.";
+    }
+    return "Recommended next step: continue without a template or create a reusable draft from this intake.";
+  }
 
   function isSelectedTemplate(templateId) {
     return selectedTemplateMode !== "none" && String(selectedTemplateId || "") === String(templateId || "");
@@ -34,7 +62,7 @@ export default function IntakeAiRecommendationPanel({
         <div>
           <h2 className="text-lg font-semibold text-gray-900">AI Project Analysis</h2>
           <p className="mt-1 text-sm text-gray-600">
-            Analyze the intake, recommend a template if one exists, or generate a draft structure.
+            Review the project analysis, choose the best template path, and continue into the agreement workflow.
           </p>
         </div>
 
@@ -66,10 +94,11 @@ export default function IntakeAiRecommendationPanel({
       ) : (
         <div className="mt-4 space-y-4">
           <div className="rounded-lg border bg-indigo-50/40 p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="text-sm font-semibold text-gray-900">
-                Suggested Project Title:
-              </div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
+              Intake Summary
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <div className="text-sm font-semibold text-gray-900">Suggested Project Title:</div>
               <div className="text-sm text-gray-800">{result.project_title || "—"}</div>
             </div>
 
@@ -86,7 +115,13 @@ export default function IntakeAiRecommendationPanel({
 
               {result.confidence ? (
                 <span className="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800">
-                  Confidence: {result.confidence}
+                  {confidenceLabel(result.confidence)}
+                </span>
+              ) : null}
+
+              {matchQuality ? (
+                <span className="rounded-full bg-white px-2 py-1 font-semibold text-slate-700">
+                  Match quality: {matchQuality}
                 </span>
               ) : null}
 
@@ -103,12 +138,23 @@ export default function IntakeAiRecommendationPanel({
               ) : null}
             </div>
 
-            {result.reason ? (
-              <div className="mt-3 text-sm text-gray-700">{result.reason}</div>
-            ) : null}
+            <div className="mt-3 rounded-md border border-indigo-100 bg-white/80 p-3">
+              <div className="text-sm font-medium text-gray-900">{recommendationLead()}</div>
+              {result.reason ? (
+                <div className="mt-1 text-xs text-gray-600">{result.reason}</div>
+              ) : null}
+              <div className="mt-2 text-xs font-medium text-indigo-800">{nextStepText()}</div>
+            </div>
 
             <div className="mt-4 space-y-3 rounded-md border bg-white p-3">
-              <div className="text-sm font-semibold text-gray-900">Template Recommendation</div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-semibold text-gray-900">Template Recommendation</div>
+                {selectedTemplateMode === "none" ? (
+                  <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
+                    Continuing without template
+                  </span>
+                ) : null}
+              </div>
 
               {result.template_name ? (
                 <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
@@ -116,7 +162,9 @@ export default function IntakeAiRecommendationPanel({
                     <div>
                       <div className="text-sm font-medium text-gray-900">{result.template_name}</div>
                       <div className="mt-1 text-xs text-gray-600">
-                        {hasStrongMatch ? "Best match based on this intake." : "Possible match based on this intake."}
+                        {hasStrongMatch
+                          ? "Best match based on project type, scope, and milestones."
+                          : "Close match based on the intake, but worth reviewing before you proceed."}
                       </div>
                     </div>
                     <button
@@ -129,7 +177,9 @@ export default function IntakeAiRecommendationPanel({
                       }`}
                     >
                       {selectedTemplateMode !== "none" && String(selectedTemplateId || "") === String(result.template_id || "")
-                        ? "Selected"
+                        ? "Template Selected"
+                        : hasStrongMatch
+                        ? "Use Recommended Template"
                         : "Use This Template"}
                     </button>
                   </div>
@@ -143,7 +193,7 @@ export default function IntakeAiRecommendationPanel({
               {templateMatches.length > 1 ? (
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Closest alternatives
+                    Other templates worth reviewing
                   </div>
                   <div className="mt-2 space-y-2">
                     {templateMatches
