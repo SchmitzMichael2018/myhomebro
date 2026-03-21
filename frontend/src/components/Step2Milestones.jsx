@@ -1678,28 +1678,6 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
-      {selectedTemplateMeta ? (
-        <div className="mb-3 rounded-md border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-semibold">Template:</span>
-            <span>{selectedTemplateMeta.name}</span>
-            {selectedTemplateMeta.project_type ? (
-              <span className="rounded bg-white/70 px-2 py-0.5 text-[11px]">
-                {selectedTemplateMeta.project_type}
-              </span>
-            ) : null}
-            {selectedTemplateMeta.project_subtype ? (
-              <span className="rounded bg-white/70 px-2 py-0.5 text-[11px]">
-                {selectedTemplateMeta.project_subtype}
-              </span>
-            ) : null}
-          </div>
-          <div className="mt-1 text-xs text-indigo-800/90">
-            These milestones were generated from a selected template. AI milestone regeneration is disabled here to avoid overwriting the template structure.
-          </div>
-        </div>
-      ) : null}
-
       {projectContextSummary.hasAny ? (
         <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
@@ -1738,6 +1716,11 @@ export default function Step2Milestones({
           {projectContextSummary.scopeSummary ? (
             <div className="mt-2 text-xs text-slate-600">
               Scope: {projectContextSummary.scopeSummary}
+            </div>
+          ) : null}
+          {projectContextSummary.templateName ? (
+            <div className="mt-2 text-xs text-indigo-700">
+              Template structure is active. AI milestone regeneration is disabled here.
             </div>
           ) : null}
         </div>
