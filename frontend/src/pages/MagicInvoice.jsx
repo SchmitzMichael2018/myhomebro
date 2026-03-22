@@ -112,11 +112,17 @@ function DisputeForm({ open, submitting, onCancel, onSubmit }) {
 
   return (
     <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4">
-      <h3 className="mb-3 text-base font-extrabold text-red-800">Dispute Details</h3>
+      <h3
+        data-testid="public-issue-entry-title"
+        className="mb-3 text-base font-extrabold text-red-800"
+      >
+        Dispute Details
+      </h3>
 
       <div className="mb-3">
         <label className="mb-1 block text-sm font-semibold text-red-900">Reason</label>
         <select
+          data-testid="public-issue-reason-select"
           className="w-full rounded border border-red-200 bg-white px-3 py-2"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
@@ -134,6 +140,7 @@ function DisputeForm({ open, submitting, onCancel, onSubmit }) {
       <div className="mb-4">
         <label className="mb-1 block text-sm font-semibold text-red-900">Description</label>
         <textarea
+          data-testid="public-issue-description-input"
           className="min-h-[110px] w-full rounded border border-red-200 bg-white px-3 py-2"
           placeholder="Describe the issue, what you expected, and what you want done to resolve it…"
           value={description}
@@ -151,6 +158,7 @@ function DisputeForm({ open, submitting, onCancel, onSubmit }) {
           Cancel
         </button>
         <button
+          data-testid="public-issue-submit-button"
           className="rounded-lg bg-red-600 px-5 py-2 font-extrabold text-white hover:bg-red-700 disabled:opacity-60"
           onClick={() => onSubmit({ reason, description })}
           disabled={submitting || !reason}
@@ -605,6 +613,7 @@ function InnerMagicInvoice() {
 
           {canDispute && (
             <button
+              data-testid="public-issue-entry-button"
               onClick={() => setShowDispute((v) => !v)}
               disabled={actionLoading}
               className={`rounded-xl px-5 py-2 font-extrabold text-white hover:bg-red-700 disabled:opacity-60 ${

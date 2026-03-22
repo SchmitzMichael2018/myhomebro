@@ -182,7 +182,12 @@ export default function PublicDisputeView() {
         <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
           <div>
             <div className="text-sm font-bold text-slate-500">Dispute</div>
-            <h1 className="text-3xl font-extrabold text-slate-900">{header.num}</h1>
+            <h1
+              data-testid="public-dispute-heading"
+              className="text-3xl font-extrabold text-slate-900"
+            >
+              {header.num}
+            </h1>
             <div className="mt-1 text-sm text-slate-600">
               Status: <b>{String(header.status).replaceAll("_", " ")}</b>
             </div>
@@ -301,6 +306,7 @@ export default function PublicDisputeView() {
           <div className="text-sm font-extrabold text-slate-800">Send a Message</div>
           <form onSubmit={postReply} className="mt-3 rounded-xl border border-slate-200 bg-white p-4">
             <textarea
+              data-testid="public-dispute-reply-input"
               className="min-h-[110px] w-full rounded border border-slate-200 bg-white px-3 py-2"
               placeholder="Add details, propose a resolution, or upload supporting evidence…"
               value={reply}
@@ -321,6 +327,7 @@ export default function PublicDisputeView() {
               </div>
 
               <button
+                data-testid="public-dispute-send-button"
                 type="submit"
                 disabled={posting}
                 className="rounded-xl bg-emerald-600 px-5 py-2 font-extrabold text-white hover:bg-emerald-700 disabled:opacity-60"
