@@ -1387,6 +1387,7 @@ export default function TemplateSearchSection({
         <div className="mt-4">
           <label className="mb-1 block text-sm font-medium">Project Title</label>
           <input
+            data-testid="agreement-project-title-input"
             className="w-full rounded border px-3 py-2 text-sm"
             name="project_title"
             value={dLocal.project_title}

@@ -1039,6 +1039,7 @@ export default function Step1Details({
 
         <div className="mt-6 flex justify-end gap-2">
           <button
+            data-testid="agreement-save-draft-button"
             type="button"
             onClick={() => saveStep1(false)}
             disabled={locked}

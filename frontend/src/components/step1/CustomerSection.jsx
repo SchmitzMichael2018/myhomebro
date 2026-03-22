@@ -33,6 +33,7 @@ export default function CustomerSection({
       <div className="md:col-span-2">
         <label className="block text-sm font-medium mb-1">Customer</label>
         <select
+          data-testid="agreement-customer-select"
           className="w-full rounded border px-3 py-2 text-sm"
           name="homeowner"
           value={String(dLocal.homeowner || "")}

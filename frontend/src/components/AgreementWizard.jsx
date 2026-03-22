@@ -965,8 +965,16 @@ export default function AgreementWizard() {
     <div className="mx-auto max-w-6xl p-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-xl font-semibold text-white">Agreement Wizard</div>
-          <div className="mt-1 text-sm font-medium text-indigo-200">
+          <div
+            data-testid="agreement-wizard-heading"
+            className="text-xl font-semibold text-white"
+          >
+            Agreement Wizard
+          </div>
+          <div
+            data-testid="agreement-wizard-subtitle"
+            className="mt-1 text-sm font-medium text-indigo-200"
+          >
             {agreementId ? `Agreement #${agreementId}` : "New Agreement"} — Step {step} of 4
           </div>
         </div>
