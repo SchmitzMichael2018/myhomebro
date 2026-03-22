@@ -1403,6 +1403,7 @@ export default function DisputesPages() {
             </button>
             {showNewButton && (
               <button
+                data-testid="start-dispute-button"
                 className="mhb-btn primary"
                 onClick={() => setShowWizard(true)}
                 disabled={!supportsDisputesApi}

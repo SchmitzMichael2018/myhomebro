@@ -119,7 +119,7 @@ export default function DisputesCreateModal({ open, onClose }) {
     <div className="mhb-modal-overlay" role="dialog" aria-modal="true">
       <div className="mhb-modal-card" style={{ width: "min(900px, 96vw)" }}>
         <div className="mhb-modal-header">
-          <h2>
+          <h2 data-testid="dispute-create-title">
             {step === 1 && "Start a Dispute — Select Agreement"}
             {step === 2 && "Describe the Dispute"}
             {step === 3 && "Dispute Fee"}
@@ -136,6 +136,7 @@ export default function DisputesCreateModal({ open, onClose }) {
               <div>
                 <label className="block text-sm text-slate-600 mb-1">Agreement</label>
                 <select
+                  data-testid="dispute-agreement-select"
                   className="w-full border rounded px-3 py-2"
                   value={agreementId}
                   onChange={(e) => {
@@ -182,6 +183,7 @@ export default function DisputesCreateModal({ open, onClose }) {
               <div>
                 <label className="block text-sm text-slate-600 mb-1">Reason</label>
                 <input
+                  data-testid="dispute-reason-input"
                   className="w-full border rounded px-3 py-2"
                   placeholder="e.g., Work not approved / quality dispute / scope issue"
                   value={reason}
@@ -202,7 +204,12 @@ export default function DisputesCreateModal({ open, onClose }) {
                 <button className="mhb-btn" onClick={() => setStep(1)}>
                   Back
                 </button>
-                <button className="mhb-btn primary" disabled={!reason.trim() || busy} onClick={createDispute}>
+                <button
+                  data-testid="dispute-submit-button"
+                  className="mhb-btn primary"
+                  disabled={!reason.trim() || busy}
+                  onClick={createDispute}
+                >
                   {busy ? "Submitting…" : "Submit Dispute"}
                 </button>
               </div>
@@ -211,7 +218,7 @@ export default function DisputesCreateModal({ open, onClose }) {
 
           {step === 3 && created && (
             <>
-              <div className="text-slate-700">
+              <div data-testid="dispute-fee-step" className="text-slate-700">
                 Dispute <strong>#{created.id}</strong> created. A fee of{" "}
                 <strong>{money(created.fee_amount || 0)}</strong> is required to proceed and freeze escrow.
               </div>
