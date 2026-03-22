@@ -445,7 +445,10 @@ export default function InvoiceDetail() {
           <div className="mt-3 flex flex-col gap-3">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h1 className="text-3xl font-bold text-gray-800">
+                <h1
+                  data-testid="invoice-detail-heading"
+                  className="text-3xl font-bold text-gray-800"
+                >
                   Invoice #{invoice.invoice_number || id}
                 </h1>
 
@@ -458,7 +461,10 @@ export default function InvoiceDetail() {
 
                 <p className="text-gray-500 mt-1">
                   Milestone:{" "}
-                  <span className="font-semibold text-gray-700">
+                  <span
+                    data-testid="invoice-detail-milestone-title"
+                    className="font-semibold text-gray-700"
+                  >
                     {milestoneTitle
                       ? `${milestoneDisplayNumber ? `${milestoneDisplayNumber} — ` : ""}${milestoneTitle}`
                       : "—"}
@@ -469,6 +475,7 @@ export default function InvoiceDetail() {
               <div className="text-right">
                 <h3 className="font-semibold text-gray-600">Status</h3>
                 <span
+                  data-testid="invoice-detail-status"
                   className={`inline-block rounded-full px-3 py-1 text-sm font-medium ${
                     statusStyles[statusKey] || "bg-gray-100 text-gray-700"
                   }`}

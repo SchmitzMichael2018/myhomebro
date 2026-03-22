@@ -970,6 +970,7 @@ export default function MilestoneList() {
                                                     </button>
 
                                                     <button
+                                                      data-testid={`milestone-invoice-button-${m.id}`}
                                                       type="button"
                                                       onClick={(e) => {
                                                         e.stopPropagation();
