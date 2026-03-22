@@ -55,7 +55,9 @@ export default function LandingPage() {
           <img src={logo} alt="MyHomeBro" style={S.logo} draggable={false} />
         </div>
 
-        <h1 style={S.title}>AI-Powered Agreements. Secure Payments. Faster Payouts.</h1>
+        <h1 data-testid="landing-hero-heading" style={S.title}>
+          AI-Powered Agreements. Secure Payments. Faster Payouts.
+        </h1>
         <div style={S.brand}>
           <span style={S.brandMain}>MyHome</span>
           <span style={S.brandSub}>Bro</span>
@@ -79,11 +81,17 @@ export default function LandingPage() {
             Contractor Sign Up
           </button>
 
-          <button onClick={() => openLogin("login")} style={S.btn} type="button">
+          <button
+            data-testid="landing-sign-in-button"
+            onClick={() => openLogin("login")}
+            style={S.btn}
+            type="button"
+          >
             Sign In
           </button>
 
           <button
+            data-testid="landing-start-project-intake-button"
             onClick={() => navigate("/start-project")}
             style={S.btn}
             type="button"
