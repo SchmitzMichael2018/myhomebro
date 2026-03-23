@@ -177,10 +177,10 @@ export default function SubcontractorAssignedWorkPage() {
       setCompletionBusy((prev) => ({ ...prev, [milestoneId]: true }));
       const note = (completionNotes[milestoneId] || "").trim();
       const { data } = await api.post(
-        `/projects/subcontractor/milestones/${milestoneId}/submit-completion/`,
+        `/projects/milestones/${milestoneId}/submit-work/`,
         { note }
       );
-      const updatedMilestone = data?.milestone || {};
+      const updatedMilestone = data || data?.milestone || {};
       setGroups((prev) =>
         prev.map((group) => ({
           ...group,
@@ -277,7 +277,8 @@ export default function SubcontractorAssignedWorkPage() {
                       <div>
                         <div className="font-semibold text-slate-900">Assigned</div>
                         <div>
-                          {milestone.assigned_subcontractor?.display_name ||
+                          {milestone.assigned_worker_display ||
+                            milestone.assigned_subcontractor?.display_name ||
                             milestone.assigned_subcontractor?.email ||
                             "Assigned"}
                         </div>
@@ -286,26 +287,29 @@ export default function SubcontractorAssignedWorkPage() {
 
                     <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
                       <div className="text-sm font-semibold text-slate-900">
-                        Completion Review
+                        Work Submission
                       </div>
                       <div
                         data-testid={`assigned-milestone-completion-state-${milestone.id}`}
                         className="mt-2 text-sm text-slate-600"
                       >
-                        <div>{completionStatusLabel(milestone.subcontractor_completion_status)}</div>
-                        {milestone.subcontractor_marked_complete_at ? (
+                        <div>{completionStatusLabel(milestone.work_submission_status || milestone.subcontractor_completion_status)}</div>
+                        <div className="mt-1">
+                          Reviewer: {milestone.reviewer_display || "Contractor Owner"}
+                        </div>
+                        {milestone.work_submitted_at || milestone.subcontractor_marked_complete_at ? (
                           <div className="mt-1">
-                            Submitted: {formatDate(milestone.subcontractor_marked_complete_at)}
+                            Submitted: {formatDate(milestone.work_submitted_at || milestone.subcontractor_marked_complete_at)}
                           </div>
                         ) : null}
-                        {milestone.subcontractor_completion_note ? (
+                        {milestone.work_submission_note || milestone.subcontractor_completion_note ? (
                           <div className="mt-1 whitespace-pre-wrap">
-                            Your note: {milestone.subcontractor_completion_note}
+                            Your note: {milestone.work_submission_note || milestone.subcontractor_completion_note}
                           </div>
                         ) : null}
-                        {milestone.subcontractor_review_response_note ? (
+                        {milestone.work_review_response_note || milestone.subcontractor_review_response_note ? (
                           <div className="mt-1 whitespace-pre-wrap text-amber-700">
-                            Contractor response: {milestone.subcontractor_review_response_note}
+                            Reviewer response: {milestone.work_review_response_note || milestone.subcontractor_review_response_note}
                           </div>
                         ) : null}
                       </div>
@@ -330,7 +334,7 @@ export default function SubcontractorAssignedWorkPage() {
                           onClick={() => submitCompletion(milestone.id)}
                           disabled={
                             completionBusy[milestone.id] ||
-                            milestone.subcontractor_completion_status === "approved"
+                            (milestone.work_submission_status || milestone.subcontractor_completion_status) === "approved"
                           }
                           className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
                         >

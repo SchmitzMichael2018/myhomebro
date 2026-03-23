@@ -13,8 +13,10 @@ from projects.api.ai_agreement_views import ai_suggest_milestones
 from projects.models import (
     Agreement,
     Contractor,
+    ContractorSubAccount,
     Homeowner,
     Milestone,
+    MilestoneAssignment,
     MilestoneComment,
     MilestoneFile,
     Notification,
@@ -791,6 +793,51 @@ class SubcontractorMilestoneAssignmentTests(TestCase):
             "Accepted Sub",
         )
 
+    def test_delegated_reviewer_assignment_accepts_internal_team_member(self):
+        user_model = get_user_model()
+        reviewer_user = user_model.objects.create_user(
+            email="reviewer-team@example.com",
+            password="testpass123",
+        )
+        reviewer_subaccount = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=reviewer_user,
+            display_name="Reviewer Team",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_SUPERVISOR,
+        )
+
+        response = self.client.patch(
+            f"/api/projects/milestones/{self.milestone.id}/",
+            {"delegated_reviewer_subaccount": reviewer_subaccount.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.milestone.refresh_from_db()
+        self.assertEqual(self.milestone.delegated_reviewer_subaccount_id, reviewer_subaccount.id)
+
+    def test_delegated_reviewer_assignment_rejects_invalid_internal_member(self):
+        user_model = get_user_model()
+        readonly_user = user_model.objects.create_user(
+            email="readonly-reviewer@example.com",
+            password="testpass123",
+        )
+        readonly_subaccount = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=readonly_user,
+            display_name="Readonly Reviewer",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_READONLY,
+        )
+
+        response = self.client.patch(
+            f"/api/projects/milestones/{self.milestone.id}/",
+            {"delegated_reviewer_subaccount": readonly_subaccount.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("eligible internal team member", str(response.json()).lower())
+
 
 class SubcontractorAssignedWorkTests(TestCase):
     def setUp(self):
@@ -1457,6 +1504,26 @@ class SubcontractorCompletionReviewTests(TestCase):
             amount="2200.00",
             assigned_subcontractor_invitation=self.assigned_invitation,
         )
+        self.reviewer_user = user_model.objects.create_user(
+            email="reviewer-complete@example.com",
+            password="testpass123",
+        )
+        self.reviewer_subaccount = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=self.reviewer_user,
+            display_name="Delegated Reviewer",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_SUPERVISOR,
+        )
+        self.worker_user = user_model.objects.create_user(
+            email="internal-worker@example.com",
+            password="testpass123",
+        )
+        self.worker_subaccount = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=self.worker_user,
+            display_name="Internal Worker",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_MILESTONES,
+        )
         self.client = APIClient()
 
     def test_assigned_subcontractor_can_submit_completion_for_review(self):
@@ -1474,6 +1541,29 @@ class SubcontractorCompletionReviewTests(TestCase):
             SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW,
         )
         self.assertEqual(self.milestone.subcontractor_marked_complete_by_id, self.assigned_user.id)
+
+    def test_internal_team_member_can_submit_work_when_assigned(self):
+        self.milestone.assigned_subcontractor_invitation = None
+        self.milestone.save(update_fields=["assigned_subcontractor_invitation"])
+        MilestoneAssignment.objects.create(
+            milestone=self.milestone,
+            subaccount=self.worker_subaccount,
+        )
+
+        self.client.force_authenticate(user=self.worker_user)
+        response = self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/submit-work/",
+            {"note": "Internal team work is ready."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.milestone.refresh_from_db()
+        self.assertEqual(
+            self.milestone.subcontractor_completion_status,
+            SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW,
+        )
+        self.assertEqual(self.milestone.subcontractor_marked_complete_by_id, self.worker_user.id)
 
     def test_optional_subcontractor_note_is_stored(self):
         self.client.force_authenticate(user=self.assigned_user)
@@ -1505,6 +1595,26 @@ class SubcontractorCompletionReviewTests(TestCase):
         )
         self.assertEqual(response.status_code, 404)
 
+    def test_subcontractor_cannot_be_reviewer(self):
+        self.milestone.subcontractor_completion_status = SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+        self.milestone.subcontractor_marked_complete_at = timezone.now()
+        self.milestone.subcontractor_marked_complete_by = self.assigned_user
+        self.milestone.save(
+            update_fields=[
+                "subcontractor_completion_status",
+                "subcontractor_marked_complete_at",
+                "subcontractor_marked_complete_by",
+            ]
+        )
+
+        self.client.force_authenticate(user=self.assigned_user)
+        response = self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/approve-work/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+
     def test_contractor_can_approve_submitted_completion(self):
         self.milestone.subcontractor_completion_status = SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
         self.milestone.subcontractor_marked_complete_at = timezone.now()
@@ -1531,6 +1641,35 @@ class SubcontractorCompletionReviewTests(TestCase):
             SubcontractorCompletionStatus.APPROVED,
         )
         self.assertEqual(self.milestone.subcontractor_review_response_note, "Looks good.")
+
+    def test_delegated_reviewer_can_review_if_assigned(self):
+        self.milestone.subcontractor_completion_status = SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+        self.milestone.subcontractor_marked_complete_at = timezone.now()
+        self.milestone.subcontractor_marked_complete_by = self.assigned_user
+        self.milestone.delegated_reviewer_subaccount = self.reviewer_subaccount
+        self.milestone.save(
+            update_fields=[
+                "subcontractor_completion_status",
+                "subcontractor_marked_complete_at",
+                "subcontractor_marked_complete_by",
+                "delegated_reviewer_subaccount",
+            ]
+        )
+
+        self.client.force_authenticate(user=self.reviewer_user)
+        response = self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/approve-work/",
+            {"response_note": "Approved by delegated reviewer."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.milestone.refresh_from_db()
+        self.assertEqual(
+            self.milestone.subcontractor_completion_status,
+            SubcontractorCompletionStatus.APPROVED,
+        )
+        self.assertEqual(self.milestone.subcontractor_reviewed_by_id, self.reviewer_user.id)
 
     def test_contractor_can_reject_submitted_completion(self):
         self.milestone.subcontractor_completion_status = SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
@@ -1614,3 +1753,6 @@ class SubcontractorCompletionReviewTests(TestCase):
         self.assertEqual(payload["subcontractor_completion_status"], "needs_changes")
         self.assertEqual(payload["subcontractor_completion_note"], "Trim installed.")
         self.assertEqual(payload["subcontractor_review_response_note"], "Please fix the hallway seam.")
+        self.assertEqual(payload["assigned_worker"]["kind"], "subcontractor")
+        self.assertEqual(payload["reviewer"]["kind"], "contractor_owner")
+        self.assertTrue(payload["can_current_user_review_work"])

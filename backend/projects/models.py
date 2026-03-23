@@ -1020,6 +1020,14 @@ class Milestone(models.Model):
         default="",
         help_text="Optional contractor response note for approval or change requests.",
     )
+    delegated_reviewer_subaccount = models.ForeignKey(
+        "projects.ContractorSubAccount",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="review_milestones",
+        help_text="Optional delegated internal reviewer for worker submissions on this milestone.",
+    )
 
     class Meta:
         ordering = ["order"]

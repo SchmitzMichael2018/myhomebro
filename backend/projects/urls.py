@@ -129,6 +129,11 @@ from .views.subcontractor_work import (
     subcontractor_submit_completion,
     subcontractor_request_review,
 )
+from .views.milestone_workflow import (
+    approve_work_submission,
+    send_back_work_submission,
+    submit_work_for_review,
+)
 
 from .views.agreement_closeout import (
     AgreementClosureStatusView,
@@ -365,6 +370,9 @@ urlpatterns = [
         "subcontractor/milestones/<int:milestone_id>/submit-completion/",
         subcontractor_submit_completion,
     ),
+    path("milestones/<int:milestone_id>/submit-work/", submit_work_for_review),
+    path("milestones/<int:milestone_id>/approve-work/", approve_work_submission),
+    path("milestones/<int:milestone_id>/send-back-work/", send_back_work_submission),
     path("employee/milestones/<int:milestone_id>/", milestone_detail),
     path("employee/milestones/<int:milestone_id>/comments/", add_comment),
     path("employee/milestones/<int:milestone_id>/files/", upload_file),

@@ -54,6 +54,7 @@ from projects.services.agreement_locking import (
     can_edit_milestones_under_agreement,
     is_completed_agreement,
 )
+from projects.services.milestone_workflow import can_user_review_submitted_work
 
 logger = logging.getLogger(__name__)
 
@@ -522,21 +523,6 @@ def _can_invoice_milestone(agreement: Agreement) -> Optional[Response]:
     return None
 
 
-def _is_owning_contractor_user(user, agreement: Agreement) -> bool:
-    try:
-        owner = getattr(getattr(agreement, "project", None), "contractor", None)
-        requester = get_contractor_for_user(user)
-        if owner is None or requester is None:
-            return False
-        if owner.id != requester.id:
-            return False
-        if hasattr(user, "contractor_subaccount"):
-            return False
-        return True
-    except Exception:
-        return False
-
-
 def _mark_milestone_complete_side_effects(*, request, milestone: Milestone, completion_notes: str = "") -> Milestone:
     """
     Shared completion side-effect handler. Used by:
@@ -636,16 +622,36 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         "agreement",
         "assigned_subcontractor_invitation",
         "assigned_subcontractor_invitation__accepted_by_user",
+        "subaccount_assignment",
+        "subaccount_assignment__subaccount",
+        "subaccount_assignment__subaccount__user",
+        "delegated_reviewer_subaccount",
+        "delegated_reviewer_subaccount__user",
         "subcontractor_review_requested_by",
         "subcontractor_marked_complete_by",
         "subcontractor_reviewed_by",
     ).all()
 
     def _assigned_queryset_for_user(self, user):
-        assignment_filter = Q(assigned_to=user) | Q(assigned_user=user) | Q(assigned_employee__user=user)
+        assignment_filter = (
+            Q(subaccount_assignment__subaccount__user=user)
+            | Q(assigned_to=user)
+            | Q(assigned_user=user)
+            | Q(assigned_employee__user=user)
+        )
 
         return (
-            Milestone.objects.select_related("agreement", "agreement__project")
+            Milestone.objects.select_related(
+                "agreement",
+                "agreement__project",
+                "subaccount_assignment",
+                "subaccount_assignment__subaccount",
+                "subaccount_assignment__subaccount__user",
+                "assigned_subcontractor_invitation",
+                "assigned_subcontractor_invitation__accepted_by_user",
+                "delegated_reviewer_subaccount",
+                "delegated_reviewer_subaccount__user",
+            )
             .filter(assignment_filter)
             .distinct()
             .order_by("completion_date", "order", "id")
@@ -663,6 +669,11 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                     "agreement__project",
                     "assigned_subcontractor_invitation",
                     "assigned_subcontractor_invitation__accepted_by_user",
+                    "subaccount_assignment",
+                    "subaccount_assignment__subaccount",
+                    "subaccount_assignment__subaccount__user",
+                    "delegated_reviewer_subaccount",
+                    "delegated_reviewer_subaccount__user",
                     "subcontractor_review_requested_by",
                     "subcontractor_marked_complete_by",
                     "subcontractor_reviewed_by",
@@ -1193,8 +1204,8 @@ class MilestoneViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="approve-subcontractor-completion")
     def approve_subcontractor_completion(self, request, pk=None):
         milestone: Milestone = self.get_object()
-        if not _is_owning_contractor_user(request.user, milestone.agreement):
-            return Response({"detail": "Only the owning contractor can review subcontractor submissions."}, status=status.HTTP_403_FORBIDDEN)
+        if not can_user_review_submitted_work(milestone, request.user):
+            return Response({"detail": "You are not allowed to review this work submission."}, status=status.HTTP_403_FORBIDDEN)
 
         if milestone.subcontractor_completion_status != SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW:
             return Response({"detail": "No subcontractor completion submission is pending review."}, status=status.HTTP_400_BAD_REQUEST)
@@ -1225,8 +1236,8 @@ class MilestoneViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="reject-subcontractor-completion")
     def reject_subcontractor_completion(self, request, pk=None):
         milestone: Milestone = self.get_object()
-        if not _is_owning_contractor_user(request.user, milestone.agreement):
-            return Response({"detail": "Only the owning contractor can review subcontractor submissions."}, status=status.HTTP_403_FORBIDDEN)
+        if not can_user_review_submitted_work(milestone, request.user):
+            return Response({"detail": "You are not allowed to review this work submission."}, status=status.HTTP_403_FORBIDDEN)
 
         if milestone.subcontractor_completion_status != SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW:
             return Response({"detail": "No subcontractor completion submission is pending review."}, status=status.HTTP_400_BAD_REQUEST)

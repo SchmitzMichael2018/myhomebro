@@ -155,6 +155,7 @@ class WhoAmIView(APIView):
                     "email": user.email,
                     "type": "contractor",
                     "role": "contractor_owner",
+                    "identity_type": "contractor_owner",
                 },
                 status=status.HTTP_200_OK,
             )
@@ -166,6 +167,8 @@ class WhoAmIView(APIView):
                     "email": user.email,
                     "type": "subaccount",
                     "role": subaccount.role,
+                    "identity_type": "internal_team_member",
+                    "team_role": subaccount.role,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -185,6 +188,7 @@ class WhoAmIView(APIView):
                     "email": user.email,
                     "type": "subcontractor",
                     "role": "subcontractor",
+                    "identity_type": "subcontractor",
                 },
                 status=status.HTTP_200_OK,
             )

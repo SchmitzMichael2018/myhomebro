@@ -47,6 +47,8 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
                       status: 'pending',
                       start_date: '2026-03-25',
                       completion_date: '2026-03-28',
+                      assigned_worker_display: 'Taylor Sub',
+                      reviewer_display: 'Contractor Owner',
                       assigned_subcontractor: {
                         invitation_id: 77,
                         display_name: 'Taylor Sub',
@@ -144,6 +146,8 @@ test('subcontractor assigned work supports comments and file upload for assigned
                 status: 'pending',
                 start_date: '2026-03-25',
                 completion_date: '2026-03-28',
+                assigned_worker_display: 'Taylor Sub',
+                reviewer_display: 'Contractor Owner',
                 assigned_subcontractor: {
                   invitation_id: 77,
                   display_name: 'Taylor Sub',
@@ -262,6 +266,8 @@ test('subcontractor assigned work can request contractor review for an assigned 
       display_name: 'Taylor Sub',
       email: 'subcontractor@example.com',
     },
+    assigned_worker_display: 'Taylor Sub',
+    reviewer_display: 'Contractor Owner',
     subcontractor_review_requested: false,
     subcontractor_review_requested_at: null,
     subcontractor_review_note: '',
@@ -365,6 +371,8 @@ test('subcontractor assigned work can submit completion for review and shows sen
       display_name: 'Taylor Sub',
       email: 'subcontractor@example.com',
     },
+    assigned_worker_display: 'Taylor Sub',
+    reviewer_display: 'Contractor Owner',
     subcontractor_review_requested: false,
     subcontractor_review_requested_at: null,
     subcontractor_review_note: '',
@@ -406,7 +414,11 @@ test('subcontractor assigned work can submit completion for review and shows sen
     });
   });
 
-  await page.route('**/api/projects/subcontractor/milestones/901/submit-completion/', async (route) => {
+  await page.route('**/api/projects/milestones/901/submit-work/', async (route) => {
+    milestoneState.work_submission_status = 'submitted_for_review';
+    milestoneState.work_submitted_at = '2026-03-24T10:20:00Z';
+    milestoneState.work_submission_note = 'Cabinet install is ready for review.';
+    milestoneState.work_review_response_note = '';
     milestoneState.subcontractor_completion_status = 'submitted_for_review';
     milestoneState.subcontractor_marked_complete_at = '2026-03-24T10:20:00Z';
     milestoneState.subcontractor_completion_note = 'Cabinet install is ready for review.';
@@ -415,9 +427,7 @@ test('subcontractor assigned work can submit completion for review and shows sen
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
-        milestone: milestoneState,
-      }),
+      body: JSON.stringify(milestoneState),
     });
   });
 

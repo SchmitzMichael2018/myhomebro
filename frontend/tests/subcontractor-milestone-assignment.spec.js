@@ -18,6 +18,14 @@ test('agreement detail renders subcontractor assignment state and lets contracto
     assigned_subcontractor_invitation: null,
     assigned_subcontractor: null,
     assigned_subcontractor_display: '',
+    assigned_worker_display: '',
+    reviewer_display: 'Contractor Owner',
+    reviewer: {
+      kind: 'contractor_owner',
+      display_name: 'Contractor Owner',
+      email: 'playwright@myhomebro.local',
+      is_delegated: false,
+    },
   };
 
   const acceptedSubcontractors = [
@@ -28,6 +36,14 @@ test('agreement detail renders subcontractor assignment state and lets contracto
       accepted_name: 'Accepted Sub',
       accepted_at: '2026-03-23T12:00:00Z',
       invite_url: 'http://localhost:4173/subcontractor-invitations/accept/accepted-token',
+    },
+  ];
+  const reviewers = [
+    {
+      id: 55,
+      display_name: 'Internal Reviewer',
+      email: 'reviewer@example.com',
+      role: 'employee_supervisor',
     },
   ];
 
@@ -115,6 +131,14 @@ test('agreement detail renders subcontractor assignment state and lets contracto
     });
   });
 
+  await page.route('**/api/projects/subaccounts/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(reviewers),
+    });
+  });
+
   await page.route(`**/api/projects/milestones/${MILESTONE_ID}/**`, async (route) => {
     if (route.request().method() !== 'PATCH') {
       await route.fallback();
@@ -126,6 +150,24 @@ test('agreement detail renders subcontractor assignment state and lets contracto
       milestoneState.assigned_subcontractor_invitation = null;
       milestoneState.assigned_subcontractor = null;
       milestoneState.assigned_subcontractor_display = '';
+      milestoneState.assigned_worker_display = '';
+    } else if (body.delegated_reviewer_subaccount === null) {
+      milestoneState.reviewer = {
+        kind: 'contractor_owner',
+        display_name: 'Contractor Owner',
+        email: 'playwright@myhomebro.local',
+        is_delegated: false,
+      };
+      milestoneState.reviewer_display = 'Contractor Owner';
+    } else if (body.delegated_reviewer_subaccount === 55) {
+      milestoneState.reviewer = {
+        kind: 'internal_team_member',
+        display_name: 'Internal Reviewer',
+        email: 'reviewer@example.com',
+        subaccount_id: 55,
+        is_delegated: true,
+      };
+      milestoneState.reviewer_display = 'Internal Reviewer';
     } else {
       milestoneState.assigned_subcontractor_invitation = 77;
       milestoneState.assigned_subcontractor = {
@@ -136,6 +178,7 @@ test('agreement detail renders subcontractor assignment state and lets contracto
         accepted_at: '2026-03-23T12:00:00Z',
       };
       milestoneState.assigned_subcontractor_display = 'Accepted Sub';
+      milestoneState.assigned_worker_display = 'Accepted Sub';
     }
 
     await route.fulfill({
@@ -150,14 +193,22 @@ test('agreement detail renders subcontractor assignment state and lets contracto
   });
 
   const milestoneCard = page.getByTestId(`milestone-card-${MILESTONE_ID}`);
-  await expect(milestoneCard).toContainText('Subcontractor: Unassigned');
+  await expect(milestoneCard).toContainText('Assigned Worker: Unassigned');
+  await expect(milestoneCard).toContainText('Reviewer: Contractor Owner');
 
   await milestoneCard.getByTestId('subcontractor-assignment-select').selectOption('77');
   await milestoneCard.getByTestId('subcontractor-assign-button').click();
-  await expect(milestoneCard).toContainText('Subcontractor: Accepted Sub');
+  await expect(milestoneCard).toContainText('Assigned Worker: Accepted Sub');
+
+  await milestoneCard.getByTestId('delegated-reviewer-select').selectOption('55');
+  await milestoneCard.getByTestId('delegated-reviewer-assign-button').click();
+  await expect(milestoneCard).toContainText('Reviewer: Internal Reviewer');
+
+  await milestoneCard.getByTestId('delegated-reviewer-clear-button').click();
+  await expect(milestoneCard).toContainText('Reviewer: Contractor Owner');
 
   await milestoneCard.getByTestId('subcontractor-unassign-button').click();
-  await expect(milestoneCard).toContainText('Subcontractor: Unassigned');
+  await expect(milestoneCard).toContainText('Assigned Worker: Unassigned');
 });
 
 test('agreement detail shows subcontractor review state and lets contractor clear it', async ({
@@ -181,6 +232,14 @@ test('agreement detail shows subcontractor review state and lets contractor clea
       accepted_at: '2026-03-23T12:00:00Z',
     },
     assigned_subcontractor_display: 'Accepted Sub',
+    assigned_worker_display: 'Accepted Sub',
+    reviewer_display: 'Contractor Owner',
+    reviewer: {
+      kind: 'contractor_owner',
+      display_name: 'Contractor Owner',
+      email: 'playwright@myhomebro.local',
+      is_delegated: false,
+    },
     subcontractor_review_requested: true,
     subcontractor_review_requested_at: '2026-03-24T14:00:00Z',
     subcontractor_review_note: 'Ready for contractor review.',
@@ -278,6 +337,14 @@ test('agreement detail shows subcontractor review state and lets contractor clea
     });
   });
 
+  await page.route('**/api/projects/subaccounts/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([]),
+    });
+  });
+
   await page.route(`**/api/projects/milestones/${MILESTONE_ID}/clear-subcontractor-review/`, async (route) => {
     milestoneState.subcontractor_review_requested = false;
     milestoneState.subcontractor_review_requested_at = null;
@@ -327,10 +394,22 @@ test('agreement detail lets contractor approve and reject subcontractor completi
       accepted_at: '2026-03-23T12:00:00Z',
     },
     assigned_subcontractor_display: 'Accepted Sub',
+    assigned_worker_display: 'Accepted Sub',
+    reviewer_display: 'Contractor Owner',
+    reviewer: {
+      kind: 'contractor_owner',
+      display_name: 'Contractor Owner',
+      email: 'playwright@myhomebro.local',
+      is_delegated: false,
+    },
     subcontractor_completion_status: 'submitted_for_review',
+    work_submission_status: 'submitted_for_review',
     subcontractor_marked_complete_at: '2026-03-24T14:00:00Z',
+    work_submitted_at: '2026-03-24T14:00:00Z',
     subcontractor_completion_note: 'Cabinet install is complete.',
+    work_submission_note: 'Cabinet install is complete.',
     subcontractor_review_response_note: '',
+    work_review_response_note: '',
   };
 
   await page.route('**/api/projects/whoami/', async (route) => {
@@ -425,9 +504,19 @@ test('agreement detail lets contractor approve and reject subcontractor completi
     });
   });
 
-  await page.route(`**/api/projects/milestones/${MILESTONE_ID}/approve-subcontractor-completion/`, async (route) => {
+  await page.route('**/api/projects/subaccounts/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([]),
+    });
+  });
+
+  await page.route(`**/api/projects/milestones/${MILESTONE_ID}/approve-work/`, async (route) => {
     milestoneState.subcontractor_completion_status = 'approved';
+    milestoneState.work_submission_status = 'approved';
     milestoneState.subcontractor_review_response_note = 'Approved for contractor closeout.';
+    milestoneState.work_review_response_note = 'Approved for contractor closeout.';
 
     await route.fulfill({
       status: 200,
@@ -436,9 +525,11 @@ test('agreement detail lets contractor approve and reject subcontractor completi
     });
   });
 
-  await page.route(`**/api/projects/milestones/${MILESTONE_ID}/reject-subcontractor-completion/`, async (route) => {
+  await page.route(`**/api/projects/milestones/${MILESTONE_ID}/send-back-work/`, async (route) => {
     milestoneState.subcontractor_completion_status = 'needs_changes';
+    milestoneState.work_submission_status = 'needs_changes';
     milestoneState.subcontractor_review_response_note = 'Please rework the filler panel before resubmitting.';
+    milestoneState.work_review_response_note = 'Please rework the filler panel before resubmitting.';
 
     await route.fulfill({
       status: 200,
@@ -467,7 +558,9 @@ test('agreement detail lets contractor approve and reject subcontractor completi
   );
 
   milestoneState.subcontractor_completion_status = 'submitted_for_review';
+  milestoneState.work_submission_status = 'submitted_for_review';
   milestoneState.subcontractor_review_response_note = '';
+  milestoneState.work_review_response_note = '';
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page
     .getByTestId(`milestone-completion-response-note-${MILESTONE_ID}`)

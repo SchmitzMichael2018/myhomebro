@@ -7,7 +7,12 @@ from typing import Optional, Any, Dict
 from django.db.models import Q
 from rest_framework import serializers
 
-from projects.models import Milestone, Agreement, SubcontractorCompletionStatus
+from projects.models import (
+    Milestone,
+    Agreement,
+    SubcontractorCompletionStatus,
+    ContractorSubAccount,
+)
 from projects.models_subcontractor import (
     SubcontractorInvitation,
     SubcontractorInvitationStatus,
@@ -18,6 +23,13 @@ from projects.utils.accounts import get_contractor_for_user
 from projects.services.agreement_locking import (
     is_completed_agreement,
     is_signed_or_locked_agreement,
+)
+from projects.services.milestone_workflow import (
+    can_user_review_submitted_work,
+    can_user_submit_work,
+    get_assigned_worker,
+    get_effective_reviewer,
+    is_valid_delegated_reviewer_subaccount,
 )
 
 
@@ -133,14 +145,32 @@ class MilestoneSerializer(serializers.ModelSerializer):
     origin_milestone = serializers.SerializerMethodField()
     assigned_subcontractor = serializers.SerializerMethodField()
     assigned_subcontractor_display = serializers.SerializerMethodField()
+    assigned_worker = serializers.SerializerMethodField()
+    assigned_worker_display = serializers.SerializerMethodField()
+    reviewer = serializers.SerializerMethodField()
+    reviewer_display = serializers.SerializerMethodField()
     subcontractor_review_requested = serializers.SerializerMethodField()
     subcontractor_review_requested_by_display = serializers.SerializerMethodField()
     subcontractor_completion_submitted_by_display = serializers.SerializerMethodField()
     subcontractor_completion_reviewed_by_display = serializers.SerializerMethodField()
+    can_current_user_submit_work = serializers.SerializerMethodField()
+    can_current_user_review_work = serializers.SerializerMethodField()
+    work_submission_status = serializers.SerializerMethodField()
+    work_submitted_at = serializers.SerializerMethodField()
+    work_submitted_by_display = serializers.SerializerMethodField()
+    work_submission_note = serializers.SerializerMethodField()
+    work_reviewed_at = serializers.SerializerMethodField()
+    work_reviewed_by_display = serializers.SerializerMethodField()
+    work_review_response_note = serializers.SerializerMethodField()
 
     allow_overlap = serializers.BooleanField(write_only=True, required=False, default=False)
     assigned_subcontractor_invitation = serializers.PrimaryKeyRelatedField(
         queryset=SubcontractorInvitation.objects.select_related("accepted_by_user"),
+        required=False,
+        allow_null=True,
+    )
+    delegated_reviewer_subaccount = serializers.PrimaryKeyRelatedField(
+        queryset=ContractorSubAccount.objects.select_related("user", "parent_contractor"),
         required=False,
         allow_null=True,
     )
@@ -167,6 +197,10 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "pricing_mode",
             "assigned_subcontractor",
             "assigned_subcontractor_display",
+            "assigned_worker",
+            "assigned_worker_display",
+            "reviewer",
+            "reviewer_display",
             "subcontractor_review_requested",
             "subcontractor_review_requested_by_display",
             "subcontractor_review_requested_at",
@@ -181,6 +215,15 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "subcontractor_reviewed_at",
             "subcontractor_reviewed_by",
             "subcontractor_review_response_note",
+            "can_current_user_submit_work",
+            "can_current_user_review_work",
+            "work_submission_status",
+            "work_submitted_at",
+            "work_submitted_by_display",
+            "work_submission_note",
+            "work_reviewed_at",
+            "work_reviewed_by_display",
+            "work_review_response_note",
         )
 
     # ------------------------ helpers (read) ------------------------ #
@@ -428,6 +471,44 @@ class MilestoneSerializer(serializers.ModelSerializer):
             return ""
         return assigned.get("display_name") or assigned.get("email") or ""
 
+    def get_assigned_worker(self, obj: Milestone) -> Optional[Dict[str, Any]]:
+        worker = get_assigned_worker(obj)
+        if worker is None:
+            return None
+        return {
+            "kind": worker.kind,
+            "user_id": getattr(worker.user, "id", None),
+            "display_name": worker.display_name,
+            "email": worker.email,
+            "subaccount_id": getattr(worker.subaccount, "id", None),
+            "invitation_id": getattr(worker.invitation, "id", None),
+        }
+
+    def get_assigned_worker_display(self, obj: Milestone) -> str:
+        worker = self.get_assigned_worker(obj)
+        if not worker:
+            return ""
+        return worker.get("display_name") or worker.get("email") or ""
+
+    def get_reviewer(self, obj: Milestone) -> Optional[Dict[str, Any]]:
+        reviewer = get_effective_reviewer(obj)
+        if reviewer is None:
+            return None
+        return {
+            "kind": reviewer.kind,
+            "user_id": getattr(reviewer.user, "id", None),
+            "display_name": reviewer.display_name,
+            "email": reviewer.email,
+            "subaccount_id": getattr(reviewer.subaccount, "id", None),
+            "is_delegated": reviewer.kind == "internal_team_member",
+        }
+
+    def get_reviewer_display(self, obj: Milestone) -> str:
+        reviewer = self.get_reviewer(obj)
+        if not reviewer:
+            return ""
+        return reviewer.get("display_name") or reviewer.get("email") or ""
+
     def get_subcontractor_review_requested(self, obj: Milestone) -> bool:
         return bool(getattr(obj, "subcontractor_review_requested_at", None))
 
@@ -467,6 +548,37 @@ class MilestoneSerializer(serializers.ModelSerializer):
             if email:
                 return email
         return ""
+
+    def get_can_current_user_submit_work(self, obj: Milestone) -> bool:
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request is not None else None
+        return can_user_submit_work(obj, user)
+
+    def get_can_current_user_review_work(self, obj: Milestone) -> bool:
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request is not None else None
+        return can_user_review_submitted_work(obj, user)
+
+    def get_work_submission_status(self, obj: Milestone) -> str:
+        return getattr(obj, "subcontractor_completion_status", SubcontractorCompletionStatus.NOT_SUBMITTED)
+
+    def get_work_submitted_at(self, obj: Milestone):
+        return getattr(obj, "subcontractor_marked_complete_at", None)
+
+    def get_work_submitted_by_display(self, obj: Milestone) -> str:
+        return self.get_subcontractor_completion_submitted_by_display(obj)
+
+    def get_work_submission_note(self, obj: Milestone) -> str:
+        return getattr(obj, "subcontractor_completion_note", "") or ""
+
+    def get_work_reviewed_at(self, obj: Milestone):
+        return getattr(obj, "subcontractor_reviewed_at", None)
+
+    def get_work_reviewed_by_display(self, obj: Milestone) -> str:
+        return self.get_subcontractor_completion_reviewed_by_display(obj)
+
+    def get_work_review_response_note(self, obj: Milestone) -> str:
+        return getattr(obj, "subcontractor_review_response_note", "") or ""
 
     # ------------------------ validation ------------------------ #
     @staticmethod
@@ -525,6 +637,10 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "assigned_subcontractor_invitation",
             getattr(self.instance, "assigned_subcontractor_invitation", None),
         )
+        delegated_reviewer_subaccount = attrs.get(
+            "delegated_reviewer_subaccount",
+            getattr(self.instance, "delegated_reviewer_subaccount", None),
+        )
 
         if "assigned_subcontractor_invitation" in attrs:
             contractor = get_contractor_for_user(getattr(request, "user", None)) if request is not None else None
@@ -544,6 +660,21 @@ class MilestoneSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError(
                         {"assigned_subcontractor_invitation": "Only accepted subcontractors can be assigned."}
                     )
+
+        if "delegated_reviewer_subaccount" in attrs:
+            contractor = get_contractor_for_user(getattr(request, "user", None)) if request is not None else None
+            owner = getattr(getattr(agreement, "project", None), "contractor", None)
+            if contractor is None or owner is None or contractor.id != owner.id:
+                raise serializers.ValidationError(
+                    {"delegated_reviewer_subaccount": "Only the owning contractor can assign delegated reviewers."}
+                )
+            if not is_valid_delegated_reviewer_subaccount(
+                self.instance or Milestone(agreement=agreement, assigned_subcontractor_invitation=assigned_subcontractor_invitation),
+                delegated_reviewer_subaccount,
+            ):
+                raise serializers.ValidationError(
+                    {"delegated_reviewer_subaccount": "Delegated reviewer must be an eligible internal team member and cannot review their own assigned work."}
+                )
 
         start_raw = attrs.get("start_date", getattr(self.instance, "start_date", None))
         end_raw = attrs.get("completion_date", getattr(self.instance, "completion_date", None))
@@ -640,9 +771,22 @@ class MilestoneSerializer(serializers.ModelSerializer):
         data["pricing_mode"] = self.get_pricing_mode(instance)
         data["assigned_subcontractor"] = self.get_assigned_subcontractor(instance)
         data["assigned_subcontractor_display"] = self.get_assigned_subcontractor_display(instance)
+        data["assigned_worker"] = self.get_assigned_worker(instance)
+        data["assigned_worker_display"] = self.get_assigned_worker_display(instance)
+        data["reviewer"] = self.get_reviewer(instance)
+        data["reviewer_display"] = self.get_reviewer_display(instance)
         data["subcontractor_review_requested"] = self.get_subcontractor_review_requested(instance)
         data["subcontractor_review_requested_by_display"] = self.get_subcontractor_review_requested_by_display(instance)
         data["subcontractor_completion_submitted_by_display"] = self.get_subcontractor_completion_submitted_by_display(instance)
         data["subcontractor_completion_reviewed_by_display"] = self.get_subcontractor_completion_reviewed_by_display(instance)
+        data["can_current_user_submit_work"] = self.get_can_current_user_submit_work(instance)
+        data["can_current_user_review_work"] = self.get_can_current_user_review_work(instance)
+        data["work_submission_status"] = self.get_work_submission_status(instance)
+        data["work_submitted_at"] = self.get_work_submitted_at(instance)
+        data["work_submitted_by_display"] = self.get_work_submitted_by_display(instance)
+        data["work_submission_note"] = self.get_work_submission_note(instance)
+        data["work_reviewed_at"] = self.get_work_reviewed_at(instance)
+        data["work_reviewed_by_display"] = self.get_work_reviewed_by_display(instance)
+        data["work_review_response_note"] = self.get_work_review_response_note(instance)
 
         return data

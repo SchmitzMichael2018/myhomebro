@@ -18,6 +18,12 @@ from django.utils import timezone
 from projects.services.subcontractor_notifications import (
     create_subcontractor_activity_notification,
 )
+from projects.services.milestone_workflow import (
+    can_user_review_submitted_work,
+    can_user_submit_work,
+    get_assigned_worker,
+    get_effective_reviewer,
+)
 
 
 def _milestone_status(milestone: Milestone) -> str:
@@ -40,6 +46,8 @@ def _milestone_payload(milestone: Milestone) -> dict:
     if user is not None:
         display_name = getattr(user, "get_full_name", lambda: "")() or ""
     display_name = display_name or getattr(assigned, "invite_name", "") or getattr(assigned, "invite_email", "") or ""
+    assigned_worker = get_assigned_worker(milestone)
+    reviewer = get_effective_reviewer(milestone)
 
     return {
         "id": milestone.id,
@@ -59,6 +67,28 @@ def _milestone_payload(milestone: Milestone) -> dict:
             "display_name": display_name,
             "email": getattr(assigned, "invite_email", "") or "",
         },
+        "assigned_worker": {
+            "kind": getattr(assigned_worker, "kind", ""),
+            "user_id": getattr(getattr(assigned_worker, "user", None), "id", None),
+            "display_name": getattr(assigned_worker, "display_name", ""),
+            "email": getattr(assigned_worker, "email", ""),
+            "subaccount_id": getattr(getattr(assigned_worker, "subaccount", None), "id", None),
+            "invitation_id": getattr(getattr(assigned_worker, "invitation", None), "id", None),
+        }
+        if assigned_worker is not None
+        else None,
+        "assigned_worker_display": getattr(assigned_worker, "display_name", "") or getattr(assigned_worker, "email", "") or "",
+        "reviewer": {
+            "kind": getattr(reviewer, "kind", ""),
+            "user_id": getattr(getattr(reviewer, "user", None), "id", None),
+            "display_name": getattr(reviewer, "display_name", ""),
+            "email": getattr(reviewer, "email", ""),
+            "subaccount_id": getattr(getattr(reviewer, "subaccount", None), "id", None),
+            "is_delegated": getattr(reviewer, "kind", "") == "internal_team_member",
+        }
+        if reviewer is not None
+        else None,
+        "reviewer_display": getattr(reviewer, "display_name", "") or getattr(reviewer, "email", "") or "",
         "subcontractor_review_requested": bool(
             getattr(milestone, "subcontractor_review_requested_at", None)
         ),
@@ -125,6 +155,44 @@ def _milestone_payload(milestone: Milestone) -> dict:
             )
             or ""
         ),
+        "work_submission_status": getattr(
+            milestone,
+            "subcontractor_completion_status",
+            SubcontractorCompletionStatus.NOT_SUBMITTED,
+        ),
+        "work_submitted_at": getattr(milestone, "subcontractor_marked_complete_at", None),
+        "work_submitted_by_display": (
+            getattr(
+                getattr(milestone, "subcontractor_marked_complete_by", None),
+                "get_full_name",
+                lambda: "",
+            )()
+            or getattr(
+                getattr(milestone, "subcontractor_marked_complete_by", None),
+                "email",
+                "",
+            )
+            or getattr(assigned_worker, "display_name", "")
+            or getattr(assigned_worker, "email", "")
+        ),
+        "work_submission_note": getattr(milestone, "subcontractor_completion_note", "") or "",
+        "work_reviewed_at": getattr(milestone, "subcontractor_reviewed_at", None),
+        "work_reviewed_by_display": (
+            getattr(
+                getattr(milestone, "subcontractor_reviewed_by", None),
+                "get_full_name",
+                lambda: "",
+            )()
+            or getattr(
+                getattr(milestone, "subcontractor_reviewed_by", None),
+                "email",
+                "",
+            )
+            or ""
+        ),
+        "work_review_response_note": getattr(milestone, "subcontractor_review_response_note", "") or "",
+        "can_current_user_submit_work": can_user_submit_work(milestone, user),
+        "can_current_user_review_work": can_user_review_submitted_work(milestone, user),
     }
 
 
@@ -134,6 +202,11 @@ def _assigned_milestone_queryset(user):
         "agreement__project",
         "assigned_subcontractor_invitation",
         "assigned_subcontractor_invitation__accepted_by_user",
+        "subaccount_assignment",
+        "subaccount_assignment__subaccount",
+        "subaccount_assignment__subaccount__user",
+        "delegated_reviewer_subaccount",
+        "delegated_reviewer_subaccount__user",
         "subcontractor_review_requested_by",
         "subcontractor_marked_complete_by",
         "subcontractor_reviewed_by",

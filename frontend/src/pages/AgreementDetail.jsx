@@ -22,6 +22,7 @@ import { useAuth } from "../context/AuthContext";
 import PdfPreviewModal from "../components/PdfPreviewModal";
 import RefundEscrowModal from "../components/RefundEscrowModal";
 import AssignSubcontractorInline from "../components/AssignSubcontractorInline";
+import AssignReviewerInline from "../components/AssignReviewerInline";
 
 // ✅ Assignment UI
 import AssignEmployeeInline from "../components/AssignEmployeeInline";
@@ -229,6 +230,7 @@ export default function AgreementDetail() {
   const [subcontractorsLoading, setSubcontractorsLoading] = useState(false);
   const [pendingInvitations, setPendingInvitations] = useState([]);
   const [acceptedSubcontractors, setAcceptedSubcontractors] = useState([]);
+  const [eligibleReviewers, setEligibleReviewers] = useState([]);
   const [inviteFormOpen, setInviteFormOpen] = useState(false);
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
   const [invitationForm, setInvitationForm] = useState({
@@ -318,6 +320,36 @@ export default function AgreementDetail() {
     fetchSubcontractorInvitations();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, isContractor]);
+
+  const fetchEligibleReviewers = async () => {
+    if (!isContractor) return;
+    try {
+      const { data } = await api.get("/projects/subaccounts/");
+      const rows = Array.isArray(data?.results) ? data.results : data || [];
+      setEligibleReviewers(
+        rows
+          .filter((item) =>
+            ["employee_milestones", "employee_supervisor"].includes(
+              String(item.role || "")
+            )
+          )
+          .map((item) => ({
+            id: item.id,
+            display_name: item.display_name || item.email || "Team Member",
+            email: item.email || item.user?.email || "",
+            role: item.role || "",
+          }))
+      );
+    } catch (err) {
+      console.error(err);
+      setEligibleReviewers([]);
+    }
+  };
+
+  useEffect(() => {
+    fetchEligibleReviewers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isContractor]);
 
   const fetchWarranties = async () => {
     if (!id) return;
@@ -628,6 +660,38 @@ export default function AgreementDetail() {
     toast.success("Subcontractor unassigned.");
   };
 
+  const assignDelegatedReviewer = async (milestoneId, subaccountId) => {
+    const { data } = await api.patch(`/projects/milestones/${milestoneId}/`, {
+      delegated_reviewer_subaccount: subaccountId,
+    });
+    setAgreement((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        milestones: (prev.milestones || []).map((milestone) =>
+          milestone.id === milestoneId ? { ...milestone, ...data } : milestone
+        ),
+      };
+    });
+    toast.success("Delegated reviewer assigned.");
+  };
+
+  const clearDelegatedReviewer = async (milestoneId) => {
+    const { data } = await api.patch(`/projects/milestones/${milestoneId}/`, {
+      delegated_reviewer_subaccount: null,
+    });
+    setAgreement((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        milestones: (prev.milestones || []).map((milestone) =>
+          milestone.id === milestoneId ? { ...milestone, ...data } : milestone
+        ),
+      };
+    });
+    toast.success("Delegated reviewer cleared.");
+  };
+
   const clearMilestoneReviewRequest = async (milestoneId) => {
     const { data } = await api.post(
       `/projects/milestones/${milestoneId}/clear-subcontractor-review/`,
@@ -650,7 +714,7 @@ export default function AgreementDetail() {
       setCompletionDecisionBusy((prev) => ({ ...prev, [milestoneId]: true }));
       const response_note = (completionResponseNotes[milestoneId] || "").trim();
       const { data } = await api.post(
-        `/projects/milestones/${milestoneId}/approve-subcontractor-completion/`,
+        `/projects/milestones/${milestoneId}/approve-work/`,
         { response_note }
       );
       setAgreement((prev) => {
@@ -680,7 +744,7 @@ export default function AgreementDetail() {
       setCompletionDecisionBusy((prev) => ({ ...prev, [milestoneId]: true }));
       const response_note = (completionResponseNotes[milestoneId] || "").trim();
       const { data } = await api.post(
-        `/projects/milestones/${milestoneId}/reject-subcontractor-completion/`,
+        `/projects/milestones/${milestoneId}/send-back-work/`,
         { response_note }
       );
       setAgreement((prev) => {
@@ -1450,9 +1514,14 @@ export default function AgreementDetail() {
 
                   <div className="mt-2 text-sm text-gray-600">
                     <span className="font-semibold text-gray-900">
-                      Subcontractor:
+                      Assigned Worker:
                     </span>{" "}
-                    {m.assigned_subcontractor_display || "Unassigned"}
+                    {m.assigned_worker_display || "Unassigned"}
+                  </div>
+
+                  <div className="mt-2 text-sm text-gray-600">
+                    <span className="font-semibold text-gray-900">Reviewer:</span>{" "}
+                    {m.reviewer_display || "Contractor Owner"}
                   </div>
 
                   <div
@@ -1485,36 +1554,38 @@ export default function AgreementDetail() {
                     className="mt-2 text-sm text-gray-600"
                   >
                     <span className="font-semibold text-gray-900">
-                      Subcontractor completion:
+                      Work submission:
                     </span>{" "}
                     {String(
-                      m.subcontractor_completion_status || "not_submitted"
+                      m.work_submission_status ||
+                        m.subcontractor_completion_status ||
+                        "not_submitted"
                     )
                       .replaceAll("_", " ")
                       .replace(/^\w/, (c) => c.toUpperCase())}
-                    {m.subcontractor_marked_complete_at ? (
+                    {m.work_submitted_at || m.subcontractor_marked_complete_at ? (
                       <span className="text-gray-500">
                         {" "}
-                        ({fmtDateTime(m.subcontractor_marked_complete_at)})
+                        ({fmtDateTime(m.work_submitted_at || m.subcontractor_marked_complete_at)})
                       </span>
                     ) : null}
                   </div>
 
-                  {m.subcontractor_completion_note ? (
+                  {m.work_submission_note || m.subcontractor_completion_note ? (
                     <div className="mt-1 text-sm text-gray-600 whitespace-pre-wrap">
                       <span className="font-semibold text-gray-900">
                         Completion note:
                       </span>{" "}
-                      {m.subcontractor_completion_note}
+                      {m.work_submission_note || m.subcontractor_completion_note}
                     </div>
                   ) : null}
 
-                  {m.subcontractor_review_response_note ? (
+                  {m.work_review_response_note || m.subcontractor_review_response_note ? (
                     <div className="mt-1 text-sm text-gray-600 whitespace-pre-wrap">
                       <span className="font-semibold text-gray-900">
                         Review response:
                       </span>{" "}
-                      {m.subcontractor_review_response_note}
+                      {m.work_review_response_note || m.subcontractor_review_response_note}
                     </div>
                   ) : null}
 
@@ -1528,6 +1599,16 @@ export default function AgreementDetail() {
                         }
                         onUnassign={() => unassignMilestoneSubcontractor(m.id)}
                       />
+                      <div className="mt-3">
+                        <AssignReviewerInline
+                          reviewers={eligibleReviewers}
+                          currentReviewer={m.reviewer}
+                          onAssign={(subaccountId) =>
+                            assignDelegatedReviewer(m.id, subaccountId)
+                          }
+                          onClear={() => clearDelegatedReviewer(m.id)}
+                        />
+                      </div>
                       {m.subcontractor_review_requested ? (
                         <button
                           type="button"
@@ -1540,7 +1621,7 @@ export default function AgreementDetail() {
                       ) : null}
                       <div className="mt-3 space-y-2 rounded-lg border border-gray-200 bg-white p-4">
                         <div className="text-sm font-semibold text-gray-900">
-                          Subcontractor Completion Review
+                          Worker Submission Review
                         </div>
                         <textarea
                           data-testid={`milestone-completion-response-note-${m.id}`}
@@ -1562,7 +1643,8 @@ export default function AgreementDetail() {
                             onClick={() => approveSubcontractorCompletion(m.id)}
                             disabled={
                               completionDecisionBusy[m.id] ||
-                              m.subcontractor_completion_status !==
+                              (m.work_submission_status ||
+                                m.subcontractor_completion_status) !==
                                 "submitted_for_review"
                             }
                             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
@@ -1575,7 +1657,8 @@ export default function AgreementDetail() {
                             onClick={() => rejectSubcontractorCompletion(m.id)}
                             disabled={
                               completionDecisionBusy[m.id] ||
-                              m.subcontractor_completion_status !==
+                              (m.work_submission_status ||
+                                m.subcontractor_completion_status) !==
                                 "submitted_for_review"
                             }
                             className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"

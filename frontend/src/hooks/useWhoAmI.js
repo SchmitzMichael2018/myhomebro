@@ -48,9 +48,12 @@ export function useWhoAmI() {
     data,
     loading,
     error,
+    identityType: data?.identity_type || data?.role || data?.type || null,
     isContractor:
       data && data.type === "contractor" && data.role === "contractor_owner",
     isEmployee: data && data.type === "subaccount",
     isSubcontractor: data && data.type === "subcontractor",
+    isInternalTeamMember:
+      data && (data.identity_type === "internal_team_member" || data.type === "subaccount"),
   };
 }
