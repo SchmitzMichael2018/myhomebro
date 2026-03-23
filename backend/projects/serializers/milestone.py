@@ -133,6 +133,8 @@ class MilestoneSerializer(serializers.ModelSerializer):
     origin_milestone = serializers.SerializerMethodField()
     assigned_subcontractor = serializers.SerializerMethodField()
     assigned_subcontractor_display = serializers.SerializerMethodField()
+    subcontractor_review_requested = serializers.SerializerMethodField()
+    subcontractor_review_requested_by_display = serializers.SerializerMethodField()
 
     allow_overlap = serializers.BooleanField(write_only=True, required=False, default=False)
     assigned_subcontractor_invitation = serializers.PrimaryKeyRelatedField(
@@ -163,6 +165,11 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "pricing_mode",
             "assigned_subcontractor",
             "assigned_subcontractor_display",
+            "subcontractor_review_requested",
+            "subcontractor_review_requested_by_display",
+            "subcontractor_review_requested_at",
+            "subcontractor_review_requested_by",
+            "subcontractor_review_note",
         )
 
     # ------------------------ helpers (read) ------------------------ #
@@ -410,6 +417,24 @@ class MilestoneSerializer(serializers.ModelSerializer):
             return ""
         return assigned.get("display_name") or assigned.get("email") or ""
 
+    def get_subcontractor_review_requested(self, obj: Milestone) -> bool:
+        return bool(getattr(obj, "subcontractor_review_requested_at", None))
+
+    def get_subcontractor_review_requested_by_display(self, obj: Milestone) -> str:
+        user = getattr(obj, "subcontractor_review_requested_by", None)
+        if user is not None:
+            display = getattr(user, "get_full_name", lambda: "")() or ""
+            if display:
+                return display
+            email = (getattr(user, "email", "") or "").strip()
+            if email:
+                return email
+
+        assigned = self.get_assigned_subcontractor(obj)
+        if assigned:
+            return assigned.get("display_name") or assigned.get("email") or ""
+        return ""
+
     # ------------------------ validation ------------------------ #
     @staticmethod
     def _as_date(value) -> Optional[date]:
@@ -536,6 +561,15 @@ class MilestoneSerializer(serializers.ModelSerializer):
         attrs.pop("allow_overlap", None)
         return attrs
 
+    def update(self, instance, validated_data):
+        if "assigned_subcontractor_invitation" in validated_data:
+            new_assignment = validated_data.get("assigned_subcontractor_invitation")
+            if getattr(instance, "assigned_subcontractor_invitation_id", None) != getattr(new_assignment, "id", None):
+                validated_data["subcontractor_review_requested_at"] = None
+                validated_data["subcontractor_review_requested_by"] = None
+                validated_data["subcontractor_review_note"] = ""
+        return super().update(instance, validated_data)
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
 
@@ -566,5 +600,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
         data["pricing_mode"] = self.get_pricing_mode(instance)
         data["assigned_subcontractor"] = self.get_assigned_subcontractor(instance)
         data["assigned_subcontractor_display"] = self.get_assigned_subcontractor_display(instance)
+        data["subcontractor_review_requested"] = self.get_subcontractor_review_requested(instance)
+        data["subcontractor_review_requested_by_display"] = self.get_subcontractor_review_requested_by_display(instance)
 
         return data

@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from projects.models import Milestone, MilestoneComment, MilestoneFile
 from projects.serializers.milestone_comment import MilestoneCommentSerializer
 from projects.serializers.milestone_file import MilestoneFileSerializer
+from django.utils import timezone
 
 
 def _milestone_status(milestone: Milestone) -> str:
@@ -49,6 +50,29 @@ def _milestone_payload(milestone: Milestone) -> dict:
             "display_name": display_name,
             "email": getattr(assigned, "invite_email", "") or "",
         },
+        "subcontractor_review_requested": bool(
+            getattr(milestone, "subcontractor_review_requested_at", None)
+        ),
+        "subcontractor_review_requested_at": getattr(
+            milestone, "subcontractor_review_requested_at", None
+        ),
+        "subcontractor_review_note": getattr(
+            milestone, "subcontractor_review_note", ""
+        )
+        or "",
+        "subcontractor_review_requested_by_display": (
+            getattr(
+                getattr(milestone, "subcontractor_review_requested_by", None),
+                "get_full_name",
+                lambda: "",
+            )()
+            or getattr(
+                getattr(milestone, "subcontractor_review_requested_by", None),
+                "email",
+                "",
+            )
+            or display_name
+        ),
     }
 
 
@@ -58,6 +82,7 @@ def _assigned_milestone_queryset(user):
         "agreement__project",
         "assigned_subcontractor_invitation",
         "assigned_subcontractor_invitation__accepted_by_user",
+        "subcontractor_review_requested_by",
     ).filter(assigned_subcontractor_invitation__accepted_by_user=user)
 
 
@@ -193,3 +218,26 @@ def subcontractor_milestone_files(request, milestone_id: int):
         MilestoneFileSerializer(obj, context={"request": request}).data,
         status=201,
     )
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def subcontractor_request_review(request, milestone_id: int):
+    milestone = _get_assigned_milestone_or_none(request.user, milestone_id)
+    if milestone is None:
+        return Response({"detail": "Not found."}, status=404)
+
+    note = ((request.data or {}).get("note") or "").strip()
+    milestone.subcontractor_review_requested_at = timezone.now()
+    milestone.subcontractor_review_requested_by = request.user
+    milestone.subcontractor_review_note = note
+    milestone.save(
+        update_fields=[
+            "subcontractor_review_requested_at",
+            "subcontractor_review_requested_by",
+            "subcontractor_review_note",
+        ]
+    )
+    milestone.refresh_from_db()
+
+    return Response({"milestone": _milestone_payload(milestone)}, status=200)

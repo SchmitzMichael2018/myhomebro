@@ -620,6 +620,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         "agreement",
         "assigned_subcontractor_invitation",
         "assigned_subcontractor_invitation__accepted_by_user",
+        "subcontractor_review_requested_by",
     ).all()
 
     def _assigned_queryset_for_user(self, user):
@@ -644,6 +645,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                     "agreement__project",
                     "assigned_subcontractor_invitation",
                     "assigned_subcontractor_invitation__accepted_by_user",
+                    "subcontractor_review_requested_by",
                 )
                 .filter(agreement__project__contractor=contractor)
                 .order_by("order", "id")
@@ -1144,6 +1146,29 @@ class MilestoneViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="complete-to-review")
     def complete_to_review(self, request, pk=None):
         return self.complete(request, pk=pk)
+
+    @action(detail=True, methods=["post"], url_path="clear-subcontractor-review")
+    def clear_subcontractor_review(self, request, pk=None):
+        milestone: Milestone = self.get_object()
+
+        with transaction.atomic():
+            milestone = Milestone.objects.select_for_update().get(pk=milestone.pk)
+            milestone.subcontractor_review_requested_at = None
+            milestone.subcontractor_review_requested_by = None
+            milestone.subcontractor_review_note = ""
+            milestone.save(
+                update_fields=[
+                    "subcontractor_review_requested_at",
+                    "subcontractor_review_requested_by",
+                    "subcontractor_review_note",
+                ]
+            )
+
+        milestone.refresh_from_db()
+        return Response(
+            MilestoneSerializer(milestone, context={"request": request}).data,
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=False, methods=["post"], url_path="check-overlap")
     def check_overlap(self, request):

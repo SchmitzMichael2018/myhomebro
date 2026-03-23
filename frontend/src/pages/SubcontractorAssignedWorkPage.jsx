@@ -32,6 +32,8 @@ export default function SubcontractorAssignedWorkPage() {
   const [commentDrafts, setCommentDrafts] = useState({});
   const [commentBusy, setCommentBusy] = useState({});
   const [fileBusy, setFileBusy] = useState({});
+  const [reviewNotes, setReviewNotes] = useState({});
+  const [reviewBusy, setReviewBusy] = useState({});
 
   useEffect(() => {
     let active = true;
@@ -131,6 +133,35 @@ export default function SubcontractorAssignedWorkPage() {
     }
   }
 
+  async function requestReview(milestoneId) {
+    try {
+      setReviewBusy((prev) => ({ ...prev, [milestoneId]: true }));
+      const note = (reviewNotes[milestoneId] || "").trim();
+      const { data } = await api.post(
+        `/projects/subcontractor/milestones/${milestoneId}/request-review/`,
+        { note }
+      );
+      const updatedMilestone = data?.milestone || {};
+      setGroups((prev) =>
+        prev.map((group) => ({
+          ...group,
+          milestones: (group.milestones || []).map((milestone) =>
+            milestone.id === milestoneId
+              ? { ...milestone, ...updatedMilestone }
+              : milestone
+          ),
+        }))
+      );
+      setReviewNotes((prev) => ({ ...prev, [milestoneId]: "" }));
+      toast.success("Review requested.");
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || "Failed to request review.");
+    } finally {
+      setReviewBusy((prev) => ({ ...prev, [milestoneId]: false }));
+    }
+  }
+
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
       <div>
@@ -209,6 +240,59 @@ export default function SubcontractorAssignedWorkPage() {
                             milestone.assigned_subcontractor?.email ||
                             "Assigned"}
                         </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                      <div className="text-sm font-semibold text-slate-900">
+                        Contractor Review
+                      </div>
+                      <div
+                        data-testid={`assigned-milestone-review-state-${milestone.id}`}
+                        className="mt-2 text-sm text-slate-600"
+                      >
+                        {milestone.subcontractor_review_requested ? (
+                          <>
+                            <div className="font-semibold text-amber-700">
+                              Review requested
+                            </div>
+                            <div className="mt-1">
+                              Requested: {formatDate(milestone.subcontractor_review_requested_at)}
+                            </div>
+                            {milestone.subcontractor_review_note ? (
+                              <div className="mt-1 whitespace-pre-wrap">
+                                Note: {milestone.subcontractor_review_note}
+                              </div>
+                            ) : null}
+                          </>
+                        ) : (
+                          <div>Review not requested</div>
+                        )}
+                      </div>
+
+                      <div className="mt-3 space-y-2">
+                        <textarea
+                          data-testid={`assigned-milestone-review-note-${milestone.id}`}
+                          rows={2}
+                          value={reviewNotes[milestone.id] || ""}
+                          onChange={(e) =>
+                            setReviewNotes((prev) => ({
+                              ...prev,
+                              [milestone.id]: e.target.value,
+                            }))
+                          }
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                          placeholder="Optional note for the contractor"
+                        />
+                        <button
+                          type="button"
+                          data-testid={`assigned-milestone-request-review-${milestone.id}`}
+                          onClick={() => requestReview(milestone.id)}
+                          disabled={reviewBusy[milestone.id]}
+                          className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-60"
+                        >
+                          {reviewBusy[milestone.id] ? "Submitting..." : "Request Review"}
+                        </button>
                       </div>
                     </div>
 

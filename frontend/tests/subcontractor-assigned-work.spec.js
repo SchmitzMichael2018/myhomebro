@@ -242,3 +242,106 @@ test('subcontractor assigned work supports comments and file upload for assigned
   });
   await expect(page.getByText('progress.txt')).toBeVisible();
 });
+
+test('subcontractor assigned work can request contractor review for an assigned milestone', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  const milestoneState = {
+    id: 901,
+    title: 'Cabinet Install',
+    description: 'Install all upper and lower cabinets.',
+    status: 'pending',
+    start_date: '2026-03-25',
+    completion_date: '2026-03-28',
+    assigned_subcontractor: {
+      invitation_id: 77,
+      display_name: 'Taylor Sub',
+      email: 'subcontractor@example.com',
+    },
+    subcontractor_review_requested: false,
+    subcontractor_review_requested_at: null,
+    subcontractor_review_note: '',
+  };
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        user_id: 99,
+        email: 'subcontractor@example.com',
+        type: 'subcontractor',
+        role: 'subcontractor',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/subcontractor/milestones/my-assigned/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        groups: [
+          {
+            agreement_id: 321,
+            agreement_title: 'Kitchen Remodel Agreement',
+            project_title: 'Kitchen Remodel Agreement',
+            milestones: [milestoneState],
+          },
+        ],
+        milestones: [milestoneState],
+        count: 1,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/subcontractor/milestones/901/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        milestone: milestoneState,
+        comments: [],
+        files: [],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/subcontractor/milestones/901/request-review/', async (route) => {
+    milestoneState.subcontractor_review_requested = true;
+    milestoneState.subcontractor_review_requested_at = '2026-03-24T10:15:00Z';
+    milestoneState.subcontractor_review_note = 'Ready for your walkthrough.';
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        milestone: milestoneState,
+      }),
+    });
+  });
+
+  await page.goto('/app/subcontractor/assigned-work', {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('assigned-milestone-review-state-901')).toContainText(
+    'Review not requested'
+  );
+
+  await page
+    .getByTestId('assigned-milestone-review-note-901')
+    .fill('Ready for your walkthrough.');
+  await page.getByTestId('assigned-milestone-request-review-901').click();
+
+  await expect(page.getByTestId('assigned-milestone-review-state-901')).toContainText(
+    'Review requested'
+  );
+  await expect(page.getByTestId('assigned-milestone-review-state-901')).toContainText(
+    'Ready for your walkthrough.'
+  );
+});

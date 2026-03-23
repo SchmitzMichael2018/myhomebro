@@ -952,6 +952,24 @@ class Milestone(models.Model):
         related_name="assigned_milestones",
         help_text="Accepted subcontractor invitation assigned to this milestone.",
     )
+    subcontractor_review_requested_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the assigned subcontractor requested contractor review.",
+    )
+    subcontractor_review_requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="subcontractor_review_requests",
+        help_text="Assigned subcontractor user who requested contractor review.",
+    )
+    subcontractor_review_note = models.TextField(
+        blank=True,
+        default="",
+        help_text="Optional note from the assigned subcontractor when requesting review.",
+    )
 
     class Meta:
         ordering = ["order"]

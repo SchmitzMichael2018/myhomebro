@@ -626,6 +626,23 @@ export default function AgreementDetail() {
     toast.success("Subcontractor unassigned.");
   };
 
+  const clearMilestoneReviewRequest = async (milestoneId) => {
+    const { data } = await api.post(
+      `/projects/milestones/${milestoneId}/clear-subcontractor-review/`,
+      {}
+    );
+    setAgreement((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        milestones: (prev.milestones || []).map((milestone) =>
+          milestone.id === milestoneId ? { ...milestone, ...data } : milestone
+        ),
+      };
+    });
+    toast.success("Review request cleared.");
+  };
+
   const statusText = norm.isDirectPay
     ? norm.isSigned
       ? "✅ Signed — Direct Pay"
@@ -1376,6 +1393,31 @@ export default function AgreementDetail() {
                     {m.assigned_subcontractor_display || "Unassigned"}
                   </div>
 
+                  <div
+                    data-testid={`milestone-review-state-${m.id}`}
+                    className="mt-2 text-sm text-gray-600"
+                  >
+                    <span className="font-semibold text-gray-900">Review:</span>{" "}
+                    {m.subcontractor_review_requested
+                      ? "Requested"
+                      : "Not requested"}
+                    {m.subcontractor_review_requested_at ? (
+                      <span className="text-gray-500">
+                        {" "}
+                        ({fmtDateTime(m.subcontractor_review_requested_at)})
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {m.subcontractor_review_note ? (
+                    <div className="mt-1 text-sm text-gray-600 whitespace-pre-wrap">
+                      <span className="font-semibold text-gray-900">
+                        Review note:
+                      </span>{" "}
+                      {m.subcontractor_review_note}
+                    </div>
+                  ) : null}
+
                   {isContractor && (
                     <div className="mt-3">
                       <AssignSubcontractorInline
@@ -1386,6 +1428,16 @@ export default function AgreementDetail() {
                         }
                         onUnassign={() => unassignMilestoneSubcontractor(m.id)}
                       />
+                      {m.subcontractor_review_requested ? (
+                        <button
+                          type="button"
+                          data-testid={`milestone-review-clear-${m.id}`}
+                          onClick={() => clearMilestoneReviewRequest(m.id)}
+                          className="mt-3 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                        >
+                          Clear Review Request
+                        </button>
+                      ) : null}
                     </div>
                   )}
                 </div>
