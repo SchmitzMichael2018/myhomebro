@@ -116,13 +116,17 @@ from .views.subaccount_schedule import (
 
 from .views.business_dashboard import BusinessDashboardSummaryAPIView
 from .views.expense_requests import ExpenseRequestViewSet
+from .views.subcontractor_invitations import (
+    AgreementSubcontractorInvitationsView,
+    RevokeSubcontractorInvitationView,
+    SubcontractorInvitationAcceptView,
+)
 
 from .views.agreement_closeout import (
     AgreementClosureStatusView,
     AgreementCloseAndArchiveView,
 )
 
-from .views.feature_flags import FeatureFlagsView
 from .views.invoice_direct_pay import invoice_create_direct_pay_link
 
 from projects.api.ai_agreement_views import (
@@ -132,10 +136,9 @@ from projects.api.ai_agreement_views import (
     ai_draft_project,
 )
 
-from projects.api.ai_void_credit_views import void_agreement_ai_credit
-
 from .views_template_recommend import TemplateRecommendView
 from .views.project_taxonomy import ProjectTypeViewSet, ProjectSubtypeViewSet
+from .views.warranty import AgreementWarrantyViewSet
 
 app_name = "projects_api"
 
@@ -153,6 +156,7 @@ router.register(r"subaccounts", ContractorSubAccountViewSet, basename="subaccoun
 router.register(r"dispute-workorders", DisputeWorkOrderViewSet, basename="dispute-workorders")
 router.register(r"project-types", ProjectTypeViewSet, basename="project-types")
 router.register(r"project-subtypes", ProjectSubtypeViewSet, basename="project-subtypes")
+router.register(r"warranties", AgreementWarrantyViewSet, basename="warranties")
 
 milestone_router = NestedDefaultRouter(
     router, r"milestones", lookup="milestone", trailing_slash="/?"
@@ -249,8 +253,6 @@ urlpatterns = [
     path("agreements/ai/draft/", ai_draft_project),
     path("agreements/<int:agreement_id>/ai/suggest-milestones/", ai_suggest_milestones),
     path("agreements/<int:agreement_id>/ai/refresh-pricing-estimate/", ai_refresh_pricing_estimate),
-    path("agreements/<int:agreement_id>/ai/void-credit/", void_agreement_ai_credit),
-
     path(
         "agreements/<int:agreement_id>/refund/",
         AgreementRefundCompatView.as_view(),
@@ -274,6 +276,21 @@ urlpatterns = [
     path(
         "agreements/<int:agreement_id>/close_and_archive/",
         AgreementCloseAndArchiveView.as_view(),
+    ),
+    path(
+        "agreements/<int:agreement_id>/subcontractor-invitations/",
+        AgreementSubcontractorInvitationsView.as_view(),
+        name="agreement-subcontractor-invitations",
+    ),
+    path(
+        "agreements/<int:agreement_id>/subcontractor-invitations/<int:invitation_id>/revoke/",
+        RevokeSubcontractorInvitationView.as_view(),
+        name="revoke-subcontractor-invitation",
+    ),
+    path(
+        "subcontractor-invitations/accept/<str:token>/",
+        SubcontractorInvitationAcceptView.as_view(),
+        name="subcontractor-invitation-accept",
     ),
 
     # -------------------------------------------------
@@ -335,11 +352,6 @@ urlpatterns = [
         BusinessDashboardSummaryAPIView.as_view(),
         name="contractor_business_summary",
     ),
-
-    # -------------------------------------------------
-    # Feature Flags
-    # -------------------------------------------------
-    path("feature-flags/", FeatureFlagsView.as_view()),
 
     # -------------------------------------------------
     # Public dispute decision

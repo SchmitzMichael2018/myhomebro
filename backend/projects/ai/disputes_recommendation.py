@@ -1,5 +1,5 @@
 # backend/projects/ai/disputes_recommendation.py
-# v2026-01-21 — AI Dispute Recommendations (Advisory Only)
+# AI dispute recommendations (advisory only).
 
 from __future__ import annotations
 
@@ -22,20 +22,6 @@ class AIRecommendationResult:
     payload: Dict[str, Any]
     model: str
     cached: bool = False
-
-
-# ---------------------------------------------------------------------------
-# Feature flags
-# ---------------------------------------------------------------------------
-def _ai_enabled() -> bool:
-    return bool(getattr(settings, "AI_ENABLED", False)) and bool(
-        getattr(settings, "AI_DISPUTES_ENABLED", False)
-    )
-
-
-def _recommendations_enabled() -> bool:
-    # Optional third flag so you can enable summaries but keep recommendations off
-    return bool(getattr(settings, "AI_DISPUTE_RECOMMENDATIONS_ENABLED", False))
 
 
 # ---------------------------------------------------------------------------
@@ -71,10 +57,6 @@ def _require_openai_client():
     Raises DRF ValidationError so the API returns:
       {"detail": "..."}
     """
-
-    # HARD GATE: feature flags first
-    if not _ai_enabled() or not _recommendations_enabled():
-        raise ValidationError("AI dispute recommendations are disabled.")
 
     try:
         from openai import OpenAI  # type: ignore
@@ -197,9 +179,6 @@ def build_dispute_recommendation_prompt(
 def generate_dispute_recommendation(
     *, dispute: Any, evidence_context: Dict[str, Any], force: bool = False
 ) -> AIRecommendationResult:
-    if not _ai_enabled() or not _recommendations_enabled():
-        raise ValidationError("AI dispute recommendations are disabled.")
-
     key = _cache_key(int(dispute.id))
     if not force:
         cached = cache.get(key)

@@ -1,20 +1,19 @@
 import { expect, test } from '@playwright/test';
 
-const AGREEMENT_ID = 123;
+const AGREEMENT_ID = 456;
 
-test('agreement wizard step 1 renders and draft creation route is reachable', async ({
+test('agreement AI actions stay available without plan or credit gating', async ({
   page,
 }) => {
   let agreement = {
     id: AGREEMENT_ID,
     agreement_id: AGREEMENT_ID,
-    project_title: 'Draft Agreement',
-    title: 'Draft Agreement',
-    project_type: '',
+    project_title: 'Kitchen Remodel',
+    title: 'Kitchen Remodel',
+    project_type: 'Remodel',
     project_subtype: '',
     payment_mode: 'escrow',
-    description:
-      'Draft agreement. Details will be completed after template selection or manual entry.',
+    description: 'Update cabinets, counters, and lighting.',
     homeowner: null,
     status: 'draft',
   };
@@ -69,9 +68,7 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
-        results: [{ id: 1, company_name: 'Demo Customer', full_name: 'Jordan Demo' }],
-      }),
+      body: JSON.stringify({ results: [] }),
     });
   });
 
@@ -82,9 +79,15 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
       body: JSON.stringify({
         id: 77,
         ai: {
-          access: 'included',
           enabled: true,
           unlimited: true,
+          agreement_writer: {
+            enabled: true,
+            unlimited: true,
+            free_total: 0,
+            free_used: 0,
+            free_remaining: 0,
+          },
         },
       }),
     });
@@ -156,20 +159,10 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
     waitUntil: 'domcontentloaded',
   });
 
-  await expect(page.getByTestId('agreement-wizard-heading')).toBeVisible();
-  await expect(page.getByTestId('agreement-customer-select')).toBeVisible();
-  await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
-  await expect(page.getByTestId('agreement-save-draft-button')).toBeVisible();
-
-  await page.getByTestId('agreement-project-title-input').fill(
-    'Playwright Agreement Smoke'
+  await page.getByTestId('agreement-project-title-input').fill('AI Access Smoke');
+  await expect(page.getByTestId('agreement-ai-generate-scope-button')).toBeEnabled();
+  await page.locator('textarea[name="description"]').fill(
+    'Install new cabinets, counters, and recessed lighting.'
   );
-  await page.getByTestId('agreement-save-draft-button').click();
-
-  await expect(page).toHaveURL(
-    new RegExp(`/app/agreements/${AGREEMENT_ID}/wizard\\?step=1$`)
-  );
-  await expect(page.getByTestId('agreement-wizard-subtitle')).toContainText(
-    `Agreement #${AGREEMENT_ID}`
-  );
+  await expect(page.getByTestId('agreement-ai-improve-scope-button')).toBeEnabled();
 });

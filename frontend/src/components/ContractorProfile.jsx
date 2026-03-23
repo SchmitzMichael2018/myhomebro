@@ -1,11 +1,6 @@
 // src/components/ContractorProfile.jsx
-// v2025-11-27 — Business Profile + Account & Login with mini sidebar (no duplicate heading)
-// v2026-02-16 — ✅ Add Plan & Billing tab (AI Pro flag + Direct Pay rate display)
-// v2026-02-16b — ✅ Show Escrow tiered rate + intro countdown + cancel/manage subscription buttons
-// v2026-02-19 — ✅ Show AI Credits (free remaining) + “1 credit = 1 agreement” in Plan & Billing
-// v2026-02-23 — ✅ Add Zip Code + Autocomplete fills City/State/Zip + require Address/City/State/Zip
-//             — ✅ Fix: remove premature “Business address required” checks that blocked profile load
-// v2026-02-23c — ✅ FIX: Split Address Search (Google) from persisted Street Address field (no widget display issues)
+// Business Profile + Account & Login with mini sidebar.
+// AI is included in the base experience.
 
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../api";
@@ -24,33 +19,16 @@ const SKILL_OPTIONS = [
   "Painting","Landscaping","Flooring","HVAC","Carpentry","Concrete","Siding","Insulation",
 ];
 
-function normalizeTierName(tier) {
-  const s = String(tier || "").trim().toLowerCase();
-  if (!s) return "free";
-  if (s.includes("ai") && s.includes("pro")) return "ai_pro";
-  if (s === "pro") return "ai_pro";
-  return s;
+function isAiProActive() {
+  return true;
 }
 
-function isAiProActive(meData) {
-  const bp = meData?.billing_profile || meData?.billingProfile || null;
-
-  if (bp && bp.ai_subscription_active === true) return true;
-  if (meData?.ai_subscription_active === true) return true;
-
-  const tier = normalizeTierName(bp?.ai_subscription_tier || meData?.ai_subscription_tier);
-  if (tier === "ai_pro") return true;
-
-  return false;
+function planLabel() {
+  return "Included";
 }
 
-function planLabel(meData) {
-  return isAiProActive(meData) ? "AI Pro" : "Free";
-}
-
-function directPayRateLabel(meData) {
-  // LOCKED
-  return isAiProActive(meData) ? "1% + $1" : "2% + $1";
+function directPayRateLabel() {
+  return "1% + $1";
 }
 
 function fmtPercent(rateDecimal) {
@@ -90,48 +68,12 @@ function computeIntroCountdownDays(meData) {
   };
 }
 
-function getAiCreditsFromMe(meData) {
-  // Supports both payload shapes:
-  // 1) new convenience shape: meData.ai.credits_remaining / credits_total
-  // 2) current shape: meData.ai_agreement_writer.free_remaining / free_total / free_used
-
-  const aw =
-    meData?.ai?.agreement_writer ||
-    meData?.ai_agreement_writer ||
-    meData?.aiAgreementWriter ||
-    null;
-
-  const remaining =
-    meData?.ai?.credits_remaining ??
-    meData?.ai?.creditsRemaining ??
-    aw?.free_remaining ??
-    aw?.freeRemaining ??
-    null;
-
-  const total =
-    meData?.ai?.credits_total ??
-    meData?.ai?.creditsTotal ??
-    aw?.free_total ??
-    aw?.freeTotal ??
-    null;
-
-  const used =
-    aw?.free_used ??
-    aw?.freeUsed ??
-    (total != null && remaining != null
-      ? Math.max(0, Number(total) - Number(remaining))
-      : null);
-
-  const enabled =
-    aw?.enabled === true ||
-    meData?.ai?.enabled === true ||
-    (remaining != null && Number(remaining) > 0);
-
+function getAiStatusFromMe(meData) {
+  const ai = meData?.ai || {};
   return {
-    remaining: remaining == null ? null : Number(remaining),
-    total: total == null ? null : Number(total),
-    used: used == null ? null : Number(used),
-    enabled: !!enabled,
+    access: ai.access || "included",
+    enabled: ai.enabled !== false,
+    unlimited: ai.unlimited !== false,
   };
 }
 
@@ -439,13 +381,8 @@ export default function ContractorProfile() {
     const plan = planLabel(meData);
     const dpRate = directPayRateLabel(meData);
 
-    const bp = meData?.billing_profile || meData?.billingProfile || null;
-    const tier = normalizeTierName(bp?.ai_subscription_tier || meData?.ai_subscription_tier || "free");
+    const tier = "included";
     const aiActive = isAiProActive(meData);
-
-    const stripeCustomerId = bp?.stripe_customer_id || "";
-    const stripeSubscriptionId = bp?.stripe_subscription_id || "";
-    const periodEnd = bp?.current_period_end || null;
 
     const { introActive, introDaysRemaining } = computeIntroCountdownDays(meData);
     const introDaysText =
@@ -457,7 +394,7 @@ export default function ContractorProfile() {
       ? `${escrowInfo.ratePercent} + $${Number(escrowInfo.fixedFee || 1).toFixed(0)}`
       : null;
 
-    const aiCredits = getAiCreditsFromMe(meData);
+    const aiStatus = getAiStatusFromMe(meData);
 
     return (
       <div className="space-y-4">
@@ -465,15 +402,11 @@ export default function ContractorProfile() {
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
           <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
             <div>
-              <div className="text-sm font-semibold text-slate-900">Plan & Billing</div>
+              <div className="text-sm font-semibold text-slate-900">AI & Billing</div>
               <div className="mt-1 text-sm text-slate-700">
-                <b>Current Plan:</b> {plan}
-                <span
-                  className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                    aiActive ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-800"
-                  }`}
-                >
-                  {aiActive ? "AI PRO ACTIVE" : "FREE"}
+                <b>AI Access:</b> {plan}
+                <span className="ml-2 inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800">
+                  INCLUDED
                 </span>
               </div>
 
@@ -482,56 +415,11 @@ export default function ContractorProfile() {
               </div>
 
               <div className="mt-2 text-xs text-slate-600">
-                Direct Pay is intended for fast invoices (subcontractor-style billing). Escrow remains tiered and separate.
+                AI tools are included in the base experience. Direct Pay is 1% + $1. Escrow remains tiered and separate.
               </div>
             </div>
 
             <div className="flex flex-col gap-2">
-              {!aiActive ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const subject = encodeURIComponent("Request: AI Pro Subscription");
-                    const body = encodeURIComponent(
-                      "Hi MyHomeBro,\n\nI would like to enable AI Pro on my contractor account.\n\nThanks!"
-                    );
-                    window.location.href = `mailto:support@myhomebro.com?subject=${subject}&body=${body}`;
-                  }}
-                  className="rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-                  title="Request AI Pro (Stripe subscription checkout can replace this later)"
-                >
-                  Upgrade to AI Pro
-                </button>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      alert("Manage Subscription will connect to Stripe billing portal once enabled.");
-                    }}
-                    className="rounded bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-                    title="Manage subscription (Stripe portal later)"
-                  >
-                    Manage Subscription
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const subject = encodeURIComponent("Request: Cancel AI Pro Subscription");
-                      const body = encodeURIComponent(
-                        "Hi MyHomeBro,\n\nPlease cancel AI Pro on my contractor account.\n\nThanks!"
-                      );
-                      window.location.href = `mailto:support@myhomebro.com?subject=${subject}&body=${body}`;
-                    }}
-                    className="rounded border border-rose-200 bg-white px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50"
-                    title="Request cancellation (Stripe portal later)"
-                  >
-                    Cancel AI Pro
-                  </button>
-                </>
-              )}
-
               <button
                 type="button"
                 onClick={async () => {
@@ -545,63 +433,57 @@ export default function ContractorProfile() {
                 className="rounded border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
                 title="Refresh plan status"
               >
-                Refresh Status
+                Refresh
               </button>
             </div>
           </div>
         </div>
 
-        {/* ✅ AI Credits */}
+        {/* AI availability */}
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-sm font-semibold text-slate-900">AI Credits</div>
+              <div className="text-sm font-semibold text-slate-900">AI Availability</div>
               <div className="mt-1 text-xs text-slate-600">
-                Credits are used by the AI Agreement Writing tools.
+                AI writing tools are included with your account.
               </div>
             </div>
             <button
               type="button"
               onClick={refreshMe}
               className="rounded border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-              title="Refresh credits"
+              title="Refresh AI status"
             >
-              Refresh Credits
+              Refresh
             </button>
           </div>
 
           <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="rounded border bg-slate-50 p-3">
-              <div className="text-xs text-slate-500">Remaining</div>
+              <div className="text-xs text-slate-500">Availability</div>
               <div className="text-sm font-semibold text-slate-900">
-                {aiCredits.remaining != null ? aiCredits.remaining : "—"}
+                {aiStatus.unlimited ? "Included" : "Available"}
               </div>
             </div>
 
             <div className="rounded border bg-slate-50 p-3">
-              <div className="text-xs text-slate-500">Used</div>
+              <div className="text-xs text-slate-500">Access</div>
               <div className="text-sm font-semibold text-slate-900">
-                {aiCredits.used != null ? aiCredits.used : "—"}
+                {String(aiStatus.access || "included").toUpperCase()}
               </div>
             </div>
 
             <div className="rounded border bg-slate-50 p-3">
-              <div className="text-xs text-slate-500">Total (Free)</div>
+              <div className="text-xs text-slate-500">Status</div>
               <div className="text-sm font-semibold text-slate-900">
-                {aiCredits.total != null ? aiCredits.total : "—"}
+                {aiStatus.enabled ? "Enabled" : "Unavailable"}
               </div>
             </div>
           </div>
 
           <div className="mt-3 text-xs text-slate-600">
-            <b>Rule:</b> 1 credit = 1 AI-written agreement. Re-clicking “Generate” for the same agreement should not double-charge once we enforce idempotency in the AI endpoint.
+            AI generation is included. Review outputs before sending or saving agreement content.
           </div>
-
-          {!aiCredits.enabled && aiCredits.total != null ? (
-            <div className="mt-2 text-xs text-rose-700">
-              No AI credits remaining.
-            </div>
-          ) : null}
         </div>
 
         {/* Escrow Pricing (tiered) */}
@@ -667,37 +549,30 @@ export default function ContractorProfile() {
             </div>
 
             <div className="rounded border bg-slate-50 p-3">
-              <div className="text-xs text-slate-500">AI Subscription Active</div>
-              <div className="text-sm font-semibold text-slate-900">{aiActive ? "Yes" : "No"}</div>
+              <div className="text-xs text-slate-500">AI Access</div>
+              <div className="text-sm font-semibold text-slate-900">Included</div>
             </div>
 
             <div className="rounded border bg-slate-50 p-3">
               <div className="text-xs text-slate-500">Next Renewal / Period End</div>
               <div className="text-sm font-semibold text-slate-900">
-                {periodEnd ? String(periodEnd) : "—"}
+                Not applicable
               </div>
             </div>
           </div>
 
-          {(stripeCustomerId || stripeSubscriptionId) ? (
-            <div className="mt-3 text-xs text-slate-600">
-              <div><b>Stripe Customer:</b> {stripeCustomerId || "—"}</div>
-              <div><b>Stripe Subscription:</b> {stripeSubscriptionId || "—"}</div>
-            </div>
-          ) : (
-            <div className="mt-3 text-xs text-slate-500">
-              Stripe subscription IDs will appear here once subscription automation is enabled.
-            </div>
-          )}
+          <div className="mt-3 text-xs text-slate-500">
+            AI is included for every contractor account.
+          </div>
         </div>
 
         {/* Pricing explanation */}
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-          <div className="text-sm font-semibold text-amber-900">How AI Pro affects pricing</div>
+          <div className="text-sm font-semibold text-amber-900">Pricing Notes</div>
           <ul className="mt-2 list-disc pl-5 text-sm text-amber-900/90 space-y-1">
-            <li>Free plan Direct Pay: <b>2% + $1</b></li>
-            <li>AI Pro Direct Pay: <b>1% + $1</b></li>
-            <li>Escrow pricing stays tiered and is not waived by AI Pro.</li>
+            <li>AI is included with your account.</li>
+            <li>Direct Pay: <b>1% + $1</b></li>
+            <li>Escrow pricing stays tiered and separate.</li>
           </ul>
         </div>
       </div>
@@ -964,6 +839,8 @@ export default function ContractorProfile() {
     );
   };
 
+  const planBadgeActive = isAiProActive(meData);
+
   return (
     <div className="flex justify-center">
       <div className="w-full max-w-5xl bg-white rounded-lg shadow p-6 mt-6">
@@ -1011,7 +888,7 @@ export default function ContractorProfile() {
               >
                 <span>Plan &amp; Billing</span>
                 <span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                  isAiProActive(meData) ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"
+                  planBadgeActive ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"
                 }`}>
                   {planLabel(meData)}
                 </span>

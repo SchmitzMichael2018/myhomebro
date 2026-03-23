@@ -1,22 +1,11 @@
 # backend/projects/api/ai_agreement_views.py
-# v2026-03-04 — Agreement AI endpoints (1 credit = 1 agreement)
-#
-# RULE:
-# - First AI use on a given agreement consumes 1 Agreement credit.
-# - Re-run AI unlimited times for that same agreement (no additional charge).
-#
-# Charging is enforced by:
-# - AIAgreementUsage uniqueness (contractor, agreement_id, feature_key)
-# - Contractor counters: ai_free_agreements_total / ai_free_agreements_used
-#
-# IMPORTANT:
-# - Uses consume_agreement_bundle_credit_if_needed() as single source of truth.
+# AI agreement endpoints. AI is included by default and must not be gated by
+# credits, subscriptions, tiers, or purchases.
 
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 
-from django.conf import settings
 from django.http import JsonResponse
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -28,12 +17,7 @@ from projects.ai.agreement_milestone_writer import (
     suggest_pricing_refresh,
 )
 from projects.models import Agreement, Milestone
-from projects.services.ai_credits import consume_agreement_bundle_credit_if_needed
 from projects.services.ai.project_drafter import draft_project_structure
-
-
-def _ai_enabled() -> bool:
-    return bool(getattr(settings, "AI_ENABLED", False))
 
 
 def _get_contractor_for_user(user):
@@ -54,41 +38,17 @@ def _get_agreement_or_404(agreement_id: int):
         return None
 
 
-def _charge_once(contractor, agreement: Agreement):
-    """
-    Calls the canonical credit service.
-    Returns: (charged_now: bool, ai_credits: dict)
-    """
-    result = consume_agreement_bundle_credit_if_needed(
-        contractor=contractor,
-        agreement_id=int(agreement.id),
-    )
-    charged_now = bool(result.get("charged", False))
-    ai_credits = (result.get("ai_credits", {}) or {})
-    return charged_now, ai_credits
-
-
-def _ai_credits_payload(ai_credits: dict) -> dict:
-    free_total = int(ai_credits.get("free_total", 0) or 0)
-    free_used = int(ai_credits.get("free_used", 0) or 0)
-    free_remaining = int(ai_credits.get("free_remaining", 0) or 0)
+def _ai_access_payload() -> dict:
     return {
-        "ai_credits": {
-            "free_total": free_total,
-            "free_used": free_used,
-            "free_remaining": free_remaining,
-            "enabled": free_remaining > 0,
-        },
-        "remaining_credits": free_remaining,
+        "ai_access": "included",
+        "ai_enabled": True,
+        "ai_unlimited": True,
     }
 
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def ai_agreement_description(request):
-    if not _ai_enabled():
-        return _deny("AI is disabled.", "AI_DISABLED")
-
     contractor = _get_contractor_for_user(request.user)
     if not contractor:
         return _deny("Contractor only.", "CONTRACTOR_ONLY")
@@ -110,17 +70,6 @@ def ai_agreement_description(request):
     if agreement.contractor_id and agreement.contractor_id != contractor.id:
         return _deny("Not your agreement.", "FORBIDDEN")
 
-    # Charge once per agreement (or free regenerate)
-    try:
-        charged_now, ai_credits = _charge_once(contractor, agreement)
-    except ValueError as e:
-        msg = str(e) or "AI not available."
-        if "agreement_id is required" in msg:
-            return _deny("Save draft first to use AI.", "AGREEMENT_REQUIRED")
-        if "No AI credits remaining" in msg:
-            return _deny("No Agreement AI credits remaining.", "AI_CREDITS_EXHAUSTED")
-        return _deny(msg, "AI_ERROR")
-
     try:
         out = generate_or_improve_description(
             mode=(request.data.get("mode") or "").strip(),
@@ -137,9 +86,7 @@ def ai_agreement_description(request):
         "description": out["description"],
         "_mode": out.get("_mode"),
         "_model": out.get("_model"),
-        "agreement_ai_credit_consumed": True,
-        "charged_now": bool(charged_now),
-        **_ai_credits_payload(ai_credits),
+        **_ai_access_payload(),
     }
     return JsonResponse(payload, status=HTTP_200_OK)
 
@@ -156,9 +103,6 @@ def ai_suggest_milestones(request, agreement_id: int):
         "questions": [...]
       }
     """
-    if not _ai_enabled():
-        return _deny("AI is disabled.", "AI_DISABLED")
-
     contractor = _get_contractor_for_user(request.user)
     if not contractor:
         return _deny("Contractor only.", "CONTRACTOR_ONLY")
@@ -169,14 +113,6 @@ def ai_suggest_milestones(request, agreement_id: int):
 
     if agreement.contractor_id and agreement.contractor_id != contractor.id:
         return _deny("Not your agreement.", "FORBIDDEN")
-
-    try:
-        charged_now, ai_credits = _charge_once(contractor, agreement)
-    except ValueError as e:
-        msg = str(e) or "AI not available."
-        if "No AI credits remaining" in msg:
-            return _deny("No Agreement AI credits remaining.", "AI_CREDITS_EXHAUSTED")
-        return _deny(msg, "AI_ERROR")
 
     notes = request.data.get("notes", "") if hasattr(request, "data") else ""
 
@@ -191,10 +127,9 @@ def ai_suggest_milestones(request, agreement_id: int):
         "milestones": out["milestones"],
         "questions": out.get("questions", []),
         "_model": out.get("_model"),
-        "agreement_ai_credit_consumed": True,
-        "charged_now": bool(charged_now),
-        **_ai_credits_payload(ai_credits),
+        **_ai_access_payload(),
     }
+    return JsonResponse(payload, status=HTTP_200_OK)
 
 
 def _to_nullable_decimal(value):
@@ -295,7 +230,6 @@ def _persist_pricing_estimates(agreement: Agreement, pricing_estimates: list[dic
             persisted += 1
 
     return persisted
-    return JsonResponse(payload, status=HTTP_200_OK)
 
 
 @api_view(["POST"])
@@ -305,9 +239,6 @@ def ai_refresh_pricing_estimate(request, agreement_id: int):
     POST /api/projects/agreements/<id>/ai/refresh-pricing-estimate/
     Returns refreshed estimate-assist guidance only.
     """
-    if not _ai_enabled():
-        return _deny("AI is disabled.", "AI_DISABLED")
-
     contractor = _get_contractor_for_user(request.user)
     if not contractor:
         return _deny("Contractor only.", "CONTRACTOR_ONLY")
@@ -318,14 +249,6 @@ def ai_refresh_pricing_estimate(request, agreement_id: int):
 
     if agreement.contractor_id and agreement.contractor_id != contractor.id:
         return _deny("Not your agreement.", "FORBIDDEN")
-
-    try:
-        charged_now, ai_credits = _charge_once(contractor, agreement)
-    except ValueError as e:
-        msg = str(e) or "AI not available."
-        if "No AI credits remaining" in msg:
-            return _deny("No Agreement AI credits remaining.", "AI_CREDITS_EXHAUSTED")
-        return _deny(msg, "AI_ERROR")
 
     try:
         out = suggest_pricing_refresh(agreement=agreement)
@@ -339,9 +262,7 @@ def ai_refresh_pricing_estimate(request, agreement_id: int):
         "pricing_estimates": out.get("pricing_estimates", []),
         "persisted_count": persisted_count,
         "_model": out.get("_model"),
-        "agreement_ai_credit_consumed": True,
-        "charged_now": bool(charged_now),
-        **_ai_credits_payload(ai_credits),
+        **_ai_access_payload(),
     }
     return JsonResponse(payload, status=HTTP_200_OK)
 
@@ -373,9 +294,6 @@ def ai_draft_project(request):
         can_save_template
       }
     """
-    if not _ai_enabled():
-        return _deny("AI is disabled.", "AI_DISABLED")
-
     contractor = _get_contractor_for_user(request.user)
     if not contractor:
         return _deny("Contractor only.", "CONTRACTOR_ONLY")
@@ -397,16 +315,6 @@ def ai_draft_project(request):
         return _deny("Not your agreement.", "FORBIDDEN")
 
     try:
-        charged_now, ai_credits = _charge_once(contractor, agreement)
-    except ValueError as e:
-        msg = str(e) or "AI not available."
-        if "agreement_id is required" in msg:
-            return _deny("Save draft first to use AI.", "AGREEMENT_REQUIRED")
-        if "No AI credits remaining" in msg:
-            return _deny("No Agreement AI credits remaining.", "AI_CREDITS_EXHAUSTED")
-        return _deny(msg, "AI_ERROR")
-
-    try:
         result = draft_project_structure(
             agreement=agreement,
             contractor=contractor,
@@ -421,8 +329,6 @@ def ai_draft_project(request):
     payload = {
         "detail": "OK",
         **result,
-        "agreement_ai_credit_consumed": True,
-        "charged_now": bool(charged_now),
-        **_ai_credits_payload(ai_credits),
+        **_ai_access_payload(),
     }
     return JsonResponse(payload, status=HTTP_200_OK)

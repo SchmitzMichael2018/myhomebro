@@ -250,7 +250,6 @@ export default function TemplateSearchSection({
   templateDetailErr,
 
   aiCredits,
-  aiBlockedByCredits,
   aiBusy,
   aiErr,
   aiPreview,
@@ -310,11 +309,8 @@ export default function TemplateSearchSection({
   const hasTemplateMatches =
     Array.isArray(filteredTemplates) && filteredTemplates.length > 0;
 
-  const aiCreditText = aiCredits?.loading
-    ? "AI Credits: —"
-    : aiCredits?.remaining == null
-    ? "AI Credits: —"
-    : `AI Credits: ${aiCredits.remaining} remaining`;
+  void aiCredits;
+  const aiCreditText = "AI Included";
 
   const selectedTypeMeta = useMemo(() => {
     return (
@@ -704,7 +700,6 @@ export default function TemplateSearchSection({
                   !agreementId ||
                   !canGenerateFromScope ||
                   aiMilestoneBusy ||
-                  aiBlockedByCredits ||
                   blockScopeGeneration
                 }
                 className="rounded border border-amber-300 bg-white px-3 py-1.5 text-xs text-amber-800 hover:bg-amber-50 disabled:opacity-60"
@@ -720,7 +715,6 @@ export default function TemplateSearchSection({
                   !agreementId ||
                   !canGenerateFromScope ||
                   aiMilestoneBusy ||
-                  aiBlockedByCredits ||
                   blockScopeGeneration
                 }
                 className="rounded border border-amber-300 bg-white px-3 py-1.5 text-xs text-amber-800 hover:bg-amber-50 disabled:opacity-60"
@@ -1434,11 +1428,9 @@ export default function TemplateSearchSection({
                 className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${
                   aiCredits?.loading
                     ? "bg-slate-100 text-slate-700"
-                    : aiBlockedByCredits
-                    ? "bg-rose-100 text-rose-800"
                     : "bg-emerald-100 text-emerald-800"
                 }`}
-                title="1 credit = 1 AI-written agreement scope action"
+                title="AI tools are included with your account"
               >
                 {aiCreditText}
               </span>
@@ -1462,10 +1454,10 @@ export default function TemplateSearchSection({
                 locked ||
                 aiBusy ||
                 !safeTrim(dLocal.description) ||
-                aiBlockedByCredits ||
                 blockScopeGeneration
               }
               className="rounded border px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
+              data-testid="agreement-ai-improve-scope-button"
             >
               {aiBusy ? "Working…" : "✨ Improve Existing Scope"}
             </button>
@@ -1477,10 +1469,10 @@ export default function TemplateSearchSection({
                 locked ||
                 aiBusy ||
                 !hasSomeContext ||
-                aiBlockedByCredits ||
                 blockScopeGeneration
               }
               className="rounded border px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
+              data-testid="agreement-ai-generate-scope-button"
             >
               {aiBusy ? "Working…" : "✨ Generate Scope Draft"}
             </button>

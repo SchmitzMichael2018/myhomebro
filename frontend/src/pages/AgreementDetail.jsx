@@ -13,7 +13,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import api from "../api";
+import api, { getAccessToken } from "../api";
 import SignatureModal from "../components/SignatureModal";
 import EscrowPromptModal from "../components/EscrowPromptModal";
 import AttachmentManager from "../components/AttachmentManager";
@@ -111,6 +111,15 @@ function shortSha(sha) {
   const s = String(sha || "").trim();
   if (!s) return "";
   return s.length > 12 ? `${s.slice(0, 12)}…` : s;
+}
+
+function formatInviteDate(value) {
+  if (!value) return "—";
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return String(value);
+  }
 }
 
 function normalizeAgreement(raw) {
@@ -218,13 +227,42 @@ export default function AgreementDetail() {
 
   // Refund modal state
   const [refundOpen, setRefundOpen] = useState(false);
+  const [subcontractorsLoading, setSubcontractorsLoading] = useState(false);
+  const [pendingInvitations, setPendingInvitations] = useState([]);
+  const [acceptedSubcontractors, setAcceptedSubcontractors] = useState([]);
+  const [inviteFormOpen, setInviteFormOpen] = useState(false);
+  const [inviteSubmitting, setInviteSubmitting] = useState(false);
+  const [invitationForm, setInvitationForm] = useState({
+    invite_email: "",
+    invite_name: "",
+    invited_message: "",
+  });
 
   // ✅ PDF Versions panel
   const [versionsOpen, setVersionsOpen] = useState(true);
+  const [warranties, setWarranties] = useState([]);
+  const [warrantiesLoading, setWarrantiesLoading] = useState(false);
+  const [warrantyEditorOpen, setWarrantyEditorOpen] = useState(false);
+  const [warrantySaving, setWarrantySaving] = useState(false);
+  const [editingWarrantyId, setEditingWarrantyId] = useState(null);
+  const [warrantyForm, setWarrantyForm] = useState({
+    title: "",
+    coverage_details: "",
+    exclusions: "",
+    start_date: "",
+    end_date: "",
+    status: "active",
+    applies_to: "full_agreement",
+  });
 
   const norm = useMemo(() => normalizeAgreement(agreement), [agreement]);
 
-  const isContractor = user?.role === "contractor" || user?.is_contractor;
+  const isContractor =
+    user?.role === "contractor" ||
+    user?.role === "contractor_owner" ||
+    user?.type === "contractor" ||
+    user?.is_contractor ||
+    !!getAccessToken();
   const signingRole = isContractor ? "contractor" : "homeowner";
 
   const ratePercent =
@@ -255,6 +293,49 @@ export default function AgreementDetail() {
 
   useEffect(() => {
     fetchAgreement();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  const fetchSubcontractorInvitations = async () => {
+    if (!id || !isContractor) return;
+    try {
+      setSubcontractorsLoading(true);
+      const { data } = await api.get(
+        `/projects/agreements/${id}/subcontractor-invitations/`
+      );
+      setPendingInvitations(data?.pending_invitations || []);
+      setAcceptedSubcontractors(data?.accepted_subcontractors || []);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to load subcontractor invitations.");
+    } finally {
+      setSubcontractorsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSubcontractorInvitations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, isContractor]);
+
+  const fetchWarranties = async () => {
+    if (!id) return;
+    try {
+      setWarrantiesLoading(true);
+      const { data } = await api.get("/projects/warranties/", {
+        params: { agreement: id },
+      });
+      setWarranties(Array.isArray(data) ? data : data?.results || []);
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load warranty records.");
+    } finally {
+      setWarrantiesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchWarranties();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -384,8 +465,145 @@ export default function AgreementDetail() {
     toast.success("Milestone unassigned.");
   };
 
+  const resetWarrantyForm = () => {
+    setEditingWarrantyId(null);
+    setWarrantyForm({
+      title: "",
+      coverage_details: "",
+      exclusions: "",
+      start_date: "",
+      end_date: "",
+      status: "active",
+      applies_to: "full_agreement",
+    });
+  };
+
+  const openWarrantyEditor = (warranty = null) => {
+    if (warranty) {
+      setEditingWarrantyId(warranty.id);
+      setWarrantyForm({
+        title: warranty.title || "",
+        coverage_details: warranty.coverage_details || "",
+        exclusions: warranty.exclusions || "",
+        start_date: warranty.start_date || "",
+        end_date: warranty.end_date || "",
+        status: warranty.status || "active",
+        applies_to: warranty.applies_to || "full_agreement",
+      });
+    } else {
+      resetWarrantyForm();
+    }
+    setWarrantyEditorOpen(true);
+  };
+
+  const saveWarrantyRecord = async () => {
+    if (!norm.id) return;
+    if (!warrantyForm.title.trim()) {
+      toast.error("Warranty title is required.");
+      return;
+    }
+
+    try {
+      setWarrantySaving(true);
+      const payload = {
+        agreement: Number(norm.id),
+        title: warrantyForm.title.trim(),
+        coverage_details: warrantyForm.coverage_details.trim(),
+        exclusions: warrantyForm.exclusions.trim(),
+        start_date: warrantyForm.start_date || null,
+        end_date: warrantyForm.end_date || null,
+        status: warrantyForm.status,
+        applies_to: warrantyForm.applies_to || "",
+      };
+
+      if (editingWarrantyId) {
+        await api.patch(`/projects/warranties/${editingWarrantyId}/`, payload);
+        toast.success("Warranty updated.");
+      } else {
+        await api.post("/projects/warranties/", payload);
+        toast.success("Warranty created.");
+      }
+
+      setWarrantyEditorOpen(false);
+      resetWarrantyForm();
+      await fetchWarranties();
+    } catch (e) {
+      console.error(e);
+      toast.error(
+        e?.response?.data?.detail || "Failed to save warranty record."
+      );
+    } finally {
+      setWarrantySaving(false);
+    }
+  };
+
   if (loading) return <div className="p-6">Loading…</div>;
   if (!norm.id) return <div className="p-6">Agreement not found.</div>;
+
+  const submitInvitation = async () => {
+    if (!invitationForm.invite_email.trim()) {
+      toast.error("Subcontractor email is required.");
+      return;
+    }
+
+    try {
+      setInviteSubmitting(true);
+      const { data } = await api.post(
+        `/projects/agreements/${id}/subcontractor-invitations/`,
+        invitationForm
+      );
+      toast.success("Subcontractor invitation created.");
+      setInvitationForm({
+        invite_email: "",
+        invite_name: "",
+        invited_message: "",
+      });
+      setInviteFormOpen(false);
+      await fetchSubcontractorInvitations();
+      if (data?.invite_url) {
+        try {
+          await navigator.clipboard.writeText(data.invite_url);
+          toast.success("Invitation link copied.");
+        } catch {
+          // Clipboard access is optional.
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        err?.response?.data?.invite_email?.[0] ||
+          err?.response?.data?.detail ||
+          "Failed to create subcontractor invitation."
+      );
+    } finally {
+      setInviteSubmitting(false);
+    }
+  };
+
+  const revokeInvitation = async (invitationId) => {
+    try {
+      await api.post(
+        `/projects/agreements/${id}/subcontractor-invitations/${invitationId}/revoke/`,
+        {}
+      );
+      toast.success("Invitation revoked.");
+      await fetchSubcontractorInvitations();
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        err?.response?.data?.detail || "Failed to revoke invitation."
+      );
+    }
+  };
+
+  const copyInviteLink = async (inviteUrl) => {
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      toast.success("Invitation link copied.");
+    } catch {
+      toast.error("Unable to copy the invitation link.");
+    }
+  };
 
   const statusText = norm.isDirectPay
     ? norm.isSigned
@@ -496,7 +714,204 @@ export default function AgreementDetail() {
         >
           Download PDF
         </button>
+
+        {isContractor && (
+          <button
+            data-testid="invite-subcontractor-button"
+            type="button"
+            onClick={() => setInviteFormOpen((open) => !open)}
+            className="px-4 py-2 rounded bg-slate-900 text-white hover:bg-slate-950"
+          >
+            {inviteFormOpen ? "Close Invite Form" : "Invite Subcontractor"}
+          </button>
+        )}
       </div>
+
+      {isContractor && (
+        <div
+          data-testid="subcontractor-section"
+          className="bg-white rounded shadow p-6 space-y-4"
+        >
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h3 className="text-lg font-semibold">Subcontractors</h3>
+              <div className="text-xs text-gray-500">
+                Invite collaborators for this agreement. Financial controls stay with the contractor owner.
+              </div>
+            </div>
+          </div>
+
+          {inviteFormOpen && (
+            <div className="rounded border bg-gray-50 p-4 grid gap-3 md:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium mb-1">Email</label>
+                <input
+                  data-testid="subcontractor-email-input"
+                  type="email"
+                  className="w-full rounded border px-3 py-2 text-sm"
+                  value={invitationForm.invite_email}
+                  onChange={(e) =>
+                    setInvitationForm((prev) => ({
+                      ...prev,
+                      invite_email: e.target.value,
+                    }))
+                  }
+                  placeholder="subcontractor@example.com"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Name</label>
+                <input
+                  className="w-full rounded border px-3 py-2 text-sm"
+                  value={invitationForm.invite_name}
+                  onChange={(e) =>
+                    setInvitationForm((prev) => ({
+                      ...prev,
+                      invite_name: e.target.value,
+                    }))
+                  }
+                  placeholder="Optional name"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-1">Message</label>
+                <textarea
+                  className="w-full rounded border px-3 py-2 text-sm"
+                  rows={3}
+                  value={invitationForm.invited_message}
+                  onChange={(e) =>
+                    setInvitationForm((prev) => ({
+                      ...prev,
+                      invited_message: e.target.value,
+                    }))
+                  }
+                  placeholder="Optional note for the subcontractor"
+                />
+              </div>
+              <div className="md:col-span-2 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setInviteFormOpen(false)}
+                  className="px-4 py-2 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  data-testid="subcontractor-submit-button"
+                  type="button"
+                  disabled={inviteSubmitting}
+                  onClick={submitInvitation}
+                  className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {inviteSubmitting ? "Sending…" : "Send Invitation"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {subcontractorsLoading ? (
+            <div className="text-sm text-gray-500">Loading subcontractors…</div>
+          ) : (
+            <div className="grid gap-6 lg:grid-cols-2">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900">
+                  Pending Invitations
+                </h4>
+                {pendingInvitations.length === 0 ? (
+                  <div className="mt-2 text-sm text-gray-500">
+                    No pending invitations for this agreement.
+                  </div>
+                ) : (
+                  <div className="mt-3 space-y-3">
+                    {pendingInvitations.map((invitation) => (
+                      <div
+                        key={invitation.id}
+                        data-testid={`pending-subcontractor-${invitation.id}`}
+                        className="rounded border bg-gray-50 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-gray-900">
+                              {invitation.invite_name || invitation.invite_email}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {invitation.invite_email}
+                            </div>
+                            <div className="mt-1 text-xs text-gray-500">
+                              Invited {formatInviteDate(invitation.invited_at)}
+                            </div>
+                          </div>
+                          <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                            Pending
+                          </span>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {invitation.invite_url ? (
+                            <button
+                              type="button"
+                              onClick={() => copyInviteLink(invitation.invite_url)}
+                              className="px-3 py-1.5 rounded border border-gray-300 bg-white text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              Copy Invite Link
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            onClick={() => revokeInvitation(invitation.id)}
+                            className="px-3 py-1.5 rounded border border-rose-200 bg-white text-sm text-rose-700 hover:bg-rose-50"
+                          >
+                            Revoke
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h4 className="text-sm font-semibold text-gray-900">
+                  Accepted Subcontractors
+                </h4>
+                {acceptedSubcontractors.length === 0 ? (
+                  <div className="mt-2 text-sm text-gray-500">
+                    No subcontractors have accepted this agreement yet.
+                  </div>
+                ) : (
+                  <div className="mt-3 space-y-3">
+                    {acceptedSubcontractors.map((subcontractor) => (
+                      <div
+                        key={subcontractor.id}
+                        data-testid={`accepted-subcontractor-${subcontractor.id}`}
+                        className="rounded border bg-gray-50 p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-gray-900">
+                              {subcontractor.accepted_name ||
+                                subcontractor.invite_name ||
+                                subcontractor.invite_email}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {subcontractor.invite_email}
+                            </div>
+                            <div className="mt-1 text-xs text-gray-500">
+                              Accepted {formatInviteDate(subcontractor.accepted_at)}
+                            </div>
+                          </div>
+                          <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                            Accepted
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ✅ PDF Versions */}
       <div className="bg-white rounded shadow p-6 space-y-3">
@@ -657,6 +1072,246 @@ export default function AgreementDetail() {
               </div>
             )}
           </>
+        )}
+      </div>
+
+      <div
+        data-testid="agreement-warranties-section"
+        className="bg-white rounded shadow p-6 space-y-4"
+      >
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h3
+              data-testid="agreement-warranties-heading"
+              className="text-lg font-semibold"
+            >
+              Warranty Records
+            </h3>
+            <div className="text-xs text-gray-500">
+              Phase 1 records active warranty coverage linked to this agreement.
+              It does not change the signed PDF warranty snapshot.
+            </div>
+          </div>
+
+          {isContractor && (
+            <button
+              data-testid="agreement-add-warranty-button"
+              type="button"
+              onClick={() => openWarrantyEditor()}
+              className="px-4 py-2 rounded bg-slate-800 text-white hover:bg-slate-900"
+            >
+              Add Warranty
+            </button>
+          )}
+        </div>
+
+        {warrantyEditorOpen && (
+          <div className="rounded border bg-gray-50 p-4 grid gap-3 md:grid-cols-2">
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">Title</label>
+              <input
+                data-testid="warranty-title-input"
+                className="w-full rounded border px-3 py-2 text-sm"
+                value={warrantyForm.title}
+                onChange={(e) =>
+                  setWarrantyForm((prev) => ({ ...prev, title: e.target.value }))
+                }
+                placeholder="e.g., 12-Month Workmanship Warranty"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">
+                Coverage Details
+              </label>
+              <textarea
+                className="w-full rounded border px-3 py-2 text-sm"
+                rows={4}
+                value={warrantyForm.coverage_details}
+                onChange={(e) =>
+                  setWarrantyForm((prev) => ({
+                    ...prev,
+                    coverage_details: e.target.value,
+                  }))
+                }
+                placeholder="What does this warranty cover?"
+              />
+            </div>
+
+            <div className="md:col-span-2">
+              <label className="block text-sm font-medium mb-1">Exclusions</label>
+              <textarea
+                className="w-full rounded border px-3 py-2 text-sm"
+                rows={3}
+                value={warrantyForm.exclusions}
+                onChange={(e) =>
+                  setWarrantyForm((prev) => ({
+                    ...prev,
+                    exclusions: e.target.value,
+                  }))
+                }
+                placeholder="List exclusions or limitations."
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Start Date</label>
+              <input
+                className="w-full rounded border px-3 py-2 text-sm"
+                type="date"
+                value={warrantyForm.start_date}
+                onChange={(e) =>
+                  setWarrantyForm((prev) => ({
+                    ...prev,
+                    start_date: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">End Date</label>
+              <input
+                className="w-full rounded border px-3 py-2 text-sm"
+                type="date"
+                value={warrantyForm.end_date}
+                onChange={(e) =>
+                  setWarrantyForm((prev) => ({
+                    ...prev,
+                    end_date: e.target.value,
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Status</label>
+              <select
+                className="w-full rounded border px-3 py-2 text-sm"
+                value={warrantyForm.status}
+                onChange={(e) =>
+                  setWarrantyForm((prev) => ({ ...prev, status: e.target.value }))
+                }
+              >
+                <option value="active">Active</option>
+                <option value="expired">Expired</option>
+                <option value="void">Void</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Applies To</label>
+              <select
+                className="w-full rounded border px-3 py-2 text-sm"
+                value={warrantyForm.applies_to}
+                onChange={(e) =>
+                  setWarrantyForm((prev) => ({
+                    ...prev,
+                    applies_to: e.target.value,
+                  }))
+                }
+              >
+                <option value="full_agreement">Full Agreement</option>
+                <option value="workmanship">Workmanship</option>
+                <option value="materials">Materials</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            <div className="md:col-span-2 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setWarrantyEditorOpen(false);
+                  resetWarrantyForm();
+                }}
+                className="px-4 py-2 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                data-testid="warranty-save-button"
+                type="button"
+                onClick={saveWarrantyRecord}
+                disabled={warrantySaving}
+                className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60"
+              >
+                {warrantySaving ? "Saving…" : editingWarrantyId ? "Update Warranty" : "Save Warranty"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {warrantiesLoading ? (
+          <div className="text-sm text-gray-500">Loading warranty records…</div>
+        ) : warranties.length === 0 ? (
+          <div className="text-sm text-gray-500">
+            No warranty records added yet.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {warranties.map((warranty) => (
+              <div
+                key={warranty.id}
+                data-testid={`warranty-card-${warranty.id}`}
+                className="rounded border p-4 bg-gray-50"
+              >
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">
+                      {warranty.title}
+                    </div>
+                    <div className="mt-1 text-xs text-gray-500">
+                      {warranty.applies_to
+                        ? `Applies to: ${String(warranty.applies_to)
+                            .replaceAll("_", " ")
+                            .replace(/^\w/, (c) => c.toUpperCase())}`
+                        : "Applies to: —"}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {warranty.start_date || "—"} to {warranty.end_date || "—"}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-700">
+                      {String(warranty.status || "active")
+                        .replaceAll("_", " ")
+                        .replace(/^\w/, (c) => c.toUpperCase())}
+                    </span>
+                    {isContractor && (
+                      <button
+                        type="button"
+                        onClick={() => openWarrantyEditor(warranty)}
+                        className="px-3 py-1.5 rounded border border-gray-300 bg-white text-sm text-gray-700 hover:bg-gray-50"
+                      >
+                        Edit
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div>
+                    <div className="text-xs font-semibold text-gray-500">
+                      Coverage
+                    </div>
+                    <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                      {warranty.coverage_details || "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-semibold text-gray-500">
+                      Exclusions
+                    </div>
+                    <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                      {warranty.exclusions || "—"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
 

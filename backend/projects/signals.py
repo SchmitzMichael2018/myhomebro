@@ -6,8 +6,7 @@ from django.db.models.signals import post_save, pre_save, post_delete
 from django.dispatch import receiver
 from django.utils import timezone
 
-from .models import Agreement, Invoice, Contractor, Milestone
-from .models_ai_entitlements import ContractorAIEntitlement
+from .models import Agreement, Invoice, Milestone
 from .tasks import (
     task_send_invoice_notification,
     task_generate_full_agreement_pdf,
@@ -89,42 +88,6 @@ def on_invoice_creation(sender, instance: Invoice, created: bool, **kwargs):
                 f"❌ Failed to dispatch invoice notification for "
                 f"Invoice {instance.id}: {e}"
             )
-
-
-# --------------------------------------------------------------------
-# Contractor post-save → auto-create AI entitlement
-# --------------------------------------------------------------------
-@receiver(post_save, sender=Contractor)
-def on_contractor_creation(sender, instance: Contractor, created: bool, **kwargs):
-    """
-    Automatically provision AI entitlements for every contractor.
-
-    This ensures:
-      - No manual admin work
-      - Every contractor has a baseline AI plan
-      - Admin UI is always populated
-    """
-    if not created:
-        return
-
-    try:
-        ContractorAIEntitlement.objects.get_or_create(
-            contractor=instance,
-            defaults={
-                "tier": ContractorAIEntitlement.TIER_FREE,
-                "free_recommendations_remaining": 1,  # free trial
-                "allow_ai_summaries": True,
-                "allow_ai_recommendations": True,
-            },
-        )
-        logger.info(
-            f"🤖 AI entitlements auto-created for Contractor {instance.id}."
-        )
-    except Exception as e:
-        logger.error(
-            f"❌ Failed to auto-create AI entitlements for Contractor "
-            f"{instance.id}: {e}"
-        )
 
 
 # --------------------------------------------------------------------

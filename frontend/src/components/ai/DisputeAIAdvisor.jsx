@@ -110,7 +110,10 @@ export default function DisputeAIAdvisor({ disputeId, enabled }) {
   if (!enabled) return null;
 
   return (
-    <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 space-y-3">
+    <div
+      data-testid="dispute-ai-advisor"
+      className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 space-y-3"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <div className="text-sm font-extrabold text-indigo-900">🤖 AI Advisor</div>

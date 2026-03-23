@@ -256,11 +256,6 @@ class DisputeViewSet(viewsets.ModelViewSet):
     # ─────────────────────────────────────────────
     @action(detail=True, methods=["post"], url_path="ai-summary")
     def ai_summary(self, request, pk=None):
-        if not getattr(settings, "AI_ENABLED", False):
-            return Response({"detail": "AI is disabled."}, status=403)
-        if not getattr(settings, "AI_DISPUTES_ENABLED", False):
-            return Response({"detail": "Dispute AI is disabled."}, status=403)
-
         dispute: Dispute = self.get_object()
 
         try:

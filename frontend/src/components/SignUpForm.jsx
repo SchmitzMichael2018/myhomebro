@@ -1,13 +1,14 @@
 // src/components/SignUpForm.jsx
 // v2026-02-10b — fix signup 404 by using real backend routes under /accounts/auth/*
 
-import React, { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import api, { setTokens } from "../api";
 import toast from "react-hot-toast";
 
 export default function SignUpForm() {
   const navigate = useNavigate();
+  const location = useLocation();
   const firstRef = useRef(null);
 
   const [loading, setLoading] = useState(false);
@@ -22,6 +23,15 @@ export default function SignUpForm() {
   });
 
   useEffect(() => { firstRef.current?.focus(); }, []);
+
+  const subcontractorInviteToken = useMemo(() => {
+    try {
+      const sp = new URLSearchParams(location.search || "");
+      return (sp.get("subcontractor_invite") || "").trim();
+    } catch {
+      return "";
+    }
+  }, [location.search]);
 
   const onChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -83,6 +93,13 @@ export default function SignUpForm() {
       if (data?.access) {
         setTokens(data.access, data.refresh || null, true);
         toast.success("Account created!");
+        if (subcontractorInviteToken) {
+          return navigate(
+            `/subcontractor-invitations/accept/${encodeURIComponent(
+              subcontractorInviteToken
+            )}`
+          );
+        }
         return navigate("/onboarding");
       }
 
@@ -115,6 +132,12 @@ export default function SignUpForm() {
     <div className="flex items-center justify-center min-h-[70vh] bg-gradient-to-r from-blue-50 to-blue-100">
       <div className="bg-white p-8 rounded-xl shadow-md w-full max-w-md">
         <h2 className="text-3xl font-bold text-blue-700 mb-6 text-center">Contractor Sign Up</h2>
+
+        {subcontractorInviteToken ? (
+          <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            Create your account with the invited email address to continue to the subcontractor invitation.
+          </div>
+        ) : null}
 
         <form onSubmit={submit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4">

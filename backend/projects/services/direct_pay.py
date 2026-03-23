@@ -64,44 +64,16 @@ def _frontend_url() -> str:
     return v.rstrip("/") if v else ""
 
 
-def _is_ai_pro(contractor) -> bool:
+def _compute_direct_pay_fee_cents(amount_cents: int) -> int:
     """
-    v1 subscription flag check (tolerant):
-    - contractor.ai_subscription_active (if you add it directly)
-    - contractor.billing_profile.ai_subscription_active (recommended)
-    """
-    if contractor is None:
-        return False
-
-    try:
-        if getattr(contractor, "ai_subscription_active", False) is True:
-            return True
-    except Exception:
-        pass
-
-    try:
-        bp = getattr(contractor, "billing_profile", None)
-        if bp and getattr(bp, "ai_subscription_active", False) is True:
-            return True
-    except Exception:
-        pass
-
-    return False
-
-
-def _compute_direct_pay_fee_cents(amount_cents: int, *, is_ai_pro: bool) -> int:
-    """
-    LOCKED PRICING:
-
-    - Free plan: 2% + $1
-    - AI Pro:    1% + $1
+    Direct Pay pricing is fixed for all contractors: 1% + $1.
 
     Returns Stripe application_fee_amount in cents.
     """
     if amount_cents <= 0:
         return 0
 
-    rate = Decimal("0.01") if is_ai_pro else Decimal("0.02")
+    rate = Decimal("0.01")
     pct_fee = (Decimal(amount_cents) * rate).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     flat_fee = Decimal("100")  # $1.00
 
@@ -149,9 +121,8 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
 
     This is NOT escrow. Funds go to the contractor account at payment time.
 
-    Pricing (LOCKED):
-      - Free plan: 2% + $1
-      - AI Pro:    1% + $1
+    Pricing:
+      - All contractors: 1% + $1
 
     Option A:
       - The payer identity should follow agreement.homeowner (customer)
@@ -202,8 +173,7 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
     except Exception:
         project_title = ""
 
-    is_ai_pro = _is_ai_pro(contractor)
-    application_fee_amount = _compute_direct_pay_fee_cents(amount_cents, is_ai_pro=is_ai_pro)
+    application_fee_amount = _compute_direct_pay_fee_cents(amount_cents)
 
     try:
         import stripe  # type: ignore

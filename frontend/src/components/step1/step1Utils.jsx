@@ -45,47 +45,11 @@ export function normalizePaymentMode(value) {
 }
 
 export function extractAiCredits(meData) {
-  if (!meData) {
-    return { remaining: null, total: null, used: null, enabled: false };
-  }
-
-  const aw =
-    meData?.ai?.agreement_writer ||
-    meData?.ai_agreement_writer ||
-    meData?.aiAgreementWriter ||
-    null;
-
-  const remaining =
-    meData?.ai?.credits_remaining ??
-    meData?.ai?.creditsRemaining ??
-    aw?.free_remaining ??
-    aw?.freeRemaining ??
-    null;
-
-  const total =
-    meData?.ai?.credits_total ??
-    meData?.ai?.creditsTotal ??
-    aw?.free_total ??
-    aw?.freeTotal ??
-    null;
-
-  const used =
-    aw?.free_used ??
-    aw?.freeUsed ??
-    (total != null && remaining != null
-      ? Math.max(0, Number(total) - Number(remaining))
-      : null);
-
-  const enabled =
-    aw?.enabled === true ||
-    meData?.ai?.enabled === true ||
-    (remaining != null && Number(remaining) > 0);
-
+  const ai = meData?.ai || {};
   return {
-    remaining: remaining == null ? null : Number(remaining),
-    total: total == null ? null : Number(total),
-    used: used == null ? null : Number(used),
-    enabled: !!enabled,
+    access: ai.access || "included",
+    enabled: ai.enabled !== false,
+    unlimited: ai.unlimited !== false,
   };
 }
 

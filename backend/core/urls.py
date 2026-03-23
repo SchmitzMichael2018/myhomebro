@@ -15,6 +15,7 @@ from rest_framework_simplejwt.views import (
 )
 
 from payments.webhooks import stripe_webhook  # noqa: F401  (imported elsewhere historically)
+from projects.views.sms_webhook import sms_webhook
 
 from .views_legal import TermsOfServiceView, PrivacyPolicyView
 
@@ -101,6 +102,7 @@ urlpatterns = [
     path("api/token/refresh/", TokenRefreshView.as_view(),    name="auth-refresh-alias"),
 
     # Primary APIs
+    path("api/sms/webhook/", sms_webhook, name="sms-webhook"),
     path("api/projects/", include(("projects.urls", "projects"), namespace="projects")),
 
     # ✅ FIX: mount accounts under /api/accounts/ (matches frontend calls)

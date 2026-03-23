@@ -8,10 +8,8 @@ from projects.models import Contractor
 
 class ContractorBillingProfile(models.Model):
     """
-    Minimal billing/subscription profile.
-
-    Goal: autonomous, set-once foundation that can expand later (Stripe subscription IDs, etc.)
-    without touching Contractor core fields.
+    Deprecated historical model retained for migration compatibility.
+    Runtime AI access no longer depends on billing profile state.
     """
 
     TIER_FREE = "free"
@@ -19,7 +17,7 @@ class ContractorBillingProfile(models.Model):
 
     TIER_CHOICES = (
         (TIER_FREE, "Free"),
-        (TIER_AI_PRO, "AI Pro"),
+        (TIER_AI_PRO, "Legacy AI Pro"),
     )
 
     contractor = models.OneToOneField(

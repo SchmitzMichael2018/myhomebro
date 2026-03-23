@@ -1,6 +1,3 @@
-// frontend/src/components/step1/DescriptionAiSection.jsx
-// v2026-03-11-phase1-scope-clarity — clearer distinction between title vs scope; improved AI wording and scope-first guidance
-
 import React from "react";
 import { safeTrim } from "./step1Utils";
 
@@ -13,7 +10,6 @@ export default function DescriptionAiSection({
   schedulePatch,
   patchAgreement,
   aiCredits,
-  aiBlockedByCredits,
   aiBusy,
   aiErr,
   aiPreview,
@@ -23,11 +19,8 @@ export default function DescriptionAiSection({
   applyAiDescription,
   hasSomeContext,
 }) {
-  const aiCreditText = aiCredits.loading
-    ? "AI Credits: —"
-    : aiCredits.remaining == null
-    ? "AI Credits: —"
-    : `AI Credits: ${aiCredits.remaining} remaining`;
+  void aiCredits;
+  const aiCreditText = "AI Included";
 
   return (
     <div className="md:col-span-2">
@@ -38,7 +31,7 @@ export default function DescriptionAiSection({
       <div className="mb-2 text-xs leading-5 text-gray-600">
         This is the actual project scope for the agreement. Describe the work clearly enough that
         the customer understands what is included, and both sides can avoid disputes later.
-        Project Title is just the label — this Description is the real scope.
+        Project Title is just the label; this Description is the real scope.
       </div>
 
       <textarea
@@ -68,19 +61,15 @@ export default function DescriptionAiSection({
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
         <div className="text-xs text-gray-600">
-          ✨ AI Assist can turn a rough idea into a clearer, stronger, more dispute-resistant scope.
+          AI Assist can turn a rough idea into a clearer, stronger, more dispute-resistant scope.
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <span
             className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${
-              aiCredits.loading
-                ? "bg-slate-100 text-slate-700"
-                : aiBlockedByCredits
-                ? "bg-rose-100 text-rose-800"
-                : "bg-emerald-100 text-emerald-800"
+              aiCredits.loading ? "bg-slate-100 text-slate-700" : "bg-emerald-100 text-emerald-800"
             }`}
-            title="1 credit = 1 AI-written agreement scope action"
+            title="AI tools are included with your account"
           >
             {aiCreditText}
           </span>
@@ -89,7 +78,7 @@ export default function DescriptionAiSection({
             type="button"
             onClick={refreshAiCredits}
             className="rounded border px-2 py-1 text-[11px] hover:bg-gray-50 disabled:opacity-60"
-            title="Refresh AI credits"
+            title="Refresh AI status"
             disabled={locked}
           >
             Refresh
@@ -100,22 +89,24 @@ export default function DescriptionAiSection({
       <div className="mt-2 flex w-full flex-wrap gap-2">
         <button
           type="button"
+          data-testid="agreement-ai-improve-scope-button"
           onClick={() => runAiDescription("improve")}
-          disabled={locked || aiBusy || !safeTrim(dLocal.description) || aiBlockedByCredits}
+          disabled={locked || aiBusy || !safeTrim(dLocal.description)}
           className="rounded border px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
           title="Improve the existing scope wording"
         >
-          {aiBusy ? "Working…" : "✨ Improve Existing Scope"}
+          {aiBusy ? "Working..." : "Improve Existing Scope"}
         </button>
 
         <button
           type="button"
+          data-testid="agreement-ai-generate-scope-button"
           onClick={() => runAiDescription("generate")}
-          disabled={locked || aiBusy || !hasSomeContext || aiBlockedByCredits}
+          disabled={locked || aiBusy || !hasSomeContext}
           className="rounded border px-2 py-1 text-xs hover:bg-gray-50 disabled:opacity-50"
           title="Generate a first scope draft from type, subtype, title, and current context"
         >
-          {aiBusy ? "Working…" : "✨ Generate Scope Draft"}
+          {aiBusy ? "Working..." : "Generate Scope Draft"}
         </button>
       </div>
 
@@ -132,7 +123,7 @@ export default function DescriptionAiSection({
             AI Suggested Scope Draft
           </div>
 
-          <div className="text-sm whitespace-pre-wrap text-indigo-900">{aiPreview}</div>
+          <div className="whitespace-pre-wrap text-sm text-indigo-900">{aiPreview}</div>
 
           <div className="mt-2 text-[11px] text-indigo-900/80">
             Review this draft before using it. Make sure it matches the actual work, assumptions,

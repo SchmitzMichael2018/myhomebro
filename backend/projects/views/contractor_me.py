@@ -72,43 +72,12 @@ def _compute_intro(created_dt: datetime | None):
     return intro_active, max(0, remaining)
 
 
-def _ai_credit_payload(contractor: Contractor) -> dict:
-    """
-    Returns a stable AI entitlement payload based on Contractor fields.
-
-    Requires Contractor fields:
-        ai_free_agreements_total (default 5)
-        ai_free_agreements_used  (default 0)
-    """
-    total = getattr(contractor, "ai_free_agreements_total", None)
-    used = getattr(contractor, "ai_free_agreements_used", None)
-
-    if total is None or used is None:
-        return {
-            "enabled": False,
-            "free_total": 0,
-            "free_used": 0,
-            "free_remaining": 0,
-            "reason": "ai_credits_not_configured",
-        }
-
-    try:
-        total_n = int(total or 0)
-    except Exception:
-        total_n = 0
-
-    try:
-        used_n = int(used or 0)
-    except Exception:
-        used_n = 0
-
-    remaining = max(0, total_n - used_n)
-
+def _ai_payload() -> dict:
     return {
-        "enabled": remaining > 0,
-        "free_total": total_n,
-        "free_used": used_n,
-        "free_remaining": remaining,
+        "access": "included",
+        "enabled": True,
+        "unlimited": True,
+        "rule": "AI is included with your account.",
     }
 
 
@@ -132,15 +101,7 @@ class ContractorMeView(APIView):
         pricing_start_dt = user_joined_dt or contractor_created_dt
         intro_active, intro_days_remaining = _compute_intro(pricing_start_dt)
 
-        ai_agreement_writer = _ai_credit_payload(c)
-
-        ai_summary = {
-            "agreement_writer": ai_agreement_writer,
-            "credits_remaining": ai_agreement_writer.get("free_remaining", 0),
-            "credits_total": ai_agreement_writer.get("free_total", 0),
-            "enabled": bool(ai_agreement_writer.get("enabled", False)),
-            "rule": "1 credit = 1 AI-written agreement",
-        }
+        ai_summary = _ai_payload()
 
         payload = {
             "id": c.id,
@@ -168,10 +129,7 @@ class ContractorMeView(APIView):
             "intro_active": bool(intro_active),
             "intro_days_remaining": intro_days_remaining,
 
-            # existing field
-            "ai_agreement_writer": ai_agreement_writer,
-
-            # new convenience field
+            # included-by-default AI status
             "ai": ai_summary,
         }
 

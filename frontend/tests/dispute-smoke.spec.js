@@ -34,17 +34,6 @@ test('contractor can open dispute flow and reach dispute fee state in a safe moc
     });
   });
 
-  await page.route('**/api/projects/feature-flags/', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        ai_enabled: false,
-        ai_disputes_enabled: false,
-      }),
-    });
-  });
-
   await page.route('**/api/projects/disputes/?mine=true', async (route) => {
     await route.fulfill({
       status: 200,

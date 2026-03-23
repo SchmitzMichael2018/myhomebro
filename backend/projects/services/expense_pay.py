@@ -25,36 +25,14 @@ def _frontend_url() -> str:
     return v.rstrip("/") if v else ""
 
 
-def _is_ai_pro(contractor) -> bool:
-    if contractor is None:
-        return False
-
-    try:
-        if getattr(contractor, "ai_subscription_active", False) is True:
-            return True
-    except Exception:
-        pass
-
-    try:
-        bp = getattr(contractor, "billing_profile", None)
-        if bp and getattr(bp, "ai_subscription_active", False) is True:
-            return True
-    except Exception:
-        pass
-
-    return False
-
-
-def _compute_fee_cents(amount_cents: int, *, is_ai_pro: bool) -> int:
+def _compute_fee_cents(amount_cents: int) -> int:
     """
-    Same locked pricing as direct pay invoices:
-    - Free: 2% + $1
-    - AI Pro: 1% + $1
+    Same pricing as Direct Pay invoices for all contractors: 1% + $1.
     """
     if amount_cents <= 0:
         return 0
 
-    rate = Decimal("0.01") if is_ai_pro else Decimal("0.02")
+    rate = Decimal("0.01")
     pct_fee = (Decimal(amount_cents) * rate).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     flat_fee = Decimal("100")
     total = int(pct_fee + flat_fee)
@@ -99,8 +77,7 @@ def create_expense_checkout_session(expense: ExpenseRequest, *, token: str = "")
     if amount_cents <= 0:
         raise ValueError("Expense amount must be greater than 0.")
 
-    is_ai_pro = _is_ai_pro(contractor)
-    application_fee_amount = _compute_fee_cents(amount_cents, is_ai_pro=is_ai_pro)
+    application_fee_amount = _compute_fee_cents(amount_cents)
 
     frontend_url = _frontend_url()
     success_url = (

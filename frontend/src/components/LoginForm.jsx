@@ -29,6 +29,15 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
     }
   }, [location.search]);
 
+  const subcontractorInviteToken = useMemo(() => {
+    try {
+      const sp = new URLSearchParams(location.search || "");
+      return (sp.get("subcontractor_invite") || "").trim();
+    } catch {
+      return "";
+    }
+  }, [location.search]);
+
   useEffect(() => {
     emailRef.current?.focus();
   }, []);
@@ -80,6 +89,15 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
       if (!access) throw new Error("Login succeeded but no tokens returned.");
 
       setTokens(access, refresh || null, !!rememberMe);
+
+      if (subcontractorInviteToken) {
+        toast.success("Signed in. Review the invitation to continue.");
+        return navigate(
+          `/subcontractor-invitations/accept/${encodeURIComponent(
+            subcontractorInviteToken
+          )}`
+        );
+      }
 
       if (inviteToken) {
         const result = await acceptInviteIfPresent(inviteToken);
@@ -147,7 +165,11 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
         Remember me
       </label>
 
-      {inviteToken ? (
+      {subcontractorInviteToken ? (
+        <div className="text-xs text-slate-600">
+          Sign in with the invited email address to continue to the subcontractor invitation.
+        </div>
+      ) : inviteToken ? (
         <div className="text-xs text-slate-600">
           Sign in to accept the invite and import the customer as a client.
         </div>

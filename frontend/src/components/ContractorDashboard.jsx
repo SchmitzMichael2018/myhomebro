@@ -227,32 +227,14 @@ const INTRO_RATE_LABEL = "3.00%";
 const STANDARD_START_RATE_LABEL = "4.50%";
 
 // ✅ Direct Pay pricing (LOCKED)
-const DIRECT_PAY_FREE_LABEL = "2% + $1";
-const DIRECT_PAY_AI_PRO_LABEL = "1% + $1";
+const DIRECT_PAY_LABEL = "1% + $1";
 
-function normalizeTierName(tier) {
-  const s = String(tier || "").trim().toLowerCase();
-  if (!s) return "free";
-  if (s.includes("ai") && s.includes("pro")) return "ai_pro";
-  if (s === "pro") return "ai_pro";
-  return s;
+function planLabel() {
+  return "Included";
 }
 
-function isAiProActive(me) {
-  const bp = me?.billing_profile || me?.billingProfile || null;
-  if (bp?.ai_subscription_active === true) return true;
-  if (me?.ai_subscription_active === true) return true;
-
-  const t = normalizeTierName(bp?.ai_subscription_tier || me?.ai_subscription_tier);
-  return t === "ai_pro";
-}
-
-function planLabel(me) {
-  return isAiProActive(me) ? "AI Pro" : "Free";
-}
-
-function directPayLabel(me) {
-  return isAiProActive(me) ? DIRECT_PAY_AI_PRO_LABEL : DIRECT_PAY_FREE_LABEL;
+function directPayLabel() {
+  return DIRECT_PAY_LABEL;
 }
 
 /* ---------- quick action button ---------- */
@@ -815,16 +797,11 @@ export default function ContractorDashboard() {
     error: "",
   });
 
-  // plan/billing snapshot + AI credits
+  // plan/billing snapshot
   const [planInfo, setPlanInfo] = useState({
     loading: true,
-    planLabel: "Free",
-    directPayLabel: DIRECT_PAY_FREE_LABEL,
-    aiProActive: false,
-    aiCreditsRemaining: null,
-    aiCreditsTotal: null,
-    aiCreditsUsed: null,
-    aiCreditsEnabled: false,
+    planLabel: "Included",
+    directPayLabel: DIRECT_PAY_LABEL,
   });
 
   const role = who?.role || "";
@@ -942,52 +919,18 @@ export default function ContractorDashboard() {
     };
   }, [who, isEmployee]);
 
-  // Intro pricing + plan + credits
+  // Intro pricing + plan
   useEffect(() => {
     const fetchIntroCountdown = async () => {
       if (isEmployee) return;
 
       try {
         const { data } = await api.get("/projects/contractors/me/");
-        const aiPro = isAiProActive(data);
-
-        const aw = data?.ai?.agreement_writer || data?.ai_agreement_writer || data?.aiAgreementWriter || null;
-
-        const creditsRemaining =
-          data?.ai?.credits_remaining ??
-          data?.ai?.creditsRemaining ??
-          aw?.free_remaining ??
-          aw?.freeRemaining ??
-          null;
-
-        const creditsTotal =
-          data?.ai?.credits_total ??
-          data?.ai?.creditsTotal ??
-          aw?.free_total ??
-          aw?.freeTotal ??
-          null;
-
-        const creditsUsed =
-          aw?.free_used ??
-          aw?.freeUsed ??
-          (creditsTotal != null && creditsRemaining != null
-            ? Math.max(0, Number(creditsTotal) - Number(remaining = creditsRemaining))
-            : null);
-
-        const creditsEnabled =
-          aw?.enabled === true ||
-          data?.ai?.enabled === true ||
-          (creditsRemaining != null && Number(creditsRemaining) > 0);
 
         setPlanInfo({
           loading: false,
           planLabel: planLabel(data),
           directPayLabel: directPayLabel(data),
-          aiProActive: aiPro,
-          aiCreditsRemaining: creditsRemaining == null ? null : Number(creditsRemaining),
-          aiCreditsTotal: creditsTotal == null ? null : Number(creditsTotal),
-          aiCreditsUsed: creditsUsed == null ? null : Number(creditsUsed),
-          aiCreditsEnabled: !!creditsEnabled,
         });
 
         const createdRaw =
@@ -1227,10 +1170,8 @@ export default function ContractorDashboard() {
 
   const subtitleParts = [];
   if (!planInfo.loading) {
-    subtitleParts.push(`Plan: ${planInfo.planLabel}. Direct Pay: ${directPayLabel(who)}.`);
-    if (planInfo.aiCreditsRemaining != null) {
-      subtitleParts.push(`AI Credits: ${planInfo.aiCreditsRemaining} remaining. (1 credit = 1 agreement.)`);
-    }
+    subtitleParts.push(`AI: ${planInfo.planLabel}. Direct Pay: ${planInfo.directPayLabel}.`);
+    subtitleParts.push("AI tools are included with your account.");
   }
 
   if (pricing.loading) {

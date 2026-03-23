@@ -4,17 +4,36 @@ from __future__ import annotations
 import os
 import logging
 from typing import Iterable
+from urllib.parse import urlsplit, urlunsplit
 
 from django.conf import settings
+from django.utils import timezone
+
+from projects.models_sms import SMSConsentStatus
 
 try:
     from twilio.rest import Client
     from twilio.base.exceptions import TwilioRestException
+    from twilio.request_validator import RequestValidator
 except Exception:  # pragma: no cover
     Client = None  # allow import even if twilio not installed yet
     TwilioRestException = Exception
+    RequestValidator = None
 
 logger = logging.getLogger(__name__)
+
+OPT_OUT_KEYWORDS = {
+    "STOP",
+    "STOPALL",
+    "UNSUBSCRIBE",
+    "CANCEL",
+    "END",
+    "QUIT",
+    "REVOKE",
+    "OPTOUT",
+}
+HELP_KEYWORDS = {"HELP", "INFO"}
+OPT_IN_KEYWORDS = {"START", "UNSTOP"}
 
 
 def _twilio_enabled() -> bool:
@@ -43,7 +62,7 @@ def _twilio_client() -> Client:
     return Client(sid, token)
 
 
-def _normalize_phone(to: str) -> str:
+def normalize_phone_number(to: str) -> str:
     """
     Very simple normalizer for US-style numbers.
 
@@ -67,6 +86,123 @@ def _normalize_phone(to: str) -> str:
     return raw
 
 
+def _normalize_phone(to: str) -> str:
+    return normalize_phone_number(to)
+
+
+def normalize_inbound_body(body: str | None) -> str:
+    return " ".join(str(body or "").strip().split())
+
+
+def classify_inbound_keyword(body: str | None) -> str:
+    normalized = normalize_inbound_body(body).upper()
+    if normalized in OPT_OUT_KEYWORDS:
+        return SMSConsentStatus.KEYWORD_OPT_OUT
+    if normalized in HELP_KEYWORDS:
+        return SMSConsentStatus.KEYWORD_HELP
+    if normalized in OPT_IN_KEYWORDS:
+        return SMSConsentStatus.KEYWORD_OPT_IN
+    return SMSConsentStatus.KEYWORD_DEFAULT
+
+
+def upsert_sms_consent_status(
+    *,
+    phone_number: str,
+    message_sid: str,
+    body: str,
+    keyword_type: str,
+) -> SMSConsentStatus:
+    normalized_phone = normalize_phone_number(phone_number)
+    if not normalized_phone:
+        raise ValueError("phone_number is required")
+    normalized_body = normalize_inbound_body(body)
+
+    consent, _ = SMSConsentStatus.objects.get_or_create(
+        phone_number=normalized_phone,
+        defaults={
+            "is_subscribed": True,
+            "last_inbound_message_sid": message_sid or "",
+            "last_inbound_body": normalized_body,
+            "last_keyword_type": keyword_type,
+        },
+    )
+
+    consent.last_inbound_message_sid = message_sid or ""
+    consent.last_inbound_body = normalized_body
+    consent.last_keyword_type = keyword_type
+
+    now = timezone.now()
+    was_subscribed = bool(consent.is_subscribed)
+    if keyword_type == SMSConsentStatus.KEYWORD_OPT_OUT:
+        consent.is_subscribed = False
+        if consent.opted_out_at is None:
+            consent.opted_out_at = now
+    elif keyword_type == SMSConsentStatus.KEYWORD_OPT_IN:
+        consent.is_subscribed = True
+        if consent.opted_in_at is None or not was_subscribed:
+            consent.opted_in_at = now
+
+    consent.save()
+    return consent
+
+
+def is_sms_subscribed(phone_number: str) -> bool:
+    normalized_phone = normalize_phone_number(phone_number)
+    if not normalized_phone:
+        return True
+    consent = SMSConsentStatus.objects.filter(phone_number=normalized_phone).only("is_subscribed").first()
+    if consent is None:
+        return True
+    return bool(consent.is_subscribed)
+
+
+def handle_incoming_user_message(from_number: str, body: str, message_sid: str) -> None:
+    # Placeholder for future conversation routing once inbound SMS is connected to project/chat threads.
+    logger.info(
+        "Inbound SMS routed to placeholder handler",
+        extra={
+            "from_number": normalize_phone_number(from_number),
+            "message_sid": message_sid or "",
+        },
+    )
+
+
+def validate_twilio_webhook_request(request) -> bool:
+    """
+    Non-blocking request validation helper.
+
+    If Twilio auth token or signature validation support is unavailable, we log and allow
+    the request so local/dev environments and staged rollouts keep working. Tighten this
+    in production once the deployed URL/signing configuration is finalized.
+    """
+    signature = (request.headers.get("X-Twilio-Signature") or "").strip()
+    auth_token = getattr(settings, "TWILIO_AUTH_TOKEN", None) or os.getenv("TWILIO_AUTH_TOKEN")
+
+    if not signature or not auth_token or RequestValidator is None:
+        logger.info(
+            "Twilio signature validation skipped",
+            extra={
+                "has_signature": bool(signature),
+                "has_auth_token": bool(auth_token),
+                "validator_available": RequestValidator is not None,
+            },
+        )
+        return True
+
+    try:
+        validator = RequestValidator(auth_token)
+        raw_url = request.build_absolute_uri()
+        parsed = urlsplit(raw_url)
+        public_url = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, parsed.fragment))
+        valid = validator.validate(public_url, request.POST, signature)
+        if not valid:
+            logger.warning("Twilio signature validation failed", extra={"path": request.path})
+        return bool(valid)
+    except Exception:
+        logger.exception("Twilio signature validation error", extra={"path": request.path})
+        return True
+
+
 def send_sms(to: str, body: str) -> bool:
     """
     Send a single SMS. Returns True on success.
@@ -75,6 +211,10 @@ def send_sms(to: str, body: str) -> bool:
     """
     if not _twilio_enabled():
         logger.warning("send_sms called but Twilio is not enabled; to=%r body=%r", to, body)
+        return False
+
+    if not is_sms_subscribed(to):
+        logger.info("SMS suppressed for locally opted-out phone number", extra={"to": normalize_phone_number(to)})
         return False
 
     normalized_to = _normalize_phone(to)

@@ -990,29 +990,7 @@ export default function DisputesPages() {
   const isEmployee = role.startsWith("employee");
   const basePath = isEmployee ? "/app/employee" : "/app";
 
-  // ✅ AI toggle (safe default OFF). Enable via:
-  // - Vite env var: VITE_AI_DISPUTES_ENABLED=true
-  // - OR localStorage override: localStorage.setItem("mhb_ai_disputes","1")
-  const [featureFlags, setFeatureFlags] = useState(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data } = await api.get("/projects/feature-flags/");
-        setFeatureFlags(data);
-      } catch (e) {
-        console.warn("Feature flags unavailable, disabling AI.");
-        setFeatureFlags({
-          ai_enabled: false,
-          ai_disputes_enabled: false,
-        });
-      }
-    })();
-  }, []);
-
-  const aiDisputesEnabled =
-    featureFlags?.ai_enabled === true &&
-    featureFlags?.ai_disputes_enabled === true;
+  const aiDisputesEnabled = true;
 
 
   const [loading, setLoading] = useState(true);

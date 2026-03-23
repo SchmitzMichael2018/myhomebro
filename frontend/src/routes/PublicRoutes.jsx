@@ -26,6 +26,7 @@ import InvoicePage from "../pages/InvoicePage.jsx"; // /invoice/:token → redir
 // Public dispute thread + decision
 import PublicDisputeView from "../pages/PublicDisputeView.jsx"; // /disputes/:id?token=...
 import PublicDisputeDecision from "../pages/PublicDisputeDecision.jsx"; // /disputes/:id/decision?token=...
+import SubcontractorInvitationAcceptPage from "../pages/SubcontractorInvitationAcceptPage.jsx";
 
 export default function PublicRoutes() {
   return (
@@ -68,6 +69,11 @@ export default function PublicRoutes() {
 
       {/* Public contractor profile */}
       <Route path="/contractors/:id" element={<PublicProfile />} />
+
+      <Route
+        path="/subcontractor-invitations/accept/:token"
+        element={<SubcontractorInvitationAcceptPage />}
+      />
 
       {/* catch-all */}
       <Route path="*" element={<Navigate to="/" replace />} />

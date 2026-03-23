@@ -133,6 +133,11 @@ except Exception:
     DisputeSerializer = _mk_model_or_plain_serializer("DisputeSerializer", DisputeModel)
 
 try:
+    from .warranty import AgreementWarrantySerializer  # type: ignore
+except Exception:
+    AgreementWarrantySerializer = _mk_model_or_plain_serializer("AgreementWarrantySerializer", None)
+
+try:
     from .notifications import NotificationSerializer  # type: ignore
 except Exception:
     NotificationSerializer = _mk_model_or_plain_serializer("NotificationSerializer", None)
@@ -163,5 +168,6 @@ __all__ = [
     "ProjectSerializer",
     "ProjectWriteSerializer",
     "DisputeSerializer",
+    "AgreementWarrantySerializer",
     "NotificationSerializer",
 ]

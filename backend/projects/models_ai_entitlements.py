@@ -1,18 +1,7 @@
 # backend/projects/models_ai_entitlements.py
-# v2026-03-03 — MyHomeBro AI Entitlements + Credits (Scope Assistant + Milestones)
-#
-# Adds robust credit/quota support for Scope Assistant while preserving existing fields:
-# - free_recommendations_remaining
-# - monthly_recommendations_included/used
-# - quota_period_start/end
-# - allow_* flags
-#
-# New:
-# - free_scope_credits_remaining
-# - monthly_scope_credits_included/used
-# - scope_quota_period_start/end
-# - scope_unlimited
-# - helpers: scope_credits_remaining(), can_generate_scope(), consume_scope_credit()
+# Deprecated historical model retained only so old migrations and stored rows
+# remain readable. Active runtime AI access no longer depends on entitlements,
+# credits, tiers, subscriptions, or purchases.
 
 from __future__ import annotations
 
@@ -33,11 +22,16 @@ def _default_period(days: int = 30):
 
 
 class ContractorAIEntitlement(models.Model):
+    TIER_FREE = "free"
+    TIER_STARTER = "starter"
+    TIER_PRO = "pro"
+    TIER_BUSINESS = "business"
+
     # --- existing / core identity ---
     contractor_id = models.IntegerField(null=True, blank=True, db_index=True)
 
     # --- existing tier/subscription fields (keep) ---
-    tier = models.CharField(max_length=64, default="free")
+    tier = models.CharField(max_length=64, default=TIER_FREE)
     subscription_active = models.BooleanField(default=False)
 
     # --- existing recommendation quota fields (keep) ---

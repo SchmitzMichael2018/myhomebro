@@ -15,8 +15,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.exceptions import PermissionDenied
 
-from postmarker.core import PostmarkClient
-
 from ..models import Invoice, InvoiceStatus, MilestoneComment, MilestoneFile
 from ..serializers.invoices import InvoiceSerializer
 from projects.services.invoice_pdf import generate_invoice_pdf_bytes
@@ -182,6 +180,13 @@ def _invoice_notes_and_attachments(invoice: Invoice) -> tuple[str, list[dict]]:
 
 
 def _send_invoice_email_postmark(invoice: Invoice) -> dict:
+    try:
+        from postmarker.core import PostmarkClient
+    except Exception as exc:
+        raise RuntimeError(
+            "Postmark email client is not installed in this environment."
+        ) from exc
+
     token = getattr(settings, "POSTMARK_SERVER_TOKEN", None)
     if not token:
         raise RuntimeError("POSTMARK_SERVER_TOKEN is missing from settings/environment.")

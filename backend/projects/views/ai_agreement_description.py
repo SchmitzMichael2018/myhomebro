@@ -1,5 +1,5 @@
 # backend/projects/views/ai_agreement_description.py
-# v2026-02-19 — AI Description endpoint consumes 1 credit per agreement (bundle) and regenerate is free
+# v2026-03-23 — AI Description endpoint keeps legacy route but treats AI as included
 
 from __future__ import annotations
 
@@ -10,9 +10,6 @@ from rest_framework import status
 
 from projects.views.contractor_me import _contractor_for_user
 from projects.ai.agreement_description_writer import generate_or_improve_description
-from projects.services.ai_credits import consume_agreement_bundle_credit_if_needed
-
-
 class AIAgreementDescriptionView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -47,24 +44,16 @@ class AIAgreementDescriptionView(APIView):
             current_description=current_description,
         )
 
-        # 2) Charge “bundle credit” once per agreement (regenerate is free)
-        try:
-            charge = consume_agreement_bundle_credit_if_needed(
-                contractor=contractor,
-                agreement_id=agreement_id,
-            )
-        except ValueError as e:
-            return Response({"detail": str(e)}, status=status.HTTP_402_PAYMENT_REQUIRED)
-
         return Response(
             {
                 "agreement_id": agreement_id,
                 "description": result.get("description"),
                 "model": result.get("_model"),
                 "mode": result.get("_mode"),
-                "charged": charge["charged"],  # True only the first time for this agreement
-                "ai_credits": charge["ai_credits"],
-                "rule": "1 credit = 1 agreement (agreement bundle). Regenerate is free.",
+                "ai_access": "included",
+                "ai_enabled": True,
+                "ai_unlimited": True,
+                "rule": "AI is included with your account.",
             },
             status=status.HTTP_200_OK,
         )

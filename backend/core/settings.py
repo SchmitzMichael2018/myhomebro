@@ -441,11 +441,11 @@ LOGGING = {
 # ============================================================================
 # AI FEATURE FLAGS (MyHomeBro)
 # ============================================================================
-AI_ENABLED = get_bool("AI_ENABLED", default=False)
-AI_DISPUTE_RECOMMENDATIONS_ENABLED = get_bool("AI_DISPUTE_RECOMMENDATIONS_ENABLED", default=False)
-AI_DISPUTES_ENABLED = get_bool("AI_DISPUTES_ENABLED", default=False)
-AI_INSIGHTS_ENABLED = get_bool("AI_INSIGHTS_ENABLED", default=False)
-AI_SCOPE_ASSIST_ENABLED = get_bool("AI_SCOPE_ASSIST_ENABLED", default=False)
+AI_ENABLED = get_bool("AI_ENABLED", default=True)
+AI_DISPUTE_RECOMMENDATIONS_ENABLED = get_bool("AI_DISPUTE_RECOMMENDATIONS_ENABLED", default=True)
+AI_DISPUTES_ENABLED = get_bool("AI_DISPUTES_ENABLED", default=True)
+AI_INSIGHTS_ENABLED = get_bool("AI_INSIGHTS_ENABLED", default=True)
+AI_SCOPE_ASSIST_ENABLED = get_bool("AI_SCOPE_ASSIST_ENABLED", default=True)
 
 OPENAI_DISPUTE_SUMMARY_MODEL = get_env_var("OPENAI_DISPUTE_SUMMARY_MODEL", "gpt-4o-mini")
 OPENAI_API_KEY = get_env_var("OPENAI_API_KEY", required=False)

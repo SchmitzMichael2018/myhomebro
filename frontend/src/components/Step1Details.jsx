@@ -311,10 +311,9 @@ export default function Step1Details({
 
   const [aiCredits, setAiCredits] = useState({
     loading: true,
-    remaining: null,
-    total: null,
-    used: null,
-    enabled: false,
+    access: "included",
+    enabled: true,
+    unlimited: true,
   });
 
   const refreshAiCredits = async () => {
@@ -340,9 +339,6 @@ export default function Step1Details({
     );
   }, [dLocal.project_title, dLocal.project_type, dLocal.project_subtype]);
 
-  const aiBlockedByCredits =
-    aiCredits.loading ? false : aiCredits.remaining != null && aiCredits.remaining <= 0;
-
   async function runAiDescription(mode) {
     if (locked) return;
 
@@ -351,11 +347,6 @@ export default function Step1Details({
     setAiBusy(true);
 
     try {
-      if (aiBlockedByCredits) {
-        toast.error("No AI credits remaining.");
-        return;
-      }
-
       const payload = {
         mode,
         agreement_id: agreementId || null,
@@ -374,31 +365,13 @@ export default function Step1Details({
 
       setAiPreview(text);
 
-      const remainingFromAi =
-        res?.data?.remaining_credits ??
-        res?.data?.ai_credits?.free_remaining ??
-        res?.data?.ai_credits?.remaining ??
-        res?.data?.ai_credits_remaining ??
-        null;
-
-      const totalFromAi =
-        res?.data?.ai_credits?.free_total ?? res?.data?.ai_credits?.total ?? null;
-
-      const usedFromAi =
-        res?.data?.ai_credits?.free_used ?? res?.data?.ai_credits?.used ?? null;
-
-      if (remainingFromAi != null) {
-        setAiCredits((prev) => ({
-          ...prev,
-          loading: false,
-          remaining: Number(remainingFromAi),
-          total: totalFromAi != null ? Number(totalFromAi) : prev.total,
-          used: usedFromAi != null ? Number(usedFromAi) : prev.used,
-          enabled: Number(remainingFromAi) > 0,
-        }));
-      } else {
-        await refreshAiCredits();
-      }
+      setAiCredits((prev) => ({
+        ...prev,
+        loading: false,
+        access: res?.data?.ai_access || "included",
+        enabled: res?.data?.ai_enabled !== false,
+        unlimited: res?.data?.ai_unlimited !== false,
+      }));
     } catch (e) {
       setAiErr(
         e?.response?.data?.detail ||
@@ -534,11 +507,6 @@ export default function Step1Details({
       toast.error("Save Draft first.");
       return;
     }
-    if (aiBlockedByCredits) {
-      toast.error("No AI credits remaining.");
-      return;
-    }
-
     const notes = [
       safeTrim(dLocal?.project_title)
         ? `Project Title: ${safeTrim(dLocal.project_title)}`
@@ -963,7 +931,6 @@ export default function Step1Details({
             templateDetailLoading={templateDetailLoading}
             templateDetailErr={templateDetailErr}
             aiCredits={aiCredits}
-            aiBlockedByCredits={aiBlockedByCredits}
             aiBusy={aiBusy}
             aiErr={aiErr}
             aiPreview={aiPreview}

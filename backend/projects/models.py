@@ -16,6 +16,8 @@ from .models_dispute import Dispute, DisputeAttachment
 from .models_invite import ContractorInvite  # noqa: F401
 from .models_project_intake import ProjectIntake
 from .models_project_taxonomy import ProjectType, ProjectSubtype  # noqa: E402,F401
+from .models_sms import SMSConsentStatus  # noqa: E402,F401
+from .models_subcontractor import SubcontractorInvitation  # noqa: E402,F401
 
 
 # --- Safe default for warranty snapshot (used if blank/None) ---
@@ -64,6 +66,19 @@ class AgreementSignaturePolicy(models.TextChoices):
     BOTH_REQUIRED = "both_required", "Both Parties Sign (Recommended)"
     CONTRACTOR_ONLY = "contractor_only", "Contractor Only (Work Order / Internal)"
     EXTERNAL_SIGNED = "external_signed", "Signed Outside MyHomeBro (Upload/Reference/Attest)"
+
+
+class WarrantyStatus(models.TextChoices):
+    ACTIVE = "active", "Active"
+    EXPIRED = "expired", "Expired"
+    VOID = "void", "Void"
+
+
+class WarrantyAppliesTo(models.TextChoices):
+    FULL_AGREEMENT = "full_agreement", "Full Agreement"
+    WORKMANSHIP = "workmanship", "Workmanship"
+    MATERIALS = "materials", "Materials"
+    OTHER = "other", "Other"
 
 
 class InvoiceStatus(models.TextChoices):
@@ -173,12 +188,10 @@ class Contractor(models.Model):
 
     @property
     def ai_free_agreements_remaining(self) -> int:
-        total = int(self.ai_free_agreements_total or 0)
-        used = int(self.ai_free_agreements_used or 0)
-        return max(0, total - used)
+        return 0
 
     def can_use_ai_agreement_writer(self) -> bool:
-        return self.ai_free_agreements_remaining > 0
+        return True
 
 
 class Homeowner(models.Model):
@@ -667,6 +680,66 @@ class AgreementPDFVersion(models.Model):
 
     def __str__(self):
         return f"AgreementPDFVersion(agreement={self.agreement_id}, v{self.version_number}, kind={self.kind})"
+
+
+class AgreementWarranty(models.Model):
+    agreement = models.ForeignKey(
+        "projects.Agreement",
+        on_delete=models.CASCADE,
+        related_name="warranty_records",
+        db_index=True,
+    )
+    contractor = models.ForeignKey(
+        Contractor,
+        on_delete=models.CASCADE,
+        related_name="agreement_warranties",
+        db_index=True,
+    )
+    title = models.CharField(max_length=255)
+    coverage_details = models.TextField(blank=True, default="")
+    exclusions = models.TextField(blank=True, default="")
+    start_date = models.DateField(null=True, blank=True, db_index=True)
+    end_date = models.DateField(null=True, blank=True, db_index=True)
+    status = models.CharField(
+        max_length=16,
+        choices=WarrantyStatus.choices,
+        default=WarrantyStatus.ACTIVE,
+        db_index=True,
+    )
+    applies_to = models.CharField(
+        max_length=24,
+        choices=WarrantyAppliesTo.choices,
+        blank=True,
+        default="",
+        help_text="Optional lightweight scope label for the warranty record.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-start_date", "-created_at", "-id"]
+
+    def clean(self):
+        super().clean()
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            raise ValidationError({"end_date": "End date cannot be before start date."})
+
+    def save(self, *args, **kwargs):
+        if not self.contractor_id and self.agreement_id and self.agreement.contractor_id:
+            self.contractor = self.agreement.contractor
+
+        if (
+            self.status == WarrantyStatus.ACTIVE
+            and self.end_date
+            and self.end_date < timezone.localdate()
+        ):
+            self.status = WarrantyStatus.EXPIRED
+
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Warranty({self.title} • agreement={self.agreement_id})"
 
 
 class AgreementFundingLink(models.Model):
@@ -1222,8 +1295,6 @@ class MilestoneAssignment(models.Model):
 from .models_attachments import AgreementAttachment, ExpenseRequestAttachment  # noqa: E402,F401
 from .models_schedule import EmployeeWorkSchedule, EmployeeScheduleException  # noqa: E402,F401
 from .models_ai_artifacts import DisputeAIArtifact  # noqa: E402,F401
-from .models_ai_entitlements import ContractorAIEntitlement  # noqa: E402,F401
-from .models_ai_purchases import DisputeAIPurchase  # noqa: E402,F401
-from .models_billing import ContractorBillingProfile  # noqa: F401
 from .models_expense_request import ExpenseRequest  # noqa: E402,F401
 from .models_templates import ProjectTemplate, ProjectTemplateMilestone  # noqa: E402,F401
+from .models_amendment_request import AmendmentRequest  # noqa: E402,F401

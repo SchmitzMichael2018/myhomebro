@@ -541,29 +541,11 @@ export default function useAgreementMilestoneAI({
           await replaceAiQuestionsOnAgreement(nextPreview.questions);
         }
 
-        const remainingFromAi =
-          res?.data?.remaining_credits ??
-          res?.data?.ai_credits?.free_remaining ??
-          res?.data?.ai_credits?.remaining ??
-          res?.data?.ai_credits_remaining ??
-          null;
-
-        const totalFromAi =
-          res?.data?.ai_credits?.free_total ??
-          res?.data?.ai_credits?.total ??
-          null;
-
-        const usedFromAi =
-          res?.data?.ai_credits?.free_used ??
-          res?.data?.ai_credits?.used ??
-          null;
-
-        if (typeof onCreditsUpdate === "function" && remainingFromAi != null) {
+        if (typeof onCreditsUpdate === "function") {
           onCreditsUpdate({
-            remaining: Number(remainingFromAi),
-            total: totalFromAi != null ? Number(totalFromAi) : null,
-            used: usedFromAi != null ? Number(usedFromAi) : null,
-            enabled: Number(remainingFromAi) > 0,
+            access: res?.data?.ai_access || "included",
+            enabled: true,
+            unlimited: true,
             loading: false,
           });
         }
@@ -681,29 +663,11 @@ export default function useAgreementMilestoneAI({
 
       const pricingEstimates = normalizePricingEstimates(res?.data?.pricing_estimates || []);
 
-      const remainingFromAi =
-        res?.data?.remaining_credits ??
-        res?.data?.ai_credits?.free_remaining ??
-        res?.data?.ai_credits?.remaining ??
-        res?.data?.ai_credits_remaining ??
-        null;
-
-      const totalFromAi =
-        res?.data?.ai_credits?.free_total ??
-        res?.data?.ai_credits?.total ??
-        null;
-
-      const usedFromAi =
-        res?.data?.ai_credits?.free_used ??
-        res?.data?.ai_credits?.used ??
-        null;
-
-      if (typeof onCreditsUpdate === "function" && remainingFromAi != null) {
+      if (typeof onCreditsUpdate === "function") {
         onCreditsUpdate({
-          remaining: Number(remainingFromAi),
-          total: totalFromAi != null ? Number(totalFromAi) : null,
-          used: usedFromAi != null ? Number(usedFromAi) : null,
-          enabled: Number(remainingFromAi) > 0,
+          access: res?.data?.ai_access || "included",
+          enabled: true,
+          unlimited: true,
           loading: false,
         });
       }

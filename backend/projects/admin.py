@@ -14,6 +14,7 @@ try:
         Homeowner,
         Project,
         Agreement,
+        AgreementWarranty,
         Milestone,
         MilestoneFile,
         MilestoneComment,
@@ -22,7 +23,7 @@ try:
         AgreementAmendment,
     )
 except Exception:  # pragma: no cover
-    Skill = Contractor = Homeowner = Project = Agreement = None
+    Skill = Contractor = Homeowner = Project = Agreement = AgreementWarranty = None
     Milestone = MilestoneFile = MilestoneComment = None
     Invoice = Expense = AgreementAmendment = None
 
@@ -37,12 +38,6 @@ try:
     from .models_attachments import AgreementAttachment  # type: ignore
 except Exception:  # pragma: no cover
     AgreementAttachment = None  # type: ignore
-
-# ✅ NEW: AI models (guarded)
-try:
-    from .models_ai_entitlements import ContractorAIEntitlement  # type: ignore
-except Exception:  # pragma: no cover
-    ContractorAIEntitlement = None  # type: ignore
 
 try:
     from .models_ai_artifacts import DisputeAIArtifact  # type: ignore
@@ -336,6 +331,30 @@ if Agreement is not None:
                     )
             if sent:
                 self.message_user(request, f"Emailed {sent} agreement(s).", level=messages.SUCCESS)
+
+
+if AgreementWarranty is not None:
+    @admin.register(AgreementWarranty)
+    class AgreementWarrantyAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "title",
+            "agreement",
+            "contractor",
+            "status",
+            "applies_to",
+            "start_date",
+            "end_date",
+            "updated_at",
+        )
+        search_fields = (
+            "title",
+            "agreement__project__title",
+            "agreement__project__number",
+            "contractor__business_name",
+        )
+        list_filter = ("status", "applies_to", "start_date", "end_date")
+        readonly_fields = ("created_at", "updated_at")
 
 
 # ─────────────────────────────────────────────────────────────
@@ -713,162 +732,8 @@ if AgreementAttachment is not None:
 
 
 # ─────────────────────────────────────────────────────────────
-# AI: Admin Controls (Entitlements + Artifacts)
+# AI: Admin Controls (Artifacts)
 # ─────────────────────────────────────────────────────────────
-if ContractorAIEntitlement is not None:
-
-    @admin.action(description="Grant +1 free AI recommendation")
-    def grant_one_free_recommendation(modeladmin, request, queryset):
-        for ent in queryset:
-            ent.free_recommendations_remaining = int(ent.free_recommendations_remaining or 0) + 1
-            ent.save(update_fields=["free_recommendations_remaining", "updated_at"])
-
-    @admin.action(description="Grant +5 free AI recommendations")
-    def grant_five_free_recommendations(modeladmin, request, queryset):
-        for ent in queryset:
-            ent.free_recommendations_remaining = int(ent.free_recommendations_remaining or 0) + 5
-            ent.save(update_fields=["free_recommendations_remaining", "updated_at"])
-
-    @admin.action(description="Reset monthly quota usage (sets used=0; sets period to next 30 days)")
-    def reset_monthly_quota(modeladmin, request, queryset):
-        now = timezone.now()
-        for ent in queryset:
-            ent.monthly_recommendations_used = 0
-            ent.quota_period_start = now
-            ent.quota_period_end = now + timezone.timedelta(days=30)
-            ent.save(
-                update_fields=[
-                    "monthly_recommendations_used",
-                    "quota_period_start",
-                    "quota_period_end",
-                    "updated_at",
-                ]
-            )
-
-    @admin.action(description="Set tier: FREE")
-    def set_tier_free(modeladmin, request, queryset):
-        queryset.update(tier=ContractorAIEntitlement.TIER_FREE, updated_at=timezone.now())
-
-    @admin.action(description="Set tier: STARTER")
-    def set_tier_starter(modeladmin, request, queryset):
-        queryset.update(tier=ContractorAIEntitlement.TIER_STARTER, updated_at=timezone.now())
-
-    @admin.action(description="Set tier: PRO")
-    def set_tier_pro(modeladmin, request, queryset):
-        queryset.update(tier=ContractorAIEntitlement.TIER_PRO, updated_at=timezone.now())
-
-    @admin.action(description="Set tier: BUSINESS")
-    def set_tier_business(modeladmin, request, queryset):
-        queryset.update(tier=ContractorAIEntitlement.TIER_BUSINESS, updated_at=timezone.now())
-
-    @admin.action(description="Mark subscription: ACTIVE")
-    def set_subscription_active(modeladmin, request, queryset):
-        queryset.update(subscription_active=True, updated_at=timezone.now())
-
-    @admin.action(description="Mark subscription: INACTIVE")
-    def set_subscription_inactive(modeladmin, request, queryset):
-        queryset.update(subscription_active=False, updated_at=timezone.now())
-
-    @admin.register(ContractorAIEntitlement)
-    class ContractorAIEntitlementAdmin(admin.ModelAdmin):
-        list_display = (
-            "id",
-            "contractor_id",
-            "contractor_email",
-            "tier",
-            "subscription_active",
-            "free_recommendations_remaining",
-            "monthly_recommendations_included",
-            "monthly_recommendations_used",
-            "quota_period_start",
-            "quota_period_end",
-            "allow_ai_summaries",
-            "allow_ai_recommendations",
-            "allow_scope_assistant",
-            "allow_resolution_agreement",
-            "allow_business_insights",
-            "updated_at",
-        )
-        list_filter = (
-            "tier",
-            "subscription_active",
-            "allow_ai_summaries",
-            "allow_ai_recommendations",
-            "allow_scope_assistant",
-            "allow_resolution_agreement",
-            "allow_business_insights",
-            "updated_at",
-        )
-        search_fields = (
-            "contractor__id",
-            "contractor__user__email",
-            "contractor__business_name",
-            "stripe_customer_id",
-            "stripe_subscription_id",
-        )
-        readonly_fields = ("created_at", "updated_at")
-        ordering = ("-updated_at", "-id")
-        actions = (
-            grant_one_free_recommendation,
-            grant_five_free_recommendations,
-            reset_monthly_quota,
-            set_tier_free,
-            set_tier_starter,
-            set_tier_pro,
-            set_tier_business,
-            set_subscription_active,
-            set_subscription_inactive,
-        )
-
-        fieldsets = (
-            ("Contractor", {"fields": ("contractor",)}),
-            (
-                "Tier & Subscription",
-                {
-                    "fields": (
-                        "tier",
-                        "subscription_active",
-                        "stripe_customer_id",
-                        "stripe_subscription_id",
-                        "current_period_end",
-                    )
-                },
-            ),
-            (
-                "Free / Quota",
-                {
-                    "fields": (
-                        "free_recommendations_remaining",
-                        "monthly_recommendations_included",
-                        "monthly_recommendations_used",
-                        "quota_period_start",
-                        "quota_period_end",
-                    )
-                },
-            ),
-            (
-                "Feature Toggles",
-                {
-                    "fields": (
-                        "allow_ai_summaries",
-                        "allow_ai_recommendations",
-                        "allow_scope_assistant",
-                        "allow_resolution_agreement",
-                        "allow_business_insights",
-                    )
-                },
-            ),
-            ("Timestamps", {"fields": ("created_at", "updated_at")}),
-        )
-
-        @admin.display(description="Contractor Email")
-        def contractor_email(self, obj):
-            try:
-                return obj.contractor.user.email
-            except Exception:
-                return ""
-
-
 if DisputeAIArtifact is not None:
 
     @admin.register(DisputeAIArtifact)
