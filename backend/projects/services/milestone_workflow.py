@@ -146,6 +146,15 @@ def get_effective_reviewer(milestone: Milestone) -> WorkerAssignment:
     )
 
 
+def is_effective_reviewer_user(milestone: Milestone, user) -> bool:
+    if user is None:
+        return False
+    reviewer = get_effective_reviewer(milestone)
+    if reviewer.user is None:
+        return False
+    return getattr(reviewer.user, "id", None) == getattr(user, "id", None)
+
+
 def can_user_submit_work(milestone: Milestone, user) -> bool:
     worker = get_assigned_worker(milestone)
     if worker is None or worker.user is None or user is None:
@@ -161,7 +170,4 @@ def can_user_review_submitted_work(milestone: Milestone, user) -> bool:
     if owner_user is not None and getattr(owner_user, "id", None) == getattr(user, "id", None):
         return True
 
-    reviewer = get_effective_reviewer(milestone)
-    if reviewer.user is None:
-        return False
-    return getattr(reviewer.user, "id", None) == getattr(user, "id", None)
+    return is_effective_reviewer_user(milestone, user)

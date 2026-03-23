@@ -62,6 +62,12 @@ export default function Sidebar({ variant = "desktop" }) {
     const role = data?.role || data?.type || "";
     return isContractor && String(role).toLowerCase() === "contractor_owner";
   }, [data, isContractor]);
+  const canAccessReviewerQueue = useMemo(() => {
+    if (isContractorOwner) return true;
+    if (!isEmployee) return false;
+    const teamRole = String(data?.team_role || data?.role || "").toLowerCase();
+    return teamRole === "employee_milestones" || teamRole === "employee_supervisor";
+  }, [data, isContractorOwner, isEmployee]);
 
   const activeAgreementId = useMemo(() => {
     const p = location.pathname || "";
@@ -155,6 +161,9 @@ export default function Sidebar({ variant = "desktop" }) {
       return (
         <>
           <Item to={`${EMP_BASE}/dashboard`} label="Dashboard" emoji="🏠" />
+          {canAccessReviewerQueue ? (
+            <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" emoji="🔍" />
+          ) : null}
           <Item to={`${EMP_BASE}/agreements`} label="My Agreements" emoji="📄" />
           <Item to={`${EMP_BASE}/milestones`} label="Milestones" emoji="🧩" />
           <Item to={`${EMP_BASE}/calendar`} label="Calendar" emoji="🗓️" />
@@ -173,6 +182,7 @@ export default function Sidebar({ variant = "desktop" }) {
     return (
       <>
         <Item to={`${APP_BASE}/dashboard`} label="Dashboard" emoji="🏠" />
+        <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" emoji="🔍" />
         <Item to={`${APP_BASE}/agreements`} label="Agreements" emoji="📄" />
         <Item to={`${APP_BASE}/templates`} label="Templates" emoji="🧱" />
         <Item to={`${APP_BASE}/milestones`} label="Milestones" emoji="🧩" />
@@ -187,7 +197,7 @@ export default function Sidebar({ variant = "desktop" }) {
         <Item to={`${APP_BASE}/business`} label="Business Dashboard" emoji="📈" />
       </>
     );
-  }, [isEmployee, isAdmin, isOnAdminRoute, isSubcontractor]);
+  }, [canAccessReviewerQueue, isEmployee, isAdmin, isOnAdminRoute, isSubcontractor]);
 
   const accountNav = useMemo(() => {
     if (isAdmin) {

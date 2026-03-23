@@ -131,6 +131,7 @@ from .views.subcontractor_work import (
 )
 from .views.milestone_workflow import (
     approve_work_submission,
+    reviewer_queue,
     send_back_work_submission,
     submit_work_for_review,
 )
@@ -370,6 +371,7 @@ urlpatterns = [
         "subcontractor/milestones/<int:milestone_id>/submit-completion/",
         subcontractor_submit_completion,
     ),
+    path("milestones/reviewer-queue/", reviewer_queue),
     path("milestones/<int:milestone_id>/submit-work/", submit_work_for_review),
     path("milestones/<int:milestone_id>/approve-work/", approve_work_submission),
     path("milestones/<int:milestone_id>/send-back-work/", send_back_work_submission),

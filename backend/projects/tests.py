@@ -1756,3 +1756,176 @@ class SubcontractorCompletionReviewTests(TestCase):
         self.assertEqual(payload["assigned_worker"]["kind"], "subcontractor")
         self.assertEqual(payload["reviewer"]["kind"], "contractor_owner")
         self.assertTrue(payload["can_current_user_review_work"])
+
+
+class ReviewerQueueTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="queue-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Queue Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Queue Homeowner",
+            email="queue-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Reviewer Queue Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Agreement for reviewer queue tests",
+        )
+
+        self.worker_user = user_model.objects.create_user(
+            email="queue-worker@example.com",
+            password="testpass123",
+            first_name="Queue",
+            last_name="Worker",
+        )
+        self.subcontractor_invitation = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="queue-worker@example.com",
+            invite_name="Queue Worker",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=self.worker_user,
+            accepted_at=timezone.now(),
+        )
+
+        self.delegated_user = user_model.objects.create_user(
+            email="queue-reviewer@example.com",
+            password="testpass123",
+        )
+        self.delegated_subaccount = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=self.delegated_user,
+            display_name="Delegated Reviewer",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_SUPERVISOR,
+        )
+
+        self.non_reviewer_user = user_model.objects.create_user(
+            email="queue-readonly@example.com",
+            password="testpass123",
+        )
+        self.non_reviewer_subaccount = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=self.non_reviewer_user,
+            display_name="Readonly Team Member",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_READONLY,
+        )
+
+        self.default_review_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Demo Cabinets",
+            description="Default contractor review item",
+            amount="1200.00",
+            assigned_subcontractor_invitation=self.subcontractor_invitation,
+            subcontractor_completion_status=SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW,
+            subcontractor_marked_complete_at=timezone.now(),
+            subcontractor_marked_complete_by=self.worker_user,
+            subcontractor_completion_note="Cabinets are installed and aligned.",
+        )
+        self.delegated_review_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=2,
+            title="Tile Backsplash",
+            description="Delegated reviewer item",
+            amount="900.00",
+            assigned_subcontractor_invitation=self.subcontractor_invitation,
+            delegated_reviewer_subaccount=self.delegated_subaccount,
+            subcontractor_completion_status=SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW,
+            subcontractor_marked_complete_at=timezone.now(),
+            subcontractor_marked_complete_by=self.worker_user,
+            subcontractor_completion_note="Tile is set and grouted.",
+        )
+        self.approved_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=3,
+            title="Punch List",
+            description="Already approved item",
+            amount="200.00",
+            assigned_subcontractor_invitation=self.subcontractor_invitation,
+            subcontractor_completion_status=SubcontractorCompletionStatus.APPROVED,
+            subcontractor_marked_complete_at=timezone.now(),
+            subcontractor_marked_complete_by=self.worker_user,
+        )
+
+        self.client = APIClient()
+
+    def test_contractor_owner_sees_only_default_reviewer_items(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/milestones/reviewer-queue/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(len(payload["groups"]), 1)
+        item = payload["groups"][0]["milestones"][0]
+        self.assertEqual(item["id"], self.default_review_milestone.id)
+        self.assertEqual(item["assigned_worker_display"], "Queue Worker")
+        self.assertEqual(item["reviewer"]["kind"], "contractor_owner")
+        self.assertEqual(
+            item["work_submission_note"],
+            "Cabinets are installed and aligned.",
+        )
+
+    def test_delegated_reviewer_sees_only_items_assigned_to_them(self):
+        self.client.force_authenticate(user=self.delegated_user)
+        response = self.client.get("/api/projects/milestones/reviewer-queue/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["count"], 1)
+        item = payload["milestones"][0]
+        self.assertEqual(item["id"], self.delegated_review_milestone.id)
+        self.assertEqual(item["reviewer_display"], "Delegated Reviewer")
+
+    def test_subcontractor_does_not_see_reviewer_queue(self):
+        self.client.force_authenticate(user=self.worker_user)
+        response = self.client.get("/api/projects/milestones/reviewer-queue/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["count"], 0)
+
+    def test_non_reviewer_internal_user_does_not_see_unrelated_review_items(self):
+        self.client.force_authenticate(user=self.non_reviewer_user)
+        response = self.client.get("/api/projects/milestones/reviewer-queue/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["count"], 0)
+
+    def test_empty_state_returns_no_groups_when_nothing_is_pending_review(self):
+        Milestone.objects.filter(
+            id__in=[self.default_review_milestone.id, self.delegated_review_milestone.id]
+        ).update(subcontractor_completion_status=SubcontractorCompletionStatus.APPROVED)
+
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/milestones/reviewer-queue/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "groups": [],
+                "milestones": [],
+                "count": 0,
+            },
+        )

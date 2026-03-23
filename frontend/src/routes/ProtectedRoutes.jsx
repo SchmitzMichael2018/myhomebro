@@ -53,6 +53,7 @@ import Expenses from "../pages/ExpensesPage.jsx";
 import Disputes from "../pages/DisputesPages.jsx";
 import TeamSchedule from "../pages/TeamSchedule.jsx";
 import TeamPage from "../pages/TeamPage.jsx";
+import ReviewerQueuePage from "../pages/ReviewerQueuePage.jsx";
 
 import { useWhoAmI } from "../hooks/useWhoAmI";
 
@@ -121,6 +122,12 @@ export function protectedRoutes() {
         </Route>
 
         {/* ---------------- CONTRACTOR ---------------- */}
+        <Route
+          element={<RoleGate allow={["contractor", "contractor_owner", "subaccount"]} />}
+        >
+          <Route path="reviewer/queue" element={<ReviewerQueuePage />} />
+        </Route>
+
         <Route element={<RoleGate allow={["contractor", "contractor_owner"]} />}>
           <Route path="dashboard" element={<ContractorDashboard />} />
 

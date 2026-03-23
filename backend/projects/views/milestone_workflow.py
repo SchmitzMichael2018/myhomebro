@@ -11,10 +11,14 @@ from projects.serializers.milestone import MilestoneSerializer
 from projects.services.milestone_workflow import (
     can_user_review_submitted_work,
     can_user_submit_work,
+    get_assigned_worker,
+    get_effective_reviewer,
+    is_effective_reviewer_user,
 )
 from projects.services.subcontractor_notifications import (
     create_subcontractor_activity_notification,
 )
+from projects.utils.accounts import get_contractor_for_user, get_subaccount_for_user
 
 
 def _workflow_queryset():
@@ -30,6 +34,108 @@ def _workflow_queryset():
         "delegated_reviewer_subaccount__user",
         "subcontractor_marked_complete_by",
         "subcontractor_reviewed_by",
+    )
+
+
+def _serialize_queue_item(milestone: Milestone) -> dict:
+    assigned_worker = get_assigned_worker(milestone)
+    reviewer = get_effective_reviewer(milestone)
+    agreement = getattr(milestone, "agreement", None)
+    project = getattr(agreement, "project", None) if agreement is not None else None
+
+    return {
+        "id": milestone.id,
+        "title": milestone.title,
+        "description": milestone.description,
+        "status": getattr(milestone, "status", "") or "pending",
+        "start_date": getattr(milestone, "start_date", None),
+        "completion_date": getattr(milestone, "completion_date", None),
+        "agreement_id": getattr(agreement, "id", None),
+        "agreement_title": (
+            getattr(agreement, "title", "")
+            or getattr(agreement, "project_title_snapshot", "")
+            or ""
+        ),
+        "project_title": (
+            getattr(project, "title", "")
+            or getattr(project, "name", "")
+            or getattr(agreement, "project_title_snapshot", "")
+            or ""
+        ),
+        "assigned_worker": (
+            {
+                "kind": assigned_worker.kind,
+                "user_id": getattr(assigned_worker.user, "id", None),
+                "display_name": assigned_worker.display_name,
+                "email": assigned_worker.email,
+                "subaccount_id": getattr(assigned_worker.subaccount, "id", None),
+                "invitation_id": getattr(assigned_worker.invitation, "id", None),
+            }
+            if assigned_worker is not None
+            else None
+        ),
+        "assigned_worker_display": (
+            assigned_worker.display_name if assigned_worker is not None else ""
+        ),
+        "reviewer": {
+            "kind": reviewer.kind,
+            "user_id": getattr(reviewer.user, "id", None),
+            "display_name": reviewer.display_name,
+            "email": reviewer.email,
+            "subaccount_id": getattr(reviewer.subaccount, "id", None),
+            "is_delegated": reviewer.kind == "internal_team_member",
+        },
+        "reviewer_display": reviewer.display_name,
+        "work_submission_status": milestone.subcontractor_completion_status,
+        "work_submitted_at": milestone.subcontractor_marked_complete_at,
+        "work_submission_note": milestone.subcontractor_completion_note or "",
+    }
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def reviewer_queue(request):
+    contractor = get_contractor_for_user(request.user)
+    subaccount = get_subaccount_for_user(request.user)
+
+    rows = _workflow_queryset().filter(
+        subcontractor_completion_status=SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+    )
+
+    if subaccount is not None:
+        rows = rows.filter(delegated_reviewer_subaccount__user=request.user)
+    elif contractor is not None:
+        rows = rows.filter(agreement__project__contractor=contractor)
+    else:
+        return Response({"groups": [], "milestones": [], "count": 0})
+
+    milestones = [
+        milestone
+        for milestone in rows.order_by("agreement_id", "order", "id")
+        if is_effective_reviewer_user(milestone, request.user)
+    ]
+
+    serialized = [_serialize_queue_item(milestone) for milestone in milestones]
+    grouped: dict[int, dict] = {}
+    for item in serialized:
+        agreement_id = item.get("agreement_id")
+        group = grouped.setdefault(
+            agreement_id,
+            {
+                "agreement_id": agreement_id,
+                "agreement_title": item.get("agreement_title") or "",
+                "project_title": item.get("project_title") or "",
+                "milestones": [],
+            },
+        )
+        group["milestones"].append(item)
+
+    return Response(
+        {
+            "groups": list(grouped.values()),
+            "milestones": serialized,
+            "count": len(serialized),
+        }
     )
 
 
