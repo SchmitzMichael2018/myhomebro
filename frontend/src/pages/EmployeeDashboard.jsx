@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api";
 import EmployeeMilestoneModal from "./EmployeeMilestoneModal.jsx";
+import RoleAwareWorkboard from "../components/RoleAwareWorkboard.jsx";
 
 function dateOnly(v) {
   if (!v) return null;
@@ -136,6 +137,10 @@ export default function EmployeeDashboard() {
             {error}
           </div>
         )}
+
+        <div className="mt-6">
+          <RoleAwareWorkboard />
+        </div>
 
         <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-6">
           <StatCard title="TODAY" value={loading ? "…" : todayItems.length} onClick={() => openBucket(todayItems, "today")} />

@@ -4,9 +4,9 @@ import { useNavigate } from "react-router-dom";
 import api from "../api";
 import { toast } from "react-hot-toast";
 import PageShell from "./PageShell.jsx";
+import RoleAwareWorkboard from "./RoleAwareWorkboard.jsx";
 import StatCard from "./StatCard.jsx";
 import Modal from "react-modal";
-import useNotifications from "../hooks/useNotifications";
 import {
   Target,
   ListTodo,
@@ -258,6 +258,7 @@ function ActionButton({ icon: Icon, label, onClick, primary }) {
     </button>
   );
 }
+
 
 /* ========================================================================== */
 /* =================  INLINE: ExpenseRequestModal (no import)  ============== */
@@ -783,7 +784,6 @@ export default function ContractorDashboard() {
   const [earnedExpensesLoading, setEarnedExpensesLoading] = useState(false);
 
   const navigate = useNavigate();
-  const { notifications, loading: notificationsLoading } = useNotifications();
 
   // Intro pricing countdown state (60-day intro) — contractor only
   const [introDaysRemaining, setIntroDaysRemaining] = useState(null);
@@ -1312,6 +1312,8 @@ export default function ContractorDashboard() {
         </>
       ) : null}
 
+      {!isEmployee ? <RoleAwareWorkboard /> : null}
+
       <div className="mhb-kicker" style={{ marginTop: 18 }}>
         Quick Actions
       </div>
@@ -1334,61 +1336,6 @@ export default function ContractorDashboard() {
       </div>
 
       {!isEmployee ? <ExpenseRequestModal isOpen={showExpenseModal} onClose={onExpenseModalClose} /> : null}
-
-      {!isEmployee ? (
-        <div className="mhb-kicker" style={{ marginTop: 18 }}>
-          Recent Subcontractor Activity
-        </div>
-      ) : null}
-
-      {!isEmployee ? (
-        <div
-          className="mhb-glass"
-          data-testid="contractor-notifications-panel"
-          style={{ padding: 12 }}
-        >
-          {notificationsLoading ? (
-            <div className="text-sm text-gray-500">Loading activity...</div>
-          ) : notifications.length === 0 ? (
-            <div
-              data-testid="contractor-notifications-empty"
-              className="text-sm text-gray-500"
-            >
-              No subcontractor activity notifications yet.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {notifications.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  data-testid={`contractor-notification-${item.id}`}
-                  onClick={() =>
-                    item.agreement_id
-                      ? navigate(`/app/agreements/${item.agreement_id}`)
-                      : undefined
-                  }
-                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left hover:bg-slate-50"
-                >
-                  <div className="text-sm font-semibold text-slate-900">
-                    {item.title}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-600">
-                    {item.message}
-                  </div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    {item.project_title || `Agreement #${item.agreement_id || "-"}`}
-                    {item.milestone_id ? ` • Milestone #${item.milestone_id}` : ""}
-                  </div>
-                  <div className="mt-1 text-xs text-slate-400">
-                    {item.created_at ? new Date(item.created_at).toLocaleString() : ""}
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      ) : null}
 
       {!isEmployee ? (
         <EarnedBreakdownModal

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import api from "../api";
 import toast from "react-hot-toast";
+import RoleAwareWorkboard from "../components/RoleAwareWorkboard.jsx";
 
 function statusBadgeClass(status) {
   const normalized = String(status || "").toLowerCase();
@@ -213,6 +214,8 @@ export default function SubcontractorAssignedWorkPage() {
           Review milestones assigned to you across your active MyHomeBro agreements.
         </p>
       </div>
+
+      <RoleAwareWorkboard />
 
       {loading ? (
         <div className="text-sm text-slate-500">Loading assigned work...</div>

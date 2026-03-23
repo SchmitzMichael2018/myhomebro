@@ -115,6 +115,7 @@ from .views.subaccount_schedule import (
 )
 
 from .views.business_dashboard import BusinessDashboardSummaryAPIView
+from .views.contractor_operations import ContractorOperationsDashboardView
 from .views.expense_requests import ExpenseRequestViewSet
 from .views.subcontractor_invitations import (
     AgreementSubcontractorInvitationsView,
@@ -390,6 +391,11 @@ urlpatterns = [
         "business/contractor/summary/",
         BusinessDashboardSummaryAPIView.as_view(),
         name="contractor_business_summary",
+    ),
+    path(
+        "dashboard/operations/",
+        ContractorOperationsDashboardView.as_view(),
+        name="contractor_operations_dashboard",
     ),
 
     # -------------------------------------------------

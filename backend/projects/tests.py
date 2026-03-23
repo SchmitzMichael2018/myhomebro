@@ -1,4 +1,5 @@
 from __future__ import annotations
+from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -1929,3 +1930,304 @@ class ReviewerQueueTests(TestCase):
                 "count": 0,
             },
         )
+
+
+class ContractorOperationsDashboardTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="ops-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Ops Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Ops Homeowner",
+            email="ops-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Ops Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Agreement for operations dashboard",
+        )
+        self.worker_user = user_model.objects.create_user(
+            email="ops-worker@example.com",
+            password="testpass123",
+            first_name="Taylor",
+            last_name="Worker",
+        )
+        self.invitation = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="ops-worker@example.com",
+            invite_name="Taylor Worker",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=self.worker_user,
+            accepted_at=timezone.now(),
+        )
+
+        today = timezone.localdate()
+        self.review_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Cabinet Install",
+            description="Awaiting review today",
+            amount="1500.00",
+            assigned_subcontractor_invitation=self.invitation,
+            subcontractor_completion_status=SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW,
+            subcontractor_marked_complete_at=timezone.now(),
+            subcontractor_marked_complete_by=self.worker_user,
+            subcontractor_completion_note="Ready for your walkthrough.",
+        )
+        self.due_today_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=2,
+            title="Paint Prep",
+            description="Due today",
+            amount="600.00",
+            assigned_subcontractor_invitation=self.invitation,
+            start_date=today,
+            completion_date=today,
+        )
+        self.start_tomorrow_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=3,
+            title="Tile Layout",
+            description="Starts tomorrow",
+            amount="700.00",
+            assigned_subcontractor_invitation=self.invitation,
+            start_date=today + timedelta(days=1),
+            completion_date=today + timedelta(days=2),
+        )
+        self.week_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=4,
+            title="Trim Install",
+            description="Due later this week",
+            amount="800.00",
+            assigned_subcontractor_invitation=self.invitation,
+            start_date=today + timedelta(days=3),
+            completion_date=today + timedelta(days=5),
+        )
+        self.sent_back_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=5,
+            title="Countertop Scribing",
+            description="Needs changes",
+            amount="400.00",
+            assigned_subcontractor_invitation=self.invitation,
+            subcontractor_completion_status=SubcontractorCompletionStatus.NEEDS_CHANGES,
+            subcontractor_reviewed_at=timezone.now(),
+            subcontractor_reviewed_by=self.contractor_user,
+            subcontractor_review_response_note="Please tighten the seam.",
+        )
+        Notification.objects.create(
+            contractor=self.contractor,
+            event_type=Notification.EVENT_SUBCONTRACTOR_COMMENT,
+            agreement=self.agreement,
+            milestone=self.due_today_milestone,
+            actor_user=self.worker_user,
+            actor_display_name="Taylor Worker",
+            actor_email="ops-worker@example.com",
+            title="Subcontractor added a comment",
+            message="Taylor Worker added a comment on Paint Prep.",
+        )
+        MilestoneComment.objects.create(
+            milestone=self.due_today_milestone,
+            author=self.worker_user,
+            content="Prep is ready for paint.",
+        )
+
+        other_contractor_user = user_model.objects.create_user(
+            email="other-ops-owner@example.com",
+            password="testpass123",
+        )
+        other_contractor = Contractor.objects.create(
+            user=other_contractor_user,
+            business_name="Other Ops Owner",
+        )
+        other_homeowner = Homeowner.objects.create(
+            created_by=other_contractor,
+            full_name="Other Homeowner",
+            email="other-ops-homeowner@example.com",
+        )
+        other_project = Project.objects.create(
+            contractor=other_contractor,
+            homeowner=other_homeowner,
+            title="Other Ops Project",
+        )
+        other_agreement = Agreement.objects.create(
+            project=other_project,
+            contractor=other_contractor,
+            homeowner=other_homeowner,
+            description="Other agreement",
+        )
+        Milestone.objects.create(
+            agreement=other_agreement,
+            order=1,
+            title="Other Review",
+            description="Should not leak",
+            amount="100.00",
+            subcontractor_completion_status=SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW,
+        )
+
+        self.client = APIClient()
+
+    def test_dashboard_endpoint_returns_all_sections(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/dashboard/operations/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["identity_type"], "contractor_owner")
+        self.assertIn("today", payload)
+        self.assertIn("tomorrow", payload)
+        self.assertIn("this_week", payload)
+        self.assertIn("recent_activity", payload)
+        self.assertIn("empty_states", payload)
+
+    def test_today_bucket_includes_review_and_actionable_items(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/dashboard/operations/")
+        payload = response.json()
+
+        item_types = {item["item_type"] for item in payload["today"]}
+        self.assertIn("review_submission", item_types)
+        self.assertIn("due_today", item_types)
+        self.assertIn("start_today", item_types)
+        self.assertIn("needs_changes", item_types)
+
+        review_item = next(
+            item for item in payload["today"] if item["item_type"] == "review_submission"
+        )
+        self.assertEqual(review_item["milestone_id"], self.review_milestone.id)
+        self.assertEqual(review_item["assigned_worker_display"], "Taylor Worker")
+        self.assertEqual(review_item["actions"][0]["label"], "Review")
+
+    def test_tomorrow_and_this_week_buckets_include_scheduled_items(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/dashboard/operations/")
+        payload = response.json()
+
+        tomorrow_ids = {item["milestone_id"] for item in payload["tomorrow"]}
+        self.assertIn(self.start_tomorrow_milestone.id, tomorrow_ids)
+
+        week_ids = {item["milestone_id"] for item in payload["this_week"]}
+        self.assertIn(self.week_milestone.id, week_ids)
+
+    def test_contractor_only_sees_their_own_items(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/dashboard/operations/")
+        payload = response.json()
+
+        titles = {
+            item["milestone_title"]
+            for bucket in ("today", "tomorrow", "this_week")
+            for item in payload[bucket]
+        }
+        self.assertNotIn("Other Review", titles)
+
+    def test_recent_activity_includes_comment_and_review_outcome(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/dashboard/operations/")
+        payload = response.json()
+
+        activity_types = {item["item_type"] for item in payload["recent_activity"]}
+        self.assertIn("subcontractor_comment", activity_types)
+        self.assertIn("work_sent_back", activity_types)
+
+    def test_empty_state_returns_empty_sections(self):
+        Milestone.objects.filter(agreement=self.agreement).delete()
+        Notification.objects.filter(contractor=self.contractor).delete()
+
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/dashboard/operations/")
+
+        self.assertEqual(
+            response.json(),
+            {
+                "identity_type": "contractor_owner",
+                "today": [],
+                "tomorrow": [],
+                "this_week": [],
+                "recent_activity": [],
+                "empty_states": {
+                    "today": "No contractor actions need attention today.",
+                    "tomorrow": "Nothing is scheduled for tomorrow yet.",
+                    "this_week": "Nothing else is stacked up for later this week.",
+                    "recent_activity": "No recent worker activity yet.",
+                },
+            },
+        )
+
+    def test_internal_team_member_dashboard_contents_are_role_aware(self):
+        reviewer_user = get_user_model().objects.create_user(
+            email="ops-reviewer@example.com",
+            password="testpass123",
+        )
+        reviewer_subaccount = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=reviewer_user,
+            display_name="Ops Reviewer",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_SUPERVISOR,
+        )
+        self.review_milestone.delegated_reviewer_subaccount = reviewer_subaccount
+        self.review_milestone.save(update_fields=["delegated_reviewer_subaccount"])
+
+        self.client.force_authenticate(user=reviewer_user)
+        response = self.client.get("/api/projects/dashboard/operations/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["identity_type"], "internal_team_member")
+        today_types = {item["item_type"] for item in payload["today"]}
+        self.assertIn("review_submission", today_types)
+        review_item = next(item for item in payload["today"] if item["item_type"] == "review_submission")
+        self.assertEqual(review_item["actions"][0]["label"], "Review")
+        recent_types = {item["item_type"] for item in payload["recent_activity"]}
+        self.assertIn("work_submitted", recent_types)
+
+    def test_subcontractor_dashboard_contents_are_role_aware(self):
+        self.client.force_authenticate(user=self.worker_user)
+        response = self.client.get("/api/projects/dashboard/operations/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["identity_type"], "subcontractor")
+        today_types = {item["item_type"] for item in payload["today"]}
+        self.assertIn("submitted_waiting", today_types)
+        self.assertIn("needs_changes", today_types)
+        waiting_item = next(item for item in payload["today"] if item["item_type"] == "submitted_waiting")
+        self.assertEqual(waiting_item["actions"][0]["label"], "Open Assigned Work")
+
+    def test_unaffiliated_user_gets_homeowner_style_empty_payload(self):
+        unrelated_user = get_user_model().objects.create_user(
+            email="ops-homeowner-view@example.com",
+            password="testpass123",
+        )
+        self.client.force_authenticate(user=unrelated_user)
+        response = self.client.get("/api/projects/dashboard/operations/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["identity_type"], "homeowner")
+        self.assertEqual(payload["today"], [])
+        self.assertEqual(payload["tomorrow"], [])
+        self.assertEqual(payload["this_week"], [])
+        self.assertEqual(payload["recent_activity"], [])

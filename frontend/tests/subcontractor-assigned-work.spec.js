@@ -22,6 +22,46 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
     });
   });
 
+  await page.route('**/api/projects/dashboard/operations/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        identity_type: 'subcontractor',
+        today: [],
+        tomorrow: [],
+        this_week: [],
+        recent_activity: [],
+        empty_states: {
+          today: 'Nothing needs your attention today.',
+          tomorrow: 'Nothing is scheduled for tomorrow yet.',
+          this_week: 'No additional assigned work is queued for later this week.',
+          recent_activity: 'No recent updates on your assigned work yet.',
+        },
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/dashboard/operations/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        identity_type: 'subcontractor',
+        today: [],
+        tomorrow: [],
+        this_week: [],
+        recent_activity: [],
+        empty_states: {
+          today: 'Nothing needs your attention today.',
+          tomorrow: 'Nothing is scheduled for tomorrow yet.',
+          this_week: 'No additional assigned work is queued for later this week.',
+          recent_activity: 'No recent updates on your assigned work yet.',
+        },
+      }),
+    });
+  });
+
   await page.route('**/api/projects/subcontractor/milestones/my-assigned/**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -124,6 +164,46 @@ test('subcontractor assigned work supports comments and file upload for assigned
         email: 'subcontractor@example.com',
         type: 'subcontractor',
         role: 'subcontractor',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/dashboard/operations/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        identity_type: 'subcontractor',
+        today: [],
+        tomorrow: [],
+        this_week: [],
+        recent_activity: [],
+        empty_states: {
+          today: 'Nothing needs your attention today.',
+          tomorrow: 'Nothing is scheduled for tomorrow yet.',
+          this_week: 'No additional assigned work is queued for later this week.',
+          recent_activity: 'No recent updates on your assigned work yet.',
+        },
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/dashboard/operations/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        identity_type: 'subcontractor',
+        today: [],
+        tomorrow: [],
+        this_week: [],
+        recent_activity: [],
+        empty_states: {
+          today: 'Nothing needs your attention today.',
+          tomorrow: 'Nothing is scheduled for tomorrow yet.',
+          this_week: 'No additional assigned work is queued for later this week.',
+          recent_activity: 'No recent updates on your assigned work yet.',
+        },
       }),
     });
   });

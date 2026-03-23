@@ -79,6 +79,19 @@ test('contractor dashboard renders included AI messaging without legacy gating t
     });
   });
 
+  await page.route('**/api/projects/dashboard/operations/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        today: [],
+        tomorrow: [],
+        this_week: [],
+        recent_activity: [],
+      }),
+    });
+  });
+
   await page.goto('/app', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
