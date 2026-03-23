@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, parser_classes
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from projects.models import Milestone
+from projects.models import Milestone, MilestoneComment, MilestoneFile
+from projects.serializers.milestone_comment import MilestoneCommentSerializer
+from projects.serializers.milestone_file import MilestoneFileSerializer
 
 
 def _milestone_status(milestone: Milestone) -> str:
@@ -49,17 +52,24 @@ def _milestone_payload(milestone: Milestone) -> dict:
     }
 
 
+def _assigned_milestone_queryset(user):
+    return Milestone.objects.select_related(
+        "agreement",
+        "agreement__project",
+        "assigned_subcontractor_invitation",
+        "assigned_subcontractor_invitation__accepted_by_user",
+    ).filter(assigned_subcontractor_invitation__accepted_by_user=user)
+
+
+def _get_assigned_milestone_or_none(user, milestone_id: int):
+    return _assigned_milestone_queryset(user).filter(id=milestone_id).first()
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def my_assigned_subcontractor_work(request):
     qs = (
-        Milestone.objects.select_related(
-            "agreement",
-            "agreement__project",
-            "assigned_subcontractor_invitation",
-            "assigned_subcontractor_invitation__accepted_by_user",
-        )
-        .filter(assigned_subcontractor_invitation__accepted_by_user=request.user)
+        _assigned_milestone_queryset(request.user)
         .order_by("agreement_id", "order", "id")
     )
 
@@ -86,4 +96,100 @@ def my_assigned_subcontractor_work(request):
             "milestones": [_milestone_payload(milestone) for milestone in qs],
             "count": qs.count(),
         }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def subcontractor_milestone_detail(request, milestone_id: int):
+    milestone = _get_assigned_milestone_or_none(request.user, milestone_id)
+    if milestone is None:
+        return Response({"detail": "Not found."}, status=404)
+
+    comments = (
+        MilestoneComment.objects.filter(milestone=milestone)
+        .select_related("author")
+        .order_by("-created_at")[:100]
+    )
+    files = (
+        MilestoneFile.objects.filter(milestone=milestone)
+        .select_related("uploaded_by")
+        .order_by("-uploaded_at")[:100]
+    )
+
+    return Response(
+        {
+            "milestone": _milestone_payload(milestone),
+            "comments": MilestoneCommentSerializer(
+                comments, many=True, context={"request": request}
+            ).data,
+            "files": MilestoneFileSerializer(
+                files, many=True, context={"request": request}
+            ).data,
+        }
+    )
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def subcontractor_milestone_comments(request, milestone_id: int):
+    milestone = _get_assigned_milestone_or_none(request.user, milestone_id)
+    if milestone is None:
+        return Response({"detail": "Not found."}, status=404)
+
+    if request.method == "GET":
+        qs = (
+            MilestoneComment.objects.filter(milestone=milestone)
+            .select_related("author")
+            .order_by("-created_at")
+        )
+        return Response(
+            MilestoneCommentSerializer(qs, many=True, context={"request": request}).data
+        )
+
+    content = ((request.data or {}).get("content") or "").strip()
+    if not content:
+        return Response({"detail": "content is required."}, status=400)
+
+    obj = MilestoneComment.objects.create(
+        milestone=milestone,
+        author=request.user,
+        content=content,
+    )
+    return Response(
+        MilestoneCommentSerializer(obj, context={"request": request}).data,
+        status=201,
+    )
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def subcontractor_milestone_files(request, milestone_id: int):
+    milestone = _get_assigned_milestone_or_none(request.user, milestone_id)
+    if milestone is None:
+        return Response({"detail": "Not found."}, status=404)
+
+    if request.method == "GET":
+        qs = (
+            MilestoneFile.objects.filter(milestone=milestone)
+            .select_related("uploaded_by")
+            .order_by("-uploaded_at")
+        )
+        return Response(
+            MilestoneFileSerializer(qs, many=True, context={"request": request}).data
+        )
+
+    uploaded = request.FILES.get("file")
+    if not uploaded:
+        return Response({"detail": "file is required."}, status=400)
+
+    obj = MilestoneFile.objects.create(
+        milestone=milestone,
+        uploaded_by=request.user,
+        file=uploaded,
+    )
+    return Response(
+        MilestoneFileSerializer(obj, context={"request": request}).data,
+        status=201,
     )

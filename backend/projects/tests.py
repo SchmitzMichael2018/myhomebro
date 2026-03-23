@@ -3,13 +3,22 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import resolve
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from projects.api.ai_agreement_views import ai_suggest_milestones
-from projects.models import Agreement, Contractor, Homeowner, Milestone, Project
+from projects.models import (
+    Agreement,
+    Contractor,
+    Homeowner,
+    Milestone,
+    MilestoneComment,
+    MilestoneFile,
+    Project,
+)
 from projects.models import AgreementWarranty
 from projects.models_sms import SMSConsentStatus
 from projects.models_subcontractor import (
@@ -914,3 +923,169 @@ class SubcontractorAssignedWorkTests(TestCase):
         self.assertEqual(payload["count"], 0)
         self.assertEqual(payload["groups"], [])
         self.assertEqual(payload["milestones"], [])
+
+
+class SubcontractorCollaborationTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="collab-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Collab Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Collab Homeowner",
+            email="collab-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Collaboration Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Agreement for subcontractor collaboration",
+        )
+
+        self.assigned_user = user_model.objects.create_user(
+            email="assigned-collab@example.com",
+            password="testpass123",
+            first_name="Assigned",
+            last_name="Collaborator",
+        )
+        self.other_user = user_model.objects.create_user(
+            email="other-collab@example.com",
+            password="testpass123",
+            first_name="Other",
+            last_name="Collaborator",
+        )
+        self.unassigned_user = user_model.objects.create_user(
+            email="unassigned-collab@example.com",
+            password="testpass123",
+        )
+
+        self.assigned_invitation = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="assigned-collab@example.com",
+            invite_name="Assigned Collaborator",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=self.assigned_user,
+            accepted_at=timezone.now(),
+        )
+        self.other_invitation = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="other-collab@example.com",
+            invite_name="Other Collaborator",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=self.other_user,
+            accepted_at=timezone.now(),
+        )
+
+        self.milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Paint Prep",
+            description="Prep all walls for paint",
+            amount="900.00",
+            assigned_subcontractor_invitation=self.assigned_invitation,
+        )
+
+        self.comment = MilestoneComment.objects.create(
+            milestone=self.milestone,
+            author=self.contractor_user,
+            content="Initial contractor note",
+        )
+        self.file = MilestoneFile.objects.create(
+            milestone=self.milestone,
+            uploaded_by=self.contractor_user,
+            file=SimpleUploadedFile("scope.txt", b"scope details", content_type="text/plain"),
+        )
+
+        self.client = APIClient()
+
+    def test_assigned_subcontractor_can_list_milestone_comments_and_files(self):
+        self.client.force_authenticate(user=self.assigned_user)
+        detail = self.client.get(f"/api/projects/subcontractor/milestones/{self.milestone.id}/")
+        self.assertEqual(detail.status_code, 200)
+        payload = detail.json()
+        self.assertEqual(len(payload["comments"]), 1)
+        self.assertEqual(len(payload["files"]), 1)
+
+        comments = self.client.get(
+            f"/api/projects/subcontractor/milestones/{self.milestone.id}/comments/"
+        )
+        files = self.client.get(
+            f"/api/projects/subcontractor/milestones/{self.milestone.id}/files/"
+        )
+        self.assertEqual(comments.status_code, 200)
+        self.assertEqual(files.status_code, 200)
+
+    def test_assigned_subcontractor_can_create_comment(self):
+        self.client.force_authenticate(user=self.assigned_user)
+        response = self.client.post(
+            f"/api/projects/subcontractor/milestones/{self.milestone.id}/comments/",
+            {"content": "Need trim dimensions."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(
+            MilestoneComment.objects.filter(
+                milestone=self.milestone,
+                author=self.assigned_user,
+                content="Need trim dimensions.",
+            ).exists()
+        )
+
+    def test_assigned_subcontractor_can_upload_file(self):
+        self.client.force_authenticate(user=self.assigned_user)
+        response = self.client.post(
+            f"/api/projects/subcontractor/milestones/{self.milestone.id}/files/",
+            {"file": SimpleUploadedFile("photo.txt", b"photo", content_type="text/plain")},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(
+            MilestoneFile.objects.filter(
+                milestone=self.milestone,
+                uploaded_by=self.assigned_user,
+            ).exists()
+        )
+
+    def test_unassigned_subcontractor_is_denied(self):
+        self.client.force_authenticate(user=self.unassigned_user)
+        response = self.client.get(
+            f"/api/projects/subcontractor/milestones/{self.milestone.id}/comments/"
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_different_subcontractor_is_denied(self):
+        self.client.force_authenticate(user=self.other_user)
+        response = self.client.post(
+            f"/api/projects/subcontractor/milestones/{self.milestone.id}/comments/",
+            {"content": "I should not be able to post here."},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_contractor_access_continues_to_work(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        comments = self.client.get(f"/api/projects/milestones/{self.milestone.id}/comments/")
+        files = self.client.get(f"/api/projects/milestones/{self.milestone.id}/files/")
+        self.assertEqual(comments.status_code, 200)
+        self.assertEqual(files.status_code, 200)

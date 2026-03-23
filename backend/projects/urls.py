@@ -121,7 +121,12 @@ from .views.subcontractor_invitations import (
     RevokeSubcontractorInvitationView,
     SubcontractorInvitationAcceptView,
 )
-from .views.subcontractor_work import my_assigned_subcontractor_work
+from .views.subcontractor_work import (
+    my_assigned_subcontractor_work,
+    subcontractor_milestone_comments,
+    subcontractor_milestone_detail,
+    subcontractor_milestone_files,
+)
 
 from .views.agreement_closeout import (
     AgreementClosureStatusView,
@@ -338,6 +343,18 @@ urlpatterns = [
     path("employee/profile/", EmployeeMeProfileView.as_view()),
     path("employee/milestones/", my_milestones),
     path("subcontractor/milestones/my-assigned/", my_assigned_subcontractor_work),
+    path(
+        "subcontractor/milestones/<int:milestone_id>/",
+        subcontractor_milestone_detail,
+    ),
+    path(
+        "subcontractor/milestones/<int:milestone_id>/comments/",
+        subcontractor_milestone_comments,
+    ),
+    path(
+        "subcontractor/milestones/<int:milestone_id>/files/",
+        subcontractor_milestone_files,
+    ),
     path("employee/milestones/<int:milestone_id>/", milestone_detail),
     path("employee/milestones/<int:milestone_id>/comments/", add_comment),
     path("employee/milestones/<int:milestone_id>/files/", upload_file),
