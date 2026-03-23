@@ -5,10 +5,19 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from projects.models import Milestone, MilestoneComment, MilestoneFile
+from projects.models import (
+    Milestone,
+    MilestoneComment,
+    MilestoneFile,
+    Notification,
+    SubcontractorCompletionStatus,
+)
 from projects.serializers.milestone_comment import MilestoneCommentSerializer
 from projects.serializers.milestone_file import MilestoneFileSerializer
 from django.utils import timezone
+from projects.services.subcontractor_notifications import (
+    create_subcontractor_activity_notification,
+)
 
 
 def _milestone_status(milestone: Milestone) -> str:
@@ -73,6 +82,49 @@ def _milestone_payload(milestone: Milestone) -> dict:
             )
             or display_name
         ),
+        "subcontractor_completion_status": getattr(
+            milestone,
+            "subcontractor_completion_status",
+            SubcontractorCompletionStatus.NOT_SUBMITTED,
+        ),
+        "subcontractor_marked_complete_at": getattr(
+            milestone, "subcontractor_marked_complete_at", None
+        ),
+        "subcontractor_completion_note": getattr(
+            milestone, "subcontractor_completion_note", ""
+        )
+        or "",
+        "subcontractor_completion_submitted_by_display": (
+            getattr(
+                getattr(milestone, "subcontractor_marked_complete_by", None),
+                "get_full_name",
+                lambda: "",
+            )()
+            or getattr(
+                getattr(milestone, "subcontractor_marked_complete_by", None),
+                "email",
+                "",
+            )
+            or display_name
+        ),
+        "subcontractor_reviewed_at": getattr(milestone, "subcontractor_reviewed_at", None),
+        "subcontractor_review_response_note": getattr(
+            milestone, "subcontractor_review_response_note", ""
+        )
+        or "",
+        "subcontractor_completion_reviewed_by_display": (
+            getattr(
+                getattr(milestone, "subcontractor_reviewed_by", None),
+                "get_full_name",
+                lambda: "",
+            )()
+            or getattr(
+                getattr(milestone, "subcontractor_reviewed_by", None),
+                "email",
+                "",
+            )
+            or ""
+        ),
     }
 
 
@@ -83,6 +135,8 @@ def _assigned_milestone_queryset(user):
         "assigned_subcontractor_invitation",
         "assigned_subcontractor_invitation__accepted_by_user",
         "subcontractor_review_requested_by",
+        "subcontractor_marked_complete_by",
+        "subcontractor_reviewed_by",
     ).filter(assigned_subcontractor_invitation__accepted_by_user=user)
 
 
@@ -181,6 +235,11 @@ def subcontractor_milestone_comments(request, milestone_id: int):
         author=request.user,
         content=content,
     )
+    create_subcontractor_activity_notification(
+        milestone=milestone,
+        actor_user=request.user,
+        event_type=Notification.EVENT_SUBCONTRACTOR_COMMENT,
+    )
     return Response(
         MilestoneCommentSerializer(obj, context={"request": request}).data,
         status=201,
@@ -214,6 +273,11 @@ def subcontractor_milestone_files(request, milestone_id: int):
         uploaded_by=request.user,
         file=uploaded,
     )
+    create_subcontractor_activity_notification(
+        milestone=milestone,
+        actor_user=request.user,
+        event_type=Notification.EVENT_SUBCONTRACTOR_FILE,
+    )
     return Response(
         MilestoneFileSerializer(obj, context={"request": request}).data,
         status=201,
@@ -239,5 +303,51 @@ def subcontractor_request_review(request, milestone_id: int):
         ]
     )
     milestone.refresh_from_db()
+    create_subcontractor_activity_notification(
+        milestone=milestone,
+        actor_user=request.user,
+        event_type=Notification.EVENT_SUBCONTRACTOR_REVIEW,
+    )
 
+    return Response({"milestone": _milestone_payload(milestone)}, status=200)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def subcontractor_submit_completion(request, milestone_id: int):
+    milestone = _get_assigned_milestone_or_none(request.user, milestone_id)
+    if milestone is None:
+        return Response({"detail": "Not found."}, status=404)
+
+    if milestone.subcontractor_completion_status == SubcontractorCompletionStatus.APPROVED:
+        return Response(
+            {"detail": "This subcontractor completion submission has already been approved."},
+            status=400,
+        )
+
+    note = ((request.data or {}).get("note") or "").strip()
+    milestone.subcontractor_completion_status = SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+    milestone.subcontractor_marked_complete_at = timezone.now()
+    milestone.subcontractor_marked_complete_by = request.user
+    milestone.subcontractor_completion_note = note
+    milestone.subcontractor_reviewed_at = None
+    milestone.subcontractor_reviewed_by = None
+    milestone.subcontractor_review_response_note = ""
+    milestone.save(
+        update_fields=[
+            "subcontractor_completion_status",
+            "subcontractor_marked_complete_at",
+            "subcontractor_marked_complete_by",
+            "subcontractor_completion_note",
+            "subcontractor_reviewed_at",
+            "subcontractor_reviewed_by",
+            "subcontractor_review_response_note",
+        ]
+    )
+    milestone.refresh_from_db()
+    create_subcontractor_activity_notification(
+        milestone=milestone,
+        actor_user=request.user,
+        event_type=Notification.EVENT_SUBCONTRACTOR_REVIEW,
+    )
     return Response({"milestone": _milestone_payload(milestone)}, status=200)

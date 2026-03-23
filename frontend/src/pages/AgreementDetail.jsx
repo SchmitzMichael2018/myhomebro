@@ -244,6 +244,8 @@ export default function AgreementDetail() {
   const [warrantyEditorOpen, setWarrantyEditorOpen] = useState(false);
   const [warrantySaving, setWarrantySaving] = useState(false);
   const [editingWarrantyId, setEditingWarrantyId] = useState(null);
+  const [completionResponseNotes, setCompletionResponseNotes] = useState({});
+  const [completionDecisionBusy, setCompletionDecisionBusy] = useState({});
   const [warrantyForm, setWarrantyForm] = useState({
     title: "",
     coverage_details: "",
@@ -641,6 +643,66 @@ export default function AgreementDetail() {
       };
     });
     toast.success("Review request cleared.");
+  };
+
+  const approveSubcontractorCompletion = async (milestoneId) => {
+    try {
+      setCompletionDecisionBusy((prev) => ({ ...prev, [milestoneId]: true }));
+      const response_note = (completionResponseNotes[milestoneId] || "").trim();
+      const { data } = await api.post(
+        `/projects/milestones/${milestoneId}/approve-subcontractor-completion/`,
+        { response_note }
+      );
+      setAgreement((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          milestones: (prev.milestones || []).map((milestone) =>
+            milestone.id === milestoneId ? { ...milestone, ...data } : milestone
+          ),
+        };
+      });
+      setCompletionResponseNotes((prev) => ({ ...prev, [milestoneId]: "" }));
+      toast.success("Subcontractor submission approved.");
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        err?.response?.data?.detail ||
+          "Failed to approve subcontractor submission."
+      );
+    } finally {
+      setCompletionDecisionBusy((prev) => ({ ...prev, [milestoneId]: false }));
+    }
+  };
+
+  const rejectSubcontractorCompletion = async (milestoneId) => {
+    try {
+      setCompletionDecisionBusy((prev) => ({ ...prev, [milestoneId]: true }));
+      const response_note = (completionResponseNotes[milestoneId] || "").trim();
+      const { data } = await api.post(
+        `/projects/milestones/${milestoneId}/reject-subcontractor-completion/`,
+        { response_note }
+      );
+      setAgreement((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          milestones: (prev.milestones || []).map((milestone) =>
+            milestone.id === milestoneId ? { ...milestone, ...data } : milestone
+          ),
+        };
+      });
+      setCompletionResponseNotes((prev) => ({ ...prev, [milestoneId]: "" }));
+      toast.success("Sent back for changes.");
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        err?.response?.data?.detail ||
+          "Failed to send subcontractor submission back."
+      );
+    } finally {
+      setCompletionDecisionBusy((prev) => ({ ...prev, [milestoneId]: false }));
+    }
   };
 
   const statusText = norm.isDirectPay
@@ -1418,6 +1480,44 @@ export default function AgreementDetail() {
                     </div>
                   ) : null}
 
+                  <div
+                    data-testid={`milestone-completion-state-${m.id}`}
+                    className="mt-2 text-sm text-gray-600"
+                  >
+                    <span className="font-semibold text-gray-900">
+                      Subcontractor completion:
+                    </span>{" "}
+                    {String(
+                      m.subcontractor_completion_status || "not_submitted"
+                    )
+                      .replaceAll("_", " ")
+                      .replace(/^\w/, (c) => c.toUpperCase())}
+                    {m.subcontractor_marked_complete_at ? (
+                      <span className="text-gray-500">
+                        {" "}
+                        ({fmtDateTime(m.subcontractor_marked_complete_at)})
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {m.subcontractor_completion_note ? (
+                    <div className="mt-1 text-sm text-gray-600 whitespace-pre-wrap">
+                      <span className="font-semibold text-gray-900">
+                        Completion note:
+                      </span>{" "}
+                      {m.subcontractor_completion_note}
+                    </div>
+                  ) : null}
+
+                  {m.subcontractor_review_response_note ? (
+                    <div className="mt-1 text-sm text-gray-600 whitespace-pre-wrap">
+                      <span className="font-semibold text-gray-900">
+                        Review response:
+                      </span>{" "}
+                      {m.subcontractor_review_response_note}
+                    </div>
+                  ) : null}
+
                   {isContractor && (
                     <div className="mt-3">
                       <AssignSubcontractorInline
@@ -1438,6 +1538,52 @@ export default function AgreementDetail() {
                           Clear Review Request
                         </button>
                       ) : null}
+                      <div className="mt-3 space-y-2 rounded-lg border border-gray-200 bg-white p-4">
+                        <div className="text-sm font-semibold text-gray-900">
+                          Subcontractor Completion Review
+                        </div>
+                        <textarea
+                          data-testid={`milestone-completion-response-note-${m.id}`}
+                          rows={2}
+                          value={completionResponseNotes[m.id] || ""}
+                          onChange={(e) =>
+                            setCompletionResponseNotes((prev) => ({
+                              ...prev,
+                              [m.id]: e.target.value,
+                            }))
+                          }
+                          className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                          placeholder="Optional response note"
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            data-testid={`milestone-completion-approve-${m.id}`}
+                            onClick={() => approveSubcontractorCompletion(m.id)}
+                            disabled={
+                              completionDecisionBusy[m.id] ||
+                              m.subcontractor_completion_status !==
+                                "submitted_for_review"
+                            }
+                            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                          >
+                            {completionDecisionBusy[m.id] ? "Working..." : "Approve Submission"}
+                          </button>
+                          <button
+                            type="button"
+                            data-testid={`milestone-completion-reject-${m.id}`}
+                            onClick={() => rejectSubcontractorCompletion(m.id)}
+                            disabled={
+                              completionDecisionBusy[m.id] ||
+                              m.subcontractor_completion_status !==
+                                "submitted_for_review"
+                            }
+                            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                          >
+                            {completionDecisionBusy[m.id] ? "Working..." : "Send Back for Changes"}
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>

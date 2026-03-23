@@ -345,3 +345,102 @@ test('subcontractor assigned work can request contractor review for an assigned 
     'Ready for your walkthrough.'
   );
 });
+
+test('subcontractor assigned work can submit completion for review and shows sent-back state', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  const milestoneState = {
+    id: 901,
+    title: 'Cabinet Install',
+    description: 'Install all upper and lower cabinets.',
+    status: 'pending',
+    start_date: '2026-03-25',
+    completion_date: '2026-03-28',
+    assigned_subcontractor: {
+      invitation_id: 77,
+      display_name: 'Taylor Sub',
+      email: 'subcontractor@example.com',
+    },
+    subcontractor_review_requested: false,
+    subcontractor_review_requested_at: null,
+    subcontractor_review_note: '',
+    subcontractor_completion_status: 'needs_changes',
+    subcontractor_marked_complete_at: '2026-03-24T09:00:00Z',
+    subcontractor_completion_note: 'Initial completion pass is done.',
+    subcontractor_review_response_note: 'Please adjust the pantry trim before resubmitting.',
+  };
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        user_id: 99,
+        email: 'subcontractor@example.com',
+        type: 'subcontractor',
+        role: 'subcontractor',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/subcontractor/milestones/my-assigned/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        groups: [
+          {
+            agreement_id: 321,
+            agreement_title: 'Kitchen Remodel Agreement',
+            project_title: 'Kitchen Remodel Agreement',
+            milestones: [milestoneState],
+          },
+        ],
+        milestones: [milestoneState],
+        count: 1,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/subcontractor/milestones/901/submit-completion/', async (route) => {
+    milestoneState.subcontractor_completion_status = 'submitted_for_review';
+    milestoneState.subcontractor_marked_complete_at = '2026-03-24T10:20:00Z';
+    milestoneState.subcontractor_completion_note = 'Cabinet install is ready for review.';
+    milestoneState.subcontractor_review_response_note = '';
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        milestone: milestoneState,
+      }),
+    });
+  });
+
+  await page.goto('/app/subcontractor/assigned-work', {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('assigned-milestone-completion-state-901')).toContainText(
+    'Needs changes'
+  );
+  await expect(page.getByTestId('assigned-milestone-completion-state-901')).toContainText(
+    'Please adjust the pantry trim before resubmitting.'
+  );
+
+  await page
+    .getByTestId('assigned-milestone-completion-note-901')
+    .fill('Cabinet install is ready for review.');
+  await page.getByTestId('assigned-milestone-submit-complete-901').click();
+
+  await expect(page.getByTestId('assigned-milestone-completion-state-901')).toContainText(
+    'Submitted for review'
+  );
+  await expect(page.getByTestId('assigned-milestone-completion-state-901')).toContainText(
+    'Cabinet install is ready for review.'
+  );
+});

@@ -39,6 +39,7 @@ from projects.models import (
     Invoice,
     InvoiceStatus,
     Agreement,
+    SubcontractorCompletionStatus,
 )
 from projects.serializers.milestone import MilestoneSerializer
 from projects.serializers.milestone_file import MilestoneFileSerializer
@@ -521,6 +522,21 @@ def _can_invoice_milestone(agreement: Agreement) -> Optional[Response]:
     return None
 
 
+def _is_owning_contractor_user(user, agreement: Agreement) -> bool:
+    try:
+        owner = getattr(getattr(agreement, "project", None), "contractor", None)
+        requester = get_contractor_for_user(user)
+        if owner is None or requester is None:
+            return False
+        if owner.id != requester.id:
+            return False
+        if hasattr(user, "contractor_subaccount"):
+            return False
+        return True
+    except Exception:
+        return False
+
+
 def _mark_milestone_complete_side_effects(*, request, milestone: Milestone, completion_notes: str = "") -> Milestone:
     """
     Shared completion side-effect handler. Used by:
@@ -621,6 +637,8 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         "assigned_subcontractor_invitation",
         "assigned_subcontractor_invitation__accepted_by_user",
         "subcontractor_review_requested_by",
+        "subcontractor_marked_complete_by",
+        "subcontractor_reviewed_by",
     ).all()
 
     def _assigned_queryset_for_user(self, user):
@@ -646,6 +664,8 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                     "assigned_subcontractor_invitation",
                     "assigned_subcontractor_invitation__accepted_by_user",
                     "subcontractor_review_requested_by",
+                    "subcontractor_marked_complete_by",
+                    "subcontractor_reviewed_by",
                 )
                 .filter(agreement__project__contractor=contractor)
                 .order_by("order", "id")
@@ -1169,6 +1189,70 @@ class MilestoneViewSet(viewsets.ModelViewSet):
             MilestoneSerializer(milestone, context={"request": request}).data,
             status=status.HTTP_200_OK,
         )
+
+    @action(detail=True, methods=["post"], url_path="approve-subcontractor-completion")
+    def approve_subcontractor_completion(self, request, pk=None):
+        milestone: Milestone = self.get_object()
+        if not _is_owning_contractor_user(request.user, milestone.agreement):
+            return Response({"detail": "Only the owning contractor can review subcontractor submissions."}, status=status.HTTP_403_FORBIDDEN)
+
+        if milestone.subcontractor_completion_status != SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW:
+            return Response({"detail": "No subcontractor completion submission is pending review."}, status=status.HTTP_400_BAD_REQUEST)
+
+        response_note = ((request.data or {}).get("response_note") or "").strip()
+
+        with transaction.atomic():
+            milestone = Milestone.objects.select_for_update().get(pk=milestone.pk)
+            if milestone.subcontractor_completion_status != SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW:
+                return Response({"detail": "No subcontractor completion submission is pending review."}, status=status.HTTP_400_BAD_REQUEST)
+
+            milestone.subcontractor_completion_status = SubcontractorCompletionStatus.APPROVED
+            milestone.subcontractor_reviewed_at = timezone.now()
+            milestone.subcontractor_reviewed_by = request.user
+            milestone.subcontractor_review_response_note = response_note
+            milestone.save(
+                update_fields=[
+                    "subcontractor_completion_status",
+                    "subcontractor_reviewed_at",
+                    "subcontractor_reviewed_by",
+                    "subcontractor_review_response_note",
+                ]
+            )
+
+        milestone.refresh_from_db()
+        return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="reject-subcontractor-completion")
+    def reject_subcontractor_completion(self, request, pk=None):
+        milestone: Milestone = self.get_object()
+        if not _is_owning_contractor_user(request.user, milestone.agreement):
+            return Response({"detail": "Only the owning contractor can review subcontractor submissions."}, status=status.HTTP_403_FORBIDDEN)
+
+        if milestone.subcontractor_completion_status != SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW:
+            return Response({"detail": "No subcontractor completion submission is pending review."}, status=status.HTTP_400_BAD_REQUEST)
+
+        response_note = ((request.data or {}).get("response_note") or "").strip()
+
+        with transaction.atomic():
+            milestone = Milestone.objects.select_for_update().get(pk=milestone.pk)
+            if milestone.subcontractor_completion_status != SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW:
+                return Response({"detail": "No subcontractor completion submission is pending review."}, status=status.HTTP_400_BAD_REQUEST)
+
+            milestone.subcontractor_completion_status = SubcontractorCompletionStatus.NEEDS_CHANGES
+            milestone.subcontractor_reviewed_at = timezone.now()
+            milestone.subcontractor_reviewed_by = request.user
+            milestone.subcontractor_review_response_note = response_note
+            milestone.save(
+                update_fields=[
+                    "subcontractor_completion_status",
+                    "subcontractor_reviewed_at",
+                    "subcontractor_reviewed_by",
+                    "subcontractor_review_response_note",
+                ]
+            )
+
+        milestone.refresh_from_db()
+        return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=["post"], url_path="check-overlap")
     def check_overlap(self, request):

@@ -103,6 +103,13 @@ class HomeownerStatus(models.TextChoices):
     ARCHIVED = "archived", "Archived"
 
 
+class SubcontractorCompletionStatus(models.TextChoices):
+    NOT_SUBMITTED = "not_submitted", "Not Submitted"
+    SUBMITTED_FOR_REVIEW = "submitted_for_review", "Submitted for Review"
+    APPROVED = "approved", "Approved"
+    NEEDS_CHANGES = "needs_changes", "Needs Changes"
+
+
 class Skill(models.Model):
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(max_length=100, unique=True)
@@ -970,6 +977,49 @@ class Milestone(models.Model):
         default="",
         help_text="Optional note from the assigned subcontractor when requesting review.",
     )
+    subcontractor_completion_status = models.CharField(
+        max_length=32,
+        choices=SubcontractorCompletionStatus.choices,
+        default=SubcontractorCompletionStatus.NOT_SUBMITTED,
+        db_index=True,
+        help_text="Parallel subcontractor completion-review workflow state.",
+    )
+    subcontractor_marked_complete_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the assigned subcontractor submitted completion for review.",
+    )
+    subcontractor_marked_complete_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="subcontractor_completion_submissions",
+        help_text="Assigned subcontractor user who submitted completion for review.",
+    )
+    subcontractor_completion_note = models.TextField(
+        blank=True,
+        default="",
+        help_text="Optional note from the subcontractor when submitting completion.",
+    )
+    subcontractor_reviewed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the contractor reviewed the subcontractor completion submission.",
+    )
+    subcontractor_reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="subcontractor_completion_reviews",
+        help_text="Owning contractor user who reviewed the subcontractor completion submission.",
+    )
+    subcontractor_review_response_note = models.TextField(
+        blank=True,
+        default="",
+        help_text="Optional contractor response note for approval or change requests.",
+    )
 
     class Meta:
         ordering = ["order"]
@@ -1039,6 +1089,58 @@ class MilestoneComment(models.Model):
         if self.author:
             author_name = self.author.get_full_name()
         return f"Comment by {author_name} on {self.created_at.strftime('%Y-%m-%d')}"
+
+
+class Notification(models.Model):
+    EVENT_SUBCONTRACTOR_COMMENT = "subcontractor_comment"
+    EVENT_SUBCONTRACTOR_FILE = "subcontractor_file"
+    EVENT_SUBCONTRACTOR_REVIEW = "subcontractor_review"
+
+    EVENT_CHOICES = (
+        (EVENT_SUBCONTRACTOR_COMMENT, "Subcontractor Comment"),
+        (EVENT_SUBCONTRACTOR_FILE, "Subcontractor File"),
+        (EVENT_SUBCONTRACTOR_REVIEW, "Subcontractor Review Request"),
+    )
+
+    contractor = models.ForeignKey(
+        Contractor,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+    )
+    event_type = models.CharField(max_length=64, choices=EVENT_CHOICES, db_index=True)
+    agreement = models.ForeignKey(
+        Agreement,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        null=True,
+        blank=True,
+    )
+    milestone = models.ForeignKey(
+        Milestone,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        null=True,
+        blank=True,
+    )
+    actor_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="sent_project_notifications",
+    )
+    actor_display_name = models.CharField(max_length=255, blank=True, default="")
+    actor_email = models.EmailField(blank=True, default="")
+    title = models.CharField(max_length=255)
+    message = models.TextField(blank=True, default="")
+    is_read = models.BooleanField(default=False, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.contractor_id}:{self.event_type}:{self.title}"
 
 
 class Invoice(models.Model):

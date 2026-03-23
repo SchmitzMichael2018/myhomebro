@@ -34,6 +34,16 @@ export default function SubcontractorAssignedWorkPage() {
   const [fileBusy, setFileBusy] = useState({});
   const [reviewNotes, setReviewNotes] = useState({});
   const [reviewBusy, setReviewBusy] = useState({});
+  const [completionNotes, setCompletionNotes] = useState({});
+  const [completionBusy, setCompletionBusy] = useState({});
+
+  function completionStatusLabel(status) {
+    const normalized = String(status || "not_submitted").toLowerCase();
+    if (normalized === "submitted_for_review") return "Submitted for review";
+    if (normalized === "approved") return "Approved";
+    if (normalized === "needs_changes") return "Needs changes";
+    return "Not submitted";
+  }
 
   useEffect(() => {
     let active = true;
@@ -162,6 +172,37 @@ export default function SubcontractorAssignedWorkPage() {
     }
   }
 
+  async function submitCompletion(milestoneId) {
+    try {
+      setCompletionBusy((prev) => ({ ...prev, [milestoneId]: true }));
+      const note = (completionNotes[milestoneId] || "").trim();
+      const { data } = await api.post(
+        `/projects/subcontractor/milestones/${milestoneId}/submit-completion/`,
+        { note }
+      );
+      const updatedMilestone = data?.milestone || {};
+      setGroups((prev) =>
+        prev.map((group) => ({
+          ...group,
+          milestones: (group.milestones || []).map((milestone) =>
+            milestone.id === milestoneId
+              ? { ...milestone, ...updatedMilestone }
+              : milestone
+          ),
+        }))
+      );
+      setCompletionNotes((prev) => ({ ...prev, [milestoneId]: "" }));
+      toast.success("Completion submitted for review.");
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        err?.response?.data?.detail || "Failed to submit completion for review."
+      );
+    } finally {
+      setCompletionBusy((prev) => ({ ...prev, [milestoneId]: false }));
+    }
+  }
+
   return (
     <div className="mx-auto max-w-5xl space-y-6 p-6">
       <div>
@@ -240,6 +281,63 @@ export default function SubcontractorAssignedWorkPage() {
                             milestone.assigned_subcontractor?.email ||
                             "Assigned"}
                         </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                      <div className="text-sm font-semibold text-slate-900">
+                        Completion Review
+                      </div>
+                      <div
+                        data-testid={`assigned-milestone-completion-state-${milestone.id}`}
+                        className="mt-2 text-sm text-slate-600"
+                      >
+                        <div>{completionStatusLabel(milestone.subcontractor_completion_status)}</div>
+                        {milestone.subcontractor_marked_complete_at ? (
+                          <div className="mt-1">
+                            Submitted: {formatDate(milestone.subcontractor_marked_complete_at)}
+                          </div>
+                        ) : null}
+                        {milestone.subcontractor_completion_note ? (
+                          <div className="mt-1 whitespace-pre-wrap">
+                            Your note: {milestone.subcontractor_completion_note}
+                          </div>
+                        ) : null}
+                        {milestone.subcontractor_review_response_note ? (
+                          <div className="mt-1 whitespace-pre-wrap text-amber-700">
+                            Contractor response: {milestone.subcontractor_review_response_note}
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-3 space-y-2">
+                        <textarea
+                          data-testid={`assigned-milestone-completion-note-${milestone.id}`}
+                          rows={2}
+                          value={completionNotes[milestone.id] || ""}
+                          onChange={(e) =>
+                            setCompletionNotes((prev) => ({
+                              ...prev,
+                              [milestone.id]: e.target.value,
+                            }))
+                          }
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                          placeholder="Optional completion note for the contractor"
+                        />
+                        <button
+                          type="button"
+                          data-testid={`assigned-milestone-submit-complete-${milestone.id}`}
+                          onClick={() => submitCompletion(milestone.id)}
+                          disabled={
+                            completionBusy[milestone.id] ||
+                            milestone.subcontractor_completion_status === "approved"
+                          }
+                          className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                        >
+                          {completionBusy[milestone.id]
+                            ? "Submitting..."
+                            : "Submit Complete for Review"}
+                        </button>
                       </div>
                     </div>
 

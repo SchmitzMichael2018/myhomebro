@@ -17,7 +17,9 @@ from projects.models import (
     Milestone,
     MilestoneComment,
     MilestoneFile,
+    Notification,
     Project,
+    SubcontractorCompletionStatus,
 )
 from projects.models import AgreementWarranty
 from projects.models_sms import SMSConsentStatus
@@ -1249,3 +1251,366 @@ class SubcontractorReviewRequestTests(TestCase):
         self.assertFalse(self.milestone.completed)
         self.assertFalse(self.milestone.is_invoiced)
         self.assertIsNone(self.milestone.invoice_id)
+
+
+class ContractorNotificationTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="notify-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Notify Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Notify Homeowner",
+            email="notify-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Notification Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Agreement for notifications",
+        )
+
+        self.subcontractor_user = user_model.objects.create_user(
+            email="notify-sub@example.com",
+            password="testpass123",
+            first_name="Taylor",
+            last_name="Sub",
+        )
+        self.invitation = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="notify-sub@example.com",
+            invite_name="Taylor Sub",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=self.subcontractor_user,
+            accepted_at=timezone.now(),
+        )
+        self.milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Countertop Install",
+            description="Install countertops",
+            amount="1500.00",
+            assigned_subcontractor_invitation=self.invitation,
+        )
+
+        self.other_contractor_user = user_model.objects.create_user(
+            email="other-notify-owner@example.com",
+            password="testpass123",
+        )
+        self.other_contractor = Contractor.objects.create(
+            user=self.other_contractor_user,
+            business_name="Other Notify Owner",
+        )
+
+        self.client = APIClient()
+
+    def test_contractor_receives_notification_for_subcontractor_comment(self):
+        self.client.force_authenticate(user=self.subcontractor_user)
+        response = self.client.post(
+            f"/api/projects/subcontractor/milestones/{self.milestone.id}/comments/",
+            {"content": "Cabinets are staged."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        notification = Notification.objects.get()
+        self.assertEqual(notification.contractor_id, self.contractor.id)
+        self.assertEqual(notification.event_type, Notification.EVENT_SUBCONTRACTOR_COMMENT)
+        self.assertEqual(notification.milestone_id, self.milestone.id)
+
+    def test_contractor_receives_notification_for_subcontractor_file_upload(self):
+        self.client.force_authenticate(user=self.subcontractor_user)
+        response = self.client.post(
+            f"/api/projects/subcontractor/milestones/{self.milestone.id}/files/",
+            {"file": SimpleUploadedFile("progress.txt", b"progress", content_type="text/plain")},
+        )
+
+        self.assertEqual(response.status_code, 201)
+        notification = Notification.objects.get()
+        self.assertEqual(notification.event_type, Notification.EVENT_SUBCONTRACTOR_FILE)
+
+    def test_contractor_receives_notification_for_review_request(self):
+        self.client.force_authenticate(user=self.subcontractor_user)
+        response = self.client.post(
+            f"/api/projects/subcontractor/milestones/{self.milestone.id}/request-review/",
+            {"note": "Ready for final walkthrough."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        notification = Notification.objects.get()
+        self.assertEqual(notification.event_type, Notification.EVENT_SUBCONTRACTOR_REVIEW)
+        self.assertIn("ready for review", notification.message.lower())
+
+    def test_other_contractors_do_not_see_notifications(self):
+        Notification.objects.create(
+            contractor=self.contractor,
+            event_type=Notification.EVENT_SUBCONTRACTOR_COMMENT,
+            agreement=self.agreement,
+            milestone=self.milestone,
+            actor_user=self.subcontractor_user,
+            actor_display_name="Taylor Sub",
+            actor_email="notify-sub@example.com",
+            title="Subcontractor added a comment",
+            message="Taylor Sub added a comment on Countertop Install.",
+        )
+
+        self.client.force_authenticate(user=self.other_contractor_user)
+        response = self.client.get("/api/projects/notifications/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [])
+
+
+class SubcontractorCompletionReviewTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="completion-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Completion Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Completion Homeowner",
+            email="completion-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Completion Review Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Agreement for subcontractor completion review",
+        )
+
+        self.assigned_user = user_model.objects.create_user(
+            email="assigned-complete@example.com",
+            password="testpass123",
+            first_name="Assigned",
+            last_name="Complete",
+        )
+        self.other_user = user_model.objects.create_user(
+            email="other-complete@example.com",
+            password="testpass123",
+        )
+        self.unassigned_user = user_model.objects.create_user(
+            email="unassigned-complete@example.com",
+            password="testpass123",
+        )
+
+        self.assigned_invitation = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="assigned-complete@example.com",
+            invite_name="Assigned Complete",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=self.assigned_user,
+            accepted_at=timezone.now(),
+        )
+        self.other_invitation = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="other-complete@example.com",
+            invite_name="Other Complete",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=self.other_user,
+            accepted_at=timezone.now(),
+        )
+
+        self.milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Finish Carpentry",
+            description="Install trim and casing",
+            amount="2200.00",
+            assigned_subcontractor_invitation=self.assigned_invitation,
+        )
+        self.client = APIClient()
+
+    def test_assigned_subcontractor_can_submit_completion_for_review(self):
+        self.client.force_authenticate(user=self.assigned_user)
+        response = self.client.post(
+            f"/api/projects/subcontractor/milestones/{self.milestone.id}/submit-completion/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.milestone.refresh_from_db()
+        self.assertEqual(
+            self.milestone.subcontractor_completion_status,
+            SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW,
+        )
+        self.assertEqual(self.milestone.subcontractor_marked_complete_by_id, self.assigned_user.id)
+
+    def test_optional_subcontractor_note_is_stored(self):
+        self.client.force_authenticate(user=self.assigned_user)
+        response = self.client.post(
+            f"/api/projects/subcontractor/milestones/{self.milestone.id}/submit-completion/",
+            {"note": "Trim is installed and caulked."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.milestone.refresh_from_db()
+        self.assertEqual(self.milestone.subcontractor_completion_note, "Trim is installed and caulked.")
+
+    def test_unassigned_subcontractor_is_denied(self):
+        self.client.force_authenticate(user=self.unassigned_user)
+        response = self.client.post(
+            f"/api/projects/subcontractor/milestones/{self.milestone.id}/submit-completion/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_different_subcontractor_is_denied(self):
+        self.client.force_authenticate(user=self.other_user)
+        response = self.client.post(
+            f"/api/projects/subcontractor/milestones/{self.milestone.id}/submit-completion/",
+            {"note": "Not my work."},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_contractor_can_approve_submitted_completion(self):
+        self.milestone.subcontractor_completion_status = SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+        self.milestone.subcontractor_marked_complete_at = timezone.now()
+        self.milestone.subcontractor_marked_complete_by = self.assigned_user
+        self.milestone.save(
+            update_fields=[
+                "subcontractor_completion_status",
+                "subcontractor_marked_complete_at",
+                "subcontractor_marked_complete_by",
+            ]
+        )
+
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/approve-subcontractor-completion/",
+            {"response_note": "Looks good."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.milestone.refresh_from_db()
+        self.assertEqual(
+            self.milestone.subcontractor_completion_status,
+            SubcontractorCompletionStatus.APPROVED,
+        )
+        self.assertEqual(self.milestone.subcontractor_review_response_note, "Looks good.")
+
+    def test_contractor_can_reject_submitted_completion(self):
+        self.milestone.subcontractor_completion_status = SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+        self.milestone.subcontractor_marked_complete_at = timezone.now()
+        self.milestone.subcontractor_marked_complete_by = self.assigned_user
+        self.milestone.save(
+            update_fields=[
+                "subcontractor_completion_status",
+                "subcontractor_marked_complete_at",
+                "subcontractor_marked_complete_by",
+            ]
+        )
+
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/reject-subcontractor-completion/",
+            {"response_note": "Please tighten the outside corners."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.milestone.refresh_from_db()
+        self.assertEqual(
+            self.milestone.subcontractor_completion_status,
+            SubcontractorCompletionStatus.NEEDS_CHANGES,
+        )
+        self.assertEqual(
+            self.milestone.subcontractor_review_response_note,
+            "Please tighten the outside corners.",
+        )
+
+    def test_review_actions_do_not_mark_milestone_complete_or_invoiced(self):
+        self.milestone.subcontractor_completion_status = SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+        self.milestone.subcontractor_marked_complete_at = timezone.now()
+        self.milestone.subcontractor_marked_complete_by = self.assigned_user
+        self.milestone.save(
+            update_fields=[
+                "subcontractor_completion_status",
+                "subcontractor_marked_complete_at",
+                "subcontractor_marked_complete_by",
+            ]
+        )
+
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/approve-subcontractor-completion/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.milestone.refresh_from_db()
+        self.assertFalse(self.milestone.completed)
+        self.assertFalse(self.milestone.is_invoiced)
+        self.assertIsNone(self.milestone.invoice_id)
+
+    def test_serializer_exposes_subcontractor_completion_review_state(self):
+        self.milestone.subcontractor_completion_status = SubcontractorCompletionStatus.NEEDS_CHANGES
+        self.milestone.subcontractor_marked_complete_at = timezone.now()
+        self.milestone.subcontractor_marked_complete_by = self.assigned_user
+        self.milestone.subcontractor_completion_note = "Trim installed."
+        self.milestone.subcontractor_reviewed_at = timezone.now()
+        self.milestone.subcontractor_reviewed_by = self.contractor_user
+        self.milestone.subcontractor_review_response_note = "Please fix the hallway seam."
+        self.milestone.save(
+            update_fields=[
+                "subcontractor_completion_status",
+                "subcontractor_marked_complete_at",
+                "subcontractor_marked_complete_by",
+                "subcontractor_completion_note",
+                "subcontractor_reviewed_at",
+                "subcontractor_reviewed_by",
+                "subcontractor_review_response_note",
+            ]
+        )
+
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get(f"/api/projects/milestones/{self.milestone.id}/")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["subcontractor_completion_status"], "needs_changes")
+        self.assertEqual(payload["subcontractor_completion_note"], "Trim installed.")
+        self.assertEqual(payload["subcontractor_review_response_note"], "Please fix the hallway seam.")

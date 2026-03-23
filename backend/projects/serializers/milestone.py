@@ -7,7 +7,7 @@ from typing import Optional, Any, Dict
 from django.db.models import Q
 from rest_framework import serializers
 
-from projects.models import Milestone, Agreement
+from projects.models import Milestone, Agreement, SubcontractorCompletionStatus
 from projects.models_subcontractor import (
     SubcontractorInvitation,
     SubcontractorInvitationStatus,
@@ -135,6 +135,8 @@ class MilestoneSerializer(serializers.ModelSerializer):
     assigned_subcontractor_display = serializers.SerializerMethodField()
     subcontractor_review_requested = serializers.SerializerMethodField()
     subcontractor_review_requested_by_display = serializers.SerializerMethodField()
+    subcontractor_completion_submitted_by_display = serializers.SerializerMethodField()
+    subcontractor_completion_reviewed_by_display = serializers.SerializerMethodField()
 
     allow_overlap = serializers.BooleanField(write_only=True, required=False, default=False)
     assigned_subcontractor_invitation = serializers.PrimaryKeyRelatedField(
@@ -170,6 +172,15 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "subcontractor_review_requested_at",
             "subcontractor_review_requested_by",
             "subcontractor_review_note",
+            "subcontractor_completion_submitted_by_display",
+            "subcontractor_completion_reviewed_by_display",
+            "subcontractor_completion_status",
+            "subcontractor_marked_complete_at",
+            "subcontractor_marked_complete_by",
+            "subcontractor_completion_note",
+            "subcontractor_reviewed_at",
+            "subcontractor_reviewed_by",
+            "subcontractor_review_response_note",
         )
 
     # ------------------------ helpers (read) ------------------------ #
@@ -435,6 +446,28 @@ class MilestoneSerializer(serializers.ModelSerializer):
             return assigned.get("display_name") or assigned.get("email") or ""
         return ""
 
+    def get_subcontractor_completion_submitted_by_display(self, obj: Milestone) -> str:
+        user = getattr(obj, "subcontractor_marked_complete_by", None)
+        if user is not None:
+            display = getattr(user, "get_full_name", lambda: "")() or ""
+            if display:
+                return display
+            email = (getattr(user, "email", "") or "").strip()
+            if email:
+                return email
+        return self.get_assigned_subcontractor_display(obj)
+
+    def get_subcontractor_completion_reviewed_by_display(self, obj: Milestone) -> str:
+        user = getattr(obj, "subcontractor_reviewed_by", None)
+        if user is not None:
+            display = getattr(user, "get_full_name", lambda: "")() or ""
+            if display:
+                return display
+            email = (getattr(user, "email", "") or "").strip()
+            if email:
+                return email
+        return ""
+
     # ------------------------ validation ------------------------ #
     @staticmethod
     def _as_date(value) -> Optional[date]:
@@ -568,6 +601,13 @@ class MilestoneSerializer(serializers.ModelSerializer):
                 validated_data["subcontractor_review_requested_at"] = None
                 validated_data["subcontractor_review_requested_by"] = None
                 validated_data["subcontractor_review_note"] = ""
+                validated_data["subcontractor_completion_status"] = SubcontractorCompletionStatus.NOT_SUBMITTED
+                validated_data["subcontractor_marked_complete_at"] = None
+                validated_data["subcontractor_marked_complete_by"] = None
+                validated_data["subcontractor_completion_note"] = ""
+                validated_data["subcontractor_reviewed_at"] = None
+                validated_data["subcontractor_reviewed_by"] = None
+                validated_data["subcontractor_review_response_note"] = ""
         return super().update(instance, validated_data)
 
     def to_representation(self, instance):
@@ -602,5 +642,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
         data["assigned_subcontractor_display"] = self.get_assigned_subcontractor_display(instance)
         data["subcontractor_review_requested"] = self.get_subcontractor_review_requested(instance)
         data["subcontractor_review_requested_by_display"] = self.get_subcontractor_review_requested_by_display(instance)
+        data["subcontractor_completion_submitted_by_display"] = self.get_subcontractor_completion_submitted_by_display(instance)
+        data["subcontractor_completion_reviewed_by_display"] = self.get_subcontractor_completion_reviewed_by_display(instance)
 
         return data

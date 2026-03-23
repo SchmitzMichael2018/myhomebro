@@ -126,6 +126,7 @@ from .views.subcontractor_work import (
     subcontractor_milestone_comments,
     subcontractor_milestone_detail,
     subcontractor_milestone_files,
+    subcontractor_submit_completion,
     subcontractor_request_review,
 )
 
@@ -359,6 +360,10 @@ urlpatterns = [
     path(
         "subcontractor/milestones/<int:milestone_id>/request-review/",
         subcontractor_request_review,
+    ),
+    path(
+        "subcontractor/milestones/<int:milestone_id>/submit-completion/",
+        subcontractor_submit_completion,
     ),
     path("employee/milestones/<int:milestone_id>/", milestone_detail),
     path("employee/milestones/<int:milestone_id>/comments/", add_comment),
