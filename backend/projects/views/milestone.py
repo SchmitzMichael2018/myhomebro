@@ -616,7 +616,11 @@ def _enforce_no_edit_on_locked_agreement(*, request, milestone: Milestone, data:
 class MilestoneViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsContractorOrSubAccount, CanEditMilestones]
     serializer_class = MilestoneSerializer
-    queryset = Milestone.objects.select_related("agreement").all()
+    queryset = Milestone.objects.select_related(
+        "agreement",
+        "assigned_subcontractor_invitation",
+        "assigned_subcontractor_invitation__accepted_by_user",
+    ).all()
 
     def _assigned_queryset_for_user(self, user):
         assignment_filter = Q(assigned_to=user) | Q(assigned_user=user) | Q(assigned_employee__user=user)
@@ -635,7 +639,12 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         if contractor is not None:
             qs = (
                 Milestone.objects
-                .select_related("agreement", "agreement__project")
+                .select_related(
+                    "agreement",
+                    "agreement__project",
+                    "assigned_subcontractor_invitation",
+                    "assigned_subcontractor_invitation__accepted_by_user",
+                )
                 .filter(agreement__project__contractor=contractor)
                 .order_by("order", "id")
             )

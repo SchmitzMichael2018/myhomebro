@@ -944,6 +944,14 @@ class Milestone(models.Model):
         related_name="source_milestone",
         help_text="Invoice created from this milestone (idempotent link).",
     )
+    assigned_subcontractor_invitation = models.ForeignKey(
+        "projects.SubcontractorInvitation",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="assigned_milestones",
+        help_text="Accepted subcontractor invitation assigned to this milestone.",
+    )
 
     class Meta:
         ordering = ["order"]

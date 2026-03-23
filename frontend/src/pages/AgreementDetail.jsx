@@ -21,14 +21,13 @@ import SendFundingLinkButton from "../components/SendFundingLinkButton";
 import { useAuth } from "../context/AuthContext";
 import PdfPreviewModal from "../components/PdfPreviewModal";
 import RefundEscrowModal from "../components/RefundEscrowModal";
+import AssignSubcontractorInline from "../components/AssignSubcontractorInline";
 
 // ✅ Assignment UI
 import AssignEmployeeInline from "../components/AssignEmployeeInline";
 import {
   assignAgreementToSubaccount,
   unassignAgreementFromSubaccount,
-  assignMilestoneToSubaccount,
-  unassignMilestone,
 } from "../api/assignments";
 
 const pick = (...vals) =>
@@ -455,16 +454,6 @@ export default function AgreementDetail() {
     toast.success("Agreement unassigned.");
   };
 
-  const assignMilestone = async (milestoneId, subId) => {
-    await assignMilestoneToSubaccount(milestoneId, subId);
-    toast.success("Milestone assigned.");
-  };
-
-  const unassignMilestoneLocal = async (milestoneId) => {
-    await unassignMilestone(milestoneId);
-    toast.success("Milestone unassigned.");
-  };
-
   const resetWarrantyForm = () => {
     setEditingWarrantyId(null);
     setWarrantyForm({
@@ -603,6 +592,38 @@ export default function AgreementDetail() {
     } catch {
       toast.error("Unable to copy the invitation link.");
     }
+  };
+
+  const assignMilestoneSubcontractor = async (milestoneId, invitationId) => {
+    const { data } = await api.patch(`/projects/milestones/${milestoneId}/`, {
+      assigned_subcontractor_invitation: invitationId,
+    });
+    setAgreement((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        milestones: (prev.milestones || []).map((milestone) =>
+          milestone.id === milestoneId ? { ...milestone, ...data } : milestone
+        ),
+      };
+    });
+    toast.success("Subcontractor assigned.");
+  };
+
+  const unassignMilestoneSubcontractor = async (milestoneId) => {
+    const { data } = await api.patch(`/projects/milestones/${milestoneId}/`, {
+      assigned_subcontractor_invitation: null,
+    });
+    setAgreement((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        milestones: (prev.milestones || []).map((milestone) =>
+          milestone.id === milestoneId ? { ...milestone, ...data } : milestone
+        ),
+      };
+    });
+    toast.success("Subcontractor unassigned.");
   };
 
   const statusText = norm.isDirectPay
@@ -1336,7 +1357,11 @@ export default function AgreementDetail() {
               const label = milestoneStatusLabel(m);
 
               return (
-                <div key={m.id} className="border rounded-lg p-3 bg-gray-50">
+                <div
+                  key={m.id}
+                  data-testid={`milestone-card-${m.id}`}
+                  className="border rounded-lg p-3 bg-gray-50"
+                >
                   <div className="text-sm">
                     <span className="font-semibold">{m.title}</span> — $
                     {toMoney(m.amount).toFixed(2)}
@@ -1344,14 +1369,22 @@ export default function AgreementDetail() {
                     <span className="text-gray-500"> ({label})</span>
                   </div>
 
-                  {/* ✅ NEW: Per-milestone override assignment selector */}
+                  <div className="mt-2 text-sm text-gray-600">
+                    <span className="font-semibold text-gray-900">
+                      Subcontractor:
+                    </span>{" "}
+                    {m.assigned_subcontractor_display || "Unassigned"}
+                  </div>
+
                   {isContractor && (
                     <div className="mt-3">
-                      <AssignEmployeeInline
-                        label="Assign This Milestone (Override)"
-                        help="Overrides agreement assignment. Only the selected employee will see this milestone."
-                        onAssign={(subId) => assignMilestone(m.id, subId)}
-                        onUnassign={() => unassignMilestoneLocal(m.id)}
+                      <AssignSubcontractorInline
+                        acceptedSubcontractors={acceptedSubcontractors}
+                        currentAssignment={m.assigned_subcontractor}
+                        onAssign={(invitationId) =>
+                          assignMilestoneSubcontractor(m.id, invitationId)
+                        }
+                        onUnassign={() => unassignMilestoneSubcontractor(m.id)}
                       />
                     </div>
                   )}

@@ -8,6 +8,11 @@ from django.db.models import Q
 from rest_framework import serializers
 
 from projects.models import Milestone, Agreement
+from projects.models_subcontractor import (
+    SubcontractorInvitation,
+    SubcontractorInvitationStatus,
+)
+from projects.utils.accounts import get_contractor_for_user
 
 # ✅ Centralized agreement locking rules
 from projects.services.agreement_locking import (
@@ -126,8 +131,15 @@ class MilestoneSerializer(serializers.ModelSerializer):
 
     is_rework = serializers.SerializerMethodField()
     origin_milestone = serializers.SerializerMethodField()
+    assigned_subcontractor = serializers.SerializerMethodField()
+    assigned_subcontractor_display = serializers.SerializerMethodField()
 
     allow_overlap = serializers.BooleanField(write_only=True, required=False, default=False)
+    assigned_subcontractor_invitation = serializers.PrimaryKeyRelatedField(
+        queryset=SubcontractorInvitation.objects.select_related("accepted_by_user"),
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model = Milestone
@@ -149,6 +161,8 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "agreement_escrow_funded",
             "agreement_signature_is_satisfied",
             "pricing_mode",
+            "assigned_subcontractor",
+            "assigned_subcontractor_display",
         )
 
     # ------------------------ helpers (read) ------------------------ #
@@ -363,6 +377,39 @@ class MilestoneSerializer(serializers.ModelSerializer):
         except Exception:
             return None
 
+    def _get_assigned_subcontractor_invitation(self, obj: Milestone):
+        try:
+            invitation = getattr(obj, "assigned_subcontractor_invitation", None)
+            if invitation is not None:
+                invitation.refresh_expired_status(save=False)
+            return invitation
+        except Exception:
+            return None
+
+    def get_assigned_subcontractor(self, obj: Milestone) -> Optional[Dict[str, Any]]:
+        invitation = self._get_assigned_subcontractor_invitation(obj)
+        if invitation is None:
+            return None
+
+        user = getattr(invitation, "accepted_by_user", None)
+        display_name = ""
+        if user is not None:
+            display_name = getattr(user, "get_full_name", lambda: "")() or ""
+
+        return {
+            "invitation_id": invitation.id,
+            "user_id": getattr(user, "id", None),
+            "display_name": display_name or invitation.invite_name or invitation.invite_email,
+            "email": invitation.invite_email,
+            "accepted_at": invitation.accepted_at,
+        }
+
+    def get_assigned_subcontractor_display(self, obj: Milestone) -> str:
+        assigned = self.get_assigned_subcontractor(obj)
+        if not assigned:
+            return ""
+        return assigned.get("display_name") or assigned.get("email") or ""
+
     # ------------------------ validation ------------------------ #
     @staticmethod
     def _as_date(value) -> Optional[date]:
@@ -378,6 +425,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
             return None
 
     def validate(self, attrs):
+        request = self.context.get("request")
         allow_overlap = attrs.get("allow_overlap", False)
 
         if "end_date" in getattr(self, "initial_data", {}):
@@ -415,6 +463,29 @@ class MilestoneSerializer(serializers.ModelSerializer):
                 attrs["amount"] = amt_dec
 
         agreement = attrs.get("agreement") or getattr(self.instance, "agreement", None)
+        assigned_subcontractor_invitation = attrs.get(
+            "assigned_subcontractor_invitation",
+            getattr(self.instance, "assigned_subcontractor_invitation", None),
+        )
+
+        if "assigned_subcontractor_invitation" in attrs:
+            contractor = get_contractor_for_user(getattr(request, "user", None)) if request is not None else None
+            owner = getattr(getattr(agreement, "project", None), "contractor", None)
+            if contractor is None or owner is None or contractor.id != owner.id:
+                raise serializers.ValidationError(
+                    {"assigned_subcontractor_invitation": "Only the owning contractor can assign subcontractors."}
+                )
+
+            if assigned_subcontractor_invitation is not None:
+                assigned_subcontractor_invitation.refresh_expired_status()
+                if assigned_subcontractor_invitation.agreement_id != getattr(agreement, "id", None):
+                    raise serializers.ValidationError(
+                        {"assigned_subcontractor_invitation": "Assigned subcontractor must belong to the same agreement."}
+                    )
+                if assigned_subcontractor_invitation.status != SubcontractorInvitationStatus.ACCEPTED:
+                    raise serializers.ValidationError(
+                        {"assigned_subcontractor_invitation": "Only accepted subcontractors can be assigned."}
+                    )
 
         start_raw = attrs.get("start_date", getattr(self.instance, "start_date", None))
         end_raw = attrs.get("completion_date", getattr(self.instance, "completion_date", None))
@@ -493,5 +564,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
         data["agreement_escrow_funded"] = self.get_agreement_escrow_funded(instance)
         data["agreement_signature_is_satisfied"] = self.get_agreement_signature_is_satisfied(instance)
         data["pricing_mode"] = self.get_pricing_mode(instance)
+        data["assigned_subcontractor"] = self.get_assigned_subcontractor(instance)
+        data["assigned_subcontractor_display"] = self.get_assigned_subcontractor_display(instance)
 
         return data

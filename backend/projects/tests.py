@@ -5,10 +5,11 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.urls import resolve
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from projects.api.ai_agreement_views import ai_suggest_milestones
-from projects.models import Agreement, Contractor, Homeowner, Project
+from projects.models import Agreement, Contractor, Homeowner, Milestone, Project
 from projects.models import AgreementWarranty
 from projects.models_sms import SMSConsentStatus
 from projects.models_subcontractor import (
@@ -603,3 +604,178 @@ class SMSWebhookTests(TestCase):
         self.assertEqual(consent.last_keyword_type, SMSConsentStatus.KEYWORD_OPT_IN)
         self.assertEqual(consent.last_inbound_body, "START")
         self.assertIsNotNone(consent.opted_in_at)
+
+
+class SubcontractorMilestoneAssignmentTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="assign-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Assign Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Assign Homeowner",
+            email="assign-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Assignment Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Agreement for milestone assignment",
+        )
+        self.milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Cabinet Install",
+            description="Install all cabinets",
+            amount="2500.00",
+        )
+
+        self.accepted_user = user_model.objects.create_user(
+            email="accepted-sub@example.com",
+            password="testpass123",
+            first_name="Accepted",
+            last_name="Sub",
+        )
+        self.accepted_invitation = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="accepted-sub@example.com",
+            invite_name="Accepted Sub",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=self.accepted_user,
+            accepted_at=timezone.now(),
+        )
+
+        self.pending_invitation = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="pending-sub@example.com",
+            invite_name="Pending Sub",
+            status=SubcontractorInvitationStatus.PENDING,
+        )
+
+        self.other_user = user_model.objects.create_user(
+            email="other-sub@example.com",
+            password="testpass123",
+        )
+        self.other_contractor = Contractor.objects.create(
+            user=user_model.objects.create_user(
+                email="other-owner-assign@example.com",
+                password="testpass123",
+            ),
+            business_name="Other Assign Owner",
+        )
+        self.other_homeowner = Homeowner.objects.create(
+            created_by=self.other_contractor,
+            full_name="Other Homeowner",
+            email="other-assign-homeowner@example.com",
+        )
+        self.other_project = Project.objects.create(
+            contractor=self.other_contractor,
+            homeowner=self.other_homeowner,
+            title="Other Assignment Project",
+        )
+        self.other_agreement = Agreement.objects.create(
+            project=self.other_project,
+            contractor=self.other_contractor,
+            homeowner=self.other_homeowner,
+            description="Other agreement",
+        )
+        self.other_invitation = SubcontractorInvitation.objects.create(
+            contractor=self.other_contractor,
+            agreement=self.other_agreement,
+            invite_email="other-sub@example.com",
+            invite_name="Other Sub",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=self.other_user,
+            accepted_at=timezone.now(),
+        )
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.contractor_user)
+
+    def test_contractor_can_assign_accepted_subcontractor_to_milestone(self):
+        response = self.client.patch(
+            f"/api/projects/milestones/{self.milestone.id}/",
+            {"assigned_subcontractor_invitation": self.accepted_invitation.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.milestone.refresh_from_db()
+        self.assertEqual(
+            self.milestone.assigned_subcontractor_invitation_id,
+            self.accepted_invitation.id,
+        )
+
+    def test_contractor_can_unassign_subcontractor(self):
+        self.milestone.assigned_subcontractor_invitation = self.accepted_invitation
+        self.milestone.save(update_fields=["assigned_subcontractor_invitation"])
+
+        response = self.client.patch(
+            f"/api/projects/milestones/{self.milestone.id}/",
+            {"assigned_subcontractor_invitation": None},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.milestone.refresh_from_db()
+        self.assertIsNone(self.milestone.assigned_subcontractor_invitation_id)
+
+    def test_cannot_assign_pending_invitation(self):
+        response = self.client.patch(
+            f"/api/projects/milestones/{self.milestone.id}/",
+            {"assigned_subcontractor_invitation": self.pending_invitation.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("accepted subcontractors", str(response.json()).lower())
+
+    def test_cannot_assign_subcontractor_from_another_agreement(self):
+        response = self.client.patch(
+            f"/api/projects/milestones/{self.milestone.id}/",
+            {"assigned_subcontractor_invitation": self.other_invitation.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("same agreement", str(response.json()).lower())
+
+    def test_serializer_returns_assignment_info_correctly(self):
+        self.milestone.assigned_subcontractor_invitation = self.accepted_invitation
+        self.milestone.save(update_fields=["assigned_subcontractor_invitation"])
+
+        response = self.client.get(f"/api/projects/milestones/{self.milestone.id}/")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(
+            payload["assigned_subcontractor_invitation"],
+            self.accepted_invitation.id,
+        )
+        self.assertEqual(
+            payload["assigned_subcontractor"]["email"],
+            "accepted-sub@example.com",
+        )
+        self.assertEqual(
+            payload["assigned_subcontractor_display"],
+            "Accepted Sub",
+        )
