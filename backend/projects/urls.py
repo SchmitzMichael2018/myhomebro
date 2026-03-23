@@ -121,6 +121,7 @@ from .views.subcontractor_invitations import (
     RevokeSubcontractorInvitationView,
     SubcontractorInvitationAcceptView,
 )
+from .views.subcontractor_work import my_assigned_subcontractor_work
 
 from .views.agreement_closeout import (
     AgreementClosureStatusView,
@@ -336,6 +337,7 @@ urlpatterns = [
     # -------------------------------------------------
     path("employee/profile/", EmployeeMeProfileView.as_view()),
     path("employee/milestones/", my_milestones),
+    path("subcontractor/milestones/my-assigned/", my_assigned_subcontractor_work),
     path("employee/milestones/<int:milestone_id>/", milestone_detail),
     path("employee/milestones/<int:milestone_id>/comments/", add_comment),
     path("employee/milestones/<int:milestone_id>/files/", upload_file),

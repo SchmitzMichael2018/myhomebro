@@ -779,3 +779,138 @@ class SubcontractorMilestoneAssignmentTests(TestCase):
             payload["assigned_subcontractor_display"],
             "Accepted Sub",
         )
+
+
+class SubcontractorAssignedWorkTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="assigned-work-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Assigned Work Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Assigned Work Homeowner",
+            email="assigned-work-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Assigned Work Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Agreement for assigned work",
+        )
+
+        self.user_one = user_model.objects.create_user(
+            email="sub-one@example.com",
+            password="testpass123",
+            first_name="Sub",
+            last_name="One",
+        )
+        self.user_two = user_model.objects.create_user(
+            email="sub-two@example.com",
+            password="testpass123",
+            first_name="Sub",
+            last_name="Two",
+        )
+
+        self.invitation_one = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="sub-one@example.com",
+            invite_name="Sub One",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=self.user_one,
+            accepted_at=timezone.now(),
+        )
+        self.invitation_two = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="sub-two@example.com",
+            invite_name="Sub Two",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=self.user_two,
+            accepted_at=timezone.now(),
+        )
+
+        self.milestone_one = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Framing",
+            description="Frame the room",
+            amount="1200.00",
+            assigned_subcontractor_invitation=self.invitation_one,
+        )
+        self.milestone_two = Milestone.objects.create(
+            agreement=self.agreement,
+            order=2,
+            title="Drywall",
+            description="Install drywall",
+            amount="800.00",
+            assigned_subcontractor_invitation=self.invitation_two,
+        )
+
+        self.client = APIClient()
+
+    def test_subcontractor_can_fetch_only_their_assigned_milestones(self):
+        self.client.force_authenticate(user=self.user_one)
+        response = self.client.get("/api/projects/subcontractor/milestones/my-assigned/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(len(payload["milestones"]), 1)
+        self.assertEqual(payload["milestones"][0]["id"], self.milestone_one.id)
+
+    def test_subcontractor_cannot_see_milestones_assigned_to_someone_else(self):
+        self.client.force_authenticate(user=self.user_one)
+        response = self.client.get("/api/projects/subcontractor/milestones/my-assigned/")
+
+        self.assertEqual(response.status_code, 200)
+        milestone_ids = [row["id"] for row in response.json()["milestones"]]
+        self.assertNotIn(self.milestone_two.id, milestone_ids)
+
+    def test_grouped_project_linked_response_includes_expected_fields(self):
+        self.client.force_authenticate(user=self.user_one)
+        response = self.client.get("/api/projects/subcontractor/milestones/my-assigned/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["groups"]), 1)
+        group = payload["groups"][0]
+        self.assertEqual(group["agreement_id"], self.agreement.id)
+        self.assertEqual(group["project_title"], "Assigned Work Project")
+        milestone = group["milestones"][0]
+        self.assertEqual(milestone["agreement_id"], self.agreement.id)
+        self.assertEqual(milestone["agreement_title"], "Assigned Work Project")
+        self.assertEqual(milestone["assigned_subcontractor"]["email"], "sub-one@example.com")
+
+    def test_empty_state_works_when_no_assignments_exist(self):
+        user_model = get_user_model()
+        unassigned_user = user_model.objects.create_user(
+            email="no-work@example.com",
+            password="testpass123",
+        )
+        self.client.force_authenticate(user=unassigned_user)
+
+        response = self.client.get("/api/projects/subcontractor/milestones/my-assigned/")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["count"], 0)
+        self.assertEqual(payload["groups"], [])
+        self.assertEqual(payload["milestones"], [])

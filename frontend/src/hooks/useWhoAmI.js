@@ -51,5 +51,6 @@ export function useWhoAmI() {
     isContractor:
       data && data.type === "contractor" && data.role === "contractor_owner",
     isEmployee: data && data.type === "subaccount",
+    isSubcontractor: data && data.type === "subcontractor",
   };
 }

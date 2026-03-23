@@ -25,7 +25,7 @@ import StripeOnboardingStatus from "./StripeOnboardingStatus";
 export default function Sidebar({ variant = "desktop" }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { data, isContractor, isEmployee } = useWhoAmI();
+  const { data, isContractor, isEmployee, isSubcontractor } = useWhoAmI();
 
   const [refundOpen, setRefundOpen] = useState(false);
 
@@ -82,8 +82,9 @@ export default function Sidebar({ variant = "desktop" }) {
   const consoleLabel = useMemo(() => {
     if (isAdmin) return "Admin Console";
     if (isEmployee) return "Team Member Console";
+    if (isSubcontractor) return "Subcontractor Console";
     return "Contractor Console";
-  }, [isAdmin, isEmployee]);
+  }, [isAdmin, isEmployee, isSubcontractor]);
 
   // Primary item (MAIN section)
   const Item = ({ to, label, emoji, title }) => (
@@ -161,6 +162,14 @@ export default function Sidebar({ variant = "desktop" }) {
       );
     }
 
+    if (isSubcontractor) {
+      return (
+        <>
+          <Item to={`${APP_BASE}/subcontractor/assigned-work`} label="My Assigned Work" emoji="🧰" />
+        </>
+      );
+    }
+
     return (
       <>
         <Item to={`${APP_BASE}/dashboard`} label="Dashboard" emoji="🏠" />
@@ -178,7 +187,7 @@ export default function Sidebar({ variant = "desktop" }) {
         <Item to={`${APP_BASE}/business`} label="Business Dashboard" emoji="📈" />
       </>
     );
-  }, [isEmployee, isAdmin, isOnAdminRoute]);
+  }, [isEmployee, isAdmin, isOnAdminRoute, isSubcontractor]);
 
   const accountNav = useMemo(() => {
     if (isAdmin) {
@@ -187,6 +196,10 @@ export default function Sidebar({ variant = "desktop" }) {
 
     if (isEmployee) {
       return <Item to={`${EMP_BASE}/profile`} label="My Profile" emoji="👤" />;
+    }
+
+    if (isSubcontractor) {
+      return null;
     }
 
     return (
@@ -204,7 +217,7 @@ export default function Sidebar({ variant = "desktop" }) {
         />
       </>
     );
-  }, [isEmployee, isAdmin]);
+  }, [isEmployee, isAdmin, isSubcontractor]);
 
   // Close-out listener
   useEffect(() => {

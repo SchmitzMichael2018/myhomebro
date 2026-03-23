@@ -14,6 +14,7 @@ from rest_framework.views import APIView
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from projects.models import ContractorSubAccount
+from projects.models_subcontractor import SubcontractorInvitation, SubcontractorInvitationStatus
 from projects.serializers.subaccounts import (
     ContractorSubAccountSerializer,
     ContractorSubAccountCreateSerializer,
@@ -165,6 +166,25 @@ class WhoAmIView(APIView):
                     "email": user.email,
                     "type": "subaccount",
                     "role": subaccount.role,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        accepted_subcontractor_invite = (
+            SubcontractorInvitation.objects.filter(
+                accepted_by_user=user,
+                status=SubcontractorInvitationStatus.ACCEPTED,
+            )
+            .only("id")
+            .first()
+        )
+        if accepted_subcontractor_invite is not None:
+            return Response(
+                {
+                    "user_id": user.id,
+                    "email": user.email,
+                    "type": "subcontractor",
+                    "role": "subcontractor",
                 },
                 status=status.HTTP_200_OK,
             )

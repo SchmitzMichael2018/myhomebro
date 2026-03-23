@@ -16,6 +16,7 @@ import EmployeeMilestones from "../pages/EmployeeMilestones.jsx";
 import EmployeeCalendar from "../pages/EmployeeCalendar.jsx";
 import EmployeeProfile from "../pages/EmployeeProfile.jsx";
 import EmployeeAgreements from "../pages/EmployeeAgreements.jsx";
+import SubcontractorAssignedWorkPage from "../pages/SubcontractorAssignedWorkPage.jsx";
 
 /* Agreements */
 import AgreementWizard from "../components/AgreementWizard.jsx";
@@ -66,6 +67,7 @@ function AppHomeRedirect() {
 
   if (r === "admin") return <Navigate to="/app/admin" replace />;
   if (r === "subaccount") return <Navigate to="/app/employee/dashboard" replace />;
+  if (r === "subcontractor") return <Navigate to="/app/subcontractor/assigned-work" replace />;
   if (r === "contractor" || r === "contractor_owner") {
     return <Navigate to="/app/dashboard" replace />;
   }
@@ -92,6 +94,7 @@ function RoleGate({ allow }) {
   if (!identity || !allowNorm.includes(r)) {
     if (r === "admin") return <Navigate to="/app/admin" replace />;
     if (r === "subaccount") return <Navigate to="/app/employee/dashboard" replace />;
+    if (r === "subcontractor") return <Navigate to="/app/subcontractor/assigned-work" replace />;
     return <Navigate to="/app/dashboard" replace />;
   }
 
@@ -173,6 +176,13 @@ export function protectedRoutes() {
           <Route path="employee/milestones" element={<EmployeeMilestones />} />
           <Route path="employee/calendar" element={<EmployeeCalendar />} />
           <Route path="employee/profile" element={<EmployeeProfile />} />
+        </Route>
+
+        <Route element={<RoleGate allow={["subcontractor"]} />}>
+          <Route
+            path="subcontractor/assigned-work"
+            element={<SubcontractorAssignedWorkPage />}
+          />
         </Route>
 
         <Route path="*" element={<AppHomeRedirect />} />
