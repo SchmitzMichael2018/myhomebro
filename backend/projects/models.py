@@ -110,6 +110,14 @@ class SubcontractorCompletionStatus(models.TextChoices):
     NEEDS_CHANGES = "needs_changes", "Needs Changes"
 
 
+class MilestonePayoutStatus(models.TextChoices):
+    NOT_ELIGIBLE = "not_eligible", "Not Eligible"
+    ELIGIBLE = "eligible", "Eligible"
+    READY_FOR_PAYOUT = "ready_for_payout", "Ready for Payout"
+    PAID = "paid", "Paid"
+    FAILED = "failed", "Failed"
+
+
 class Skill(models.Model):
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(max_length=100, unique=True)
@@ -1028,6 +1036,11 @@ class Milestone(models.Model):
         related_name="review_milestones",
         help_text="Optional delegated internal reviewer for worker submissions on this milestone.",
     )
+    subcontractor_payout_amount_cents = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Optional subcontractor payout amount in cents for this milestone. Defaults to the milestone amount in V1.",
+    )
 
     class Meta:
         ordering = ["order"]
@@ -1149,6 +1162,40 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"{self.contractor_id}:{self.event_type}:{self.title}"
+
+
+class MilestonePayout(models.Model):
+    milestone = models.OneToOneField(
+        Milestone,
+        on_delete=models.CASCADE,
+        related_name="payout_record",
+    )
+    subcontractor_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="milestone_payouts",
+    )
+    amount_cents = models.PositiveIntegerField(default=0)
+    status = models.CharField(
+        max_length=32,
+        choices=MilestonePayoutStatus.choices,
+        default=MilestonePayoutStatus.NOT_ELIGIBLE,
+        db_index=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    eligible_at = models.DateTimeField(null=True, blank=True)
+    ready_for_payout_at = models.DateTimeField(null=True, blank=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    failed_at = models.DateTimeField(null=True, blank=True)
+    stripe_transfer_id = models.CharField(max_length=255, blank=True, default="")
+    failure_reason = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-updated_at", "-id"]
+
+    def __str__(self):
+        return f"MilestonePayout(milestone={self.milestone_id}, subcontractor={self.subcontractor_user_id}, status={self.status})"
 
 
 class Invoice(models.Model):

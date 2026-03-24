@@ -16,6 +16,7 @@ from ..models import Invoice, InvoiceStatus
 from ..serializers.invoices import InvoiceSerializer
 
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
+from projects.services.milestone_payouts import sync_payout_for_invoice
 from projects.services.pricing_observations import record_pricing_observation_for_invoice
 
 logger = logging.getLogger(__name__)
@@ -139,6 +140,7 @@ class MagicInvoiceApproveView(APIView):
 
                 if update_fields:
                     invoice.save(update_fields=update_fields)
+                sync_payout_for_invoice(invoice)
 
             _record_pricing_observation(invoice)
 
@@ -235,6 +237,7 @@ class MagicInvoiceApproveView(APIView):
                             pass
 
                     invoice.save(update_fields=update_fields)
+                sync_payout_for_invoice(invoice)
 
                 _record_pricing_observation(invoice)
 
@@ -306,6 +309,7 @@ class MagicInvoiceApproveView(APIView):
                         pass
 
                 invoice.save(update_fields=update_fields)
+                sync_payout_for_invoice(invoice)
 
             _record_pricing_observation(invoice)
 
@@ -334,6 +338,7 @@ class MagicInvoiceApproveView(APIView):
                     invoice.status = InvoiceStatus.APPROVED
                     invoice.approved_at = timezone.now()
                     invoice.save(update_fields=["status", "approved_at"])
+                sync_payout_for_invoice(invoice)
 
                 intent = stripe.PaymentIntent.create(
                     amount=amount_cents,
@@ -353,6 +358,7 @@ class MagicInvoiceApproveView(APIView):
                 if hasattr(invoice, "stripe_payment_intent_id"):
                     invoice.stripe_payment_intent_id = intent.id
                     invoice.save(update_fields=["stripe_payment_intent_id"])
+                sync_payout_for_invoice(invoice)
 
         except Exception as exc:
             logger.exception("Failed to create PaymentIntent for invoice %s: %s", invoice.id, exc)

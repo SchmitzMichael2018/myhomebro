@@ -55,6 +55,7 @@ from projects.services.agreement_locking import (
     is_completed_agreement,
 )
 from projects.services.milestone_workflow import can_user_review_submitted_work
+from projects.services.milestone_payouts import sync_milestone_payout
 
 logger = logging.getLogger(__name__)
 
@@ -630,6 +631,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         "subcontractor_review_requested_by",
         "subcontractor_marked_complete_by",
         "subcontractor_reviewed_by",
+        "payout_record",
     ).all()
 
     def _assigned_queryset_for_user(self, user):
@@ -677,6 +679,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                     "subcontractor_review_requested_by",
                     "subcontractor_marked_complete_by",
                     "subcontractor_reviewed_by",
+                    "payout_record",
                 )
                 .filter(agreement__project__contractor=contractor)
                 .order_by("order", "id")
@@ -1229,6 +1232,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                     "subcontractor_review_response_note",
                 ]
             )
+            sync_milestone_payout(milestone.id)
 
         milestone.refresh_from_db()
         return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=status.HTTP_200_OK)
@@ -1261,6 +1265,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                     "subcontractor_review_response_note",
                 ]
             )
+            sync_milestone_payout(milestone.id)
 
         milestone.refresh_from_db()
         return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=status.HTTP_200_OK)
@@ -1371,6 +1376,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                 milestone.is_invoiced = True
                 milestone.invoice = invoice
                 milestone.save(update_fields=["is_invoiced", "invoice"])
+                sync_milestone_payout(milestone.id)
 
                 return Response(InvoiceSerializer(invoice, context={"request": request}).data, status=status.HTTP_201_CREATED)
 

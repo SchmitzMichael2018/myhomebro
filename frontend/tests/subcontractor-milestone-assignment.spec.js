@@ -26,6 +26,8 @@ test('agreement detail renders subcontractor assignment state and lets contracto
       email: 'playwright@myhomebro.local',
       is_delegated: false,
     },
+    payout_amount: null,
+    payout_status: null,
   };
 
   const acceptedSubcontractors = [
@@ -151,6 +153,9 @@ test('agreement detail renders subcontractor assignment state and lets contracto
       milestoneState.assigned_subcontractor = null;
       milestoneState.assigned_subcontractor_display = '';
       milestoneState.assigned_worker_display = '';
+      milestoneState.assigned_worker = null;
+      milestoneState.payout_amount = null;
+      milestoneState.payout_status = null;
     } else if (body.delegated_reviewer_subaccount === null) {
       milestoneState.reviewer = {
         kind: 'contractor_owner',
@@ -179,6 +184,15 @@ test('agreement detail renders subcontractor assignment state and lets contracto
       };
       milestoneState.assigned_subcontractor_display = 'Accepted Sub';
       milestoneState.assigned_worker_display = 'Accepted Sub';
+      milestoneState.assigned_worker = {
+        kind: 'subcontractor',
+        user_id: 88,
+        display_name: 'Accepted Sub',
+        email: 'accepted-sub@example.com',
+        invitation_id: 77,
+      };
+      milestoneState.payout_amount = '2500.00';
+      milestoneState.payout_status = 'not_eligible';
     }
 
     await route.fulfill({
@@ -199,6 +213,7 @@ test('agreement detail renders subcontractor assignment state and lets contracto
   await milestoneCard.getByTestId('subcontractor-assignment-select').selectOption('77');
   await milestoneCard.getByTestId('subcontractor-assign-button').click();
   await expect(milestoneCard).toContainText('Assigned Worker: Accepted Sub');
+  await expect(milestoneCard).toContainText('Payout: $2,500.00 (Not eligible)');
 
   await milestoneCard.getByTestId('delegated-reviewer-select').selectOption('55');
   await milestoneCard.getByTestId('delegated-reviewer-assign-button').click();

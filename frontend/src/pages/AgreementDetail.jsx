@@ -1589,6 +1589,25 @@ export default function AgreementDetail() {
                     </div>
                   ) : null}
 
+                  {isContractor &&
+                  m.assigned_worker &&
+                  m.assigned_worker.kind === "subcontractor" ? (
+                    <div
+                      data-testid={`milestone-payout-state-${m.id}`}
+                      className="mt-2 text-sm text-gray-600"
+                    >
+                      <span className="font-semibold text-gray-900">Payout:</span>{" "}
+                      {m.payout_amount ? formatMoney(m.payout_amount) : "—"}{" "}
+                      <span className="text-gray-500">
+                        (
+                        {String(m.payout_status || "not_eligible")
+                          .replaceAll("_", " ")
+                          .replace(/^\w/, (c) => c.toUpperCase())}
+                        )
+                      </span>
+                    </div>
+                  ) : null}
+
                   {isContractor && (
                     <div className="mt-3">
                       <AssignSubcontractorInline

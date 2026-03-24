@@ -31,6 +31,7 @@ from projects.services.milestone_workflow import (
     get_effective_reviewer,
     is_valid_delegated_reviewer_subaccount,
 )
+from projects.services.milestone_payouts import payout_amount_cents_for_milestone, serialize_payout_for_milestone
 
 
 def _normalize_pricing_mode(materials_responsibility) -> str:
@@ -162,6 +163,10 @@ class MilestoneSerializer(serializers.ModelSerializer):
     work_reviewed_at = serializers.SerializerMethodField()
     work_reviewed_by_display = serializers.SerializerMethodField()
     work_review_response_note = serializers.SerializerMethodField()
+    payout_amount = serializers.SerializerMethodField()
+    payout_status = serializers.SerializerMethodField()
+    payout_eligible = serializers.SerializerMethodField()
+    payout_ready = serializers.SerializerMethodField()
 
     allow_overlap = serializers.BooleanField(write_only=True, required=False, default=False)
     assigned_subcontractor_invitation = serializers.PrimaryKeyRelatedField(
@@ -224,6 +229,11 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "work_reviewed_at",
             "work_reviewed_by_display",
             "work_review_response_note",
+            "subcontractor_payout_amount_cents",
+            "payout_amount",
+            "payout_status",
+            "payout_eligible",
+            "payout_ready",
         )
 
     # ------------------------ helpers (read) ------------------------ #
@@ -580,6 +590,47 @@ class MilestoneSerializer(serializers.ModelSerializer):
     def get_work_review_response_note(self, obj: Milestone) -> str:
         return getattr(obj, "subcontractor_review_response_note", "") or ""
 
+    def _can_view_payout(self, obj: Milestone) -> bool:
+        request = self.context.get("request")
+        user = getattr(request, "user", None) if request is not None else None
+        contractor = get_contractor_for_user(user) if user is not None else None
+        owner = getattr(getattr(getattr(obj, "agreement", None), "project", None), "contractor", None)
+        return contractor is not None and owner is not None and contractor.id == owner.id
+
+    def _get_payout_payload(self, obj: Milestone) -> dict | None:
+        if not self._can_view_payout(obj):
+            return None
+        payload = serialize_payout_for_milestone(obj)
+        if payload is not None:
+            return payload
+        assigned_worker = self.get_assigned_worker(obj)
+        if not assigned_worker or assigned_worker.get("kind") != "subcontractor":
+            return None
+        cents = payout_amount_cents_for_milestone(obj)
+        return {
+            "payout_amount_cents": cents,
+            "payout_amount": f"{Decimal(cents) / Decimal('100'):.2f}",
+            "payout_status": "not_eligible",
+            "payout_eligible": False,
+            "payout_ready": False,
+        }
+
+    def get_payout_amount(self, obj: Milestone):
+        payload = self._get_payout_payload(obj)
+        return None if payload is None else payload.get("payout_amount")
+
+    def get_payout_status(self, obj: Milestone):
+        payload = self._get_payout_payload(obj)
+        return None if payload is None else payload.get("payout_status")
+
+    def get_payout_eligible(self, obj: Milestone) -> bool:
+        payload = self._get_payout_payload(obj)
+        return bool(payload and payload.get("payout_eligible"))
+
+    def get_payout_ready(self, obj: Milestone) -> bool:
+        payload = self._get_payout_payload(obj)
+        return bool(payload and payload.get("payout_ready"))
+
     # ------------------------ validation ------------------------ #
     @staticmethod
     def _as_date(value) -> Optional[date]:
@@ -739,7 +790,14 @@ class MilestoneSerializer(serializers.ModelSerializer):
                 validated_data["subcontractor_reviewed_at"] = None
                 validated_data["subcontractor_reviewed_by"] = None
                 validated_data["subcontractor_review_response_note"] = ""
-        return super().update(instance, validated_data)
+        instance = super().update(instance, validated_data)
+        try:
+            from projects.services.milestone_payouts import sync_milestone_payout
+
+            sync_milestone_payout(instance.id)
+        except Exception:
+            pass
+        return instance
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -788,5 +846,9 @@ class MilestoneSerializer(serializers.ModelSerializer):
         data["work_reviewed_at"] = self.get_work_reviewed_at(instance)
         data["work_reviewed_by_display"] = self.get_work_reviewed_by_display(instance)
         data["work_review_response_note"] = self.get_work_review_response_note(instance)
+        data["payout_amount"] = self.get_payout_amount(instance)
+        data["payout_status"] = self.get_payout_status(instance)
+        data["payout_eligible"] = self.get_payout_eligible(instance)
+        data["payout_ready"] = self.get_payout_ready(instance)
 
         return data

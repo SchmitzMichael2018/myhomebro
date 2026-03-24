@@ -18,6 +18,7 @@ from projects.models import Invoice, InvoiceStatus
 
 # ✅ canonical agreement completion recompute
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
+from projects.services.milestone_payouts import sync_payout_for_invoice
 
 log = logging.getLogger(__name__)
 
@@ -343,6 +344,8 @@ def finalize_direct_pay_invoice_paid(
             update_fields.append("direct_pay_payment_intent_id")
 
         inv.save(update_fields=list(set(update_fields)))
+
+    sync_payout_for_invoice(inv)
 
     # recompute agreement completion after invoice becomes paid
     try:

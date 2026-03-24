@@ -16,10 +16,14 @@ from projects.models import (
     Contractor,
     ContractorSubAccount,
     Homeowner,
+    Invoice,
+    InvoiceStatus,
     Milestone,
     MilestoneAssignment,
     MilestoneComment,
     MilestoneFile,
+    MilestonePayout,
+    MilestonePayoutStatus,
     Notification,
     Project,
     SubcontractorCompletionStatus,
@@ -31,6 +35,7 @@ from projects.models_subcontractor import (
     SubcontractorInvitationStatus,
 )
 from projects.models_dispute import Dispute
+from projects.services.milestone_payouts import sync_milestone_payout
 
 
 class AgreementMilestoneAIRouteTests(TestCase):
@@ -1757,6 +1762,270 @@ class SubcontractorCompletionReviewTests(TestCase):
         self.assertEqual(payload["assigned_worker"]["kind"], "subcontractor")
         self.assertEqual(payload["reviewer"]["kind"], "contractor_owner")
         self.assertTrue(payload["can_current_user_review_work"])
+
+
+class MilestonePayoutFoundationTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="payout-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Payout Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Payout Homeowner",
+            email="payout-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Payout Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Agreement for milestone payout tests",
+        )
+
+        self.subcontractor_user = user_model.objects.create_user(
+            email="payout-sub@example.com",
+            password="testpass123",
+        )
+        self.subcontractor_invitation = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="payout-sub@example.com",
+            invite_name="Payout Sub",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=self.subcontractor_user,
+            accepted_at=timezone.now(),
+        )
+
+        self.internal_user = user_model.objects.create_user(
+            email="payout-internal@example.com",
+            password="testpass123",
+        )
+        self.internal_subaccount = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=self.internal_user,
+            display_name="Internal Worker",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_MILESTONES,
+        )
+
+        self.milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Rough-In",
+            description="Complete rough-in stage",
+            amount="1800.00",
+        )
+        self.client = APIClient()
+
+    def test_subcontractor_assignment_creates_payout_record(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.patch(
+            f"/api/projects/milestones/{self.milestone.id}/",
+            {"assigned_subcontractor_invitation": self.subcontractor_invitation.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payout = MilestonePayout.objects.get(milestone=self.milestone)
+        self.assertEqual(payout.subcontractor_user_id, self.subcontractor_user.id)
+        self.assertEqual(payout.status, MilestonePayoutStatus.NOT_ELIGIBLE)
+        self.assertEqual(payout.amount_cents, 180000)
+
+    def test_internal_team_assignment_does_not_create_payout_record(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.post(
+            f"/api/projects/assignments/milestones/{self.milestone.id}/assign/",
+            {"subaccount_id": self.internal_subaccount.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(MilestonePayout.objects.filter(milestone=self.milestone).exists())
+
+    def test_payout_does_not_trigger_prematurely(self):
+        self.milestone.assigned_subcontractor_invitation = self.subcontractor_invitation
+        self.milestone.save(update_fields=["assigned_subcontractor_invitation"])
+
+        payout = sync_milestone_payout(self.milestone.id)
+        self.assertIsNotNone(payout)
+        self.assertEqual(payout.status, MilestonePayoutStatus.NOT_ELIGIBLE)
+
+        self.milestone.subcontractor_completion_status = SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+        self.milestone.subcontractor_marked_complete_at = timezone.now()
+        self.milestone.subcontractor_marked_complete_by = self.subcontractor_user
+        self.milestone.save(
+            update_fields=[
+                "subcontractor_completion_status",
+                "subcontractor_marked_complete_at",
+                "subcontractor_marked_complete_by",
+            ]
+        )
+
+        payout = sync_milestone_payout(self.milestone.id)
+        self.assertEqual(payout.status, MilestonePayoutStatus.NOT_ELIGIBLE)
+
+        self.milestone.subcontractor_completion_status = SubcontractorCompletionStatus.APPROVED
+        self.milestone.subcontractor_reviewed_at = timezone.now()
+        self.milestone.subcontractor_reviewed_by = self.contractor_user
+        self.milestone.save(
+            update_fields=[
+                "subcontractor_completion_status",
+                "subcontractor_reviewed_at",
+                "subcontractor_reviewed_by",
+            ]
+        )
+
+        payout = sync_milestone_payout(self.milestone.id)
+        self.assertEqual(payout.status, MilestonePayoutStatus.NOT_ELIGIBLE)
+        self.assertIsNone(payout.eligible_at)
+
+    def test_payout_becomes_eligible_only_after_customer_condition(self):
+        self.milestone.assigned_subcontractor_invitation = self.subcontractor_invitation
+        self.milestone.subcontractor_completion_status = SubcontractorCompletionStatus.APPROVED
+        self.milestone.subcontractor_marked_complete_at = timezone.now()
+        self.milestone.subcontractor_marked_complete_by = self.subcontractor_user
+        self.milestone.subcontractor_reviewed_at = timezone.now()
+        self.milestone.subcontractor_reviewed_by = self.contractor_user
+        self.milestone.save(
+            update_fields=[
+                "assigned_subcontractor_invitation",
+                "subcontractor_completion_status",
+                "subcontractor_marked_complete_at",
+                "subcontractor_marked_complete_by",
+                "subcontractor_reviewed_at",
+                "subcontractor_reviewed_by",
+            ]
+        )
+
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=self.milestone.amount,
+            status=InvoiceStatus.PENDING,
+            milestone_id_snapshot=self.milestone.id,
+            milestone_title_snapshot=self.milestone.title,
+        )
+        self.milestone.completed = True
+        self.milestone.completed_at = timezone.now()
+        self.milestone.is_invoiced = True
+        self.milestone.invoice = invoice
+        self.milestone.save(update_fields=["completed", "completed_at", "is_invoiced", "invoice"])
+
+        payout = sync_milestone_payout(self.milestone.id)
+        self.assertEqual(payout.status, MilestonePayoutStatus.NOT_ELIGIBLE)
+
+        invoice.status = InvoiceStatus.APPROVED
+        invoice.approved_at = timezone.now()
+        invoice.save(update_fields=["status", "approved_at"])
+
+        payout = sync_milestone_payout(self.milestone.id)
+        self.assertEqual(payout.status, MilestonePayoutStatus.ELIGIBLE)
+        self.assertIsNotNone(payout.eligible_at)
+        self.assertIsNone(payout.ready_for_payout_at)
+
+    def test_payout_status_transitions_to_ready_for_payout_after_payment(self):
+        self.milestone.assigned_subcontractor_invitation = self.subcontractor_invitation
+        self.milestone.subcontractor_completion_status = SubcontractorCompletionStatus.APPROVED
+        self.milestone.subcontractor_marked_complete_at = timezone.now()
+        self.milestone.subcontractor_marked_complete_by = self.subcontractor_user
+        self.milestone.subcontractor_reviewed_at = timezone.now()
+        self.milestone.subcontractor_reviewed_by = self.contractor_user
+        self.milestone.subcontractor_payout_amount_cents = 125000
+        self.milestone.save(
+            update_fields=[
+                "assigned_subcontractor_invitation",
+                "subcontractor_completion_status",
+                "subcontractor_marked_complete_at",
+                "subcontractor_marked_complete_by",
+                "subcontractor_reviewed_at",
+                "subcontractor_reviewed_by",
+                "subcontractor_payout_amount_cents",
+            ]
+        )
+
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=self.milestone.amount,
+            status=InvoiceStatus.APPROVED,
+            approved_at=timezone.now(),
+            milestone_id_snapshot=self.milestone.id,
+            milestone_title_snapshot=self.milestone.title,
+        )
+        self.milestone.completed = True
+        self.milestone.completed_at = timezone.now()
+        self.milestone.is_invoiced = True
+        self.milestone.invoice = invoice
+        self.milestone.save(update_fields=["completed", "completed_at", "is_invoiced", "invoice"])
+
+        payout = sync_milestone_payout(self.milestone.id)
+        self.assertEqual(payout.status, MilestonePayoutStatus.ELIGIBLE)
+        self.assertEqual(payout.amount_cents, 125000)
+
+        invoice.status = InvoiceStatus.PAID
+        invoice.escrow_released = True
+        invoice.escrow_released_at = timezone.now()
+        invoice.save(update_fields=["status", "escrow_released", "escrow_released_at"])
+
+        payout = sync_milestone_payout(self.milestone.id)
+        self.assertEqual(payout.status, MilestonePayoutStatus.READY_FOR_PAYOUT)
+        self.assertTrue(payout.ready_for_payout_at is not None)
+
+    def test_contractor_serializer_exposes_payout_foundation_fields(self):
+        self.milestone.assigned_subcontractor_invitation = self.subcontractor_invitation
+        self.milestone.subcontractor_completion_status = SubcontractorCompletionStatus.APPROVED
+        self.milestone.subcontractor_marked_complete_at = timezone.now()
+        self.milestone.subcontractor_marked_complete_by = self.subcontractor_user
+        self.milestone.subcontractor_reviewed_at = timezone.now()
+        self.milestone.subcontractor_reviewed_by = self.contractor_user
+        self.milestone.save(
+            update_fields=[
+                "assigned_subcontractor_invitation",
+                "subcontractor_completion_status",
+                "subcontractor_marked_complete_at",
+                "subcontractor_marked_complete_by",
+                "subcontractor_reviewed_at",
+                "subcontractor_reviewed_by",
+            ]
+        )
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=self.milestone.amount,
+            status=InvoiceStatus.APPROVED,
+            approved_at=timezone.now(),
+            milestone_id_snapshot=self.milestone.id,
+            milestone_title_snapshot=self.milestone.title,
+        )
+        self.milestone.completed = True
+        self.milestone.completed_at = timezone.now()
+        self.milestone.is_invoiced = True
+        self.milestone.invoice = invoice
+        self.milestone.save(update_fields=["completed", "completed_at", "is_invoiced", "invoice"])
+        sync_milestone_payout(self.milestone.id)
+
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get(f"/api/projects/milestones/{self.milestone.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["payout_amount"], "1800.00")
+        self.assertEqual(payload["payout_status"], "eligible")
+        self.assertTrue(payload["payout_eligible"])
+        self.assertFalse(payload["payout_ready"])
 
 
 class ReviewerQueueTests(TestCase):

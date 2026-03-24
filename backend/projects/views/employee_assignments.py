@@ -15,6 +15,7 @@ from projects.models import (
     AgreementAssignment,
     MilestoneAssignment,
 )
+from projects.services.milestone_payouts import sync_milestone_payout
 from projects.utils.accounts import get_contractor_for_user
 
 
@@ -122,6 +123,7 @@ def assign_milestone(request, milestone_id: int):
         milestone=milestone,
         defaults={"subaccount": sub},
     )
+    sync_milestone_payout(milestone.id)
     return Response({"assigned": True, "created": created, "id": obj.id})
 
 
@@ -139,5 +141,6 @@ def unassign_milestone(request, milestone_id: int):
         milestone_id=milestone_id,
         milestone__agreement__contractor=contractor,
     ).delete()
+    sync_milestone_payout(milestone_id)
 
     return Response({"unassigned": True, "deleted": deleted})

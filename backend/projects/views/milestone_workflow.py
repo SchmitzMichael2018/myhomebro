@@ -15,6 +15,7 @@ from projects.services.milestone_workflow import (
     get_effective_reviewer,
     is_effective_reviewer_user,
 )
+from projects.services.milestone_payouts import sync_milestone_payout
 from projects.services.subcontractor_notifications import (
     create_subcontractor_activity_notification,
 )
@@ -34,6 +35,7 @@ def _workflow_queryset():
         "delegated_reviewer_subaccount__user",
         "subcontractor_marked_complete_by",
         "subcontractor_reviewed_by",
+        "payout_record",
     )
 
 
@@ -171,6 +173,7 @@ def submit_work_for_review(request, milestone_id: int):
             "subcontractor_review_response_note",
         ]
     )
+    sync_milestone_payout(milestone.id)
     milestone.refresh_from_db()
     create_subcontractor_activity_notification(
         milestone=milestone,
@@ -202,6 +205,7 @@ def approve_work_submission(request, milestone_id: int):
             "subcontractor_review_response_note",
         ]
     )
+    sync_milestone_payout(milestone.id)
     milestone.refresh_from_db()
     return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=200)
 
@@ -228,5 +232,6 @@ def send_back_work_submission(request, milestone_id: int):
             "subcontractor_review_response_note",
         ]
     )
+    sync_milestone_payout(milestone.id)
     milestone.refresh_from_db()
     return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=200)
