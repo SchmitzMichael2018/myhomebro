@@ -3410,3 +3410,126 @@ class BusinessDashboardExportTests(TestCase):
         self.assertIn("agreement,customer,project_type,project_subtype,status,start_date,end_date,completion_days,total_cost", body)
         self.assertIn("Reports Project", body)
         self.assertIn("Reports Homeowner", body)
+
+
+class BusinessDashboardInsightsTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="insights-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Insight Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Insight Homeowner",
+            email="insight-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Insight Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Insight agreement",
+        )
+        self.review_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Awaiting Review",
+            amount="1200.00",
+            subcontractor_completion_status=SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW,
+        )
+        self.overdue_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=2,
+            title="Overdue Work",
+            amount="900.00",
+            completion_date=timezone.localdate() - timezone.timedelta(days=2),
+            completed=False,
+        )
+        self.failed_payout_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=3,
+            title="Failed Payout Milestone",
+            amount="700.00",
+        )
+        self.subcontractor_user = user_model.objects.create_user(
+            email="insights-sub@example.com",
+            password="testpass123",
+        )
+        MilestonePayout.objects.create(
+            milestone=self.failed_payout_milestone,
+            subcontractor_user=self.subcontractor_user,
+            amount_cents=70000,
+            status=MilestonePayoutStatus.FAILED,
+            failed_at=timezone.now() - timezone.timedelta(days=1),
+            failure_reason="transfer failed",
+        )
+        self.invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount="2200.00",
+            status="approved",
+            escrow_released=False,
+        )
+        self.client = APIClient()
+
+    def test_business_dashboard_returns_grounded_insights(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/business/contractor/summary/?range=30")
+
+        self.assertEqual(response.status_code, 200)
+        insights = response.json()["insights"]
+        self.assertTrue(any(item["category"] == "payout_attention" for item in insights))
+        self.assertTrue(any(item["category"] == "review_bottleneck" for item in insights))
+        self.assertTrue(any(item["category"] == "schedule_risk" for item in insights))
+        self.assertFalse(any(item["explanation"].strip() == "Your business is doing well." for item in insights))
+
+    def test_failed_payout_generates_payout_attention_insight(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/business/contractor/summary/?range=30")
+
+        insight = next(
+            item for item in response.json()["insights"] if item["category"] == "payout_attention"
+        )
+        self.assertIn("failed payout", insight["explanation"].lower())
+        self.assertEqual(insight["action_href"], "/app/payouts/history")
+
+    def test_empty_healthy_dashboard_returns_no_junk_insights(self):
+        user_model = get_user_model()
+        healthy_user = user_model.objects.create_user(
+            email="healthy-insights@example.com",
+            password="testpass123",
+        )
+        healthy_contractor = Contractor.objects.create(
+            user=healthy_user,
+            business_name="Healthy Contractor",
+        )
+        healthy_homeowner = Homeowner.objects.create(
+            created_by=healthy_contractor,
+            full_name="Healthy Homeowner",
+            email="healthy-homeowner@example.com",
+        )
+        healthy_project = Project.objects.create(
+            contractor=healthy_contractor,
+            homeowner=healthy_homeowner,
+            title="Healthy Project",
+        )
+        Agreement.objects.create(
+            project=healthy_project,
+            contractor=healthy_contractor,
+            homeowner=healthy_homeowner,
+            description="Healthy agreement",
+        )
+
+        self.client.force_authenticate(user=healthy_user)
+        response = self.client.get("/api/projects/business/contractor/summary/?range=30")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["insights"], [])

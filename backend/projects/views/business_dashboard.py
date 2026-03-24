@@ -14,6 +14,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
 from projects.models import Agreement, Invoice, Contractor, ProjectStatus
+from projects.services.business_insights import build_business_insights
 from projects.views.payout_history import _apply_history_filters, _history_base_queryset, _serialize_payout_row
 
 
@@ -258,6 +259,7 @@ class BusinessDashboardSummaryAPIView(APIView):
                 "avg_completion_days": avg_completion_days,
             },
             "by_category": category_rows,
+            "insights": build_business_insights(contractor, start_dt, end_dt),
         }
 
         return Response(payload)

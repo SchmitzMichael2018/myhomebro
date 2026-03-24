@@ -68,6 +68,7 @@ test('contractor can toggle auto subcontractor payouts in business dashboard', a
       body: JSON.stringify({
         snapshot: {},
         by_category: [],
+        insights: [],
       }),
     });
   });
@@ -93,6 +94,7 @@ test('contractor can toggle auto subcontractor payouts in business dashboard', a
 
   await expect(page.getByText('Subcontractor Payout Automation')).toBeVisible();
   await expect(page.getByTestId('dashboard-payouts-section')).toBeVisible();
+  await expect(page.getByTestId('dashboard-ai-insights-empty')).toBeVisible();
   await expect(page.getByTestId('auto-payout-setting-label')).toContainText('Off');
 
   await page.getByTestId('auto-payout-setting-toggle').click();

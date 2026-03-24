@@ -56,6 +56,16 @@ test('business dashboard shows payout reporting and links to full history', asyn
           disputes_open: 0,
         },
         by_category: [],
+        insights: [
+          {
+            category: 'review_bottleneck',
+            title: 'Awaiting review',
+            explanation: '3 milestones are waiting for contractor review, which may delay invoicing.',
+            severity: 'high',
+            action_label: 'View Review Queue',
+            action_href: '/app/reviewer/queue',
+          },
+        ],
       }),
     });
   });
@@ -160,6 +170,10 @@ test('business dashboard shows payout reporting and links to full history', asyn
   await expect(page.getByTestId('dashboard-payouts-section')).toContainText('$700.00');
   await expect(page.getByTestId('dashboard-payouts-section')).toContainText('$400.00');
   await expect(page.getByTestId('dashboard-payouts-section')).toContainText('$250.00');
+  await expect(page.getByTestId('dashboard-ai-insights-section')).toBeVisible();
+  await expect(page.getByTestId('dashboard-ai-insight-0')).toContainText('Awaiting review');
+  await expect(page.getByTestId('dashboard-ai-insight-0')).toContainText('may delay invoicing');
+  await expect(page.getByRole('link', { name: 'View Review Queue' })).toBeVisible();
   await expect(page.getByTestId('dashboard-payout-row-1')).toContainText('Taylor Sub');
   await expect(page.getByTestId('dashboard-payout-row-2')).toContainText('Morgan Failed');
   await expect(page.getByTestId('dashboard-payouts-export')).toBeVisible();

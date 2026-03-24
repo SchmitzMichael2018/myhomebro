@@ -64,6 +64,16 @@ function directPayRateLabel() {
   return "1% + $1";
 }
 
+function insightTone(severity) {
+  if (severity === "high") {
+    return "border-rose-200 bg-rose-50 text-rose-900";
+  }
+  if (severity === "medium") {
+    return "border-amber-200 bg-amber-50 text-amber-900";
+  }
+  return "border-slate-200 bg-white text-slate-900";
+}
+
 function formatDateTime(value) {
   if (!value) return "";
   try {
@@ -117,6 +127,7 @@ export default function BusinessDashboard() {
 
   const snapshot = payload?.snapshot || {};
   const byCategory = payload?.by_category || [];
+  const insights = payload?.insights || [];
   const payoutQuery = useMemo(() => buildPayoutQuery(range), [range]);
   const recentPayouts = useMemo(() => payoutRows.slice(0, 5), [payoutRows]);
 
@@ -366,6 +377,55 @@ export default function BusinessDashboard() {
           </label>
         </div>
       </div>
+
+      <section
+        data-testid="dashboard-ai-insights-section"
+        className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-base font-bold text-slate-900">AI Business Insights</div>
+            <div className="mt-1 text-sm text-slate-600">
+              Short operational signals based on your current dashboard, review, payout, and project data.
+            </div>
+          </div>
+        </div>
+
+        {insights.length === 0 ? (
+          <div
+            data-testid="dashboard-ai-insights-empty"
+            className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600"
+          >
+            No business insights need attention right now.
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {insights.map((insight, index) => (
+              <div
+                key={`${insight.category || "insight"}-${index}`}
+                data-testid={`dashboard-ai-insight-${index}`}
+                className={`rounded-xl border p-4 shadow-sm ${insightTone(insight.severity)}`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-bold">{insight.title}</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide opacity-75">
+                    {insight.severity || "info"}
+                  </div>
+                </div>
+                <div className="mt-2 text-sm leading-6">{insight.explanation}</div>
+                {insight.action_href ? (
+                  <a
+                    href={insight.action_href}
+                    className="mt-3 inline-flex rounded-lg border border-current px-3 py-2 text-xs font-semibold hover:bg-white/60"
+                  >
+                    {insight.action_label || "Review"}
+                  </a>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* KPI grid */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
