@@ -5,7 +5,11 @@ from django.utils import timezone
 
 from payments.models import ConnectedAccount
 from payments.stripe_config import stripe
-from projects.models import MilestonePayout, MilestonePayoutStatus
+from projects.models import (
+    MilestonePayout,
+    MilestonePayoutExecutionMode,
+    MilestonePayoutStatus,
+)
 from projects.services.milestone_workflow import ROLE_SUBCONTRACTOR, get_assigned_worker
 
 
@@ -20,7 +24,12 @@ def _payout_attempt_key(payout: MilestonePayout) -> str:
     return f"milestone-payout:{payout.id}:{payout.status}:{marker_text}"
 
 
-def execute_milestone_payout(payout_id: int, *, allow_failed_retry: bool = False) -> MilestonePayout:
+def execute_milestone_payout(
+    payout_id: int,
+    *,
+    allow_failed_retry: bool = False,
+    execution_mode: str = MilestonePayoutExecutionMode.MANUAL,
+) -> MilestonePayout:
     with transaction.atomic():
         payout = (
             MilestonePayout.objects.select_for_update()
@@ -42,7 +51,8 @@ def execute_milestone_payout(payout_id: int, *, allow_failed_retry: bool = False
         if payout.status == MilestonePayoutStatus.FAILED and allow_failed_retry:
             payout.failed_at = None
             payout.failure_reason = ""
-            payout.save(update_fields=["failed_at", "failure_reason", "updated_at"])
+            payout.execution_mode = execution_mode or payout.execution_mode or ""
+            payout.save(update_fields=["failed_at", "failure_reason", "execution_mode", "updated_at"])
             payout.refresh_from_db()
         elif payout.status != MilestonePayoutStatus.READY_FOR_PAYOUT:
             raise ValueError("Only payouts marked ready_for_payout can be executed.")
@@ -61,7 +71,8 @@ def execute_milestone_payout(payout_id: int, *, allow_failed_retry: bool = False
             payout.status = MilestonePayoutStatus.FAILED
             payout.failed_at = timezone.now()
             payout.failure_reason = message
-            payout.save(update_fields=["status", "failed_at", "failure_reason", "updated_at"])
+            payout.execution_mode = execution_mode or payout.execution_mode or ""
+            payout.save(update_fields=["status", "failed_at", "failure_reason", "execution_mode", "updated_at"])
             return payout
 
         try:
@@ -82,7 +93,8 @@ def execute_milestone_payout(payout_id: int, *, allow_failed_retry: bool = False
             payout.status = MilestonePayoutStatus.FAILED
             payout.failed_at = timezone.now()
             payout.failure_reason = str(exc)
-            payout.save(update_fields=["status", "failed_at", "failure_reason", "updated_at"])
+            payout.execution_mode = execution_mode or payout.execution_mode or ""
+            payout.save(update_fields=["status", "failed_at", "failure_reason", "execution_mode", "updated_at"])
             return payout
 
         payout.status = MilestonePayoutStatus.PAID
@@ -90,6 +102,7 @@ def execute_milestone_payout(payout_id: int, *, allow_failed_retry: bool = False
         payout.stripe_transfer_id = str(transfer.get("id") or "")
         payout.failed_at = None
         payout.failure_reason = ""
+        payout.execution_mode = execution_mode or payout.execution_mode or ""
         payout.save(
             update_fields=[
                 "status",
@@ -97,6 +110,7 @@ def execute_milestone_payout(payout_id: int, *, allow_failed_retry: bool = False
                 "stripe_transfer_id",
                 "failed_at",
                 "failure_reason",
+                "execution_mode",
                 "updated_at",
             ]
         )

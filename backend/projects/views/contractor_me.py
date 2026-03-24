@@ -128,6 +128,9 @@ class ContractorMeView(APIView):
             "intro_days_total": INTRO_DAYS_TOTAL,
             "intro_active": bool(intro_active),
             "intro_days_remaining": intro_days_remaining,
+            "auto_subcontractor_payouts_enabled": bool(
+                getattr(c, "auto_subcontractor_payouts_enabled", False)
+            ),
 
             # included-by-default AI status
             "ai": ai_summary,
@@ -185,6 +188,14 @@ class ContractorMeView(APIView):
             ]:
                 if f in data:
                     setattr(c, f, data.get(f))
+
+            if "auto_subcontractor_payouts_enabled" in data:
+                raw = data.get("auto_subcontractor_payouts_enabled")
+                c.auto_subcontractor_payouts_enabled = bool(
+                    raw is True
+                    or raw == 1
+                    or str(raw).strip().lower() in {"1", "true", "yes", "on"}
+                )
 
             # license date
             lic_date = data.get("license_expiration_date") or data.get("license_expiration")

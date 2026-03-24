@@ -2179,6 +2179,89 @@ class SubcontractorStripePayoutExecutionTests(TestCase):
         self.assertEqual(self.payout.status, MilestonePayoutStatus.PAID)
         self.assertEqual(self.payout.stripe_transfer_id, "tr_sub_123")
         self.assertIsNotNone(self.payout.paid_at)
+        self.assertEqual(self.payout.execution_mode, "manual")
+
+    def test_auto_payout_does_not_run_when_setting_is_off(self):
+        ConnectedAccount.objects.create(
+            user=self.subcontractor_user,
+            stripe_account_id="acct_sub_ready",
+            payouts_enabled=True,
+            details_submitted=True,
+        )
+        self.payout.status = MilestonePayoutStatus.ELIGIBLE
+        self.payout.ready_for_payout_at = None
+        self.payout.save(update_fields=["status", "ready_for_payout_at"])
+
+        with patch("projects.services.milestone_payout_execution.stripe.Transfer.create") as transfer_create:
+            payout = sync_milestone_payout(self.milestone.id)
+
+        self.assertEqual(payout.status, MilestonePayoutStatus.READY_FOR_PAYOUT)
+        self.assertFalse(transfer_create.called)
+
+    def test_auto_payout_runs_when_setting_is_on_and_payout_becomes_ready(self):
+        self.contractor.auto_subcontractor_payouts_enabled = True
+        self.contractor.save(update_fields=["auto_subcontractor_payouts_enabled"])
+        ConnectedAccount.objects.create(
+            user=self.subcontractor_user,
+            stripe_account_id="acct_sub_ready",
+            payouts_enabled=True,
+            details_submitted=True,
+        )
+        self.payout.status = MilestonePayoutStatus.ELIGIBLE
+        self.payout.ready_for_payout_at = None
+        self.payout.save(update_fields=["status", "ready_for_payout_at"])
+
+        with patch(
+            "projects.services.milestone_payout_execution.stripe.Transfer.create",
+            return_value={"id": "tr_auto_123"},
+        ):
+            payout = sync_milestone_payout(self.milestone.id)
+
+        self.assertEqual(payout.status, MilestonePayoutStatus.PAID)
+        self.assertEqual(payout.stripe_transfer_id, "tr_auto_123")
+        self.assertEqual(payout.execution_mode, "automatic")
+
+    def test_auto_payout_is_blocked_when_subcontractor_account_is_not_ready(self):
+        self.contractor.auto_subcontractor_payouts_enabled = True
+        self.contractor.save(update_fields=["auto_subcontractor_payouts_enabled"])
+        ConnectedAccount.objects.create(
+            user=self.subcontractor_user,
+            stripe_account_id="acct_sub_not_ready",
+            payouts_enabled=False,
+            details_submitted=False,
+        )
+        self.payout.status = MilestonePayoutStatus.ELIGIBLE
+        self.payout.ready_for_payout_at = None
+        self.payout.save(update_fields=["status", "ready_for_payout_at"])
+
+        with patch("projects.services.milestone_payout_execution.stripe.Transfer.create") as transfer_create:
+            payout = sync_milestone_payout(self.milestone.id)
+
+        self.assertEqual(payout.status, MilestonePayoutStatus.READY_FOR_PAYOUT)
+        self.assertFalse(transfer_create.called)
+
+    def test_auto_payout_failure_persists_failed_state_and_reason(self):
+        self.contractor.auto_subcontractor_payouts_enabled = True
+        self.contractor.save(update_fields=["auto_subcontractor_payouts_enabled"])
+        ConnectedAccount.objects.create(
+            user=self.subcontractor_user,
+            stripe_account_id="acct_sub_ready",
+            payouts_enabled=True,
+            details_submitted=True,
+        )
+        self.payout.status = MilestonePayoutStatus.ELIGIBLE
+        self.payout.ready_for_payout_at = None
+        self.payout.save(update_fields=["status", "ready_for_payout_at"])
+
+        with patch(
+            "projects.services.milestone_payout_execution.stripe.Transfer.create",
+            side_effect=Exception("auto transfer failed"),
+        ):
+            payout = sync_milestone_payout(self.milestone.id)
+
+        self.assertEqual(payout.status, MilestonePayoutStatus.FAILED)
+        self.assertIn("auto transfer failed", payout.failure_reason)
+        self.assertEqual(payout.execution_mode, "automatic")
 
     def test_payout_execution_is_denied_for_internal_workers(self):
         internal_milestone = Milestone.objects.create(
@@ -2230,6 +2313,47 @@ class SubcontractorStripePayoutExecutionTests(TestCase):
         bogus_payout.refresh_from_db()
         self.assertEqual(bogus_payout.status, MilestonePayoutStatus.READY_FOR_PAYOUT)
 
+    def test_auto_payout_is_blocked_for_internal_workers(self):
+        self.contractor.auto_subcontractor_payouts_enabled = True
+        self.contractor.save(update_fields=["auto_subcontractor_payouts_enabled"])
+        internal_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=4,
+            title="Internal Auto Assignment",
+            description="Internal team should never pay out",
+            amount="950.00",
+            completed=True,
+            completed_at=timezone.now(),
+            subcontractor_completion_status=SubcontractorCompletionStatus.APPROVED,
+            subcontractor_marked_complete_at=timezone.now(),
+            subcontractor_marked_complete_by=self.internal_user,
+            subcontractor_reviewed_at=timezone.now(),
+            subcontractor_reviewed_by=self.contractor_user,
+        )
+        MilestoneAssignment.objects.create(
+            milestone=internal_milestone,
+            subaccount=self.internal_subaccount,
+        )
+        internal_invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=internal_milestone.amount,
+            status=InvoiceStatus.PAID,
+            approved_at=timezone.now(),
+            escrow_released=True,
+            escrow_released_at=timezone.now(),
+            milestone_id_snapshot=internal_milestone.id,
+            milestone_title_snapshot=internal_milestone.title,
+        )
+        internal_milestone.is_invoiced = True
+        internal_milestone.invoice = internal_invoice
+        internal_milestone.save(update_fields=["is_invoiced", "invoice"])
+
+        with patch("projects.services.milestone_payout_execution.stripe.Transfer.create") as transfer_create:
+            payout = sync_milestone_payout(internal_milestone.id)
+
+        self.assertIsNone(payout)
+        self.assertFalse(transfer_create.called)
+
     def test_payout_execution_is_denied_for_non_ready_payouts(self):
         self.payout.status = MilestonePayoutStatus.ELIGIBLE
         self.payout.ready_for_payout_at = None
@@ -2278,6 +2402,34 @@ class SubcontractorStripePayoutExecutionTests(TestCase):
 
         self.assertEqual(first.status_code, 200)
         self.assertEqual(second.status_code, 400)
+
+    def test_duplicate_payment_is_prevented_when_auto_and_manual_flows_interact(self):
+        self.contractor.auto_subcontractor_payouts_enabled = True
+        self.contractor.save(update_fields=["auto_subcontractor_payouts_enabled"])
+        ConnectedAccount.objects.create(
+            user=self.subcontractor_user,
+            stripe_account_id="acct_sub_ready",
+            payouts_enabled=True,
+            details_submitted=True,
+        )
+        self.payout.status = MilestonePayoutStatus.ELIGIBLE
+        self.payout.ready_for_payout_at = None
+        self.payout.save(update_fields=["status", "ready_for_payout_at"])
+
+        with patch(
+            "projects.services.milestone_payout_execution.stripe.Transfer.create",
+            return_value={"id": "tr_auto_once"},
+        ):
+            payout = sync_milestone_payout(self.milestone.id)
+
+        self.assertEqual(payout.status, MilestonePayoutStatus.PAID)
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/execute-subcontractor-payout/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
 
     def test_payout_failure_persists_failed_status_and_reason(self):
         ConnectedAccount.objects.create(
@@ -2919,3 +3071,189 @@ class ContractorOperationsDashboardTests(TestCase):
         self.assertEqual(payload["tomorrow"], [])
         self.assertEqual(payload["this_week"], [])
         self.assertEqual(payload["recent_activity"], [])
+
+
+class ContractorPayoutHistoryTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="payout-history-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Payout History Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="History Homeowner",
+            email="history-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="History Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="History agreement",
+        )
+
+        self.other_contractor_user = user_model.objects.create_user(
+            email="other-payout-owner@example.com",
+            password="testpass123",
+        )
+        self.other_contractor = Contractor.objects.create(
+            user=self.other_contractor_user,
+            business_name="Other Owner",
+        )
+        self.other_homeowner = Homeowner.objects.create(
+            created_by=self.other_contractor,
+            full_name="Other Homeowner",
+            email="other-homeowner@example.com",
+        )
+        self.other_project = Project.objects.create(
+            contractor=self.other_contractor,
+            homeowner=self.other_homeowner,
+            title="Other Project",
+        )
+        self.other_agreement = Agreement.objects.create(
+            project=self.other_project,
+            contractor=self.other_contractor,
+            homeowner=self.other_homeowner,
+            description="Other history agreement",
+        )
+
+        self.subcontractor_user = user_model.objects.create_user(
+            email="history-subcontractor@example.com",
+            password="testpass123",
+            first_name="Taylor",
+            last_name="Sub",
+        )
+
+        self.paid_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Paid Milestone",
+            amount="1000.00",
+        )
+        self.ready_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=2,
+            title="Ready Milestone",
+            amount="800.00",
+        )
+        self.failed_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=3,
+            title="Failed Milestone",
+            amount="600.00",
+        )
+        self.pending_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=4,
+            title="Pending Milestone",
+            amount="400.00",
+        )
+        self.other_milestone = Milestone.objects.create(
+            agreement=self.other_agreement,
+            order=1,
+            title="Other Contractor Milestone",
+            amount="700.00",
+        )
+
+        now = timezone.now()
+        self.paid_payout = MilestonePayout.objects.create(
+            milestone=self.paid_milestone,
+            subcontractor_user=self.subcontractor_user,
+            amount_cents=100000,
+            status=MilestonePayoutStatus.PAID,
+            eligible_at=now - timezone.timedelta(days=7),
+            ready_for_payout_at=now - timezone.timedelta(days=6),
+            paid_at=now - timezone.timedelta(days=2),
+            stripe_transfer_id="tr_paid_hist",
+            execution_mode="manual",
+        )
+        self.ready_payout = MilestonePayout.objects.create(
+            milestone=self.ready_milestone,
+            subcontractor_user=self.subcontractor_user,
+            amount_cents=80000,
+            status=MilestonePayoutStatus.READY_FOR_PAYOUT,
+            eligible_at=now - timezone.timedelta(days=4),
+            ready_for_payout_at=now - timezone.timedelta(days=1),
+            execution_mode="automatic",
+        )
+        self.failed_payout = MilestonePayout.objects.create(
+            milestone=self.failed_milestone,
+            subcontractor_user=self.subcontractor_user,
+            amount_cents=60000,
+            status=MilestonePayoutStatus.FAILED,
+            failed_at=now - timezone.timedelta(days=3),
+            failure_reason="Bank rejected transfer",
+            execution_mode="automatic",
+        )
+        self.pending_payout = MilestonePayout.objects.create(
+            milestone=self.pending_milestone,
+            subcontractor_user=self.subcontractor_user,
+            amount_cents=40000,
+            status=MilestonePayoutStatus.NOT_ELIGIBLE,
+        )
+        self.other_payout = MilestonePayout.objects.create(
+            milestone=self.other_milestone,
+            subcontractor_user=self.subcontractor_user,
+            amount_cents=70000,
+            status=MilestonePayoutStatus.PAID,
+            paid_at=now - timezone.timedelta(days=1),
+            stripe_transfer_id="tr_other_hist",
+        )
+        self.client = APIClient()
+
+    def test_contractor_sees_only_their_own_payout_history(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/payouts/history/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        ids = {row["id"] for row in payload["results"]}
+        self.assertIn(self.paid_payout.id, ids)
+        self.assertIn(self.ready_payout.id, ids)
+        self.assertIn(self.failed_payout.id, ids)
+        self.assertIn(self.pending_payout.id, ids)
+        self.assertNotIn(self.other_payout.id, ids)
+
+    def test_filters_work_by_status_and_date_range(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get(
+            "/api/projects/payouts/history/",
+            {"status": "paid", "date_from": (timezone.now() - timezone.timedelta(days=3)).date().isoformat()},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["results"]), 1)
+        self.assertEqual(payload["results"][0]["id"], self.paid_payout.id)
+
+    def test_summary_totals_are_correct(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/payouts/history/")
+
+        self.assertEqual(response.status_code, 200)
+        summary = response.json()["summary"]
+        self.assertEqual(summary["total_paid_amount"], "1000.00")
+        self.assertEqual(summary["total_ready_amount"], "800.00")
+        self.assertEqual(summary["total_failed_amount"], "600.00")
+        self.assertEqual(summary["total_pending_amount"], "400.00")
+        self.assertEqual(summary["record_count"], 4)
+
+    def test_csv_export_returns_headers_and_contractor_rows_only(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/payouts/history/export/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/csv", response["Content-Type"])
+        body = response.content.decode("utf-8")
+        self.assertIn("agreement,milestone,subcontractor,amount,status,execution_mode,paid_at,failed_at,transfer_id,failure_reason", body)
+        self.assertIn("History Project", body)
+        self.assertNotIn("Other Project", body)

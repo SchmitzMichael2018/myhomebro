@@ -173,6 +173,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
     payout_failed_at = serializers.SerializerMethodField()
     payout_stripe_transfer_id = serializers.SerializerMethodField()
     payout_failure_reason = serializers.SerializerMethodField()
+    payout_execution_mode = serializers.SerializerMethodField()
 
     allow_overlap = serializers.BooleanField(write_only=True, required=False, default=False)
     assigned_subcontractor_invitation = serializers.PrimaryKeyRelatedField(
@@ -246,6 +247,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "payout_failed_at",
             "payout_stripe_transfer_id",
             "payout_failure_reason",
+            "payout_execution_mode",
         )
 
     # ------------------------ helpers (read) ------------------------ #
@@ -631,6 +633,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "payout_failed_at": None,
             "payout_stripe_transfer_id": "",
             "payout_failure_reason": "",
+            "payout_execution_mode": "",
         }
 
     def get_payout_amount(self, obj: Milestone):
@@ -672,6 +675,10 @@ class MilestoneSerializer(serializers.ModelSerializer):
     def get_payout_failure_reason(self, obj: Milestone) -> str:
         payload = self._get_payout_payload(obj)
         return "" if payload is None else payload.get("payout_failure_reason") or ""
+
+    def get_payout_execution_mode(self, obj: Milestone) -> str:
+        payload = self._get_payout_payload(obj)
+        return "" if payload is None else payload.get("payout_execution_mode") or ""
 
     # ------------------------ validation ------------------------ #
     @staticmethod
@@ -898,5 +905,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
         data["payout_failed_at"] = self.get_payout_failed_at(instance)
         data["payout_stripe_transfer_id"] = self.get_payout_stripe_transfer_id(instance)
         data["payout_failure_reason"] = self.get_payout_failure_reason(instance)
+        data["payout_execution_mode"] = self.get_payout_execution_mode(instance)
 
         return data

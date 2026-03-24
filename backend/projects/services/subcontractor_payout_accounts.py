@@ -39,6 +39,14 @@ def get_or_create_connected_account(user) -> ConnectedAccount:
     return profile
 
 
+def has_ready_connected_payout_account(user) -> bool:
+    profile = ConnectedAccount.objects.filter(user=user).first()
+    if profile is None:
+        return False
+    acct_id = str(getattr(profile, "stripe_account_id", "") or "").strip()
+    return bool(acct_id and getattr(profile, "payouts_enabled", False))
+
+
 def refresh_connected_account(profile: ConnectedAccount):
     if not profile.stripe_account_id or not stripe_connect_enabled():
         return None

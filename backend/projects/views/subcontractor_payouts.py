@@ -4,7 +4,7 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from projects.models import Milestone
+from projects.models import Milestone, MilestonePayoutExecutionMode
 from projects.serializers.milestone import MilestoneSerializer
 from projects.services.milestone_payout_execution import (
     execute_milestone_payout,
@@ -90,7 +90,10 @@ class ExecuteMilestonePayoutView(APIView):
             return Response({"detail": "No subcontractor payout exists for this milestone."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            execute_milestone_payout(payout.id)
+            execute_milestone_payout(
+                payout.id,
+                execution_mode=MilestonePayoutExecutionMode.MANUAL,
+            )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -126,7 +129,11 @@ class RetryMilestonePayoutView(APIView):
             return Response({"detail": "Only failed payouts can be retried."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            execute_milestone_payout(payout.id, allow_failed_retry=True)
+            execute_milestone_payout(
+                payout.id,
+                allow_failed_retry=True,
+                execution_mode=MilestonePayoutExecutionMode.MANUAL,
+            )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 

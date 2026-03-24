@@ -64,6 +64,40 @@ function directPayRateLabel() {
   return "1% + $1";
 }
 
+function formatDateTime(value) {
+  if (!value) return "";
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return String(value);
+  }
+}
+
+function buildPayoutQuery(range) {
+  const params = new URLSearchParams();
+  if (range === "all") {
+    return "";
+  }
+
+  const now = new Date();
+  const from = new Date(now);
+  if (range === "ytd") {
+    from.setMonth(0, 1);
+    from.setHours(0, 0, 0, 0);
+  } else {
+    const days = Number(range || 0);
+    if (Number.isFinite(days) && days > 0) {
+      from.setDate(now.getDate() - days);
+      from.setHours(0, 0, 0, 0);
+    }
+  }
+
+  if (!Number.isNaN(from.getTime())) {
+    params.set("date_from", from.toISOString().slice(0, 10));
+  }
+  return params.toString();
+}
+
 export default function BusinessDashboard() {
   const [range, setRange] = useState("90"); // backend supports: 30 | 90 | ytd | all
   const [loading, setLoading] = useState(true);
@@ -74,9 +108,17 @@ export default function BusinessDashboard() {
   // Included AI + pricing summary
   const [meData, setMeData] = useState(null);
   const [meLoading, setMeLoading] = useState(true);
+  const [autoPayoutBusy, setAutoPayoutBusy] = useState(false);
+  const [payoutLoading, setPayoutLoading] = useState(true);
+  const [payoutError, setPayoutError] = useState("");
+  const [payoutRows, setPayoutRows] = useState([]);
+  const [payoutSummary, setPayoutSummary] = useState(null);
+  const [payoutExporting, setPayoutExporting] = useState(false);
 
   const snapshot = payload?.snapshot || {};
   const byCategory = payload?.by_category || [];
+  const payoutQuery = useMemo(() => buildPayoutQuery(range), [range]);
+  const recentPayouts = useMemo(() => payoutRows.slice(0, 5), [payoutRows]);
 
   const categoryChart = useMemo(() => {
     // Recharts expects numbers; backend returns strings for money fields
@@ -105,6 +147,24 @@ export default function BusinessDashboard() {
     }
   };
 
+  const toggleAutoPayouts = async (enabled) => {
+    try {
+      setAutoPayoutBusy(true);
+      await api.patch("/projects/contractors/me/", {
+        auto_subcontractor_payouts_enabled: enabled,
+      });
+      setMeData((prev) => ({
+        ...(prev || {}),
+        auto_subcontractor_payouts_enabled: enabled,
+      }));
+    } catch (err) {
+      console.error("Failed to update auto payout setting:", err);
+      setError("Failed to update auto payout setting.");
+    } finally {
+      setAutoPayoutBusy(false);
+    }
+  };
+
   const fetchData = async () => {
     setLoading(true);
     setError("");
@@ -121,6 +181,49 @@ export default function BusinessDashboard() {
     }
   };
 
+  const fetchPayoutData = async () => {
+    setPayoutLoading(true);
+    setPayoutError("");
+    try {
+      const { data } = await api.get(
+        `/projects/payouts/history/${payoutQuery ? `?${payoutQuery}` : ""}`
+      );
+      setPayoutRows(Array.isArray(data?.results) ? data.results : []);
+      setPayoutSummary(data?.summary || null);
+    } catch (err) {
+      console.error("Error loading payout reporting:", err);
+      setPayoutRows([]);
+      setPayoutSummary(null);
+      setPayoutError("Failed to load subcontractor payout reporting.");
+    } finally {
+      setPayoutLoading(false);
+    }
+  };
+
+  const exportPayoutCsv = async () => {
+    try {
+      setPayoutExporting(true);
+      const response = await api.get(
+        `/projects/payouts/history/export/${payoutQuery ? `?${payoutQuery}` : ""}`,
+        { responseType: "blob" }
+      );
+      const blob = new Blob([response.data], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "payout-history.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Failed to export payout history:", err);
+      setPayoutError("Failed to export payout history.");
+    } finally {
+      setPayoutExporting(false);
+    }
+  };
+
   useEffect(() => {
     fetchMe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -130,6 +233,11 @@ export default function BusinessDashboard() {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range]);
+
+  useEffect(() => {
+    fetchPayoutData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payoutQuery]);
 
   if (loading) {
     return <div className="p-6 text-center text-gray-500">Loading dashboard...</div>;
@@ -210,6 +318,33 @@ export default function BusinessDashboard() {
         </div>
       </div>
 
+      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="text-sm font-extrabold text-slate-900">Subcontractor Payout Automation</div>
+            <div className="mt-2 text-sm text-slate-700">
+              Automatically pay subcontractors when payouts are ready.
+            </div>
+            <div className="mt-2 text-xs text-slate-600">
+              Failed payouts are not retried automatically and can still be reviewed manually.
+            </div>
+          </div>
+
+          <label className="flex items-center gap-3 text-sm font-semibold text-slate-800">
+            <span data-testid="auto-payout-setting-label">
+              {meData?.auto_subcontractor_payouts_enabled ? "On" : "Off"}
+            </span>
+            <input
+              data-testid="auto-payout-setting-toggle"
+              type="checkbox"
+              checked={!!meData?.auto_subcontractor_payouts_enabled}
+              disabled={meLoading || autoPayoutBusy}
+              onChange={(e) => toggleAutoPayouts(e.target.checked)}
+            />
+          </label>
+        </div>
+      </div>
+
       {/* KPI grid */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
@@ -264,6 +399,131 @@ export default function BusinessDashboard() {
           sub="Active disputes"
           tone={Number(snapshot.disputes_open || 0) > 0 ? "bad" : "default"}
         />
+      </div>
+
+      <div
+        data-testid="dashboard-payouts-section"
+        className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      >
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="text-base font-bold text-slate-900">Subcontractor Payouts</div>
+            <div className="mt-1 text-sm text-slate-600">
+              Track paid, ready, failed, and pending subcontractor payouts alongside your business reporting.
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              data-testid="dashboard-payouts-export"
+              onClick={exportPayoutCsv}
+              disabled={payoutExporting}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              {payoutExporting ? "Exporting..." : "Export CSV"}
+            </button>
+            <a
+              data-testid="dashboard-payouts-full-history"
+              href="/app/payouts/history"
+              className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              View Full Payout History
+            </a>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Stat
+            label="Paid to Subs"
+            value={money(payoutSummary?.total_paid_amount)}
+            sub="Completed subcontractor payouts"
+            tone="good"
+          />
+          <Stat
+            label="Ready for Payout"
+            value={money(payoutSummary?.total_ready_amount)}
+            sub="Can be paid now"
+            tone="warn"
+          />
+          <Stat
+            label="Failed Payouts"
+            value={money(payoutSummary?.total_failed_amount)}
+            sub="Needs contractor follow-up"
+            tone="bad"
+          />
+          <Stat
+            label="Pending Payouts"
+            value={money(payoutSummary?.total_pending_amount)}
+            sub="Not ready yet"
+          />
+        </div>
+
+        <div className="mt-5">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-sm font-bold text-slate-900">Recent Payout Activity</div>
+            <div className="text-xs text-slate-500">
+              {payoutSummary?.record_count ?? payoutRows.length} payout records in range
+            </div>
+          </div>
+
+          {payoutLoading ? (
+            <div className="text-sm text-slate-500">Loading payout reporting...</div>
+          ) : payoutError ? (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+              {payoutError}
+            </div>
+          ) : recentPayouts.length === 0 ? (
+            <Empty text="No subcontractor payouts in this range yet." />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-xs font-semibold text-slate-600">
+                    <th className="py-2 pr-3">Agreement / Milestone</th>
+                    <th className="py-2 pr-3">Subcontractor</th>
+                    <th className="py-2 pr-3">Amount</th>
+                    <th className="py-2 pr-3">Status</th>
+                    <th className="py-2 pr-3">Activity</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {recentPayouts.map((row) => (
+                    <tr key={row.id} data-testid={`dashboard-payout-row-${row.id}`}>
+                      <td className="py-3 pr-3">
+                        <div className="font-semibold text-slate-900">{row.agreement_title}</div>
+                        <div className="mt-1 text-slate-600">{row.milestone_title}</div>
+                      </td>
+                      <td className="py-3 pr-3 text-slate-700">
+                        {row.subcontractor_display_name || row.subcontractor_email}
+                      </td>
+                      <td className="py-3 pr-3 font-semibold text-slate-900">
+                        {money(row.payout_amount)}
+                      </td>
+                      <td className="py-3 pr-3">
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">
+                          {String(row.payout_status || "").replaceAll("_", " ")}
+                        </span>
+                      </td>
+                      <td className="py-3 pr-3 text-slate-600">
+                        {row.paid_at ? <div>Paid {formatDateTime(row.paid_at)}</div> : null}
+                        {!row.paid_at && row.ready_for_payout_at ? (
+                          <div>Ready {formatDateTime(row.ready_for_payout_at)}</div>
+                        ) : null}
+                        {row.failed_at ? <div>Failed {formatDateTime(row.failed_at)}</div> : null}
+                        {row.execution_mode ? (
+                          <div className="mt-1 text-xs uppercase tracking-wide text-slate-500">
+                            {row.execution_mode}
+                          </div>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Jobs by Category */}

@@ -182,6 +182,7 @@ export default function Sidebar({ variant = "desktop" }) {
     return (
       <>
         <Item to={`${APP_BASE}/dashboard`} label="Dashboard" emoji="🏠" />
+        <Item to={`${APP_BASE}/business`} label="Business Dashboard" emoji="📈" />
         <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" emoji="🔍" />
         <Item to={`${APP_BASE}/agreements`} label="Agreements" emoji="📄" />
         <Item to={`${APP_BASE}/templates`} label="Templates" emoji="🧱" />
@@ -194,7 +195,6 @@ export default function Sidebar({ variant = "desktop" }) {
         <Item to={`${APP_BASE}/calendar`} label="Calendar" emoji="🗓️" />
         <Item to={`${APP_BASE}/expenses`} label="Expenses" emoji="📊" />
         <Item to={`${APP_BASE}/disputes`} label="Disputes" emoji="⚖️" />
-        <Item to={`${APP_BASE}/business`} label="Business Dashboard" emoji="📈" />
       </>
     );
   }, [canAccessReviewerQueue, isEmployee, isAdmin, isOnAdminRoute, isSubcontractor]);

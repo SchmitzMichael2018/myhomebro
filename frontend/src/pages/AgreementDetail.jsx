@@ -128,6 +128,13 @@ function formatPayoutStatus(value) {
     .replace(/^\w/, (c) => c.toUpperCase());
 }
 
+function formatExecutionMode(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "automatic") return "Automatic";
+  if (normalized === "manual") return "Manual";
+  return "";
+}
+
 function normalizeAgreement(raw) {
   if (!raw || typeof raw !== "object")
     return { id: null, title: "—", invoices: [], milestones: [] };
@@ -1710,6 +1717,11 @@ export default function AgreementDetail() {
                       {m.payout_stripe_transfer_id ? (
                         <div className="mt-1 text-xs text-gray-500">
                           Transfer: {m.payout_stripe_transfer_id}
+                        </div>
+                      ) : null}
+                      {m.payout_execution_mode ? (
+                        <div className="mt-1 text-xs text-gray-500">
+                          Execution: {formatExecutionMode(m.payout_execution_mode)}
                         </div>
                       ) : null}
                     </div>

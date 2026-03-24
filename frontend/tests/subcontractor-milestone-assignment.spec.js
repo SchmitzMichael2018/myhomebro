@@ -632,6 +632,7 @@ test('agreement detail shows ready, paid, and failed subcontractor payout states
     payout_failed_at: null,
     payout_stripe_transfer_id: '',
     payout_failure_reason: '',
+    payout_execution_mode: '',
   };
 
   await page.route('**/api/projects/whoami/', async (route) => {
@@ -732,6 +733,7 @@ test('agreement detail shows ready, paid, and failed subcontractor payout states
     milestoneState.payout_failed_at = null;
     milestoneState.payout_stripe_transfer_id = 'tr_sub_123';
     milestoneState.payout_failure_reason = '';
+    milestoneState.payout_execution_mode = 'manual';
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -745,6 +747,7 @@ test('agreement detail shows ready, paid, and failed subcontractor payout states
     milestoneState.payout_failed_at = null;
     milestoneState.payout_stripe_transfer_id = 'tr_retry_123';
     milestoneState.payout_failure_reason = '';
+    milestoneState.payout_execution_mode = 'manual';
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -775,6 +778,7 @@ test('agreement detail shows ready, paid, and failed subcontractor payout states
 
   await page.getByTestId(`milestone-payout-execute-${MILESTONE_ID}`).click();
   await expect(milestoneCard).toContainText('Payout: $1,500.00 (Paid)');
+  await expect(milestoneCard).toContainText('Execution: Manual');
   await expect(page.getByTestId(`milestone-payout-paid-at-${MILESTONE_ID}`)).toBeVisible();
 
   milestoneState.payout_status = 'failed';

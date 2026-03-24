@@ -118,6 +118,11 @@ class MilestonePayoutStatus(models.TextChoices):
     FAILED = "failed", "Failed"
 
 
+class MilestonePayoutExecutionMode(models.TextChoices):
+    MANUAL = "manual", "Manual"
+    AUTOMATIC = "automatic", "Automatic"
+
+
 class Skill(models.Model):
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(max_length=100, unique=True)
@@ -159,6 +164,7 @@ class Contractor(models.Model):
     requirements_due_count = models.IntegerField(default=0)
     stripe_status_updated_at = models.DateTimeField(default=timezone.now)
     stripe_deauthorized_at = models.DateTimeField(null=True, blank=True)
+    auto_subcontractor_payouts_enabled = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1190,6 +1196,7 @@ class MilestonePayout(models.Model):
     failed_at = models.DateTimeField(null=True, blank=True)
     stripe_transfer_id = models.CharField(max_length=255, blank=True, default="")
     failure_reason = models.TextField(blank=True, default="")
+    execution_mode = models.CharField(max_length=16, choices=MilestonePayoutExecutionMode.choices, blank=True, default="")
 
     class Meta:
         ordering = ["-updated_at", "-id"]

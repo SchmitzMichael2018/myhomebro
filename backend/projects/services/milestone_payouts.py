@@ -5,7 +5,15 @@ from decimal import Decimal, InvalidOperation
 from django.db import transaction
 from django.utils import timezone
 
-from projects.models import InvoiceStatus, Milestone, MilestonePayout, MilestonePayoutStatus
+from projects.models import (
+    InvoiceStatus,
+    Milestone,
+    MilestonePayout,
+    MilestonePayoutExecutionMode,
+    MilestonePayoutStatus,
+)
+from projects.services.milestone_payout_execution import execute_milestone_payout
+from projects.services.subcontractor_payout_accounts import has_ready_connected_payout_account
 from projects.services.milestone_workflow import ROLE_SUBCONTRACTOR, get_assigned_worker
 
 
@@ -83,11 +91,16 @@ def sync_milestone_payout(milestone: Milestone | int) -> MilestonePayout | None:
     if not milestone_id:
         return None
 
+    should_auto_execute = False
+    payout_id_to_auto_execute: int | None = None
+
     with transaction.atomic():
         locked = (
             Milestone.objects.select_for_update()
             .select_related(
                 "agreement",
+                "agreement__project",
+                "agreement__project__contractor",
                 "invoice",
                 "assigned_subcontractor_invitation",
                 "assigned_subcontractor_invitation__accepted_by_user",
@@ -111,6 +124,7 @@ def sync_milestone_payout(milestone: Milestone | int) -> MilestonePayout | None:
                 "amount_cents": amount_cents,
             },
         )
+        previous_status = payout.status
 
         desired_status = _desired_payout_status(locked)
         update_fields: list[str] = []
@@ -155,7 +169,27 @@ def sync_milestone_payout(milestone: Milestone | int) -> MilestonePayout | None:
         if update_fields:
             payout.save(update_fields=sorted(set(update_fields)))
 
-        return payout
+        contractor = getattr(getattr(getattr(locked, "agreement", None), "project", None), "contractor", None)
+        auto_enabled = bool(getattr(contractor, "auto_subcontractor_payouts_enabled", False))
+        if (
+            auto_enabled
+            and previous_status != MilestonePayoutStatus.READY_FOR_PAYOUT
+            and payout.status == MilestonePayoutStatus.READY_FOR_PAYOUT
+            and has_ready_connected_payout_account(worker.user)
+        ):
+            should_auto_execute = True
+            payout_id_to_auto_execute = payout.id
+
+    if should_auto_execute and payout_id_to_auto_execute:
+        try:
+            return execute_milestone_payout(
+                payout_id_to_auto_execute,
+                execution_mode=MilestonePayoutExecutionMode.AUTOMATIC,
+            )
+        except ValueError:
+            pass
+
+    return payout
 
 
 def sync_payout_for_invoice(invoice) -> MilestonePayout | None:
@@ -195,4 +229,5 @@ def serialize_payout_for_milestone(milestone: Milestone) -> dict | None:
         "payout_failed_at": payout.failed_at,
         "payout_stripe_transfer_id": payout.stripe_transfer_id or "",
         "payout_failure_reason": payout.failure_reason or "",
+        "payout_execution_mode": payout.execution_mode or "",
     }
