@@ -228,9 +228,45 @@ function formatMoney(v) {
   })}`;
 }
 
+function roundCurrency(value) {
+  return Math.round(Number(value || 0) * 100) / 100;
+}
+
 function sumMilestones(milestones) {
   const arr = Array.isArray(milestones) ? milestones : [];
   return arr.reduce((sum, m) => sum + Number(m?.amount || 0), 0);
+}
+
+function isSubcontractorAssignedMilestone(milestone) {
+  const workerKind = String(milestone?.assigned_worker?.kind || "").trim().toLowerCase();
+  if (workerKind === "subcontractor") return true;
+  if (milestone?.assigned_subcontractor) return true;
+  if (milestone?.assigned_subcontractor_invitation) return true;
+  return false;
+}
+
+function getMilestoneSubcontractorPayoutAmount(milestone) {
+  if (!isSubcontractorAssignedMilestone(milestone)) return 0;
+
+  const cents = parseMoneyNumber(milestone?.subcontractor_payout_amount_cents);
+  if (Number.isFinite(cents) && cents > 0) {
+    return roundCurrency(cents / 100);
+  }
+
+  const dollarCandidates = [
+    milestone?.payout_amount,
+    milestone?.subcontractor_payout_amount,
+    milestone?.subcontractor_payout_amount_dollars,
+  ];
+
+  for (const candidate of dollarCandidates) {
+    const dollars = parseMoneyNumber(candidate);
+    if (Number.isFinite(dollars) && dollars > 0) {
+      return roundCurrency(dollars);
+    }
+  }
+
+  return 0;
 }
 
 function formatMilestoneDate(m) {
@@ -1164,11 +1200,6 @@ export default function Step4Finalize({
       ? Number(fundingPreview.platform_fee)
       : Math.max(0, Math.round((projectAmount * escrowRate + escrowFlat) * 100) / 100);
 
-  const escrowContractorTakeHome =
-    fundingPreview?.contractor_payout != null
-      ? Number(fundingPreview.contractor_payout)
-      : Math.max(0, Math.round((projectAmount - escrowPlatformFee) * 100) / 100);
-
   const homeownerEscrow =
     fundingPreview?.homeowner_escrow != null ? Number(fundingPreview.homeowner_escrow) : projectAmount;
 
@@ -1182,9 +1213,61 @@ export default function Step4Finalize({
 
   const DIRECT_RATE = 0.02;
   const DIRECT_FLAT = 1;
+  const ESTIMATED_STRIPE_RATE = 0.029;
+  const ESTIMATED_STRIPE_FLAT = 0.3;
 
   const directPlatformFee = Math.max(0, Math.round((projectAmount * DIRECT_RATE + DIRECT_FLAT) * 100) / 100);
-  const directContractorTakeHome = Math.max(0, Math.round((projectAmount - directPlatformFee) * 100) / 100);
+  const estimatedStripeProcessingFee = Math.max(
+    0,
+    roundCurrency(projectAmount * ESTIMATED_STRIPE_RATE + ESTIMATED_STRIPE_FLAT)
+  );
+  const subcontractorPayoutTotal = useMemo(
+    () =>
+      roundCurrency(
+        safeArray(displayMilestones).reduce(
+          (sum, milestone) => sum + getMilestoneSubcontractorPayoutAmount(milestone),
+          0
+        )
+      ),
+    [displayMilestones]
+  );
+  const showSubcontractorPayoutRow = subcontractorPayoutTotal > 0;
+  const platformFee = isDirectPay ? directPlatformFee : escrowPlatformFee;
+  const estimatedContractorNet = Math.max(
+    0,
+    roundCurrency(projectAmount - platformFee - estimatedStripeProcessingFee - subcontractorPayoutTotal)
+  );
+  const summaryBreakdownRows = [
+    {
+      key: "project-total",
+      label: "Total Project Amount",
+      value: formatMoney(projectAmount),
+      tone: "default",
+    },
+    {
+      key: "platform-fee",
+      label: "Platform Fee",
+      value: `-${formatMoney(platformFee)}`,
+      tone: "deduction",
+    },
+    {
+      key: "stripe-fee",
+      label: "Estimated Stripe Processing Fee",
+      value: `-${formatMoney(estimatedStripeProcessingFee)}`,
+      tone: "deduction",
+      help: "Estimated based on standard card-processing assumptions and shown for planning only.",
+    },
+    ...(showSubcontractorPayoutRow
+      ? [
+          {
+            key: "subcontractor-payouts",
+            label: "Subcontractor Payouts",
+            value: `-${formatMoney(subcontractorPayoutTotal)}`,
+            tone: "deduction",
+          },
+        ]
+      : []),
+  ];
 
   const handleToggleRequirement = async (key, value) => {
     if (!agreementId) return;
@@ -1699,60 +1782,84 @@ export default function Step4Finalize({
       <section className="rounded-lg border bg-white p-4 shadow">
         <h3 className="text-lg font-semibold text-gray-900 mb-2">Totals &amp; Fees</h3>
 
-        {isDirectPay ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span>Total Due (Customer Pays)</span>
-                <span className="font-medium tabular-nums">{formatMoney(projectAmount)}</span>
+        <div className="grid grid-cols-1 md:grid-cols-[minmax(0,1.25fr)_minmax(280px,0.9fr)] gap-4 text-sm">
+          <div
+            className="rounded-xl border border-slate-200 bg-white p-4"
+            data-testid="step4-financial-summary"
+          >
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                Estimated Contractor Earnings
               </div>
-              <div className="flex justify-between">
-                <span>Platform Fee (2% + $1)</span>
-                <span className="font-medium tabular-nums">-{formatMoney(directPlatformFee)}</span>
+              <div
+                className="mt-1 text-3xl font-bold tracking-tight text-emerald-900 tabular-nums"
+                data-testid="financial-summary-net"
+              >
+                {formatMoney(estimatedContractorNet)}
               </div>
-              <div className="flex justify-between">
-                <span>Contractor Take-Home (Before Stripe Fees)</span>
-                <span className="font-semibold tabular-nums">{formatMoney(directContractorTakeHome)}</span>
+              <div className="mt-1 text-xs text-emerald-800">
+                Project total minus platform fees, estimated Stripe processing, and any subcontractor payouts.
               </div>
             </div>
 
-            <div className="rounded border bg-slate-50 p-3 text-[12px] text-slate-700">
-              <div className="font-semibold mb-1">Direct Pay</div>
-              <div>Customer pays invoices via Stripe links. No escrow deposit is required.</div>
-            </div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span>Total Project Amount</span>
-                <span className="font-medium tabular-nums">{formatMoney(projectAmount)}</span>
-              </div>
-
-              <div className="flex justify-between">
-                <span>Platform Fee</span>
-                <span className="font-medium tabular-nums">-{formatMoney(escrowPlatformFee)}</span>
-              </div>
-
-              <div className="flex justify-between">
-                <span>Contractor Take-Home (Before Stripe Fees)</span>
-                <span className="font-semibold tabular-nums">{formatMoney(escrowContractorTakeHome)}</span>
-              </div>
-
-              <div className="flex justify-between text-indigo-700">
-                <span>Total Escrow Deposit</span>
-                <span className="font-semibold tabular-nums">{formatMoney(homeownerEscrow)}</span>
-              </div>
-
-              {fundingError ? <div className="text-[11px] text-amber-700">{fundingError}</div> : null}
-            </div>
-
-            <div className="rounded border bg-slate-50 p-3 text-[12px] text-slate-700">
-              <div className="font-semibold mb-1">Escrow (Protected)</div>
-              <div>Funds are held until milestones are approved. Disputes can freeze funds until resolved.</div>
+            <div className="mt-4 space-y-3">
+              {summaryBreakdownRows.map((row) => (
+                <div
+                  key={row.key}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                  data-testid={`financial-row-${row.key}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-medium text-slate-900">{row.label}</div>
+                      {row.help ? <div className="mt-0.5 text-[11px] text-slate-500">{row.help}</div> : null}
+                    </div>
+                    <div
+                      className={`font-semibold tabular-nums ${
+                        row.tone === "deduction" ? "text-slate-700" : "text-slate-900"
+                      }`}
+                    >
+                      {row.value}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-        )}
+
+          <div className="rounded border bg-slate-50 p-3 text-[12px] text-slate-700">
+            <div className="font-semibold mb-1">{isDirectPay ? "Direct Pay" : "Escrow (Protected)"}</div>
+            {isDirectPay ? (
+              <>
+                <div>Customer pays invoices via Stripe links. No escrow deposit is required.</div>
+                <div className="mt-3 rounded border border-slate-200 bg-white px-3 py-2">
+                  <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                    Payment context
+                  </div>
+                  <div className="mt-1 text-sm font-semibold text-slate-900 tabular-nums">
+                    Customer pays as invoices are sent and approved.
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div>Funds are held until milestones are approved. Disputes can freeze funds until resolved.</div>
+                <div
+                  className="mt-3 rounded border border-indigo-200 bg-indigo-50 px-3 py-2"
+                  data-testid="financial-row-escrow-deposit"
+                >
+                  <div className="text-[11px] uppercase tracking-wide text-indigo-700">
+                    Total Escrow Deposit
+                  </div>
+                  <div className="mt-1 text-lg font-semibold text-indigo-900 tabular-nums">
+                    {formatMoney(homeownerEscrow)}
+                  </div>
+                  {fundingError ? <div className="mt-1 text-[11px] text-amber-700">{fundingError}</div> : null}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       </section>
 
       <section className="rounded-lg border bg-white p-4 shadow">
