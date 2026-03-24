@@ -5,6 +5,11 @@ test('business dashboard shows payout reporting and links to full history', asyn
     window.localStorage.setItem('access', 'playwright-access-token');
   });
 
+  let revenueExportCalled = false;
+  let feeExportCalled = false;
+  let payoutExportCalled = false;
+  let jobsExportCalled = false;
+
   await page.route('**/api/projects/whoami/', async (route) => {
     await route.fulfill({
       status: 200,
@@ -60,6 +65,42 @@ test('business dashboard shows payout reporting and links to full history', asyn
       status: 200,
       contentType: 'text/csv',
       body: 'agreement,milestone,subcontractor,amount,status,execution_mode,paid_at,failed_at,transfer_id,failure_reason\n',
+    });
+  });
+
+  await page.route('**/api/projects/business-dashboard/export/revenue/**', async (route) => {
+    revenueExportCalled = true;
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/csv',
+      body: 'agreement,invoice,milestone,project_type,payment_mode,paid_at,gross_amount\n',
+    });
+  });
+
+  await page.route('**/api/projects/business-dashboard/export/fees/**', async (route) => {
+    feeExportCalled = true;
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/csv',
+      body: 'agreement,invoice,project_type,paid_at,gross_amount,platform_fee_amount\n',
+    });
+  });
+
+  await page.route('**/api/projects/business-dashboard/export/payouts/**', async (route) => {
+    payoutExportCalled = true;
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/csv',
+      body: 'agreement,milestone,subcontractor,amount,status,execution_mode,paid_at,failed_at,transfer_id,failure_reason\n',
+    });
+  });
+
+  await page.route('**/api/projects/business-dashboard/export/jobs/**', async (route) => {
+    jobsExportCalled = true;
+    await route.fulfill({
+      status: 200,
+      contentType: 'text/csv',
+      body: 'agreement,customer,project_type,project_subtype,status,start_date,end_date,completion_days,total_cost\n',
     });
   });
 
@@ -122,6 +163,20 @@ test('business dashboard shows payout reporting and links to full history', asyn
   await expect(page.getByTestId('dashboard-payout-row-1')).toContainText('Taylor Sub');
   await expect(page.getByTestId('dashboard-payout-row-2')).toContainText('Morgan Failed');
   await expect(page.getByTestId('dashboard-payouts-export')).toBeVisible();
+  await expect(page.getByTestId('dashboard-reports-exports-section')).toBeVisible();
+  await expect(page.getByTestId('export-revenue-report')).toBeVisible();
+  await expect(page.getByTestId('export-fee-report')).toBeVisible();
+  await expect(page.getByTestId('export-payout-report')).toBeVisible();
+  await expect(page.getByTestId('export-jobs-report')).toBeVisible();
+
+  await page.getByTestId('export-revenue-report').click();
+  await expect.poll(() => revenueExportCalled).toBe(true);
+  await page.getByTestId('export-fee-report').click();
+  await expect.poll(() => feeExportCalled).toBe(true);
+  await page.getByTestId('export-payout-report').click();
+  await expect.poll(() => payoutExportCalled).toBe(true);
+  await page.getByTestId('export-jobs-report').click();
+  await expect.poll(() => jobsExportCalled).toBe(true);
 
   await page.getByTestId('dashboard-payouts-full-history').click();
   await expect(page).toHaveURL(/\/app\/payouts\/history$/);

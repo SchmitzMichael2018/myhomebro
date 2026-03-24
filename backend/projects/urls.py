@@ -114,7 +114,13 @@ from .views.subaccount_schedule import (
     delete_schedule_exception,
 )
 
-from .views.business_dashboard import BusinessDashboardSummaryAPIView
+from .views.business_dashboard import (
+    BusinessDashboardCompletedJobsExportView,
+    BusinessDashboardFeesExportView,
+    BusinessDashboardPayoutsExportView,
+    BusinessDashboardRevenueExportView,
+    BusinessDashboardSummaryAPIView,
+)
 from .views.contractor_operations import ContractorOperationsDashboardView
 from .views.expense_requests import ExpenseRequestViewSet
 from .views.subcontractor_invitations import (
@@ -409,6 +415,26 @@ urlpatterns = [
         "business/contractor/summary/",
         BusinessDashboardSummaryAPIView.as_view(),
         name="contractor_business_summary",
+    ),
+    path(
+        "business-dashboard/export/revenue/",
+        BusinessDashboardRevenueExportView.as_view(),
+        name="business_dashboard_export_revenue",
+    ),
+    path(
+        "business-dashboard/export/fees/",
+        BusinessDashboardFeesExportView.as_view(),
+        name="business_dashboard_export_fees",
+    ),
+    path(
+        "business-dashboard/export/payouts/",
+        BusinessDashboardPayoutsExportView.as_view(),
+        name="business_dashboard_export_payouts",
+    ),
+    path(
+        "business-dashboard/export/jobs/",
+        BusinessDashboardCompletedJobsExportView.as_view(),
+        name="business_dashboard_export_jobs",
     ),
     path(
         "dashboard/operations/",

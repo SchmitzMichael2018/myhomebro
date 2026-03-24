@@ -224,6 +224,28 @@ export default function BusinessDashboard() {
     }
   };
 
+  const exportDashboardReport = async (kind) => {
+    try {
+      setError("");
+      const response = await api.get(
+        `/projects/business-dashboard/export/${kind}/${range ? `?range=${encodeURIComponent(range)}` : ""}`,
+        { responseType: "blob" }
+      );
+      const blob = new Blob([response.data], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `business-dashboard-${kind}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(`Failed to export ${kind} report:`, err);
+      setError("Failed to export report.");
+    }
+  };
+
   useEffect(() => {
     fetchMe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -525,6 +547,59 @@ export default function BusinessDashboard() {
           )}
         </div>
       </div>
+
+      <section
+        data-testid="dashboard-reports-exports-section"
+        className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      >
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="text-base font-bold text-slate-900">Reports & Exports</div>
+            <div className="mt-1 text-sm text-slate-600">
+              Export for bookkeeping or tax prep using the current dashboard date range.
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <button
+            type="button"
+            data-testid="export-revenue-report"
+            onClick={() => exportDashboardReport("revenue")}
+            className="rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:bg-slate-50"
+          >
+            <div className="text-sm font-bold text-slate-900">Revenue Report</div>
+            <div className="mt-1 text-xs text-slate-600">Gross revenue and paid invoice rows.</div>
+          </button>
+          <button
+            type="button"
+            data-testid="export-fee-report"
+            onClick={() => exportDashboardReport("fees")}
+            className="rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:bg-slate-50"
+          >
+            <div className="text-sm font-bold text-slate-900">Fee Report</div>
+            <div className="mt-1 text-xs text-slate-600">Platform fee rows for bookkeeping review.</div>
+          </button>
+          <button
+            type="button"
+            data-testid="export-payout-report"
+            onClick={() => exportDashboardReport("payouts")}
+            className="rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:bg-slate-50"
+          >
+            <div className="text-sm font-bold text-slate-900">Subcontractor Payout Report</div>
+            <div className="mt-1 text-xs text-slate-600">Payout status, failures, and payout audit rows.</div>
+          </button>
+          <button
+            type="button"
+            data-testid="export-jobs-report"
+            onClick={() => exportDashboardReport("jobs")}
+            className="rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:bg-slate-50"
+          >
+            <div className="text-sm font-bold text-slate-900">Completed Jobs Report</div>
+            <div className="mt-1 text-xs text-slate-600">Completed agreement rows for operations review.</div>
+          </button>
+        </div>
+      </section>
 
       {/* Jobs by Category */}
       <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">

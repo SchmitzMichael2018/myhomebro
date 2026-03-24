@@ -26,6 +26,7 @@ from projects.models import (
     MilestonePayoutStatus,
     Notification,
     Project,
+    ProjectStatus,
     SubcontractorCompletionStatus,
 )
 from projects.models import AgreementWarranty
@@ -3257,3 +3258,155 @@ class ContractorPayoutHistoryTests(TestCase):
         self.assertIn("agreement,milestone,subcontractor,amount,status,execution_mode,paid_at,failed_at,transfer_id,failure_reason", body)
         self.assertIn("History Project", body)
         self.assertNotIn("Other Project", body)
+
+
+class BusinessDashboardExportTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="reports-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Reports Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Reports Homeowner",
+            email="reports-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Reports Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Reports agreement",
+            project_type="Remodel",
+            project_subtype="Kitchen",
+            start=timezone.now().date() - timezone.timedelta(days=20),
+            end=timezone.now().date() - timezone.timedelta(days=5),
+            status=ProjectStatus.COMPLETED,
+            total_cost="5200.00",
+        )
+        self.milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Cabinet Install",
+            amount="2500.00",
+        )
+        self.invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount="2500.00",
+            status="paid",
+            escrow_released=True,
+            escrow_released_at=timezone.now() - timezone.timedelta(days=2),
+            platform_fee_cents=12500,
+            milestone_title_snapshot="Cabinet Install",
+        )
+
+        self.subcontractor_user = user_model.objects.create_user(
+            email="reports-sub@example.com",
+            password="testpass123",
+            first_name="Taylor",
+            last_name="Sub",
+        )
+        self.payout = MilestonePayout.objects.create(
+            milestone=self.milestone,
+            subcontractor_user=self.subcontractor_user,
+            amount_cents=90000,
+            status=MilestonePayoutStatus.PAID,
+            paid_at=timezone.now() - timezone.timedelta(days=1),
+            stripe_transfer_id="tr_reports_123",
+            execution_mode="manual",
+        )
+
+        self.other_contractor_user = user_model.objects.create_user(
+            email="reports-other@example.com",
+            password="testpass123",
+        )
+        self.other_contractor = Contractor.objects.create(
+            user=self.other_contractor_user,
+            business_name="Other Reports Owner",
+        )
+        self.other_homeowner = Homeowner.objects.create(
+            created_by=self.other_contractor,
+            full_name="Other Homeowner",
+            email="other-reports-homeowner@example.com",
+        )
+        self.other_project = Project.objects.create(
+            contractor=self.other_contractor,
+            homeowner=self.other_homeowner,
+            title="Other Reports Project",
+        )
+        self.other_agreement = Agreement.objects.create(
+            project=self.other_project,
+            contractor=self.other_contractor,
+            homeowner=self.other_homeowner,
+            description="Other reports agreement",
+            project_type="Roofing",
+            status=ProjectStatus.COMPLETED,
+            total_cost="3300.00",
+        )
+        self.other_invoice = Invoice.objects.create(
+            agreement=self.other_agreement,
+            amount="3300.00",
+            status="paid",
+            escrow_released=True,
+            escrow_released_at=timezone.now() - timezone.timedelta(days=1),
+            platform_fee_cents=9900,
+            milestone_title_snapshot="Other Milestone",
+        )
+
+        self.client = APIClient()
+
+    def test_revenue_export_is_contractor_scoped_and_has_headers(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/business-dashboard/export/revenue/?range=30")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/csv", response["Content-Type"])
+        body = response.content.decode("utf-8")
+        self.assertIn("agreement,invoice,milestone,project_type,payment_mode,paid_at,gross_amount", body)
+        self.assertIn("Reports Project", body)
+        self.assertNotIn("Other Reports Project", body)
+
+    def test_fee_export_respects_date_range(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/business-dashboard/export/fees/?range=30")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode("utf-8")
+        self.assertIn("agreement,invoice,project_type,paid_at,gross_amount,platform_fee_amount", body)
+        self.assertIn("125.00", body)
+
+        self.invoice.escrow_released_at = timezone.now() - timezone.timedelta(days=120)
+        self.invoice.save(update_fields=["escrow_released_at"])
+
+        response = self.client.get("/api/projects/business-dashboard/export/fees/?range=30")
+        body = response.content.decode("utf-8")
+        self.assertNotIn("Reports Project", body)
+
+    def test_payout_export_is_contractor_scoped(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/business-dashboard/export/payouts/")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode("utf-8")
+        self.assertIn("agreement,milestone,subcontractor,amount,status,execution_mode,paid_at,failed_at,transfer_id,failure_reason", body)
+        self.assertIn("Reports Project", body)
+        self.assertNotIn("Other Reports Project", body)
+
+    def test_completed_jobs_export_returns_completed_jobs_rows(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/business-dashboard/export/jobs/?range=30")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode("utf-8")
+        self.assertIn("agreement,customer,project_type,project_subtype,status,start_date,end_date,completion_days,total_cost", body)
+        self.assertIn("Reports Project", body)
+        self.assertIn("Reports Homeowner", body)
