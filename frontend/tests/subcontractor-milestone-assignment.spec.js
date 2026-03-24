@@ -627,6 +627,10 @@ test('agreement detail shows ready, paid, and failed subcontractor payout states
     },
     payout_amount: '1500.00',
     payout_status: 'ready_for_payout',
+    payout_ready_for_payout_at: '2026-03-24T15:00:00Z',
+    payout_paid_at: null,
+    payout_failed_at: null,
+    payout_stripe_transfer_id: '',
     payout_failure_reason: '',
   };
 
@@ -725,6 +729,34 @@ test('agreement detail shows ready, paid, and failed subcontractor payout states
   await page.route(`**/api/projects/milestones/${MILESTONE_ID}/execute-subcontractor-payout/`, async (route) => {
     milestoneState.payout_status = 'paid';
     milestoneState.payout_paid_at = '2026-03-24T16:00:00Z';
+    milestoneState.payout_failed_at = null;
+    milestoneState.payout_stripe_transfer_id = 'tr_sub_123';
+    milestoneState.payout_failure_reason = '';
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(milestoneState),
+    });
+  });
+
+  await page.route(`**/api/projects/milestones/${MILESTONE_ID}/retry-subcontractor-payout/`, async (route) => {
+    milestoneState.payout_status = 'paid';
+    milestoneState.payout_paid_at = '2026-03-24T17:00:00Z';
+    milestoneState.payout_failed_at = null;
+    milestoneState.payout_stripe_transfer_id = 'tr_retry_123';
+    milestoneState.payout_failure_reason = '';
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(milestoneState),
+    });
+  });
+
+  await page.route(`**/api/projects/milestones/${MILESTONE_ID}/reset-subcontractor-payout/`, async (route) => {
+    milestoneState.payout_status = 'ready_for_payout';
+    milestoneState.payout_ready_for_payout_at = '2026-03-24T16:30:00Z';
+    milestoneState.payout_failed_at = null;
+    milestoneState.payout_failure_reason = '';
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -738,14 +770,33 @@ test('agreement detail shows ready, paid, and failed subcontractor payout states
 
   const milestoneCard = page.getByTestId(`milestone-card-${MILESTONE_ID}`);
   await expect(milestoneCard).toContainText('Payout: $1,500.00 (Ready for payout)');
+  await expect(page.getByTestId(`milestone-payout-ready-at-${MILESTONE_ID}`)).toBeVisible();
   await expect(page.getByTestId(`milestone-payout-execute-${MILESTONE_ID}`)).toBeVisible();
 
   await page.getByTestId(`milestone-payout-execute-${MILESTONE_ID}`).click();
   await expect(milestoneCard).toContainText('Payout: $1,500.00 (Paid)');
+  await expect(page.getByTestId(`milestone-payout-paid-at-${MILESTONE_ID}`)).toBeVisible();
 
   milestoneState.payout_status = 'failed';
+  milestoneState.payout_failed_at = '2026-03-24T18:00:00Z';
+  milestoneState.payout_paid_at = null;
+  milestoneState.payout_stripe_transfer_id = '';
   milestoneState.payout_failure_reason = 'Transfer failed at Stripe.';
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(milestoneCard).toContainText('Payout: $1,500.00 (Failed)');
-  await expect(milestoneCard).toContainText('Transfer failed at Stripe.');
+  await expect(page.getByTestId(`milestone-payout-failure-${MILESTONE_ID}`)).toContainText(
+    'Transfer failed at Stripe.'
+  );
+  await expect(page.getByTestId(`milestone-payout-retry-${MILESTONE_ID}`)).toBeVisible();
+  await expect(page.getByTestId(`milestone-payout-reset-${MILESTONE_ID}`)).toBeVisible();
+
+  await page.getByTestId(`milestone-payout-reset-${MILESTONE_ID}`).click();
+  await expect(milestoneCard).toContainText('Payout: $1,500.00 (Ready for payout)');
+
+  milestoneState.payout_status = 'failed';
+  milestoneState.payout_failed_at = '2026-03-24T18:15:00Z';
+  milestoneState.payout_failure_reason = 'Transfer failed at Stripe.';
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.getByTestId(`milestone-payout-retry-${MILESTONE_ID}`).click();
+  await expect(milestoneCard).toContainText('Payout: $1,500.00 (Paid)');
 });

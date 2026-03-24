@@ -115,6 +115,8 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
                       completion_date: '2026-03-28',
                       assigned_worker_display: 'Taylor Sub',
                       reviewer_display: 'Contractor Owner',
+                      payout_status: 'failed',
+                      payout_failed: true,
                       assigned_subcontractor: {
                         invitation_id: 77,
                         display_name: 'Taylor Sub',
@@ -168,6 +170,13 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
   await expect(page.getByTestId('assigned-milestone-901')).toContainText(
     'Taylor Sub'
   );
+  await expect(page.getByTestId('assigned-milestone-payout-state-901')).toContainText(
+    'Failed'
+  );
+  await expect(page.getByTestId('assigned-milestone-payout-state-901')).toContainText(
+    'Payment failed — contractor will retry.'
+  );
+  await expect(page.getByTestId('assigned-milestone-901')).not.toContainText('Retry Payout');
 
   emptyMode = true;
   await page.reload({ waitUntil: 'domcontentloaded' });

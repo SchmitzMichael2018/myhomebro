@@ -49,6 +49,14 @@ export default function SubcontractorAssignedWorkPage() {
     return "Not submitted";
   }
 
+  function milestonePayoutStatusLabel(status) {
+    const normalized = String(status || "").toLowerCase();
+    if (normalized === "ready_for_payout") return "Ready for payout";
+    if (normalized === "paid") return "Paid";
+    if (normalized === "failed") return "Failed";
+    return "Not ready";
+  }
+
   useEffect(() => {
     let active = true;
 
@@ -392,6 +400,26 @@ export default function SubcontractorAssignedWorkPage() {
                             milestone.assigned_subcontractor?.email ||
                             "Assigned"}
                         </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                      <div className="text-sm font-semibold text-slate-900">
+                        Payout Status
+                      </div>
+                      <div
+                        data-testid={`assigned-milestone-payout-state-${milestone.id}`}
+                        className="mt-2 text-sm text-slate-600"
+                      >
+                        <div>{milestonePayoutStatusLabel(milestone.payout_status)}</div>
+                        {milestone.payout_paid_at ? (
+                          <div className="mt-1">Paid: {formatDate(milestone.payout_paid_at)}</div>
+                        ) : null}
+                        {milestone.payout_failed ? (
+                          <div className="mt-1 text-amber-700">
+                            Payment failed — contractor will retry.
+                          </div>
+                        ) : null}
                       </div>
                     </div>
 

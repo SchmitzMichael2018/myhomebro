@@ -2027,6 +2027,10 @@ class MilestonePayoutFoundationTests(TestCase):
         self.assertEqual(payload["payout_status"], "eligible")
         self.assertTrue(payload["payout_eligible"])
         self.assertFalse(payload["payout_ready"])
+        self.assertIsNotNone(payload["payout_eligible_at"])
+        self.assertIsNone(payload["payout_ready_for_payout_at"])
+        self.assertIsNone(payload["payout_failed_at"])
+        self.assertEqual(payload["payout_stripe_transfer_id"], "")
 
 
 @override_settings(
@@ -2298,6 +2302,149 @@ class SubcontractorStripePayoutExecutionTests(TestCase):
         self.assertEqual(self.payout.status, MilestonePayoutStatus.FAILED)
         self.assertIn("transfer failed", self.payout.failure_reason)
         self.assertIsNotNone(self.payout.failed_at)
+
+    def test_failed_payout_can_be_retried_successfully(self):
+        ConnectedAccount.objects.create(
+            user=self.subcontractor_user,
+            stripe_account_id="acct_sub_ready",
+            payouts_enabled=True,
+            details_submitted=True,
+        )
+        self.payout.status = MilestonePayoutStatus.FAILED
+        self.payout.failed_at = timezone.now()
+        self.payout.failure_reason = "temporary stripe issue"
+        self.payout.save(update_fields=["status", "failed_at", "failure_reason"])
+
+        self.client.force_authenticate(user=self.contractor_user)
+        with patch(
+            "projects.services.milestone_payout_execution.stripe.Transfer.create",
+            return_value={"id": "tr_retry_123"},
+        ):
+            response = self.client.post(
+                f"/api/projects/milestones/{self.milestone.id}/retry-subcontractor-payout/",
+                {},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.payout.refresh_from_db()
+        self.assertEqual(self.payout.status, MilestonePayoutStatus.PAID)
+        self.assertEqual(self.payout.stripe_transfer_id, "tr_retry_123")
+        self.assertEqual(self.payout.failure_reason, "")
+        self.assertIsNotNone(self.payout.paid_at)
+
+    def test_retry_failure_persists_failed_status_and_reason(self):
+        ConnectedAccount.objects.create(
+            user=self.subcontractor_user,
+            stripe_account_id="acct_sub_ready",
+            payouts_enabled=True,
+            details_submitted=True,
+        )
+        self.payout.status = MilestonePayoutStatus.FAILED
+        self.payout.failed_at = timezone.now()
+        self.payout.failure_reason = "temporary stripe issue"
+        self.payout.save(update_fields=["status", "failed_at", "failure_reason"])
+
+        self.client.force_authenticate(user=self.contractor_user)
+        with patch(
+            "projects.services.milestone_payout_execution.stripe.Transfer.create",
+            side_effect=Exception("retry transfer failed"),
+        ):
+            response = self.client.post(
+                f"/api/projects/milestones/{self.milestone.id}/retry-subcontractor-payout/",
+                {},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.payout.refresh_from_db()
+        self.assertEqual(self.payout.status, MilestonePayoutStatus.FAILED)
+        self.assertIn("retry transfer failed", self.payout.failure_reason)
+        self.assertIsNotNone(self.payout.failed_at)
+
+    def test_cannot_retry_paid_payout(self):
+        self.payout.status = MilestonePayoutStatus.PAID
+        self.payout.paid_at = timezone.now()
+        self.payout.stripe_transfer_id = "tr_paid_existing"
+        self.payout.save(update_fields=["status", "paid_at", "stripe_transfer_id"])
+
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/retry-subcontractor-payout/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_cannot_retry_non_failed_payout(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/retry-subcontractor-payout/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_retry_is_denied_for_internal_worker_payouts(self):
+        internal_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=3,
+            title="Internal Retry Assignment",
+            description="Internal team should never pay out",
+            amount="700.00",
+            completed=True,
+            completed_at=timezone.now(),
+            subcontractor_completion_status=SubcontractorCompletionStatus.APPROVED,
+            subcontractor_marked_complete_at=timezone.now(),
+            subcontractor_marked_complete_by=self.internal_user,
+            subcontractor_reviewed_at=timezone.now(),
+            subcontractor_reviewed_by=self.contractor_user,
+        )
+        MilestoneAssignment.objects.create(
+            milestone=internal_milestone,
+            subaccount=self.internal_subaccount,
+        )
+        bogus_payout = MilestonePayout.objects.create(
+            milestone=internal_milestone,
+            subcontractor_user=self.subcontractor_user,
+            amount_cents=70000,
+            status=MilestonePayoutStatus.FAILED,
+            failed_at=timezone.now(),
+            failure_reason="bad worker type",
+        )
+
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.post(
+            f"/api/projects/milestones/{internal_milestone.id}/retry-subcontractor-payout/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        bogus_payout.refresh_from_db()
+        self.assertEqual(bogus_payout.status, MilestonePayoutStatus.FAILED)
+
+    def test_failed_payout_can_be_reset_to_ready(self):
+        self.payout.status = MilestonePayoutStatus.FAILED
+        self.payout.failed_at = timezone.now()
+        self.payout.failure_reason = "bank account issue"
+        self.payout.save(update_fields=["status", "failed_at", "failure_reason"])
+
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/reset-subcontractor-payout/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.payout.refresh_from_db()
+        self.assertEqual(self.payout.status, MilestonePayoutStatus.READY_FOR_PAYOUT)
+        self.assertEqual(self.payout.failure_reason, "")
+        self.assertIsNone(self.payout.failed_at)
+        self.assertIsNotNone(self.payout.ready_for_payout_at)
 
 
 class ReviewerQueueTests(TestCase):

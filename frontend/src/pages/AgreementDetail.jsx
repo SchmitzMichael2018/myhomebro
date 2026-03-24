@@ -122,6 +122,12 @@ function formatInviteDate(value) {
   }
 }
 
+function formatPayoutStatus(value) {
+  return String(value || "not_eligible")
+    .replaceAll("_", " ")
+    .replace(/^\w/, (c) => c.toUpperCase());
+}
+
 function normalizeAgreement(raw) {
   if (!raw || typeof raw !== "object")
     return { id: null, title: "—", invoices: [], milestones: [] };
@@ -760,6 +766,56 @@ export default function AgreementDetail() {
     } catch (err) {
       console.error(err);
       toast.error(err?.response?.data?.detail || "Failed to execute subcontractor payout.");
+    } finally {
+      setPayoutDecisionBusy((prev) => ({ ...prev, [milestoneId]: false }));
+    }
+  };
+
+  const retryMilestonePayout = async (milestoneId) => {
+    try {
+      setPayoutDecisionBusy((prev) => ({ ...prev, [milestoneId]: true }));
+      const { data } = await api.post(
+        `/projects/milestones/${milestoneId}/retry-subcontractor-payout/`,
+        {}
+      );
+      setAgreement((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          milestones: (prev.milestones || []).map((milestone) =>
+            milestone.id === milestoneId ? { ...milestone, ...data } : milestone
+          ),
+        };
+      });
+      toast.success("Subcontractor payout retried.");
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || "Failed to retry subcontractor payout.");
+    } finally {
+      setPayoutDecisionBusy((prev) => ({ ...prev, [milestoneId]: false }));
+    }
+  };
+
+  const resetMilestonePayout = async (milestoneId) => {
+    try {
+      setPayoutDecisionBusy((prev) => ({ ...prev, [milestoneId]: true }));
+      const { data } = await api.post(
+        `/projects/milestones/${milestoneId}/reset-subcontractor-payout/`,
+        {}
+      );
+      setAgreement((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          milestones: (prev.milestones || []).map((milestone) =>
+            milestone.id === milestoneId ? { ...milestone, ...data } : milestone
+          ),
+        };
+      });
+      toast.success("Subcontractor payout reset to ready.");
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || "Failed to reset subcontractor payout.");
     } finally {
       setPayoutDecisionBusy((prev) => ({ ...prev, [milestoneId]: false }));
     }
@@ -1625,17 +1681,45 @@ export default function AgreementDetail() {
                       <span className="font-semibold text-gray-900">Payout:</span>{" "}
                       {m.payout_amount ? formatMoney(m.payout_amount) : "—"}{" "}
                       <span className="text-gray-500">
-                        (
-                        {String(m.payout_status || "not_eligible")
-                          .replaceAll("_", " ")
-                          .replace(/^\w/, (c) => c.toUpperCase())}
-                        )
+                        ({formatPayoutStatus(m.payout_status)})
                       </span>
+                      {m.payout_ready_for_payout_at ? (
+                        <div
+                          data-testid={`milestone-payout-ready-at-${m.id}`}
+                          className="mt-1 text-xs text-emerald-700"
+                        >
+                          Ready for payout: {fmtDateTime(m.payout_ready_for_payout_at)}
+                        </div>
+                      ) : null}
+                      {m.payout_paid_at ? (
+                        <div
+                          data-testid={`milestone-payout-paid-at-${m.id}`}
+                          className="mt-1 text-xs text-emerald-700"
+                        >
+                          Paid: {fmtDateTime(m.payout_paid_at)}
+                        </div>
+                      ) : null}
+                      {m.payout_failed_at ? (
+                        <div
+                          data-testid={`milestone-payout-failed-at-${m.id}`}
+                          className="mt-1 text-xs text-rose-700"
+                        >
+                          Failed: {fmtDateTime(m.payout_failed_at)}
+                        </div>
+                      ) : null}
+                      {m.payout_stripe_transfer_id ? (
+                        <div className="mt-1 text-xs text-gray-500">
+                          Transfer: {m.payout_stripe_transfer_id}
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
 
                   {isContractor && m.payout_failure_reason ? (
-                    <div className="mt-1 text-sm text-rose-700 whitespace-pre-wrap">
+                    <div
+                      data-testid={`milestone-payout-failure-${m.id}`}
+                      className="mt-1 text-sm text-rose-700 whitespace-pre-wrap"
+                    >
                       <span className="font-semibold">Payout failure:</span>{" "}
                       {m.payout_failure_reason}
                     </div>
@@ -1736,6 +1820,41 @@ export default function AgreementDetail() {
                           >
                             {payoutDecisionBusy[m.id] ? "Processing..." : "Pay Subcontractor"}
                           </button>
+                        </div>
+                      ) : null}
+                      {m.payout_status === "failed" ? (
+                        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-4">
+                          <div className="text-sm font-semibold text-rose-900">
+                            Subcontractor payout failed.
+                          </div>
+                          <div className="mt-1 text-sm text-rose-800">
+                            Amount: {m.payout_amount ? formatMoney(m.payout_amount) : "—"}
+                          </div>
+                          {m.payout_failure_reason ? (
+                            <div className="mt-1 text-sm text-rose-800 whitespace-pre-wrap">
+                              Reason: {m.payout_failure_reason}
+                            </div>
+                          ) : null}
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              data-testid={`milestone-payout-retry-${m.id}`}
+                              onClick={() => retryMilestonePayout(m.id)}
+                              disabled={payoutDecisionBusy[m.id]}
+                              className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+                            >
+                              {payoutDecisionBusy[m.id] ? "Working..." : "Retry Payout"}
+                            </button>
+                            <button
+                              type="button"
+                              data-testid={`milestone-payout-reset-${m.id}`}
+                              onClick={() => resetMilestonePayout(m.id)}
+                              disabled={payoutDecisionBusy[m.id]}
+                              className="rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                            >
+                              {payoutDecisionBusy[m.id] ? "Working..." : "Reset Payout"}
+                            </button>
+                          </div>
                         </div>
                       ) : null}
                     </div>

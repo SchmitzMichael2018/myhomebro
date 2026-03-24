@@ -167,7 +167,11 @@ class MilestoneSerializer(serializers.ModelSerializer):
     payout_status = serializers.SerializerMethodField()
     payout_eligible = serializers.SerializerMethodField()
     payout_ready = serializers.SerializerMethodField()
+    payout_eligible_at = serializers.SerializerMethodField()
+    payout_ready_for_payout_at = serializers.SerializerMethodField()
     payout_paid_at = serializers.SerializerMethodField()
+    payout_failed_at = serializers.SerializerMethodField()
+    payout_stripe_transfer_id = serializers.SerializerMethodField()
     payout_failure_reason = serializers.SerializerMethodField()
 
     allow_overlap = serializers.BooleanField(write_only=True, required=False, default=False)
@@ -236,7 +240,11 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "payout_status",
             "payout_eligible",
             "payout_ready",
+            "payout_eligible_at",
+            "payout_ready_for_payout_at",
             "payout_paid_at",
+            "payout_failed_at",
+            "payout_stripe_transfer_id",
             "payout_failure_reason",
         )
 
@@ -617,7 +625,11 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "payout_status": "not_eligible",
             "payout_eligible": False,
             "payout_ready": False,
+            "payout_eligible_at": None,
+            "payout_ready_for_payout_at": None,
             "payout_paid_at": None,
+            "payout_failed_at": None,
+            "payout_stripe_transfer_id": "",
             "payout_failure_reason": "",
         }
 
@@ -640,6 +652,22 @@ class MilestoneSerializer(serializers.ModelSerializer):
     def get_payout_paid_at(self, obj: Milestone):
         payload = self._get_payout_payload(obj)
         return None if payload is None else payload.get("payout_paid_at")
+
+    def get_payout_eligible_at(self, obj: Milestone):
+        payload = self._get_payout_payload(obj)
+        return None if payload is None else payload.get("payout_eligible_at")
+
+    def get_payout_ready_for_payout_at(self, obj: Milestone):
+        payload = self._get_payout_payload(obj)
+        return None if payload is None else payload.get("payout_ready_for_payout_at")
+
+    def get_payout_failed_at(self, obj: Milestone):
+        payload = self._get_payout_payload(obj)
+        return None if payload is None else payload.get("payout_failed_at")
+
+    def get_payout_stripe_transfer_id(self, obj: Milestone) -> str:
+        payload = self._get_payout_payload(obj)
+        return "" if payload is None else payload.get("payout_stripe_transfer_id") or ""
 
     def get_payout_failure_reason(self, obj: Milestone) -> str:
         payload = self._get_payout_payload(obj)
@@ -864,7 +892,11 @@ class MilestoneSerializer(serializers.ModelSerializer):
         data["payout_status"] = self.get_payout_status(instance)
         data["payout_eligible"] = self.get_payout_eligible(instance)
         data["payout_ready"] = self.get_payout_ready(instance)
+        data["payout_eligible_at"] = self.get_payout_eligible_at(instance)
+        data["payout_ready_for_payout_at"] = self.get_payout_ready_for_payout_at(instance)
         data["payout_paid_at"] = self.get_payout_paid_at(instance)
+        data["payout_failed_at"] = self.get_payout_failed_at(instance)
+        data["payout_stripe_transfer_id"] = self.get_payout_stripe_transfer_id(instance)
         data["payout_failure_reason"] = self.get_payout_failure_reason(instance)
 
         return data

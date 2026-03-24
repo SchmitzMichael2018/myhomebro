@@ -132,6 +132,8 @@ from .views.subcontractor_work import (
 )
 from .views.subcontractor_payouts import (
     ExecuteMilestonePayoutView,
+    ResetMilestonePayoutView,
+    RetryMilestonePayoutView,
     SubcontractorPayoutAccountManageView,
     SubcontractorPayoutAccountStartView,
     SubcontractorPayoutAccountStatusView,
@@ -386,6 +388,8 @@ urlpatterns = [
     path("milestones/<int:milestone_id>/approve-work/", approve_work_submission),
     path("milestones/<int:milestone_id>/send-back-work/", send_back_work_submission),
     path("milestones/<int:milestone_id>/execute-subcontractor-payout/", ExecuteMilestonePayoutView.as_view()),
+    path("milestones/<int:milestone_id>/retry-subcontractor-payout/", RetryMilestonePayoutView.as_view()),
+    path("milestones/<int:milestone_id>/reset-subcontractor-payout/", ResetMilestonePayoutView.as_view()),
     path("employee/milestones/<int:milestone_id>/", milestone_detail),
     path("employee/milestones/<int:milestone_id>/comments/", add_comment),
     path("employee/milestones/<int:milestone_id>/files/", upload_file),
