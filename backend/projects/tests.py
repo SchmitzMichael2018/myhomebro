@@ -36,6 +36,7 @@ from projects.models_subcontractor import (
 )
 from projects.models_dispute import Dispute
 from projects.services.milestone_payouts import sync_milestone_payout
+from payments.models import ConnectedAccount
 
 
 class AgreementMilestoneAIRouteTests(TestCase):
@@ -2026,6 +2027,277 @@ class MilestonePayoutFoundationTests(TestCase):
         self.assertEqual(payload["payout_status"], "eligible")
         self.assertTrue(payload["payout_eligible"])
         self.assertFalse(payload["payout_ready"])
+
+
+@override_settings(
+    STRIPE_ENABLED=True,
+    STRIPE_SECRET_KEY="sk_test_subcontractor",
+    FRONTEND_URL="http://localhost:4173",
+)
+class SubcontractorStripePayoutExecutionTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="stripe-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Stripe Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Stripe Homeowner",
+            email="stripe-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Stripe Subcontractor Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Agreement for subcontractor payouts",
+        )
+
+        self.subcontractor_user = user_model.objects.create_user(
+            email="stripe-sub@example.com",
+            password="testpass123",
+        )
+        self.subcontractor_invitation = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="stripe-sub@example.com",
+            invite_name="Stripe Sub",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=self.subcontractor_user,
+            accepted_at=timezone.now(),
+        )
+
+        self.internal_user = user_model.objects.create_user(
+            email="stripe-internal@example.com",
+            password="testpass123",
+        )
+        self.internal_subaccount = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=self.internal_user,
+            display_name="Internal Milestone Worker",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_MILESTONES,
+        )
+
+        self.milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Finish Work",
+            description="Complete final subcontractor work",
+            amount="2400.00",
+            completed=True,
+            completed_at=timezone.now(),
+            assigned_subcontractor_invitation=self.subcontractor_invitation,
+            subcontractor_completion_status=SubcontractorCompletionStatus.APPROVED,
+            subcontractor_marked_complete_at=timezone.now(),
+            subcontractor_marked_complete_by=self.subcontractor_user,
+            subcontractor_reviewed_at=timezone.now(),
+            subcontractor_reviewed_by=self.contractor_user,
+        )
+        self.invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=self.milestone.amount,
+            status=InvoiceStatus.PAID,
+            approved_at=timezone.now(),
+            escrow_released=True,
+            escrow_released_at=timezone.now(),
+            milestone_id_snapshot=self.milestone.id,
+            milestone_title_snapshot=self.milestone.title,
+        )
+        self.milestone.is_invoiced = True
+        self.milestone.invoice = self.invoice
+        self.milestone.save(update_fields=["is_invoiced", "invoice"])
+        self.payout = sync_milestone_payout(self.milestone.id)
+        self.client = APIClient()
+
+    def test_subcontractor_can_start_stripe_onboarding(self):
+        self.client.force_authenticate(user=self.subcontractor_user)
+        with patch(
+            "projects.services.subcontractor_payout_accounts.stripe.Account.create",
+            return_value={
+                "id": "acct_sub_123",
+                "charges_enabled": False,
+                "payouts_enabled": False,
+                "details_submitted": False,
+            },
+        ), patch(
+            "projects.services.subcontractor_payout_accounts.stripe.AccountLink.create",
+            return_value={"url": "https://connect.stripe.test/onboarding/sub"},
+        ):
+            response = self.client.post("/api/projects/subcontractor/payout-account/start/", {}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["url"], "https://connect.stripe.test/onboarding/sub")
+        connected = ConnectedAccount.objects.get(user=self.subcontractor_user)
+        self.assertEqual(connected.stripe_account_id, "acct_sub_123")
+
+    def test_internal_team_member_cannot_onboard_for_milestone_payout(self):
+        self.client.force_authenticate(user=self.internal_user)
+        response = self.client.post("/api/projects/subcontractor/payout-account/start/", {}, format="json")
+        self.assertEqual(response.status_code, 403)
+
+    def test_payout_execution_succeeds_only_for_ready_subcontractor_payouts(self):
+        ConnectedAccount.objects.create(
+            user=self.subcontractor_user,
+            stripe_account_id="acct_sub_ready",
+            payouts_enabled=True,
+            details_submitted=True,
+        )
+        self.client.force_authenticate(user=self.contractor_user)
+        with patch(
+            "projects.services.milestone_payout_execution.stripe.Transfer.create",
+            return_value={"id": "tr_sub_123"},
+        ):
+            response = self.client.post(
+                f"/api/projects/milestones/{self.milestone.id}/execute-subcontractor-payout/",
+                {},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.payout.refresh_from_db()
+        self.assertEqual(self.payout.status, MilestonePayoutStatus.PAID)
+        self.assertEqual(self.payout.stripe_transfer_id, "tr_sub_123")
+        self.assertIsNotNone(self.payout.paid_at)
+
+    def test_payout_execution_is_denied_for_internal_workers(self):
+        internal_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=2,
+            title="Internal Assignment",
+            description="Internal team should never pay out",
+            amount="900.00",
+            completed=True,
+            completed_at=timezone.now(),
+            subcontractor_completion_status=SubcontractorCompletionStatus.APPROVED,
+            subcontractor_marked_complete_at=timezone.now(),
+            subcontractor_marked_complete_by=self.internal_user,
+            subcontractor_reviewed_at=timezone.now(),
+            subcontractor_reviewed_by=self.contractor_user,
+        )
+        MilestoneAssignment.objects.create(
+            milestone=internal_milestone,
+            subaccount=self.internal_subaccount,
+        )
+        internal_invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=internal_milestone.amount,
+            status=InvoiceStatus.PAID,
+            approved_at=timezone.now(),
+            escrow_released=True,
+            escrow_released_at=timezone.now(),
+            milestone_id_snapshot=internal_milestone.id,
+            milestone_title_snapshot=internal_milestone.title,
+        )
+        internal_milestone.is_invoiced = True
+        internal_milestone.invoice = internal_invoice
+        internal_milestone.save(update_fields=["is_invoiced", "invoice"])
+        bogus_payout = MilestonePayout.objects.create(
+            milestone=internal_milestone,
+            subcontractor_user=self.subcontractor_user,
+            amount_cents=90000,
+            status=MilestonePayoutStatus.READY_FOR_PAYOUT,
+        )
+
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.post(
+            f"/api/projects/milestones/{internal_milestone.id}/execute-subcontractor-payout/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        bogus_payout.refresh_from_db()
+        self.assertEqual(bogus_payout.status, MilestonePayoutStatus.READY_FOR_PAYOUT)
+
+    def test_payout_execution_is_denied_for_non_ready_payouts(self):
+        self.payout.status = MilestonePayoutStatus.ELIGIBLE
+        self.payout.ready_for_payout_at = None
+        self.payout.save(update_fields=["status", "ready_for_payout_at"])
+
+        ConnectedAccount.objects.create(
+            user=self.subcontractor_user,
+            stripe_account_id="acct_sub_ready",
+            payouts_enabled=True,
+            details_submitted=True,
+        )
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/execute-subcontractor-payout/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.payout.refresh_from_db()
+        self.assertEqual(self.payout.status, MilestonePayoutStatus.ELIGIBLE)
+
+    def test_duplicate_payout_execution_is_prevented(self):
+        ConnectedAccount.objects.create(
+            user=self.subcontractor_user,
+            stripe_account_id="acct_sub_ready",
+            payouts_enabled=True,
+            details_submitted=True,
+        )
+        self.client.force_authenticate(user=self.contractor_user)
+        with patch(
+            "projects.services.milestone_payout_execution.stripe.Transfer.create",
+            return_value={"id": "tr_sub_once"},
+        ):
+            first = self.client.post(
+                f"/api/projects/milestones/{self.milestone.id}/execute-subcontractor-payout/",
+                {},
+                format="json",
+            )
+
+        second = self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/execute-subcontractor-payout/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 400)
+
+    def test_payout_failure_persists_failed_status_and_reason(self):
+        ConnectedAccount.objects.create(
+            user=self.subcontractor_user,
+            stripe_account_id="acct_sub_ready",
+            payouts_enabled=True,
+            details_submitted=True,
+        )
+        self.client.force_authenticate(user=self.contractor_user)
+        with patch(
+            "projects.services.milestone_payout_execution.stripe.Transfer.create",
+            side_effect=Exception("transfer failed"),
+        ):
+            response = self.client.post(
+                f"/api/projects/milestones/{self.milestone.id}/execute-subcontractor-payout/",
+                {},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.payout.refresh_from_db()
+        self.assertEqual(self.payout.status, MilestonePayoutStatus.FAILED)
+        self.assertIn("transfer failed", self.payout.failure_reason)
+        self.assertIsNotNone(self.payout.failed_at)
 
 
 class ReviewerQueueTests(TestCase):

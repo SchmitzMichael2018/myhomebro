@@ -130,6 +130,12 @@ from .views.subcontractor_work import (
     subcontractor_submit_completion,
     subcontractor_request_review,
 )
+from .views.subcontractor_payouts import (
+    ExecuteMilestonePayoutView,
+    SubcontractorPayoutAccountManageView,
+    SubcontractorPayoutAccountStartView,
+    SubcontractorPayoutAccountStatusView,
+)
 from .views.milestone_workflow import (
     approve_work_submission,
     reviewer_queue,
@@ -352,6 +358,9 @@ urlpatterns = [
     path("employee/profile/", EmployeeMeProfileView.as_view()),
     path("employee/milestones/", my_milestones),
     path("subcontractor/milestones/my-assigned/", my_assigned_subcontractor_work),
+    path("subcontractor/payout-account/status/", SubcontractorPayoutAccountStatusView.as_view()),
+    path("subcontractor/payout-account/start/", SubcontractorPayoutAccountStartView.as_view()),
+    path("subcontractor/payout-account/manage/", SubcontractorPayoutAccountManageView.as_view()),
     path(
         "subcontractor/milestones/<int:milestone_id>/",
         subcontractor_milestone_detail,
@@ -376,6 +385,7 @@ urlpatterns = [
     path("milestones/<int:milestone_id>/submit-work/", submit_work_for_review),
     path("milestones/<int:milestone_id>/approve-work/", approve_work_submission),
     path("milestones/<int:milestone_id>/send-back-work/", send_back_work_submission),
+    path("milestones/<int:milestone_id>/execute-subcontractor-payout/", ExecuteMilestonePayoutView.as_view()),
     path("employee/milestones/<int:milestone_id>/", milestone_detail),
     path("employee/milestones/<int:milestone_id>/comments/", add_comment),
     path("employee/milestones/<int:milestone_id>/files/", upload_file),

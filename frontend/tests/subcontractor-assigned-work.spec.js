@@ -22,6 +22,32 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
     });
   });
 
+  await page.route('**/api/projects/subcontractor/payout-account/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        eligible_role: true,
+        connected: true,
+        account_linked: true,
+        onboarding_status: 'ready',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/subcontractor/payout-account/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        eligible_role: true,
+        connected: true,
+        account_linked: true,
+        onboarding_status: 'ready',
+      }),
+    });
+  });
+
   await page.route('**/api/projects/dashboard/operations/', async (route) => {
     await route.fulfill({
       status: 200,
@@ -110,11 +136,29 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
     });
   });
 
+  await page.route('**/api/projects/subcontractor/payout-account/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        eligible_role: true,
+        connected: false,
+        account_linked: true,
+        onboarding_status: 'onboarding_incomplete',
+      }),
+    });
+  });
+
   await page.goto('/app/subcontractor/assigned-work', {
     waitUntil: 'domcontentloaded',
   });
 
   await expect(page.getByTestId('subcontractor-assigned-work-title')).toBeVisible();
+  await expect(page.getByTestId('subcontractor-payout-account-status')).toContainText(
+    'Onboarding incomplete'
+  );
+  await expect(page.getByTestId('subcontractor-payout-account-start')).toBeVisible();
+  await expect(page.getByTestId('subcontractor-payout-account-manage')).toBeVisible();
   await expect(page.getByTestId('assigned-work-group-321')).toContainText(
     'Kitchen Remodel Agreement'
   );
@@ -164,6 +208,19 @@ test('subcontractor assigned work supports comments and file upload for assigned
         email: 'subcontractor@example.com',
         type: 'subcontractor',
         role: 'subcontractor',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/subcontractor/payout-account/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        eligible_role: true,
+        connected: true,
+        account_linked: true,
+        onboarding_status: 'ready',
       }),
     });
   });
@@ -362,6 +419,19 @@ test('subcontractor assigned work can request contractor review for an assigned 
         email: 'subcontractor@example.com',
         type: 'subcontractor',
         role: 'subcontractor',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/subcontractor/payout-account/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        eligible_role: true,
+        connected: true,
+        account_linked: true,
+        onboarding_status: 'ready',
       }),
     });
   });

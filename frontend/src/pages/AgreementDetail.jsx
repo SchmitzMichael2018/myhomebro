@@ -248,6 +248,7 @@ export default function AgreementDetail() {
   const [editingWarrantyId, setEditingWarrantyId] = useState(null);
   const [completionResponseNotes, setCompletionResponseNotes] = useState({});
   const [completionDecisionBusy, setCompletionDecisionBusy] = useState({});
+  const [payoutDecisionBusy, setPayoutDecisionBusy] = useState({});
   const [warrantyForm, setWarrantyForm] = useState({
     title: "",
     coverage_details: "",
@@ -736,6 +737,31 @@ export default function AgreementDetail() {
       );
     } finally {
       setCompletionDecisionBusy((prev) => ({ ...prev, [milestoneId]: false }));
+    }
+  };
+
+  const executeMilestonePayout = async (milestoneId) => {
+    try {
+      setPayoutDecisionBusy((prev) => ({ ...prev, [milestoneId]: true }));
+      const { data } = await api.post(
+        `/projects/milestones/${milestoneId}/execute-subcontractor-payout/`,
+        {}
+      );
+      setAgreement((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          milestones: (prev.milestones || []).map((milestone) =>
+            milestone.id === milestoneId ? { ...milestone, ...data } : milestone
+          ),
+        };
+      });
+      toast.success("Subcontractor payout executed.");
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || "Failed to execute subcontractor payout.");
+    } finally {
+      setPayoutDecisionBusy((prev) => ({ ...prev, [milestoneId]: false }));
     }
   };
 
@@ -1608,6 +1634,13 @@ export default function AgreementDetail() {
                     </div>
                   ) : null}
 
+                  {isContractor && m.payout_failure_reason ? (
+                    <div className="mt-1 text-sm text-rose-700 whitespace-pre-wrap">
+                      <span className="font-semibold">Payout failure:</span>{" "}
+                      {m.payout_failure_reason}
+                    </div>
+                  ) : null}
+
                   {isContractor && (
                     <div className="mt-3">
                       <AssignSubcontractorInline
@@ -1686,6 +1719,25 @@ export default function AgreementDetail() {
                           </button>
                         </div>
                       </div>
+                      {m.payout_status === "ready_for_payout" ? (
+                        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                          <div className="text-sm font-semibold text-emerald-900">
+                            Subcontractor payout is ready.
+                          </div>
+                          <div className="mt-1 text-sm text-emerald-800">
+                            Amount: {m.payout_amount ? formatMoney(m.payout_amount) : "—"}
+                          </div>
+                          <button
+                            type="button"
+                            data-testid={`milestone-payout-execute-${m.id}`}
+                            onClick={() => executeMilestonePayout(m.id)}
+                            disabled={payoutDecisionBusy[m.id]}
+                            className="mt-3 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                          >
+                            {payoutDecisionBusy[m.id] ? "Processing..." : "Pay Subcontractor"}
+                          </button>
+                        </div>
+                      ) : null}
                     </div>
                   )}
                 </div>

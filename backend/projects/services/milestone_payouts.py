@@ -189,4 +189,6 @@ def serialize_payout_for_milestone(milestone: Milestone) -> dict | None:
             MilestonePayoutStatus.READY_FOR_PAYOUT,
             MilestonePayoutStatus.PAID,
         },
+        "payout_paid_at": payout.paid_at,
+        "payout_failure_reason": payout.failure_reason or "",
     }
