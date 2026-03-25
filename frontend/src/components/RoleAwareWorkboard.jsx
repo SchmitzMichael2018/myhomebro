@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import api from "../api";
 
 const TASK_SECTION_CAP = 5;
+const ID_SEPARATOR = "\u00b7";
 
 const TASK_SECTION_CONFIG = [
   { key: "needs_attention", title: "Needs Attention", testId: "role-workboard-needs-attention" },
@@ -130,19 +131,19 @@ function flattenTaskItems(payload) {
 
 function summarizeAgreementGroup(sectionKey, totalCount, overdueCount) {
   if (sectionKey === "needs_attention") {
-    return `${overdueCount} overdue`;
+    return `${overdueCount} overdue ${pluralize(overdueCount, "milestone")}`;
   }
   if (sectionKey === "today") {
-    return `${totalCount} ${pluralize(totalCount, "task")} for today`;
+    return `${totalCount} ${pluralize(totalCount, "milestone")} due today`;
   }
   if (sectionKey === "tomorrow") {
-    return `${totalCount} ${pluralize(totalCount, "task")} for tomorrow`;
+    return `${totalCount} ${pluralize(totalCount, "milestone")} due tomorrow`;
   }
-  return `${totalCount} ${pluralize(totalCount, "task")} later this week`;
+  return `${totalCount} ${pluralize(totalCount, "milestone")} due later this week`;
 }
 
 function formatAgreementIdentity(agreementId, summary) {
-  return `#${agreementId} · ${summary}`;
+  return `Agreement #${agreementId} ${ID_SEPARATOR} ${summary}`;
 }
 
 function buildAgreementRows(payload) {
@@ -209,9 +210,7 @@ function buildAgreementRows(payload) {
         agreementId,
         summarizeAgreementGroup(selectedSection, sortedItems.length, overdueCount)
       ),
-      group_detail: earliestDate
-        ? `Earliest: ${formatDateShort(earliestDate)}`
-        : "",
+      group_detail: earliestDate ? `Earliest: ${formatDateShort(earliestDate)}` : "",
       actions: agreementAction ? [agreementAction] : lead.actions || [],
       grouped_items: sortedItems,
       grouped_count: sortedItems.length,
@@ -240,67 +239,76 @@ function buildTaskSections(payload) {
   })).filter((section) => section.items.length > 0);
 }
 
+function buildSingleRowMeta(item) {
+  if (item.completion_date) return `Due: ${formatDateShort(item.completion_date)}`;
+  if (item.start_date) return `Starts: ${formatDateShort(item.start_date)}`;
+  if (item.work_submitted_at) return `Submitted: ${formatDateShort(item.work_submitted_at)}`;
+  if (item.occurred_at) return `Updated: ${formatDateShort(item.occurred_at)}`;
+  return "";
+}
+
 function ItemCard({ item, onAction }) {
   const isGroup = item.row_type === "group";
+  const isOverdue = item.task_section === "needs_attention";
+  const cardClassName = isOverdue
+    ? "rounded-lg border border-amber-200 bg-amber-50/30 px-3 py-2"
+    : "rounded-lg border border-slate-200 bg-white px-3 py-2";
+  const summaryLine = item.identity_line || item.subtitle;
+  const tertiaryLine = isGroup ? item.group_detail : buildSingleRowMeta(item);
 
   return (
-    <div
-      data-testid={`workboard-item-${item.id}`}
-      className="rounded-xl border border-slate-200 bg-white px-4 py-3"
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div data-testid={`workboard-item-${item.id}`} className={cardClassName}>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold text-slate-900">{item.title}</div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <div className="min-w-0 text-[14px] font-semibold leading-5 text-slate-900 sm:text-[15px]">
+              {item.title}
+            </div>
+            {isOverdue ? (
+              <span className="inline-flex rounded-full border border-amber-200 bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                Overdue
+              </span>
+            ) : null}
+          </div>
           <div
-            className="mt-1 text-sm text-slate-600"
+            className="mt-0.5 text-[13px] leading-4 text-slate-600 sm:text-sm"
             data-testid={item.agreement_id ? `workboard-agreement-id-${item.id}` : undefined}
           >
-            {item.identity_line || item.subtitle}
+            {summaryLine}
           </div>
-          {isGroup ? (
-            item.group_detail ? (
-              <div className="mt-2 text-xs text-slate-500">{item.group_detail}</div>
-            ) : null
-          ) : (
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-              {item.milestone_title ? <span>Milestone: {item.milestone_title}</span> : null}
-              {item.assigned_worker_display ? <span>Worker: {item.assigned_worker_display}</span> : null}
-              {item.reviewer_display ? <span>Reviewer: {item.reviewer_display}</span> : null}
-              {item.work_submitted_at ? <span>Submitted: {formatDateTimeShort(item.work_submitted_at)}</span> : null}
-              {item.completion_date ? <span>Due: {formatDateTimeShort(item.completion_date)}</span> : null}
-              {item.start_date ? <span>Start: {formatDateTimeShort(item.start_date)}</span> : null}
-              {item.occurred_at ? <span>Activity: {formatDateTimeShort(item.occurred_at)}</span> : null}
-            </div>
-          )}
+          {tertiaryLine ? (
+            <div className="mt-0.5 text-[11px] leading-4 text-slate-400">{tertiaryLine}</div>
+          ) : null}
           {item.work_submission_note ? (
-            <div className="mt-2 text-sm text-slate-700">Note: {item.work_submission_note}</div>
+            <div className="mt-1 text-xs leading-4 text-slate-600">Note: {item.work_submission_note}</div>
           ) : null}
           {item.review_response_note ? (
-            <div className="mt-2 text-sm text-amber-700">
+            <div className="mt-1 text-xs leading-4 text-amber-700">
               Response: {item.review_response_note}
             </div>
           ) : null}
         </div>
-        {item.status ? (
-          <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-700">
-            {String(item.status).replaceAll("_", " ")}
-          </span>
+        {(item.actions || []).length ? (
+          <div className="flex shrink-0 flex-wrap gap-1.5 sm:justify-end">
+            {(item.actions || []).map((action, idx) => (
+              <button
+                key={`${item.id}-${idx}`}
+                type="button"
+                data-testid={`workboard-action-${item.id}-${idx}`}
+                onClick={() => onAction(action)}
+                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 sm:min-w-[108px]"
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
         ) : null}
       </div>
 
-      {(item.actions || []).length ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {(item.actions || []).map((action, idx) => (
-            <button
-              key={`${item.id}-${idx}`}
-              type="button"
-              data-testid={`workboard-action-${item.id}-${idx}`}
-              onClick={() => onAction(action)}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-            >
-              {action.label}
-            </button>
-          ))}
+      {!isGroup && (item.assigned_worker_display || item.reviewer_display) ? (
+        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] leading-4 text-slate-400">
+          {item.assigned_worker_display ? <span>Worker: {item.assigned_worker_display}</span> : null}
+          {item.reviewer_display ? <span>Reviewer: {item.reviewer_display}</span> : null}
         </div>
       ) : null}
     </div>
@@ -316,8 +324,8 @@ function Section({ title, testId, items, expanded, onToggleExpanded, onAction })
       <div className="mhb-kicker" style={{ marginTop: 18 }}>
         {title}
       </div>
-      <div className="mhb-glass" data-testid={testId} style={{ padding: 12 }}>
-        <div className="space-y-3">
+      <div className="mhb-glass" data-testid={testId} style={{ padding: 10 }}>
+        <div className="space-y-2">
           {visibleItems.map((item) => (
             <ItemCard key={item.id} item={item} onAction={onAction} />
           ))}
@@ -326,7 +334,7 @@ function Section({ title, testId, items, expanded, onToggleExpanded, onAction })
               type="button"
               data-testid={`${testId}-view-all`}
               onClick={onToggleExpanded}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
             >
               {expanded ? "Show less" : `View all (${items.length})`}
             </button>
@@ -358,7 +366,7 @@ function RecentActivitySection({ items, emptyText, onAction }) {
       <div
         className="mhb-glass"
         data-testid="role-workboard-recent-activity"
-        style={{ padding: 12 }}
+        style={{ padding: 10 }}
       >
         {items.length === 0 ? (
           <div
@@ -368,7 +376,7 @@ function RecentActivitySection({ items, emptyText, onAction }) {
             {emptyText}
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {items.map((item) => (
               <ItemCard key={item.id} item={item} onAction={onAction} />
             ))}
