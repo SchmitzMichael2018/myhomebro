@@ -135,24 +135,30 @@ function summarizeAgreementGroup(sectionKey, totalCount, priorityCount) {
     if (priorityCount === totalCount) {
       return `${totalCount} overdue ${pluralize(totalCount, "milestone")}`;
     }
-    return `${totalCount} ${pluralize(totalCount, "milestone")} · ${priorityCount} overdue`;
+    return `${totalCount} ${pluralize(totalCount, "milestone")} - ${priorityCount} overdue`;
   }
   if (sectionKey === "today") {
     if (priorityCount === totalCount) {
       return `${totalCount} ${pluralize(totalCount, "task")} for today`;
     }
-    return `${totalCount} ${pluralize(totalCount, "milestone")} · ${priorityCount} for today`;
+    return `${totalCount} ${pluralize(totalCount, "milestone")} - ${priorityCount} for today`;
   }
   if (sectionKey === "tomorrow") {
     if (priorityCount === totalCount) {
       return `${totalCount} ${pluralize(totalCount, "task")} for tomorrow`;
     }
-    return `${totalCount} ${pluralize(totalCount, "milestone")} · ${priorityCount} for tomorrow`;
+    return `${totalCount} ${pluralize(totalCount, "milestone")} - ${priorityCount} for tomorrow`;
   }
   if (priorityCount === totalCount) {
     return `${totalCount} ${pluralize(totalCount, "task")} later this week`;
   }
-  return `${totalCount} ${pluralize(totalCount, "milestone")} · ${priorityCount} later this week`;
+  return `${totalCount} ${pluralize(totalCount, "milestone")} - ${priorityCount} later this week`;
+}
+
+function formatAgreementIdentity(agreementId, summary = "") {
+  if (!agreementId) return summary || "";
+  if (!summary) return `#${agreementId}`;
+  return `#${agreementId} - ${summary}`;
 }
 
 function buildAgreementRows(payload) {
@@ -162,7 +168,11 @@ function buildAgreementRows(payload) {
 
   taskItems.forEach((item) => {
     if (!item?.agreement_id) {
-      standaloneRows.push({ ...item, row_type: "single" });
+      standaloneRows.push({
+        ...item,
+        row_type: "single",
+        identity_line: item.subtitle || "",
+      });
       return;
     }
 
@@ -190,6 +200,10 @@ function buildAgreementRows(payload) {
       return {
         ...lead,
         row_type: "single",
+        identity_line: formatAgreementIdentity(
+          agreementId,
+          lead.project_title || lead.agreement_title || lead.subtitle || ""
+        ),
       };
     }
 
@@ -210,11 +224,10 @@ function buildAgreementRows(payload) {
       row_type: "group",
       task_section: selectedSection,
       title: lead.project_title || lead.agreement_title || lead.subtitle || "Agreement",
-      subtitle: `Agreement #${agreementId} · ${summarizeAgreementGroup(
-        selectedSection,
-        sortedItems.length,
-        selectedItems.length
-      )}`,
+      identity_line: formatAgreementIdentity(
+        agreementId,
+        summarizeAgreementGroup(selectedSection, sortedItems.length, selectedItems.length)
+      ),
       group_detail: earliestDate
         ? `Earliest: ${earliestMember.milestone_title || earliestMember.title} on ${formatDateShort(earliestDate)}`
         : "",
@@ -231,9 +244,21 @@ function buildAgreementRows(payload) {
 
 function buildTaskSections(payload) {
   const rows = buildAgreementRows(payload);
+  const rowsByAgreementId = new Map();
+
+  rows.forEach((row) => {
+    if (!row?.agreement_id) {
+      rowsByAgreementId.set(`no-agreement-${row.id}`, row);
+      return;
+    }
+    rowsByAgreementId.set(String(row.agreement_id), row);
+  });
+
+  const dedupedRows = Array.from(rowsByAgreementId.values());
+
   return TASK_SECTION_CONFIG.map((section) => {
     const sectionItems = sortAgreementRows(
-      rows.filter((item) => item.task_section === section.key)
+      dedupedRows.filter((item) => item.task_section === section.key)
     );
     return {
       ...section,
@@ -253,14 +278,18 @@ function ItemCard({ item, onAction }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold text-slate-900">{item.title}</div>
-          <div className="mt-1 text-sm text-slate-600">{item.subtitle}</div>
+          <div
+            className="mt-1 text-sm text-slate-600"
+            data-testid={item.agreement_id ? `workboard-agreement-id-${item.id}` : undefined}
+          >
+            {item.identity_line || item.subtitle}
+          </div>
           {isGroup ? (
             item.group_detail ? (
               <div className="mt-2 text-xs text-slate-500">{item.group_detail}</div>
             ) : null
           ) : (
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-              {item.agreement_id ? <span>Agreement #{item.agreement_id}</span> : null}
               {item.milestone_title ? <span>Milestone: {item.milestone_title}</span> : null}
               {item.assigned_worker_display ? <span>Worker: {item.assigned_worker_display}</span> : null}
               {item.reviewer_display ? <span>Reviewer: {item.reviewer_display}</span> : null}
