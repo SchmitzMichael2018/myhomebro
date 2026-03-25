@@ -1,8 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('contractor dashboard renders operations sections and recent activity actions', async ({
-  page,
-}) => {
+async function mockContractorDashboard(page, operationsPayload) {
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
   });
@@ -50,6 +48,20 @@ test('contractor dashboard renders operations sections and recent activity actio
     });
   });
 
+  await page.route(/\/api\/projects\/milestones\/\d+\/?.*$/, async (route) => {
+    const url = new URL(route.request().url());
+    const id = url.pathname.split('/').filter(Boolean).pop();
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id,
+        title: `Milestone ${id}`,
+        agreement: 321,
+      }),
+    });
+  });
+
   await page.route(/\/api\/projects\/invoices\/?$/, async (route) => {
     await route.fulfill({
       status: 200,
@@ -74,244 +86,270 @@ test('contractor dashboard renders operations sections and recent activity actio
     });
   });
 
-  await page.route('**/api/projects/dashboard/operations/', async (route) => {
+  await page.route(/\/api\/projects\/agreements\/\d+\/?.*$/, async (route) => {
+    const url = new URL(route.request().url());
+    const id = url.pathname.split('/').filter(Boolean).pop();
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        identity_type: 'contractor_owner',
-        today: [
-          {
-            id: 'review_submission-45',
-            item_type: 'review_submission',
-            title: 'Cabinet Install is awaiting your review',
-            subtitle: 'Taylor Sub submitted work for review in Kitchen Remodel.',
-            agreement_id: 321,
-            agreement_title: 'Kitchen Remodel Agreement',
-            project_title: 'Kitchen Remodel',
-            milestone_id: 45,
-            milestone_title: 'Cabinet Install',
-            status: 'pending',
-            assigned_worker_display: 'Taylor Sub',
-            reviewer_display: 'Contractor Owner',
-            work_submitted_at: '2026-03-24T09:00:00Z',
-            work_submission_note: 'Ready for walkthrough.',
-            actions: [
-              { label: 'Review Now', type: 'route', target: '/app/reviewer/queue' },
-              { label: 'Open Agreement', type: 'route', target: '/app/agreements/321' },
-            ],
-          },
-        ],
-        tomorrow: [
-          {
-            id: 'start_tomorrow-46',
-            item_type: 'start_tomorrow',
-            title: 'Paint Prep starts tomorrow',
-            subtitle: 'Kitchen Remodel',
-            agreement_id: 321,
-            agreement_title: 'Kitchen Remodel Agreement',
-            project_title: 'Kitchen Remodel',
-            milestone_id: 46,
-            milestone_title: 'Paint Prep',
-            status: 'pending',
-            assigned_worker_display: 'Taylor Sub',
-            reviewer_display: 'Contractor Owner',
-            completion_date: '2026-03-25T09:00:00Z',
-            actions: [
-              { label: 'View Milestone', type: 'route', target: '/app/milestones/46' },
-            ],
-          },
-        ],
-        this_week: [
-          {
-            id: 'due_this_week-47',
-            item_type: 'due_this_week',
-            title: 'Trim Install is due later this week',
-            subtitle: 'Kitchen Remodel',
-            agreement_id: 321,
-            agreement_title: 'Kitchen Remodel Agreement',
-            project_title: 'Kitchen Remodel',
-            milestone_id: 47,
-            milestone_title: 'Trim Install',
-            status: 'pending',
-            assigned_worker_display: 'Taylor Sub',
-            reviewer_display: 'Contractor Owner',
-            completion_date: '2026-03-28T09:00:00Z',
-            actions: [
-              { label: 'View Milestone', type: 'route', target: '/app/milestones/47' },
-            ],
-          },
-        ],
-        recent_activity: [
-          {
-            id: 'notification-901',
-            item_type: 'subcontractor_comment',
-            title: 'Subcontractor added a comment',
-            subtitle: 'Taylor Sub added a comment on Paint Prep in Kitchen Remodel.',
-            agreement_id: 321,
-            project_title: 'Kitchen Remodel',
-            milestone_id: 46,
-            milestone_title: 'Paint Prep',
-            occurred_at: '2026-03-24T10:00:00Z',
-            actions: [
-              { label: 'Open Agreement', type: 'route', target: '/app/agreements/321' },
-            ],
-          },
-          {
-            id: 'work_sent_back-48',
-            item_type: 'work_sent_back',
-            title: 'Countertop Scribing was sent back',
-            subtitle: 'Taylor Sub needs changes in Kitchen Remodel.',
-            agreement_id: 321,
-            project_title: 'Kitchen Remodel',
-            milestone_id: 48,
-            milestone_title: 'Countertop Scribing',
-            occurred_at: '2026-03-24T11:00:00Z',
-            review_response_note: 'Please tighten the seam.',
-            actions: [
-              { label: 'View Milestone', type: 'route', target: '/app/milestones/48' },
-            ],
-          },
-        ],
-        empty_states: {
-          today: 'No contractor actions need attention today.',
-          tomorrow: 'Nothing is scheduled for tomorrow yet.',
-          this_week: 'Nothing else is stacked up for later this week.',
-          recent_activity: 'No recent worker activity yet.',
-        },
+        id,
+        title: `Agreement ${id}`,
       }),
     });
   });
 
+  await page.route('**/api/projects/dashboard/operations/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(operationsPayload),
+    });
+  });
+}
+
+function buildTask({
+  id,
+  item_type,
+  title,
+  subtitle = 'Kitchen Remodel',
+  agreement_id = 321,
+  agreement_title = 'Kitchen Remodel Agreement',
+  project_title = 'Kitchen Remodel',
+  milestone_id,
+  milestone_title,
+  completion_date = null,
+  start_date = null,
+  actions = null,
+}) {
+  return {
+    id,
+    item_type,
+    title,
+    subtitle,
+    agreement_id,
+    agreement_title,
+    project_title,
+    milestone_id,
+    milestone_title,
+    status: 'pending',
+    completion_date,
+    start_date,
+    actions:
+      actions || [
+        { label: 'View Milestone', type: 'route', target: `/app/milestones/${milestone_id}` },
+        { label: 'Open Agreement', type: 'route', target: `/app/agreements/${agreement_id}` },
+      ],
+  };
+}
+
+test('contractor dashboard prioritizes grouped tasks and preserves navigation actions', async ({
+  page,
+}) => {
+  await mockContractorDashboard(page, {
+    identity_type: 'contractor_owner',
+    today: [
+      buildTask({
+        id: 'overdue-41',
+        item_type: 'overdue',
+        title: 'Cabinet Install is overdue',
+        milestone_id: 41,
+        milestone_title: 'Cabinet Install',
+        completion_date: '2026-03-20T09:00:00Z',
+      }),
+      buildTask({
+        id: 'overdue-42',
+        item_type: 'overdue',
+        title: 'Countertop Template is overdue',
+        milestone_id: 42,
+        milestone_title: 'Countertop Template',
+        completion_date: '2026-03-22T09:00:00Z',
+      }),
+      buildTask({
+        id: 'due-today-43',
+        item_type: 'due_today',
+        title: 'Paint Prep is due today',
+        milestone_id: 43,
+        milestone_title: 'Paint Prep',
+        completion_date: '2026-03-24T11:00:00Z',
+      }),
+      buildTask({
+        id: 'start-today-44',
+        item_type: 'start_today',
+        title: 'Floor Protection starts today',
+        milestone_id: 44,
+        milestone_title: 'Floor Protection',
+        start_date: '2026-03-24T14:00:00Z',
+      }),
+    ],
+    tomorrow: [
+      buildTask({
+        id: 'due-tomorrow-46',
+        item_type: 'due_tomorrow',
+        title: 'Final Paint is due tomorrow',
+        agreement_id: 654,
+        agreement_title: 'Lake House Agreement',
+        project_title: 'Lake House',
+        subtitle: 'Lake House',
+        milestone_id: 46,
+        milestone_title: 'Final Paint',
+        completion_date: '2026-03-25T09:00:00Z',
+      }),
+    ],
+    this_week: [],
+    recent_activity: [],
+    empty_states: {
+      recent_activity: 'No recent worker activity yet.',
+    },
+  });
+
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
+  await expect(page.getByTestId('role-workboard-needs-attention')).toBeVisible();
   await expect(page.getByTestId('role-workboard-today')).toBeVisible();
   await expect(page.getByTestId('role-workboard-tomorrow')).toBeVisible();
-  await expect(page.getByTestId('role-workboard-this-week')).toBeVisible();
-  await expect(page.getByTestId('role-workboard-recent-activity')).toBeVisible();
+  await expect(page.getByTestId('role-workboard-this-week')).toHaveCount(0);
 
-  await expect(page.getByTestId('workboard-item-review_submission-45')).toContainText(
-    'Cabinet Install is awaiting your review'
+  await expect(page.getByTestId('workboard-item-group-needs_attention-321')).toContainText(
+    'Kitchen Remodel'
   );
-  await expect(page.getByTestId('workboard-item-start_tomorrow-46')).toContainText(
-    'Paint Prep starts tomorrow'
+  await expect(page.getByTestId('workboard-item-group-needs_attention-321')).toContainText(
+    '2 overdue milestones'
   );
-  await expect(page.getByTestId('workboard-item-due_this_week-47')).toContainText(
-    'Trim Install is due later this week'
+  await expect(page.getByTestId('workboard-item-group-today-321')).toContainText(
+    '2 tasks for today'
   );
-  await expect(page.getByTestId('workboard-item-notification-901')).toContainText(
-    'Subcontractor added a comment'
-  );
-  await expect(page.getByTestId('workboard-item-work_sent_back-48')).toContainText(
-    'Please tighten the seam.'
+  await expect(page.getByTestId('workboard-item-group-needs_attention-321')).toContainText(
+    'Earliest: Cabinet Install'
   );
 
-  await expect(page.getByTestId('workboard-action-review_submission-45-0')).toContainText(
-    'Review'
-  );
-  await expect(page.getByTestId('workboard-action-notification-901-0')).toContainText(
-    'Open Agreement'
-  );
+  await page.getByTestId('workboard-action-group-needs_attention-321-0').click();
+  await page.waitForURL('**/app/agreements/321');
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('workboard-action-due-tomorrow-46-0').click();
+  await page.waitForURL('**/app/milestones/46');
 });
 
-test('contractor dashboard operations shows empty states when nothing needs attention', async ({
-  page,
-}) => {
-  await page.addInitScript(() => {
-    window.localStorage.setItem('access', 'playwright-access-token');
-  });
-
-  await page.route('**/api/projects/whoami/', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        id: 7,
-        type: 'contractor',
-        role: 'contractor_owner',
-        email: 'playwright@myhomebro.local',
+test('contractor dashboard caps long sections and expands with view all', async ({ page }) => {
+  await mockContractorDashboard(page, {
+    identity_type: 'contractor_owner',
+    today: [
+      buildTask({
+        id: 'due-today-101',
+        item_type: 'due_today',
+        title: 'Task 1 is due today',
+        agreement_id: 901,
+        agreement_title: 'Agreement 901',
+        project_title: 'Project 901',
+        subtitle: 'Project 901',
+        milestone_id: 101,
+        milestone_title: 'Task 1',
+        completion_date: '2026-03-24T08:00:00Z',
       }),
-    });
-  });
-
-  await page.route('**/api/payments/onboarding/status/', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        onboarding_status: 'complete',
-        connected: true,
+      buildTask({
+        id: 'due-today-102',
+        item_type: 'due_today',
+        title: 'Task 2 is due today',
+        agreement_id: 902,
+        agreement_title: 'Agreement 902',
+        project_title: 'Project 902',
+        subtitle: 'Project 902',
+        milestone_id: 102,
+        milestone_title: 'Task 2',
+        completion_date: '2026-03-24T09:00:00Z',
       }),
-    });
-  });
-
-  await page.route('**/api/projects/contractors/me/**', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        id: 77,
-        created_at: '2026-03-01T10:00:00Z',
+      buildTask({
+        id: 'due-today-103',
+        item_type: 'due_today',
+        title: 'Task 3 is due today',
+        agreement_id: 903,
+        agreement_title: 'Agreement 903',
+        project_title: 'Project 903',
+        subtitle: 'Project 903',
+        milestone_id: 103,
+        milestone_title: 'Task 3',
+        completion_date: '2026-03-24T10:00:00Z',
       }),
-    });
-  });
-
-  await page.route(/\/api\/projects\/milestones\/?$/, async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ results: [] }),
-    });
-  });
-
-  await page.route(/\/api\/projects\/invoices\/?$/, async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ results: [] }),
-    });
-  });
-
-  await page.route(/\/api\/projects\/expense-requests\/?.*$/, async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ results: [] }),
-    });
-  });
-
-  await page.route(/\/api\/projects\/agreements\/?$/, async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ results: [] }),
-    });
-  });
-
-  await page.route('**/api/projects/dashboard/operations/', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        identity_type: 'contractor_owner',
-        today: [],
-        tomorrow: [],
-        this_week: [],
-        recent_activity: [],
-        empty_states: {
-          today: 'No contractor actions need attention today.',
-          tomorrow: 'Nothing is scheduled for tomorrow yet.',
-          this_week: 'Nothing else is stacked up for later this week.',
-          recent_activity: 'No recent worker activity yet.',
-        },
+      buildTask({
+        id: 'due-today-104',
+        item_type: 'due_today',
+        title: 'Task 4 is due today',
+        agreement_id: 904,
+        agreement_title: 'Agreement 904',
+        project_title: 'Project 904',
+        subtitle: 'Project 904',
+        milestone_id: 104,
+        milestone_title: 'Task 4',
+        completion_date: '2026-03-24T11:00:00Z',
       }),
-    });
+      buildTask({
+        id: 'due-today-105',
+        item_type: 'due_today',
+        title: 'Task 5 is due today',
+        agreement_id: 905,
+        agreement_title: 'Agreement 905',
+        project_title: 'Project 905',
+        subtitle: 'Project 905',
+        milestone_id: 105,
+        milestone_title: 'Task 5',
+        completion_date: '2026-03-24T12:00:00Z',
+      }),
+      buildTask({
+        id: 'due-today-106',
+        item_type: 'due_today',
+        title: 'Task 6 is due today',
+        agreement_id: 906,
+        agreement_title: 'Agreement 906',
+        project_title: 'Project 906',
+        subtitle: 'Project 906',
+        milestone_id: 106,
+        milestone_title: 'Task 6',
+        completion_date: '2026-03-24T13:00:00Z',
+      }),
+    ],
+    tomorrow: [],
+    this_week: [],
+    recent_activity: [],
+    empty_states: {
+      recent_activity: 'No recent worker activity yet.',
+    },
   });
 
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByTestId('role-workboard-today-empty')).toBeVisible();
-  await expect(page.getByTestId('role-workboard-tomorrow-empty')).toBeVisible();
-  await expect(page.getByTestId('role-workboard-this-week-empty')).toBeVisible();
+  await expect(page.getByTestId('role-workboard-today-view-all')).toContainText('View all (6)');
+  await expect(page.getByTestId('workboard-item-due-today-101')).toBeVisible();
+  await expect(page.getByTestId('workboard-item-due-today-105')).toBeVisible();
+  await expect(page.getByTestId('workboard-item-due-today-106')).toHaveCount(0);
+
+  await page.getByTestId('role-workboard-today-view-all').click();
+  await expect(page.getByTestId('workboard-item-due-today-106')).toBeVisible();
+  await expect(page.getByTestId('role-workboard-today-view-all')).toContainText('Show less');
+});
+
+test('contractor dashboard hides empty task sections and shows one compact empty state', async ({
+  page,
+}) => {
+  await mockContractorDashboard(page, {
+    identity_type: 'contractor_owner',
+    today: [],
+    tomorrow: [],
+    this_week: [],
+    recent_activity: [],
+    empty_states: {
+      recent_activity: 'No recent worker activity yet.',
+    },
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('role-workboard-empty')).toContainText(
+    'No upcoming tasks right now.'
+  );
+  await expect(page.getByTestId('role-workboard-needs-attention')).toHaveCount(0);
+  await expect(page.getByTestId('role-workboard-today')).toHaveCount(0);
+  await expect(page.getByTestId('role-workboard-tomorrow')).toHaveCount(0);
+  await expect(page.getByTestId('role-workboard-this-week')).toHaveCount(0);
   await expect(page.getByTestId('role-workboard-recent-activity-empty')).toBeVisible();
 });
