@@ -1,5 +1,6 @@
 from __future__ import annotations
 from datetime import timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -3259,6 +3260,39 @@ class ContractorPayoutHistoryTests(TestCase):
         self.assertIn("History Project", body)
         self.assertNotIn("Other Project", body)
 
+    def test_payout_detail_returns_paid_ready_and_failed_context(self):
+        self.client.force_authenticate(user=self.contractor_user)
+
+        paid_response = self.client.get(f"/api/projects/payouts/history/{self.paid_payout.id}/")
+        self.assertEqual(paid_response.status_code, 200)
+        paid_payload = paid_response.json()
+        self.assertEqual(paid_payload["payout_id"], self.paid_payout.id)
+        self.assertEqual(paid_payload["payout_status"], "paid")
+        self.assertEqual(paid_payload["stripe_transfer_id"], "tr_paid_hist")
+        self.assertEqual(paid_payload["effective_at"], paid_payload["paid_at"])
+
+        ready_response = self.client.get(f"/api/projects/payouts/history/{self.ready_payout.id}/")
+        self.assertEqual(ready_response.status_code, 200)
+        ready_payload = ready_response.json()
+        self.assertEqual(ready_payload["payout_status"], "ready_for_payout")
+        self.assertEqual(ready_payload["effective_at"], ready_payload["ready_for_payout_at"])
+
+        failed_response = self.client.get(f"/api/projects/payouts/history/{self.failed_payout.id}/")
+        self.assertEqual(failed_response.status_code, 200)
+        failed_payload = failed_response.json()
+        self.assertEqual(failed_payload["payout_status"], "failed")
+        self.assertEqual(failed_payload["failure_reason"], "Bank rejected transfer")
+        self.assertEqual(failed_payload["effective_at"], failed_payload["failed_at"])
+
+    def test_payout_detail_is_contractor_scoped_and_missing_is_404(self):
+        self.client.force_authenticate(user=self.contractor_user)
+
+        other_response = self.client.get(f"/api/projects/payouts/history/{self.other_payout.id}/")
+        self.assertEqual(other_response.status_code, 404)
+
+        missing_response = self.client.get("/api/projects/payouts/history/999999/")
+        self.assertEqual(missing_response.status_code, 404)
+
 
 class BusinessDashboardExportTests(TestCase):
     def setUp(self):
@@ -3533,3 +3567,237 @@ class BusinessDashboardInsightsTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["insights"], [])
+
+
+class BusinessDashboardChartTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="chart-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Chart Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Chart Homeowner",
+            email="chart-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Chart Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Chart agreement",
+            status=ProjectStatus.IN_PROGRESS,
+            total_cost="4500.00",
+        )
+        self.client = APIClient()
+
+        now = timezone.now()
+        self.revenue_invoice_recent = Invoice.objects.create(
+            agreement=self.agreement,
+            amount="1000.00",
+            status="paid",
+            escrow_released=True,
+            escrow_released_at=now - timezone.timedelta(days=3),
+            platform_fee_cents=10000,
+            payout_cents=85000,
+        )
+        self.revenue_invoice_older = Invoice.objects.create(
+            agreement=self.agreement,
+            amount="500.00",
+            status="paid",
+            escrow_released=True,
+            escrow_released_at=now - timezone.timedelta(days=40),
+            platform_fee_cents=5000,
+            payout_cents=43000,
+        )
+
+        self.ready_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Ready Payout Milestone",
+            amount="800.00",
+            completion_date=timezone.localdate() - timezone.timedelta(days=4),
+            completed=True,
+        )
+        self.failed_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=2,
+            title="Failed Payout Milestone",
+            amount="650.00",
+            completion_date=timezone.localdate() - timezone.timedelta(days=18),
+            completed=True,
+        )
+        self.overdue_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=3,
+            title="Overdue Milestone",
+            amount="400.00",
+            completion_date=timezone.localdate() - timezone.timedelta(days=9),
+            completed=False,
+            subcontractor_completion_status=SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW,
+        )
+
+        self.subcontractor_user = user_model.objects.create_user(
+            email="chart-sub@example.com",
+            password="testpass123",
+        )
+        MilestonePayout.objects.create(
+            milestone=self.ready_milestone,
+            subcontractor_user=self.subcontractor_user,
+            amount_cents=80000,
+            status=MilestonePayoutStatus.READY_FOR_PAYOUT,
+            ready_for_payout_at=now - timezone.timedelta(days=4),
+        )
+        MilestonePayout.objects.create(
+            milestone=self.failed_milestone,
+            subcontractor_user=self.subcontractor_user,
+            amount_cents=65000,
+            status=MilestonePayoutStatus.FAILED,
+            failed_at=now - timezone.timedelta(days=18),
+        )
+
+        self.other_user = user_model.objects.create_user(
+            email="chart-other@example.com",
+            password="testpass123",
+        )
+        self.other_contractor = Contractor.objects.create(
+            user=self.other_user,
+            business_name="Other Chart Owner",
+        )
+        self.other_homeowner = Homeowner.objects.create(
+            created_by=self.other_contractor,
+            full_name="Other Chart Homeowner",
+            email="other-chart-homeowner@example.com",
+        )
+        self.other_project = Project.objects.create(
+            contractor=self.other_contractor,
+            homeowner=self.other_homeowner,
+            title="Other Chart Project",
+        )
+        self.other_agreement = Agreement.objects.create(
+            project=self.other_project,
+            contractor=self.other_contractor,
+            homeowner=self.other_homeowner,
+            description="Other chart agreement",
+            status=ProjectStatus.IN_PROGRESS,
+            total_cost="3200.00",
+        )
+        other_milestone = Milestone.objects.create(
+            agreement=self.other_agreement,
+            order=1,
+            title="Other Overdue",
+            amount="300.00",
+            completion_date=timezone.localdate() - timezone.timedelta(days=6),
+            completed=False,
+        )
+        Invoice.objects.create(
+            agreement=self.other_agreement,
+            amount="999.00",
+            status="paid",
+            escrow_released=True,
+            escrow_released_at=now - timezone.timedelta(days=2),
+            platform_fee_cents=9900,
+            payout_cents=85000,
+        )
+        MilestonePayout.objects.create(
+            milestone=other_milestone,
+            subcontractor_user=self.subcontractor_user,
+            amount_cents=30000,
+            status=MilestonePayoutStatus.FAILED,
+            failed_at=now - timezone.timedelta(days=2),
+        )
+
+    def test_chart_series_are_contractor_scoped(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/business/contractor/summary/?range=30")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        self.assertEqual(payload["bucket"], "day")
+        self.assertEqual(payload["fee_summary"]["platform_fee_total"], "100.00")
+        self.assertEqual(payload["fee_summary"]["estimated_processing_fee_total"], "50.00")
+
+        revenue_total = sum(Decimal(row["revenue"]) for row in payload["revenue_series"])
+        payout_failed_total = sum(Decimal(row["failed_amount"]) for row in payload["payout_series"])
+        payout_ready_total = sum(Decimal(row["ready_amount"]) for row in payload["payout_series"])
+        overdue_total = sum(int(row["overdue_milestones"]) for row in payload["workflow_series"])
+
+        self.assertEqual(revenue_total, Decimal("1000.00"))
+        self.assertEqual(payout_failed_total, Decimal("650.00"))
+        self.assertEqual(payout_ready_total, Decimal("800.00"))
+        self.assertEqual(overdue_total, 1)
+
+    def test_chart_bucketing_changes_with_selected_range(self):
+        self.client.force_authenticate(user=self.contractor_user)
+
+        short_range = self.client.get("/api/projects/business/contractor/summary/?range=30")
+        self.assertEqual(short_range.status_code, 200)
+        self.assertEqual(short_range.json()["bucket"], "day")
+
+        long_range = self.client.get("/api/projects/business/contractor/summary/?range=90")
+        self.assertEqual(long_range.status_code, 200)
+        payload = long_range.json()
+
+        self.assertEqual(payload["bucket"], "week")
+        revenue_total = sum(Decimal(row["revenue"]) for row in payload["revenue_series"])
+        self.assertEqual(revenue_total, Decimal("1500.00"))
+        self.assertTrue(any("-" in row["bucket_label"] for row in payload["revenue_series"]))
+
+    def test_drilldown_is_contractor_scoped_and_bucket_filtered(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        summary = self.client.get("/api/projects/business/contractor/summary/?range=30")
+        self.assertEqual(summary.status_code, 200)
+
+        revenue_bucket = next(
+            row["bucket_start"]
+            for row in summary.json()["revenue_series"]
+            if Decimal(row["revenue"]) == Decimal("1000.00")
+        )
+        revenue_response = self.client.get(
+            f"/api/projects/business/contractor/drilldown/?range=30&chart_type=revenue&bucket_start={revenue_bucket}"
+        )
+        self.assertEqual(revenue_response.status_code, 200)
+        revenue_payload = revenue_response.json()
+        self.assertEqual(revenue_payload["chart_type"], "revenue")
+        self.assertEqual(revenue_payload["record_count"], 1)
+        self.assertEqual(revenue_payload["records"][0]["agreement_title"], "Chart Project")
+        self.assertNotEqual(revenue_payload["records"][0]["agreement_title"], "Other Chart Project")
+        self.assertEqual(revenue_payload["records"][0]["invoice_id"], self.revenue_invoice_recent.id)
+        self.assertEqual(revenue_payload["records"][0]["agreement_id"], self.agreement.id)
+
+        workflow_bucket = next(
+            row["bucket_start"]
+            for row in summary.json()["workflow_series"]
+            if int(row["overdue_milestones"]) == 1
+        )
+        workflow_response = self.client.get(
+            f"/api/projects/business/contractor/drilldown/?range=30&chart_type=workflow&bucket_start={workflow_bucket}"
+        )
+        self.assertEqual(workflow_response.status_code, 200)
+        workflow_payload = workflow_response.json()
+        self.assertEqual(workflow_payload["record_count"], 1)
+        self.assertEqual(workflow_payload["records"][0]["agreement_title"], "Chart Project")
+        self.assertEqual(workflow_payload["records"][0]["milestone_title"], "Overdue Milestone")
+        self.assertEqual(workflow_payload["records"][0]["milestone_id"], self.overdue_milestone.id)
+        self.assertEqual(workflow_payload["records"][0]["agreement_id"], self.agreement.id)
+
+    def test_drilldown_returns_empty_for_bucket_without_records(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get(
+            "/api/projects/business/contractor/drilldown/?range=30&chart_type=workflow&bucket_start=2026-01-01"
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["chart_type"], "workflow")
+        self.assertEqual(payload["record_count"], 0)
+        self.assertEqual(payload["records"], [])

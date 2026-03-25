@@ -1,6 +1,7 @@
 # backend/projects/views/business_dashboard.py
 
 import csv
+from collections import OrderedDict
 from datetime import timedelta, datetime, date
 from decimal import Decimal
 
@@ -8,12 +9,20 @@ from django.http import HttpResponse
 from django.db.models import Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from projects.models import Agreement, Invoice, Contractor, ProjectStatus
+from projects.models import (
+    Agreement,
+    Contractor,
+    Invoice,
+    Milestone,
+    MilestonePayoutStatus,
+    ProjectStatus,
+)
 from projects.services.business_insights import build_business_insights
 from projects.views.payout_history import _apply_history_filters, _history_base_queryset, _serialize_payout_row
 
@@ -51,6 +60,14 @@ def _format_dt(value):
     return value.isoformat() if value else ""
 
 
+def _to_local_dt(value):
+    if value is None:
+        return None
+    if timezone.is_naive(value):
+        return timezone.make_aware(value, timezone.get_current_timezone())
+    return timezone.localtime(value, timezone.get_current_timezone())
+
+
 def _effective_invoice_paid_at(invoice):
     return (
         getattr(invoice, "escrow_released_at", None)
@@ -58,6 +75,311 @@ def _effective_invoice_paid_at(invoice):
         or getattr(invoice, "approved_at", None)
         or getattr(invoice, "created_at", None)
     )
+
+
+def _effective_payout_dt(payout):
+    return payout.paid_at if payout.status == MilestonePayoutStatus.PAID else payout.updated_at
+
+
+def _range_bucket_kind(start_dt, end_dt):
+    span_days = max((end_dt.date() - start_dt.date()).days + 1, 1)
+    if span_days <= 45:
+        return "day"
+    if span_days <= 180:
+        return "week"
+    return "month"
+
+
+def _bucket_start_for_dt(value, bucket_kind):
+    local_dt = _to_local_dt(value)
+    if local_dt is None:
+        return None
+    if bucket_kind == "day":
+        return local_dt.date()
+    if bucket_kind == "week":
+        return (local_dt - timedelta(days=local_dt.weekday())).date()
+    return local_dt.date().replace(day=1)
+
+
+def _bucket_label(bucket_start, bucket_kind):
+    if bucket_kind == "day":
+        return f"{bucket_start.strftime('%b')} {bucket_start.day}"
+    if bucket_kind == "week":
+        bucket_end = bucket_start + timedelta(days=6)
+        if bucket_start.month == bucket_end.month:
+            return f"{bucket_start.strftime('%b')} {bucket_start.day}-{bucket_end.day}"
+        return f"{bucket_start.strftime('%b')} {bucket_start.day}-{bucket_end.strftime('%b')} {bucket_end.day}"
+    return bucket_start.strftime("%b %Y")
+
+
+def _bucket_range(start_dt, end_dt, bucket_kind):
+    buckets = OrderedDict()
+    cursor = _bucket_start_for_dt(start_dt, bucket_kind)
+    last_bucket = _bucket_start_for_dt(end_dt, bucket_kind)
+
+    while cursor is not None and cursor <= last_bucket:
+        buckets[cursor] = {
+            "bucket_start": cursor.isoformat(),
+            "bucket_label": _bucket_label(cursor, bucket_kind),
+        }
+        if bucket_kind == "day":
+            cursor = cursor + timedelta(days=1)
+        elif bucket_kind == "week":
+            cursor = cursor + timedelta(days=7)
+        else:
+            if cursor.month == 12:
+                cursor = date(cursor.year + 1, 1, 1)
+            else:
+                cursor = date(cursor.year, cursor.month + 1, 1)
+
+    return buckets
+
+
+def _amount_to_cents(value):
+    return int((Decimal(value or 0) * Decimal("100")).quantize(Decimal("1")))
+
+
+def _sum_money_series(rows, key, divisor=Decimal("100")):
+    total = sum(Decimal(row.get(key) or 0) for row in rows)
+    return str((total / divisor).quantize(Decimal("0.01")))
+
+
+def _build_chart_series(contractor, request, start_dt, end_dt):
+    bucket_kind, buckets = _chart_buckets(start_dt, end_dt)
+
+    revenue_buckets = OrderedDict(
+        (
+            bucket_start,
+            {
+                **meta,
+                "revenue": Decimal("0.00"),
+            },
+        )
+        for bucket_start, meta in buckets.items()
+    )
+    fee_buckets = OrderedDict(
+        (
+            bucket_start,
+            {
+                **meta,
+                "platform_fee": Decimal("0.00"),
+                "estimated_processing_fee": Decimal("0.00"),
+                "total_fee": Decimal("0.00"),
+            },
+        )
+        for bucket_start, meta in buckets.items()
+    )
+    payout_buckets = OrderedDict(
+        (
+            bucket_start,
+            {
+                **meta,
+                "paid_amount": Decimal("0.00"),
+                "ready_amount": Decimal("0.00"),
+                "failed_amount": Decimal("0.00"),
+                "paid_count": 0,
+                "ready_count": 0,
+                "failed_count": 0,
+            },
+        )
+        for bucket_start, meta in buckets.items()
+    )
+    workflow_buckets = OrderedDict(
+        (
+            bucket_start,
+            {
+                **meta,
+                "overdue_milestones": 0,
+            },
+        )
+        for bucket_start, meta in buckets.items()
+    )
+
+    for invoice in _paid_invoice_queryset(contractor, start_dt, end_dt):
+        paid_at = _effective_invoice_paid_at(invoice)
+        bucket_start = _bucket_start_for_dt(paid_at, bucket_kind)
+        if bucket_start not in revenue_buckets:
+            continue
+
+        amount = Decimal(invoice.amount or 0)
+        platform_fee = (Decimal(invoice.platform_fee_cents or 0) / Decimal("100")).quantize(Decimal("0.01"))
+        processing_fee = Decimal("0.00")
+        amount_cents = _amount_to_cents(invoice.amount)
+        payout_cents = int(getattr(invoice, "payout_cents", 0) or 0)
+        platform_fee_cents = int(getattr(invoice, "platform_fee_cents", 0) or 0)
+        if payout_cents > 0 and amount_cents > 0:
+            estimated_processing_cents = max(amount_cents - payout_cents - platform_fee_cents, 0)
+            processing_fee = (Decimal(estimated_processing_cents) / Decimal("100")).quantize(Decimal("0.01"))
+
+        revenue_buckets[bucket_start]["revenue"] += amount
+        fee_buckets[bucket_start]["platform_fee"] += platform_fee
+        fee_buckets[bucket_start]["estimated_processing_fee"] += processing_fee
+        fee_buckets[bucket_start]["total_fee"] += platform_fee + processing_fee
+
+    payout_request = request._request
+    payout_qs = _apply_history_filters(_history_base_queryset(contractor), payout_request)
+    filtered_ids = []
+    for payout in payout_qs:
+        effective_dt = _effective_payout_dt(payout)
+        if effective_dt is None:
+            continue
+        lhs = timezone.make_naive(effective_dt) if timezone.is_aware(effective_dt) else effective_dt
+        rhs_from = timezone.make_naive(start_dt) if timezone.is_aware(start_dt) else start_dt
+        rhs_to = timezone.make_naive(end_dt) if timezone.is_aware(end_dt) else end_dt
+        if lhs < rhs_from or lhs > rhs_to:
+            continue
+        filtered_ids.append(payout.id)
+    payout_qs = payout_qs.filter(id__in=filtered_ids)
+
+    for payout in payout_qs:
+        payout_dt = _effective_payout_dt(payout)
+        bucket_start = _bucket_start_for_dt(payout_dt, bucket_kind)
+        if bucket_start not in payout_buckets:
+            continue
+        amount = (Decimal(payout.amount_cents or 0) / Decimal("100")).quantize(Decimal("0.01"))
+        row = payout_buckets[bucket_start]
+        if payout.status == MilestonePayoutStatus.PAID:
+            row["paid_amount"] += amount
+            row["paid_count"] += 1
+        elif payout.status == MilestonePayoutStatus.READY_FOR_PAYOUT:
+            row["ready_amount"] += amount
+            row["ready_count"] += 1
+        elif payout.status == MilestonePayoutStatus.FAILED:
+            row["failed_amount"] += amount
+            row["failed_count"] += 1
+
+    overdue_qs = Milestone.objects.filter(
+        agreement__contractor=contractor,
+        completed=False,
+        completion_date__isnull=False,
+        completion_date__gte=start_dt.date(),
+        completion_date__lte=end_dt.date(),
+        completion_date__lt=timezone.localdate(),
+    )
+    for milestone in overdue_qs:
+        bucket_start = _bucket_start_for_dt(
+            timezone.make_aware(datetime.combine(milestone.completion_date, datetime.min.time())),
+            bucket_kind,
+        )
+        if bucket_start in workflow_buckets:
+            workflow_buckets[bucket_start]["overdue_milestones"] += 1
+
+    def serialize_money_series(rows, keys):
+        result = []
+        for row in rows.values():
+            serialized = dict(row)
+            for key in keys:
+                serialized[key] = str(Decimal(serialized[key]).quantize(Decimal("0.01")))
+            result.append(serialized)
+        return result
+
+    revenue_series = serialize_money_series(revenue_buckets, ["revenue"])
+    fee_series = serialize_money_series(
+        fee_buckets,
+        ["platform_fee", "estimated_processing_fee", "total_fee"],
+    )
+    payout_series = serialize_money_series(
+        payout_buckets,
+        ["paid_amount", "ready_amount", "failed_amount"],
+    )
+    workflow_series = list(workflow_buckets.values())
+
+    return {
+        "bucket": bucket_kind,
+        "revenue_series": revenue_series,
+        "fee_series": fee_series,
+        "payout_series": payout_series,
+        "workflow_series": workflow_series,
+        "fee_summary": {
+            "platform_fee_total": _sum_money_series(fee_series, "platform_fee", Decimal("1")),
+            "estimated_processing_fee_total": _sum_money_series(
+                fee_series, "estimated_processing_fee", Decimal("1")
+            ),
+            "total_fee": _sum_money_series(fee_series, "total_fee", Decimal("1")),
+        },
+        "workflow_summary": {
+            "metric": "overdue_milestones",
+            "label": "Overdue Milestones",
+        },
+    }
+
+
+def _chart_buckets(start_dt, end_dt):
+    bucket_kind = _range_bucket_kind(start_dt, end_dt)
+    return bucket_kind, _bucket_range(start_dt, end_dt, bucket_kind)
+
+
+def _parse_bucket_start(value):
+    parsed = parse_date(str(value or "").strip())
+    return parsed
+
+
+def _serialize_revenue_drilldown_row(invoice):
+    agreement = getattr(invoice, "agreement", None)
+    project = getattr(agreement, "project", None)
+    return {
+        "id": invoice.id,
+        "invoice_id": invoice.id,
+        "record_type": "invoice",
+        "agreement_id": getattr(agreement, "id", None),
+        "agreement_title": getattr(project, "title", "") or f"Agreement #{getattr(agreement, 'id', '')}".strip(),
+        "invoice_number": invoice.invoice_number,
+        "milestone_title": invoice.milestone_title_snapshot or "",
+        "paid_at": _format_dt(_effective_invoice_paid_at(invoice)),
+        "gross_amount": _format_money(invoice.amount),
+    }
+
+
+def _serialize_fee_drilldown_row(invoice):
+    agreement = getattr(invoice, "agreement", None)
+    project = getattr(agreement, "project", None)
+    amount_cents = _amount_to_cents(invoice.amount)
+    payout_cents = int(getattr(invoice, "payout_cents", 0) or 0)
+    platform_fee_cents = int(getattr(invoice, "platform_fee_cents", 0) or 0)
+    estimated_processing_cents = 0
+    if payout_cents > 0 and amount_cents > 0:
+        estimated_processing_cents = max(amount_cents - payout_cents - platform_fee_cents, 0)
+
+    return {
+        "id": invoice.id,
+        "invoice_id": invoice.id,
+        "record_type": "invoice_fee",
+        "agreement_id": getattr(agreement, "id", None),
+        "agreement_title": getattr(project, "title", "") or f"Agreement #{getattr(agreement, 'id', '')}".strip(),
+        "invoice_number": invoice.invoice_number,
+        "paid_at": _format_dt(_effective_invoice_paid_at(invoice)),
+        "gross_amount": _format_money(invoice.amount),
+        "platform_fee": _format_money(Decimal(platform_fee_cents) / Decimal("100")),
+        "estimated_processing_fee": _format_money(Decimal(estimated_processing_cents) / Decimal("100")),
+    }
+
+
+def _serialize_workflow_drilldown_row(milestone):
+    agreement = getattr(milestone, "agreement", None)
+    project = getattr(agreement, "project", None)
+    return {
+        "id": milestone.id,
+        "milestone_id": milestone.id,
+        "record_type": "overdue_milestone",
+        "agreement_id": getattr(agreement, "id", None),
+        "agreement_title": getattr(project, "title", "") or f"Agreement #{getattr(agreement, 'id', '')}".strip(),
+        "milestone_title": getattr(milestone, "title", "") or "",
+        "completion_date": milestone.completion_date.isoformat() if getattr(milestone, "completion_date", None) else "",
+        "subcontractor_completion_status": getattr(milestone, "subcontractor_completion_status", "") or "",
+        "amount": _format_money(getattr(milestone, "amount", 0)),
+    }
+
+
+def _chart_detail_payload(chart_type, bucket_kind, bucket_start, records):
+    bucket_label = _bucket_label(bucket_start, bucket_kind)
+    return {
+        "chart_type": chart_type,
+        "bucket": bucket_kind,
+        "bucket_start": bucket_start.isoformat(),
+        "bucket_label": bucket_label,
+        "record_count": len(records),
+        "records": records,
+    }
 
 
 def _paid_invoice_queryset(contractor, start_dt, end_dt):
@@ -261,8 +583,90 @@ class BusinessDashboardSummaryAPIView(APIView):
             "by_category": category_rows,
             "insights": build_business_insights(contractor, start_dt, end_dt),
         }
+        payload.update(_build_chart_series(contractor, request, start_dt, end_dt))
 
         return Response(payload)
+
+
+class BusinessDashboardDrilldownAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        contractor = _require_contractor(request)
+        if contractor is None:
+            return Response({"detail": "Contractor profile not found."}, status=400)
+
+        chart_type = str(request.query_params.get("chart_type", "") or "").strip().lower()
+        bucket_start = _parse_bucket_start(request.query_params.get("bucket_start"))
+        if chart_type not in {"revenue", "fees", "payouts", "workflow"}:
+            return Response({"detail": "Invalid chart type."}, status=400)
+        if bucket_start is None:
+            return Response({"detail": "Valid bucket_start is required."}, status=400)
+
+        start_dt, end_dt = _parse_range(request)
+        bucket_kind, buckets = _chart_buckets(start_dt, end_dt)
+        if bucket_start not in buckets:
+            return Response(
+                _chart_detail_payload(chart_type, bucket_kind, bucket_start, []),
+                status=200,
+            )
+
+        if chart_type == "revenue":
+            records = []
+            for invoice in _paid_invoice_queryset(contractor, start_dt, end_dt):
+                invoice_bucket = _bucket_start_for_dt(_effective_invoice_paid_at(invoice), bucket_kind)
+                if invoice_bucket == bucket_start:
+                    records.append(_serialize_revenue_drilldown_row(invoice))
+            return Response(_chart_detail_payload(chart_type, bucket_kind, bucket_start, records))
+
+        if chart_type == "fees":
+            records = []
+            for invoice in _paid_invoice_queryset(contractor, start_dt, end_dt):
+                invoice_bucket = _bucket_start_for_dt(_effective_invoice_paid_at(invoice), bucket_kind)
+                if invoice_bucket == bucket_start:
+                    records.append(_serialize_fee_drilldown_row(invoice))
+            return Response(_chart_detail_payload(chart_type, bucket_kind, bucket_start, records))
+
+        if chart_type == "payouts":
+            payout_request = request._request
+            payout_qs = _apply_history_filters(_history_base_queryset(contractor), payout_request)
+            filtered_ids = []
+            for payout in payout_qs:
+                effective_dt = _effective_payout_dt(payout)
+                if effective_dt is None:
+                    continue
+                lhs = timezone.make_naive(effective_dt) if timezone.is_aware(effective_dt) else effective_dt
+                rhs_from = timezone.make_naive(start_dt) if timezone.is_aware(start_dt) else start_dt
+                rhs_to = timezone.make_naive(end_dt) if timezone.is_aware(end_dt) else end_dt
+                if lhs < rhs_from or lhs > rhs_to:
+                    continue
+                filtered_ids.append(payout.id)
+            payout_qs = payout_qs.filter(id__in=filtered_ids)
+
+            records = []
+            for payout in payout_qs:
+                payout_bucket = _bucket_start_for_dt(_effective_payout_dt(payout), bucket_kind)
+                if payout_bucket == bucket_start:
+                    records.append(_serialize_payout_row(payout))
+            return Response(_chart_detail_payload(chart_type, bucket_kind, bucket_start, records))
+
+        workflow_qs = Milestone.objects.select_related("agreement", "agreement__project").filter(
+            agreement__contractor=contractor,
+            completed=False,
+            completion_date__isnull=False,
+            completion_date__gte=start_dt.date(),
+            completion_date__lte=end_dt.date(),
+            completion_date__lt=timezone.localdate(),
+        ).order_by("completion_date", "id")
+        records = []
+        for milestone in workflow_qs:
+            milestone_bucket = _bucket_start_for_dt(
+                timezone.make_aware(datetime.combine(milestone.completion_date, datetime.min.time())),
+                bucket_kind,
+            )
+            if milestone_bucket == bucket_start:
+                records.append(_serialize_workflow_drilldown_row(milestone))
+        return Response(_chart_detail_payload(chart_type, bucket_kind, bucket_start, records))
 
 
 class BusinessDashboardRevenueExportView(_CSVExportBase):

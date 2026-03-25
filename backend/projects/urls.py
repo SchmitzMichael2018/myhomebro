@@ -115,6 +115,7 @@ from .views.subaccount_schedule import (
 )
 
 from .views.business_dashboard import (
+    BusinessDashboardDrilldownAPIView,
     BusinessDashboardCompletedJobsExportView,
     BusinessDashboardFeesExportView,
     BusinessDashboardPayoutsExportView,
@@ -145,6 +146,7 @@ from .views.subcontractor_payouts import (
     SubcontractorPayoutAccountStatusView,
 )
 from .views.payout_history import (
+    ContractorPayoutDetailView,
     ContractorPayoutHistoryExportView,
     ContractorPayoutHistoryView,
 )
@@ -417,6 +419,11 @@ urlpatterns = [
         name="contractor_business_summary",
     ),
     path(
+        "business/contractor/drilldown/",
+        BusinessDashboardDrilldownAPIView.as_view(),
+        name="contractor_business_drilldown",
+    ),
+    path(
         "business-dashboard/export/revenue/",
         BusinessDashboardRevenueExportView.as_view(),
         name="business_dashboard_export_revenue",
@@ -442,6 +449,7 @@ urlpatterns = [
         name="contractor_operations_dashboard",
     ),
     path("payouts/history/", ContractorPayoutHistoryView.as_view()),
+    path("payouts/history/<int:payout_id>/", ContractorPayoutDetailView.as_view()),
     path("payouts/history/export/", ContractorPayoutHistoryExportView.as_view()),
 
     # -------------------------------------------------

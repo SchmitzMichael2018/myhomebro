@@ -258,6 +258,9 @@ export default function PayoutHistoryPage() {
                       <div className="font-semibold text-slate-900">{row.agreement_title}</div>
                       <div className="mt-1 text-slate-600">{row.milestone_title}</div>
                       <div className="mt-1 flex flex-wrap gap-3 text-xs">
+                        <a className="text-blue-700 hover:underline" href={`/app/payouts/history/${row.payout_id || row.id}`}>
+                          View Payout
+                        </a>
                         <a className="text-blue-700 hover:underline" href={`/app/agreements/${row.agreement_id}`}>
                           Open Agreement
                         </a>

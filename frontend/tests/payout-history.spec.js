@@ -148,3 +148,148 @@ test('contractor payout history page renders totals, filters, and empty state', 
   await page.getByTestId('payout-filter-subcontractor').fill('nobody@example.com');
   await expect(page.getByTestId('payout-history-empty')).toBeVisible();
 });
+
+test('payout detail page renders paid ready and failed payout examples', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/payouts/history/*/', async (route) => {
+    const match = route.request().url().match(/\/api\/projects\/payouts\/history\/(\d+)\/?$/);
+    const payoutId = match?.[1];
+
+    if (payoutId === '1') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          payout_id: 1,
+          agreement_id: 321,
+          agreement_title: 'Kitchen Remodel Agreement',
+          milestone_id: 901,
+          milestone_title: 'Cabinet Install',
+          subcontractor_display_name: 'Taylor Sub',
+          subcontractor_email: 'taylor@example.com',
+          payout_amount: '1500.00',
+          payout_status: 'paid',
+          execution_mode: 'manual',
+          ready_for_payout_at: '2026-03-20T10:00:00Z',
+          paid_at: '2026-03-21T11:00:00Z',
+          failed_at: null,
+          stripe_transfer_id: 'tr_paid_hist',
+          failure_reason: '',
+          effective_at: '2026-03-21T11:00:00Z',
+        }),
+      });
+      return;
+    }
+
+    if (payoutId === '2') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          payout_id: 2,
+          agreement_id: 321,
+          agreement_title: 'Kitchen Remodel Agreement',
+          milestone_id: 902,
+          milestone_title: 'Final Punch',
+          subcontractor_display_name: 'Casey Ready',
+          subcontractor_email: 'casey@example.com',
+          payout_amount: '700.00',
+          payout_status: 'ready_for_payout',
+          execution_mode: 'automatic',
+          ready_for_payout_at: '2026-03-24T09:00:00Z',
+          paid_at: null,
+          failed_at: null,
+          stripe_transfer_id: '',
+          failure_reason: '',
+          effective_at: '2026-03-24T09:00:00Z',
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        payout_id: 3,
+        agreement_id: 654,
+        agreement_title: 'Bathroom Remodel Agreement',
+        milestone_id: 903,
+        milestone_title: 'Tile Work',
+        subcontractor_display_name: 'Morgan Failed',
+        subcontractor_email: 'morgan@example.com',
+        payout_amount: '400.00',
+        payout_status: 'failed',
+        execution_mode: 'automatic',
+        ready_for_payout_at: '2026-03-23T09:00:00Z',
+        paid_at: null,
+        failed_at: '2026-03-23T11:30:00Z',
+        stripe_transfer_id: '',
+        failure_reason: 'Bank rejected transfer',
+        effective_at: '2026-03-23T11:30:00Z',
+      }),
+    });
+  });
+
+  await page.goto('/app/payouts/history/1', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('payout-detail-title')).toBeVisible();
+  await expect(page.getByTestId('payout-detail-surface')).toContainText('paid');
+  await expect(page.getByTestId('payout-detail-surface')).toContainText('Taylor Sub');
+  await expect(page.getByTestId('payout-detail-surface')).toContainText('tr_paid_hist');
+
+  await page.goto('/app/payouts/history/2', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('payout-detail-surface')).toContainText('Ready For Payout');
+  await expect(page.getByTestId('payout-detail-surface')).toContainText('Casey Ready');
+
+  await page.goto('/app/payouts/history/3', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('payout-detail-surface')).toContainText('Morgan Failed');
+  await expect(page.getByTestId('payout-detail-failure-reason')).toContainText('Bank rejected transfer');
+});
+
+test('payout detail page shows graceful missing fallback', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/payouts/history/*/', async (route) => {
+    await route.fulfill({
+      status: 404,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        detail: 'Payout record not found.',
+      }),
+    });
+  });
+
+  await page.goto('/app/payouts/history/999', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('payout-detail-missing')).toContainText('Payout record not found.');
+});

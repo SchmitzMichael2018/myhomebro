@@ -104,6 +104,7 @@ def _serialize_payout_row(payout: MilestonePayout) -> dict:
 
     return {
         "id": payout.id,
+        "payout_id": payout.id,
         "milestone_id": getattr(milestone, "id", None),
         "milestone_title": getattr(milestone, "title", "") or "",
         "agreement_id": getattr(agreement, "id", None),
@@ -124,6 +125,17 @@ def _serialize_payout_row(payout: MilestonePayout) -> dict:
         "created_at": payout.created_at,
         "updated_at": payout.updated_at,
     }
+
+
+def _serialize_payout_detail(payout: MilestonePayout) -> dict:
+    row = _serialize_payout_row(payout)
+    row["effective_at"] = (
+        row.get("paid_at")
+        or row.get("failed_at")
+        or row.get("ready_for_payout_at")
+        or row.get("updated_at")
+    )
+    return row
 
 
 def _build_summary(qs) -> dict:
@@ -222,3 +234,18 @@ class ContractorPayoutHistoryExportView(APIView):
             )
 
         return response
+
+
+class ContractorPayoutDetailView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, payout_id: int):
+        contractor = _require_contractor_owner(request.user)
+        if contractor is None:
+            return Response({"detail": "Only contractor owners can view payout detail."}, status=status.HTTP_403_FORBIDDEN)
+
+        payout = _history_base_queryset(contractor).filter(id=payout_id).first()
+        if payout is None:
+            return Response({"detail": "Payout record not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response(_serialize_payout_detail(payout), status=status.HTTP_200_OK)
