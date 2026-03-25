@@ -62,6 +62,11 @@ class AgreementPaymentMode(models.TextChoices):
     DIRECT = "direct", "Direct Pay (Fast)"
 
 
+class AgreementPaymentStructure(models.TextChoices):
+    SIMPLE = "simple", "Simple Payments"
+    PROGRESS = "progress", "Progress Payments"
+
+
 class AgreementSignaturePolicy(models.TextChoices):
     BOTH_REQUIRED = "both_required", "Both Parties Sign (Recommended)"
     CONTRACTOR_ONLY = "contractor_only", "Contractor Only (Work Order / Internal)"
@@ -121,6 +126,22 @@ class MilestonePayoutStatus(models.TextChoices):
 class MilestonePayoutExecutionMode(models.TextChoices):
     MANUAL = "manual", "Manual"
     AUTOMATIC = "automatic", "Automatic"
+
+
+class DrawRequestStatus(models.TextChoices):
+    DRAFT = "draft", "Draft"
+    SUBMITTED = "submitted", "Submitted"
+    APPROVED = "approved", "Approved"
+    REJECTED = "rejected", "Rejected"
+    CHANGES_REQUESTED = "changes_requested", "Changes Requested"
+    PAID = "paid", "Paid"
+
+
+class ExternalPaymentStatus(models.TextChoices):
+    RECORDED = "recorded", "Recorded"
+    VERIFIED = "verified", "Verified"
+    DISPUTED = "disputed", "Disputed"
+    VOIDED = "voided", "Voided"
 
 
 class Skill(models.Model):
@@ -352,6 +373,23 @@ class Agreement(models.Model):
         default=AgreementPaymentMode.ESCROW,
         db_index=True,
         help_text="ESCROW uses protected funding/release. DIRECT uses pay-now invoices to contractor Stripe.",
+    )
+    payment_structure = models.CharField(
+        max_length=20,
+        choices=AgreementPaymentStructure.choices,
+        default=AgreementPaymentStructure.SIMPLE,
+        db_index=True,
+        help_text="SIMPLE keeps milestone-paid workflow intact. PROGRESS enables draw-based requests.",
+    )
+    retainage_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="Optional retainage withheld on progress-payment draw requests.",
+    )
+    external_payment_enabled = models.BooleanField(
+        default=False,
+        help_text="Whether the contractor can record external progress payments for this agreement.",
     )
 
     signature_policy = models.CharField(
@@ -1203,6 +1241,134 @@ class MilestonePayout(models.Model):
 
     def __str__(self):
         return f"MilestonePayout(milestone={self.milestone_id}, subcontractor={self.subcontractor_user_id}, status={self.status})"
+
+
+class DrawRequest(models.Model):
+    agreement = models.ForeignKey(
+        Agreement,
+        on_delete=models.CASCADE,
+        related_name="draw_requests",
+    )
+    draw_number = models.PositiveIntegerField()
+    status = models.CharField(
+        max_length=32,
+        choices=DrawRequestStatus.choices,
+        default=DrawRequestStatus.DRAFT,
+        db_index=True,
+    )
+    title = models.CharField(max_length=255)
+    notes = models.TextField(blank=True, default="")
+    submitted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="submitted_draw_requests",
+    )
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reviewed_draw_requests",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    gross_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    retainage_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    net_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    previous_payments_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    current_requested_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agreement", "draw_number"],
+                name="unique_draw_number_per_agreement",
+            )
+        ]
+
+    def __str__(self):
+        return f"DrawRequest(agreement={self.agreement_id}, draw_number={self.draw_number}, status={self.status})"
+
+
+class DrawLineItem(models.Model):
+    draw_request = models.ForeignKey(
+        DrawRequest,
+        on_delete=models.CASCADE,
+        related_name="line_items",
+    )
+    milestone = models.ForeignKey(
+        Milestone,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="draw_line_items",
+    )
+    description = models.CharField(max_length=255)
+    scheduled_value = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    percent_complete = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    earned_to_date = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    previous_billed = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    this_draw_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    retainage_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    remaining_balance = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["id"]
+
+    def __str__(self):
+        return f"DrawLineItem(draw_request={self.draw_request_id}, milestone={self.milestone_id})"
+
+
+class ExternalPaymentRecord(models.Model):
+    agreement = models.ForeignKey(
+        Agreement,
+        on_delete=models.CASCADE,
+        related_name="external_payment_records",
+    )
+    draw_request = models.ForeignKey(
+        DrawRequest,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="external_payment_records",
+    )
+    payer_name = models.CharField(max_length=255, blank=True, default="")
+    payee_name = models.CharField(max_length=255, blank=True, default="")
+    gross_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    retainage_withheld_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    net_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    payment_method = models.CharField(max_length=16, default="other")
+    payment_date = models.DateField()
+    reference_number = models.CharField(max_length=255, blank=True, default="")
+    notes = models.TextField(blank=True, default="")
+    proof_file = models.FileField(upload_to="payments/external_proof/", null=True, blank=True)
+    status = models.CharField(
+        max_length=16,
+        choices=ExternalPaymentStatus.choices,
+        default=ExternalPaymentStatus.RECORDED,
+        db_index=True,
+    )
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="recorded_external_payments",
+    )
+    recorded_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-payment_date", "-id"]
+
+    def __str__(self):
+        return f"ExternalPaymentRecord(agreement={self.agreement_id}, draw={self.draw_request_id}, status={self.status})"
 
 
 class Invoice(models.Model):

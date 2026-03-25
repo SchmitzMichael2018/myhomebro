@@ -68,7 +68,15 @@ test('profile billing view renders with included AI wording', async ({
   await expect(page.getByRole('heading', { name: 'My Profile' })).toBeVisible();
   await page.getByRole('button', { name: 'Plan & Billing' }).click();
 
-  await expect(page.getByText('AI Availability')).toBeVisible();
-  await expect(page.getByText('AI is included for every contractor account.')).toBeVisible();
-  await expect(page.getByText('Not applicable')).toBeVisible();
+  await expect(page.getByText('Billing & Fees')).toBeVisible();
+  await expect(page.getByText('AI & Billing')).toHaveCount(0);
+  await expect(page.getByText('Plan Details')).toHaveCount(0);
+  await expect(page.getByText('All AI tools are included with your account.')).toBeVisible();
+  await expect(page.getByText('Platform Fees (MyHomeBro)')).toBeVisible();
+  await expect(page.getByText('3% + $1 for the first 60 days on new accounts')).toBeVisible();
+  await expect(page.getByText('2% + $1 per transaction')).toBeVisible();
+  await expect(page.getByText('Payment Processing (Stripe)')).toBeVisible();
+  await expect(page.getByText('Typical card processing fees are around 2.9% + $0.30 per transaction')).toBeVisible();
+  await expect(page.getByText('What You’ll See in the App')).toBeVisible();
+  await expect(page.getByText('net payout')).toBeVisible();
 });

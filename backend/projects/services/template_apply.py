@@ -344,6 +344,8 @@ def _persist_selected_template(agreement: Agreement, template: ProjectTemplate) 
 def _hydrate_agreement_core_fields(
     agreement: Agreement,
     template: ProjectTemplate,
+    *,
+    overwrite_payment_settings: bool = False,
 ) -> None:
     """
     Copy template-level fields onto the agreement and linked project.
@@ -359,6 +361,28 @@ def _hydrate_agreement_core_fields(
     template_subtype = (getattr(template, "project_subtype", None) or "").strip()
     template_description = (getattr(template, "description", None) or "").strip()
     template_name = (getattr(template, "name", None) or "").strip()
+    template_payment_structure = (
+        getattr(template, "payment_structure", None) or getattr(agreement, "payment_structure", "simple")
+    )
+    template_retainage_percent = _safe_decimal(
+        getattr(template, "retainage_percent", None),
+        getattr(agreement, "retainage_percent", Decimal("0.00")),
+    ).quantize(Decimal("0.01"))
+    current_payment_structure = str(getattr(agreement, "payment_structure", "simple") or "simple").strip().lower()
+    current_retainage_percent = _safe_decimal(
+        getattr(agreement, "retainage_percent", None),
+        Decimal("0.00"),
+    ).quantize(Decimal("0.01"))
+    can_apply_template_payment_settings = overwrite_payment_settings or (
+        current_payment_structure == "simple"
+        and current_retainage_percent == Decimal("0.00")
+        and not bool(getattr(agreement, "signed_by_contractor", False))
+        and not bool(getattr(agreement, "signed_by_homeowner", False))
+        and not bool(getattr(agreement, "escrow_funded", False))
+        and not bool(getattr(agreement, "invoices").exists())
+        and not bool(getattr(agreement, "draw_requests").exists())
+        and not bool(getattr(agreement, "external_payment_records").exists())
+    )
 
     if template_type and getattr(agreement, "project_type", "") != template_type:
       agreement.project_type = template_type
@@ -381,6 +405,16 @@ def _hydrate_agreement_core_fields(
     if template_description and getattr(agreement, "description", "") != template_description:
         agreement.description = template_description
         agreement_update_fields.append("description")
+
+    if can_apply_template_payment_settings and getattr(agreement, "payment_structure", None) != template_payment_structure:
+        agreement.payment_structure = template_payment_structure
+        agreement_update_fields.append("payment_structure")
+
+    if can_apply_template_payment_settings and _safe_decimal(getattr(agreement, "retainage_percent", None), Decimal("0.00")).quantize(
+        Decimal("0.01")
+    ) != template_retainage_percent:
+        agreement.retainage_percent = template_retainage_percent
+        agreement_update_fields.append("retainage_percent")
 
     _save_model_if_needed(agreement, agreement_update_fields)
 
@@ -680,6 +714,8 @@ def save_agreement_as_template(
         project_subtype=agreement.project_subtype or "",
         description=(description or agreement.description or "").strip(),
         estimated_days=estimated_days,
+        payment_structure=getattr(agreement, "payment_structure", "simple") or "simple",
+        retainage_percent=_safe_decimal(getattr(agreement, "retainage_percent", None), Decimal("0.00")),
         default_scope=template_scope_text,
         default_clarifications=template_questions,
         is_system=False,

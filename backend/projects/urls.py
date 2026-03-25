@@ -161,6 +161,15 @@ from .views.agreement_closeout import (
     AgreementClosureStatusView,
     AgreementCloseAndArchiveView,
 )
+from .views.draw_requests import (
+    AgreementDrawListCreateView,
+    AgreementExternalPaymentListView,
+    DrawApproveView,
+    DrawRecordExternalPaymentView,
+    DrawRejectView,
+    DrawRequestChangesView,
+    DrawSubmitView,
+)
 
 from .views.invoice_direct_pay import invoice_create_direct_pay_link
 
@@ -316,6 +325,29 @@ urlpatterns = [
         "agreements/<int:agreement_id>/subcontractor-invitations/",
         AgreementSubcontractorInvitationsView.as_view(),
         name="agreement-subcontractor-invitations",
+    ),
+    path(
+        "agreements/<int:agreement_id>/draws/",
+        AgreementDrawListCreateView.as_view(),
+        name="agreement-draws",
+    ),
+    path(
+        "agreements/<int:agreement_id>/external-payments/",
+        AgreementExternalPaymentListView.as_view(),
+        name="agreement-external-payments",
+    ),
+    path("draws/<int:draw_id>/submit/", DrawSubmitView.as_view(), name="draw-submit"),
+    path("draws/<int:draw_id>/approve/", DrawApproveView.as_view(), name="draw-approve"),
+    path("draws/<int:draw_id>/reject/", DrawRejectView.as_view(), name="draw-reject"),
+    path(
+        "draws/<int:draw_id>/request_changes/",
+        DrawRequestChangesView.as_view(),
+        name="draw-request-changes",
+    ),
+    path(
+        "draws/<int:draw_id>/record_external_payment/",
+        DrawRecordExternalPaymentView.as_view(),
+        name="draw-record-external-payment",
     ),
     path(
         "agreements/<int:agreement_id>/subcontractor-invitations/<int:invitation_id>/revoke/",

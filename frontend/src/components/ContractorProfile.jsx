@@ -27,10 +27,6 @@ function planLabel() {
   return "Included";
 }
 
-function directPayRateLabel() {
-  return "1% + $1";
-}
-
 function fmtPercent(rateDecimal) {
   const r = Number(rateDecimal);
   if (!Number.isFinite(r)) return null;
@@ -378,12 +374,6 @@ export default function ContractorProfile() {
   };
 
   const renderBilling = () => {
-    const plan = planLabel(meData);
-    const dpRate = directPayRateLabel(meData);
-
-    const tier = "included";
-    const aiActive = isAiProActive(meData);
-
     const { introActive, introDaysRemaining } = computeIntroCountdownDays(meData);
     const introDaysText =
       introDaysRemaining != null
@@ -398,54 +388,13 @@ export default function ContractorProfile() {
 
     return (
       <div className="space-y-4">
-        {/* Plan overview */}
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-            <div>
-              <div className="text-sm font-semibold text-slate-900">AI & Billing</div>
-              <div className="mt-1 text-sm text-slate-700">
-                <b>AI Access:</b> {plan}
-                <span className="ml-2 inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800">
-                  INCLUDED
-                </span>
-              </div>
-
-              <div className="mt-2 text-sm text-slate-700">
-                <b>Direct Pay Rate:</b> {dpRate}
-              </div>
-
-              <div className="mt-2 text-xs text-slate-600">
-                AI tools are included in the base experience. Direct Pay is 1% + $1. Escrow remains tiered and separate.
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    await refreshMe();
-                    await refreshEscrowPricing();
-                  } catch {
-                    // ignore
-                  }
-                }}
-                className="rounded border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-                title="Refresh plan status"
-              >
-                Refresh
-              </button>
-            </div>
-          </div>
-        </div>
-
         {/* AI availability */}
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-sm font-semibold text-slate-900">AI Availability</div>
               <div className="mt-1 text-xs text-slate-600">
-                AI writing tools are included with your account.
+                Current AI access status for this account.
               </div>
             </div>
             <button
@@ -482,7 +431,7 @@ export default function ContractorProfile() {
           </div>
 
           <div className="mt-3 text-xs text-slate-600">
-            AI generation is included. Review outputs before sending or saving agreement content.
+            Status only. Billing and fee details are listed below.
           </div>
         </div>
 
@@ -491,9 +440,6 @@ export default function ContractorProfile() {
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-sm font-semibold text-slate-900">Escrow Pricing (Tiered)</div>
-              <div className="mt-1 text-xs text-slate-600">
-                This is your current escrow (protected) pricing tier. It may change as your monthly volume changes.
-              </div>
             </div>
             <button
               type="button"
@@ -510,7 +456,7 @@ export default function ContractorProfile() {
             <div className="mt-3 text-sm text-rose-700">{escrowInfo.error}</div>
           ) : !escrowInfo.hasAgreement ? (
             <div className="mt-3 text-sm text-slate-600">
-              No agreements yet. Create your first agreement to compute tiered escrow pricing and previews.
+              No agreements yet. Create your first agreement to see your current escrow tier.
             </div>
           ) : (
             <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -538,42 +484,61 @@ export default function ContractorProfile() {
           )}
         </div>
 
-        {/* Plan Details */}
         <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <div className="text-sm font-semibold text-slate-900">Plan Details</div>
+          <div className="text-sm font-semibold text-slate-900">Billing &amp; Fees</div>
 
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="rounded border bg-slate-50 p-3">
-              <div className="text-xs text-slate-500">Tier Key</div>
-              <div className="text-sm font-semibold text-slate-900">{tier}</div>
+          <div className="mt-4 space-y-4 text-sm text-slate-700">
+            <div>
+              <div className="font-semibold text-slate-900">AI Access</div>
+              <div className="mt-1">All AI tools are included with your account.</div>
             </div>
 
-            <div className="rounded border bg-slate-50 p-3">
-              <div className="text-xs text-slate-500">AI Access</div>
-              <div className="text-sm font-semibold text-slate-900">Included</div>
+            <div>
+              <div className="font-semibold text-slate-900">Platform Fees (MyHomeBro)</div>
+
+              <div className="mt-3 font-medium text-slate-900">Escrow Payments</div>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li>3% + $1 for the first 60 days on new accounts</li>
+                <li>4.5% + $1 standard rate</li>
+                <li>3.5% + $1 with volume discount</li>
+                <li>$750 maximum fee per agreement/project</li>
+              </ul>
+
+              <div className="mt-3 font-medium text-slate-900">Direct Pay</div>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li>2% + $1 per transaction</li>
+              </ul>
             </div>
 
-            <div className="rounded border bg-slate-50 p-3">
-              <div className="text-xs text-slate-500">Next Renewal / Period End</div>
-              <div className="text-sm font-semibold text-slate-900">
-                Not applicable
+            <div>
+              <div className="font-semibold text-slate-900">Payment Processing (Stripe)</div>
+              <div className="mt-1">
+                Payments are processed through Stripe. Processing fees are separate from platform fees and may vary depending on payment method.
               </div>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li>Typical card processing fees are around 2.9% + $0.30 per transaction</li>
+                <li>ACH bank payments are typically ~0.8% (capped at $5)</li>
+              </ul>
+              <div className="mt-2">Actual processing fees may vary based on:</div>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li>card type</li>
+                <li>international payments</li>
+                <li>payment method</li>
+              </ul>
+            </div>
+
+            <div>
+              <div className="font-semibold text-slate-900">What You’ll See in the App</div>
+              <div className="mt-1">For every agreement, invoice, and payout, display:</div>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li>total amount</li>
+                <li>platform fee</li>
+                <li>processing fee</li>
+                <li>total deductions</li>
+                <li>net payout</li>
+              </ul>
             </div>
           </div>
-
-          <div className="mt-3 text-xs text-slate-500">
-            AI is included for every contractor account.
-          </div>
-        </div>
-
-        {/* Pricing explanation */}
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-          <div className="text-sm font-semibold text-amber-900">Pricing Notes</div>
-          <ul className="mt-2 list-disc pl-5 text-sm text-amber-900/90 space-y-1">
-            <li>AI is included with your account.</li>
-            <li>Direct Pay: <b>1% + $1</b></li>
-            <li>Escrow pricing stays tiered and separate.</li>
-          </ul>
         </div>
       </div>
     );

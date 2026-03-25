@@ -44,6 +44,12 @@ export function normalizePaymentMode(value) {
   return "escrow";
 }
 
+export function normalizePaymentStructure(value) {
+  const s = String(value || "").trim().toLowerCase();
+  if (s === "progress") return "progress";
+  return "simple";
+}
+
 export function extractAiCredits(meData) {
   const ai = meData?.ai || {};
   return {
