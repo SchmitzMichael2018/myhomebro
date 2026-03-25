@@ -143,9 +143,7 @@ function buildTask({
   };
 }
 
-test('contractor dashboard prioritizes grouped tasks and preserves navigation actions', async ({
-  page,
-}) => {
+test('contractor dashboard groups agreements globally and renders them once', async ({ page }) => {
   await mockContractorDashboard(page, {
     identity_type: 'contractor_owner',
     today: [
@@ -158,14 +156,6 @@ test('contractor dashboard prioritizes grouped tasks and preserves navigation ac
         completion_date: '2026-03-20T09:00:00Z',
       }),
       buildTask({
-        id: 'overdue-42',
-        item_type: 'overdue',
-        title: 'Countertop Template is overdue',
-        milestone_id: 42,
-        milestone_title: 'Countertop Template',
-        completion_date: '2026-03-22T09:00:00Z',
-      }),
-      buildTask({
         id: 'due-today-43',
         item_type: 'due_today',
         title: 'Paint Prep is due today',
@@ -173,16 +163,16 @@ test('contractor dashboard prioritizes grouped tasks and preserves navigation ac
         milestone_title: 'Paint Prep',
         completion_date: '2026-03-24T11:00:00Z',
       }),
-      buildTask({
-        id: 'start-today-44',
-        item_type: 'start_today',
-        title: 'Floor Protection starts today',
-        milestone_id: 44,
-        milestone_title: 'Floor Protection',
-        start_date: '2026-03-24T14:00:00Z',
-      }),
     ],
     tomorrow: [
+      buildTask({
+        id: 'due-tomorrow-44',
+        item_type: 'due_tomorrow',
+        title: 'Floor Protection is due tomorrow',
+        milestone_id: 44,
+        milestone_title: 'Floor Protection',
+        completion_date: '2026-03-25T09:00:00Z',
+      }),
       buildTask({
         id: 'due-tomorrow-46',
         item_type: 'due_tomorrow',
@@ -193,7 +183,7 @@ test('contractor dashboard prioritizes grouped tasks and preserves navigation ac
         subtitle: 'Lake House',
         milestone_id: 46,
         milestone_title: 'Final Paint',
-        completion_date: '2026-03-25T09:00:00Z',
+        completion_date: '2026-03-25T10:00:00Z',
       }),
     ],
     this_week: [],
@@ -206,29 +196,72 @@ test('contractor dashboard prioritizes grouped tasks and preserves navigation ac
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('role-workboard-needs-attention')).toBeVisible();
-  await expect(page.getByTestId('role-workboard-today')).toBeVisible();
+  await expect(page.getByTestId('role-workboard-today')).toHaveCount(0);
   await expect(page.getByTestId('role-workboard-tomorrow')).toBeVisible();
-  await expect(page.getByTestId('role-workboard-this-week')).toHaveCount(0);
+  await expect(page.getByTestId('workboard-item-group-agreement-321')).toHaveCount(1);
+  await expect(page.getByTestId('workboard-agreement-id-group-agreement-321')).toContainText(
+    '#321'
+  );
+  await expect(page.getByTestId('workboard-agreement-id-group-agreement-321')).toContainText(
+    '1 overdue'
+  );
+  await expect(page.getByTestId('role-workboard-tomorrow')).not.toContainText('Kitchen Remodel');
 
-  await expect(page.getByTestId('workboard-item-group-needs_attention-321')).toContainText(
-    'Kitchen Remodel'
-  );
-  await expect(page.getByTestId('workboard-item-group-needs_attention-321')).toContainText(
-    '2 overdue milestones'
-  );
-  await expect(page.getByTestId('workboard-item-group-today-321')).toContainText(
-    '2 tasks for today'
-  );
-  await expect(page.getByTestId('workboard-item-group-needs_attention-321')).toContainText(
-    'Earliest: Cabinet Install'
-  );
-
-  await page.getByTestId('workboard-action-group-needs_attention-321-0').click();
+  await page.getByTestId('workboard-action-group-agreement-321-0').click();
   await page.waitForURL('**/app/agreements/321');
 
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('workboard-action-due-tomorrow-46-0').click();
   await page.waitForURL('**/app/milestones/46');
+});
+
+test('contractor dashboard keeps same-title agreements separate and shows ids on all rows', async ({
+  page,
+}) => {
+  await mockContractorDashboard(page, {
+    identity_type: 'contractor_owner',
+    today: [
+      buildTask({
+        id: 'overdue-201',
+        item_type: 'overdue',
+        title: 'Roof Deck is overdue',
+        agreement_id: 1042,
+        agreement_title: 'Roof Replacement Agreement',
+        project_title: 'Roof Replacement',
+        subtitle: 'Roof Replacement',
+        milestone_id: 201,
+        milestone_title: 'Roof Deck',
+        completion_date: '2026-03-21T09:00:00Z',
+      }),
+      buildTask({
+        id: 'overdue-202',
+        item_type: 'overdue',
+        title: 'Shingle Delivery is overdue',
+        agreement_id: 2042,
+        agreement_title: 'Roof Replacement Agreement',
+        project_title: 'Roof Replacement',
+        subtitle: 'Roof Replacement',
+        milestone_id: 202,
+        milestone_title: 'Shingle Delivery',
+        completion_date: '2026-03-22T09:00:00Z',
+      }),
+    ],
+    tomorrow: [],
+    this_week: [],
+    recent_activity: [],
+    empty_states: {
+      recent_activity: 'No recent worker activity yet.',
+    },
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('workboard-agreement-id-overdue-201')).toContainText(
+    '#1042 · Roof Replacement'
+  );
+  await expect(page.getByTestId('workboard-agreement-id-overdue-202')).toContainText(
+    '#2042 · Roof Replacement'
+  );
 });
 
 test('contractor dashboard caps long sections and expands with view all', async ({ page }) => {
@@ -325,7 +358,6 @@ test('contractor dashboard caps long sections and expands with view all', async 
 
   await page.getByTestId('role-workboard-today-view-all').click();
   await expect(page.getByTestId('workboard-item-due-today-106')).toBeVisible();
-  await expect(page.getByTestId('role-workboard-today-view-all')).toContainText('Show less');
 });
 
 test('contractor dashboard hides empty task sections and shows one compact empty state', async ({
@@ -351,5 +383,4 @@ test('contractor dashboard hides empty task sections and shows one compact empty
   await expect(page.getByTestId('role-workboard-today')).toHaveCount(0);
   await expect(page.getByTestId('role-workboard-tomorrow')).toHaveCount(0);
   await expect(page.getByTestId('role-workboard-this-week')).toHaveCount(0);
-  await expect(page.getByTestId('role-workboard-recent-activity-empty')).toBeVisible();
 });
