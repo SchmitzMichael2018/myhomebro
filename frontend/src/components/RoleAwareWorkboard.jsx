@@ -13,6 +13,13 @@ const TASK_SECTION_CONFIG = [
   { key: "later_this_week", title: "Later This Week", testId: "role-workboard-this-week" },
 ];
 
+const SECTION_PRIORITY = {
+  needs_attention: 0,
+  today: 1,
+  tomorrow: 2,
+  later_this_week: 3,
+};
+
 function formatDateTimeShort(value) {
   if (!value) return "";
   try {
@@ -46,7 +53,15 @@ function taskDateForSort(item) {
   );
 }
 
-function sortTaskItems(items, sectionKey) {
+function stableTaskKey(item) {
+  return [
+    item.project_title || item.agreement_title || item.subtitle || "",
+    item.milestone_title || item.title || "",
+    String(item.id || ""),
+  ].join("|");
+}
+
+function sortTaskItems(items) {
   return [...items].sort((left, right) => {
     const leftDate = taskDateForSort(left);
     const rightDate = taskDateForSort(right);
@@ -57,144 +72,179 @@ function sortTaskItems(items, sectionKey) {
       return leftTime - rightTime;
     }
 
-    const leftStable = [
-      left.project_title || left.agreement_title || left.subtitle || "",
-      left.milestone_title || left.title || "",
-      String(left.id || ""),
-    ].join("|");
-    const rightStable = [
-      right.project_title || right.agreement_title || right.subtitle || "",
-      right.milestone_title || right.title || "",
-      String(right.id || ""),
-    ].join("|");
-
-    return leftStable.localeCompare(rightStable);
+    return stableTaskKey(left).localeCompare(stableTaskKey(right));
   });
 }
 
-function classifyTaskSections(payload) {
-  const todayItems = Array.isArray(payload?.today) ? payload.today : [];
-  const tomorrowItems = Array.isArray(payload?.tomorrow) ? payload.tomorrow : [];
-  const thisWeekItems = Array.isArray(payload?.this_week) ? payload.this_week : [];
+function sortAgreementRows(rows) {
+  return [...rows].sort((left, right) => {
+    const leftDate = taskDateForSort(left);
+    const rightDate = taskDateForSort(right);
+    const leftTime = leftDate ? leftDate.getTime() : Number.MAX_SAFE_INTEGER;
+    const rightTime = rightDate ? rightDate.getTime() : Number.MAX_SAFE_INTEGER;
 
-  const needsAttention = [];
-  const today = [];
-
-  todayItems.forEach((item) => {
-    if (item?.item_type === "overdue") {
-      needsAttention.push(item);
-      return;
+    if (leftTime !== rightTime) {
+      return leftTime - rightTime;
     }
-    today.push(item);
-  });
 
-  return {
-    needs_attention: sortTaskItems(needsAttention, "needs_attention"),
-    today: sortTaskItems(today, "today"),
-    tomorrow: sortTaskItems(tomorrowItems, "tomorrow"),
-    later_this_week: sortTaskItems(thisWeekItems, "later_this_week"),
-  };
+    return [
+      left.title || "",
+      String(left.agreement_id || ""),
+      String(left.id || ""),
+    ].join("|").localeCompare([
+      right.title || "",
+      String(right.agreement_id || ""),
+      String(right.id || ""),
+    ].join("|"));
+  });
 }
 
 function pluralize(value, singular, plural = `${singular}s`) {
   return value === 1 ? singular : plural;
 }
 
-function summarizeGroup(items, sectionKey) {
-  const count = items.length;
-  if (sectionKey === "needs_attention") {
-    return `${count} overdue ${pluralize(count, "milestone")}`;
+function sectionKeyForItem(item, sourceSection) {
+  if (sourceSection === "today") {
+    return item?.item_type === "overdue" ? "needs_attention" : "today";
   }
-  if (sectionKey === "today") {
-    return `${count} ${pluralize(count, "task")} for today`;
+  if (sourceSection === "tomorrow") {
+    return "tomorrow";
   }
-  if (sectionKey === "tomorrow") {
-    return `${count} ${pluralize(count, "task")} for tomorrow`;
-  }
-  return `${count} ${pluralize(count, "task")} later this week`;
+  return "later_this_week";
 }
 
-function groupSectionItems(items, sectionKey) {
-  const counts = new Map();
-  items.forEach((item) => {
-    const key = item.agreement_id || item.project_title || item.agreement_title || null;
-    if (!key) return;
-    counts.set(key, (counts.get(key) || 0) + 1);
+function flattenTaskItems(payload) {
+  return [
+    ...(Array.isArray(payload?.today) ? payload.today : []).map((item) => ({
+      ...item,
+      task_section: sectionKeyForItem(item, "today"),
+    })),
+    ...(Array.isArray(payload?.tomorrow) ? payload.tomorrow : []).map((item) => ({
+      ...item,
+      task_section: sectionKeyForItem(item, "tomorrow"),
+    })),
+    ...(Array.isArray(payload?.this_week) ? payload.this_week : []).map((item) => ({
+      ...item,
+      task_section: sectionKeyForItem(item, "this_week"),
+    })),
+  ];
+}
+
+function summarizeAgreementGroup(sectionKey, totalCount, priorityCount) {
+  if (sectionKey === "needs_attention") {
+    if (priorityCount === totalCount) {
+      return `${totalCount} overdue ${pluralize(totalCount, "milestone")}`;
+    }
+    return `${totalCount} ${pluralize(totalCount, "milestone")} · ${priorityCount} overdue`;
+  }
+  if (sectionKey === "today") {
+    if (priorityCount === totalCount) {
+      return `${totalCount} ${pluralize(totalCount, "task")} for today`;
+    }
+    return `${totalCount} ${pluralize(totalCount, "milestone")} · ${priorityCount} for today`;
+  }
+  if (sectionKey === "tomorrow") {
+    if (priorityCount === totalCount) {
+      return `${totalCount} ${pluralize(totalCount, "task")} for tomorrow`;
+    }
+    return `${totalCount} ${pluralize(totalCount, "milestone")} · ${priorityCount} for tomorrow`;
+  }
+  if (priorityCount === totalCount) {
+    return `${totalCount} ${pluralize(totalCount, "task")} later this week`;
+  }
+  return `${totalCount} ${pluralize(totalCount, "milestone")} · ${priorityCount} later this week`;
+}
+
+function buildAgreementRows(payload) {
+  const taskItems = sortTaskItems(flattenTaskItems(payload));
+  const agreementGroups = new Map();
+  const standaloneRows = [];
+
+  taskItems.forEach((item) => {
+    if (!item?.agreement_id) {
+      standaloneRows.push({ ...item, row_type: "single" });
+      return;
+    }
+
+    const existing = agreementGroups.get(item.agreement_id) || [];
+    existing.push(item);
+    agreementGroups.set(item.agreement_id, existing);
   });
 
-  const grouped = [];
-  const used = new Set();
+  const groupedRows = Array.from(agreementGroups.entries()).map(([agreementId, items]) => {
+    const sortedItems = [...items].sort((left, right) => {
+      const priorityDiff =
+        SECTION_PRIORITY[left.task_section] - SECTION_PRIORITY[right.task_section];
+      if (priorityDiff !== 0) {
+        return priorityDiff;
+      }
 
-  items.forEach((item) => {
-    const groupKey = item.agreement_id || item.project_title || item.agreement_title || null;
-    const groupCount = groupKey ? counts.get(groupKey) || 0 : 0;
-
-    if (used.has(groupKey)) {
-      return;
-    }
-
-    if (!groupKey || groupCount < 2) {
-      grouped.push({ ...item, row_type: "single" });
-      return;
-    }
-
-    const members = items.filter((candidate) => {
-      const candidateKey =
-        candidate.agreement_id || candidate.project_title || candidate.agreement_title || null;
-      return candidateKey === groupKey;
+      const sortedPair = sortTaskItems([left, right]);
+      return sortedPair[0].id === left.id ? -1 : 1;
     });
-    used.add(groupKey);
-    const lead = members[0];
-    const earliestMember =
-      members
-        .map((candidate) => ({ candidate, date: taskDateForSort(candidate) }))
-        .filter((entry) => entry.date)
-        .sort((left, right) => left.date.getTime() - right.date.getTime())[0]?.candidate || lead;
-    const earliestDate =
-      members
-        .map((candidate) => taskDateForSort(candidate))
-        .filter(Boolean)
-        .sort((left, right) => left.getTime() - right.getTime())[0] || null;
+
+    const lead = sortedItems[0];
+    const selectedSection = lead.task_section;
+
+    if (sortedItems.length === 1) {
+      return {
+        ...lead,
+        row_type: "single",
+      };
+    }
+
+    const selectedItems = sortTaskItems(
+      sortedItems.filter((item) => item.task_section === selectedSection)
+    );
+    const earliestMember = selectedItems[0] || lead;
+    const earliestDate = taskDateForSort(earliestMember);
     const agreementAction =
-      members.flatMap((candidate) => candidate.actions || []).find((action) => action?.label === "Open Agreement")
+      sortedItems
+        .flatMap((candidate) => candidate.actions || [])
+        .find((action) => action?.label === "Open Agreement")
       || null;
-    const previewTitles = members
-      .slice(0, 2)
-      .map((candidate) => candidate.milestone_title || candidate.title)
-      .filter(Boolean);
 
-    grouped.push({
+    return {
       ...lead,
-      id: `group-${sectionKey}-${String(groupKey).replaceAll(" ", "-")}`,
+      id: `group-agreement-${agreementId}`,
       row_type: "group",
-      title: `${lead.project_title || lead.agreement_title || lead.subtitle || "Agreement"} — ${summarizeGroup(members, sectionKey)}`,
-      subtitle: earliestDate
+      task_section: selectedSection,
+      title: lead.project_title || lead.agreement_title || lead.subtitle || "Agreement",
+      subtitle: `Agreement #${agreementId} · ${summarizeAgreementGroup(
+        selectedSection,
+        sortedItems.length,
+        selectedItems.length
+      )}`,
+      group_detail: earliestDate
         ? `Earliest: ${earliestMember.milestone_title || earliestMember.title} on ${formatDateShort(earliestDate)}`
-        : `${members.length} related ${pluralize(members.length, "item")} in this period.`,
-      milestone_title: previewTitles.join(" • "),
+        : "",
       actions: agreementAction ? [agreementAction] : lead.actions || [],
-      grouped_items: members,
-      grouped_count: members.length,
-      status: `${members.length} ${pluralize(members.length, "item")}`,
-    });
+      grouped_items: sortedItems,
+      grouped_count: sortedItems.length,
+      status: "",
+      agreement_id: agreementId,
+    };
   });
 
-  return grouped;
+  return [...groupedRows, ...standaloneRows];
 }
 
 function buildTaskSections(payload) {
-  const classified = classifyTaskSections(payload);
+  const rows = buildAgreementRows(payload);
   return TASK_SECTION_CONFIG.map((section) => {
-    const groupedItems = groupSectionItems(classified[section.key] || [], section.key);
+    const sectionItems = sortAgreementRows(
+      rows.filter((item) => item.task_section === section.key)
+    );
     return {
       ...section,
-      items: groupedItems,
-      totalCount: groupedItems.length,
+      items: sectionItems,
     };
   }).filter((section) => section.items.length > 0);
 }
 
 function ItemCard({ item, onAction }) {
+  const isGroup = item.row_type === "group";
+
   return (
     <div
       data-testid={`workboard-item-${item.id}`}
@@ -204,16 +254,22 @@ function ItemCard({ item, onAction }) {
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold text-slate-900">{item.title}</div>
           <div className="mt-1 text-sm text-slate-600">{item.subtitle}</div>
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-            {item.milestone_title ? <span>Milestone: {item.milestone_title}</span> : null}
-            {item.assigned_worker_display ? <span>Worker: {item.assigned_worker_display}</span> : null}
-            {item.reviewer_display ? <span>Reviewer: {item.reviewer_display}</span> : null}
-            {item.work_submitted_at ? <span>Submitted: {formatDateTimeShort(item.work_submitted_at)}</span> : null}
-            {item.completion_date ? <span>Due: {formatDateTimeShort(item.completion_date)}</span> : null}
-            {item.start_date ? <span>Start: {formatDateTimeShort(item.start_date)}</span> : null}
-            {item.occurred_at ? <span>Activity: {formatDateTimeShort(item.occurred_at)}</span> : null}
-            {item.row_type === "group" ? <span>Grouped milestones: {item.grouped_count}</span> : null}
-          </div>
+          {isGroup ? (
+            item.group_detail ? (
+              <div className="mt-2 text-xs text-slate-500">{item.group_detail}</div>
+            ) : null
+          ) : (
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+              {item.agreement_id ? <span>Agreement #{item.agreement_id}</span> : null}
+              {item.milestone_title ? <span>Milestone: {item.milestone_title}</span> : null}
+              {item.assigned_worker_display ? <span>Worker: {item.assigned_worker_display}</span> : null}
+              {item.reviewer_display ? <span>Reviewer: {item.reviewer_display}</span> : null}
+              {item.work_submitted_at ? <span>Submitted: {formatDateTimeShort(item.work_submitted_at)}</span> : null}
+              {item.completion_date ? <span>Due: {formatDateTimeShort(item.completion_date)}</span> : null}
+              {item.start_date ? <span>Start: {formatDateTimeShort(item.start_date)}</span> : null}
+              {item.occurred_at ? <span>Activity: {formatDateTimeShort(item.occurred_at)}</span> : null}
+            </div>
+          )}
           {item.work_submission_note ? (
             <div className="mt-2 text-sm text-slate-700">
               Note: {item.work_submission_note}
@@ -283,7 +339,11 @@ function Section({ title, testId, items, expanded, onToggleExpanded, onAction })
 
 function EmptyTasksCard() {
   return (
-    <div className="mhb-glass" data-testid="role-workboard-empty" style={{ padding: 12, marginTop: 18 }}>
+    <div
+      className="mhb-glass"
+      data-testid="role-workboard-empty"
+      style={{ padding: 12, marginTop: 18 }}
+    >
       <div className="text-sm font-medium text-slate-700">No upcoming tasks right now.</div>
     </div>
   );
@@ -295,9 +355,16 @@ function RecentActivitySection({ items, emptyText, onAction }) {
       <div className="mhb-kicker" style={{ marginTop: 18 }}>
         Recent Activity
       </div>
-      <div className="mhb-glass" data-testid="role-workboard-recent-activity" style={{ padding: 12 }}>
+      <div
+        className="mhb-glass"
+        data-testid="role-workboard-recent-activity"
+        style={{ padding: 12 }}
+      >
         {items.length === 0 ? (
-          <div data-testid="role-workboard-recent-activity-empty" className="text-sm text-gray-500">
+          <div
+            data-testid="role-workboard-recent-activity-empty"
+            className="text-sm text-gray-500"
+          >
             {emptyText}
           </div>
         ) : (

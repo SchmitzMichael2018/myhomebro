@@ -143,7 +143,7 @@ function buildTask({
   };
 }
 
-test('contractor dashboard prioritizes grouped tasks and preserves navigation actions', async ({
+test('contractor dashboard groups by agreement id once and preserves navigation actions', async ({
   page,
 }) => {
   await mockContractorDashboard(page, {
@@ -206,29 +206,81 @@ test('contractor dashboard prioritizes grouped tasks and preserves navigation ac
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('role-workboard-needs-attention')).toBeVisible();
-  await expect(page.getByTestId('role-workboard-today')).toBeVisible();
+  await expect(page.getByTestId('role-workboard-today')).toHaveCount(0);
   await expect(page.getByTestId('role-workboard-tomorrow')).toBeVisible();
   await expect(page.getByTestId('role-workboard-this-week')).toHaveCount(0);
 
-  await expect(page.getByTestId('workboard-item-group-needs_attention-321')).toContainText(
+  await expect(page.getByTestId('workboard-item-group-agreement-321')).toContainText(
     'Kitchen Remodel'
   );
-  await expect(page.getByTestId('workboard-item-group-needs_attention-321')).toContainText(
-    '2 overdue milestones'
+  await expect(page.getByTestId('workboard-item-group-agreement-321')).toContainText(
+    'Agreement #321'
   );
-  await expect(page.getByTestId('workboard-item-group-today-321')).toContainText(
-    '2 tasks for today'
+  await expect(page.getByTestId('workboard-item-group-agreement-321')).toContainText(
+    '4 milestones'
   );
-  await expect(page.getByTestId('workboard-item-group-needs_attention-321')).toContainText(
+  await expect(page.getByTestId('workboard-item-group-agreement-321')).toContainText(
+    '2 overdue'
+  );
+  await expect(page.getByTestId('workboard-item-group-agreement-321')).toContainText(
     'Earliest: Cabinet Install'
   );
+  await expect(page.getByTestId('workboard-item-group-agreement-321')).toHaveCount(1);
 
-  await page.getByTestId('workboard-action-group-needs_attention-321-0').click();
+  await page.getByTestId('workboard-action-group-agreement-321-0').click();
   await page.waitForURL('**/app/agreements/321');
 
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('workboard-action-due-tomorrow-46-0').click();
   await page.waitForURL('**/app/milestones/46');
+});
+
+test('contractor dashboard keeps same-title agreements separate and shows agreement ids', async ({
+  page,
+}) => {
+  await mockContractorDashboard(page, {
+    identity_type: 'contractor_owner',
+    today: [
+      buildTask({
+        id: 'overdue-201',
+        item_type: 'overdue',
+        title: 'Roof Deck is overdue',
+        agreement_id: 1042,
+        agreement_title: 'Roof Replacement Agreement',
+        project_title: 'Roof Replacement',
+        subtitle: 'Roof Replacement',
+        milestone_id: 201,
+        milestone_title: 'Roof Deck',
+        completion_date: '2026-03-21T09:00:00Z',
+      }),
+      buildTask({
+        id: 'overdue-202',
+        item_type: 'overdue',
+        title: 'Shingle Delivery is overdue',
+        agreement_id: 2042,
+        agreement_title: 'Roof Replacement Agreement',
+        project_title: 'Roof Replacement',
+        subtitle: 'Roof Replacement',
+        milestone_id: 202,
+        milestone_title: 'Shingle Delivery',
+        completion_date: '2026-03-22T09:00:00Z',
+      }),
+    ],
+    tomorrow: [],
+    this_week: [],
+    recent_activity: [],
+    empty_states: {
+      recent_activity: 'No recent worker activity yet.',
+    },
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('role-workboard-needs-attention')).toBeVisible();
+  await expect(page.getByTestId('workboard-item-overdue-201')).toContainText('Agreement #1042');
+  await expect(page.getByTestId('workboard-item-overdue-202')).toContainText('Agreement #2042');
+  await expect(page.getByTestId('workboard-item-overdue-201')).toContainText('Roof Replacement');
+  await expect(page.getByTestId('workboard-item-overdue-202')).toContainText('Roof Replacement');
 });
 
 test('contractor dashboard caps long sections and expands with view all', async ({ page }) => {
