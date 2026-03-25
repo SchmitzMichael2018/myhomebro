@@ -61,14 +61,6 @@ function Stat({ label, value, sub, tone = "default" }) {
   );
 }
 
-function planLabel() {
-  return "Included";
-}
-
-function directPayRateLabel() {
-  return "1% + $1";
-}
-
 function insightTone(severity) {
   if (severity === "high") {
     return "border-rose-200 bg-rose-50 text-rose-900";
@@ -493,6 +485,7 @@ export default function BusinessDashboard() {
   const workflowSeries = payload?.workflow_series || [];
   const feeSummary = payload?.fee_summary || {};
   const workflowSummary = payload?.workflow_summary || {};
+  const progressSummary = payload?.progress_summary || {};
   const payoutQuery = useMemo(() => buildPayoutQuery(range), [range]);
   const recentPayouts = useMemo(() => payoutRows.slice(0, 5), [payoutRows]);
 
@@ -733,9 +726,6 @@ export default function BusinessDashboard() {
   if (error) {
     return <div className="p-6 text-center text-red-600 font-semibold">{error}</div>;
   }
-
-  const plan = planLabel(meData);
-  const dpRate = directPayRateLabel(meData);
   return (
     <div className="p-6">
       {/* Header */}
@@ -766,42 +756,6 @@ export default function BusinessDashboard() {
           >
             Refresh
           </button>
-        </div>
-      </div>
-
-      {/* AI availability */}
-      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <div className="text-sm font-extrabold text-slate-900">AI & Pricing</div>
-
-            <div className="mt-2 text-sm text-slate-700">
-              <b>AI Access:</b>{" "}
-              {meLoading ? "Loading…" : plan}
-              <span className="ml-2 inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-800">
-                INCLUDED
-              </span>
-            </div>
-
-            <div className="mt-2 text-sm text-slate-700">
-              <b>Direct Pay Rate:</b> {meLoading ? "—" : dpRate}
-            </div>
-
-            <div className="mt-2 text-xs text-slate-600">
-              AI tools are included in the base experience. Direct Pay uses <b>1% + $1</b>.
-              Escrow pricing remains tiered.
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={fetchMe}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50"
-            >
-              Refresh
-            </button>
-          </div>
         </div>
       </div>
 
@@ -936,6 +890,31 @@ export default function BusinessDashboard() {
           tone={Number(snapshot.disputes_open || 0) > 0 ? "bad" : "default"}
         />
       </div>
+
+      {Number(progressSummary.project_count || 0) > 0 ? (
+        <section className="mt-6 rounded-xl border border-indigo-200 bg-indigo-50/70 p-5 shadow-sm">
+          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="text-base font-bold text-slate-900">Progress Project Financials</div>
+              <div className="mt-1 text-sm text-slate-600">
+                Contract-value and draw-based visibility for agreements using Progress Payments.
+              </div>
+            </div>
+            <div className="text-xs text-slate-500">
+              {int(progressSummary.project_count)} progress projects
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <Stat label="Contract Value" value={money(progressSummary.contract_value)} />
+            <Stat label="Earned to Date" value={money(progressSummary.earned_to_date)} />
+            <Stat label="Approved to Date" value={money(progressSummary.approved_to_date)} />
+            <Stat label="Paid to Date" value={money(progressSummary.paid_to_date)} tone="good" />
+            <Stat label="Retainage Held" value={money(progressSummary.retainage_held)} tone="warn" />
+            <Stat label="Remaining Balance" value={money(progressSummary.remaining_balance)} />
+          </div>
+        </section>
+      ) : null}
 
       <section
         data-testid="dashboard-charts-section"

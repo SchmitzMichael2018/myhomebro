@@ -19,8 +19,10 @@ except Exception:  # pragma: no cover
 from projects.models_ai_scope import AgreementAIScope
 
 try:
-    from projects.models import Milestone, Invoice  # type: ignore
+    from projects.models import DrawRequest, ExternalPaymentRecord, Milestone, Invoice  # type: ignore
 except Exception:  # pragma: no cover
+    DrawRequest = None  # type: ignore
+    ExternalPaymentRecord = None  # type: ignore
     Milestone = None  # type: ignore
     Invoice = None  # type: ignore
 
@@ -1118,6 +1120,76 @@ class AgreementSerializer(serializers.ModelSerializer):
 
         if attrs.get("description", None) is None:
             attrs["description"] = ""
+
+        payment_structure = str(
+            attrs.get("payment_structure", getattr(self.instance, "payment_structure", "simple")) or "simple"
+        ).strip().lower()
+        current_payment_structure = str(
+            getattr(self.instance, "payment_structure", payment_structure) or "simple"
+        ).strip().lower()
+        retainage_percent = attrs.get(
+            "retainage_percent",
+            getattr(self.instance, "retainage_percent", Decimal("0.00")),
+        )
+
+        try:
+            retainage_decimal = Decimal(str(retainage_percent or 0))
+        except Exception:
+            raise serializers.ValidationError({"retainage_percent": "Enter a valid retainage percent."})
+
+        if retainage_decimal < 0 or retainage_decimal > 100:
+            raise serializers.ValidationError(
+                {"retainage_percent": "Retainage percent must be between 0 and 100."}
+            )
+
+        if self.instance is not None and payment_structure != current_payment_structure:
+            has_invoices = bool(Invoice and Invoice.objects.filter(agreement=self.instance).exists())
+            has_draws = bool(DrawRequest and DrawRequest.objects.filter(agreement=self.instance).exists())
+            has_external_payments = bool(
+                ExternalPaymentRecord and ExternalPaymentRecord.objects.filter(agreement=self.instance).exists()
+            )
+            signature_satisfied = getattr(self.instance, "signature_is_satisfied", None)
+            if callable(signature_satisfied):
+                signature_satisfied = signature_satisfied()
+            executed = bool(
+                signature_satisfied
+                or getattr(self.instance, "is_fully_signed", False)
+                or getattr(self.instance, "signed_by_contractor", False)
+                or getattr(self.instance, "signed_by_homeowner", False)
+            )
+            escrow_funded = bool(getattr(self.instance, "escrow_funded", False))
+            escrow_funded_amount = _to_decimal(getattr(self.instance, "escrow_funded_amount", None)) or Decimal("0.00")
+
+            if current_payment_structure == "simple" and payment_structure == "progress":
+                if has_invoices:
+                    raise serializers.ValidationError(
+                        {"payment_structure": "Cannot switch to Progress Payments after invoices already exist."}
+                    )
+                if executed:
+                    raise serializers.ValidationError(
+                        {"payment_structure": "Cannot switch payment structure after the agreement is signed."}
+                    )
+                if escrow_funded or escrow_funded_amount > 0:
+                    raise serializers.ValidationError(
+                        {"payment_structure": "Cannot switch to Progress Payments after escrow or payment activity exists."}
+                    )
+
+            if current_payment_structure == "progress" and payment_structure == "simple":
+                if has_draws:
+                    raise serializers.ValidationError(
+                        {"payment_structure": "Cannot switch to Simple Payments after draw requests already exist."}
+                    )
+                if has_external_payments:
+                    raise serializers.ValidationError(
+                        {"payment_structure": "Cannot switch to Simple Payments after external payments already exist."}
+                    )
+                if executed:
+                    raise serializers.ValidationError(
+                        {"payment_structure": "Cannot switch payment structure after the agreement is signed."}
+                    )
+
+        if payment_structure != "progress":
+            attrs["retainage_percent"] = Decimal("0.00")
 
         return attrs
 

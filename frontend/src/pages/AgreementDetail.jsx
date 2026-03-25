@@ -13,7 +13,17 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import api, { getAccessToken } from "../api";
+import api, {
+  approveDrawRequest,
+  createAgreementDrawRequest,
+  getAccessToken,
+  getAgreementDrawRequests,
+  getAgreementExternalPayments,
+  recordDrawExternalPayment,
+  rejectDrawRequest,
+  requestDrawChanges,
+  submitDrawRequest,
+} from "../api";
 import SignatureModal from "../components/SignatureModal";
 import EscrowPromptModal from "../components/EscrowPromptModal";
 import AttachmentManager from "../components/AttachmentManager";
@@ -70,9 +80,27 @@ function normalizePaymentMode(val) {
   return "escrow";
 }
 
+function normalizePaymentStructure(val) {
+  const s = String(val || "").trim().toLowerCase();
+  return s === "progress" ? "progress" : "simple";
+}
+
 function paymentModeLabel(mode) {
   const m = normalizePaymentMode(mode);
   return m === "direct" ? "Direct Pay" : "Escrow (Protected)";
+}
+
+function formatApiError(error, fallback) {
+  const data = error?.response?.data;
+  if (!data) return fallback;
+  if (typeof data === "string") return data;
+  if (typeof data?.detail === "string") return data.detail;
+  const firstEntry = Object.entries(data).find(([, value]) => value != null);
+  if (!firstEntry) return fallback;
+  const [field, value] = firstEntry;
+  const message = Array.isArray(value) ? value[0] : value;
+  if (typeof message === "string") return `${field.replaceAll("_", " ")}: ${message}`;
+  return fallback;
 }
 
 function PaymentModeBadge({ mode }) {
@@ -240,6 +268,27 @@ export default function AgreementDetail() {
 
   // Refund modal state
   const [refundOpen, setRefundOpen] = useState(false);
+  const [drawRows, setDrawRows] = useState([]);
+  const [drawLoading, setDrawLoading] = useState(false);
+  const [drawMilestones, setDrawMilestones] = useState([]);
+  const [drawModalOpen, setDrawModalOpen] = useState(false);
+  const [drawSaving, setDrawSaving] = useState(false);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [paymentSaving, setPaymentSaving] = useState(false);
+  const [paymentTargetDraw, setPaymentTargetDraw] = useState(null);
+  const [externalPayments, setExternalPayments] = useState([]);
+  const [externalPaymentsLoading, setExternalPaymentsLoading] = useState(false);
+  const [drawForm, setDrawForm] = useState({ title: "", notes: "", percents: {} });
+  const [paymentForm, setPaymentForm] = useState({
+    gross_amount: "",
+    retainage_withheld_amount: "",
+    net_amount: "",
+    payment_method: "ach",
+    payment_date: "",
+    reference_number: "",
+    notes: "",
+    proof_file: null,
+  });
   const [subcontractorsLoading, setSubcontractorsLoading] = useState(false);
   const [pendingInvitations, setPendingInvitations] = useState([]);
   const [acceptedSubcontractors, setAcceptedSubcontractors] = useState([]);
@@ -273,6 +322,12 @@ export default function AgreementDetail() {
   });
 
   const norm = useMemo(() => normalizeAgreement(agreement), [agreement]);
+  const paymentStructure = useMemo(
+    () => normalizePaymentStructure(agreement?.payment_structure),
+    [agreement?.payment_structure]
+  );
+  const isProgressPayments = paymentStructure === "progress";
+  const isExecuted = Boolean(agreement?.signature_is_satisfied || agreement?.is_fully_signed);
 
   const isContractor =
     user?.role === "contractor" ||
@@ -313,6 +368,17 @@ export default function AgreementDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  useEffect(() => {
+    if (!isProgressPayments || !isExecuted) {
+      setDrawRows([]);
+      setExternalPayments([]);
+      return;
+    }
+    fetchDraws();
+    fetchExternalPayments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, isExecuted, isProgressPayments]);
+
   const fetchSubcontractorInvitations = async () => {
     if (!id || !isContractor) return;
     try {
@@ -327,6 +393,58 @@ export default function AgreementDetail() {
       toast.error("Failed to load subcontractor invitations.");
     } finally {
       setSubcontractorsLoading(false);
+    }
+  };
+
+  const fetchDraws = async () => {
+    if (!id || !isProgressPayments || !isExecuted) {
+      setDrawRows([]);
+      return;
+    }
+    try {
+      setDrawLoading(true);
+      const data = await getAgreementDrawRequests(id);
+      setDrawRows(Array.isArray(data?.results) ? data.results : []);
+    } catch (e) {
+      console.error(e);
+      toast.error(formatApiError(e, "Failed to load draw requests."));
+      setDrawRows([]);
+    } finally {
+      setDrawLoading(false);
+    }
+  };
+
+  const fetchExternalPayments = async () => {
+    if (!id || !isProgressPayments || !isExecuted) {
+      setExternalPayments([]);
+      return;
+    }
+    try {
+      setExternalPaymentsLoading(true);
+      const data = await getAgreementExternalPayments(id);
+      setExternalPayments(Array.isArray(data?.results) ? data.results : []);
+    } catch (e) {
+      console.error(e);
+      toast.error(formatApiError(e, "Failed to load external payments."));
+      setExternalPayments([]);
+    } finally {
+      setExternalPaymentsLoading(false);
+    }
+  };
+
+  const fetchDrawMilestones = async () => {
+    if (!id) return [];
+    try {
+      const { data } = await api.get("/projects/milestones/", {
+        params: { agreement: id, _ts: Date.now() },
+      });
+      const rows = Array.isArray(data) ? data : Array.isArray(data?.results) ? data.results : [];
+      setDrawMilestones(rows);
+      return rows;
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to load milestones for draw creation.");
+      return [];
     }
   };
 
@@ -571,6 +689,114 @@ export default function AgreementDetail() {
       );
     } finally {
       setWarrantySaving(false);
+    }
+  };
+
+  const openCreateDrawModal = async () => {
+    const rows = await fetchDrawMilestones();
+    const nextPercents = {};
+    rows.forEach((row) => {
+      nextPercents[String(row.id)] = "0";
+    });
+    setDrawForm({
+      title: `Draw ${drawRows.length + 1}`,
+      notes: "",
+      percents: nextPercents,
+    });
+    setDrawModalOpen(true);
+  };
+
+  const submitCreateDraw = async () => {
+    try {
+      setDrawSaving(true);
+      const lineItems = (drawMilestones || [])
+        .map((milestone) => ({
+          milestone_id: milestone.id,
+          description: milestone.title || `Milestone ${milestone.id}`,
+          scheduled_value: milestone.amount || "0.00",
+          percent_complete: drawForm.percents[String(milestone.id)] || "0",
+        }))
+        .filter((row) => Number(row.percent_complete || 0) > 0);
+
+      if (!lineItems.length) {
+        toast.error("Enter percent complete for at least one milestone.");
+        return;
+      }
+
+      await createAgreementDrawRequest(id, {
+        title: drawForm.title,
+        notes: drawForm.notes,
+        line_items: lineItems,
+      });
+      toast.success("Draw request created.");
+      setDrawModalOpen(false);
+      await fetchDraws();
+    } catch (e) {
+      console.error(e);
+      toast.error(formatApiError(e, "Failed to create draw request."));
+    } finally {
+      setDrawSaving(false);
+    }
+  };
+
+  const runDrawAction = async (drawId, action) => {
+    try {
+      if (action === "submit") await submitDrawRequest(drawId);
+      if (action === "approve") await approveDrawRequest(drawId);
+      if (action === "reject") await rejectDrawRequest(drawId);
+      if (action === "changes") await requestDrawChanges(drawId);
+      toast.success("Draw updated.");
+      await fetchDraws();
+      await fetchExternalPayments();
+    } catch (e) {
+      console.error(e);
+      toast.error(formatApiError(e, "Failed to update draw."));
+    }
+  };
+
+  const openExternalPaymentModal = (draw) => {
+    setPaymentTargetDraw(draw);
+    setPaymentForm({
+      gross_amount: draw?.gross_amount || "",
+      retainage_withheld_amount: draw?.retainage_amount || "0.00",
+      net_amount: draw?.net_amount || "",
+      payment_method: "ach",
+      payment_date: new Date().toISOString().slice(0, 10),
+      reference_number: "",
+      notes: "",
+      proof_file: null,
+    });
+    setPaymentModalOpen(true);
+  };
+
+  const submitExternalPayment = async () => {
+    if (!paymentTargetDraw?.id) return;
+    try {
+      setPaymentSaving(true);
+      const formData = new FormData();
+      formData.append("gross_amount", paymentForm.gross_amount || "0.00");
+      formData.append(
+        "retainage_withheld_amount",
+        paymentForm.retainage_withheld_amount || "0.00"
+      );
+      formData.append("net_amount", paymentForm.net_amount || "0.00");
+      formData.append("payment_method", paymentForm.payment_method || "ach");
+      formData.append("payment_date", paymentForm.payment_date);
+      formData.append("reference_number", paymentForm.reference_number || "");
+      formData.append("notes", paymentForm.notes || "");
+      if (paymentForm.proof_file) {
+        formData.append("proof_file", paymentForm.proof_file);
+      }
+      await recordDrawExternalPayment(paymentTargetDraw.id, formData);
+      toast.success("External payment recorded.");
+      setPaymentModalOpen(false);
+      await fetchDraws();
+      await fetchExternalPayments();
+    } catch (e) {
+      console.error(e);
+      toast.error(formatApiError(e, "Failed to record external payment."));
+    } finally {
+      setPaymentSaving(false);
     }
   };
 
@@ -1948,7 +2174,177 @@ export default function AgreementDetail() {
         </div>
       )}
 
-      {/* Invoices */}
+      {isProgressPayments && (
+        <>
+          <div className="bg-white rounded shadow p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold mb-1">Draw Requests</h3>
+                <p className="text-sm text-gray-500">
+                  Create and review progress-payment draws after the agreement is signed.
+                </p>
+              </div>
+              {isExecuted ? (
+                <button
+                  type="button"
+                  onClick={openCreateDrawModal}
+                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                >
+                  Create Draw
+                </button>
+              ) : null}
+            </div>
+
+            {!isExecuted ? (
+              <div className="mt-4 rounded-lg border border-dashed border-gray-300 px-4 py-4 text-sm text-gray-500">
+                Draw tools unlock after the agreement is fully signed.
+              </div>
+            ) : drawLoading ? (
+              <div className="mt-4 text-sm text-gray-500">Loading draw requests…</div>
+            ) : drawRows.length === 0 ? (
+              <div className="mt-4 rounded-lg border border-dashed border-gray-300 px-4 py-4 text-sm text-gray-500">
+                No draw requests yet.
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {drawRows.map((draw) => (
+                  <div key={draw.id} className="rounded-xl border border-gray-200 p-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <div className="text-sm font-semibold text-gray-900">
+                          Draw {draw.draw_number}: {draw.title}
+                        </div>
+                        <div className="mt-1 text-xs text-gray-500">
+                          Status: {String(draw.status || "").replaceAll("_", " ")} • Gross {formatMoney(draw.gross_amount)} •
+                          Retainage {formatMoney(draw.retainage_amount)} • Net {formatMoney(draw.net_amount)}
+                        </div>
+                        {draw.notes ? (
+                          <div className="mt-2 text-sm text-gray-600 whitespace-pre-wrap">{draw.notes}</div>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {draw.status === "draft" || draw.status === "changes_requested" ? (
+                          <button
+                            type="button"
+                            onClick={() => runDrawAction(draw.id, "submit")}
+                            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                          >
+                            Submit
+                          </button>
+                        ) : null}
+                        {draw.status === "submitted" ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => runDrawAction(draw.id, "approve")}
+                              className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+                            >
+                              Mark Reviewed
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => runDrawAction(draw.id, "changes")}
+                              className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+                            >
+                              Needs Changes
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => runDrawAction(draw.id, "reject")}
+                              className="rounded-lg border border-rose-300 bg-white px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50"
+                            >
+                              Close Draw
+                            </button>
+                          </>
+                        ) : null}
+                        {draw.status === "approved" ? (
+                          <button
+                            type="button"
+                            onClick={() => openExternalPaymentModal(draw)}
+                            className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                          >
+                            Record External Payment
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {Array.isArray(draw.line_items) && draw.line_items.length ? (
+                      <div className="mt-4 overflow-x-auto">
+                        <table className="min-w-full text-xs">
+                          <thead>
+                            <tr className="border-b border-gray-200 text-left text-gray-500">
+                              <th className="py-2 pr-3">Line Item</th>
+                              <th className="py-2 pr-3">Scheduled Value</th>
+                              <th className="py-2 pr-3">% Complete</th>
+                              <th className="py-2 pr-3">This Draw</th>
+                              <th className="py-2 pr-3">Remaining</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {draw.line_items.map((item) => (
+                              <tr key={item.id} className="border-b border-gray-100">
+                                <td className="py-2 pr-3 text-gray-700">
+                                  {item.milestone_title || item.description}
+                                </td>
+                                <td className="py-2 pr-3">{formatMoney(item.scheduled_value)}</td>
+                                <td className="py-2 pr-3">{Number(item.percent_complete || 0).toFixed(2)}%</td>
+                                <td className="py-2 pr-3">{formatMoney(item.this_draw_amount)}</td>
+                                <td className="py-2 pr-3">{formatMoney(item.remaining_balance)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white rounded shadow p-6">
+            <h3 className="text-lg font-semibold mb-1">External Payments</h3>
+            <p className="text-sm text-gray-500">
+              Read-only records for payments received outside the app.
+            </p>
+            {externalPaymentsLoading ? (
+              <div className="mt-4 text-sm text-gray-500">Loading external payments…</div>
+            ) : externalPayments.length === 0 ? (
+              <div className="mt-4 rounded-lg border border-dashed border-gray-300 px-4 py-4 text-sm text-gray-500">
+                No external payments recorded yet.
+              </div>
+            ) : (
+              <div className="mt-4 overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 text-left text-xs font-semibold text-gray-500">
+                      <th className="py-2 pr-3">Draw</th>
+                      <th className="py-2 pr-3">Method</th>
+                      <th className="py-2 pr-3">Payment Date</th>
+                      <th className="py-2 pr-3">Net</th>
+                      <th className="py-2 pr-3">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {externalPayments.map((row) => (
+                      <tr key={row.id} className="border-b border-gray-100">
+                        <td className="py-3 pr-3 text-gray-700">{row.draw_title || "Unlinked payment"}</td>
+                        <td className="py-3 pr-3 text-gray-700 uppercase">{row.payment_method}</td>
+                        <td className="py-3 pr-3 text-gray-700">{row.payment_date || "—"}</td>
+                        <td className="py-3 pr-3 font-semibold text-gray-900">{formatMoney(row.net_amount)}</td>
+                        <td className="py-3 pr-3 text-gray-700">{row.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {!isProgressPayments ? (
       <div className="bg-white rounded shadow p-6">
         <h3 className="text-lg font-semibold mb-3">Invoices</h3>
         {!norm.invoices || norm.invoices.length === 0 ? (
@@ -1963,6 +2359,225 @@ export default function AgreementDetail() {
           </ul>
         )}
       </div>
+      ) : null}
+
+      {drawModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-3xl rounded-xl bg-white p-5 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold text-gray-900">Create Draw</div>
+                <div className="text-sm text-gray-500">
+                  Set percent complete for the schedule-of-values items you want to bill in this draw.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDrawModalOpen(false)}
+                className="rounded border px-2 py-1 text-sm"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              <input
+                type="text"
+                value={drawForm.title}
+                onChange={(e) => setDrawForm((prev) => ({ ...prev, title: e.target.value }))}
+                className="rounded border px-3 py-2 text-sm"
+                placeholder="Draw title"
+              />
+              <textarea
+                rows={3}
+                value={drawForm.notes}
+                onChange={(e) => setDrawForm((prev) => ({ ...prev, notes: e.target.value }))}
+                className="rounded border px-3 py-2 text-sm"
+                placeholder="Notes"
+              />
+            </div>
+
+            <div className="mt-4 max-h-[45vh] overflow-y-auto rounded-lg border">
+              <table className="min-w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr className="text-left text-xs font-semibold text-gray-500">
+                    <th className="px-3 py-2">Milestone</th>
+                    <th className="px-3 py-2">Scheduled Value</th>
+                    <th className="px-3 py-2">% Complete</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {drawMilestones.map((milestone) => (
+                    <tr key={milestone.id} className="border-t border-gray-100">
+                      <td className="px-3 py-2 text-gray-700">{milestone.title}</td>
+                      <td className="px-3 py-2 text-gray-700">{formatMoney(milestone.amount)}</td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          value={drawForm.percents[String(milestone.id)] || "0"}
+                          onChange={(e) =>
+                            setDrawForm((prev) => ({
+                              ...prev,
+                              percents: {
+                                ...prev.percents,
+                                [String(milestone.id)]: e.target.value,
+                              },
+                            }))
+                          }
+                          className="w-28 rounded border px-3 py-2 text-sm"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDrawModalOpen(false)}
+                className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitCreateDraw}
+                disabled={drawSaving}
+                className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+              >
+                {drawSaving ? "Creating…" : "Create Draw"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {paymentModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-xl rounded-xl bg-white p-5 shadow-xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-semibold text-gray-900">Record External Payment</div>
+                <div className="text-sm text-gray-500">
+                  Save payment context without changing payout execution or escrow behavior.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPaymentModalOpen(false)}
+                className="rounded border px-2 py-1 text-sm"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700 sm:col-span-2">
+                <div className="font-semibold text-slate-900">
+                  Expected payment: Gross {formatMoney(paymentTargetDraw?.gross_amount)} • Retainage{" "}
+                  {formatMoney(paymentTargetDraw?.retainage_amount)} • Net {formatMoney(paymentTargetDraw?.net_amount)}
+                </div>
+                <div className="mt-1 text-xs text-slate-500">
+                  Partial external payments are not supported. Recorded amounts must match this approved draw.
+                </div>
+              </div>
+              <input
+                type="number"
+                step="0.01"
+                value={paymentForm.gross_amount}
+                onChange={(e) => setPaymentForm((prev) => ({ ...prev, gross_amount: e.target.value }))}
+                className="rounded border px-3 py-2 text-sm"
+                placeholder="Amount"
+              />
+              <select
+                value={paymentForm.payment_method}
+                onChange={(e) => setPaymentForm((prev) => ({ ...prev, payment_method: e.target.value }))}
+                className="rounded border px-3 py-2 text-sm"
+              >
+                <option value="ach">ACH</option>
+                <option value="wire">Wire</option>
+                <option value="check">Check</option>
+                <option value="cash">Cash</option>
+                <option value="other">Other</option>
+              </select>
+              <input
+                type="number"
+                step="0.01"
+                value={paymentForm.retainage_withheld_amount}
+                onChange={(e) =>
+                  setPaymentForm((prev) => ({
+                    ...prev,
+                    retainage_withheld_amount: e.target.value,
+                  }))
+                }
+                className="rounded border px-3 py-2 text-sm"
+                placeholder="Retainage withheld"
+              />
+              <input
+                type="number"
+                step="0.01"
+                value={paymentForm.net_amount}
+                onChange={(e) => setPaymentForm((prev) => ({ ...prev, net_amount: e.target.value }))}
+                className="rounded border px-3 py-2 text-sm"
+                placeholder="Net amount"
+              />
+              <input
+                type="date"
+                value={paymentForm.payment_date}
+                onChange={(e) => setPaymentForm((prev) => ({ ...prev, payment_date: e.target.value }))}
+                className="rounded border px-3 py-2 text-sm"
+              />
+              <input
+                type="text"
+                value={paymentForm.reference_number}
+                onChange={(e) => setPaymentForm((prev) => ({ ...prev, reference_number: e.target.value }))}
+                className="rounded border px-3 py-2 text-sm sm:col-span-2"
+                placeholder="Reference number"
+              />
+              <textarea
+                rows={3}
+                value={paymentForm.notes}
+                onChange={(e) => setPaymentForm((prev) => ({ ...prev, notes: e.target.value }))}
+                className="rounded border px-3 py-2 text-sm sm:col-span-2"
+                placeholder="Notes"
+              />
+              <input
+                type="file"
+                onChange={(e) =>
+                  setPaymentForm((prev) => ({
+                    ...prev,
+                    proof_file: e.target.files?.[0] || null,
+                  }))
+                }
+                className="text-sm sm:col-span-2"
+              />
+            </div>
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPaymentModalOpen(false)}
+                className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitExternalPayment}
+                disabled={paymentSaving}
+                className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+              >
+                {paymentSaving ? "Saving…" : "Record Payment"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <SignatureModal
         isOpen={sigOpen}

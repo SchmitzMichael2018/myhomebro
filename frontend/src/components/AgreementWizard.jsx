@@ -184,6 +184,8 @@ const EMPTY_DLOCAL = {
   project_type: "",
   project_subtype: "",
   payment_mode: "escrow",
+  payment_structure: "simple",
+  retainage_percent: "0.00",
   description: "",
   address_line1: "",
   address_line2: "",
@@ -430,6 +432,11 @@ export default function AgreementWizard() {
           project_type: data?.project_type || prev.project_type,
           project_subtype: data?.project_subtype ?? prev.project_subtype,
           payment_mode: data?.payment_mode || prev.payment_mode,
+          payment_structure: data?.payment_structure || prev.payment_structure || "simple",
+          retainage_percent:
+            data?.retainage_percent != null
+              ? String(data.retainage_percent)
+              : prev.retainage_percent || "0.00",
           description: data?.description || prev.description,
 
           address_line1:
@@ -626,6 +633,11 @@ export default function AgreementWizard() {
       project_type_ref: selectedType?.id || null,
       project_subtype_ref: selectedSubtype?.id || null,
       payment_mode: dLocal.payment_mode || "escrow",
+      payment_structure: dLocal.payment_structure || "simple",
+      retainage_percent:
+        String(dLocal.payment_structure || "simple").toLowerCase() === "progress"
+          ? dLocal.retainage_percent || "0.00"
+          : "0.00",
       description: forDraftCreate ? rawDescription || fallbackDescription : rawDescription,
 
       address_line1: dLocal.address_line1 || "",
@@ -915,6 +927,12 @@ export default function AgreementWizard() {
           project_subtype: hydratedAgreement?.project_subtype ?? prev.project_subtype,
           description: hydratedAgreement?.description ?? prev.description,
           payment_mode: hydratedAgreement?.payment_mode || prev.payment_mode,
+          payment_structure:
+            hydratedAgreement?.payment_structure || prev.payment_structure || "simple",
+          retainage_percent:
+            hydratedAgreement?.retainage_percent != null
+              ? String(hydratedAgreement.retainage_percent)
+              : prev.retainage_percent || "0.00",
           address_line1:
             hydratedAgreement?.address_line1 ||
             hydratedAgreement?.project_address_line1 ||

@@ -16,6 +16,10 @@ from projects.models import (
     Agreement,
     Contractor,
     ContractorSubAccount,
+    DrawRequest,
+    DrawRequestStatus,
+    ExternalPaymentRecord,
+    ExternalPaymentStatus,
     Homeowner,
     Invoice,
     InvoiceStatus,
@@ -31,12 +35,14 @@ from projects.models import (
     SubcontractorCompletionStatus,
 )
 from projects.models import AgreementWarranty
+from projects.models_templates import ProjectTemplate
 from projects.models_sms import SMSConsentStatus
 from projects.models_subcontractor import (
     SubcontractorInvitation,
     SubcontractorInvitationStatus,
 )
 from projects.models_dispute import Dispute
+from projects.services.template_apply import apply_template_to_agreement
 from projects.services.milestone_payouts import sync_milestone_payout
 from payments.models import ConnectedAccount
 
@@ -3801,3 +3807,361 @@ class BusinessDashboardChartTests(TestCase):
         self.assertEqual(payload["chart_type"], "workflow")
         self.assertEqual(payload["record_count"], 0)
         self.assertEqual(payload["records"], [])
+
+
+class ProgressPaymentWorkflowTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="progress-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Progress Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Progress Homeowner",
+            email="progress-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Progress Agreement",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Progress agreement",
+            payment_structure="progress",
+            retainage_percent=Decimal("10.00"),
+            total_cost=Decimal("10000.00"),
+        )
+        self.milestone_one = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Mobilization",
+            amount=Decimal("4000.00"),
+        )
+        self.milestone_two = Milestone.objects.create(
+            agreement=self.agreement,
+            order=2,
+            title="Finish",
+            amount=Decimal("6000.00"),
+        )
+        self.template = ProjectTemplate.objects.create(
+            contractor=self.contractor,
+            name="Progress Template",
+            payment_structure="progress",
+            retainage_percent=Decimal("7.50"),
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.contractor_user)
+
+    def test_agreement_patch_accepts_payment_structure_fields(self):
+        response = self.client.patch(
+            f"/api/projects/agreements/{self.agreement.id}/",
+            {
+                "payment_structure": "progress",
+                "retainage_percent": "12.50",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.agreement.refresh_from_db()
+        self.assertEqual(self.agreement.payment_structure, "progress")
+        self.assertEqual(self.agreement.retainage_percent, Decimal("12.50"))
+
+    def test_progress_draw_endpoints_create_transition_and_record_payment(self):
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_by_homeowner = True
+        self.agreement.save(update_fields=["signed_by_contractor", "signed_by_homeowner"])
+
+        create_response = self.client.post(
+            f"/api/projects/agreements/{self.agreement.id}/draws/",
+            {
+                "title": "First Draw",
+                "notes": "Initial mobilization billing",
+                "line_items": [
+                    {
+                        "milestone_id": self.milestone_one.id,
+                        "scheduled_value": "4000.00",
+                        "percent_complete": "50.00",
+                    }
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201)
+        payload = create_response.json()
+        self.assertEqual(payload["status"], "draft")
+        self.assertEqual(payload["gross_amount"], "2000.00")
+        self.assertEqual(payload["retainage_amount"], "200.00")
+        self.assertEqual(payload["net_amount"], "1800.00")
+
+        draw_id = payload["id"]
+
+        submit_response = self.client.post(f"/api/projects/draws/{draw_id}/submit/", {}, format="json")
+        self.assertEqual(submit_response.status_code, 200)
+        self.assertEqual(submit_response.json()["status"], "submitted")
+
+        approve_response = self.client.post(f"/api/projects/draws/{draw_id}/approve/", {}, format="json")
+        self.assertEqual(approve_response.status_code, 200)
+        self.assertEqual(approve_response.json()["status"], "approved")
+
+        payment_response = self.client.post(
+            f"/api/projects/draws/{draw_id}/record_external_payment/",
+            {
+                "gross_amount": "2000.00",
+                "retainage_withheld_amount": "200.00",
+                "net_amount": "1800.00",
+                "payment_method": "ach",
+                "payment_date": "2026-03-25",
+                "reference_number": "ACH-100",
+                "notes": "Paid outside the app",
+            },
+            format="json",
+        )
+        self.assertEqual(payment_response.status_code, 201)
+        self.assertEqual(payment_response.json()["draw_request_id"], draw_id)
+        self.assertEqual(payment_response.json()["net_amount"], "1800.00")
+
+        draw = DrawRequest.objects.get(pk=draw_id)
+        self.assertEqual(draw.status, DrawRequestStatus.PAID)
+        self.assertTrue(
+            ExternalPaymentRecord.objects.filter(draw_request=draw, agreement=self.agreement).exists()
+        )
+
+    def test_progress_draw_creation_requires_signed_agreement(self):
+        response = self.client.post(
+            f"/api/projects/agreements/{self.agreement.id}/draws/",
+            {
+                "title": "Unsigned Draw",
+                "line_items": [
+                    {
+                        "milestone_id": self.milestone_one.id,
+                        "scheduled_value": "9999.00",
+                        "percent_complete": "50.00",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("after the agreement is signed", str(response.json()).lower())
+
+    def test_external_payment_requires_exact_draw_amounts_and_prevents_duplicates(self):
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_by_homeowner = True
+        self.agreement.save(update_fields=["signed_by_contractor", "signed_by_homeowner"])
+
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=1,
+            status=DrawRequestStatus.APPROVED,
+            title="Approved Draw",
+            gross_amount=Decimal("2500.00"),
+            retainage_amount=Decimal("250.00"),
+            net_amount=Decimal("2250.00"),
+            current_requested_amount=Decimal("2500.00"),
+        )
+
+        mismatch = self.client.post(
+            f"/api/projects/draws/{draw.id}/record_external_payment/",
+            {
+                "gross_amount": "2250.00",
+                "retainage_withheld_amount": "0.00",
+                "net_amount": "2250.00",
+                "payment_method": "ach",
+                "payment_date": "2026-03-25",
+            },
+            format="json",
+        )
+        self.assertEqual(mismatch.status_code, 400)
+        self.assertIn("gross_amount", mismatch.json())
+
+        payment = self.client.post(
+            f"/api/projects/draws/{draw.id}/record_external_payment/",
+            {
+                "gross_amount": "2500.00",
+                "retainage_withheld_amount": "250.00",
+                "net_amount": "2250.00",
+                "payment_method": "ach",
+                "payment_date": "2026-03-25",
+            },
+            format="json",
+        )
+        self.assertEqual(payment.status_code, 201)
+
+        duplicate = self.client.post(
+            f"/api/projects/draws/{draw.id}/record_external_payment/",
+            {
+                "gross_amount": "2500.00",
+                "retainage_withheld_amount": "250.00",
+                "net_amount": "2250.00",
+                "payment_method": "ach",
+                "payment_date": "2026-03-25",
+            },
+            format="json",
+        )
+        self.assertEqual(duplicate.status_code, 400)
+        self.assertIn("approved draws", str(duplicate.json()).lower())
+
+    def test_payment_structure_switching_is_blocked_after_downstream_activity(self):
+        simple_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Simple Agreement Project",
+        )
+        simple_agreement = Agreement.objects.create(
+            project=simple_project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Simple agreement",
+            payment_structure="simple",
+            total_cost=Decimal("5000.00"),
+            signed_by_contractor=True,
+            signed_by_homeowner=True,
+        )
+        Invoice.objects.create(
+            agreement=simple_agreement,
+            amount=Decimal("500.00"),
+            status="draft",
+        )
+
+        simple_to_progress = self.client.patch(
+            f"/api/projects/agreements/{simple_agreement.id}/",
+            {"payment_structure": "progress", "retainage_percent": "10.00"},
+            format="json",
+        )
+        self.assertEqual(simple_to_progress.status_code, 400)
+        self.assertIn("payment_structure", str(simple_to_progress.json()).lower())
+
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_by_homeowner = True
+        self.agreement.save(update_fields=["signed_by_contractor", "signed_by_homeowner"])
+        DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=1,
+            status=DrawRequestStatus.DRAFT,
+            title="Existing Draw",
+        )
+
+        progress_to_simple = self.client.patch(
+            f"/api/projects/agreements/{self.agreement.id}/",
+            {"payment_structure": "simple"},
+            format="json",
+        )
+        self.assertEqual(progress_to_simple.status_code, 400)
+        self.assertIn("payment_structure", str(progress_to_simple.json()).lower())
+
+    def test_template_apply_preserves_existing_payment_settings(self):
+        template_agreement_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Template Preserve Project",
+        )
+        template_agreement = Agreement.objects.create(
+            project=template_agreement_project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Template preserve agreement",
+            payment_structure="progress",
+            retainage_percent=Decimal("12.50"),
+            total_cost=Decimal("8000.00"),
+        )
+        self.template.milestones.create(
+            title="Template Milestone",
+            description="Template milestone",
+            sort_order=1,
+        )
+        result = apply_template_to_agreement(
+            agreement=template_agreement,
+            template=self.template,
+            overwrite_existing=True,
+            copy_text_fields=True,
+        )
+
+        self.assertEqual(result["template_id"], self.template.id)
+        template_agreement.refresh_from_db()
+        self.assertEqual(template_agreement.payment_structure, "progress")
+        self.assertEqual(template_agreement.retainage_percent, Decimal("12.50"))
+
+    def test_simple_agreement_rejects_draw_creation(self):
+        self.agreement.payment_structure = "simple"
+        self.agreement.save(update_fields=["payment_structure"])
+
+        response = self.client.post(
+            f"/api/projects/agreements/{self.agreement.id}/draws/",
+            {
+                "title": "Should Fail",
+                "line_items": [
+                    {
+                        "milestone_id": self.milestone_one.id,
+                        "scheduled_value": "4000.00",
+                        "percent_complete": "50.00",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("progress-payment agreements", str(response.json()).lower())
+
+    def test_business_dashboard_includes_progress_summary(self):
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=1,
+            status=DrawRequestStatus.APPROVED,
+            title="Approved Draw",
+            gross_amount=Decimal("2500.00"),
+            retainage_amount=Decimal("250.00"),
+            net_amount=Decimal("2250.00"),
+            current_requested_amount=Decimal("2500.00"),
+        )
+        ExternalPaymentRecord.objects.create(
+            agreement=self.agreement,
+            draw_request=draw,
+            gross_amount=Decimal("2250.00"),
+            net_amount=Decimal("2250.00"),
+            retainage_withheld_amount=Decimal("0.00"),
+            payment_method="ach",
+            payment_date=timezone.localdate(),
+            recorded_by=self.contractor_user,
+        )
+        DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=2,
+            status=DrawRequestStatus.DRAFT,
+            title="Draft Draw",
+            gross_amount=Decimal("999.00"),
+            retainage_amount=Decimal("99.00"),
+            net_amount=Decimal("900.00"),
+            current_requested_amount=Decimal("999.00"),
+        )
+        ExternalPaymentRecord.objects.create(
+            agreement=self.agreement,
+            draw_request=draw,
+            gross_amount=Decimal("500.00"),
+            net_amount=Decimal("500.00"),
+            retainage_withheld_amount=Decimal("0.00"),
+            payment_method="ach",
+            payment_date=timezone.localdate(),
+            status=ExternalPaymentStatus.VOIDED,
+            recorded_by=self.contractor_user,
+        )
+
+        response = self.client.get("/api/projects/business/contractor/summary/?range=30")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["progress_summary"]
+        self.assertEqual(payload["project_count"], 1)
+        self.assertEqual(payload["contract_value"], "10000.00")
+        self.assertEqual(payload["earned_to_date"], "2500.00")
+        self.assertEqual(payload["approved_to_date"], "2500.00")
+        self.assertEqual(payload["paid_to_date"], "2250.00")
+        self.assertEqual(payload["retainage_held"], "250.00")

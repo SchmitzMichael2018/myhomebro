@@ -3,6 +3,8 @@ from __future__ import annotations
 from decimal import Decimal
 from django.db import models
 
+from projects.models import AgreementPaymentStructure
+
 
 class ProjectTemplate(models.Model):
     """
@@ -26,6 +28,17 @@ class ProjectTemplate(models.Model):
 
     description = models.TextField(blank=True, default="")
     estimated_days = models.PositiveIntegerField(default=1)
+    payment_structure = models.CharField(
+        max_length=20,
+        choices=AgreementPaymentStructure.choices,
+        default=AgreementPaymentStructure.SIMPLE,
+        db_index=True,
+    )
+    retainage_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
 
     default_scope = models.TextField(blank=True, default="")
     default_clarifications = models.JSONField(blank=True, default=list)

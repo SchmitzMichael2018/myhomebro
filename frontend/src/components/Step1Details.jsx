@@ -24,6 +24,7 @@ import {
   safeTrim,
   computeCustomerAddressMissing,
   normalizePaymentMode,
+  normalizePaymentStructure,
   extractAiCredits,
   isAgreementLocked,
 } from "./step1/step1Utils";
@@ -97,6 +98,20 @@ export default function Step1Details({
   const patchTimerRef = useRef(null);
   const lastPatchedRef = useRef({});
 
+  function formatApiError(error, fallback = "Could not save changes.") {
+    const data = error?.response?.data;
+    if (!data) return fallback;
+    if (typeof data === "string") return data;
+    if (typeof data?.detail === "string") return data.detail;
+    if (typeof data?.error === "string") return data.error;
+    const firstEntry = Object.entries(data).find(([, value]) => value != null);
+    if (!firstEntry) return fallback;
+    const [field, value] = firstEntry;
+    const message = Array.isArray(value) ? value[0] : value;
+    if (typeof message === "string") return `${field.replaceAll("_", " ")}: ${message}`;
+    return fallback;
+  }
+
   async function patchAgreement(fields, { silent = true } = {}) {
     if (locked) return;
 
@@ -112,10 +127,7 @@ export default function Step1Details({
       await api.patch(`/projects/agreements/${id}/`, fields);
       if (!silent) toast.success("Saved");
     } catch (e) {
-      const msg =
-        e?.response?.data?.detail ||
-        e?.response?.data?.error ||
-        "Could not save changes.";
+      const msg = formatApiError(e, "Could not save changes.");
       if (!silent) toast.error(msg);
     } finally {
       delete lastPatchedRef.current[key];
@@ -174,6 +186,16 @@ export default function Step1Details({
   }, [agreementId, isNewAgreement, dLocal?.payment_mode, setDLocal]);
 
   useEffect(() => {
+    const normalized = normalizePaymentStructure(dLocal?.payment_structure);
+    if (!safeTrim(dLocal?.payment_structure)) {
+      setDLocal((s) => ({ ...s, payment_structure: normalized }));
+      if (!isNewAgreement) {
+        writeCache({ payment_structure: normalized });
+      }
+    }
+  }, [agreementId, isNewAgreement, dLocal?.payment_structure, setDLocal]);
+
+  useEffect(() => {
     if (isNewAgreement) return;
 
     try {
@@ -186,6 +208,12 @@ export default function Step1Details({
 
         if (!safeTrim(next.payment_mode) && safeTrim(saved.payment_mode)) {
           next.payment_mode = saved.payment_mode;
+        }
+        if (!safeTrim(next.payment_structure) && safeTrim(saved.payment_structure)) {
+          next.payment_structure = saved.payment_structure;
+        }
+        if (!safeTrim(next.retainage_percent) && safeTrim(saved.retainage_percent)) {
+          next.retainage_percent = saved.retainage_percent;
         }
         if (!safeTrim(next.address_line1) && safeTrim(saved.address_line1)) {
           next.address_line1 = saved.address_line1;
@@ -234,6 +262,8 @@ export default function Step1Details({
     try {
       const payload = {
         payment_mode: dLocal?.payment_mode || "",
+        payment_structure: dLocal?.payment_structure || "",
+        retainage_percent: dLocal?.retainage_percent || "",
         address_search: addrSearch || "",
         address_line1: dLocal?.address_line1 || "",
         address_line2: dLocal?.address_line2 || "",
@@ -252,6 +282,8 @@ export default function Step1Details({
     cacheKey,
     addrSearch,
     dLocal?.payment_mode,
+    dLocal?.payment_structure,
+    dLocal?.retainage_percent,
     dLocal?.address_line1,
     dLocal?.address_line2,
     dLocal?.address_city,
@@ -403,6 +435,8 @@ export default function Step1Details({
   }
 
   const paymentMode = normalizePaymentMode(dLocal?.payment_mode);
+  const paymentStructure = normalizePaymentStructure(dLocal?.payment_structure);
+  const retainagePercent = safeTrim(dLocal?.retainage_percent) || "0.00";
 
   async function handlePaymentModeChange(mode) {
     if (locked) return;
@@ -415,6 +449,75 @@ export default function Step1Details({
     }
 
     await patchAgreement({ payment_mode: normalized }, { silent: true });
+  }
+
+  async function handlePaymentStructureChange(nextMode) {
+    if (locked) return;
+
+    const normalized = normalizePaymentStructure(nextMode);
+    if (normalized === paymentStructure) return;
+
+    const confirmed = window.confirm(
+      normalized === "progress"
+        ? "Switch to Progress Payments? Milestones will stay intact, but the workflow will use draw requests after signing."
+        : "Switch back to Simple Payments? Draw request tools will be hidden and retainage will reset to 0%."
+    );
+    if (!confirmed) return;
+
+    const nextRetainage = normalized === "progress" ? retainagePercent || "0.00" : "0.00";
+    const previousPaymentStructure = paymentStructure;
+    const previousRetainage = retainagePercent || "0.00";
+    setDLocal((s) => ({
+      ...s,
+      payment_structure: normalized,
+      retainage_percent: nextRetainage,
+    }));
+    if (!isNewAgreement) {
+      writeCache({ payment_structure: normalized, retainage_percent: nextRetainage });
+    }
+
+    if (!agreementId) return;
+
+    try {
+      await api.patch(`/projects/agreements/${agreementId}/`, {
+        payment_structure: normalized,
+        retainage_percent: nextRetainage,
+      });
+    } catch (e) {
+      setDLocal((s) => ({
+        ...s,
+        payment_structure: previousPaymentStructure,
+        retainage_percent: previousRetainage,
+      }));
+      if (!isNewAgreement) {
+        writeCache({
+          payment_structure: previousPaymentStructure,
+          retainage_percent: previousRetainage,
+        });
+      }
+      toast.error(formatApiError(e, "Could not update payment structure."));
+    }
+  }
+
+  async function handleRetainageChange(value) {
+    if (locked) return;
+    const previousRetainage = retainagePercent || "0.00";
+    setDLocal((s) => ({ ...s, retainage_percent: value }));
+    if (!isNewAgreement) {
+      writeCache({ retainage_percent: value });
+    }
+    if (!agreementId) return;
+    try {
+      await api.patch(`/projects/agreements/${agreementId}/`, {
+        retainage_percent: value || "0.00",
+      });
+    } catch (e) {
+      setDLocal((s) => ({ ...s, retainage_percent: previousRetainage }));
+      if (!isNewAgreement) {
+        writeCache({ retainage_percent: previousRetainage });
+      }
+      toast.error(formatApiError(e, "Could not update retainage."));
+    }
   }
 
   function persistAddressNow({ silent = true } = {}) {
@@ -620,6 +723,14 @@ export default function Step1Details({
         normalizePaymentMode(
           nextAgreement.payment_mode ?? nextAgreement.paymentMode ?? prev.payment_mode
         ) || prev.payment_mode,
+      payment_structure:
+        normalizePaymentStructure(
+          nextAgreement.payment_structure ?? nextAgreement.paymentStructure ?? prev.payment_structure
+        ) || prev.payment_structure || "simple",
+      retainage_percent:
+        nextAgreement.retainage_percent != null
+          ? String(nextAgreement.retainage_percent)
+          : prev.retainage_percent || "0.00",
       selected_template: nextSelectedTemplate,
       selected_template_id: nextSelectedTemplateId,
       selected_template_name_snapshot:
@@ -648,6 +759,14 @@ export default function Step1Details({
           normalizePaymentMode(
             nextAgreement.payment_mode ?? nextAgreement.paymentMode ?? dLocal?.payment_mode
           ) || dLocal?.payment_mode,
+        payment_structure:
+          normalizePaymentStructure(
+            nextAgreement.payment_structure ?? nextAgreement.paymentStructure ?? dLocal?.payment_structure
+          ) || dLocal?.payment_structure || "simple",
+        retainage_percent:
+          nextAgreement.retainage_percent != null
+            ? String(nextAgreement.retainage_percent)
+            : dLocal?.retainage_percent || "0.00",
         selected_template: nextSelectedTemplate,
         selected_template_id: nextSelectedTemplateId,
         selected_template_name_snapshot:
@@ -995,6 +1114,71 @@ export default function Step1Details({
               schedulePatch={schedulePatch}
               onLocalChange={handleStep1LocalChange}
             />
+
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-sm font-semibold text-slate-900">Payment Structure</div>
+              <div className="mt-1 text-sm text-slate-600">
+                How will you get paid for this project?
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                <button
+                  type="button"
+                  onClick={() => handlePaymentStructureChange("simple")}
+                  disabled={locked}
+                  className={`rounded-xl border px-4 py-3 text-left transition ${
+                    paymentStructure === "simple"
+                      ? "border-indigo-300 bg-indigo-50"
+                      : "border-slate-200 bg-white hover:bg-slate-50"
+                  } disabled:opacity-60`}
+                >
+                  <div className="font-semibold text-slate-900">Simple Payments</div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    Get paid when milestones are completed
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handlePaymentStructureChange("progress")}
+                  disabled={locked}
+                  className={`rounded-xl border px-4 py-3 text-left transition ${
+                    paymentStructure === "progress"
+                      ? "border-indigo-300 bg-indigo-50"
+                      : "border-slate-200 bg-white hover:bg-slate-50"
+                  } disabled:opacity-60`}
+                >
+                  <div className="font-semibold text-slate-900">Progress Payments</div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    Get paid based on progress, with approvals and retainage
+                  </div>
+                </button>
+              </div>
+
+              {paymentStructure === "progress" ? (
+                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    Retainage %
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.01"
+                    value={retainagePercent}
+                    disabled={locked}
+                    onChange={(e) =>
+                      setDLocal((s) => ({ ...s, retainage_percent: e.target.value }))
+                    }
+                    onBlur={(e) => handleRetainageChange(e.target.value)}
+                    className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  />
+                  <div className="mt-2 text-xs text-slate-500">
+                    This retainage is used when draw requests are created after signing.
+                  </div>
+                </div>
+              ) : null}
+            </div>
 
             <PaymentModeSection
               locked={locked}

@@ -18,6 +18,10 @@ from rest_framework.permissions import IsAuthenticated
 from projects.models import (
     Agreement,
     Contractor,
+    DrawRequest,
+    DrawRequestStatus,
+    ExternalPaymentRecord,
+    ExternalPaymentStatus,
     Invoice,
     Milestone,
     MilestonePayoutStatus,
@@ -409,6 +413,62 @@ def _completed_agreements_queryset(contractor, start_dt, end_dt):
     ).order_by("-updated_at", "-id")
 
 
+def _build_progress_summary(contractor, end_dt):
+    progress_agreements = Agreement.objects.filter(
+        contractor=contractor,
+        payment_structure="progress",
+    )
+    contract_value = (
+        progress_agreements.aggregate(total=Coalesce(Sum("total_cost"), Decimal("0.00"))).get("total")
+        or Decimal("0.00")
+    ).quantize(Decimal("0.01"))
+
+    progress_draws = DrawRequest.objects.filter(
+        agreement__contractor=contractor,
+        agreement__payment_structure="progress",
+        created_at__lte=end_dt,
+    )
+    valid_earned_draws = progress_draws.filter(status__in=[DrawRequestStatus.APPROVED, DrawRequestStatus.PAID])
+    earned_to_date = (
+        valid_earned_draws.aggregate(total=Coalesce(Sum("gross_amount"), Decimal("0.00"))).get("total")
+        or Decimal("0.00")
+    ).quantize(Decimal("0.01"))
+    approved_to_date = (
+        valid_earned_draws.aggregate(
+            total=Coalesce(Sum("gross_amount"), Decimal("0.00"))
+        ).get("total")
+        or Decimal("0.00")
+    ).quantize(Decimal("0.01"))
+    retainage_held = (
+        valid_earned_draws.aggregate(
+            total=Coalesce(Sum("retainage_amount"), Decimal("0.00"))
+        ).get("total")
+        or Decimal("0.00")
+    ).quantize(Decimal("0.01"))
+
+    paid_to_date = (
+        ExternalPaymentRecord.objects.filter(
+            agreement__contractor=contractor,
+            agreement__payment_structure="progress",
+            payment_date__lte=end_dt.date(),
+            status__in=[ExternalPaymentStatus.RECORDED, ExternalPaymentStatus.VERIFIED],
+        ).aggregate(total=Coalesce(Sum("net_amount"), Decimal("0.00"))).get("total")
+        or Decimal("0.00")
+    ).quantize(Decimal("0.01"))
+
+    remaining_balance = max(contract_value - earned_to_date, Decimal("0.00")).quantize(Decimal("0.01"))
+
+    return {
+        "project_count": progress_agreements.count(),
+        "contract_value": str(contract_value),
+        "earned_to_date": str(earned_to_date),
+        "approved_to_date": str(approved_to_date),
+        "paid_to_date": str(paid_to_date),
+        "retainage_held": str(retainage_held),
+        "remaining_balance": str(remaining_balance),
+    }
+
+
 class _CSVExportBase(APIView):
     permission_classes = [IsAuthenticated]
     filename = "report.csv"
@@ -582,6 +642,7 @@ class BusinessDashboardSummaryAPIView(APIView):
             },
             "by_category": category_rows,
             "insights": build_business_insights(contractor, start_dt, end_dt),
+            "progress_summary": _build_progress_summary(contractor, end_dt),
         }
         payload.update(_build_chart_series(contractor, request, start_dt, end_dt))
 

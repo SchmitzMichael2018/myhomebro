@@ -417,6 +417,47 @@ export async function getContractorBusinessDashboardSummary(range = "30") {
   return res.data;
 }
 
+export async function getAgreementDrawRequests(agreementId) {
+  const res = await api.get(`/projects/agreements/${agreementId}/draws/`);
+  return res.data;
+}
+
+export async function createAgreementDrawRequest(agreementId, payload) {
+  const res = await api.post(`/projects/agreements/${agreementId}/draws/`, payload);
+  return res.data;
+}
+
+export async function submitDrawRequest(drawId) {
+  const res = await api.post(`/projects/draws/${drawId}/submit/`);
+  return res.data;
+}
+
+export async function approveDrawRequest(drawId) {
+  const res = await api.post(`/projects/draws/${drawId}/approve/`);
+  return res.data;
+}
+
+export async function rejectDrawRequest(drawId) {
+  const res = await api.post(`/projects/draws/${drawId}/reject/`);
+  return res.data;
+}
+
+export async function requestDrawChanges(drawId) {
+  const res = await api.post(`/projects/draws/${drawId}/request_changes/`);
+  return res.data;
+}
+
+export async function recordDrawExternalPayment(drawId, payload) {
+  const headers = payload instanceof FormData ? { "Content-Type": "multipart/form-data" } : undefined;
+  const res = await api.post(`/projects/draws/${drawId}/record_external_payment/`, payload, { headers });
+  return res.data;
+}
+
+export async function getAgreementExternalPayments(agreementId) {
+  const res = await api.get(`/projects/agreements/${agreementId}/external-payments/`);
+  return res.data;
+}
+
 // ------------------------
 // ✅ Agreement Close-out / Archive API
 // ------------------------

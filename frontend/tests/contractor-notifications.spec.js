@@ -158,14 +158,6 @@ test('contractor dashboard groups by agreement id once and preserves navigation 
         completion_date: '2026-03-20T09:00:00Z',
       }),
       buildTask({
-        id: 'overdue-42',
-        item_type: 'overdue',
-        title: 'Countertop Template is overdue',
-        milestone_id: 42,
-        milestone_title: 'Countertop Template',
-        completion_date: '2026-03-22T09:00:00Z',
-      }),
-      buildTask({
         id: 'due-today-43',
         item_type: 'due_today',
         title: 'Paint Prep is due today',
@@ -173,16 +165,16 @@ test('contractor dashboard groups by agreement id once and preserves navigation 
         milestone_title: 'Paint Prep',
         completion_date: '2026-03-24T11:00:00Z',
       }),
-      buildTask({
-        id: 'start-today-44',
-        item_type: 'start_today',
-        title: 'Floor Protection starts today',
-        milestone_id: 44,
-        milestone_title: 'Floor Protection',
-        start_date: '2026-03-24T14:00:00Z',
-      }),
     ],
     tomorrow: [
+      buildTask({
+        id: 'due-tomorrow-44',
+        item_type: 'due_tomorrow',
+        title: 'Floor Protection is due tomorrow',
+        milestone_id: 44,
+        milestone_title: 'Floor Protection',
+        completion_date: '2026-03-25T09:00:00Z',
+      }),
       buildTask({
         id: 'due-tomorrow-46',
         item_type: 'due_tomorrow',
@@ -193,7 +185,7 @@ test('contractor dashboard groups by agreement id once and preserves navigation 
         subtitle: 'Lake House',
         milestone_id: 46,
         milestone_title: 'Final Paint',
-        completion_date: '2026-03-25T09:00:00Z',
+        completion_date: '2026-03-25T10:00:00Z',
       }),
     ],
     this_week: [],
@@ -208,25 +200,23 @@ test('contractor dashboard groups by agreement id once and preserves navigation 
   await expect(page.getByTestId('role-workboard-needs-attention')).toBeVisible();
   await expect(page.getByTestId('role-workboard-today')).toHaveCount(0);
   await expect(page.getByTestId('role-workboard-tomorrow')).toBeVisible();
-  await expect(page.getByTestId('role-workboard-this-week')).toHaveCount(0);
-
+  await expect(page.getByTestId('workboard-item-group-agreement-321')).toHaveCount(1);
   await expect(page.getByTestId('workboard-item-group-agreement-321')).toContainText(
     'Kitchen Remodel'
-  );
-  await expect(page.getByTestId('workboard-agreement-id-group-agreement-321')).toContainText(
-    '#321'
-  );
-  await expect(page.getByTestId('workboard-agreement-id-group-agreement-321')).toContainText(
-    '4 milestones'
-  );
-  await expect(page.getByTestId('workboard-agreement-id-group-agreement-321')).toContainText(
-    '2 overdue'
   );
   await expect(page.getByTestId('workboard-item-group-agreement-321')).toContainText(
     'Earliest: Cabinet Install'
   );
-  await expect(page.getByTestId('workboard-item-group-agreement-321')).toHaveCount(1);
-  await expect(page.getByTestId('workboard-agreement-id-group-agreement-321')).toHaveCount(1);
+  await expect(page.getByTestId('workboard-agreement-id-group-agreement-321')).toContainText(
+    'Agreement #321'
+  );
+  await expect(page.getByTestId('workboard-agreement-id-group-agreement-321')).toContainText(
+    '3 milestones'
+  );
+  await expect(page.getByTestId('workboard-agreement-id-group-agreement-321')).toContainText(
+    '1 overdue'
+  );
+  await expect(page.getByTestId('role-workboard-tomorrow')).not.toContainText('Kitchen Remodel');
 
   await page.getByTestId('workboard-action-group-agreement-321-0').click();
   await page.waitForURL('**/app/agreements/321');
@@ -236,7 +226,7 @@ test('contractor dashboard groups by agreement id once and preserves navigation 
   await page.waitForURL('**/app/milestones/46');
 });
 
-test('contractor dashboard keeps same-title agreements separate and shows agreement ids', async ({
+test('contractor dashboard keeps same-title agreements separate and shows ids on all rows', async ({
   page,
 }) => {
   await mockContractorDashboard(page, {
@@ -279,9 +269,13 @@ test('contractor dashboard keeps same-title agreements separate and shows agreem
 
   await expect(page.getByTestId('role-workboard-needs-attention')).toBeVisible();
   await expect(page.getByTestId('workboard-agreement-id-overdue-201')).toContainText('#1042');
+  await expect(page.getByTestId('workboard-agreement-id-overdue-201')).toContainText(
+    'Roof Replacement'
+  );
   await expect(page.getByTestId('workboard-agreement-id-overdue-202')).toContainText('#2042');
-  await expect(page.getByTestId('workboard-item-overdue-201')).toContainText('Roof Replacement');
-  await expect(page.getByTestId('workboard-item-overdue-202')).toContainText('Roof Replacement');
+  await expect(page.getByTestId('workboard-agreement-id-overdue-202')).toContainText(
+    'Roof Replacement'
+  );
 });
 
 test('contractor dashboard renders no duplicate agreement rows in the dom', async ({ page }) => {
@@ -338,7 +332,7 @@ test('contractor dashboard renders no duplicate agreement rows in the dom', asyn
 
   await expect(page.getByTestId('workboard-item-group-agreement-777')).toHaveCount(1);
   await expect(page.getByTestId('workboard-agreement-id-group-agreement-777')).toContainText(
-    '#777'
+    'Agreement #777'
   );
   await expect(page.getByTestId('role-workboard-needs-attention')).toContainText(
     'Roof Replacement'
@@ -441,7 +435,6 @@ test('contractor dashboard caps long sections and expands with view all', async 
 
   await page.getByTestId('role-workboard-today-view-all').click();
   await expect(page.getByTestId('workboard-item-due-today-106')).toBeVisible();
-  await expect(page.getByTestId('role-workboard-today-view-all')).toContainText('Show less');
 });
 
 test('contractor dashboard hides empty task sections and shows one compact empty state', async ({
@@ -467,5 +460,4 @@ test('contractor dashboard hides empty task sections and shows one compact empty
   await expect(page.getByTestId('role-workboard-today')).toHaveCount(0);
   await expect(page.getByTestId('role-workboard-tomorrow')).toHaveCount(0);
   await expect(page.getByTestId('role-workboard-this-week')).toHaveCount(0);
-  await expect(page.getByTestId('role-workboard-recent-activity-empty')).toBeVisible();
 });

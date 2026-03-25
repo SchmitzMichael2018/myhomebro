@@ -838,6 +838,15 @@ export default function Step4Finalize({
   }, [agreement?.payment_mode, agreement?.paymentMode, dLocal?.payment_mode]);
 
   const isDirectPay = paymentMode === "direct";
+  const paymentStructure = String(
+    agreement?.payment_structure || dLocal?.payment_structure || "simple"
+  )
+    .trim()
+    .toLowerCase();
+  const isProgressPayments = paymentStructure === "progress";
+  const retainagePercent = Number(
+    agreement?.retainage_percent ?? dLocal?.retainage_percent ?? 0
+  );
 
   useEffect(() => {
     const fetchHomeowner = async () => {
@@ -1520,7 +1529,14 @@ export default function Step4Finalize({
           <SummaryCard label="Agreement Version" value={amendmentNumber > 0 ? `Amendment ${amendmentNumber}` : "Original Agreement"} />
           <SummaryCard label="PDF Version" value={pdfVersion != null ? `v${pdfVersion}` : "—"} />
           <SummaryCard label="Payment Mode" value={isDirectPay ? "Direct Pay" : "Escrow (Protected)"} />
-          <SummaryCard label="Escrow Funded?" value={isDirectPay ? "N/A" : escrowFunded ? "Yes" : "No"} />
+          <SummaryCard
+            label="Payment Structure"
+            value={isProgressPayments ? "Progress Payments" : "Simple Payments"}
+          />
+          <SummaryCard
+            label={isProgressPayments ? "Retainage %" : "Escrow Funded?"}
+            value={isProgressPayments ? `${retainagePercent.toFixed(2)}%` : isDirectPay ? "N/A" : escrowFunded ? "Yes" : "No"}
+          />
           <SummaryCard label="Fully Signed?" value={isFullySigned ? "Yes" : "No"} />
         </div>
 
@@ -1828,8 +1844,22 @@ export default function Step4Finalize({
           </div>
 
           <div className="rounded border bg-slate-50 p-3 text-[12px] text-slate-700">
-            <div className="font-semibold mb-1">{isDirectPay ? "Direct Pay" : "Escrow (Protected)"}</div>
-            {isDirectPay ? (
+            <div className="font-semibold mb-1">
+              {isProgressPayments ? "Progress Payments" : isDirectPay ? "Direct Pay" : "Escrow (Protected)"}
+            </div>
+            {isProgressPayments ? (
+              <>
+                <div>Payments will be handled via draw requests after signing.</div>
+                <div className="mt-3 rounded border border-slate-200 bg-white px-3 py-2">
+                  <div className="text-[11px] uppercase tracking-wide text-slate-500">
+                    Progress-payment context
+                  </div>
+                  <div className="mt-1 text-sm font-semibold text-slate-900 tabular-nums">
+                    Retainage set to {retainagePercent.toFixed(2)}% until draws are approved and paid.
+                  </div>
+                </div>
+              </>
+            ) : isDirectPay ? (
               <>
                 <div>Customer pays invoices via Stripe links. No escrow deposit is required.</div>
                 <div className="mt-3 rounded border border-slate-200 bg-white px-3 py-2">
@@ -1864,7 +1894,7 @@ export default function Step4Finalize({
 
       <section className="rounded-lg border bg-white p-4 shadow">
         <h3 className="text-lg font-semibold text-gray-900 mb-2">
-          {isDirectPay ? "Signatures & Payment" : "Signatures & Escrow"}
+          {isProgressPayments ? "Signatures & Progress Payments" : isDirectPay ? "Signatures & Payment" : "Signatures & Escrow"}
         </h3>
 
         <div className="mb-4 rounded border bg-slate-50 p-3">
@@ -2015,7 +2045,12 @@ export default function Step4Finalize({
               </div>
             )}
 
-            {!isDirectPay ? (
+            {isProgressPayments ? (
+              <div className="mt-4 rounded border border-indigo-200 bg-indigo-50 px-3 py-3 text-[11px] text-indigo-900">
+                Payments will be handled via draw requests after signing. External payment records can be added from
+                the agreement detail page when funds are received outside the app.
+              </div>
+            ) : !isDirectPay ? (
               <div className="mt-4 border-t pt-2">
                 <div className="text-xs text-gray-700 mb-1">Escrow Funding</div>
 

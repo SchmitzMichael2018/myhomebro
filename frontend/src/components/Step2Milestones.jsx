@@ -861,6 +861,8 @@ export default function Step2Milestones({
 
   const selectedTemplateMeta = useMemo(() => deriveSelectedTemplateMeta(agreementMeta), [agreementMeta]);
   const templateApplied = !!selectedTemplateMeta;
+  const paymentStructure = String(agreementMeta?.payment_structure || "simple").trim().toLowerCase();
+  const isProgressPayments = paymentStructure === "progress";
   const projectContextSummary = useMemo(() => {
     const agreementAnswers = agreementMeta?.ai_scope?.answers || {};
     const projectType =
@@ -2123,7 +2125,7 @@ export default function Step2Milestones({
           min="0.01"
           step="0.01"
           className="rounded border px-3 py-2 text-sm md:col-span-2"
-          placeholder="Amount"
+          placeholder={isProgressPayments ? "Scheduled Value" : "Amount"}
           name="amount"
           value={mLocal.amount}
           onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
@@ -2157,6 +2159,16 @@ export default function Step2Milestones({
         </button>
       </div>
 
+      {isProgressPayments ? (
+        <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-900">
+          <div className="font-semibold">Progress Payments</div>
+          <div className="mt-1">
+            Milestones stay as your schedule of values. Percent complete, earned amount, and remaining balance are
+            shown here for draw-request planning after signing.
+          </div>
+        </div>
+      ) : null}
+
       <div className="overflow-x-auto rounded-2xl border">
         <table className="w-full text-sm">
           <thead className="bg-gray-50">
@@ -2183,7 +2195,6 @@ export default function Step2Milestones({
           <tbody>
             {effectiveMilestones.map((m, idx) => {
               const estimate = getEstimateAssistMeta(m);
-
               return (
                 <tr key={m.id || `${m.title}-${idx}`} className="border-t align-top">
                   <td className="px-3 py-2">{m?.order ?? idx + 1}</td>
