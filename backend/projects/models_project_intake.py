@@ -12,6 +12,7 @@ class ProjectIntake(models.Model):
         ("landing_page", "Landing Page"),
         ("public_profile", "Public Profile"),
         ("qr", "QR"),
+        ("contractor_sent_form", "Contractor Sent Form"),
         ("direct", "Direct"),
     ]
 

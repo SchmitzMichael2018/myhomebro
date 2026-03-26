@@ -31,6 +31,12 @@ function fmtDateTime(value) {
 function statusChipClass(value) {
   const normalized = String(value || '').toLowerCase();
   if (normalized === 'new') return 'border-blue-200 bg-blue-50 text-blue-700';
+  if (normalized === 'pending_customer_response') {
+    return 'border-amber-200 bg-amber-50 text-amber-700';
+  }
+  if (normalized === 'ready_for_review') {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  }
   if (normalized === 'accepted') return 'border-indigo-200 bg-indigo-50 text-indigo-700';
   if (normalized === 'rejected') return 'border-rose-200 bg-rose-50 text-rose-700';
   if (normalized === 'contacted' || normalized === 'qualified') {
@@ -46,8 +52,20 @@ function sourceLabel(value) {
   if (normalized === 'landing_page') return 'Landing Page';
   if (normalized === 'public_profile' || normalized === 'profile') return 'Public Profile';
   if (normalized === 'qr') return 'QR';
+  if (normalized === 'contractor_sent_form') return 'Contractor Form';
   if (normalized === 'direct') return 'Direct';
   return value || 'Unknown';
+}
+
+function leadCanSkipColdAcceptance(lead) {
+  return String(lead?.source || '').toLowerCase() === 'contractor_sent_form';
+}
+
+function leadCanRunAiActions(lead) {
+  if (!lead) return false;
+  const status = String(lead.status || '').toLowerCase();
+  if (status === 'accepted') return true;
+  return leadCanSkipColdAcceptance(lead) && ['ready_for_review', 'contacted', 'qualified'].includes(status);
 }
 
 const defaultProfile = {
@@ -788,6 +806,8 @@ export default function ContractorPublicPresencePage() {
                     <div className="mt-4 grid gap-3 md:grid-cols-2">
                       <select value={selectedLead.status} onChange={(e) => setSelectedLead((prev) => ({ ...prev, status: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm">
                         <option value="new">New</option>
+                        <option value="pending_customer_response">Pending Customer Response</option>
+                        <option value="ready_for_review">Ready for Review</option>
                         <option value="accepted">Accepted</option>
                         <option value="rejected">Rejected</option>
                         <option value="contacted">Contacted</option>
@@ -803,20 +823,25 @@ export default function ContractorPublicPresencePage() {
                       </div>
                     ) : null}
                     <div className="mt-4 flex flex-wrap justify-end gap-2">
-                      {selectedLead.status !== 'accepted' ? (
+                      {!leadCanSkipColdAcceptance(selectedLead) && selectedLead.status !== 'accepted' ? (
                         <button type="button" onClick={acceptLead} disabled={leadBusy} className="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-60">
                           Accept
                         </button>
                       ) : null}
-                      {selectedLead.status !== 'rejected' ? (
+                      {!leadCanSkipColdAcceptance(selectedLead) && selectedLead.status !== 'rejected' ? (
                         <button type="button" onClick={rejectLead} disabled={leadBusy || Boolean(selectedLead.converted_agreement)} className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60">
                           Reject
                         </button>
                       ) : null}
-                      <button type="button" onClick={analyzeLeadWithAi} disabled={leadBusy || selectedLead.status !== 'accepted'} className="rounded-xl border border-indigo-300 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60">
+                      {leadCanSkipColdAcceptance(selectedLead) && selectedLead.source_intake_id ? (
+                        <button type="button" onClick={() => navigate(`/app/intake/new?intakeId=${selectedLead.source_intake_id}`)} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+                          Review Intake
+                        </button>
+                      ) : null}
+                      <button type="button" onClick={analyzeLeadWithAi} disabled={leadBusy || !leadCanRunAiActions(selectedLead)} className="rounded-xl border border-indigo-300 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60">
                         Analyze Intake with AI
                       </button>
-                      <button type="button" onClick={createAgreementFromLead} disabled={leadBusy || selectedLead.status !== 'accepted'} className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60">
+                      <button type="button" onClick={createAgreementFromLead} disabled={leadBusy || !leadCanRunAiActions(selectedLead)} className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60">
                         Create AI-Assisted Agreement
                       </button>
                       <button type="button" onClick={() => updateLeadStatus('contacted')} disabled={leadBusy} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">

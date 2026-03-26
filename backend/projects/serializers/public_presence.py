@@ -211,6 +211,7 @@ class PublicContractorLeadCreateSerializer(serializers.ModelSerializer):
             PublicContractorLead.SOURCE_PUBLIC_PROFILE: PublicContractorLead.SOURCE_PUBLIC_PROFILE,
             PublicContractorLead.SOURCE_LANDING_PAGE: PublicContractorLead.SOURCE_LANDING_PAGE,
             PublicContractorLead.SOURCE_QR: PublicContractorLead.SOURCE_QR,
+            PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM: PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM,
             PublicContractorLead.SOURCE_DIRECT: PublicContractorLead.SOURCE_DIRECT,
         }
         normalized = mapping.get(value)
@@ -230,6 +231,7 @@ class ContractorPublicLeadSerializer(serializers.ModelSerializer):
         read_only=True,
     )
     converted_homeowner_name = serializers.SerializerMethodField()
+    source_intake_id = serializers.SerializerMethodField()
 
     class Meta:
         model = PublicContractorLead
@@ -254,6 +256,7 @@ class ContractorPublicLeadSerializer(serializers.ModelSerializer):
             "rejected_at",
             "rejected_email_sent_at",
             "ai_analysis",
+            "source_intake_id",
             "converted_homeowner_id",
             "converted_homeowner_name",
             "converted_agreement",
@@ -279,6 +282,10 @@ class ContractorPublicLeadSerializer(serializers.ModelSerializer):
     def get_converted_homeowner_name(self, obj):
         homeowner = getattr(obj, "converted_homeowner", None)
         return homeowner.full_name if homeowner else ""
+
+    def get_source_intake_id(self, obj):
+        source_intake = getattr(obj, "source_intake", None)
+        return getattr(source_intake, "id", None)
 
 
 class PublicContractorProfileSerializer(serializers.ModelSerializer):

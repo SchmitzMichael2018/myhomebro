@@ -50,6 +50,7 @@ from .views.magic_invoice_pdf import MagicInvoicePDFView
 
 from .views.public_intake import PublicIntakeView
 from .views.public_intake_start import PublicIntakeStartView
+from .views.project_intake import ProjectIntakeViewSet
 
 from .views.contractor_me import ContractorMeView
 from .views.subaccounts import ContractorSubAccountViewSet, WhoAmIView
@@ -231,6 +232,7 @@ router.register(r"dispute-workorders", DisputeWorkOrderViewSet, basename="disput
 router.register(r"project-types", ProjectTypeViewSet, basename="project-types")
 router.register(r"project-subtypes", ProjectSubtypeViewSet, basename="project-subtypes")
 router.register(r"warranties", AgreementWarrantyViewSet, basename="warranties")
+router.register(r"intakes", ProjectIntakeViewSet, basename="project-intakes")
 
 milestone_router = NestedDefaultRouter(
     router, r"milestones", lookup="milestone", trailing_slash="/?"

@@ -805,3 +805,382 @@ test('hidden public contractor profile is not exposed', async ({ page }) => {
 
   await expect(page.getByText('This contractor profile is not available.')).toBeVisible();
 });
+
+test('contractor-sent intake flows into the same lead inbox without cold-lead accept actions', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  const state = {
+    intake: null,
+    lead: null,
+  };
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        onboarding_status: 'complete',
+        connected: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractors/me/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 77,
+        created_at: '2026-03-01T10:00:00Z',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/homeowners/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route('**/api/projects/intakes/', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ results: [] }),
+      });
+      return;
+    }
+
+    const body = route.request().postDataJSON();
+    state.intake = {
+      id: 501,
+      ...body,
+    };
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify(state.intake),
+    });
+  });
+
+  await page.route(/.*\/api\/projects\/intakes\/501\/send-to-homeowner\/$/, async (route) => {
+    state.intake = {
+      ...(state.intake || {}),
+      id: 501,
+      share_token: 'contractor-sent-token',
+      lead_source: 'contractor_sent_form',
+      sent_at: '2026-03-26T09:00:00Z',
+    };
+    state.lead = {
+      id: 701,
+      source: 'contractor_sent_form',
+      full_name: state.intake.customer_name,
+      email: state.intake.customer_email,
+      phone: state.intake.customer_phone,
+      project_address: '',
+      city: '',
+      state: '',
+      zip_code: '',
+      project_type: '',
+      project_description: '',
+      preferred_timeline: '',
+      budget_text: '',
+      status: 'pending_customer_response',
+      internal_notes: '',
+      accepted_at: null,
+      ai_analysis: {},
+      created_at: '2026-03-26T09:00:00Z',
+      converted_homeowner_id: null,
+      converted_homeowner_name: '',
+      converted_agreement: null,
+      converted_at: null,
+      source_intake_id: 501,
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        intake_id: 501,
+        email: state.intake.customer_email,
+        url: 'http://localhost:4173/start-project/contractor-sent-token',
+        lead_id: 701,
+        lead_status: 'pending_customer_response',
+        lead_source: 'contractor_sent_form',
+      }),
+    });
+  });
+
+  await page.route(/.*\/api\/projects\/public-intake\/?.*/, async (route) => {
+    const url = new URL(route.request().url());
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 501,
+          token: url.searchParams.get('token'),
+          status: 'submitted',
+          initiated_by: 'contractor',
+          contractor_name: 'Bright Build Co',
+          customer_name: state.intake?.customer_name || 'Riley Customer',
+          customer_email: state.intake?.customer_email || 'riley@example.com',
+          customer_phone: state.intake?.customer_phone || '555-888-9999',
+          customer_address_line1: '',
+          customer_address_line2: '',
+          customer_city: '',
+          customer_state: '',
+          customer_postal_code: '',
+          same_as_customer_address: true,
+          project_address_line1: '',
+          project_address_line2: '',
+          project_city: '',
+          project_state: '',
+          project_postal_code: '',
+          accomplishment_text: '',
+          submitted_at: null,
+          sent_at: '2026-03-26T09:00:00Z',
+          completed_at: null,
+        }),
+      });
+      return;
+    }
+
+    const body = route.request().postDataJSON();
+    state.lead = {
+      ...state.lead,
+      full_name: body.customer_name,
+      email: body.customer_email,
+      phone: body.customer_phone,
+      project_address: body.project_address_line1,
+      city: body.project_city,
+      state: body.project_state,
+      zip_code: body.project_postal_code,
+      project_description: body.accomplishment_text,
+      status: 'ready_for_review',
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        detail: 'Intake updated successfully.',
+        id: 501,
+        status: 'submitted',
+        lead_id: 701,
+        completed_at: '2026-03-26T10:00:00Z',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor/public-profile/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        slug: 'bright-build-co',
+        business_name_public: 'Bright Build Co',
+        tagline: 'Trusted renovations and repairs',
+        bio: 'We help homeowners with clean, reliable project delivery.',
+        city: 'Austin',
+        state: 'TX',
+        service_area_text: 'Austin metro',
+        years_in_business: 12,
+        website_url: 'https://bright.example.com',
+        phone_public: '555-111-2222',
+        email_public: 'hello@bright.example.com',
+        specialties: ['Roofing'],
+        work_types: ['Repairs'],
+        show_license_public: true,
+        show_phone_public: true,
+        show_email_public: false,
+        allow_public_intake: true,
+        allow_public_reviews: true,
+        is_public: true,
+        seo_title: '',
+        seo_description: '',
+        public_url: 'http://localhost:4173/contractors/bright-build-co',
+        logo_url: '',
+        cover_image_url: '',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor/public-profile/qr/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        slug: 'bright-build-co',
+        public_url: 'http://localhost:4173/contractors/bright-build-co',
+        qr_target_url: 'http://localhost:4173/contractors/bright-build-co?source=qr',
+        qr_svg: 'data:image/svg+xml;base64,PHN2Zy8+',
+        download_filename: 'bright-build-co-public-profile-qr.svg',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor/gallery/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor/reviews/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor/public-leads/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: state.lead ? [state.lead] : [] }),
+    });
+  });
+
+  await page.route(/.*\/api\/projects\/contractor\/public-leads\/701\/$/, async (route) => {
+    const body = route.request().postDataJSON();
+    state.lead = { ...state.lead, ...body };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(state.lead),
+    });
+  });
+
+  await page.route(/.*\/api\/projects\/intakes\/501\/$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 501,
+        initiated_by: 'contractor',
+        customer_name: state.lead?.full_name || 'Riley Customer',
+        customer_email: state.lead?.email || 'riley@example.com',
+        customer_phone: state.lead?.phone || '555-888-9999',
+        customer_address_line1: state.lead?.project_address || '',
+        customer_address_line2: '',
+        customer_city: state.lead?.city || 'Austin',
+        customer_state: state.lead?.state || 'TX',
+        customer_postal_code: state.lead?.zip_code || '78705',
+        same_as_customer_address: true,
+        project_address_line1: state.lead?.project_address || '',
+        project_address_line2: '',
+        project_city: state.lead?.city || 'Austin',
+        project_state: state.lead?.state || 'TX',
+        project_postal_code: state.lead?.zip_code || '78705',
+        accomplishment_text: state.lead?.project_description || '',
+        ai_analysis_payload: state.lead?.ai_analysis || {},
+      }),
+    });
+  });
+
+  await page.route(/.*\/api\/projects\/contractor\/public-leads\/701\/analyze\/$/, async (route) => {
+    state.lead = {
+      ...state.lead,
+      ai_analysis: {
+        project_type: 'Remodel',
+        project_subtype: 'Bathroom Remodel',
+        suggested_title: 'Bathroom Remodel - Riley Customer',
+        suggested_description: 'AI analysis from contractor-sent intake.',
+        clarifications_needed: [{ key: 'fixtures', label: 'Who is selecting fixtures?' }],
+        milestone_outline: [{ order: 1, title: 'Demo' }, { order: 2, title: 'Build' }],
+        recommended_templates: [{ id: 801, name: 'Bathroom Remodel Template' }],
+        template_id: 801,
+        template_name: 'Bathroom Remodel Template',
+      },
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ lead_id: 701, ai_analysis: state.lead.ai_analysis }),
+    });
+  });
+
+  await page.route(/.*\/api\/projects\/contractor\/public-leads\/701\/create-agreement\/$/, async (route) => {
+    state.lead = {
+      ...state.lead,
+      converted_homeowner_id: 222,
+      converted_homeowner_name: state.lead.full_name,
+      converted_agreement: 901,
+      converted_at: '2026-03-26T10:10:00Z',
+    };
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        agreement_id: 901,
+        detail_url: '/app/agreements/901',
+        wizard_url: '/app/agreements/901/wizard?step=1',
+        created: true,
+      }),
+    });
+  });
+
+  await page.goto('/app/intake/new', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('intake-mode-send-to-customer').check();
+  await page.getByPlaceholder('e.g., Jane Smith').fill('Riley Customer');
+  await page.getByPlaceholder('jane@example.com').fill('riley@example.com');
+  await page.getByPlaceholder('(555) 555-5555').fill('555-888-9999');
+  await page.getByTestId('intake-send-to-customer').click();
+
+  await page.goto('/start-project/contractor-sent-token', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('public-intake-customer-address-line1').fill('300 Scope St');
+  await page.getByTestId('public-intake-customer-city').fill('Austin');
+  await page.getByTestId('public-intake-customer-state').fill('TX');
+  await page.getByTestId('public-intake-customer-postal-code').fill('78705');
+  await page
+    .getByTestId('public-intake-accomplishment-text')
+    .fill('Complete a bathroom remodel with updated tile and fixtures.');
+  await page.getByTestId('public-intake-submit-button').click();
+
+  await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Public Leads' }).click();
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
+    'Contractor Form'
+  );
+  await expect(page.getByTestId('public-lead-workflow-hint')).toContainText(
+    'Analyze the intake and confirm project details before drafting the agreement'
+  );
+  await expect(page.getByRole('button', { name: 'Accept' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Reject' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Review Intake' }).click();
+  await page.waitForURL('**/app/intake/new?intakeId=501');
+  await expect(page.getByPlaceholder('e.g., Jane Smith')).toHaveValue('Riley Customer');
+  await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Public Leads' }).click();
+  await page.getByRole('button', { name: 'Analyze Intake with AI' }).click();
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
+    'Bathroom Remodel - Riley Customer'
+  );
+  await expect(page.getByTestId('public-lead-workflow-hint')).toContainText(
+    'Review the completed intake and create a draft agreement'
+  );
+  await page.getByRole('button', { name: 'Create AI-Assisted Agreement' }).click();
+  await page.waitForURL('**/app/agreements/901/wizard?step=1');
+});

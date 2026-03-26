@@ -1,7 +1,7 @@
 // frontend/src/components/intake/ProjectIntakeForm.jsx
 
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../../api";
 import IntakeAiRecommendationPanel from "./IntakeAiRecommendationPanel.jsx";
@@ -59,6 +59,8 @@ function homeownerLabel(h) {
 
 export default function ProjectIntakeForm() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const queryIntakeId = searchParams.get("intakeId");
 
   const [form, setForm] = useState(blankForm);
   const [intakeId, setIntakeId] = useState(null);
@@ -100,6 +102,53 @@ export default function ProjectIntakeForm() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadExistingIntake() {
+      if (!queryIntakeId) return;
+      try {
+        const { data } = await api.get(`/projects/intakes/${queryIntakeId}/`);
+        if (!mounted) return;
+        setIntakeId(data?.id || null);
+        setForm((prev) => ({
+          ...prev,
+          initiated_by: data?.initiated_by || prev.initiated_by,
+          customer_name: data?.customer_name || "",
+          customer_email: data?.customer_email || "",
+          customer_phone: data?.customer_phone || "",
+          customer_address_line1: data?.customer_address_line1 || "",
+          customer_address_line2: data?.customer_address_line2 || "",
+          customer_city: data?.customer_city || "",
+          customer_state: data?.customer_state || "",
+          customer_postal_code: data?.customer_postal_code || "",
+          same_as_customer_address:
+            data?.same_as_customer_address !== undefined
+              ? Boolean(data.same_as_customer_address)
+              : prev.same_as_customer_address,
+          project_address_line1: data?.project_address_line1 || "",
+          project_address_line2: data?.project_address_line2 || "",
+          project_city: data?.project_city || "",
+          project_state: data?.project_state || "",
+          project_postal_code: data?.project_postal_code || "",
+          accomplishment_text: data?.accomplishment_text || "",
+        }));
+        if (data?.ai_analysis_payload && Object.keys(data.ai_analysis_payload).length) {
+          setResult(data.ai_analysis_payload);
+        }
+      } catch (e) {
+        console.error(e);
+        if (!mounted) return;
+        toast.error("Could not load intake.");
+      }
+    }
+
+    loadExistingIntake();
+    return () => {
+      mounted = false;
+    };
+  }, [queryIntakeId]);
 
   useEffect(() => {
     if (!form.same_as_customer_address) return;
@@ -408,6 +457,7 @@ export default function ProjectIntakeForm() {
         <div className="mt-4 flex flex-wrap gap-3">
           <label className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm">
             <input
+              data-testid="intake-mode-complete-now"
               type="radio"
               name="intake_mode"
               checked={intakeMode === "complete_now"}
@@ -418,6 +468,7 @@ export default function ProjectIntakeForm() {
 
           <label className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm">
             <input
+              data-testid="intake-mode-send-to-customer"
               type="radio"
               name="intake_mode"
               checked={intakeMode === "send_to_homeowner"}
@@ -679,6 +730,7 @@ export default function ProjectIntakeForm() {
             {intakeMode === "send_to_homeowner" ? (
               <button
                 type="button"
+                data-testid="intake-send-to-customer"
                 onClick={handleSendToHomeowner}
                 disabled={sending || saving}
                 className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"

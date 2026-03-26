@@ -166,6 +166,20 @@ def _build_lead_analysis_payload(lead):
     }
 
 
+def _lead_skips_cold_acceptance(lead) -> bool:
+    return lead.source == PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM
+
+
+def _lead_ready_for_ai_and_agreement(lead) -> bool:
+    if lead.status == PublicContractorLead.STATUS_ACCEPTED:
+        return True
+    return _lead_skips_cold_acceptance(lead) and lead.status in {
+        PublicContractorLead.STATUS_READY_FOR_REVIEW,
+        PublicContractorLead.STATUS_CONTACTED,
+        PublicContractorLead.STATUS_QUALIFIED,
+    }
+
+
 class ContractorPublicProfileManageView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -311,6 +325,11 @@ class ContractorPublicLeadAcceptView(APIView):
     def post(self, request, lead_id: int):
         contractor = _resolve_contractor(request.user)
         lead = get_object_or_404(contractor.public_leads.select_related("converted_homeowner").all(), pk=lead_id)
+        if _lead_skips_cold_acceptance(lead):
+            return Response(
+                {"detail": "Contractor-sent intake forms do not need to be accepted. Review the completed intake and continue with analysis or agreement drafting."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         homeowner = _ensure_homeowner_for_lead(lead)
         if homeowner is None:
             return Response(
@@ -338,6 +357,11 @@ class ContractorPublicLeadRejectView(APIView):
     def post(self, request, lead_id: int):
         contractor = _resolve_contractor(request.user)
         lead = get_object_or_404(contractor.public_leads.all(), pk=lead_id)
+        if _lead_skips_cold_acceptance(lead):
+            return Response(
+                {"detail": "Contractor-sent intake forms should be closed or archived instead of rejected."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         if lead.converted_agreement_id:
             return Response(
                 {"detail": "This lead already has a draft agreement and cannot be rejected from the lead inbox."},
@@ -360,9 +384,9 @@ class ContractorPublicLeadAnalyzeView(APIView):
     def post(self, request, lead_id: int):
         contractor = _resolve_contractor(request.user)
         lead = get_object_or_404(contractor.public_leads.all(), pk=lead_id)
-        if lead.status != PublicContractorLead.STATUS_ACCEPTED:
+        if not _lead_ready_for_ai_and_agreement(lead):
             return Response(
-                {"detail": "Only accepted leads can be analyzed."},
+                {"detail": "Only accepted leads or completed contractor-sent intake forms can be analyzed."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         analysis = _build_lead_analysis_payload(lead)
@@ -380,9 +404,9 @@ class ContractorPublicLeadCreateAgreementView(APIView):
             contractor.public_leads.select_related("converted_homeowner", "converted_agreement").all(),
             pk=lead_id,
         )
-        if lead.status != PublicContractorLead.STATUS_ACCEPTED:
+        if not _lead_ready_for_ai_and_agreement(lead):
             return Response(
-                {"detail": "Only accepted leads can be converted into an agreement."},
+                {"detail": "Only accepted leads or completed contractor-sent intake forms can be converted into an agreement."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if lead.converted_agreement_id:

@@ -40,6 +40,32 @@ export function getPublicLeadHint(lead) {
   if (!lead) return null;
 
   const status = normalizeStatus(lead.status);
+  const source = normalizeStatus(lead.source);
+  const isContractorSent = source === "contractor_sent_form";
+
+  if (isContractorSent && status === "pending_customer_response") {
+    return {
+      title: "Next step",
+      body: "Wait for the customer to complete the intake form before reviewing the project details.",
+      tone: "muted",
+    };
+  }
+
+  if (isContractorSent && status === "ready_for_review" && hasAnalysis(lead) && !hasConvertedAgreement(lead)) {
+    return {
+      title: "Next step",
+      body: "Review the completed intake and create a draft agreement when the scope looks right.",
+      tone: "info",
+    };
+  }
+
+  if (isContractorSent && status === "ready_for_review") {
+    return {
+      title: "Next step",
+      body: "Analyze the intake and confirm project details before drafting the agreement.",
+      tone: "info",
+    };
+  }
 
   if (status === "rejected") {
     return {
@@ -275,6 +301,7 @@ export function getDashboardNextSteps({
     const status = normalizeStatus(lead?.status);
     return (
       status === "new" ||
+      status === "ready_for_review" ||
       ((status === "accepted" || status === "contacted" || status === "qualified") &&
         !hasConvertedAgreement(lead))
     );

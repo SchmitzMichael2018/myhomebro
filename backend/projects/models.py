@@ -337,6 +337,8 @@ class ContractorGalleryItem(models.Model):
 
 class PublicContractorLead(models.Model):
     STATUS_NEW = "new"
+    STATUS_PENDING_CUSTOMER_RESPONSE = "pending_customer_response"
+    STATUS_READY_FOR_REVIEW = "ready_for_review"
     STATUS_ACCEPTED = "accepted"
     STATUS_REJECTED = "rejected"
     STATUS_CONTACTED = "contacted"
@@ -345,6 +347,8 @@ class PublicContractorLead(models.Model):
     STATUS_ARCHIVED = "archived"
     STATUS_CHOICES = [
         (STATUS_NEW, "New"),
+        (STATUS_PENDING_CUSTOMER_RESPONSE, "Pending Customer Response"),
+        (STATUS_READY_FOR_REVIEW, "Ready for Review"),
         (STATUS_ACCEPTED, "Accepted"),
         (STATUS_REJECTED, "Rejected"),
         (STATUS_CONTACTED, "Contacted"),
@@ -356,11 +360,13 @@ class PublicContractorLead(models.Model):
     SOURCE_LANDING_PAGE = "landing_page"
     SOURCE_PUBLIC_PROFILE = "public_profile"
     SOURCE_QR = "qr"
+    SOURCE_CONTRACTOR_SENT_FORM = "contractor_sent_form"
     SOURCE_DIRECT = "direct"
     SOURCE_CHOICES = [
         (SOURCE_LANDING_PAGE, "Landing Page"),
         (SOURCE_PUBLIC_PROFILE, "Public Profile"),
         (SOURCE_QR, "QR"),
+        (SOURCE_CONTRACTOR_SENT_FORM, "Contractor Sent Form"),
         (SOURCE_DIRECT, "Direct"),
     ]
 
@@ -390,7 +396,7 @@ class PublicContractorLead(models.Model):
     project_description = models.TextField(blank=True, default="")
     preferred_timeline = models.CharField(max_length=120, blank=True, default="")
     budget_text = models.CharField(max_length=120, blank=True, default="")
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_NEW)
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_NEW)
     internal_notes = models.TextField(blank=True, default="")
     accepted_at = models.DateTimeField(null=True, blank=True)
     accepted_email_sent_at = models.DateTimeField(null=True, blank=True)

@@ -10,6 +10,7 @@ LEGACY_SOURCE_ALIASES = {
     "public_profile": PublicContractorLead.SOURCE_PUBLIC_PROFILE,
     "landing_page": PublicContractorLead.SOURCE_LANDING_PAGE,
     "qr": PublicContractorLead.SOURCE_QR,
+    "contractor_sent_form": PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM,
     "direct": PublicContractorLead.SOURCE_DIRECT,
 }
 
@@ -45,7 +46,7 @@ def _project_address_from_intake(intake) -> str:
     return ", ".join([part for part in parts if part])
 
 
-def sync_public_lead_from_project_intake(intake):
+def sync_public_lead_from_project_intake(intake, *, status_override=None):
     contractor = getattr(intake, "contractor", None)
     if contractor is None:
         return None
@@ -55,10 +56,11 @@ def sync_public_lead_from_project_intake(intake):
     )
     lead = getattr(intake, "public_lead", None)
 
+    normalized_source = normalize_public_lead_source(getattr(intake, "lead_source", None))
     payload = {
         "contractor": contractor,
         "public_profile": profile,
-        "source": normalize_public_lead_source(getattr(intake, "lead_source", None)),
+        "source": normalized_source,
         "full_name": (intake.customer_name or "").strip() or "Project Intake Lead",
         "email": (intake.customer_email or "").strip(),
         "phone": (intake.customer_phone or "").strip(),
@@ -70,6 +72,7 @@ def sync_public_lead_from_project_intake(intake):
         "project_description": (intake.accomplishment_text or "").strip(),
         "preferred_timeline": "",
         "budget_text": "",
+        "status": status_override or PublicContractorLead.STATUS_NEW,
     }
 
     if lead is None:
@@ -80,6 +83,27 @@ def sync_public_lead_from_project_intake(intake):
         return lead
 
     for key, value in payload.items():
+        if key == "status" and status_override is None:
+            continue
+        if (
+            key == "status"
+            and normalized_source == PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM
+            and lead.status
+            in {
+                PublicContractorLead.STATUS_ACCEPTED,
+                PublicContractorLead.STATUS_REJECTED,
+                PublicContractorLead.STATUS_CONTACTED,
+                PublicContractorLead.STATUS_QUALIFIED,
+                PublicContractorLead.STATUS_CLOSED,
+                PublicContractorLead.STATUS_ARCHIVED,
+            }
+            and value
+            in {
+                PublicContractorLead.STATUS_PENDING_CUSTOMER_RESPONSE,
+                PublicContractorLead.STATUS_READY_FOR_REVIEW,
+            }
+        ):
+            continue
         setattr(lead, key, value)
     lead.save(
         update_fields=[
@@ -97,6 +121,7 @@ def sync_public_lead_from_project_intake(intake):
             "project_description",
             "preferred_timeline",
             "budget_text",
+            "status",
             "updated_at",
         ]
     )

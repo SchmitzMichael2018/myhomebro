@@ -11,7 +11,12 @@ from projects.serializers.project_intake import ProjectIntakeSerializer
 from projects.services.intake_analysis import analyze_project_intake
 from projects.services.intake_conversion import convert_intake_to_agreement
 from projects.services.intake_public import send_intake_email
-from projects.services.public_lead_pipeline import ensure_public_profile_for_contractor
+from projects.services.public_lead_pipeline import (
+    ensure_public_profile_for_contractor,
+    sync_public_lead_from_project_intake,
+)
+from projects.models import PublicContractorLead
+from projects.services.agreements.project_create import resolve_contractor_for_user
 
 
 class ProjectIntakeViewSet(viewsets.ModelViewSet):
@@ -25,14 +30,14 @@ class ProjectIntakeViewSet(viewsets.ModelViewSet):
         if user.is_staff:
             return qs
 
-        contractor = getattr(user, "contractor", None)
+        contractor = resolve_contractor_for_user(user)
         if contractor is not None:
             return qs.filter(contractor=contractor)
 
         return qs.none()
 
     def perform_create(self, serializer):
-        contractor = getattr(self.request.user, "contractor", None)
+        contractor = resolve_contractor_for_user(self.request.user)
         profile = ensure_public_profile_for_contractor(contractor) if contractor is not None else None
         serializer.save(contractor=contractor, public_profile=profile, lead_source="direct")
 
@@ -101,6 +106,12 @@ class ProjectIntakeViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="send-to-homeowner")
     def send_to_homeowner(self, request, pk=None):
         intake = self.get_object()
+        if intake.contractor_id:
+            intake.lead_source = PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM
+            intake.public_profile = intake.public_profile or ensure_public_profile_for_contractor(
+                intake.contractor
+            )
+            intake.save(update_fields=["lead_source", "public_profile", "updated_at"])
 
         try:
             result = send_intake_email(intake)
@@ -115,6 +126,13 @@ class ProjectIntakeViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+        lead = sync_public_lead_from_project_intake(
+            intake,
+            status_override=PublicContractorLead.STATUS_PENDING_CUSTOMER_RESPONSE,
+        )
+        result["lead_id"] = getattr(lead, "id", None)
+        result["lead_status"] = getattr(lead, "status", None)
+        result["lead_source"] = getattr(lead, "source", None)
         return Response(result, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="convert-to-agreement")

@@ -42,6 +42,7 @@ from projects.models import (
 from projects.models import AgreementWarranty
 from projects.models_templates import ProjectTemplate
 from projects.models_sms import SMSConsentStatus
+from projects.models_project_intake import ProjectIntake
 from projects.models_subcontractor import (
     SubcontractorInvitation,
     SubcontractorInvitationStatus,
@@ -686,6 +687,132 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(create_response.status_code, 201)
         lead.refresh_from_db()
         self.assertEqual(lead.source, PublicContractorLead.SOURCE_LANDING_PAGE)
+        self.assertIsNotNone(lead.converted_homeowner_id)
+        self.assertIsNotNone(lead.converted_agreement_id)
+
+    @patch("projects.services.intake_public.send_postmark_template_email", return_value=None)
+    def test_contractor_sent_intake_completes_into_unified_ready_for_review_lead(self, _send_email):
+        self.client.force_authenticate(user=self.contractor_user)
+        create_response = self.client.post(
+            "/api/projects/intakes/",
+            {
+                "customer_name": "Pat Customer",
+                "customer_email": "pat@example.com",
+                "customer_phone": "555-222-3333",
+            },
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201)
+        intake_id = create_response.json()["id"]
+
+        send_response = self.client.post(
+            f"/api/projects/intakes/{intake_id}/send-to-homeowner/",
+            {},
+            format="json",
+        )
+        self.assertEqual(send_response.status_code, 200)
+        intake = ProjectIntake.objects.get(pk=intake_id)
+        lead = PublicContractorLead.objects.get(pk=send_response.json()["lead_id"])
+        self.assertEqual(intake.lead_source, PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM)
+        self.assertEqual(lead.source, PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM)
+        self.assertEqual(lead.status, PublicContractorLead.STATUS_PENDING_CUSTOMER_RESPONSE)
+
+        self.client.force_authenticate(user=None)
+        complete_response = self.client.patch(
+            f"/api/projects/public-intake/?token={intake.share_token}",
+            {
+                "customer_name": "Pat Customer",
+                "customer_email": "pat@example.com",
+                "customer_phone": "555-222-3333",
+                "project_address_line1": "200 Builder Ave",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78704",
+                "accomplishment_text": "Need a contractor-sent intake completed for a kitchen remodel.",
+            },
+            format="json",
+        )
+        self.assertEqual(complete_response.status_code, 200)
+
+        lead.refresh_from_db()
+        self.assertEqual(complete_response.json()["lead_id"], lead.id)
+        self.assertEqual(lead.status, PublicContractorLead.STATUS_READY_FOR_REVIEW)
+        self.assertEqual(lead.project_address, "200 Builder Ave")
+        self.assertEqual(
+            lead.project_description,
+            "Need a contractor-sent intake completed for a kitchen remodel.",
+        )
+
+        self.client.force_authenticate(user=self.contractor_user)
+        lead_list_response = self.client.get("/api/projects/contractor/public-leads/")
+        self.assertEqual(lead_list_response.status_code, 200)
+        rows = lead_list_response.json()["results"]
+        matching = next((row for row in rows if row["id"] == lead.id), None)
+        self.assertIsNotNone(matching)
+        self.assertEqual(matching["source"], PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM)
+        self.assertEqual(matching["status"], PublicContractorLead.STATUS_READY_FOR_REVIEW)
+
+    @patch("projects.services.intake_public.send_postmark_template_email", return_value=None)
+    def test_contractor_sent_ready_for_review_lead_can_analyze_and_create_agreement_without_accept(self, _send_email):
+        self.client.force_authenticate(user=self.contractor_user)
+        create_response = self.client.post(
+            "/api/projects/intakes/",
+            {
+                "customer_name": "Riley Customer",
+                "customer_email": "riley@example.com",
+                "customer_phone": "555-888-9999",
+            },
+            format="json",
+        )
+        intake_id = create_response.json()["id"]
+        self.client.post(
+            f"/api/projects/intakes/{intake_id}/send-to-homeowner/",
+            {},
+            format="json",
+        )
+        intake = ProjectIntake.objects.get(pk=intake_id)
+
+        self.client.force_authenticate(user=None)
+        self.client.patch(
+            f"/api/projects/public-intake/?token={intake.share_token}",
+            {
+                "customer_name": "Riley Customer",
+                "customer_email": "riley@example.com",
+                "project_address_line1": "300 Scope St",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78705",
+                "accomplishment_text": "Complete a bathroom remodel with updated tile and fixtures.",
+            },
+            format="json",
+        )
+
+        lead = PublicContractorLead.objects.get(email="riley@example.com")
+        self.assertEqual(lead.status, PublicContractorLead.STATUS_READY_FOR_REVIEW)
+
+        self.client.force_authenticate(user=self.contractor_user)
+        accept_response = self.client.post(
+            f"/api/projects/contractor/public-leads/{lead.id}/accept/",
+            {},
+            format="json",
+        )
+        self.assertEqual(accept_response.status_code, 400)
+
+        analyze_response = self.client.post(
+            f"/api/projects/contractor/public-leads/{lead.id}/analyze/",
+            {},
+            format="json",
+        )
+        self.assertEqual(analyze_response.status_code, 200)
+
+        create_agreement_response = self.client.post(
+            f"/api/projects/contractor/public-leads/{lead.id}/create-agreement/",
+            {},
+            format="json",
+        )
+        self.assertEqual(create_agreement_response.status_code, 201)
+        lead.refresh_from_db()
+        self.assertEqual(lead.source, PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM)
         self.assertIsNotNone(lead.converted_homeowner_id)
         self.assertIsNotNone(lead.converted_agreement_id)
 

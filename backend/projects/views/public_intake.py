@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from projects.models_project_intake import ProjectIntake
+from projects.models import PublicContractorLead
 from projects.services.intake_analysis import analyze_project_intake
 from projects.services.public_lead_pipeline import sync_public_lead_from_project_intake
 
@@ -165,7 +166,10 @@ class PublicIntakeView(APIView):
             )
 
         intake.save(update_fields=changed + ["updated_at"])
-        lead = sync_public_lead_from_project_intake(intake)
+        status_override = None
+        if intake.lead_source == PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM:
+            status_override = PublicContractorLead.STATUS_READY_FOR_REVIEW
+        lead = sync_public_lead_from_project_intake(intake, status_override=status_override)
 
         return Response(
             {
