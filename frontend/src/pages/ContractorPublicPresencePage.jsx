@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 import api from '../api';
+import QuickAddLeadModal from '../components/QuickAddLeadModal.jsx';
 import { WorkflowHint } from '../components/WorkflowHint.jsx';
 import { getPublicLeadHint, getPublicPresenceHint } from '../lib/workflowHints.js';
 
@@ -51,6 +52,7 @@ function sourceLabel(value) {
   const normalized = String(value || '').toLowerCase();
   if (normalized === 'landing_page') return 'Landing Page';
   if (normalized === 'public_profile' || normalized === 'profile') return 'Public Profile';
+  if (normalized === 'manual') return 'Manual';
   if (normalized === 'qr') return 'QR';
   if (normalized === 'contractor_sent_form') return 'Contractor Form';
   if (normalized === 'direct') return 'Direct';
@@ -72,20 +74,60 @@ function statusLabel(value) {
 }
 
 function leadCanSkipColdAcceptance(lead) {
-  return String(lead?.source || '').toLowerCase() === 'contractor_sent_form';
+  return ['contractor_sent_form', 'manual'].includes(String(lead?.source || '').toLowerCase());
+}
+
+function leadHasScopeDetails(lead) {
+  return Boolean(
+    [
+      lead?.project_type,
+      lead?.project_description,
+      lead?.preferred_timeline,
+      lead?.budget_text,
+    ]
+      .map((value) => String(value || '').trim())
+      .find(Boolean)
+  );
 }
 
 function leadCanRunAiActions(lead) {
   if (!lead) return false;
   const status = String(lead.status || '').toLowerCase();
   if (status === 'accepted') return true;
-  return leadCanSkipColdAcceptance(lead) && ['ready_for_review', 'contacted', 'qualified'].includes(status);
+  return (
+    leadCanSkipColdAcceptance(lead) &&
+    ['ready_for_review', 'contacted', 'qualified'].includes(status)
+  );
+}
+
+function leadCanSendIntake(lead) {
+  return (
+    String(lead?.source || '').toLowerCase() === 'manual' &&
+    Boolean(String(lead?.email || '').trim()) &&
+    !lead?.converted_agreement
+  );
+}
+
+function leadCanAnalyzeFromUi(lead) {
+  if (!leadCanRunAiActions(lead)) return false;
+  if (String(lead?.source || '').toLowerCase() === 'manual') {
+    return leadHasScopeDetails(lead);
+  }
+  return true;
 }
 
 function getLeadPrimaryAction(lead) {
   if (!lead) return null;
   if (lead.converted_agreement) {
     return { kind: 'open_agreement', label: 'Open Draft Agreement' };
+  }
+  if (String(lead.source || '').toLowerCase() === 'manual') {
+    if (String(lead.status || '').toLowerCase() === 'pending_customer_response' && lead.source_intake_id) {
+      return { kind: 'review_intake', label: 'Review Intake' };
+    }
+    if (leadCanSendIntake(lead) && !lead.source_intake_id && !leadHasScopeDetails(lead)) {
+      return { kind: 'send_intake', label: 'Send Intake Form' };
+    }
   }
   if (leadCanSkipColdAcceptance(lead) && lead.source_intake_id) {
     return { kind: 'review_intake', label: 'Review Intake' };
@@ -430,6 +472,31 @@ export default function ContractorPublicPresencePage() {
     }
   }
 
+  async function sendLeadIntake() {
+    if (!selectedLead) return;
+    try {
+      setLeadBusy(true);
+      const { data } = await api.post(
+        `/projects/contractor/public-leads/${selectedLead.id}/send-intake/`
+      );
+      const updated = {
+        ...selectedLead,
+        status: data?.lead_status || 'pending_customer_response',
+        source_intake_id: data?.intake_id || selectedLead.source_intake_id,
+      };
+      setLeadsRows((prev) =>
+        prev.map((row) => (row.id === selectedLead.id ? updated : row))
+      );
+      setSelectedLead(updated);
+      toast.success(data?.email ? `Intake sent to ${data.email}.` : 'Intake form sent.');
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.email?.[0] || err?.response?.data?.detail || 'Failed to send intake form.');
+    } finally {
+      setLeadBusy(false);
+    }
+  }
+
   async function createAgreementFromLead() {
     if (!selectedLead) return;
     try {
@@ -458,6 +525,10 @@ export default function ContractorPublicPresencePage() {
     if (!selectedLead || !primaryLeadAction) return;
     if (primaryLeadAction.kind === 'accept') {
       await acceptLead();
+      return;
+    }
+    if (primaryLeadAction.kind === 'send_intake') {
+      await sendLeadIntake();
       return;
     }
     if (primaryLeadAction.kind === 'review_intake') {
@@ -505,6 +576,13 @@ export default function ContractorPublicPresencePage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-6">
+      <QuickAddLeadModal
+        onCreated={(lead) => {
+          setLeadsRows((prev) => [lead, ...prev.filter((row) => row.id !== lead.id)]);
+          setSelectedLead(lead);
+          setActiveTab('leads');
+        }}
+      />
       <header className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
@@ -799,7 +877,7 @@ export default function ContractorPublicPresencePage() {
               <div className="space-y-3">
                 {leadsRows.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
-                    No leads yet. Share your public profile or QR code to start collecting project requests.
+                    No leads yet. Use Quick Add Lead, share your public profile, or post your QR code to start collecting project requests.
                   </div>
                 ) : leadsRows.map((lead) => (
                   <button
@@ -990,9 +1068,20 @@ export default function ContractorPublicPresencePage() {
                           Reject Lead
                         </button>
                       ) : null}
-                      <button type="button" onClick={analyzeLeadWithAi} disabled={leadBusy || !leadCanRunAiActions(selectedLead)} className="rounded-xl border border-indigo-300 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60">
+                      <button type="button" onClick={analyzeLeadWithAi} disabled={leadBusy || !leadCanAnalyzeFromUi(selectedLead)} className="rounded-xl border border-indigo-300 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60">
                         Analyze Intake with AI
                       </button>
+                      {leadCanSendIntake(selectedLead) &&
+                      primaryLeadAction?.kind !== 'send_intake' ? (
+                        <button
+                          type="button"
+                          onClick={sendLeadIntake}
+                          disabled={leadBusy}
+                          className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-60"
+                        >
+                          Send Intake Form
+                        </button>
+                      ) : null}
                       {!selectedLead.converted_agreement &&
                       leadCanRunAiActions(selectedLead) &&
                       primaryLeadAction?.kind !== 'create_agreement' ? (

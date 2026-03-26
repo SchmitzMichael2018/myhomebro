@@ -795,6 +795,386 @@ test('public contractor profile renders gallery reviews and intake', async ({ pa
   await expect(page.getByPlaceholder('Full name')).toHaveValue('');
 });
 
+test('manual leads can be quick-added, sent an intake, and stay in the same lead flow', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  const state = {
+    leads: [],
+    nextLeadId: 900,
+  };
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        onboarding_status: 'complete',
+        connected: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractors/me/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 77,
+        created_at: '2026-03-01T10:00:00Z',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor/public-profile/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        slug: 'bright-build-co',
+        business_name_public: 'Bright Build Co',
+        tagline: 'Trusted renovations and repairs',
+        bio: 'We help homeowners with clean, reliable project delivery.',
+        city: 'Austin',
+        state: 'TX',
+        service_area_text: 'Austin metro',
+        years_in_business: 12,
+        website_url: 'https://bright.example.com',
+        phone_public: '555-111-2222',
+        email_public: 'hello@bright.example.com',
+        specialties: ['Roofing'],
+        work_types: ['Repairs'],
+        show_license_public: true,
+        show_phone_public: true,
+        show_email_public: false,
+        allow_public_intake: true,
+        allow_public_reviews: true,
+        is_public: true,
+        seo_title: '',
+        seo_description: '',
+        public_url: 'http://localhost:4173/contractors/bright-build-co',
+        logo_url: '',
+        cover_image_url: '',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor/public-profile/qr/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        slug: 'bright-build-co',
+        public_url: 'http://localhost:4173/contractors/bright-build-co',
+        qr_target_url: 'http://localhost:4173/contractors/bright-build-co?source=qr',
+        qr_svg: 'data:image/svg+xml;base64,PHN2Zy8+',
+        download_filename: 'bright-build-co-public-profile-qr.svg',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor/gallery/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor/reviews/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor/public-leads/', async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON();
+      const lead = {
+        id: state.nextLeadId++,
+        source: 'manual',
+        full_name: body.full_name,
+        email: body.email,
+        phone: body.phone,
+        project_address: body.project_address || '',
+        city: '',
+        state: '',
+        zip_code: '',
+        project_type: '',
+        project_description: body.notes || '',
+        preferred_timeline: '',
+        budget_text: '',
+        status: 'qualified',
+        internal_notes: '',
+        accepted_at: null,
+        ai_analysis: {},
+        source_intake_id: null,
+        created_at: '2026-03-26T11:00:00Z',
+        converted_homeowner_id: null,
+        converted_homeowner_name: '',
+        converted_agreement: null,
+        converted_at: null,
+      };
+      state.leads = [lead, ...state.leads];
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify(lead),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: state.leads }),
+    });
+  });
+
+  await page.route(/.*\/api\/projects\/contractor\/public-leads\/\d+\/$/, async (route) => {
+    const id = Number(route.request().url().match(/public-leads\/(\d+)\//)?.[1]);
+    const body = route.request().postDataJSON();
+    state.leads = state.leads.map((lead) => (lead.id === id ? { ...lead, ...body } : lead));
+    const updated = state.leads.find((lead) => lead.id === id);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(updated),
+    });
+  });
+
+  await page.route(/.*\/api\/projects\/contractor\/public-leads\/\d+\/send-intake\/$/, async (route) => {
+    const id = Number(route.request().url().match(/public-leads\/(\d+)\/send-intake\//)?.[1]);
+    state.leads = state.leads.map((lead) =>
+      lead.id === id
+        ? {
+            ...lead,
+            status: 'pending_customer_response',
+            source_intake_id: 801,
+          }
+        : lead
+    );
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        intake_id: 801,
+        email: 'walkup@example.com',
+        url: 'http://localhost:4173/start-project/manual-token',
+        lead_id: id,
+        lead_status: 'pending_customer_response',
+        lead_source: 'manual',
+      }),
+    });
+  });
+
+  await page.route(/.*\/api\/projects\/intakes\/801\/$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 801,
+        initiated_by: 'contractor',
+        customer_name: 'Walk Up Prospect',
+        customer_email: 'walkup@example.com',
+        customer_phone: '555-666-0000',
+        customer_address_line1: '400 Field Visit Rd',
+        customer_address_line2: '',
+        customer_city: 'Austin',
+        customer_state: 'TX',
+        customer_postal_code: '78706',
+        same_as_customer_address: true,
+        project_address_line1: '400 Field Visit Rd',
+        project_address_line2: '',
+        project_city: 'Austin',
+        project_state: 'TX',
+        project_postal_code: '78706',
+        accomplishment_text: 'Convert the garage into a finished office and laundry room.',
+        ai_analysis_payload: {},
+      }),
+    });
+  });
+
+  await page.route(/.*\/api\/projects\/public-intake\/?.*/, async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 801,
+          token: 'manual-token',
+          status: 'submitted',
+          initiated_by: 'contractor',
+          contractor_name: 'Bright Build Co',
+          customer_name: 'Walk Up Prospect',
+          customer_email: 'walkup@example.com',
+          customer_phone: '555-666-0000',
+          customer_address_line1: '',
+          customer_address_line2: '',
+          customer_city: '',
+          customer_state: '',
+          customer_postal_code: '',
+          same_as_customer_address: true,
+          project_address_line1: '',
+          project_address_line2: '',
+          project_city: '',
+          project_state: '',
+          project_postal_code: '',
+          accomplishment_text: '',
+          submitted_at: null,
+          sent_at: '2026-03-26T11:10:00Z',
+          completed_at: null,
+        }),
+      });
+      return;
+    }
+
+    state.leads = state.leads.map((lead) =>
+      lead.id === 900
+        ? {
+            ...lead,
+            source: 'manual',
+            status: 'ready_for_review',
+            project_description:
+              'Convert the garage into a finished office and laundry room.',
+            city: 'Austin',
+            state: 'TX',
+            zip_code: '78706',
+          }
+        : lead
+    );
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        detail: 'Intake updated successfully.',
+        id: 801,
+        status: 'submitted',
+        lead_id: 900,
+        completed_at: '2026-03-26T12:00:00Z',
+      }),
+    });
+  });
+
+  await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Public Leads' }).click();
+  await page.getByTestId('quick-add-lead-button').click();
+  await expect(page.getByTestId('quick-add-lead-sheet')).toBeVisible();
+  await page.getByPlaceholder('Full name').fill('Walk Up Prospect');
+  await page.getByPlaceholder('(555) 555-5555').fill('5556660000');
+  await page.getByTestId('quick-add-lead-more-toggle').click();
+  await page.getByPlaceholder('name@example.com').fill('walkup@example.com');
+  await page.getByPlaceholder('123 Main St').fill('400 Field Visit Rd');
+  await page.getByPlaceholder('Kitchen remodel, roof repair, bath update...').fill(
+    'Garage conversion'
+  );
+  await page
+    .getByPlaceholder('Referral details, timeline, follow-up plan, or anything you want to remember.')
+    .fill('Met on site and discussed a garage conversion.');
+  await page.getByTestId('manual-lead-save').click();
+
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Walk Up Prospect');
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Manual');
+  await expect(page.getByRole('button', { name: 'Accept Lead' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Reject Lead' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Send Intake Form' })).toBeVisible();
+  await expect(page.getByTestId('public-lead-workflow-hint')).toContainText('warm lead');
+
+  await page.getByRole('button', { name: 'Send Intake Form' }).click();
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Waiting on Customer');
+  await expect(page.getByTestId('public-lead-workflow-hint')).toContainText(
+    'You sent the intake form'
+  );
+
+  await page.goto('/start-project/manual-token', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('public-intake-customer-address-line1').fill('400 Field Visit Rd');
+  await page.getByTestId('public-intake-customer-city').fill('Austin');
+  await page.getByTestId('public-intake-customer-state').fill('TX');
+  await page.getByTestId('public-intake-customer-postal-code').fill('78706');
+  await page
+    .getByTestId('public-intake-accomplishment-text')
+    .fill('Convert the garage into a finished office and laundry room.');
+  await page.getByTestId('public-intake-submit-button').click();
+
+  await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Public Leads' }).click();
+  await page.getByRole('button', { name: 'Walk Up Prospect' }).click();
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Manual');
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Ready for Review');
+  await expect(page.getByRole('button', { name: 'Review Intake' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Accept Lead' })).toHaveCount(0);
+});
+
+test('qr project requests preserve qr source attribution', async ({ page }) => {
+  let capturedSource = null;
+
+  await page.route('**/api/projects/public/contractors/bright-build-co/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        slug: 'bright-build-co',
+        business_name_public: 'Bright Build Co',
+        tagline: 'Trusted renovations and repairs',
+        bio: 'We help homeowners with clean, reliable project delivery.',
+        city: 'Austin',
+        state: 'TX',
+        service_area_text: 'Austin metro',
+        years_in_business: 12,
+        phone_public: '555-111-2222',
+        email_public: 'hello@bright.example.com',
+        show_phone_public: true,
+        show_email_public: true,
+        show_license_public: true,
+        allow_public_intake: true,
+        allow_public_reviews: false,
+        specialties: ['Roofing'],
+        work_types: ['Repairs'],
+        review_count: 0,
+        average_rating: null,
+        gallery: [],
+        reviews: [],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/public/contractors/bright-build-co/intake/', async (route) => {
+    capturedSource = route.request().postDataJSON()?.source || null;
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, message: 'Your project request was submitted.' }),
+    });
+  });
+
+  await page.goto('/contractors/bright-build-co?source=qr', { waitUntil: 'domcontentloaded' });
+  await page.getByPlaceholder('Full name').fill('QR Prospect');
+  await page.getByPlaceholder('Email').fill('qr@example.com');
+  await page.getByPlaceholder('Tell us about your project').fill('Scanned a QR code to ask for a quote.');
+  await page.getByRole('button', { name: 'Submit Project Request' }).click();
+
+  expect(capturedSource).toBe('qr');
+});
+
 test('hidden public contractor profile is not exposed', async ({ page }) => {
   await page.route('**/api/projects/public/contractors/hidden-builder/', async (route) => {
     await route.fulfill({

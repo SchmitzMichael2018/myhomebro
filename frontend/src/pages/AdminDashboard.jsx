@@ -33,6 +33,32 @@ function fmtNumber(v) {
   return Number.isFinite(n) ? numberFmt.format(n) : "0";
 }
 
+function fmtDateTime(value) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function titleCase(value) {
+  return String(value || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function tonePill(tone) {
+  if (tone === "good") return "bg-emerald-100 text-emerald-800 border-emerald-200";
+  if (tone === "warn") return "bg-amber-100 text-amber-900 border-amber-200";
+  if (tone === "bad") return "bg-rose-100 text-rose-800 border-rose-200";
+  return "bg-slate-100 text-slate-700 border-slate-200";
+}
+
 /* =========================
    URL Helpers (persist filters)
 ========================= */
@@ -108,14 +134,14 @@ const SoftCard = ({ children, className = "" }) => (
   </div>
 );
 
-const BorderedSection = ({ title, subtitle, children }) => (
-  <div className="rounded-2xl border border-white/25 bg-white/10 p-4 shadow-sm">
+const BorderedSection = ({ title, subtitle, children, testId }) => (
+  <div data-testid={testId} className="rounded-2xl border border-white/25 bg-white/10 p-4 shadow-sm">
     <SectionTitle title={title} subtitle={subtitle} />
     {children}
   </div>
 );
 
-const StatCard = ({ label, value, sub, tone = "neutral", onClick }) => {
+const StatCard = ({ label, value, sub, tone = "neutral", onClick, testId }) => {
   const toneClass =
     tone === "good"
       ? "bg-emerald-50 border-emerald-200"
@@ -132,6 +158,7 @@ const StatCard = ({ label, value, sub, tone = "neutral", onClick }) => {
       type="button"
       onClick={onClick}
       disabled={!clickable}
+      data-testid={testId}
       className={[
         "text-left rounded-2xl border p-4 shadow-sm backdrop-blur-md transition",
         toneClass,
@@ -146,13 +173,14 @@ const StatCard = ({ label, value, sub, tone = "neutral", onClick }) => {
   );
 };
 
-const ThinStat = ({ label, value, sub, onClick }) => {
+const ThinStat = ({ label, value, sub, onClick, testId }) => {
   const clickable = typeof onClick === "function";
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={!clickable}
+      data-testid={testId}
       className={[
         "text-left rounded-xl border border-black/10 bg-white/70 p-3 shadow-sm transition",
         clickable ? "hover:bg-white cursor-pointer" : "cursor-default",
@@ -224,6 +252,7 @@ export default function AdminDashboard() {
   const [goals, setGoals] = useState(null);
 
   const [contractors, setContractors] = useState([]);
+  const [subcontractors, setSubcontractors] = useState([]);
   const [homeowners, setHomeowners] = useState([]);
   const [agreements, setAgreements] = useState([]);
   const [disputes, setDisputes] = useState([]);
@@ -242,6 +271,7 @@ export default function AdminDashboard() {
 
   // Contractor query (optional persistence later)
   const [contractorQuery, setContractorQuery] = useState("");
+  const [contractorFilter, setContractorFilter] = useState("newest");
 
   // Support tools
   const [pwResetEmail, setPwResetEmail] = useState("");
@@ -267,10 +297,11 @@ export default function AdminDashboard() {
   }
 
   async function loadCore() {
-    const [o, g, c, h, a, d] = await Promise.all([
+    const [o, g, c, s, h, a, d] = await Promise.all([
       api.get(`${ADMIN_BASE}/overview/`),
       api.get(`${ADMIN_BASE}/goals/`),
       api.get(`${ADMIN_BASE}/contractors/`),
+      api.get(`${ADMIN_BASE}/subcontractors/`),
       api.get(`${ADMIN_BASE}/homeowners/`),
       api.get(`${ADMIN_BASE}/agreements/`),
       api.get(`${ADMIN_BASE}/disputes/`),
@@ -279,6 +310,7 @@ export default function AdminDashboard() {
     setOverview(o.data);
     setGoals(g.data);
     setContractors(c.data?.results || []);
+    setSubcontractors(s.data?.results || []);
     setHomeowners(h.data?.results || []);
     setAgreements(a.data?.results || []);
     setDisputes(d.data?.results || []);
@@ -405,6 +437,13 @@ export default function AdminDashboard() {
   ========================= */
   const moneyBlock = overview?.money || {};
   const counts = overview?.counts || {};
+  const summary = overview?.summary || {};
+  const feeTrend = overview?.fee_trend || [];
+  const feeByContractor = overview?.fee_by_contractor || [];
+  const feeByPaymentMode = overview?.fee_by_payment_mode || [];
+  const topCategories = overview?.top_categories || [];
+  const topRegions = overview?.top_regions || [];
+  const insights = overview?.insights || [];
 
   const tracker = goals?.salary_tracker || {};
   const goal = goals?.goal || {};
@@ -480,8 +519,7 @@ export default function AdminDashboard() {
   // Filters
   const contractorFiltered = (() => {
     const q = contractorQuery.trim().toLowerCase();
-    if (!q) return contractors;
-    return contractors.filter((c) => {
+    let next = contractors.filter((c) => {
       const blob = [
         c.id,
         c.name,
@@ -498,7 +536,21 @@ export default function AdminDashboard() {
         .toLowerCase();
       return blob.includes(q);
     });
+    if (contractorFilter === "inactive") {
+      next = next.filter((c) => ["not_onboarded", "pending_stripe", "deauthorized"].includes(c.account_status));
+    }
+    if (contractorFilter === "top_fee") {
+      next = [...next].sort((a, b) => toFloat(b.fee_revenue) - toFloat(a.fee_revenue));
+    } else if (contractorFilter === "missing_profile") {
+      next = next.filter((c) => c.public_profile_status !== "public");
+    } else {
+      next = [...next].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    }
+    return next;
   })();
+
+  const homeownerRows = homeowners;
+  const subcontractorRows = subcontractors;
 
   const agreementsFiltered = (() => {
     const q = (agreementQuery || "").trim().toLowerCase();
@@ -572,6 +624,34 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      <div className="mt-4 flex flex-wrap gap-2">
+        {[
+          ["overview", "Overview"],
+          ["contractors", "Contractors"],
+          ["subcontractors", "Subcontractors"],
+          ["homeowners", "Customers"],
+          ["agreements", "Agreements"],
+          ["disputes", "Disputes"],
+          ["geo", "Geo"],
+          ["fee_audit", "Fee Audit"],
+          ["support", "Support"],
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => goTo(key)}
+            className={[
+              "rounded-full border px-3 py-1.5 text-xs font-extrabold transition",
+              view === key
+                ? "border-slate-900 bg-slate-900 text-white"
+                : "border-black/10 bg-white/70 text-slate-700 hover:bg-white",
+            ].join(" ")}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {loading ? (
         <SoftCard className="mt-6 p-5">
           <div className="text-slate-700">Loading admin data…</div>
@@ -580,7 +660,29 @@ export default function AdminDashboard() {
         <>
           {/* ===================== OVERVIEW ===================== */}
           {view === "overview" && (
-            <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div className="mt-6 space-y-5">
+              <BorderedSection
+                title="Platform Overview"
+                subtitle="Growth, operations, disputes, customers, and platform revenue in one place."
+                testId="admin-overview-cards"
+              >
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+                  <StatCard testId="admin-stat-contractors" label="Contractors" value={fmtNumber(counts.contractors || 0)} sub={`${fmtNumber(summary.new_contractors_this_month || 0)} new this month`} onClick={() => goTo("contractors")} />
+                  <StatCard testId="admin-stat-subcontractors" label="Subcontractors" value={fmtNumber(counts.subcontractors || 0)} sub="Invited + accepted" onClick={() => goTo("subcontractors")} />
+                  <StatCard testId="admin-stat-customers" label="Customers" value={fmtNumber(counts.homeowners || 0)} sub="Captured homeowners" onClick={() => goTo("homeowners")} />
+                  <StatCard testId="admin-stat-active-agreements" label="Active Agreements" value={fmtNumber(summary.active_agreements || 0)} sub={`${fmtNumber(summary.agreements_this_month || 0)} created this month`} onClick={() => goTo("agreements")} />
+                  <StatCard testId="admin-stat-open-disputes" label="Open Disputes" value={fmtNumber(summary.open_disputes || 0)} sub="Operator queue" tone={Number(summary.open_disputes || 0) > 0 ? "warn" : "good"} onClick={() => goTo("disputes")} />
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+                  <ThinStat testId="admin-thin-total-fees" label="Total Fees" value={fmtMoney(moneyBlock.platform_fee_total || 0)} sub="All time" onClick={() => goTo("fee_audit")} />
+                  <ThinStat testId="admin-thin-fees-this-month" label="Fees This Month" value={fmtMoney(moneyBlock.platform_fee_this_month || 0)} sub="Current month" onClick={() => goTo("fee_audit")} />
+                  <ThinStat testId="admin-thin-gross-paid" label="Gross Paid" value={fmtMoney(moneyBlock.gross_paid_revenue || 0)} sub="Stripe-confirmed" onClick={() => goTo("fee_audit")} />
+                  <ThinStat testId="admin-thin-leads-this-month" label="Leads This Month" value={fmtNumber(summary.leads_this_month || 0)} sub="Unified intake volume" onClick={() => goTo("contractors")} />
+                  <ThinStat testId="admin-thin-new-this-week" label="New This Week" value={fmtNumber(summary.new_contractors_this_week || 0)} sub="Contractor signups" onClick={() => goTo("contractors")} />
+                </div>
+              </BorderedSection>
+
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
               <div className="lg:col-span-2 space-y-5">
                 <BorderedSection
                   title="Business Health"
@@ -651,9 +753,132 @@ export default function AdminDashboard() {
                     <StatCard label="Agreements" value={fmtNumber(counts.agreements || 0)} sub="Total agreements" onClick={() => goTo("agreements")} />
                   </div>
                 </BorderedSection>
+
+                <BorderedSection
+                  title="Growth Insights"
+                  subtitle="Rules-first signals that surface activation gaps, conversion misses, and operational risk."
+                  testId="admin-growth-insights"
+                >
+                  <div className="space-y-2">
+                    {insights.length === 0 ? (
+                      <div className="text-sm text-slate-700">No major platform issues surfaced in this refresh.</div>
+                    ) : (
+                      insights.map((item, idx) => (
+                        <button
+                          key={`${item.title}-${idx}`}
+                          type="button"
+                          onClick={() => goTo(item.view || "overview")}
+                          className="w-full rounded-2xl border border-black/10 bg-white/70 p-4 text-left shadow-sm hover:bg-white"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`rounded-full border px-2 py-1 text-[11px] font-extrabold ${tonePill(item.tone)}`}>
+                              {titleCase(item.tone || "note")}
+                            </span>
+                            <span className="text-sm font-extrabold text-slate-900">{item.title}</span>
+                          </div>
+                          <div className="mt-2 text-sm text-slate-700">{item.detail}</div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </BorderedSection>
+
+                <BorderedSection
+                  title="Revenue Signals"
+                  subtitle="Fee trend, payment mix, and the categories driving platform revenue."
+                  testId="admin-revenue-summary"
+                >
+                  <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                    <TableShell>
+                      <table className="min-w-full text-sm">
+                        <thead className="border-b border-black/10 bg-white/60">
+                          <tr><Th>Month</Th><Th>Fees</Th><Th>Gross Paid</Th></tr>
+                        </thead>
+                        <tbody>
+                          {feeTrend.length === 0 ? (
+                            <tr><Td colSpan={3} className="text-slate-600">No fee trend data yet.</Td></tr>
+                          ) : (
+                            feeTrend.map((row) => (
+                              <tr key={row.label} className="border-b border-black/5">
+                                <Td className="font-extrabold">{row.label}</Td>
+                                <Td>{fmtMoney(row.platform_fee || 0)}</Td>
+                                <Td>{fmtMoney(row.gross_paid || 0)}</Td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </TableShell>
+
+                    <div className="space-y-4">
+                      <TableShell>
+                        <table className="min-w-full text-sm">
+                          <thead className="border-b border-black/10 bg-white/60">
+                            <tr><Th>Payment Type</Th><Th>Fees</Th></tr>
+                          </thead>
+                          <tbody>
+                            {feeByPaymentMode.length === 0 ? (
+                              <tr><Td colSpan={2} className="text-slate-600">No payment mix data yet.</Td></tr>
+                            ) : (
+                              feeByPaymentMode.map((row) => (
+                                <tr key={row.payment_mode} className="border-b border-black/5">
+                                  <Td className="font-extrabold">{titleCase(row.payment_mode)}</Td>
+                                  <Td>{fmtMoney(row.platform_fee || 0)}</Td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </TableShell>
+
+                      <TableShell>
+                        <table className="min-w-full text-sm">
+                          <thead className="border-b border-black/10 bg-white/60">
+                            <tr><Th>Category</Th><Th>Fees</Th></tr>
+                          </thead>
+                          <tbody>
+                            {topCategories.length === 0 ? (
+                              <tr><Td colSpan={2} className="text-slate-600">No category revenue data yet.</Td></tr>
+                            ) : (
+                              topCategories.map((row) => (
+                                <tr key={row.category} className="border-b border-black/5">
+                                  <Td className="font-extrabold">{row.category}</Td>
+                                  <Td>{fmtMoney(row.platform_fee || 0)}</Td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </TableShell>
+                    </div>
+                  </div>
+                </BorderedSection>
               </div>
 
               <div className="space-y-4">
+                <SoftCard className="p-4">
+                  <SectionTitle title="Top Fee Generators" subtitle="Contractors generating the most platform fee revenue." />
+                  <div className="space-y-2">
+                    {feeByContractor.length === 0 ? (
+                      <div className="text-sm text-slate-700">No contractor fee history yet.</div>
+                    ) : (
+                      feeByContractor.map((row) => (
+                        <button
+                          key={row.contractor_id}
+                          type="button"
+                          onClick={() => goTo("contractors")}
+                          className="w-full rounded-xl border border-black/10 bg-white/80 p-3 text-left hover:bg-white"
+                        >
+                          <div className="text-sm font-extrabold text-slate-900">{row.contractor_name}</div>
+                          <div className="mt-1 text-xs text-slate-600">
+                            {fmtMoney(row.platform_fee || 0)} in fees • {fmtNumber(row.lead_count || 0)} leads • {fmtNumber(row.agreement_count || 0)} agreements
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </SoftCard>
+
                 <SoftCard className="p-4">
                   <SectionTitle title="Needs Attention" subtitle="Click an item to jump to the fix." />
                   <div className="space-y-2">
@@ -677,9 +902,26 @@ export default function AdminDashboard() {
                 </SoftCard>
 
                 <SoftCard className="p-4">
+                  <SectionTitle title="Top Regions" subtitle="Where fee revenue is strongest right now." />
+                  <div className="space-y-2">
+                    {topRegions.length === 0 ? (
+                      <div className="text-sm text-slate-700">No regional fee data yet.</div>
+                    ) : (
+                      topRegions.map((row) => (
+                        <div key={row.region} className="rounded-xl border border-black/10 bg-white/80 p-3">
+                          <div className="text-sm font-extrabold text-slate-900">{row.region}</div>
+                          <div className="mt-1 text-xs text-slate-600">{fmtMoney(row.platform_fee || 0)} platform fees</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </SoftCard>
+
+                <SoftCard className="p-4">
                   <div className="text-xs text-slate-600">Generated: {overview?.generated_at || "—"}</div>
                 </SoftCard>
               </div>
+            </div>
             </div>
           )}
 
@@ -724,9 +966,19 @@ export default function AdminDashboard() {
 
           {/* ===================== CONTRACTORS ===================== */}
           {view === "contractors" && (
-            <div className="mt-6">
+            <div className="mt-6" data-testid="admin-contractors-view">
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <div className="text-sm font-extrabold text-slate-900">Contractors</div>
+                <select
+                  value={contractorFilter}
+                  onChange={(e) => setContractorFilter(e.target.value)}
+                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
+                >
+                  <option value="newest">Newest signups</option>
+                  <option value="inactive">Inactive onboarding</option>
+                  <option value="top_fee">Top fee generators</option>
+                  <option value="missing_profile">Missing public profile</option>
+                </select>
                 <input
                   value={contractorQuery}
                   onChange={(e) => setContractorQuery(e.target.value)}
@@ -738,25 +990,77 @@ export default function AdminDashboard() {
               <TableShell>
                 <table className="min-w-full text-sm">
                   <thead className="border-b border-black/10 bg-white/60">
-                    <tr><Th>ID</Th><Th>Name / Business</Th><Th>Email</Th><Th>City</Th><Th>State</Th><Th>Stripe</Th></tr>
+                    <tr><Th>Contractor</Th><Th>Signup</Th><Th>Status</Th><Th>Public Profile</Th><Th>Pipeline</Th><Th>Fee Revenue</Th><Th>Recent Activity</Th></tr>
                   </thead>
                   <tbody>
                     {contractorFiltered.length === 0 ? (
-                      <tr><Td colSpan={6} className="text-slate-600">No results.</Td></tr>
+                      <tr><Td colSpan={7} className="text-slate-600">No results.</Td></tr>
                     ) : (
                       contractorFiltered.map((c) => (
-                        <tr key={c.id} className="border-b border-black/5">
-                          <Td>{c.id}</Td>
+                        <tr key={c.id} data-testid={`admin-contractor-row-${c.id}`} className="border-b border-black/5">
                           <Td>
-                            <div className="font-extrabold text-slate-900">{c.name || "—"}</div>
-                            <div className="text-xs text-slate-600">{c.business_name || ""}</div>
+                            <div className="font-extrabold text-slate-900">{c.business_name || c.name || "—"}</div>
+                            <div className="text-xs text-slate-600">{c.email || "—"} • #{c.id}</div>
                           </Td>
-                          <Td>{c.email || "—"}</Td>
-                          <Td>{c.city || "—"}</Td>
-                          <Td>{c.state || "—"}</Td>
-                          <Td title={c.stripe_account_id || ""}>
-                            {c.stripe_account_id ? String(c.stripe_account_id).slice(0, 12) + "…" : "—"}
+                          <Td>{fmtDateTime(c.created_at)}</Td>
+                          <Td>
+                            <div className="font-semibold text-slate-900">{titleCase(c.account_status)}</div>
+                            <div className="text-xs text-slate-600">{c.city || "—"}, {c.state || "—"}</div>
                           </Td>
+                          <Td>
+                            <div className="font-semibold text-slate-900">{titleCase(c.public_profile_status)}</div>
+                            <div className="text-xs text-slate-600">
+                              Gallery {fmtNumber(c.gallery_count || 0)} • Reviews {fmtNumber(c.review_count || 0)}
+                            </div>
+                          </Td>
+                          <Td>
+                            <div className="font-semibold text-slate-900">{fmtNumber(c.lead_count || 0)} leads • {fmtNumber(c.agreement_count || 0)} agreements</div>
+                            <div className="text-xs text-slate-600">{c.stripe_account_id ? String(c.stripe_account_id).slice(0, 16) : "No Stripe account"}</div>
+                          </Td>
+                          <Td>{fmtMoney(c.fee_revenue || 0)}</Td>
+                          <Td title={c.recent_activity_at || ""}>
+                            {fmtDateTime(c.recent_activity_at)}
+                          </Td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </TableShell>
+            </div>
+          )}
+
+          {/* ===================== SUBCONTRACTORS ===================== */}
+          {view === "subcontractors" && (
+            <div className="mt-6" data-testid="admin-subcontractors-view">
+              <TableShell>
+                <table className="min-w-full text-sm">
+                  <thead className="border-b border-black/10 bg-white/60">
+                    <tr><Th>Subcontractor</Th><Th>Contractor</Th><Th>Agreement</Th><Th>Status</Th><Th>Assigned Work</Th><Th>Recent Activity</Th></tr>
+                  </thead>
+                  <tbody>
+                    {subcontractorRows.length === 0 ? (
+                      <tr><Td colSpan={6} className="text-slate-600">No subcontractor activity yet.</Td></tr>
+                    ) : (
+                      subcontractorRows.map((row) => (
+                        <tr key={row.id} data-testid={`admin-subcontractor-row-${row.id}`} className="border-b border-black/5">
+                          <Td>
+                            <div className="font-extrabold text-slate-900">{row.name || "—"}</div>
+                            <div className="text-xs text-slate-600">{row.email || "—"}</div>
+                          </Td>
+                          <Td>{row.contractor_name || "—"}</Td>
+                          <Td>
+                            <div className="font-semibold text-slate-900">{row.agreement_title || `Agreement #${row.agreement_id}`}</div>
+                            <div className="text-xs text-slate-600">#{row.agreement_id || "—"}</div>
+                          </Td>
+                          <Td>
+                            <div className="font-semibold text-slate-900">{titleCase(row.status)}</div>
+                            <div className="text-xs text-slate-600">
+                              Invited {fmtDateTime(row.invited_at)}{row.accepted_at ? ` • Accepted ${fmtDateTime(row.accepted_at)}` : ""}
+                            </div>
+                          </Td>
+                          <Td>{fmtNumber(row.assigned_work_count || 0)}</Td>
+                          <Td>{fmtDateTime(row.recent_activity_at)}</Td>
                         </tr>
                       ))
                     )}
@@ -768,23 +1072,30 @@ export default function AdminDashboard() {
 
           {/* ===================== HOMEOWNERS ===================== */}
           {view === "homeowners" && (
-            <div className="mt-6">
+            <div className="mt-6" data-testid="admin-homeowners-view">
               <TableShell>
                 <table className="min-w-full text-sm">
                   <thead className="border-b border-black/10 bg-white/60">
-                    <tr><Th>ID</Th><Th>Name</Th><Th>Email</Th><Th>City</Th><Th>State</Th></tr>
+                    <tr><Th>Customer</Th><Th>Contractor</Th><Th>Created</Th><Th>Leads</Th><Th>Agreements</Th><Th>Projects</Th></tr>
                   </thead>
                   <tbody>
-                    {homeowners.length === 0 ? (
-                      <tr><Td colSpan={5} className="text-slate-600">No results.</Td></tr>
+                    {homeownerRows.length === 0 ? (
+                      <tr><Td colSpan={6} className="text-slate-600">No results.</Td></tr>
                     ) : (
-                      homeowners.map((h) => (
-                        <tr key={h.id} className="border-b border-black/5">
-                          <Td>{h.id}</Td>
-                          <Td className="font-extrabold text-slate-900">{h.name || "—"}</Td>
-                          <Td>{h.email || "—"}</Td>
-                          <Td>{h.city || "—"}</Td>
-                          <Td>{h.state || "—"}</Td>
+                      homeownerRows.map((h) => (
+                        <tr key={h.id} data-testid={`admin-homeowner-row-${h.id}`} className="border-b border-black/5">
+                          <Td>
+                            <div className="font-extrabold text-slate-900">{h.name || "—"}</div>
+                            <div className="text-xs text-slate-600">{h.email || "—"} • {h.phone || "—"}</div>
+                          </Td>
+                          <Td>
+                            <div className="font-semibold text-slate-900">{h.contractor_name || "—"}</div>
+                            <div className="text-xs text-slate-600">#{h.created_by_contractor_id || "—"} • {titleCase(h.status || "active")}</div>
+                          </Td>
+                          <Td>{fmtDateTime(h.created_at)}</Td>
+                          <Td>{fmtNumber(h.lead_count || 0)}</Td>
+                          <Td>{fmtNumber(h.agreement_count || 0)}</Td>
+                          <Td>{fmtNumber(h.project_count || 0)}</Td>
                         </tr>
                       ))
                     )}
@@ -966,23 +1277,35 @@ export default function AdminDashboard() {
 
           {/* ===================== DISPUTES ===================== */}
           {view === "disputes" && (
-            <div className="mt-6">
+            <div className="mt-6" data-testid="admin-disputes-view">
               <TableShell>
                 <table className="min-w-full text-sm">
                   <thead className="border-b border-black/10 bg-white/60">
-                    <tr><Th>ID</Th><Th>Status</Th><Th>Agreement</Th><Th>Invoice</Th><Th>Reason</Th></tr>
+                    <tr><Th>Dispute</Th><Th>Contractor / Customer</Th><Th>Project</Th><Th>Status</Th><Th>Amount</Th><Th>Updated</Th></tr>
                   </thead>
                   <tbody>
                     {disputes.length === 0 ? (
-                      <tr><Td colSpan={5} className="text-slate-600">No disputes.</Td></tr>
+                      <tr><Td colSpan={6} className="text-slate-600">No disputes.</Td></tr>
                     ) : (
                       disputes.map((d) => (
-                        <tr key={d.id} className="border-b border-black/5">
-                          <Td>{d.id}</Td>
-                          <Td>{d.status || "—"}</Td>
-                          <Td>{d.agreement_id || "—"}</Td>
-                          <Td>{d.invoice_id || "—"}</Td>
-                          <Td>{d.reason || "—"}</Td>
+                        <tr key={d.id} data-testid={`admin-dispute-row-${d.id}`} className="border-b border-black/5">
+                          <Td>
+                            <div className="font-extrabold text-slate-900">Dispute #{d.id}</div>
+                            <div className="text-xs text-slate-600">
+                              Agreement #{d.agreement_id || "—"}{d.invoice_id ? ` • Invoice #${d.invoice_id}` : ""}{d.initiator ? ` • ${titleCase(d.initiator)}` : ""}
+                            </div>
+                          </Td>
+                          <Td>
+                            <div className="font-semibold text-slate-900">{d.contractor_name || "—"}</div>
+                            <div className="text-xs text-slate-600">{d.homeowner_name || "—"}</div>
+                          </Td>
+                          <Td>
+                            <div className="font-semibold text-slate-900">{d.project_title || "—"}</div>
+                            <div className="text-xs text-slate-600">{d.milestone_title || d.reason || "No detail saved."}</div>
+                          </Td>
+                          <Td>{titleCase(d.status || "—")}</Td>
+                          <Td>{fmtMoney(d.amount || 0)}</Td>
+                          <Td>{fmtDateTime(d.updated_at || d.created_at)}</Td>
                         </tr>
                       ))
                     )}

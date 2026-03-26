@@ -551,6 +551,23 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(lead.public_profile_id, self.profile.id)
         self.assertEqual(lead.source, PublicContractorLead.SOURCE_PUBLIC_PROFILE)
 
+    def test_qr_public_profile_intake_preserves_qr_source(self):
+        response = self.client.post(
+            f"/api/projects/public/contractors/{self.profile.slug}/intake/",
+            {
+                "source": "qr",
+                "full_name": "QR Prospect",
+                "email": "qr@example.com",
+                "phone": "555-777-9999",
+                "project_description": "Scanned the yard sign QR code.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        lead = PublicContractorLead.objects.get(email="qr@example.com")
+        self.assertEqual(lead.source, PublicContractorLead.SOURCE_QR)
+
     def test_landing_page_public_intake_creates_same_lead_structure_with_source_attribution(self):
         start_response = self.client.post(
             "/api/projects/public-intake/start/",
@@ -815,6 +832,66 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(lead.source, PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM)
         self.assertIsNotNone(lead.converted_homeowner_id)
         self.assertIsNotNone(lead.converted_agreement_id)
+
+    @patch("projects.services.intake_public.send_postmark_template_email", return_value=None)
+    def test_contractor_can_quick_add_manual_lead_and_enrich_same_lead_from_sent_intake(self, _send_email):
+        self.client.force_authenticate(user=self.contractor_user)
+        create_response = self.client.post(
+            "/api/projects/contractor/public-leads/",
+            {
+                "full_name": "Walk Up Prospect",
+                "email": "walkup@example.com",
+                "phone": "555-666-0000",
+                "project_address": "400 Field Visit Rd",
+                "notes": "Met on site and discussed a garage conversion.",
+            },
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201)
+        lead_id = create_response.json()["id"]
+
+        lead = PublicContractorLead.objects.get(pk=lead_id)
+        self.assertEqual(lead.source, PublicContractorLead.SOURCE_MANUAL)
+        self.assertEqual(lead.status, PublicContractorLead.STATUS_QUALIFIED)
+        self.assertEqual(lead.project_description, "Met on site and discussed a garage conversion.")
+
+        send_response = self.client.post(
+            f"/api/projects/contractor/public-leads/{lead.id}/send-intake/",
+            {},
+            format="json",
+        )
+        self.assertEqual(send_response.status_code, 200)
+        lead.refresh_from_db()
+        intake = ProjectIntake.objects.get(pk=send_response.json()["intake_id"])
+        self.assertEqual(intake.public_lead_id, lead.id)
+        self.assertEqual(intake.lead_source, PublicContractorLead.SOURCE_MANUAL)
+        self.assertEqual(lead.status, PublicContractorLead.STATUS_PENDING_CUSTOMER_RESPONSE)
+
+        self.client.force_authenticate(user=None)
+        complete_response = self.client.patch(
+            f"/api/projects/public-intake/?token={intake.share_token}",
+            {
+                "customer_name": "Walk Up Prospect",
+                "customer_email": "walkup@example.com",
+                "customer_phone": "555-666-0000",
+                "project_address_line1": "400 Field Visit Rd",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78706",
+                "accomplishment_text": "Convert the garage into a finished office and laundry room.",
+            },
+            format="json",
+        )
+        self.assertEqual(complete_response.status_code, 200)
+        self.assertEqual(complete_response.json()["lead_id"], lead.id)
+
+        lead.refresh_from_db()
+        self.assertEqual(lead.source, PublicContractorLead.SOURCE_MANUAL)
+        self.assertEqual(lead.status, PublicContractorLead.STATUS_READY_FOR_REVIEW)
+        self.assertEqual(
+            lead.project_description,
+            "Convert the garage into a finished office and laundry room.",
+        )
 
     def test_public_review_submission_creates_non_public_unverified_review(self):
         response = self.client.post(

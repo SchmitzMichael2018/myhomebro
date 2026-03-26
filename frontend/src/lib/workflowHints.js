@@ -42,6 +42,39 @@ export function getPublicLeadHint(lead) {
   const status = normalizeStatus(lead.status);
   const source = normalizeStatus(lead.source);
   const isContractorSent = source === "contractor_sent_form";
+  const isManual = source === "manual";
+
+  if (isManual && status === "pending_customer_response") {
+    return {
+      title: "Next step",
+      body: "You sent the intake form. Wait for the customer to fill it out, then review the updated scope and move into drafting.",
+      tone: "muted",
+    };
+  }
+
+  if (isManual && status === "ready_for_review" && hasAnalysis(lead) && !hasConvertedAgreement(lead)) {
+    return {
+      title: "Next step",
+      body: "Review the completed intake, confirm the AI summary, and create the draft agreement when the scope looks right.",
+      tone: "info",
+    };
+  }
+
+  if (isManual && status === "ready_for_review") {
+    return {
+      title: "Next step",
+      body: "Review the completed intake first. Then analyze it or move straight into a draft agreement when you are ready.",
+      tone: "info",
+    };
+  }
+
+  if (isManual && !hasAnalysis(lead) && !hasConvertedAgreement(lead)) {
+    return {
+      title: "Next step",
+      body: "This is a warm lead. Add a few scope details, send an intake form for more context, or move straight into a draft agreement when you're ready.",
+      tone: "info",
+    };
+  }
 
   if (isContractorSent && status === "pending_customer_response") {
     return {
@@ -316,9 +349,25 @@ export function getDashboardNextSteps({
     );
   }
 
+  const manualLeads = leads.filter((lead) => {
+    const source = normalizeStatus(lead?.source);
+    const status = normalizeStatus(lead?.status);
+    return source === "manual" && ["qualified", "contacted", "ready_for_review"].includes(status);
+  }).length;
+  if (manualLeads > 0) {
+    items.push(
+      `${manualLeads} manual lead${manualLeads === 1 ? " is" : "s are"} ready for follow-up.`
+    );
+  }
+
   const aiReadyLeads = leads.filter((lead) => {
     const status = normalizeStatus(lead?.status);
-    return ["accepted", "contacted", "qualified"].includes(status) && !hasConvertedAgreement(lead);
+    const source = normalizeStatus(lead?.source);
+    return (
+      ["accepted", "contacted", "qualified", "ready_for_review"].includes(status) &&
+      !["contractor_sent_form", "manual"].includes(source) &&
+      !hasConvertedAgreement(lead)
+    );
   }).length;
   if (aiReadyLeads > 0) {
     items.push(

@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional, List, Tuple
 from django.apps import apps
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import PasswordResetForm
-from django.db.models import Q, Sum
+from django.db.models import Count, Max, Q, Sum
 from django.http import FileResponse, Http404
 from django.utils.timezone import now
 
@@ -51,6 +51,12 @@ Milestone = _get_first_model([("projects", "ProjectMilestone")])
 # Contractor/Homeowner have moved around across builds: try both.
 Contractor = _get_first_model([("projects", "Contractor"), ("accounts", "Contractor")])
 Homeowner = _get_first_model([("projects", "Homeowner"), ("accounts", "Homeowner")])
+ContractorPublicProfile = _get_first_model([("projects", "ContractorPublicProfile")])
+PublicContractorLead = _get_first_model([("projects", "PublicContractorLead")])
+ContractorReview = _get_first_model([("projects", "ContractorReview")])
+ContractorGalleryItem = _get_first_model([("projects", "ContractorGalleryItem")])
+Project = _get_first_model([("projects", "Project")])
+SubcontractorInvitation = _get_first_model([("projects", "SubcontractorInvitation")])
 
 # Dispute may be a model or derived from invoices
 Dispute = _get_first_model([("projects", "Dispute")])
@@ -150,6 +156,78 @@ def _get_project_geo(project) -> Tuple[Optional[str], Optional[str], Optional[st
     return city, state, zipc
 
 
+def _to_iso(value):
+    try:
+        return value.isoformat() if value is not None else None
+    except Exception:
+        return value
+
+
+def _month_start(anchor: _date, months_back: int = 0) -> _date:
+    year = anchor.year
+    month = anchor.month - months_back
+    while month <= 0:
+        month += 12
+        year -= 1
+    return _date(year, month, 1)
+
+
+def _contractor_display(contractor) -> str:
+    return (
+        safe_get(contractor, ["business_name", "name"], None)
+        or safe_get(getattr(contractor, "user", None), ["email"], None)
+        or f"Contractor #{safe_get(contractor, ['id'], '')}"
+    )
+
+
+def _homeowner_display(homeowner) -> str:
+    return (
+        safe_get(homeowner, ["full_name", "name"], None)
+        or safe_get(homeowner, ["email"], None)
+        or f"Customer #{safe_get(homeowner, ['id'], '')}"
+    )
+
+
+def _account_status(contractor) -> str:
+    if contractor is None:
+        return "unknown"
+    if getattr(contractor, "stripe_deauthorized_at", None):
+        return "deauthorized"
+    if bool(getattr(contractor, "charges_enabled", False)) and bool(
+        getattr(contractor, "payouts_enabled", False)
+    ):
+        return "active"
+    if bool(getattr(contractor, "details_submitted", False)):
+        return "pending_stripe"
+    return "not_onboarded"
+
+
+def _public_profile_status(profile) -> str:
+    if profile is None:
+        return "missing"
+    if bool(getattr(profile, "is_public", False)):
+        return "public"
+    return "private"
+
+
+def _is_active_agreement(agreement) -> bool:
+    status_value = str(getattr(agreement, "status", "") or "").strip().lower()
+    if bool(getattr(agreement, "is_archived", False)):
+        return False
+    return status_value not in {"completed", "cancelled", "canceled", "closed", "archived"}
+
+
+def _is_open_dispute_status(status_value: str) -> bool:
+    return str(status_value or "").strip().lower() not in {
+        "resolved_contractor",
+        "resolved_homeowner",
+        "resolved",
+        "closed",
+        "canceled",
+        "cancelled",
+    }
+
+
 # -------------------------------------------------------------------
 # Views
 # -------------------------------------------------------------------
@@ -167,6 +245,9 @@ class AdminOverview(APIView):
     permission_classes = [IsAuthenticated, IsAdminUserRole]
 
     def get(self, request):
+        today = now().date()
+        week_start = today - timedelta(days=today.weekday())
+        month_start = today.replace(day=1)
         data: Dict[str, Any] = {
             "generated_at": now().isoformat(),
             "counts": {
@@ -177,6 +258,7 @@ class AdminOverview(APIView):
                 "disputes": 0,
                 "receipts": 0,
                 "refunds": 0,
+                "subcontractors": 0,
             },
             "money": {
                 "gross_paid_revenue": "0.00",
@@ -185,6 +267,30 @@ class AdminOverview(APIView):
                 "escrow_released_total": "0.00",
                 "escrow_refunded_total": "0.00",
                 "escrow_in_flight_total": "0.00",
+                "platform_fee_this_month": "0.00",
+            },
+            "summary": {
+                "new_contractors_this_week": 0,
+                "new_contractors_this_month": 0,
+                "active_agreements": 0,
+                "open_disputes": 0,
+                "leads_this_month": 0,
+                "agreements_this_month": 0,
+            },
+            "fee_trend": [],
+            "fee_by_contractor": [],
+            "fee_by_payment_mode": [],
+            "top_categories": [],
+            "top_regions": [],
+            "insights": [],
+            "admin_views": {
+                "contractors": "contractors",
+                "subcontractors": "subcontractors",
+                "homeowners": "homeowners",
+                "agreements": "agreements",
+                "disputes": "disputes",
+                "fee_audit": "fee_audit",
+                "geo": "geo",
             },
         }
 
@@ -207,6 +313,8 @@ class AdminOverview(APIView):
             data["counts"]["receipts"] = Receipt.objects.count()
         if Refund is not None:
             data["counts"]["refunds"] = Refund.objects.count()
+        if SubcontractorInvitation is not None:
+            data["counts"]["subcontractors"] = SubcontractorInvitation.objects.count()
 
         # Money: escrow funded
         funded_total = D0
@@ -232,6 +340,7 @@ class AdminOverview(APIView):
         # Money: paid revenue + platform fees (from Receipt)
         gross_paid = D0
         platform_fee = D0
+        platform_fee_this_month = D0
         if Receipt is not None:
             try:
                 agg_paid = Receipt.objects.aggregate(total=Sum("amount_paid_cents"))
@@ -244,6 +353,11 @@ class AdminOverview(APIView):
                 platform_fee = _cents_to_dollars_dec(int(agg_fee.get("total") or 0))
             except Exception:
                 platform_fee = D0
+            try:
+                agg_fee_month = Receipt.objects.filter(created_at__date__gte=month_start).aggregate(total=Sum("platform_fee_cents"))
+                platform_fee_this_month = _cents_to_dollars_dec(int(agg_fee_month.get("total") or 0))
+            except Exception:
+                platform_fee_this_month = D0
 
         # In flight
         in_flight = funded_total - released_total - refunded_total
@@ -256,6 +370,232 @@ class AdminOverview(APIView):
         data["money"]["escrow_released_total"] = _fmt_money(released_total)
         data["money"]["escrow_refunded_total"] = _fmt_money(refunded_total)
         data["money"]["escrow_in_flight_total"] = _fmt_money(in_flight)
+        data["money"]["platform_fee_this_month"] = _fmt_money(platform_fee_this_month)
+
+        contractor_stats: Dict[int, Dict[str, Any]] = {}
+        if Contractor is not None:
+            for contractor in Contractor.objects.all():
+                contractor_stats[contractor.id] = {
+                    "name": _contractor_display(contractor),
+                    "lead_count": 0,
+                    "agreement_count": 0,
+                    "fee_cents": 0,
+                    "latest_activity": safe_get(contractor, ["updated_at", "created_at"], None),
+                    "profile_missing": True,
+                    "profile_private": False,
+                    "gallery_count": 0,
+                    "review_count": 0,
+                }
+            if hasattr(Contractor, "created_at"):
+                data["summary"]["new_contractors_this_week"] = Contractor.objects.filter(created_at__date__gte=week_start).count()
+                data["summary"]["new_contractors_this_month"] = Contractor.objects.filter(created_at__date__gte=month_start).count()
+
+        if ContractorPublicProfile is not None and contractor_stats:
+            for profile in ContractorPublicProfile.objects.select_related("contractor").all():
+                stats = contractor_stats.get(profile.contractor_id)
+                if stats is None:
+                    continue
+                stats["profile_missing"] = False
+                stats["profile_private"] = not bool(getattr(profile, "is_public", False))
+                profile_time = safe_get(profile, ["updated_at", "created_at"], None)
+                if profile_time and (stats["latest_activity"] is None or profile_time > stats["latest_activity"]):
+                    stats["latest_activity"] = profile_time
+
+        if ContractorGalleryItem is not None and contractor_stats:
+            for row in ContractorGalleryItem.objects.values("contractor_id").annotate(total=Count("id")):
+                if row["contractor_id"] in contractor_stats:
+                    contractor_stats[row["contractor_id"]]["gallery_count"] = int(row["total"] or 0)
+
+        if ContractorReview is not None and contractor_stats:
+            for row in ContractorReview.objects.values("contractor_id").annotate(total=Count("id")):
+                if row["contractor_id"] in contractor_stats:
+                    contractor_stats[row["contractor_id"]]["review_count"] = int(row["total"] or 0)
+
+        if PublicContractorLead is not None:
+            data["summary"]["leads_this_month"] = PublicContractorLead.objects.filter(created_at__date__gte=month_start).count()
+            for row in PublicContractorLead.objects.values("contractor_id").annotate(total=Count("id"), latest=Max("updated_at")):
+                stats = contractor_stats.get(row["contractor_id"])
+                if stats is None:
+                    continue
+                stats["lead_count"] = int(row["total"] or 0)
+                latest = row.get("latest")
+                if latest and (stats["latest_activity"] is None or latest > stats["latest_activity"]):
+                    stats["latest_activity"] = latest
+
+        active_agreements = 0
+        category_fee_cents = defaultdict(int)
+        region_fee_cents = defaultdict(int)
+        if Agreement is not None:
+            agreements = list(Agreement.objects.select_related("project", "contractor").all())
+            data["summary"]["agreements_this_month"] = sum(
+                1 for agreement in agreements if safe_get(agreement, ["created_at"], None) and agreement.created_at.date() >= month_start
+            )
+            for agreement in agreements:
+                if _is_active_agreement(agreement):
+                    active_agreements += 1
+                contractor_id = getattr(agreement, "contractor_id", None)
+                if contractor_id in contractor_stats:
+                    contractor_stats[contractor_id]["agreement_count"] += 1
+                    latest = safe_get(agreement, ["updated_at", "created_at"], None)
+                    if latest and (
+                        contractor_stats[contractor_id]["latest_activity"] is None
+                        or latest > contractor_stats[contractor_id]["latest_activity"]
+                    ):
+                        contractor_stats[contractor_id]["latest_activity"] = latest
+            data["summary"]["active_agreements"] = active_agreements
+
+        open_disputes = 0
+        dispute_count_by_contractor = defaultdict(int)
+        if Dispute is not None:
+            for dispute in Dispute.objects.select_related("agreement", "agreement__contractor").all():
+                if _is_open_dispute_status(getattr(dispute, "status", "")):
+                    open_disputes += 1
+                contractor_id = safe_get(getattr(dispute, "agreement", None), ["contractor_id"], None)
+                if contractor_id:
+                    dispute_count_by_contractor[contractor_id] += 1
+        elif Invoice is not None:
+            open_disputes = Invoice.objects.filter(_invoice_disputed_q()).count()
+        data["summary"]["open_disputes"] = open_disputes
+
+        if Receipt is not None:
+            month_buckets = {
+                _month_start(today, months_back): {
+                    "label": _month_start(today, months_back).strftime("%b %Y"),
+                    "fee_cents": 0,
+                    "gross_cents": 0,
+                }
+                for months_back in range(5, -1, -1)
+            }
+            fee_by_payment_mode = defaultdict(int)
+            receipts = list(
+                Receipt.objects.select_related("agreement", "agreement__contractor", "agreement__project").order_by("-created_at")[:20000]
+            )
+            for receipt in receipts:
+                fee_cents = int(getattr(receipt, "platform_fee_cents", 0) or 0)
+                gross_cents = int(getattr(receipt, "amount_paid_cents", 0) or 0)
+                created_at = safe_get(receipt, ["created_at"], None)
+                if created_at:
+                    bucket = month_buckets.get(_month_start(created_at.date(), 0))
+                    if bucket is not None:
+                        bucket["fee_cents"] += fee_cents
+                        bucket["gross_cents"] += gross_cents
+                agreement = getattr(receipt, "agreement", None)
+                contractor_id = getattr(agreement, "contractor_id", None) if agreement else None
+                if contractor_id in contractor_stats:
+                    contractor_stats[contractor_id]["fee_cents"] += fee_cents
+                payment_mode = str(getattr(agreement, "payment_mode", "") or "unknown")
+                fee_by_payment_mode[payment_mode] += fee_cents
+                category = (
+                    getattr(agreement, "standardized_category", None)
+                    or getattr(agreement, "project_type", None)
+                    or safe_get(getattr(agreement, "project", None), ["title"], None)
+                    or "Unknown"
+                )
+                category_fee_cents[str(category).strip() or "Unknown"] += fee_cents
+                project = getattr(agreement, "project", None)
+                _, region_state, _ = _get_project_geo(project)
+                region_fee_cents[region_state or "Unknown"] += fee_cents
+
+            data["fee_trend"] = [
+                {
+                    "label": bucket["label"],
+                    "platform_fee": _fmt_money(_cents_to_dollars_dec(bucket["fee_cents"])),
+                    "gross_paid": _fmt_money(_cents_to_dollars_dec(bucket["gross_cents"])),
+                }
+                for _, bucket in sorted(month_buckets.items())
+            ]
+            data["fee_by_payment_mode"] = [
+                {
+                    "payment_mode": mode,
+                    "platform_fee": _fmt_money(_cents_to_dollars_dec(total_cents)),
+                }
+                for mode, total_cents in sorted(fee_by_payment_mode.items(), key=lambda item: item[1], reverse=True)
+            ]
+
+        data["fee_by_contractor"] = [
+            {
+                "contractor_id": contractor_id,
+                "contractor_name": stats["name"],
+                "platform_fee": _fmt_money(_cents_to_dollars_dec(stats["fee_cents"])),
+                "lead_count": stats["lead_count"],
+                "agreement_count": stats["agreement_count"],
+            }
+            for contractor_id, stats in sorted(contractor_stats.items(), key=lambda item: item[1]["fee_cents"], reverse=True)[:8]
+        ]
+        data["top_categories"] = [
+            {"category": category, "platform_fee": _fmt_money(_cents_to_dollars_dec(total_cents))}
+            for category, total_cents in sorted(category_fee_cents.items(), key=lambda item: item[1], reverse=True)[:5]
+        ]
+        data["top_regions"] = [
+            {"region": region, "platform_fee": _fmt_money(_cents_to_dollars_dec(total_cents))}
+            for region, total_cents in sorted(region_fee_cents.items(), key=lambda item: item[1], reverse=True)[:5]
+        ]
+
+        missing_profile_count = sum(1 for stats in contractor_stats.values() if stats["profile_missing"])
+        private_profile_count = sum(1 for stats in contractor_stats.values() if stats["profile_private"])
+        leads_no_agreements_count = sum(1 for stats in contractor_stats.values() if stats["lead_count"] > 0 and stats["agreement_count"] == 0)
+        inactive_promising_count = sum(
+            1
+            for stats in contractor_stats.values()
+            if (stats["lead_count"] >= 2 or stats["fee_cents"] > 0)
+            and stats["latest_activity"]
+            and (today - stats["latest_activity"].date()).days >= 21
+        )
+        insights = []
+        if missing_profile_count:
+            insights.append({
+                "tone": "warn",
+                "title": f"{missing_profile_count} contractor profiles still need setup",
+                "detail": "These signups are less likely to convert until their public presence is finished.",
+                "view": "contractors",
+            })
+        if leads_no_agreements_count:
+            insights.append({
+                "tone": "warn",
+                "title": f"{leads_no_agreements_count} contractors have leads but no agreements",
+                "detail": "They are attracting demand but not moving work into signed or draft agreements.",
+                "view": "contractors",
+            })
+        if private_profile_count:
+            insights.append({
+                "tone": "neutral",
+                "title": f"{private_profile_count} contractor profiles are private",
+                "detail": "Review public visibility, intake, gallery, and reviews to unlock organic conversion.",
+                "view": "contractors",
+            })
+        if data["top_categories"]:
+            top_category = data["top_categories"][0]
+            insights.append({
+                "tone": "good",
+                "title": f"{top_category['category']} is the top fee category",
+                "detail": f"Platform fees are strongest here at ${top_category['platform_fee']}.",
+                "view": "agreements",
+            })
+        if data["top_regions"]:
+            top_region = data["top_regions"][0]
+            insights.append({
+                "tone": "good",
+                "title": f"{top_region['region']} is the strongest fee region",
+                "detail": "Use this market as a benchmark for recruiting and activation.",
+                "view": "geo",
+            })
+        if dispute_count_by_contractor:
+            contractor_id, total = max(dispute_count_by_contractor.items(), key=lambda item: item[1])
+            contractor_name = contractor_stats.get(contractor_id, {}).get("name") or f"Contractor #{contractor_id}"
+            insights.append({
+                "tone": "bad" if total >= 2 else "warn",
+                "title": f"{contractor_name} leads current dispute volume",
+                "detail": f"{total} dispute(s) are tied to this contractor right now.",
+                "view": "disputes",
+            })
+        if inactive_promising_count:
+            insights.append({
+                "tone": "warn",
+                "title": f"{inactive_promising_count} promising contractors look inactive",
+                "detail": "They have prior lead or fee activity but no meaningful movement in the last 21 days.",
+                "view": "contractors",
+            })
+        data["insights"] = insights[:6]
 
         return Response(data, status=status.HTTP_200_OK)
 
@@ -270,21 +610,76 @@ class AdminContractors(APIView):
                 status=status.HTTP_200_OK,
             )
 
-        qs = Contractor.objects.all()
+        qs = Contractor.objects.select_related("user").all()
         if hasattr(Contractor, "created_at"):
             qs = qs.order_by("-created_at")
         else:
             qs = qs.order_by("-id")
 
-        qs = qs[:500]
+        contractors = list(qs[:500])
+        contractor_ids = [contractor.id for contractor in contractors]
+        profile_by_contractor_id = {}
+        lead_counts = defaultdict(int)
+        agreement_counts = defaultdict(int)
+        fee_cents_by_contractor = defaultdict(int)
+        latest_activity = {}
+        gallery_counts = defaultdict(int)
+        review_counts = defaultdict(int)
+
+        if ContractorPublicProfile is not None and contractor_ids:
+            for profile in ContractorPublicProfile.objects.filter(contractor_id__in=contractor_ids):
+                profile_by_contractor_id[profile.contractor_id] = profile
+                profile_time = safe_get(profile, ["updated_at", "created_at"], None)
+                if profile_time:
+                    latest_activity[profile.contractor_id] = profile_time
+
+        if PublicContractorLead is not None and contractor_ids:
+            for row in PublicContractorLead.objects.filter(contractor_id__in=contractor_ids).values("contractor_id").annotate(
+                total=Count("id"),
+                latest=Max("updated_at"),
+            ):
+                lead_counts[row["contractor_id"]] = int(row["total"] or 0)
+                if row.get("latest"):
+                    latest_activity[row["contractor_id"]] = max(
+                        latest_activity.get(row["contractor_id"]) or row["latest"],
+                        row["latest"],
+                    )
+
+        if Agreement is not None and contractor_ids:
+            for row in Agreement.objects.filter(contractor_id__in=contractor_ids).values("contractor_id").annotate(
+                total=Count("id"),
+                latest=Max("updated_at"),
+            ):
+                agreement_counts[row["contractor_id"]] = int(row["total"] or 0)
+                if row.get("latest"):
+                    latest_activity[row["contractor_id"]] = max(
+                        latest_activity.get(row["contractor_id"]) or row["latest"],
+                        row["latest"],
+                    )
+
+        if Receipt is not None and contractor_ids:
+            for row in Receipt.objects.filter(agreement__contractor_id__in=contractor_ids).values("agreement__contractor_id").annotate(
+                total=Sum("platform_fee_cents")
+            ):
+                fee_cents_by_contractor[row["agreement__contractor_id"]] = int(row["total"] or 0)
+
+        if ContractorGalleryItem is not None and contractor_ids:
+            for row in ContractorGalleryItem.objects.filter(contractor_id__in=contractor_ids).values("contractor_id").annotate(total=Count("id")):
+                gallery_counts[row["contractor_id"]] = int(row["total"] or 0)
+
+        if ContractorReview is not None and contractor_ids:
+            for row in ContractorReview.objects.filter(contractor_id__in=contractor_ids).values("contractor_id").annotate(total=Count("id")):
+                review_counts[row["contractor_id"]] = int(row["total"] or 0)
 
         items = []
-        for c in qs:
+        for c in contractors:
             user = safe_get(c, ["user"], None)
+            profile = profile_by_contractor_id.get(c.id)
+            recent_activity = latest_activity.get(c.id) or safe_get(c, ["updated_at", "created_at"], None)
 
             items.append({
                 "id": safe_get(c, ["id"], None),
-                "created_at": safe_get(c, ["created_at"], None),
+                "created_at": _to_iso(safe_get(c, ["created_at"], None)),
                 "name": safe_get(c, ["name"], None),
                 "business_name": safe_get(c, ["business_name", "company_name"], None),
                 "email": safe_get(c, ["email"], None) or safe_get(user, ["email"], None),
@@ -297,6 +692,18 @@ class AdminContractors(APIView):
                 "payouts_enabled": safe_get(c, ["payouts_enabled"], None),
                 "details_submitted": safe_get(c, ["details_submitted"], None),
                 "requirements_due_count": safe_get(c, ["requirements_due_count"], None),
+                "account_status": _account_status(c),
+                "public_profile_status": _public_profile_status(profile),
+                "public_profile_slug": safe_get(profile, ["slug"], None) if profile else None,
+                "public_profile_is_public": bool(getattr(profile, "is_public", False)) if profile else False,
+                "allow_public_intake": bool(getattr(profile, "allow_public_intake", False)) if profile else False,
+                "allow_public_reviews": bool(getattr(profile, "allow_public_reviews", False)) if profile else False,
+                "gallery_count": gallery_counts.get(c.id, 0),
+                "review_count": review_counts.get(c.id, 0),
+                "lead_count": lead_counts.get(c.id, 0),
+                "agreement_count": agreement_counts.get(c.id, 0),
+                "fee_revenue": _fmt_money(_cents_to_dollars_dec(fee_cents_by_contractor.get(c.id, 0))),
+                "recent_activity_at": _to_iso(recent_activity),
             })
 
         return Response({"count": len(items), "results": items}, status=status.HTTP_200_OK)
@@ -312,20 +719,36 @@ class AdminHomeowners(APIView):
                 status=status.HTTP_200_OK,
             )
 
-        qs = Homeowner.objects.all()
+        qs = Homeowner.objects.select_related("created_by", "created_by__user").all()
         if hasattr(Homeowner, "created_at"):
             qs = qs.order_by("-created_at")
         else:
             qs = qs.order_by("-id")
 
-        qs = qs[:500]
+        homeowners = list(qs[:500])
+        homeowner_ids = [homeowner.id for homeowner in homeowners]
+        lead_counts = defaultdict(int)
+        agreement_counts = defaultdict(int)
+        project_counts = defaultdict(int)
+
+        if PublicContractorLead is not None and homeowner_ids:
+            for row in PublicContractorLead.objects.filter(converted_homeowner_id__in=homeowner_ids).values("converted_homeowner_id").annotate(total=Count("id")):
+                lead_counts[row["converted_homeowner_id"]] = int(row["total"] or 0)
+
+        if Agreement is not None and homeowner_ids:
+            for row in Agreement.objects.filter(homeowner_id__in=homeowner_ids).values("homeowner_id").annotate(total=Count("id")):
+                agreement_counts[row["homeowner_id"]] = int(row["total"] or 0)
+
+        if Project is not None and homeowner_ids:
+            for row in Project.objects.filter(homeowner_id__in=homeowner_ids).values("homeowner_id").annotate(total=Count("id")):
+                project_counts[row["homeowner_id"]] = int(row["total"] or 0)
 
         results = []
-        for h in qs:
+        for h in homeowners:
             created_by = safe_get(h, ["created_by"], None)
             results.append({
                 "id": safe_get(h, ["id"], None),
-                "created_at": safe_get(h, ["created_at"], None),
+                "created_at": _to_iso(safe_get(h, ["created_at"], None)),
                 "name": safe_get(h, ["full_name", "name"], None),
                 "email": safe_get(h, ["email"], None),
                 "phone": safe_get(h, ["phone_number", "phone"], None),
@@ -333,7 +756,76 @@ class AdminHomeowners(APIView):
                 "state": safe_get(h, ["state"], None),
                 "zip": safe_get(h, ["zip_code", "zipcode", "postal_code"], None),
                 "created_by_contractor_id": safe_get(created_by, ["id"], None) if created_by else None,
+                "contractor_name": _contractor_display(created_by) if created_by else "",
+                "lead_count": lead_counts.get(h.id, 0),
+                "agreement_count": agreement_counts.get(h.id, 0),
+                "project_count": project_counts.get(h.id, 0),
+                "status": safe_get(h, ["status"], None),
             })
+
+        return Response({"count": len(results), "results": results}, status=status.HTTP_200_OK)
+
+
+class AdminSubcontractors(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserRole]
+
+    def get(self, request):
+        if SubcontractorInvitation is None:
+            return Response(
+                {"count": 0, "results": [], "warning": "Subcontractor invitations are not available in this deployment."},
+                status=status.HTTP_200_OK,
+            )
+
+        invitations = list(
+            SubcontractorInvitation.objects.select_related(
+                "contractor",
+                "contractor__user",
+                "agreement",
+                "agreement__project",
+                "accepted_by_user",
+            ).order_by("-invited_at")[:500]
+        )
+        invitation_ids = [invitation.id for invitation in invitations]
+        assigned_counts = defaultdict(int)
+        latest_activity = {}
+
+        if Milestone is not None and invitation_ids:
+            for row in Milestone.objects.filter(assigned_subcontractor_invitation_id__in=invitation_ids).values(
+                "assigned_subcontractor_invitation_id"
+            ).annotate(total=Count("id"), latest=Max("updated_at")):
+                invitation_id = row["assigned_subcontractor_invitation_id"]
+                assigned_counts[invitation_id] = int(row["total"] or 0)
+                latest_activity[invitation_id] = row.get("latest")
+
+        results = []
+        for invitation in invitations:
+            agreement = getattr(invitation, "agreement", None)
+            project = getattr(agreement, "project", None) if agreement else None
+            accepted_user = getattr(invitation, "accepted_by_user", None)
+            display_name = (
+                (getattr(accepted_user, "get_full_name", lambda: "")() or "").strip()
+                or getattr(accepted_user, "email", "")
+                or invitation.invite_name
+                or invitation.invite_email
+            )
+            latest = latest_activity.get(invitation.id) or invitation.accepted_at or invitation.invited_at
+            effective_status = getattr(invitation, "effective_status", None) or getattr(invitation, "status", "")
+            results.append(
+                {
+                    "id": invitation.id,
+                    "name": display_name,
+                    "email": invitation.invite_email,
+                    "contractor_id": invitation.contractor_id,
+                    "contractor_name": _contractor_display(getattr(invitation, "contractor", None)),
+                    "agreement_id": invitation.agreement_id,
+                    "agreement_title": safe_get(project, ["title"], None) or f"Agreement #{invitation.agreement_id}",
+                    "status": effective_status,
+                    "assigned_work_count": assigned_counts.get(invitation.id, 0),
+                    "invited_at": _to_iso(invitation.invited_at),
+                    "accepted_at": _to_iso(invitation.accepted_at),
+                    "recent_activity_at": _to_iso(latest),
+                }
+            )
 
         return Response({"count": len(results), "results": results}, status=status.HTTP_200_OK)
 
@@ -665,16 +1157,33 @@ class AdminDisputes(APIView):
     def get(self, request):
         # Prefer Dispute model if present
         if Dispute is not None:
-            qs = Dispute.objects.all().order_by("-id")[:500]
+            qs = Dispute.objects.select_related(
+                "agreement",
+                "agreement__contractor",
+                "agreement__contractor__user",
+                "agreement__homeowner",
+                "agreement__project",
+                "milestone",
+            ).order_by("-id")[:500]
             results = []
             for d in qs:
+                agreement = safe_get(d, ["agreement"], None)
+                homeowner = safe_get(agreement, ["homeowner"], None) if agreement else None
+                project = safe_get(agreement, ["project"], None) if agreement else None
                 results.append({
                     "id": safe_get(d, ["id"], None),
-                    "created_at": safe_get(d, ["created_at"], None),
+                    "created_at": _to_iso(safe_get(d, ["created_at"], None)),
+                    "updated_at": _to_iso(safe_get(d, ["updated_at", "last_activity_at"], None)),
                     "status": safe_get(d, ["status"], None),
                     "agreement_id": safe_get(d, ["agreement_id"], None) or safe_get(safe_get(d, ["agreement"], None), ["id"], None),
                     "invoice_id": safe_get(d, ["invoice_id"], None) or safe_get(safe_get(d, ["invoice"], None), ["id"], None),
                     "reason": safe_get(d, ["reason", "notes", "description"], None),
+                    "contractor_name": _contractor_display(safe_get(agreement, ["contractor"], None)) if agreement else "",
+                    "homeowner_name": _homeowner_display(homeowner) if homeowner else "",
+                    "project_title": safe_get(project, ["title"], None) or f"Agreement #{safe_get(agreement, ['id'], '')}",
+                    "amount": _fmt_money(_to_dec(safe_get(d, ["fee_amount"], None))),
+                    "initiator": safe_get(d, ["initiator"], None),
+                    "milestone_title": safe_get(safe_get(d, ["milestone"], None), ["title"], None),
                 })
             return Response({"count": len(results), "results": results}, status=status.HTTP_200_OK)
 
@@ -685,13 +1194,22 @@ class AdminDisputes(APIView):
         qs = Invoice.objects.filter(_invoice_disputed_q()).order_by("-created_at")[:500]
         results = []
         for inv in qs:
+            agreement = safe_get(inv, ["agreement"], None)
+            project = safe_get(agreement, ["project"], None) if agreement else None
             results.append({
                 "id": inv.id,
-                "created_at": safe_get(inv, ["created_at"], None),
+                "created_at": _to_iso(safe_get(inv, ["created_at"], None)),
+                "updated_at": _to_iso(safe_get(inv, ["updated_at"], None)),
                 "status": safe_get(inv, ["status"], None),
                 "agreement_id": safe_get(inv, ["agreement_id"], None),
                 "invoice_id": inv.id,
                 "reason": safe_get(inv, ["dispute_reason"], None),
+                "contractor_name": _contractor_display(safe_get(agreement, ["contractor"], None)) if agreement else "",
+                "homeowner_name": _homeowner_display(safe_get(agreement, ["homeowner"], None)) if agreement else "",
+                "project_title": safe_get(project, ["title"], None) or f"Agreement #{safe_get(agreement, ['id'], '')}",
+                "amount": _fmt_money(_to_dec(safe_get(inv, ["amount"], None))),
+                "initiator": "",
+                "milestone_title": "",
             })
         return Response({"count": len(results), "results": results}, status=status.HTTP_200_OK)
 

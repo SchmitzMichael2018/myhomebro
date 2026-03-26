@@ -107,7 +107,10 @@ class ProjectIntakeViewSet(viewsets.ModelViewSet):
     def send_to_homeowner(self, request, pk=None):
         intake = self.get_object()
         if intake.contractor_id:
-            intake.lead_source = PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM
+            existing_lead_source = getattr(getattr(intake, "public_lead", None), "source", "")
+            intake.lead_source = (
+                existing_lead_source or PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM
+            )
             intake.public_profile = intake.public_profile or ensure_public_profile_for_contractor(
                 intake.contractor
             )

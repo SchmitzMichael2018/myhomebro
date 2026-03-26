@@ -11,6 +11,7 @@ class ProjectIntake(models.Model):
     LEAD_SOURCE_CHOICES = [
         ("landing_page", "Landing Page"),
         ("public_profile", "Public Profile"),
+        ("manual", "Manual"),
         ("qr", "QR"),
         ("contractor_sent_form", "Contractor Sent Form"),
         ("direct", "Direct"),

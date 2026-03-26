@@ -167,7 +167,10 @@ class PublicIntakeView(APIView):
 
         intake.save(update_fields=changed + ["updated_at"])
         status_override = None
-        if intake.lead_source == PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM:
+        if intake.lead_source in {
+            PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM,
+            PublicContractorLead.SOURCE_MANUAL,
+        }:
             status_override = PublicContractorLead.STATUS_READY_FOR_REVIEW
         lead = sync_public_lead_from_project_intake(intake, status_override=status_override)
 

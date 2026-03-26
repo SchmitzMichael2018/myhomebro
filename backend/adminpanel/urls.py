@@ -2,6 +2,7 @@ from django.urls import path
 from .views import (
     AdminOverview,
     AdminContractors,
+    AdminSubcontractors,
     AdminHomeowners,
     AdminAgreements,
     AdminAgreementAIContext,
@@ -20,6 +21,7 @@ urlpatterns = [
     path("goals/", AdminGoals.as_view(), name="admin-goals"),
 
     path("contractors/", AdminContractors.as_view(), name="admin-contractors"),
+    path("subcontractors/", AdminSubcontractors.as_view(), name="admin-subcontractors"),
     path("homeowners/", AdminHomeowners.as_view(), name="admin-homeowners"),
     path("agreements/", AdminAgreements.as_view(), name="admin-agreements"),
     path("agreements/<int:agreement_id>/ai-context/", AdminAgreementAIContext.as_view(), name="admin-agreement-ai-context"),

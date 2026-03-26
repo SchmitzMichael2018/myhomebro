@@ -210,6 +210,7 @@ class PublicContractorLeadCreateSerializer(serializers.ModelSerializer):
             "profile": PublicContractorLead.SOURCE_PUBLIC_PROFILE,
             PublicContractorLead.SOURCE_PUBLIC_PROFILE: PublicContractorLead.SOURCE_PUBLIC_PROFILE,
             PublicContractorLead.SOURCE_LANDING_PAGE: PublicContractorLead.SOURCE_LANDING_PAGE,
+            PublicContractorLead.SOURCE_MANUAL: PublicContractorLead.SOURCE_MANUAL,
             PublicContractorLead.SOURCE_QR: PublicContractorLead.SOURCE_QR,
             PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM: PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM,
             PublicContractorLead.SOURCE_DIRECT: PublicContractorLead.SOURCE_DIRECT,
@@ -223,6 +224,39 @@ class PublicContractorLeadCreateSerializer(serializers.ModelSerializer):
         if not (attrs.get("email") or attrs.get("phone")):
             raise serializers.ValidationError("Email or phone is required.")
         return attrs
+
+
+class ContractorManualLeadCreateSerializer(serializers.ModelSerializer):
+    notes = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
+    class Meta:
+        model = PublicContractorLead
+        fields = [
+            "full_name",
+            "email",
+            "phone",
+            "project_address",
+            "city",
+            "state",
+            "zip_code",
+            "notes",
+        ]
+
+    def validate(self, attrs):
+        if not (attrs.get("email") or attrs.get("phone")):
+            raise serializers.ValidationError("Email or phone is required.")
+        if not (attrs.get("full_name") or "").strip():
+            raise serializers.ValidationError({"full_name": "Name is required."})
+        return attrs
+
+    def create(self, validated_data):
+        notes = (validated_data.pop("notes", "") or "").strip()
+        return PublicContractorLead.objects.create(
+            source=PublicContractorLead.SOURCE_MANUAL,
+            status=PublicContractorLead.STATUS_QUALIFIED,
+            project_description=notes,
+            **validated_data,
+        )
 
 
 class ContractorPublicLeadSerializer(serializers.ModelSerializer):

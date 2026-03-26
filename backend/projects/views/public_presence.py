@@ -13,8 +13,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from projects.models import Agreement, Contractor, ContractorPublicProfile, ContractorReview, Homeowner, Project, PublicContractorLead
+from projects.models_project_intake import ProjectIntake
 from projects.models_templates import ProjectTemplate
 from projects.serializers.public_presence import (
+    ContractorManualLeadCreateSerializer,
     ContractorGalleryItemSerializer,
     ContractorPublicLeadSerializer,
     ContractorPublicProfileSerializer,
@@ -33,6 +35,7 @@ from projects.services.public_lead_notifications import (
 )
 from projects.services.public_lead_pipeline import normalize_public_lead_source
 from projects.services.agreements.project_create import resolve_contractor_for_user
+from projects.services.intake_public import send_intake_email
 
 
 def _resolve_contractor(user):
@@ -167,7 +170,10 @@ def _build_lead_analysis_payload(lead):
 
 
 def _lead_skips_cold_acceptance(lead) -> bool:
-    return lead.source == PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM
+    return lead.source in {
+        PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM,
+        PublicContractorLead.SOURCE_MANUAL,
+    }
 
 
 def _lead_ready_for_ai_and_agreement(lead) -> bool:
@@ -300,6 +306,14 @@ class ContractorPublicLeadListView(APIView):
         rows = contractor.public_leads.select_related("public_profile").order_by("-created_at", "-id")
         return Response({"results": ContractorPublicLeadSerializer(rows, many=True).data})
 
+    def post(self, request):
+        contractor = _resolve_contractor(request.user)
+        profile = _get_or_create_profile(contractor)
+        serializer = ContractorManualLeadCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        lead = serializer.save(contractor=contractor, public_profile=profile)
+        return Response(ContractorPublicLeadSerializer(lead).data, status=status.HTTP_201_CREATED)
+
 
 class ContractorPublicLeadDetailView(APIView):
     permission_classes = [IsAuthenticated]
@@ -327,7 +341,7 @@ class ContractorPublicLeadAcceptView(APIView):
         lead = get_object_or_404(contractor.public_leads.select_related("converted_homeowner").all(), pk=lead_id)
         if _lead_skips_cold_acceptance(lead):
             return Response(
-                {"detail": "Contractor-sent intake forms do not need to be accepted. Review the completed intake and continue with analysis or agreement drafting."},
+                {"detail": "Warm leads do not need to be accepted. Review the lead details, send an intake if needed, and continue with analysis or agreement drafting."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         homeowner = _ensure_homeowner_for_lead(lead)
@@ -359,7 +373,7 @@ class ContractorPublicLeadRejectView(APIView):
         lead = get_object_or_404(contractor.public_leads.all(), pk=lead_id)
         if _lead_skips_cold_acceptance(lead):
             return Response(
-                {"detail": "Contractor-sent intake forms should be closed or archived instead of rejected."},
+                {"detail": "Warm leads should be closed or archived instead of rejected."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if lead.converted_agreement_id:
@@ -386,13 +400,101 @@ class ContractorPublicLeadAnalyzeView(APIView):
         lead = get_object_or_404(contractor.public_leads.all(), pk=lead_id)
         if not _lead_ready_for_ai_and_agreement(lead):
             return Response(
-                {"detail": "Only accepted leads or completed contractor-sent intake forms can be analyzed."},
+                {"detail": "Only accepted cold leads or warm leads that are ready for review can be analyzed."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not _lead_scope_text(lead):
+            return Response(
+                {"detail": "Add a few project details first, or send an intake form so the customer can complete the scope."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         analysis = _build_lead_analysis_payload(lead)
         lead.ai_analysis = analysis
         lead.save(update_fields=["ai_analysis", "updated_at"])
         return Response({"lead_id": lead.id, "ai_analysis": analysis}, status=status.HTTP_200_OK)
+
+
+class ContractorPublicLeadSendIntakeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, lead_id: int):
+        contractor = _resolve_contractor(request.user)
+        lead = get_object_or_404(
+            contractor.public_leads.select_related("public_profile", "source_intake").all(),
+            pk=lead_id,
+        )
+        if lead.source == PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM:
+            return Response(
+                {"detail": "This lead already uses a contractor-sent intake form."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not lead.email:
+            return Response(
+                {"email": ["An email address is required before you can send an intake form."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        intake = getattr(lead, "source_intake", None)
+        if intake is None:
+            intake = ProjectIntake.objects.create(
+                contractor=contractor,
+                public_profile=lead.public_profile or _get_or_create_profile(contractor),
+                public_lead=lead,
+                initiated_by="contractor",
+                status="draft",
+                lead_source=lead.source or PublicContractorLead.SOURCE_MANUAL,
+                customer_name=lead.full_name or "",
+                customer_email=lead.email or "",
+                customer_phone=lead.phone or "",
+                project_address_line1=lead.project_address or "",
+                project_city=lead.city or "",
+                project_state=lead.state or "",
+                project_postal_code=lead.zip_code or "",
+                accomplishment_text=lead.project_description or "",
+            )
+        else:
+            intake.public_profile = intake.public_profile or lead.public_profile or _get_or_create_profile(contractor)
+            intake.lead_source = lead.source or PublicContractorLead.SOURCE_MANUAL
+            intake.customer_name = lead.full_name or intake.customer_name
+            intake.customer_email = lead.email or intake.customer_email
+            intake.customer_phone = lead.phone or intake.customer_phone
+            intake.project_address_line1 = lead.project_address or intake.project_address_line1
+            intake.project_city = lead.city or intake.project_city
+            intake.project_state = lead.state or intake.project_state
+            intake.project_postal_code = lead.zip_code or intake.project_postal_code
+            intake.accomplishment_text = lead.project_description or intake.accomplishment_text
+            intake.save(
+                update_fields=[
+                    "public_profile",
+                    "lead_source",
+                    "customer_name",
+                    "customer_email",
+                    "customer_phone",
+                    "project_address_line1",
+                    "project_city",
+                    "project_state",
+                    "project_postal_code",
+                    "accomplishment_text",
+                    "updated_at",
+                ]
+            )
+
+        try:
+            result = send_intake_email(intake)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            return Response(
+                {"detail": "Failed to send intake email."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        lead.status = PublicContractorLead.STATUS_PENDING_CUSTOMER_RESPONSE
+        lead.save(update_fields=["status", "updated_at"])
+        result["lead_id"] = lead.id
+        result["lead_status"] = lead.status
+        result["lead_source"] = lead.source
+        return Response(result, status=status.HTTP_200_OK)
 
 
 class ContractorPublicLeadCreateAgreementView(APIView):
@@ -406,7 +508,7 @@ class ContractorPublicLeadCreateAgreementView(APIView):
         )
         if not _lead_ready_for_ai_and_agreement(lead):
             return Response(
-                {"detail": "Only accepted leads or completed contractor-sent intake forms can be converted into an agreement."},
+                {"detail": "Only accepted cold leads or warm leads that are ready for review can be converted into an agreement."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if lead.converted_agreement_id:

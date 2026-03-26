@@ -9,6 +9,7 @@ LEGACY_SOURCE_ALIASES = {
     "profile": PublicContractorLead.SOURCE_PUBLIC_PROFILE,
     "public_profile": PublicContractorLead.SOURCE_PUBLIC_PROFILE,
     "landing_page": PublicContractorLead.SOURCE_LANDING_PAGE,
+    "manual": PublicContractorLead.SOURCE_MANUAL,
     "qr": PublicContractorLead.SOURCE_QR,
     "contractor_sent_form": PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM,
     "direct": PublicContractorLead.SOURCE_DIRECT,

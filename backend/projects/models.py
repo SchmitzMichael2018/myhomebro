@@ -359,12 +359,14 @@ class PublicContractorLead(models.Model):
 
     SOURCE_LANDING_PAGE = "landing_page"
     SOURCE_PUBLIC_PROFILE = "public_profile"
+    SOURCE_MANUAL = "manual"
     SOURCE_QR = "qr"
     SOURCE_CONTRACTOR_SENT_FORM = "contractor_sent_form"
     SOURCE_DIRECT = "direct"
     SOURCE_CHOICES = [
         (SOURCE_LANDING_PAGE, "Landing Page"),
         (SOURCE_PUBLIC_PROFILE, "Public Profile"),
+        (SOURCE_MANUAL, "Manual"),
         (SOURCE_QR, "QR"),
         (SOURCE_CONTRACTOR_SENT_FORM, "Contractor Sent Form"),
         (SOURCE_DIRECT, "Direct"),
