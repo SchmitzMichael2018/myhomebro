@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import resolve
@@ -641,6 +642,111 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(lead.converted_homeowner_id, existing_homeowner.id)
         self.assertIsNotNone(lead.accepted_at)
 
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_accept_sends_email_when_customer_email_exists(self):
+        lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            full_name="Email Accept Lead",
+            email="accept-notify@example.com",
+            project_type="Kitchen Remodel",
+            project_description="Need a kitchen remodel estimate.",
+        )
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.post(
+            f"/api/projects/contractor/public-leads/{lead.id}/accept/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        lead.refresh_from_db()
+        self.assertIsNotNone(lead.accepted_email_sent_at)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("accepted your MyHomeBro project request", mail.outbox[0].subject)
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_reject_sends_email_when_customer_email_exists(self):
+        lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            full_name="Email Reject Lead",
+            email="reject-notify@example.com",
+            project_type="Deck Build",
+        )
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.post(
+            f"/api/projects/contractor/public-leads/{lead.id}/reject/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        lead.refresh_from_db()
+        self.assertEqual(lead.status, PublicContractorLead.STATUS_REJECTED)
+        self.assertIsNotNone(lead.rejected_email_sent_at)
+        self.assertIsNotNone(lead.rejected_at)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("unable to take on your MyHomeBro request", mail.outbox[0].subject)
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_no_notification_send_occurs_when_email_missing(self):
+        rejectable_lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            full_name="No Email Reject Lead",
+            email="",
+        )
+        self.client.force_authenticate(user=self.contractor_user)
+        reject_response = self.client.post(
+            f"/api/projects/contractor/public-leads/{rejectable_lead.id}/reject/",
+            {},
+            format="json",
+        )
+        self.assertEqual(reject_response.status_code, 200)
+        rejectable_lead.refresh_from_db()
+        self.assertIsNone(rejectable_lead.rejected_email_sent_at)
+        self.assertEqual(len(mail.outbox), 0)
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_duplicate_notification_sends_are_prevented(self):
+        lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            full_name="Duplicate Notify Lead",
+            email="duplicate@example.com",
+        )
+        self.client.force_authenticate(user=self.contractor_user)
+        first = self.client.post(
+            f"/api/projects/contractor/public-leads/{lead.id}/accept/",
+            {},
+            format="json",
+        )
+        second = self.client.post(
+            f"/api/projects/contractor/public-leads/{lead.id}/accept/",
+            {},
+            format="json",
+        )
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+
+        reject_lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            full_name="Duplicate Reject Lead",
+            email="duplicate-reject@example.com",
+        )
+        self.client.post(
+            f"/api/projects/contractor/public-leads/{reject_lead.id}/reject/",
+            {},
+            format="json",
+        )
+        self.client.post(
+            f"/api/projects/contractor/public-leads/{reject_lead.id}/reject/",
+            {},
+            format="json",
+        )
+        self.assertEqual(len(mail.outbox), 2)
+
     def test_analyze_accepted_lead_requires_ownership_and_acceptance(self):
         lead = PublicContractorLead.objects.create(
             contractor=self.contractor,
@@ -675,6 +781,29 @@ class ContractorPublicPresenceApiTests(TestCase):
             format="json",
         )
         self.assertEqual(forbidden_response.status_code, 404)
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_contractor_cannot_trigger_notifications_for_another_contractors_lead(self):
+        other_lead = PublicContractorLead.objects.create(
+            contractor=self.other_contractor,
+            public_profile=self.other_profile,
+            full_name="Other Notify Lead",
+            email="other-notify@example.com",
+        )
+        self.client.force_authenticate(user=self.contractor_user)
+        accept_response = self.client.post(
+            f"/api/projects/contractor/public-leads/{other_lead.id}/accept/",
+            {},
+            format="json",
+        )
+        reject_response = self.client.post(
+            f"/api/projects/contractor/public-leads/{other_lead.id}/reject/",
+            {},
+            format="json",
+        )
+        self.assertEqual(accept_response.status_code, 404)
+        self.assertEqual(reject_response.status_code, 404)
+        self.assertEqual(len(mail.outbox), 0)
 
     def test_create_agreement_from_accepted_lead_prefills_safe_fields(self):
         lead = PublicContractorLead.objects.create(

@@ -1,0 +1,13 @@
+<p>Hello,</p>
+
+<p><strong>{{ contractor_name }}</strong> has accepted your MyHomeBro project request.</p>
+
+<ul>
+  {% if project_type %}<li><strong>Project type:</strong> {{ project_type }}</li>{% endif %}
+  {% if project_location %}<li><strong>Project location:</strong> {{ project_location }}</li>{% endif %}
+  {% if request_summary %}<li><strong>Request summary:</strong> {{ request_summary }}</li>{% endif %}
+</ul>
+
+<p>The contractor will review your request and follow up with next steps.</p>
+
+<p>Thank you,<br>MyHomeBro</p>

@@ -1,0 +1,11 @@
+Hello,
+
+{{ contractor_name }} is unable to move forward with your MyHomeBro project request at this time.
+
+{% if project_type %}Project type: {{ project_type }}
+{% endif %}{% if project_location %}Project location: {{ project_location }}
+{% endif %}
+We appreciate your interest, and you may wish to reach out to another contractor for this project.
+
+Thank you,
+MyHomeBro

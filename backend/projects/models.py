@@ -338,6 +338,7 @@ class ContractorGalleryItem(models.Model):
 class PublicContractorLead(models.Model):
     STATUS_NEW = "new"
     STATUS_ACCEPTED = "accepted"
+    STATUS_REJECTED = "rejected"
     STATUS_CONTACTED = "contacted"
     STATUS_QUALIFIED = "qualified"
     STATUS_CLOSED = "closed"
@@ -345,6 +346,7 @@ class PublicContractorLead(models.Model):
     STATUS_CHOICES = [
         (STATUS_NEW, "New"),
         (STATUS_ACCEPTED, "Accepted"),
+        (STATUS_REJECTED, "Rejected"),
         (STATUS_CONTACTED, "Contacted"),
         (STATUS_QUALIFIED, "Qualified"),
         (STATUS_CLOSED, "Closed"),
@@ -385,6 +387,9 @@ class PublicContractorLead(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_NEW)
     internal_notes = models.TextField(blank=True, default="")
     accepted_at = models.DateTimeField(null=True, blank=True)
+    accepted_email_sent_at = models.DateTimeField(null=True, blank=True)
+    rejected_at = models.DateTimeField(null=True, blank=True)
+    rejected_email_sent_at = models.DateTimeField(null=True, blank=True)
     ai_analysis = models.JSONField(default=dict, blank=True)
     converted_homeowner = models.ForeignKey(
         "projects.Homeowner",

@@ -27,6 +27,10 @@ from projects.serializers.public_presence import (
     make_qr_svg_data,
 )
 from projects.services.intake_analysis import analyze_project_intake
+from projects.services.public_lead_notifications import (
+    send_public_lead_accept_email,
+    send_public_lead_reject_email,
+)
 from projects.services.agreements.project_create import resolve_contractor_for_user
 
 
@@ -318,7 +322,33 @@ class ContractorPublicLeadAcceptView(APIView):
         if lead.converted_at is None:
             lead.converted_at = timezone.now()
         lead.save(update_fields=["converted_homeowner", "status", "accepted_at", "converted_at", "updated_at"])
-        return Response(ContractorPublicLeadSerializer(lead).data, status=status.HTTP_200_OK)
+        notification = send_public_lead_accept_email(lead)
+        payload = ContractorPublicLeadSerializer(lead).data
+        payload["customer_notified"] = notification["sent"]
+        payload["notification_detail"] = notification["detail"]
+        return Response(payload, status=status.HTTP_200_OK)
+
+
+class ContractorPublicLeadRejectView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, lead_id: int):
+        contractor = _resolve_contractor(request.user)
+        lead = get_object_or_404(contractor.public_leads.all(), pk=lead_id)
+        if lead.converted_agreement_id:
+            return Response(
+                {"detail": "This lead already has a draft agreement and cannot be rejected from the lead inbox."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        lead.status = PublicContractorLead.STATUS_REJECTED
+        if lead.rejected_at is None:
+            lead.rejected_at = timezone.now()
+        lead.save(update_fields=["status", "rejected_at", "updated_at"])
+        notification = send_public_lead_reject_email(lead)
+        payload = ContractorPublicLeadSerializer(lead).data
+        payload["customer_notified"] = notification["sent"]
+        payload["notification_detail"] = notification["detail"]
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 class ContractorPublicLeadAnalyzeView(APIView):

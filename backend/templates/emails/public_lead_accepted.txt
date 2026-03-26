@@ -1,0 +1,12 @@
+Hello,
+
+{{ contractor_name }} has accepted your MyHomeBro project request.
+
+{% if project_type %}Project type: {{ project_type }}
+{% endif %}{% if project_location %}Project location: {{ project_location }}
+{% endif %}{% if request_summary %}Request summary: {{ request_summary }}
+{% endif %}
+The contractor will review your request and follow up with next steps.
+
+Thank you,
+MyHomeBro

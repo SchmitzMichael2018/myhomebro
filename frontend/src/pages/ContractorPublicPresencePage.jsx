@@ -30,6 +30,7 @@ function statusChipClass(value) {
   const normalized = String(value || '').toLowerCase();
   if (normalized === 'new') return 'border-blue-200 bg-blue-50 text-blue-700';
   if (normalized === 'accepted') return 'border-indigo-200 bg-indigo-50 text-indigo-700';
+  if (normalized === 'rejected') return 'border-rose-200 bg-rose-50 text-rose-700';
   if (normalized === 'contacted' || normalized === 'qualified') {
     return 'border-emerald-200 bg-emerald-50 text-emerald-700';
   }
@@ -287,10 +288,28 @@ export default function ContractorPublicPresencePage() {
       );
       setLeadsRows((prev) => prev.map((row) => (row.id === data.id ? data : row)));
       setSelectedLead(data);
-      toast.success('Lead accepted.');
+      toast.success(data?.notification_detail || 'Lead accepted.');
     } catch (err) {
       console.error(err);
       toast.error(err?.response?.data?.email?.[0] || 'Failed to accept lead.');
+    } finally {
+      setLeadBusy(false);
+    }
+  }
+
+  async function rejectLead() {
+    if (!selectedLead) return;
+    try {
+      setLeadBusy(true);
+      const { data } = await api.post(
+        `/projects/contractor/public-leads/${selectedLead.id}/reject/`
+      );
+      setLeadsRows((prev) => prev.map((row) => (row.id === data.id ? data : row)));
+      setSelectedLead(data);
+      toast.success(data?.notification_detail || 'Lead rejected.');
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || 'Failed to reject lead.');
     } finally {
       setLeadBusy(false);
     }
@@ -741,6 +760,7 @@ export default function ContractorPublicPresencePage() {
                       <select value={selectedLead.status} onChange={(e) => setSelectedLead((prev) => ({ ...prev, status: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm">
                         <option value="new">New</option>
                         <option value="accepted">Accepted</option>
+                        <option value="rejected">Rejected</option>
                         <option value="contacted">Contacted</option>
                         <option value="qualified">Qualified</option>
                         <option value="closed">Closed</option>
@@ -757,6 +777,11 @@ export default function ContractorPublicPresencePage() {
                       {selectedLead.status !== 'accepted' ? (
                         <button type="button" onClick={acceptLead} disabled={leadBusy} className="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-60">
                           Accept
+                        </button>
+                      ) : null}
+                      {selectedLead.status !== 'rejected' ? (
+                        <button type="button" onClick={rejectLead} disabled={leadBusy || Boolean(selectedLead.converted_agreement)} className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60">
+                          Reject
                         </button>
                       ) : null}
                       <button type="button" onClick={analyzeLeadWithAi} disabled={leadBusy || selectedLead.status !== 'accepted'} className="rounded-xl border border-indigo-300 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60">
