@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
 
-async function mockContractorDashboard(page, operationsPayload) {
+async function mockContractorDashboard(page, operationsPayload, options = {}) {
+  const milestones = options.milestones || [];
+  const agreements = options.agreements || [];
+  const publicLeads = options.publicLeads || [];
+
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
   });
@@ -44,7 +48,7 @@ async function mockContractorDashboard(page, operationsPayload) {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ results: [] }),
+      body: JSON.stringify({ results: milestones }),
     });
   });
 
@@ -82,7 +86,7 @@ async function mockContractorDashboard(page, operationsPayload) {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ results: [] }),
+      body: JSON.stringify({ results: agreements }),
     });
   });
 
@@ -104,6 +108,14 @@ async function mockContractorDashboard(page, operationsPayload) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(operationsPayload),
+    });
+  });
+
+  await page.route('**/api/projects/contractor/public-leads/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: publicLeads }),
     });
   });
 }
@@ -460,4 +472,73 @@ test('contractor dashboard hides empty task sections and shows one compact empty
   await expect(page.getByTestId('role-workboard-today')).toHaveCount(0);
   await expect(page.getByTestId('role-workboard-tomorrow')).toHaveCount(0);
   await expect(page.getByTestId('role-workboard-this-week')).toHaveCount(0);
+});
+
+test('contractor dashboard shows next steps for leads signatures funding and reviews', async ({
+  page,
+}) => {
+  await mockContractorDashboard(
+    page,
+    {
+      identity_type: 'contractor_owner',
+      today: [],
+      tomorrow: [],
+      this_week: [],
+      recent_activity: [],
+      empty_states: {
+        recent_activity: 'No recent worker activity yet.',
+      },
+    },
+    {
+      publicLeads: [
+        {
+          id: 91,
+          status: 'new',
+          full_name: 'Casey Prospect',
+        },
+      ],
+      agreements: [
+        {
+          id: 321,
+          title: 'Kitchen Remodel Agreement',
+          status: 'draft',
+          payment_mode: 'escrow',
+          signature_is_satisfied: false,
+          is_fully_signed: false,
+          escrow_funded: false,
+        },
+        {
+          id: 654,
+          title: 'Bath Remodel Agreement',
+          status: 'signed',
+          payment_mode: 'escrow',
+          signature_is_satisfied: true,
+          is_fully_signed: true,
+          escrow_funded: false,
+        },
+      ],
+      milestones: [
+        {
+          id: 401,
+          title: 'Paint Prep',
+          status: 'submitted',
+        },
+      ],
+    }
+  );
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('dashboard-next-steps')).toContainText(
+    '1 public lead needs follow-up.'
+  );
+  await expect(page.getByTestId('dashboard-next-steps')).toContainText(
+    '1 agreement is waiting for signature.'
+  );
+  await expect(page.getByTestId('dashboard-next-steps')).toContainText(
+    '1 project is waiting for funding.'
+  );
+  await expect(page.getByTestId('dashboard-next-steps')).toContainText(
+    '1 milestone is awaiting review.'
+  );
 });

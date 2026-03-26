@@ -309,6 +309,9 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
 
   await expect(page.getByTestId('public-presence-title')).toBeVisible();
   await expect(page.getByTestId('public-presence-qr-image')).toBeVisible();
+  await expect(page.getByTestId('public-presence-profile-hint')).toContainText(
+    'Add project photos to strengthen your public profile'
+  );
   await page.getByPlaceholder('Tagline').fill('Now booking spring projects');
   await page.getByTestId('public-presence-save-profile').click();
   await expect(page.getByPlaceholder('Tagline')).toHaveValue('Now booking spring projects');
@@ -330,11 +333,17 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Public');
   await page.getByRole('button', { name: 'Public Leads' }).click();
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Casey Prospect');
+  await expect(page.getByTestId('public-lead-workflow-hint')).toContainText(
+    'Review the intake and decide whether to accept or reject'
+  );
   await page.getByRole('button', { name: 'Accept' }).click();
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('accepted');
   await page.getByRole('button', { name: 'Analyze Intake with AI' }).click();
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
     'Kitchen Remodel - Casey Prospect'
+  );
+  await expect(page.getByTestId('public-lead-workflow-hint')).toContainText(
+    'Review the AI suggestions and create a draft agreement'
   );
   await page.getByRole('button', { name: 'Create AI-Assisted Agreement' }).click();
   await page.waitForURL('**/app/agreements/901/wizard?step=1');

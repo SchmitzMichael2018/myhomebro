@@ -6,6 +6,7 @@ import { toast } from "react-hot-toast";
 import PageShell from "./PageShell.jsx";
 import RoleAwareWorkboard from "./RoleAwareWorkboard.jsx";
 import StatCard from "./StatCard.jsx";
+import { WorkflowHintList } from "./WorkflowHint.jsx";
 import Modal from "react-modal";
 import {
   Target,
@@ -24,6 +25,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
+import { getDashboardNextSteps } from "../lib/workflowHints.js";
 
 console.log(
   "ContractorDashboard.jsx v2026-03-10 — added + New Intake quick action"
@@ -772,6 +774,8 @@ function EarnedBreakdownModal({ isOpen, onClose, invoices, expenses, loading }) 
 export default function ContractorDashboard() {
   const [who, setWho] = useState(null);
 
+  const [agreements, setAgreements] = useState([]);
+  const [publicLeads, setPublicLeads] = useState([]);
   const [milestones, setMilestones] = useState([]);
   const [invoices, setInvoices] = useState([]);
 
@@ -848,9 +852,11 @@ export default function ContractorDashboard() {
           return;
         }
 
-        const [mRes, iRes] = await Promise.allSettled([
+        const [mRes, iRes, aRes, lRes] = await Promise.allSettled([
           api.get("/projects/milestones/"),
           api.get("/projects/invoices/"),
+          api.get("/projects/agreements/"),
+          api.get("/projects/contractor/public-leads/"),
         ]);
 
         if (!mounted) return;
@@ -869,6 +875,26 @@ export default function ContractorDashboard() {
         } else {
           console.error(iRes.reason);
           toast.error("Failed to load invoices.");
+        }
+
+        if (aRes.status === "fulfilled") {
+          const list = Array.isArray(aRes.value.data)
+            ? aRes.value.data
+            : aRes.value.data?.results || [];
+          setAgreements(list);
+        } else {
+          console.error(aRes.reason);
+          setAgreements([]);
+        }
+
+        if (lRes.status === "fulfilled") {
+          const list = Array.isArray(lRes.value.data)
+            ? lRes.value.data
+            : lRes.value.data?.results || [];
+          setPublicLeads(list);
+        } else {
+          console.error(lRes.reason);
+          setPublicLeads([]);
         }
       } catch (e) {
         console.error(e);
@@ -1095,6 +1121,15 @@ export default function ContractorDashboard() {
       earnedAmount: sum(buckets.earned),
     };
   }, [invoices]);
+  const dashboardNextSteps = useMemo(
+    () =>
+      getDashboardNextSteps({
+        leads: publicLeads,
+        agreements,
+        milestones,
+      }),
+    [agreements, milestones, publicLeads]
+  );
 
   // ✅ Earned YTD (Jan 1 -> today) for the stat card
   const earnedYtdAmount = useMemo(() => {
@@ -1313,6 +1348,18 @@ export default function ContractorDashboard() {
       ) : null}
 
       {!isEmployee ? <RoleAwareWorkboard /> : null}
+
+      {!isEmployee && dashboardNextSteps.length ? (
+        <>
+          <div className="mhb-kicker" style={{ marginTop: 18 }}>
+            Next Steps
+          </div>
+          <WorkflowHintList
+            items={dashboardNextSteps}
+            testId="dashboard-next-steps"
+          />
+        </>
+      ) : null}
 
       <div className="mhb-kicker" style={{ marginTop: 18 }}>
         Quick Actions

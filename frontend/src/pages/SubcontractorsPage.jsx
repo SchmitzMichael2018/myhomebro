@@ -3,6 +3,8 @@ import toast from "react-hot-toast";
 import { Link } from "react-router-dom";
 
 import api from "../api";
+import { WorkflowHint } from "../components/WorkflowHint.jsx";
+import { getSubcontractorHubHint } from "../lib/workflowHints.js";
 
 const TABS = [
   { key: "directory", label: "Directory" },
@@ -198,6 +200,15 @@ export default function SubcontractorsPage() {
       ).length,
     [submissionRows]
   );
+  const subcontractorHint = useMemo(
+    () =>
+      getSubcontractorHubHint({
+        invitationRows,
+        assignmentRows,
+        submissionRows,
+      }),
+    [assignmentRows, invitationRows, submissionRows]
+  );
 
   const acceptedInvitesForAgreement = useMemo(
     () =>
@@ -346,6 +357,11 @@ export default function SubcontractorsPage() {
         <SummaryCard label="Assigned Work" value={assignedWorkCount} />
         <SummaryCard label="Submitted for Review" value={submittedForReviewCount} />
       </section>
+
+      <WorkflowHint
+        hint={subcontractorHint}
+        testId="subcontractors-workflow-hint"
+      />
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap gap-2">

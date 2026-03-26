@@ -282,6 +282,9 @@ test("contractor can open subcontractors hub, invite, assign work, and review su
   await expect(page.getByTestId("subcontractors-page-title")).toBeVisible();
   await expect(page.getByText("Pending Invites")).toBeVisible();
   await expect(page.getByText("Active Subs")).toBeVisible();
+  await expect(page.getByTestId("subcontractors-workflow-hint")).toContainText(
+    "Wait for the subcontractor to accept the invitation before assigning work."
+  );
 
   await page.getByTestId("subcontractors-invite-button").click();
   await page.selectOption("select", "321");

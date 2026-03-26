@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 import api from '../api';
+import { WorkflowHint } from '../components/WorkflowHint.jsx';
+import { getPublicLeadHint, getPublicPresenceHint } from '../lib/workflowHints.js';
 
 const TABS = [
   { key: 'profile', label: 'Public Profile' },
@@ -102,6 +104,11 @@ export default function ContractorPublicPresencePage() {
     () => (Array.isArray(profile.work_types) ? profile.work_types.join(', ') : ''),
     [profile.work_types]
   );
+  const profileHint = useMemo(
+    () => getPublicPresenceHint({ profile, galleryRows, reviewsRows, qrData }),
+    [galleryRows, profile, qrData, reviewsRows]
+  );
+  const selectedLeadHint = useMemo(() => getPublicLeadHint(selectedLead), [selectedLead]);
 
   async function loadAll() {
     try {
@@ -422,6 +429,11 @@ export default function ContractorPublicPresencePage() {
             </a>
           </div>
         </div>
+        <WorkflowHint
+          hint={profileHint}
+          testId="public-presence-profile-hint"
+          className="mt-4"
+        />
       </header>
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_320px]">
@@ -693,6 +705,11 @@ export default function ContractorPublicPresencePage() {
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 {selectedLead ? (
                   <>
+                    <WorkflowHint
+                      hint={selectedLeadHint}
+                      testId="public-lead-workflow-hint"
+                      className="mb-4"
+                    />
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="text-lg font-semibold text-slate-900">{selectedLead.full_name}</div>

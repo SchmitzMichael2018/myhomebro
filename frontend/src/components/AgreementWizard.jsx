@@ -19,6 +19,8 @@ import Step1Details from "./Step1Details.jsx";
 import Step2Milestones from "./Step2Milestones.jsx";
 import Step3WarrantyAttachments from "./Step3WarrantyAttachments.jsx";
 import Step4Finalize from "./Step4Finalize.jsx";
+import { WorkflowHint } from "./WorkflowHint.jsx";
+import { getAgreementWizardHint } from "../lib/workflowHints.js";
 
 /* ---------------- helpers ---------------- */
 
@@ -978,6 +980,10 @@ export default function AgreementWizard() {
     },
     [refreshAgreement, loadMilestones, setAgreement]
   );
+  const wizardHint = useMemo(
+    () => getAgreementWizardHint({ step, agreement }),
+    [agreement, step]
+  );
 
   return (
     <div className="mx-auto max-w-6xl p-4">
@@ -1026,6 +1032,12 @@ export default function AgreementWizard() {
           </button>
         ))}
       </div>
+
+      <WorkflowHint
+        hint={wizardHint}
+        testId="agreement-wizard-hint"
+        className="mt-4"
+      />
 
       {loadingAgreement ? (
         <div className="mt-6 text-sm text-white/80">Loading agreement…</div>

@@ -157,6 +157,9 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   });
 
   await expect(page.getByTestId('agreement-wizard-heading')).toBeVisible();
+  await expect(page.getByTestId('agreement-wizard-hint')).toContainText(
+    'Confirm the customer, address, and project details'
+  );
   await expect(page.getByTestId('agreement-customer-select')).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
   await expect(page.getByTestId('agreement-save-draft-button')).toBeVisible();

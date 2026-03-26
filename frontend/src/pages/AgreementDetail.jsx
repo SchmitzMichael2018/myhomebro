@@ -36,6 +36,8 @@ import AssignReviewerInline from "../components/AssignReviewerInline";
 
 // ✅ Assignment UI
 import AssignEmployeeInline from "../components/AssignEmployeeInline";
+import { WorkflowHint } from "../components/WorkflowHint.jsx";
+import { getAgreementDetailHint } from "../lib/workflowHints.js";
 import {
   assignAgreementToSubaccount,
   unassignAgreementFromSubaccount,
@@ -1093,6 +1095,11 @@ export default function AgreementDetail() {
     : norm.isSigned
     ? "❌ Awaiting Funding"
     : "❌ Not Signed";
+  const agreementHint = getAgreementDetailHint({
+    agreement,
+    norm,
+    milestones,
+  });
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -1130,6 +1137,11 @@ export default function AgreementDetail() {
           </div>
         )}
       </div>
+
+      <WorkflowHint
+        hint={agreementHint}
+        testId="agreement-detail-hint"
+      />
 
       {/* ✅ NEW: Agreement assignment selector */}
       {isContractor && (
