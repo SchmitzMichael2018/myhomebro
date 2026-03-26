@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 import api from '../api';
@@ -28,9 +29,11 @@ function fmtDateTime(value) {
 function statusChipClass(value) {
   const normalized = String(value || '').toLowerCase();
   if (normalized === 'new') return 'border-blue-200 bg-blue-50 text-blue-700';
+  if (normalized === 'accepted') return 'border-indigo-200 bg-indigo-50 text-indigo-700';
   if (normalized === 'contacted' || normalized === 'qualified') {
     return 'border-emerald-200 bg-emerald-50 text-emerald-700';
   }
+  if (normalized === 'closed') return 'border-violet-200 bg-violet-50 text-violet-700';
   if (normalized === 'archived') return 'border-slate-200 bg-slate-100 text-slate-600';
   return 'border-slate-200 bg-slate-50 text-slate-700';
 }
@@ -63,6 +66,7 @@ const defaultProfile = {
 };
 
 export default function ContractorPublicPresencePage() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('profile');
   const [profile, setProfile] = useState(defaultProfile);
@@ -88,14 +92,6 @@ export default function ContractorPublicPresencePage() {
     is_public: true,
   });
   const [galleryImage, setGalleryImage] = useState(null);
-  const [reviewForm, setReviewForm] = useState({
-    customer_name: '',
-    rating: 5,
-    title: '',
-    review_text: '',
-    is_verified: false,
-    is_public: true,
-  });
 
   const specialtiesText = useMemo(
     () => (Array.isArray(profile.specialties) ? profile.specialties.join(', ') : ''),
@@ -244,31 +240,9 @@ export default function ContractorPublicPresencePage() {
     }
   }
 
-  async function addReview() {
-    try {
-      setReviewBusy(true);
-      await api.post('/projects/contractor/reviews/', reviewForm);
-      setReviewForm({
-        customer_name: '',
-        rating: 5,
-        title: '',
-        review_text: '',
-        is_verified: false,
-        is_public: true,
-      });
-      const { data } = await api.get('/projects/contractor/reviews/');
-      setReviewsRows(normalizeList(data));
-      toast.success('Review saved.');
-    } catch (err) {
-      console.error(err);
-      toast.error(err?.response?.data?.rating?.[0] || 'Failed to save review.');
-    } finally {
-      setReviewBusy(false);
-    }
-  }
-
   async function toggleReviewVisibility(review) {
     try {
+      setReviewBusy(true);
       const { data } = await api.patch(`/projects/contractor/reviews/${review.id}/`, {
         is_public: !review.is_public,
       });
@@ -276,6 +250,8 @@ export default function ContractorPublicPresencePage() {
     } catch (err) {
       console.error(err);
       toast.error('Failed to update review visibility.');
+    } finally {
+      setReviewBusy(false);
     }
   }
 
@@ -292,6 +268,92 @@ export default function ContractorPublicPresencePage() {
     } catch (err) {
       console.error(err);
       toast.error('Failed to update lead.');
+    } finally {
+      setLeadBusy(false);
+    }
+  }
+
+  async function updateLeadStatus(nextStatus) {
+    if (!selectedLead) return;
+    await saveLead({ ...selectedLead, status: nextStatus });
+  }
+
+  async function acceptLead() {
+    if (!selectedLead) return;
+    try {
+      setLeadBusy(true);
+      const { data } = await api.post(
+        `/projects/contractor/public-leads/${selectedLead.id}/accept/`
+      );
+      setLeadsRows((prev) => prev.map((row) => (row.id === data.id ? data : row)));
+      setSelectedLead(data);
+      toast.success('Lead accepted.');
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.email?.[0] || 'Failed to accept lead.');
+    } finally {
+      setLeadBusy(false);
+    }
+  }
+
+  async function analyzeLeadWithAi() {
+    if (!selectedLead) return;
+    try {
+      setLeadBusy(true);
+      const { data } = await api.post(
+        `/projects/contractor/public-leads/${selectedLead.id}/analyze/`
+      );
+      const updated = { ...selectedLead, ai_analysis: data?.ai_analysis || {} };
+      setLeadsRows((prev) =>
+        prev.map((row) => (row.id === selectedLead.id ? updated : row))
+      );
+      setSelectedLead(updated);
+      toast.success('Lead analyzed with AI.');
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || 'Failed to analyze lead.');
+    } finally {
+      setLeadBusy(false);
+    }
+  }
+
+  async function createAgreementFromLead() {
+    if (!selectedLead) return;
+    try {
+      setLeadBusy(true);
+      const { data } = await api.post(
+        `/projects/contractor/public-leads/${selectedLead.id}/create-agreement/`
+      );
+      const updated = {
+        ...selectedLead,
+        converted_agreement: data?.agreement_id || selectedLead.converted_agreement,
+      };
+      setLeadsRows((prev) =>
+        prev.map((row) => (row.id === selectedLead.id ? updated : row))
+      );
+      setSelectedLead(updated);
+      navigate(data?.wizard_url || `/app/agreements/${data?.agreement_id}`);
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || 'Failed to create agreement.');
+    } finally {
+      setLeadBusy(false);
+    }
+  }
+
+  async function convertLeadToCustomer() {
+    if (!selectedLead) return;
+    try {
+      setLeadBusy(true);
+      const { data } = await api.post(
+        `/projects/contractor/public-leads/${selectedLead.id}/convert-homeowner/`
+      );
+      setLeadsRows((prev) => prev.map((row) => (row.id === data.id ? data : row)));
+      setSelectedLead(data);
+      toast.success('Lead converted to customer.');
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.email?.[0] || 'Failed to convert lead.');
     } finally {
       setLeadBusy(false);
     }
@@ -543,17 +605,9 @@ export default function ContractorPublicPresencePage() {
 
           {activeTab === 'reviews' ? (
             <div className="mt-6 space-y-4" data-testid="public-presence-reviews-tab">
-              <div className="grid gap-4 md:grid-cols-2">
-                <input value={reviewForm.customer_name} onChange={(e) => setReviewForm((prev) => ({ ...prev, customer_name: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Customer name" />
-                <input type="number" min="1" max="5" value={reviewForm.rating} onChange={(e) => setReviewForm((prev) => ({ ...prev, rating: Number(e.target.value || 5) }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Rating" />
-                <input value={reviewForm.title} onChange={(e) => setReviewForm((prev) => ({ ...prev, title: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2" placeholder="Review title" />
-                <textarea value={reviewForm.review_text} onChange={(e) => setReviewForm((prev) => ({ ...prev, review_text: e.target.value }))} rows={4} className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2" placeholder="Review text" />
-                <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={reviewForm.is_verified} onChange={(e) => setReviewForm((prev) => ({ ...prev, is_verified: e.target.checked }))} /> Verified</label>
-                <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={reviewForm.is_public} onChange={(e) => setReviewForm((prev) => ({ ...prev, is_public: e.target.checked }))} /> Public</label>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                Public review submissions stay hidden until you publish them here. Verified badges stay read-only unless a safe agreement-linked workflow sets them.
               </div>
-              <button type="button" onClick={addReview} disabled={reviewBusy} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60">
-                {reviewBusy ? 'Saving…' : 'Add Review'}
-              </button>
 
               <div className="space-y-3">
                 {reviewsRows.map((review) => (
@@ -561,13 +615,38 @@ export default function ContractorPublicPresencePage() {
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="text-sm font-semibold text-slate-900">{review.customer_name}</div>
-                        <div className="mt-1 text-xs text-slate-500">{review.rating}/5 {review.title ? `· ${review.title}` : ''}</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {review.rating}/5 {review.title ? `· ${review.title}` : ''}
+                        </div>
                       </div>
-                      <button type="button" onClick={() => toggleReviewVisibility(review)} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100">
-                        {review.is_public ? 'Hide' : 'Make Public'}
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <span
+                          className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                            review.is_public
+                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                              : 'border-amber-200 bg-amber-50 text-amber-700'
+                          }`}
+                        >
+                          {review.is_public ? 'Public' : 'Pending moderation'}
+                        </span>
+                        {review.is_verified ? (
+                          <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                            Verified
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                     <div className="mt-3 text-sm text-slate-700">{review.review_text}</div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleReviewVisibility(review)}
+                        disabled={reviewBusy}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                      >
+                        {review.is_public ? 'Hide Review' : 'Publish Review'}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -612,19 +691,101 @@ export default function ContractorPublicPresencePage() {
                       <div><span className="font-semibold text-slate-900">Budget:</span> {selectedLead.budget_text || '-'}</div>
                       <div><span className="font-semibold text-slate-900">Created:</span> {fmtDateTime(selectedLead.created_at)}</div>
                     </div>
+                    {selectedLead.accepted_at ? (
+                      <div className="mt-3 text-xs font-medium text-indigo-700">
+                        Accepted: {fmtDateTime(selectedLead.accepted_at)}
+                      </div>
+                    ) : null}
                     <div className="mt-4 text-sm text-slate-700">{selectedLead.project_description || 'No project description provided.'}</div>
+                    {selectedLead.ai_analysis?.suggested_title ? (
+                      <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
+                          AI Intake Analysis
+                        </div>
+                        <div className="mt-2 text-sm font-semibold text-slate-900">
+                          {selectedLead.ai_analysis.suggested_title}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                          {selectedLead.ai_analysis.project_type ? (
+                            <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-slate-700">
+                              {selectedLead.ai_analysis.project_type}
+                            </span>
+                          ) : null}
+                          {selectedLead.ai_analysis.project_subtype ? (
+                            <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-slate-700">
+                              {selectedLead.ai_analysis.project_subtype}
+                            </span>
+                          ) : null}
+                          {selectedLead.ai_analysis.template_name ? (
+                            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-emerald-700">
+                              Template: {selectedLead.ai_analysis.template_name}
+                            </span>
+                          ) : null}
+                        </div>
+                        {selectedLead.ai_analysis.suggested_description ? (
+                          <div className="mt-3 text-sm text-slate-700">
+                            {selectedLead.ai_analysis.suggested_description}
+                          </div>
+                        ) : null}
+                        <div className="mt-3 grid gap-3 md:grid-cols-2 text-xs text-slate-600">
+                          <div>
+                            Clarifications: {Array.isArray(selectedLead.ai_analysis.clarifications_needed) ? selectedLead.ai_analysis.clarifications_needed.length : 0}
+                          </div>
+                          <div>
+                            Milestones: {Array.isArray(selectedLead.ai_analysis.milestone_outline) ? selectedLead.ai_analysis.milestone_outline.length : 0}
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="mt-4 grid gap-3 md:grid-cols-2">
                       <select value={selectedLead.status} onChange={(e) => setSelectedLead((prev) => ({ ...prev, status: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm">
                         <option value="new">New</option>
+                        <option value="accepted">Accepted</option>
                         <option value="contacted">Contacted</option>
                         <option value="qualified">Qualified</option>
+                        <option value="closed">Closed</option>
                         <option value="archived">Archived</option>
                       </select>
                       <textarea value={selectedLead.internal_notes || ''} onChange={(e) => setSelectedLead((prev) => ({ ...prev, internal_notes: e.target.value }))} rows={4} className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2" placeholder="Internal notes" />
                     </div>
-                    <div className="mt-4 flex justify-end">
+                    {selectedLead.converted_homeowner_name ? (
+                      <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                        Converted to customer: {selectedLead.converted_homeowner_name}
+                      </div>
+                    ) : null}
+                    <div className="mt-4 flex flex-wrap justify-end gap-2">
+                      {selectedLead.status !== 'accepted' ? (
+                        <button type="button" onClick={acceptLead} disabled={leadBusy} className="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-60">
+                          Accept
+                        </button>
+                      ) : null}
+                      <button type="button" onClick={analyzeLeadWithAi} disabled={leadBusy || selectedLead.status !== 'accepted'} className="rounded-xl border border-indigo-300 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60">
+                        Analyze Intake with AI
+                      </button>
+                      <button type="button" onClick={createAgreementFromLead} disabled={leadBusy || selectedLead.status !== 'accepted'} className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60">
+                        Create AI-Assisted Agreement
+                      </button>
+                      <button type="button" onClick={() => updateLeadStatus('contacted')} disabled={leadBusy} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">
+                        Mark Contacted
+                      </button>
+                      <button type="button" onClick={() => updateLeadStatus('closed')} disabled={leadBusy} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">
+                        Mark Closed
+                      </button>
+                      <button type="button" onClick={() => updateLeadStatus('archived')} disabled={leadBusy} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">
+                        Archive Lead
+                      </button>
+                      {!selectedLead.converted_homeowner_id ? (
+                        <button type="button" onClick={convertLeadToCustomer} disabled={leadBusy} className="rounded-xl border border-blue-300 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-60">
+                          Convert to Customer
+                        </button>
+                      ) : null}
+                      {selectedLead.converted_agreement ? (
+                        <button type="button" onClick={() => navigate(`/app/agreements/${selectedLead.converted_agreement}`)} className="rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50">
+                          Open Draft Agreement
+                        </button>
+                      ) : null}
                       <button type="button" onClick={() => saveLead(selectedLead)} disabled={leadBusy} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60">
-                        {leadBusy ? 'Saving…' : 'Save Lead'}
+                        {leadBusy ? 'Saving...' : 'Save Lead'}
                       </button>
                     </div>
                   </>

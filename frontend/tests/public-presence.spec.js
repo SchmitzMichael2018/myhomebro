@@ -50,6 +50,16 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
         is_public: true,
         submitted_at: '2026-03-25T10:00:00Z',
       },
+      {
+        id: 2,
+        customer_name: 'Jordan Client',
+        rating: 4,
+        title: 'Pending review',
+        review_text: 'Waiting for moderation.',
+        is_verified: false,
+        is_public: false,
+        submitted_at: '2026-03-25T12:00:00Z',
+      },
     ],
     leads: [
       {
@@ -68,7 +78,13 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
         budget_text: '$25k-$40k',
         status: 'new',
         internal_notes: '',
+        accepted_at: null,
+        ai_analysis: {},
         created_at: '2026-03-25T11:00:00Z',
+        converted_homeowner_id: null,
+        converted_homeowner_name: '',
+        converted_agreement: null,
+        converted_at: null,
       },
     ],
   };
@@ -172,11 +188,120 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
     });
   });
 
+  await page.route(/.*\/api\/projects\/contractor\/reviews\/\d+\/$/, async (route) => {
+    const id = Number(route.request().url().match(/reviews\/(\d+)\//)?.[1]);
+    const body = route.request().postDataJSON();
+    state.reviews = state.reviews.map((review) =>
+      review.id === id ? { ...review, ...body } : review
+    );
+    const updated = state.reviews.find((review) => review.id === id);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(updated),
+    });
+  });
+
   await page.route('**/api/projects/contractor/public-leads/', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ results: state.leads }),
+    });
+  });
+
+  await page.route(/.*\/api\/projects\/contractor\/public-leads\/\d+\/$/, async (route) => {
+    const id = Number(route.request().url().match(/public-leads\/(\d+)\//)?.[1]);
+    const body = route.request().postDataJSON();
+    state.leads = state.leads.map((lead) => (lead.id === id ? { ...lead, ...body } : lead));
+    const updated = state.leads.find((lead) => lead.id === id);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(updated),
+    });
+  });
+
+  await page.route(/.*\/api\/projects\/contractor\/public-leads\/\d+\/accept\/$/, async (route) => {
+    const id = Number(route.request().url().match(/public-leads\/(\d+)\/accept\//)?.[1]);
+    state.leads = state.leads.map((lead) =>
+      lead.id === id
+        ? {
+            ...lead,
+            status: 'accepted',
+            accepted_at: '2026-03-25T12:00:00Z',
+            converted_homeowner_id: 201,
+            converted_homeowner_name: lead.full_name,
+            converted_at: '2026-03-25T12:00:00Z',
+          }
+        : lead
+    );
+    const updated = state.leads.find((lead) => lead.id === id);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(updated),
+    });
+  });
+
+  await page.route(/.*\/api\/projects\/contractor\/public-leads\/\d+\/analyze\/$/, async (route) => {
+    const id = Number(route.request().url().match(/public-leads\/(\d+)\/analyze\//)?.[1]);
+    const aiAnalysis = {
+      project_type: 'Remodel',
+      project_subtype: 'Kitchen Remodel',
+      suggested_title: 'Kitchen Remodel - Casey Prospect',
+      suggested_description: 'AI suggested remodel draft from public intake.',
+      clarifications_needed: [{ key: 'materials', label: 'Who supplies materials?' }],
+      milestone_outline: [{ order: 1, title: 'Preparation' }, { order: 2, title: 'Core Work' }],
+      recommended_templates: [{ id: 501, name: 'Kitchen Remodel Template' }],
+      template_id: 501,
+      template_name: 'Kitchen Remodel Template',
+    };
+    state.leads = state.leads.map((lead) =>
+      lead.id === id ? { ...lead, ai_analysis: aiAnalysis } : lead
+    );
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ lead_id: id, ai_analysis: aiAnalysis }),
+    });
+  });
+
+  await page.route(/.*\/api\/projects\/contractor\/public-leads\/\d+\/create-agreement\/$/, async (route) => {
+    const id = Number(route.request().url().match(/public-leads\/(\d+)\/create-agreement\//)?.[1]);
+    state.leads = state.leads.map((lead) =>
+      lead.id === id ? { ...lead, converted_agreement: 901 } : lead
+    );
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        agreement_id: 901,
+        detail_url: '/app/agreements/901',
+        wizard_url: '/app/agreements/901/wizard?step=1',
+        created: true,
+      }),
+    });
+  });
+
+  await page.route(/.*\/api\/projects\/contractor\/public-leads\/\d+\/convert-homeowner\/$/, async (route) => {
+    const id = Number(route.request().url().match(/public-leads\/(\d+)\/convert-homeowner\//)?.[1]);
+    state.leads = state.leads.map((lead) =>
+      lead.id === id
+        ? {
+            ...lead,
+            status: lead.status === 'new' ? 'qualified' : lead.status,
+            converted_homeowner_id: 201,
+            converted_homeowner_name: lead.full_name,
+            converted_at: '2026-03-25T12:30:00Z',
+          }
+        : lead
+    );
+    const updated = state.leads.find((lead) => lead.id === id);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(updated),
     });
   });
 
@@ -200,11 +325,42 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
 
   await page.getByRole('button', { name: 'Reviews' }).click();
   await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Taylor Homeowner');
+  await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Pending moderation');
+  await page.getByRole('button', { name: 'Publish Review' }).click();
+  await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Public');
   await page.getByRole('button', { name: 'Public Leads' }).click();
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Casey Prospect');
+  await page.getByRole('button', { name: 'Accept' }).click();
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('accepted');
+  await page.getByRole('button', { name: 'Analyze Intake with AI' }).click();
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
+    'Kitchen Remodel - Casey Prospect'
+  );
+  await page.getByRole('button', { name: 'Create AI-Assisted Agreement' }).click();
+  await page.waitForURL('**/app/agreements/901/wizard?step=1');
+
+  await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Public Leads' }).click();
+  await page.getByRole('button', { name: 'Mark Contacted' }).click();
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('contacted');
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
+    'Converted to customer: Casey Prospect'
+  );
 });
 
 test('public contractor profile renders gallery reviews and intake', async ({ page }) => {
+  const reviewState = [
+    {
+      id: 1,
+      customer_name: 'Taylor Homeowner',
+      rating: 5,
+      title: 'Excellent work',
+      review_text: 'Professional from start to finish.',
+      is_verified: true,
+      submitted_at: '2026-03-25T10:00:00Z',
+    },
+  ];
+
   await page.route('**/api/projects/public/contractors/bright-build-co/', async (route) => {
     await route.fulfill({
       status: 200,
@@ -240,18 +396,28 @@ test('public contractor profile renders gallery reviews and intake', async ({ pa
             project_state: 'TX',
           },
         ],
-        reviews: [
-          {
-            id: 1,
-            customer_name: 'Taylor Homeowner',
-            rating: 5,
-            title: 'Excellent work',
-            review_text: 'Professional from start to finish.',
-            is_verified: true,
-            submitted_at: '2026-03-25T10:00:00Z',
-          },
-        ],
+        reviews: reviewState,
       }),
+    });
+  });
+
+  await page.route('**/api/projects/public/contractors/bright-build-co/reviews/', async (route) => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          message: 'Thanks for your review. It will appear after moderation.',
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: reviewState }),
     });
   });
 
@@ -268,6 +434,12 @@ test('public contractor profile renders gallery reviews and intake', async ({ pa
   await expect(page.getByRole('heading', { name: 'Bright Build Co' })).toBeVisible();
   await expect(page.getByText('Kitchen Remodel')).toBeVisible();
   await expect(page.getByText('Taylor Homeowner')).toBeVisible();
+  await page.getByRole('link', { name: 'Leave Review' }).click();
+  await page.getByPlaceholder('Your name').fill('Morgan Reviewer');
+  await page.getByPlaceholder('Review title').fill('Great communication');
+  await page.getByPlaceholder('Share your experience').fill('Clear updates and clean work.');
+  await page.getByRole('button', { name: 'Submit Review' }).click();
+  await expect(page.getByPlaceholder('Your name')).toHaveValue('');
   await page.getByPlaceholder('Full name').fill('Casey Prospect');
   await page.getByPlaceholder('Email').fill('casey@example.com');
   await page.getByPlaceholder('Tell us about your project').fill('Need a remodel estimate.');

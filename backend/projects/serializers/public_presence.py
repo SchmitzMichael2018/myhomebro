@@ -163,7 +163,23 @@ class ContractorReviewSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at", "is_verified"]
+
+    def validate_rating(self, value):
+        if value < 1 or value > 5:
+            raise serializers.ValidationError("Rating must be between 1 and 5.")
+        return value
+
+
+class PublicContractorReviewCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ContractorReview
+        fields = [
+            "customer_name",
+            "rating",
+            "title",
+            "review_text",
+        ]
 
     def validate_rating(self, value):
         if value < 1 or value > 5:
@@ -206,6 +222,12 @@ class PublicContractorLeadCreateSerializer(serializers.ModelSerializer):
 
 
 class ContractorPublicLeadSerializer(serializers.ModelSerializer):
+    converted_homeowner_id = serializers.PrimaryKeyRelatedField(
+        source="converted_homeowner",
+        read_only=True,
+    )
+    converted_homeowner_name = serializers.SerializerMethodField()
+
     class Meta:
         model = PublicContractorLead
         fields = [
@@ -224,10 +246,30 @@ class ContractorPublicLeadSerializer(serializers.ModelSerializer):
             "budget_text",
             "status",
             "internal_notes",
+            "accepted_at",
+            "ai_analysis",
+            "converted_homeowner_id",
+            "converted_homeowner_name",
+            "converted_agreement",
+            "converted_at",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = [
+            "id",
+            "created_at",
+            "updated_at",
+            "accepted_at",
+            "ai_analysis",
+            "converted_homeowner_id",
+            "converted_homeowner_name",
+            "converted_agreement",
+            "converted_at",
+        ]
+
+    def get_converted_homeowner_name(self, obj):
+        homeowner = getattr(obj, "converted_homeowner", None)
+        return homeowner.full_name if homeowner else ""
 
 
 class PublicContractorProfileSerializer(serializers.ModelSerializer):

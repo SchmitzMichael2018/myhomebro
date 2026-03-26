@@ -19,6 +19,13 @@ const emptyLeadForm = {
   budget_text: '',
 };
 
+const emptyReviewForm = {
+  customer_name: '',
+  rating: 5,
+  title: '',
+  review_text: '',
+};
+
 function fmtRating(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric.toFixed(1) : '-';
@@ -30,7 +37,9 @@ export default function PublicProfile() {
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [leadForm, setLeadForm] = useState(emptyLeadForm);
+  const [reviewForm, setReviewForm] = useState(emptyReviewForm);
 
   useEffect(() => {
     let active = true;
@@ -79,6 +88,21 @@ export default function PublicProfile() {
     }
   }
 
+  async function submitReview(event) {
+    event.preventDefault();
+    try {
+      setReviewSubmitting(true);
+      await api.post(`/projects/public/contractors/${slug}/reviews/`, reviewForm);
+      toast.success('Thanks for your review. It will appear after moderation.');
+      setReviewForm(emptyReviewForm);
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || err?.response?.data?.rating?.[0] || 'Unable to submit your review.');
+    } finally {
+      setReviewSubmitting(false);
+    }
+  }
+
   if (loading) {
     return <div className="px-4 py-16 text-center text-sm text-slate-500">Loading contractor profile…</div>;
   }
@@ -120,7 +144,7 @@ export default function PublicProfile() {
               <a href="#intake" className="rounded-xl bg-white px-5 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-100">Request Project</a>
               <a href="#gallery" className="rounded-xl border border-white/25 bg-white/10 px-5 py-3 text-sm font-semibold text-white hover:bg-white/20">View Gallery</a>
               {profile.allow_public_reviews ? (
-                <a href="#reviews" className="rounded-xl border border-white/25 bg-white/10 px-5 py-3 text-sm font-semibold text-white hover:bg-white/20">Reviews</a>
+                <a href="#review-form" className="rounded-xl border border-white/25 bg-white/10 px-5 py-3 text-sm font-semibold text-white hover:bg-white/20">Leave Review</a>
               ) : null}
             </div>
           </div>
@@ -215,6 +239,52 @@ export default function PublicProfile() {
             ) : (
               <div className="mt-4 text-sm text-slate-500">No public reviews yet.</div>
             )}
+
+            <div id="review-form" className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-5">
+              <div className="text-lg font-semibold text-slate-900">Leave a Review</div>
+              <p className="mt-2 text-sm text-slate-600">
+                Reviews are moderated before they appear on the public profile.
+              </p>
+              <form onSubmit={submitReview} className="mt-4 grid gap-4 md:grid-cols-2">
+                <input
+                  value={reviewForm.customer_name}
+                  onChange={(e) => setReviewForm((prev) => ({ ...prev, customer_name: e.target.value }))}
+                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="Your name"
+                />
+                <input
+                  type="number"
+                  min="1"
+                  max="5"
+                  value={reviewForm.rating}
+                  onChange={(e) => setReviewForm((prev) => ({ ...prev, rating: Number(e.target.value || 5) }))}
+                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                  placeholder="Rating"
+                />
+                <input
+                  value={reviewForm.title}
+                  onChange={(e) => setReviewForm((prev) => ({ ...prev, title: e.target.value }))}
+                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
+                  placeholder="Review title"
+                />
+                <textarea
+                  value={reviewForm.review_text}
+                  onChange={(e) => setReviewForm((prev) => ({ ...prev, review_text: e.target.value }))}
+                  rows={4}
+                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
+                  placeholder="Share your experience"
+                />
+                <div className="md:col-span-2">
+                  <button
+                    type="submit"
+                    disabled={reviewSubmitting}
+                    className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                  >
+                    {reviewSubmitting ? 'Submitting...' : 'Submit Review'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </section>
         ) : null}
 

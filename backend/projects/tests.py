@@ -548,6 +548,195 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(lead.contractor_id, self.contractor.id)
         self.assertEqual(lead.public_profile_id, self.profile.id)
 
+    def test_public_review_submission_creates_non_public_unverified_review(self):
+        response = self.client.post(
+            f"/api/projects/public/contractors/{self.profile.slug}/reviews/",
+            {
+                "customer_name": "Jordan Client",
+                "rating": 4,
+                "title": "Solid communication",
+                "review_text": "Project stayed on track.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        review = ContractorReview.objects.get(customer_name="Jordan Client")
+        self.assertEqual(review.contractor_id, self.contractor.id)
+        self.assertEqual(review.public_profile_id, self.profile.id)
+        self.assertFalse(review.is_public)
+        self.assertFalse(review.is_verified)
+
+    def test_contractor_can_only_moderate_own_reviews(self):
+        other_review = ContractorReview.objects.create(
+            contractor=self.other_contractor,
+            public_profile=self.other_profile,
+            customer_name="Other Review",
+            rating=5,
+            is_public=False,
+        )
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.patch(
+            f"/api/projects/contractor/reviews/{other_review.id}/",
+            {"is_public": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_contractor_can_update_lead_status_and_convert_to_homeowner(self):
+        lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            full_name="Lead Convert",
+            email="lead-convert@example.com",
+            phone="555-000-1111",
+            project_address="123 Lead St",
+            city="Austin",
+            state="TX",
+            zip_code="78701",
+        )
+        self.client.force_authenticate(user=self.contractor_user)
+
+        patch_response = self.client.patch(
+            f"/api/projects/contractor/public-leads/{lead.id}/",
+            {"status": "closed", "internal_notes": "Closed after estimate."},
+            format="json",
+        )
+        self.assertEqual(patch_response.status_code, 200)
+        lead.refresh_from_db()
+        self.assertEqual(lead.status, PublicContractorLead.STATUS_CLOSED)
+
+        convert_response = self.client.post(
+            f"/api/projects/contractor/public-leads/{lead.id}/convert-homeowner/",
+            {},
+            format="json",
+        )
+        self.assertEqual(convert_response.status_code, 200)
+        lead.refresh_from_db()
+        self.assertIsNotNone(lead.converted_homeowner_id)
+        self.assertEqual(lead.converted_homeowner.email, "lead-convert@example.com")
+
+    def test_accept_lead_creates_or_reuses_homeowner(self):
+        existing_homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Existing Customer",
+            email="accepted@example.com",
+        )
+        lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            full_name="Accepted Lead",
+            email="accepted@example.com",
+            phone="555-111-0000",
+        )
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.post(
+            f"/api/projects/contractor/public-leads/{lead.id}/accept/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        lead.refresh_from_db()
+        self.assertEqual(lead.status, PublicContractorLead.STATUS_ACCEPTED)
+        self.assertEqual(lead.converted_homeowner_id, existing_homeowner.id)
+        self.assertIsNotNone(lead.accepted_at)
+
+    def test_analyze_accepted_lead_requires_ownership_and_acceptance(self):
+        lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            full_name="Analyze Lead",
+            email="analyze@example.com",
+            project_type="Kitchen Remodel",
+            project_description="Remodel kitchen with new cabinets and counters.",
+            status=PublicContractorLead.STATUS_ACCEPTED,
+        )
+        self.client.force_authenticate(user=self.contractor_user)
+        ok_response = self.client.post(
+            f"/api/projects/contractor/public-leads/{lead.id}/analyze/",
+            {},
+            format="json",
+        )
+        self.assertEqual(ok_response.status_code, 200)
+        lead.refresh_from_db()
+        self.assertIn("suggested_title", lead.ai_analysis)
+        self.assertIn("recommended_templates", lead.ai_analysis)
+
+        other_lead = PublicContractorLead.objects.create(
+            contractor=self.other_contractor,
+            public_profile=self.other_profile,
+            full_name="Other Analyze Lead",
+            email="other-analyze@example.com",
+            status=PublicContractorLead.STATUS_ACCEPTED,
+        )
+        forbidden_response = self.client.post(
+            f"/api/projects/contractor/public-leads/{other_lead.id}/analyze/",
+            {},
+            format="json",
+        )
+        self.assertEqual(forbidden_response.status_code, 404)
+
+    def test_create_agreement_from_accepted_lead_prefills_safe_fields(self):
+        lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            full_name="Agreement Lead",
+            email="agreement-lead@example.com",
+            project_address="789 Builder Ln",
+            city="Austin",
+            state="TX",
+            zip_code="78702",
+            project_type="Kitchen Remodel",
+            project_description="Full kitchen remodel with island and cabinets.",
+            status=PublicContractorLead.STATUS_ACCEPTED,
+            ai_analysis={
+                "project_type": "Remodel",
+                "project_subtype": "Kitchen Remodel",
+                "suggested_title": "Kitchen Remodel - Builder Ln",
+                "suggested_description": "Draft kitchen remodel agreement from intake.",
+                "template_id": None,
+            },
+        )
+        self.client.force_authenticate(user=self.contractor_user)
+        accept_response = self.client.post(
+            f"/api/projects/contractor/public-leads/{lead.id}/accept/",
+            {},
+            format="json",
+        )
+        self.assertEqual(accept_response.status_code, 200)
+
+        create_response = self.client.post(
+            f"/api/projects/contractor/public-leads/{lead.id}/create-agreement/",
+            {},
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201)
+        lead.refresh_from_db()
+        agreement = lead.converted_agreement
+        self.assertIsNotNone(agreement)
+        self.assertEqual(agreement.homeowner_id, lead.converted_homeowner_id)
+        self.assertEqual(agreement.source_lead_id, lead.id)
+        self.assertEqual(agreement.project.title, "Kitchen Remodel - Builder Ln")
+        self.assertEqual(agreement.project.project_city, "Austin")
+        self.assertEqual(agreement.project_address_line1, "789 Builder Ln")
+        self.assertEqual(agreement.project_type, "Remodel")
+        self.assertEqual(agreement.project_subtype, "Kitchen Remodel")
+
+    def test_contractor_cannot_update_another_contractors_lead(self):
+        other_lead = PublicContractorLead.objects.create(
+            contractor=self.other_contractor,
+            public_profile=self.other_profile,
+            full_name="Other Lead",
+            email="otherlead@example.com",
+        )
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.patch(
+            f"/api/projects/contractor/public-leads/{other_lead.id}/",
+            {"status": "contacted"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)
+
     def test_contractor_cannot_edit_another_contractors_gallery_item(self):
         other_item = ContractorGalleryItem.objects.create(
             contractor=self.other_contractor,

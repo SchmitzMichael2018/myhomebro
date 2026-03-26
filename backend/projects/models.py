@@ -337,13 +337,17 @@ class ContractorGalleryItem(models.Model):
 
 class PublicContractorLead(models.Model):
     STATUS_NEW = "new"
+    STATUS_ACCEPTED = "accepted"
     STATUS_CONTACTED = "contacted"
     STATUS_QUALIFIED = "qualified"
+    STATUS_CLOSED = "closed"
     STATUS_ARCHIVED = "archived"
     STATUS_CHOICES = [
         (STATUS_NEW, "New"),
+        (STATUS_ACCEPTED, "Accepted"),
         (STATUS_CONTACTED, "Contacted"),
         (STATUS_QUALIFIED, "Qualified"),
+        (STATUS_CLOSED, "Closed"),
         (STATUS_ARCHIVED, "Archived"),
     ]
 
@@ -380,6 +384,23 @@ class PublicContractorLead(models.Model):
     budget_text = models.CharField(max_length=120, blank=True, default="")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_NEW)
     internal_notes = models.TextField(blank=True, default="")
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    ai_analysis = models.JSONField(default=dict, blank=True)
+    converted_homeowner = models.ForeignKey(
+        "projects.Homeowner",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="converted_public_leads",
+    )
+    converted_agreement = models.ForeignKey(
+        "projects.Agreement",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="source_public_leads",
+    )
+    converted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -653,6 +674,13 @@ class Agreement(models.Model):
         blank=True,
         default="",
         help_text="Snapshot of template name at time of apply, for audit/history.",
+    )
+    source_lead = models.ForeignKey(
+        "projects.PublicContractorLead",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="agreements_created_from_lead",
     )
 
     start = models.DateField(null=True, blank=True, db_index=True)
