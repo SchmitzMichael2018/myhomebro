@@ -187,6 +187,8 @@ export default function Sidebar({ variant = "desktop" }) {
         <Item to={`${APP_BASE}/agreements`} label="Agreements" emoji="📄" />
         <Item to={`${APP_BASE}/templates`} label="Templates" emoji="🧱" />
         <Item to={`${APP_BASE}/milestones`} label="Milestones" emoji="🧩" />
+        <Item to={`${APP_BASE}/subcontractors`} label="Subcontractors" emoji="🧰" />
+        <Item to={`${APP_BASE}/public-presence`} label="Public Presence" emoji="🌐" />
         <Item to={`${APP_BASE}/assignments`} label="Assignments" emoji="🧭" />
         <Item to={`${APP_BASE}/team-schedule`} label="Team Schedule" emoji="🧑‍🏭" />
         <Item to={`${APP_BASE}/team`} label="Team" emoji="🧑‍🤝‍🧑" />

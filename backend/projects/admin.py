@@ -15,16 +15,22 @@ try:
         Project,
         Agreement,
         AgreementWarranty,
+        ContractorGalleryItem,
+        ContractorPublicProfile,
+        ContractorReview,
         Milestone,
         MilestoneFile,
         MilestoneComment,
+        PublicContractorLead,
         Invoice,
         Expense,
         AgreementAmendment,
     )
 except Exception:  # pragma: no cover
     Skill = Contractor = Homeowner = Project = Agreement = AgreementWarranty = None
+    ContractorGalleryItem = ContractorPublicProfile = ContractorReview = None
     Milestone = MilestoneFile = MilestoneComment = None
+    PublicContractorLead = None
     Invoice = Expense = AgreementAmendment = None
 
 # Optional/independent models (guarded with try so admin doesn’t break)
@@ -122,6 +128,40 @@ if Contractor is not None:
         def get_state(self, obj):
             return getattr(obj, "state", "")
         get_state.short_description = "State"
+
+
+if ContractorPublicProfile is not None:
+    @admin.register(ContractorPublicProfile)
+    class ContractorPublicProfileAdmin(admin.ModelAdmin):
+        list_display = ("id", "contractor", "slug", "is_public", "allow_public_intake", "allow_public_reviews", "updated_at")
+        search_fields = ("slug", "business_name_public", "contractor__business_name", "contractor__user__email")
+        list_filter = ("is_public", "allow_public_intake", "allow_public_reviews")
+        readonly_fields = ("created_at", "updated_at")
+
+
+if ContractorGalleryItem is not None:
+    @admin.register(ContractorGalleryItem)
+    class ContractorGalleryItemAdmin(admin.ModelAdmin):
+        list_display = ("id", "contractor", "title", "category", "is_featured", "is_public", "sort_order", "created_at")
+        search_fields = ("title", "description", "category", "contractor__business_name")
+        list_filter = ("is_featured", "is_public", "category")
+
+
+if PublicContractorLead is not None:
+    @admin.register(PublicContractorLead)
+    class PublicContractorLeadAdmin(admin.ModelAdmin):
+        list_display = ("id", "contractor", "full_name", "email", "phone", "status", "source", "created_at")
+        search_fields = ("full_name", "email", "phone", "project_description", "contractor__business_name")
+        list_filter = ("status", "source")
+        readonly_fields = ("created_at", "updated_at")
+
+
+if ContractorReview is not None:
+    @admin.register(ContractorReview)
+    class ContractorReviewAdmin(admin.ModelAdmin):
+        list_display = ("id", "contractor", "customer_name", "rating", "is_verified", "is_public", "submitted_at")
+        search_fields = ("customer_name", "title", "review_text", "contractor__business_name")
+        list_filter = ("is_verified", "is_public", "rating")
 
 
 # ─────────────────────────────────────────────────────────────

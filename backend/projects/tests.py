@@ -15,6 +15,9 @@ from projects.api.ai_agreement_views import ai_suggest_milestones
 from projects.models import (
     Agreement,
     Contractor,
+    ContractorGalleryItem,
+    ContractorPublicProfile,
+    ContractorReview,
     ContractorSubAccount,
     DrawRequest,
     DrawRequestStatus,
@@ -32,6 +35,7 @@ from projects.models import (
     Notification,
     Project,
     ProjectStatus,
+    PublicContractorLead,
     SubcontractorCompletionStatus,
 )
 from projects.models import AgreementWarranty
@@ -112,6 +116,467 @@ class AgreementMilestoneAIRouteTests(TestCase):
         self.assertTrue(data["ai_unlimited"])
 
         mock_suggest.assert_called_once_with(agreement=self.agreement, notes="Please suggest milestones")
+
+
+class SubcontractorHubApiTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="hub-contractor@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Hub Contractor",
+        )
+        self.other_contractor_user = user_model.objects.create_user(
+            email="hub-other@example.com",
+            password="testpass123",
+        )
+        self.other_contractor = Contractor.objects.create(
+            user=self.other_contractor_user,
+            business_name="Other Contractor",
+        )
+        self.subcontractor_user = user_model.objects.create_user(
+            email="hub-subcontractor@example.com",
+            password="testpass123",
+        )
+        self.other_subcontractor_user = user_model.objects.create_user(
+            email="hub-other-subcontractor@example.com",
+            password="testpass123",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Hub Homeowner",
+            email="hub-homeowner@example.com",
+        )
+        self.other_homeowner = Homeowner.objects.create(
+            created_by=self.other_contractor,
+            full_name="Other Homeowner",
+            email="other-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Kitchen Remodel",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Agreement with subcontractor hub",
+            signed_by_contractor=True,
+            signed_by_homeowner=True,
+        )
+        self.other_project = Project.objects.create(
+            contractor=self.other_contractor,
+            homeowner=self.other_homeowner,
+            title="Other Project",
+        )
+        self.other_agreement = Agreement.objects.create(
+            project=self.other_project,
+            contractor=self.other_contractor,
+            homeowner=self.other_homeowner,
+            description="Other agreement",
+        )
+        self.accepted_invitation = SubcontractorInvitation.objects.create(
+            agreement=self.agreement,
+            contractor=self.contractor,
+            invite_email="hub-subcontractor@example.com",
+            invite_name="Taylor Sub",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_at=timezone.now(),
+            accepted_by_user=self.subcontractor_user,
+        )
+        self.other_invitation = SubcontractorInvitation.objects.create(
+            agreement=self.other_agreement,
+            contractor=self.other_contractor,
+            invite_email="hub-other-subcontractor@example.com",
+            invite_name="Other Sub",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_at=timezone.now(),
+            accepted_by_user=self.other_subcontractor_user,
+        )
+        self.milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Cabinet Install",
+            amount=Decimal("2500.00"),
+            start_date=timezone.localdate(),
+            completion_date=timezone.localdate(),
+        )
+        self.other_milestone = Milestone.objects.create(
+            agreement=self.other_agreement,
+            order=1,
+            title="Other Work",
+            amount=Decimal("1800.00"),
+            start_date=timezone.localdate(),
+            completion_date=timezone.localdate(),
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.contractor_user)
+
+    @patch(
+        "projects.views.subcontractor_hub.send_subcontractor_invitation_email",
+        return_value={"attempted": True, "ok": True, "invite_url": "http://testserver/subcontractor-invitations/accept/test-token"},
+    )
+    def test_contractor_can_invite_subcontractor_from_hub_endpoint(self, _send_email):
+        response = self.client.post(
+            "/api/projects/subcontractors/invite/",
+            {
+                "agreement_id": self.agreement.id,
+                "invite_email": "new-sub@example.com",
+                "invite_name": "New Sub",
+                "invited_message": "Please join this agreement.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertEqual(payload["invite_email"], "new-sub@example.com")
+        self.assertEqual(payload["agreement_title"], "Kitchen Remodel")
+
+    @patch(
+        "projects.views.subcontractor_hub.send_subcontractor_invitation_email",
+        return_value={"attempted": True, "ok": True, "invite_url": "http://testserver/subcontractor-invitations/accept/test-token"},
+    )
+    def test_contractor_cannot_create_duplicate_pending_invite_for_same_email(self, _send_email):
+        response_one = self.client.post(
+            "/api/projects/subcontractors/invite/",
+            {
+                "agreement_id": self.agreement.id,
+                "invite_email": "pending-sub@example.com",
+                "invite_name": "Pending Sub",
+            },
+            format="json",
+        )
+        self.assertEqual(response_one.status_code, 201)
+
+        second_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Second Kitchen Remodel",
+        )
+        second_agreement = Agreement.objects.create(
+            project=second_project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Second agreement",
+            signed_by_contractor=True,
+            signed_by_homeowner=True,
+        )
+
+        response_two = self.client.post(
+            "/api/projects/subcontractors/invite/",
+            {
+                "agreement_id": second_agreement.id,
+                "invite_email": "pending-sub@example.com",
+                "invite_name": "Pending Sub",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response_two.status_code, 400)
+        self.assertIn("pending invitation already exists", str(response_two.json()).lower())
+
+    @patch(
+        "projects.views.subcontractor_hub.send_subcontractor_invitation_email",
+        return_value={"attempted": True, "ok": True, "invite_url": "http://testserver/subcontractor-invitations/accept/test-token"},
+    )
+    def test_contractor_cannot_reinvite_already_accepted_subcontractor(self, _send_email):
+        second_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Addition Project",
+        )
+        second_agreement = Agreement.objects.create(
+            project=second_project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Addition agreement",
+            signed_by_contractor=True,
+            signed_by_homeowner=True,
+        )
+
+        response = self.client.post(
+            "/api/projects/subcontractors/invite/",
+            {
+                "agreement_id": second_agreement.id,
+                "invite_email": "hub-subcontractor@example.com",
+                "invite_name": "Taylor Sub",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("already active for your business", str(response.json()).lower())
+
+    def test_directory_and_assignments_are_contractor_scoped(self):
+        self.milestone.assigned_subcontractor_invitation = self.accepted_invitation
+        self.milestone.save(update_fields=["assigned_subcontractor_invitation"])
+        self.other_milestone.assigned_subcontractor_invitation = self.other_invitation
+        self.other_milestone.save(update_fields=["assigned_subcontractor_invitation"])
+
+        directory_response = self.client.get("/api/projects/subcontractors/")
+        assignments_response = self.client.get("/api/projects/subcontractor-assignments/")
+
+        self.assertEqual(directory_response.status_code, 200)
+        self.assertEqual(assignments_response.status_code, 200)
+        directory_rows = directory_response.json()["results"]
+        assignment_rows = assignments_response.json()["results"]
+
+        self.assertEqual(len(directory_rows), 1)
+        self.assertEqual(directory_rows[0]["email"], "hub-subcontractor@example.com")
+        self.assertEqual(len(assignment_rows), 1)
+        self.assertEqual(assignment_rows[0]["agreement_id"], self.agreement.id)
+
+    def test_contractor_can_assign_milestones_from_agreement_assignment_endpoint(self):
+        response = self.client.post(
+            f"/api/projects/agreements/{self.agreement.id}/subcontractor-assignments/",
+            {
+                "invitation_id": self.accepted_invitation.id,
+                "milestone_ids": [self.milestone.id],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.milestone.refresh_from_db()
+        self.assertEqual(
+            self.milestone.assigned_subcontractor_invitation_id,
+            self.accepted_invitation.id,
+        )
+        self.assertEqual(
+            response.json()["assignment"]["assigned_milestones_count"],
+            1,
+        )
+
+    def test_contractor_can_review_submitted_work_from_hub_endpoint(self):
+        self.milestone.assigned_subcontractor_invitation = self.accepted_invitation
+        self.milestone.subcontractor_completion_status = SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+        self.milestone.subcontractor_marked_complete_at = timezone.now()
+        self.milestone.subcontractor_marked_complete_by = self.subcontractor_user
+        self.milestone.subcontractor_completion_note = "Ready for walkthrough."
+        self.milestone.save(
+            update_fields=[
+                "assigned_subcontractor_invitation",
+                "subcontractor_completion_status",
+                "subcontractor_marked_complete_at",
+                "subcontractor_marked_complete_by",
+                "subcontractor_completion_note",
+            ]
+        )
+
+        response = self.client.post(
+            f"/api/projects/subcontractor-work-submissions/{self.milestone.id}/review/",
+            {"action": "approve", "response_note": "Looks good."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.milestone.refresh_from_db()
+        self.assertEqual(
+            self.milestone.subcontractor_completion_status,
+            SubcontractorCompletionStatus.APPROVED,
+        )
+        self.assertEqual(self.milestone.subcontractor_review_response_note, "Looks good.")
+
+    def test_other_contractor_is_blocked_from_reviewing_submission(self):
+        self.milestone.assigned_subcontractor_invitation = self.accepted_invitation
+        self.milestone.subcontractor_completion_status = SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+        self.milestone.subcontractor_marked_complete_at = timezone.now()
+        self.milestone.subcontractor_marked_complete_by = self.subcontractor_user
+        self.milestone.save(
+            update_fields=[
+                "assigned_subcontractor_invitation",
+                "subcontractor_completion_status",
+                "subcontractor_marked_complete_at",
+                "subcontractor_marked_complete_by",
+            ]
+        )
+
+        other_client = APIClient()
+        other_client.force_authenticate(user=self.other_contractor_user)
+        response = other_client.post(
+            f"/api/projects/subcontractor-work-submissions/{self.milestone.id}/review/",
+            {"action": "approve"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+
+class ContractorPublicPresenceApiTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="public-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Bright Build Co",
+            phone="555-111-2222",
+            city="Austin",
+            state="TX",
+            license_number="LIC-100",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Public Homeowner",
+            email="public-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Public Presence Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Public profile agreement",
+        )
+        self.profile = ContractorPublicProfile.objects.create(
+            contractor=self.contractor,
+            business_name_public="Bright Build Co",
+            tagline="Trusted renovations and repairs",
+            bio="We help homeowners with clean, reliable project delivery.",
+            city="Austin",
+            state="TX",
+            is_public=True,
+            specialties=["Roofing", "Exterior"],
+            work_types=["Repairs", "Remodels"],
+        )
+        ContractorGalleryItem.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            title="Kitchen Remodel",
+            category="Remodel",
+            image=SimpleUploadedFile("public.jpg", b"filecontent", content_type="image/jpeg"),
+            is_public=True,
+        )
+        ContractorGalleryItem.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            title="Private Job",
+            category="Private",
+            image=SimpleUploadedFile("private.jpg", b"filecontent", content_type="image/jpeg"),
+            is_public=False,
+        )
+        ContractorReview.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            agreement=self.agreement,
+            customer_name="Taylor Homeowner",
+            rating=5,
+            title="Excellent work",
+            review_text="Professional from start to finish.",
+            is_verified=True,
+            is_public=True,
+        )
+        ContractorReview.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            customer_name="Hidden Reviewer",
+            rating=4,
+            review_text="Hidden review.",
+            is_public=False,
+        )
+        self.other_user = user_model.objects.create_user(
+            email="other-public-owner@example.com",
+            password="testpass123",
+        )
+        self.other_contractor = Contractor.objects.create(
+            user=self.other_user,
+            business_name="Bright Build Co",
+        )
+        self.other_profile = ContractorPublicProfile.objects.create(
+            contractor=self.other_contractor,
+            business_name_public="Bright Build Co",
+            is_public=False,
+        )
+        self.client = APIClient()
+
+    def test_slug_generation_is_unique(self):
+        self.assertTrue(self.profile.slug)
+        self.assertTrue(self.other_profile.slug)
+        self.assertNotEqual(self.profile.slug, self.other_profile.slug)
+
+    def test_public_profile_requires_public_flag(self):
+        response = self.client.get(f"/api/projects/public/contractors/{self.profile.slug}/")
+        self.assertEqual(response.status_code, 200)
+
+        hidden_response = self.client.get(f"/api/projects/public/contractors/{self.other_profile.slug}/")
+        self.assertEqual(hidden_response.status_code, 404)
+
+    def test_public_gallery_and_reviews_only_return_public_rows(self):
+        gallery_response = self.client.get(f"/api/projects/public/contractors/{self.profile.slug}/gallery/")
+        reviews_response = self.client.get(f"/api/projects/public/contractors/{self.profile.slug}/reviews/")
+
+        self.assertEqual(gallery_response.status_code, 200)
+        self.assertEqual(reviews_response.status_code, 200)
+        self.assertEqual(len(gallery_response.json()["results"]), 1)
+        self.assertEqual(gallery_response.json()["results"][0]["title"], "Kitchen Remodel")
+        self.assertEqual(len(reviews_response.json()["results"]), 1)
+        self.assertEqual(reviews_response.json()["results"][0]["customer_name"], "Taylor Homeowner")
+
+    def test_public_intake_creates_lead_for_correct_profile(self):
+        response = self.client.post(
+            f"/api/projects/public/contractors/{self.profile.slug}/intake/",
+            {
+                "source": "profile",
+                "full_name": "Casey Prospect",
+                "email": "casey@example.com",
+                "phone": "555-444-3333",
+                "project_type": "Kitchen Remodel",
+                "project_description": "Need a remodel estimate.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        lead = PublicContractorLead.objects.get(full_name="Casey Prospect")
+        self.assertEqual(lead.contractor_id, self.contractor.id)
+        self.assertEqual(lead.public_profile_id, self.profile.id)
+
+    def test_contractor_cannot_edit_another_contractors_gallery_item(self):
+        other_item = ContractorGalleryItem.objects.create(
+            contractor=self.other_contractor,
+            public_profile=self.other_profile,
+            title="Other Item",
+            image=SimpleUploadedFile("other.jpg", b"filecontent", content_type="image/jpeg"),
+            is_public=True,
+        )
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.patch(
+            f"/api/projects/contractor/gallery/{other_item.id}/",
+            {"title": "Hacked"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_public_profile_payload_does_not_expose_private_lead_fields(self):
+        PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            full_name="Private Lead",
+            email="private@example.com",
+            internal_notes="Do not show publicly.",
+        )
+        response = self.client.get(f"/api/projects/public/contractors/{self.profile.slug}/")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertNotIn("internal_notes", payload)
+        self.assertNotIn("email", payload)
 
 
 class AgreementWarrantyApiTests(TestCase):
@@ -972,6 +1437,10 @@ class SubcontractorAssignedWorkTests(TestCase):
         self.assertEqual(milestone["agreement_id"], self.agreement.id)
         self.assertEqual(milestone["agreement_title"], "Assigned Work Project")
         self.assertEqual(milestone["assigned_subcontractor"]["email"], "sub-one@example.com")
+        self.assertNotIn("payout_status", milestone)
+        self.assertNotIn("payment_structure", milestone)
+        self.assertNotIn("retainage_percent", milestone)
+        self.assertNotIn("is_invoiced", milestone)
 
     def test_empty_state_works_when_no_assignments_exist(self):
         user_model = get_user_model()

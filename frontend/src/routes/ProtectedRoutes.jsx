@@ -53,9 +53,11 @@ import Expenses from "../pages/ExpensesPage.jsx";
 import Disputes from "../pages/DisputesPages.jsx";
 import TeamSchedule from "../pages/TeamSchedule.jsx";
 import TeamPage from "../pages/TeamPage.jsx";
+import SubcontractorsPage from "../pages/SubcontractorsPage.jsx";
 import ReviewerQueuePage from "../pages/ReviewerQueuePage.jsx";
 import PayoutHistoryPage from "../pages/PayoutHistoryPage.jsx";
 import PayoutDetailPage from "../pages/PayoutDetailPage.jsx";
+import ContractorPublicPresencePage from "../pages/ContractorPublicPresencePage.jsx";
 
 import { useWhoAmI } from "../hooks/useWhoAmI";
 
@@ -143,6 +145,8 @@ export function protectedRoutes() {
 
           <Route path="team-schedule" element={<TeamSchedule />} />
           <Route path="team" element={<TeamPage />} />
+          <Route path="subcontractors" element={<SubcontractorsPage />} />
+          <Route path="public-presence" element={<ContractorPublicPresencePage />} />
 
           <Route path="intake/new" element={<ProjectIntakeForm />} />
 

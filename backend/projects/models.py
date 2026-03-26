@@ -10,6 +10,7 @@ from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.text import slugify
 
 from .models_ai_scope import AgreementAIScope  # noqa: E402,F401
 from .models_dispute import Dispute, DisputeAttachment
@@ -227,6 +228,206 @@ class Contractor(models.Model):
     @property
     def stripe_action_required(self) -> bool:
         return int(self.requirements_due_count or 0) > 0
+
+
+def contractor_public_asset_upload_to(instance, filename: str) -> str:
+    contractor_id = getattr(instance, "contractor_id", None) or "unknown"
+    ts = timezone.now().strftime("%Y%m%d-%H%M%S")
+    return f"contractor_public/{contractor_id}/{ts}_{filename}"
+
+
+def _unique_contractor_public_slug(base_text: str, *, exclude_profile_id: int | None = None) -> str:
+    base = slugify(base_text or "")[:50] or f"contractor-{secrets.token_hex(3)}"
+    candidate = base
+    suffix = 2
+    while True:
+        qs = ContractorPublicProfile.objects.filter(slug=candidate)
+        if exclude_profile_id is not None:
+            qs = qs.exclude(pk=exclude_profile_id)
+        if not qs.exists():
+            return candidate
+        candidate = f"{base[:44]}-{suffix}"
+        suffix += 1
+
+
+class ContractorPublicProfile(models.Model):
+    contractor = models.OneToOneField(
+        "projects.Contractor",
+        on_delete=models.CASCADE,
+        related_name="public_profile",
+    )
+    slug = models.SlugField(max_length=64, unique=True, db_index=True, blank=True)
+    business_name_public = models.CharField(max_length=255, blank=True, default="")
+    tagline = models.CharField(max_length=255, blank=True, default="")
+    bio = models.TextField(blank=True, default="")
+    logo = models.ImageField(upload_to=contractor_public_asset_upload_to, null=True, blank=True)
+    cover_image = models.ImageField(upload_to=contractor_public_asset_upload_to, null=True, blank=True)
+    city = models.CharField(max_length=120, blank=True, default="")
+    state = models.CharField(max_length=60, blank=True, default="")
+    service_area_text = models.CharField(max_length=255, blank=True, default="")
+    years_in_business = models.PositiveIntegerField(null=True, blank=True)
+    website_url = models.URLField(blank=True, default="")
+    phone_public = models.CharField(max_length=40, blank=True, default="")
+    email_public = models.EmailField(blank=True, default="")
+    specialties = models.JSONField(default=list, blank=True)
+    work_types = models.JSONField(default=list, blank=True)
+    show_license_public = models.BooleanField(default=True)
+    show_phone_public = models.BooleanField(default=True)
+    show_email_public = models.BooleanField(default=False)
+    allow_public_intake = models.BooleanField(default=True)
+    allow_public_reviews = models.BooleanField(default=True)
+    is_public = models.BooleanField(default=False)
+    seo_title = models.CharField(max_length=255, blank=True, default="")
+    seo_description = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["contractor_id"]
+
+    def __str__(self) -> str:
+        return self.business_name_public or self.contractor.business_name or f"PublicProfile {self.pk}"
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            business_name = self.business_name_public or getattr(self.contractor, "business_name", "") or getattr(self.contractor, "name", "")
+            self.slug = _unique_contractor_public_slug(
+                business_name or f"contractor-{self.contractor_id}",
+                exclude_profile_id=self.pk,
+            )
+        elif self.pk:
+            self.slug = _unique_contractor_public_slug(self.slug, exclude_profile_id=self.pk)
+        else:
+            self.slug = _unique_contractor_public_slug(self.slug)
+        super().save(*args, **kwargs)
+
+    @property
+    def public_url_path(self) -> str:
+        return f"/contractors/{self.slug}"
+
+
+class ContractorGalleryItem(models.Model):
+    contractor = models.ForeignKey(
+        "projects.Contractor",
+        on_delete=models.CASCADE,
+        related_name="public_gallery_items",
+    )
+    public_profile = models.ForeignKey(
+        "projects.ContractorPublicProfile",
+        on_delete=models.CASCADE,
+        related_name="gallery_items",
+    )
+    title = models.CharField(max_length=255, blank=True, default="")
+    description = models.TextField(blank=True, default="")
+    category = models.CharField(max_length=80, blank=True, default="")
+    image = models.ImageField(upload_to=contractor_public_asset_upload_to)
+    is_featured = models.BooleanField(default=False)
+    is_public = models.BooleanField(default=True)
+    sort_order = models.IntegerField(default=0)
+    project_city = models.CharField(max_length=120, blank=True, default="")
+    project_state = models.CharField(max_length=60, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-is_featured", "sort_order", "-created_at", "-id"]
+
+    def __str__(self) -> str:
+        return self.title or f"Gallery Item {self.pk}"
+
+
+class PublicContractorLead(models.Model):
+    STATUS_NEW = "new"
+    STATUS_CONTACTED = "contacted"
+    STATUS_QUALIFIED = "qualified"
+    STATUS_ARCHIVED = "archived"
+    STATUS_CHOICES = [
+        (STATUS_NEW, "New"),
+        (STATUS_CONTACTED, "Contacted"),
+        (STATUS_QUALIFIED, "Qualified"),
+        (STATUS_ARCHIVED, "Archived"),
+    ]
+
+    SOURCE_PROFILE = "profile"
+    SOURCE_QR = "qr"
+    SOURCE_DIRECT = "direct"
+    SOURCE_CHOICES = [
+        (SOURCE_PROFILE, "Profile"),
+        (SOURCE_QR, "QR"),
+        (SOURCE_DIRECT, "Direct"),
+    ]
+
+    contractor = models.ForeignKey(
+        "projects.Contractor",
+        on_delete=models.CASCADE,
+        related_name="public_leads",
+    )
+    public_profile = models.ForeignKey(
+        "projects.ContractorPublicProfile",
+        on_delete=models.CASCADE,
+        related_name="leads",
+    )
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default=SOURCE_PROFILE)
+    full_name = models.CharField(max_length=255)
+    email = models.EmailField(blank=True, default="")
+    phone = models.CharField(max_length=40, blank=True, default="")
+    project_address = models.CharField(max_length=255, blank=True, default="")
+    city = models.CharField(max_length=120, blank=True, default="")
+    state = models.CharField(max_length=60, blank=True, default="")
+    zip_code = models.CharField(max_length=20, blank=True, default="")
+    project_type = models.CharField(max_length=120, blank=True, default="")
+    project_description = models.TextField(blank=True, default="")
+    preferred_timeline = models.CharField(max_length=120, blank=True, default="")
+    budget_text = models.CharField(max_length=120, blank=True, default="")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_NEW)
+    internal_notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self) -> str:
+        return f"{self.full_name} -> contractor {self.contractor_id}"
+
+
+class ContractorReview(models.Model):
+    contractor = models.ForeignKey(
+        "projects.Contractor",
+        on_delete=models.CASCADE,
+        related_name="public_reviews",
+    )
+    public_profile = models.ForeignKey(
+        "projects.ContractorPublicProfile",
+        on_delete=models.CASCADE,
+        related_name="reviews",
+    )
+    agreement = models.ForeignKey(
+        "projects.Agreement",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contractor_reviews",
+    )
+    customer_name = models.CharField(max_length=255)
+    rating = models.PositiveSmallIntegerField()
+    title = models.CharField(max_length=255, blank=True, default="")
+    review_text = models.TextField(blank=True, default="")
+    is_verified = models.BooleanField(default=False)
+    is_public = models.BooleanField(default=True)
+    submitted_at = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-is_verified", "-submitted_at", "-created_at"]
+
+    def clean(self):
+        super().clean()
+        if self.rating < 1 or self.rating > 5:
+            raise ValidationError({"rating": "Rating must be between 1 and 5."})
+
+    def __str__(self) -> str:
+        return f"{self.customer_name} ({self.rating}/5)"
 
     @property
     def ai_free_agreements_remaining(self) -> int:

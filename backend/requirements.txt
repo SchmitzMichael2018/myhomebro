@@ -39,6 +39,7 @@ propcache==0.3.2
 psycopg==3.2.7
 psycopg2-binary==2.9.10
 PyJWT==2.9.0
+qrcode==7.4.2
 pypdf==5.8.0
 python-crontab==3.3.0
 python-dateutil==2.9.0.post0

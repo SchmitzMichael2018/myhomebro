@@ -26,9 +26,6 @@ function formatDate(value) {
 export default function SubcontractorAssignedWorkPage() {
   const [loading, setLoading] = useState(true);
   const [groups, setGroups] = useState([]);
-  const [payoutAccount, setPayoutAccount] = useState(null);
-  const [payoutAccountLoading, setPayoutAccountLoading] = useState(true);
-  const [payoutAccountBusy, setPayoutAccountBusy] = useState(false);
   const [expanded, setExpanded] = useState({});
   const [detailsLoading, setDetailsLoading] = useState({});
   const [commentsByMilestone, setCommentsByMilestone] = useState({});
@@ -44,17 +41,9 @@ export default function SubcontractorAssignedWorkPage() {
   function completionStatusLabel(status) {
     const normalized = String(status || "not_submitted").toLowerCase();
     if (normalized === "submitted_for_review") return "Submitted for review";
-    if (normalized === "approved") return "Approved";
+    if (normalized === "approved") return "Reviewed";
     if (normalized === "needs_changes") return "Needs changes";
     return "Not submitted";
-  }
-
-  function milestonePayoutStatusLabel(status) {
-    const normalized = String(status || "").toLowerCase();
-    if (normalized === "ready_for_payout") return "Ready for payout";
-    if (normalized === "paid") return "Paid";
-    if (normalized === "failed") return "Failed";
-    return "Not ready";
   }
 
   useEffect(() => {
@@ -82,60 +71,6 @@ export default function SubcontractorAssignedWorkPage() {
     };
   }, []);
 
-  useEffect(() => {
-    let active = true;
-
-    async function loadPayoutAccount() {
-      try {
-        setPayoutAccountLoading(true);
-        const { data } = await api.get("/projects/subcontractor/payout-account/status/");
-        if (!active) return;
-        setPayoutAccount(data || null);
-      } catch (err) {
-        if (!active) return;
-        console.error(err);
-        setPayoutAccount(null);
-      } finally {
-        if (active) setPayoutAccountLoading(false);
-      }
-    }
-
-    loadPayoutAccount();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  async function openPayoutOnboarding(mode = "start") {
-    try {
-      setPayoutAccountBusy(true);
-      const { data } = await api.post(
-        mode === "manage"
-          ? "/projects/subcontractor/payout-account/manage/"
-          : "/projects/subcontractor/payout-account/start/",
-        {}
-      );
-      const url = data?.url;
-      if (!url) {
-        toast.error("Stripe onboarding URL was not returned.");
-        return;
-      }
-      window.location.href = url;
-    } catch (err) {
-      console.error(err);
-      toast.error(err?.response?.data?.detail || "Failed to open payout onboarding.");
-    } finally {
-      setPayoutAccountBusy(false);
-    }
-  }
-
-  function payoutStatusLabel(status) {
-    const normalized = String(status || "").toLowerCase();
-    if (normalized === "ready") return "Ready to receive payouts";
-    if (normalized === "onboarding_incomplete") return "Onboarding incomplete";
-    if (normalized === "disabled") return "Stripe disabled";
-    return "Not connected";
-  }
 
   async function toggleDetails(milestoneId) {
     setExpanded((prev) => ({ ...prev, [milestoneId]: !prev[milestoneId] }));
@@ -283,55 +218,6 @@ export default function SubcontractorAssignedWorkPage() {
 
       <RoleAwareWorkboard />
 
-      <section
-        data-testid="subcontractor-payout-account"
-        className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-      >
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">Payout Account</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Connect Stripe to receive subcontractor milestone payouts when they are ready.
-            </p>
-          </div>
-          <div
-            data-testid="subcontractor-payout-account-status"
-            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700"
-          >
-            {payoutAccountLoading
-              ? "Checking…"
-              : payoutStatusLabel(payoutAccount?.onboarding_status)}
-          </div>
-        </div>
-
-        {!payoutAccountLoading ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {!payoutAccount?.connected ? (
-              <button
-                type="button"
-                data-testid="subcontractor-payout-account-start"
-                onClick={() => openPayoutOnboarding("start")}
-                disabled={payoutAccountBusy}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-              >
-                {payoutAccountBusy ? "Opening..." : "Connect / Continue Stripe"}
-              </button>
-            ) : null}
-            {payoutAccount?.account_linked ? (
-              <button
-                type="button"
-                data-testid="subcontractor-payout-account-manage"
-                onClick={() => openPayoutOnboarding("manage")}
-                disabled={payoutAccountBusy}
-                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-              >
-                {payoutAccountBusy ? "Opening..." : "Manage Stripe"}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-      </section>
-
       {loading ? (
         <div className="text-sm text-slate-500">Loading assigned work...</div>
       ) : groups.length === 0 ? (
@@ -405,26 +291,6 @@ export default function SubcontractorAssignedWorkPage() {
 
                     <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
                       <div className="text-sm font-semibold text-slate-900">
-                        Payout Status
-                      </div>
-                      <div
-                        data-testid={`assigned-milestone-payout-state-${milestone.id}`}
-                        className="mt-2 text-sm text-slate-600"
-                      >
-                        <div>{milestonePayoutStatusLabel(milestone.payout_status)}</div>
-                        {milestone.payout_paid_at ? (
-                          <div className="mt-1">Paid: {formatDate(milestone.payout_paid_at)}</div>
-                        ) : null}
-                        {milestone.payout_failed ? (
-                          <div className="mt-1 text-amber-700">
-                            Payment failed — contractor will retry.
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
-                      <div className="text-sm font-semibold text-slate-900">
                         Work Submission
                       </div>
                       <div
@@ -478,7 +344,7 @@ export default function SubcontractorAssignedWorkPage() {
                         >
                           {completionBusy[milestone.id]
                             ? "Submitting..."
-                            : "Submit Complete for Review"}
+                            : "Submit Work for Review"}
                         </button>
                       </div>
                     </div>

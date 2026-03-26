@@ -137,6 +137,31 @@ from .views.subcontractor_work import (
     subcontractor_submit_completion,
     subcontractor_request_review,
 )
+from .views.subcontractor_hub import (
+    AgreementSubcontractorAssignmentsView,
+    ContractorSubcontractorAssignmentsView,
+    ContractorSubcontractorDirectoryView,
+    ContractorSubcontractorInvitationRevokeView,
+    ContractorSubcontractorInvitationsView,
+    ContractorSubcontractorInviteView,
+    ContractorSubcontractorWorkReviewView,
+    ContractorSubcontractorWorkSubmissionListView,
+)
+from .views.public_presence import (
+    ContractorGalleryDetailView,
+    ContractorGalleryListCreateView,
+    ContractorPublicLeadDetailView,
+    ContractorPublicLeadListView,
+    ContractorPublicProfileManageView,
+    ContractorPublicProfileQrView,
+    ContractorReviewDetailView,
+    ContractorReviewListCreateView,
+    PublicContractorGalleryView,
+    PublicContractorIntakeView,
+    PublicContractorProfileView as PublicContractorProfileBySlugView,
+    PublicContractorQrView,
+    PublicContractorReviewsView,
+)
 from .views.subcontractor_payouts import (
     ExecuteMilestonePayoutView,
     ResetMilestonePayoutView,
@@ -327,6 +352,11 @@ urlpatterns = [
         name="agreement-subcontractor-invitations",
     ),
     path(
+        "agreements/<int:agreement_id>/subcontractor-assignments/",
+        AgreementSubcontractorAssignmentsView.as_view(),
+        name="agreement-subcontractor-assignments",
+    ),
+    path(
         "agreements/<int:agreement_id>/draws/",
         AgreementDrawListCreateView.as_view(),
         name="agreement-draws",
@@ -358,6 +388,41 @@ urlpatterns = [
         "subcontractor-invitations/accept/<str:token>/",
         SubcontractorInvitationAcceptView.as_view(),
         name="subcontractor-invitation-accept",
+    ),
+    path(
+        "subcontractors/",
+        ContractorSubcontractorDirectoryView.as_view(),
+        name="contractor-subcontractor-directory",
+    ),
+    path(
+        "subcontractors/invite/",
+        ContractorSubcontractorInviteView.as_view(),
+        name="contractor-subcontractor-invite",
+    ),
+    path(
+        "subcontractor-invitations/",
+        ContractorSubcontractorInvitationsView.as_view(),
+        name="contractor-subcontractor-invitations",
+    ),
+    path(
+        "subcontractor-invitations/<int:invitation_id>/revoke/",
+        ContractorSubcontractorInvitationRevokeView.as_view(),
+        name="contractor-subcontractor-invitation-revoke",
+    ),
+    path(
+        "subcontractor-assignments/",
+        ContractorSubcontractorAssignmentsView.as_view(),
+        name="contractor-subcontractor-assignments",
+    ),
+    path(
+        "subcontractor-work-submissions/",
+        ContractorSubcontractorWorkSubmissionListView.as_view(),
+        name="contractor-subcontractor-work-submissions",
+    ),
+    path(
+        "subcontractor-work-submissions/<int:submission_id>/review/",
+        ContractorSubcontractorWorkReviewView.as_view(),
+        name="contractor-subcontractor-work-review",
     ),
 
     # -------------------------------------------------
@@ -490,6 +555,23 @@ urlpatterns = [
     path("disputes/public/<int:dispute_id>/", public_dispute_detail),
     path("disputes/public/<int:dispute_id>/accept/", public_dispute_accept),
     path("disputes/public/<int:dispute_id>/reject/", public_dispute_reject),
+
+    # -------------------------------------------------
+    # Contractor public presence
+    # -------------------------------------------------
+    path("contractor/public-profile/", ContractorPublicProfileManageView.as_view()),
+    path("contractor/public-profile/qr/", ContractorPublicProfileQrView.as_view()),
+    path("contractor/gallery/", ContractorGalleryListCreateView.as_view()),
+    path("contractor/gallery/<int:item_id>/", ContractorGalleryDetailView.as_view()),
+    path("contractor/reviews/", ContractorReviewListCreateView.as_view()),
+    path("contractor/reviews/<int:review_id>/", ContractorReviewDetailView.as_view()),
+    path("contractor/public-leads/", ContractorPublicLeadListView.as_view()),
+    path("contractor/public-leads/<int:lead_id>/", ContractorPublicLeadDetailView.as_view()),
+    path("public/contractors/<slug:slug>/", PublicContractorProfileBySlugView.as_view()),
+    path("public/contractors/<slug:slug>/gallery/", PublicContractorGalleryView.as_view()),
+    path("public/contractors/<slug:slug>/reviews/", PublicContractorReviewsView.as_view()),
+    path("public/contractors/<slug:slug>/intake/", PublicContractorIntakeView.as_view()),
+    path("public/contractors/<slug:slug>/qr/", PublicContractorQrView.as_view()),
 
     # -------------------------------------------------
     # Misc

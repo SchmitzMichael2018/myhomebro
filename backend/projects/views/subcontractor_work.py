@@ -24,7 +24,6 @@ from projects.services.milestone_workflow import (
     get_assigned_worker,
     get_effective_reviewer,
 )
-from projects.services.milestone_payouts import serialize_payout_for_milestone
 
 
 def _milestone_status(milestone: Milestone) -> str:
@@ -49,7 +48,6 @@ def _milestone_payload(milestone: Milestone) -> dict:
     display_name = display_name or getattr(assigned, "invite_name", "") or getattr(assigned, "invite_email", "") or ""
     assigned_worker = get_assigned_worker(milestone)
     reviewer = get_effective_reviewer(milestone)
-    payout = serialize_payout_for_milestone(milestone) or {}
 
     return {
         "id": milestone.id,
@@ -58,9 +56,6 @@ def _milestone_payload(milestone: Milestone) -> dict:
         "status": _milestone_status(milestone),
         "start_date": getattr(milestone, "start_date", None),
         "completion_date": getattr(milestone, "completion_date", None),
-        "completed": bool(getattr(milestone, "completed", False)),
-        "completed_at": getattr(milestone, "completed_at", None),
-        "is_invoiced": bool(getattr(milestone, "is_invoiced", False)),
         "agreement_id": getattr(agreement, "id", None),
         "agreement_title": getattr(project, "title", "") or f"Agreement #{getattr(agreement, 'id', '')}".strip(),
         "project_title": getattr(project, "title", "") or "",
@@ -193,10 +188,6 @@ def _milestone_payload(milestone: Milestone) -> dict:
             or ""
         ),
         "work_review_response_note": getattr(milestone, "subcontractor_review_response_note", "") or "",
-        "payout_status": payout.get("payout_status") or "not_eligible",
-        "payout_ready": bool(payout.get("payout_ready")),
-        "payout_paid_at": payout.get("payout_paid_at"),
-        "payout_failed": (payout.get("payout_status") == "failed"),
         "can_current_user_submit_work": can_user_submit_work(milestone, user),
         "can_current_user_review_work": can_user_review_submitted_work(milestone, user),
     }

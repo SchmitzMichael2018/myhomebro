@@ -967,7 +967,7 @@ export default function AgreementDetail() {
         };
       });
       setCompletionResponseNotes((prev) => ({ ...prev, [milestoneId]: "" }));
-      toast.success("Subcontractor submission approved.");
+      toast.success("Subcontractor submission marked reviewed.");
     } catch (err) {
       console.error(err);
       toast.error(
@@ -2023,7 +2023,7 @@ export default function AgreementDetail() {
                             }
                             className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
                           >
-                            {completionDecisionBusy[m.id] ? "Working..." : "Approve Submission"}
+                            {completionDecisionBusy[m.id] ? "Working..." : "Mark Reviewed"}
                           </button>
                           <button
                             type="button"

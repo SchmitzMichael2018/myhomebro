@@ -1,5 +1,21 @@
 import { expect, test } from '@playwright/test';
 
+function subcontractorOpsPayload() {
+  return {
+    identity_type: 'subcontractor',
+    today: [],
+    tomorrow: [],
+    this_week: [],
+    recent_activity: [],
+    empty_states: {
+      today: 'Nothing needs your attention today.',
+      tomorrow: 'Nothing is scheduled for tomorrow yet.',
+      this_week: 'No additional assigned work is queued for later this week.',
+      recent_activity: 'No recent updates on your assigned work yet.',
+    },
+  };
+}
+
 test('subcontractor assigned work page renders grouped milestones and empty state', async ({
   page,
 }) => {
@@ -22,69 +38,11 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
     });
   });
 
-  await page.route('**/api/projects/subcontractor/payout-account/status/', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        eligible_role: true,
-        connected: true,
-        account_linked: true,
-        onboarding_status: 'ready',
-      }),
-    });
-  });
-
-  await page.route('**/api/projects/subcontractor/payout-account/status/', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        eligible_role: true,
-        connected: true,
-        account_linked: true,
-        onboarding_status: 'ready',
-      }),
-    });
-  });
-
   await page.route('**/api/projects/dashboard/operations/', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
-        identity_type: 'subcontractor',
-        today: [],
-        tomorrow: [],
-        this_week: [],
-        recent_activity: [],
-        empty_states: {
-          today: 'Nothing needs your attention today.',
-          tomorrow: 'Nothing is scheduled for tomorrow yet.',
-          this_week: 'No additional assigned work is queued for later this week.',
-          recent_activity: 'No recent updates on your assigned work yet.',
-        },
-      }),
-    });
-  });
-
-  await page.route('**/api/projects/dashboard/operations/', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        identity_type: 'subcontractor',
-        today: [],
-        tomorrow: [],
-        this_week: [],
-        recent_activity: [],
-        empty_states: {
-          today: 'Nothing needs your attention today.',
-          tomorrow: 'Nothing is scheduled for tomorrow yet.',
-          this_week: 'No additional assigned work is queued for later this week.',
-          recent_activity: 'No recent updates on your assigned work yet.',
-        },
-      }),
+      body: JSON.stringify(subcontractorOpsPayload()),
     });
   });
 
@@ -94,11 +52,7 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
       contentType: 'application/json',
       body: JSON.stringify(
         emptyMode
-          ? {
-              groups: [],
-              milestones: [],
-              count: 0,
-            }
+          ? { groups: [], milestones: [], count: 0 }
           : {
               groups: [
                 {
@@ -115,8 +69,6 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
                       completion_date: '2026-03-28',
                       assigned_worker_display: 'Taylor Sub',
                       reviewer_display: 'Contractor Owner',
-                      payout_status: 'failed',
-                      payout_failed: true,
                       assigned_subcontractor: {
                         invitation_id: 77,
                         display_name: 'Taylor Sub',
@@ -126,28 +78,10 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
                   ],
                 },
               ],
-              milestones: [
-                {
-                  id: 901,
-                  title: 'Cabinet Install',
-                },
-              ],
+              milestones: [{ id: 901, title: 'Cabinet Install' }],
               count: 1,
             }
       ),
-    });
-  });
-
-  await page.route('**/api/projects/subcontractor/payout-account/status/', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        eligible_role: true,
-        connected: false,
-        account_linked: true,
-        onboarding_status: 'onboarding_incomplete',
-      }),
     });
   });
 
@@ -156,27 +90,18 @@ test('subcontractor assigned work page renders grouped milestones and empty stat
   });
 
   await expect(page.getByTestId('subcontractor-assigned-work-title')).toBeVisible();
-  await expect(page.getByTestId('subcontractor-payout-account-status')).toContainText(
-    'Onboarding incomplete'
-  );
-  await expect(page.getByTestId('subcontractor-payout-account-start')).toBeVisible();
-  await expect(page.getByTestId('subcontractor-payout-account-manage')).toBeVisible();
   await expect(page.getByTestId('assigned-work-group-321')).toContainText(
     'Kitchen Remodel Agreement'
   );
   await expect(page.getByTestId('assigned-milestone-901')).toContainText(
     'Cabinet Install'
   );
-  await expect(page.getByTestId('assigned-milestone-901')).toContainText(
-    'Taylor Sub'
+  await expect(page.getByTestId('assigned-milestone-901')).toContainText('Taylor Sub');
+  await expect(page.getByTestId('assigned-milestone-submit-complete-901')).toContainText(
+    'Submit Work for Review'
   );
-  await expect(page.getByTestId('assigned-milestone-payout-state-901')).toContainText(
-    'Failed'
-  );
-  await expect(page.getByTestId('assigned-milestone-payout-state-901')).toContainText(
-    'Payment failed — contractor will retry.'
-  );
-  await expect(page.getByTestId('assigned-milestone-901')).not.toContainText('Retry Payout');
+  await expect(page.getByTestId('assigned-milestone-payout-state-901')).toHaveCount(0);
+  await expect(page.getByTestId('subcontractor-payout-account-status')).toHaveCount(0);
 
   emptyMode = true;
   await page.reload({ waitUntil: 'domcontentloaded' });
@@ -221,56 +146,11 @@ test('subcontractor assigned work supports comments and file upload for assigned
     });
   });
 
-  await page.route('**/api/projects/subcontractor/payout-account/status/', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        eligible_role: true,
-        connected: true,
-        account_linked: true,
-        onboarding_status: 'ready',
-      }),
-    });
-  });
-
   await page.route('**/api/projects/dashboard/operations/', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
-        identity_type: 'subcontractor',
-        today: [],
-        tomorrow: [],
-        this_week: [],
-        recent_activity: [],
-        empty_states: {
-          today: 'Nothing needs your attention today.',
-          tomorrow: 'Nothing is scheduled for tomorrow yet.',
-          this_week: 'No additional assigned work is queued for later this week.',
-          recent_activity: 'No recent updates on your assigned work yet.',
-        },
-      }),
-    });
-  });
-
-  await page.route('**/api/projects/dashboard/operations/', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        identity_type: 'subcontractor',
-        today: [],
-        tomorrow: [],
-        this_week: [],
-        recent_activity: [],
-        empty_states: {
-          today: 'Nothing needs your attention today.',
-          tomorrow: 'Nothing is scheduled for tomorrow yet.',
-          this_week: 'No additional assigned work is queued for later this week.',
-          recent_activity: 'No recent updates on your assigned work yet.',
-        },
-      }),
+      body: JSON.stringify(subcontractorOpsPayload()),
     });
   });
 
@@ -432,16 +312,11 @@ test('subcontractor assigned work can request contractor review for an assigned 
     });
   });
 
-  await page.route('**/api/projects/subcontractor/payout-account/status/', async (route) => {
+  await page.route('**/api/projects/dashboard/operations/', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
-        eligible_role: true,
-        connected: true,
-        account_linked: true,
-        onboarding_status: 'ready',
-      }),
+      body: JSON.stringify(subcontractorOpsPayload()),
     });
   });
 
@@ -551,6 +426,14 @@ test('subcontractor assigned work can submit completion for review and shows sen
         type: 'subcontractor',
         role: 'subcontractor',
       }),
+    });
+  });
+
+  await page.route('**/api/projects/dashboard/operations/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(subcontractorOpsPayload()),
     });
   });
 

@@ -33,21 +33,55 @@ class SubcontractorInvitationCreateSerializer(serializers.ModelSerializer):
         if normalize_email(getattr(contractor, "email", None)) == email:
             raise serializers.ValidationError({"invite_email": "Use a different email for the subcontractor."})
 
-        existing_accepted = SubcontractorInvitation.objects.filter(
-            agreement=agreement,
+        existing_accepted = (
+            SubcontractorInvitation.objects.filter(
+            contractor=contractor,
             invite_email__iexact=email,
             status=SubcontractorInvitationStatus.ACCEPTED,
-        ).exists()
+        )
+            .select_related("agreement__project")
+            .order_by("-accepted_at", "-id")
+            .first()
+        )
         if existing_accepted:
-            raise serializers.ValidationError({"invite_email": "This subcontractor is already attached to the agreement."})
+            agreement_label = (
+                getattr(getattr(existing_accepted.agreement, "project", None), "title", "")
+                or getattr(existing_accepted.agreement, "title", "")
+                or f"Agreement #{existing_accepted.agreement_id}"
+            )
+            raise serializers.ValidationError(
+                {
+                    "invite_email": (
+                        "This subcontractor is already active for your business"
+                        f" on {agreement_label}."
+                    )
+                }
+            )
 
-        duplicate_pending = SubcontractorInvitation.objects.filter(
-            agreement=agreement,
-            invite_email__iexact=email,
-            status=SubcontractorInvitationStatus.PENDING,
-            expires_at__gt=timezone.now(),
-        ).exists()
+        duplicate_pending = (
+            SubcontractorInvitation.objects.filter(
+                contractor=contractor,
+                invite_email__iexact=email,
+                status=SubcontractorInvitationStatus.PENDING,
+                expires_at__gt=timezone.now(),
+            )
+            .select_related("agreement__project")
+            .order_by("-invited_at", "-id")
+            .first()
+        )
         if duplicate_pending:
-            raise serializers.ValidationError({"invite_email": "A pending invitation already exists for this email."})
+            agreement_label = (
+                getattr(getattr(duplicate_pending.agreement, "project", None), "title", "")
+                or getattr(duplicate_pending.agreement, "title", "")
+                or f"Agreement #{duplicate_pending.agreement_id}"
+            )
+            raise serializers.ValidationError(
+                {
+                    "invite_email": (
+                        "A pending invitation already exists for this subcontractor"
+                        f" on {agreement_label}."
+                    )
+                }
+            )
 
         return attrs

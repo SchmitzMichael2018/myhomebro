@@ -18,7 +18,7 @@ import PublicIntake from "../pages/PublicIntake.jsx"; // /start-project/:token o
 import StartProjectIntake from "../pages/StartProjectIntake.jsx"; // /start-project
 import MagicInvoice from "../pages/MagicInvoice.jsx"; // /invoices/magic/:token
 import MagicAgreement from "../pages/MagicAgreement.jsx"; // /agreements/magic/:token
-import PublicProfile from "../pages/PublicProfile.jsx"; // /contractors/:id public view
+import PublicProfile from "../pages/PublicProfile.jsx"; // /contractors/:slug public view
 
 // Optional: your /invoice/:token router page
 import InvoicePage from "../pages/InvoicePage.jsx"; // /invoice/:token → redirects to /invoices/magic/:token
@@ -68,7 +68,7 @@ export default function PublicRoutes() {
       <Route path="/disputes/:id/decision" element={<PublicDisputeDecision />} />
 
       {/* Public contractor profile */}
-      <Route path="/contractors/:id" element={<PublicProfile />} />
+      <Route path="/contractors/:slug" element={<PublicProfile />} />
 
       <Route
         path="/subcontractor-invitations/accept/:token"
