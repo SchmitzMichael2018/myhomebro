@@ -19,6 +19,8 @@ from rest_framework.permissions import IsAuthenticated
 
 from .permissions import IsAdminUserRole
 from .utils import safe_get
+from projects.api.ai_agreement_views import _persist_pricing_estimates, suggest_pricing_refresh
+from projects.services.agreements.contractor_signing import send_signature_request_to_homeowner
 
 User = get_user_model()
 
@@ -44,6 +46,7 @@ def _get_first_model(candidates: List[Tuple[str, str]]):
 # Prefer current canonical locations; fall back to older layouts
 Agreement = _get_first_model([("projects", "Agreement")])
 Invoice = _get_first_model([("projects", "Invoice")])
+Milestone = _get_first_model([("projects", "ProjectMilestone")])
 
 # Contractor/Homeowner have moved around across builds: try both.
 Contractor = _get_first_model([("projects", "Contractor"), ("accounts", "Contractor")])
@@ -389,6 +392,7 @@ class AdminAgreements(APIView):
                 "project_city": project_city,
                 "project_state": project_state,
                 "project_zip": project_zip,
+                "source_lead_id": safe_get(a, ["source_lead_id"], None),
 
                 "created_at": safe_get(a, ["created_at"], None),
                 "updated_at": safe_get(a, ["updated_at"], None),
@@ -712,6 +716,104 @@ class AdminDownloadAgreementPDF(APIView):
             return FileResponse(pdf_field.open("rb"), as_attachment=False, filename=pdf_field.name.split("/")[-1])
         except Exception:
             raise Http404("Unable to open PDF file.")
+
+
+class AdminAgreementAIContext(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserRole]
+
+    def get(self, request, agreement_id: int):
+        if Agreement is None:
+            raise Http404("Agreement model not found.")
+
+        try:
+            agreement = Agreement.objects.select_related("source_lead").get(id=agreement_id)
+        except Exception:
+            raise Http404("Agreement not found.")
+
+        lead = getattr(agreement, "source_lead", None)
+        analysis = getattr(lead, "ai_analysis", {}) or {}
+        pricing_sources = []
+        pricing_confidence_levels = []
+        if Milestone is not None:
+            try:
+                for milestone in Milestone.objects.filter(agreement_id=agreement.id).order_by("order", "id")[:12]:
+                    source_note = (getattr(milestone, "pricing_source_note", "") or "").strip()
+                    confidence = (getattr(milestone, "pricing_confidence", "") or "").strip()
+                    if source_note and source_note not in pricing_sources:
+                        pricing_sources.append(source_note)
+                    if confidence and confidence not in pricing_confidence_levels:
+                        pricing_confidence_levels.append(confidence)
+            except Exception:
+                pricing_sources = pricing_sources or []
+                pricing_confidence_levels = pricing_confidence_levels or []
+        return Response(
+            {
+                "agreement_id": agreement.id,
+                "source_lead_id": getattr(lead, "id", None),
+                "has_ai_analysis": bool(analysis),
+                "suggested_title": analysis.get("suggested_title") or "",
+                "template_name": analysis.get("template_name") or "",
+                "confidence": analysis.get("confidence") or "",
+                "reason": analysis.get("reason") or "",
+                "pricing_sources": pricing_sources,
+                "pricing_confidence_levels": pricing_confidence_levels,
+                "ai_analysis": analysis,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class AdminAgreementRefreshPricing(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserRole]
+
+    def post(self, request, agreement_id: int):
+        if Agreement is None:
+            raise Http404("Agreement model not found.")
+
+        try:
+            agreement = Agreement.objects.get(id=agreement_id)
+        except Exception:
+            raise Http404("Agreement not found.")
+
+        try:
+            out = suggest_pricing_refresh(agreement=agreement)
+            persisted_count = _persist_pricing_estimates(agreement, out.get("pricing_estimates", []))
+        except Exception as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            {
+                "detail": "Pricing guidance refreshed.",
+                "persisted_count": persisted_count,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class AdminAgreementResendSignature(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserRole]
+
+    def post(self, request, agreement_id: int):
+        if Agreement is None:
+            raise Http404("Agreement model not found.")
+
+        try:
+            agreement = Agreement.objects.select_related("homeowner").get(id=agreement_id)
+        except Exception:
+            raise Http404("Agreement not found.")
+
+        try:
+            result = send_signature_request_to_homeowner(agreement)
+        except Exception as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            {
+                "detail": "Signature invite resent.",
+                "sign_url": result.get("sign_url"),
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class AdminTriggerPasswordReset(APIView):

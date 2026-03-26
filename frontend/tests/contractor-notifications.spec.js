@@ -530,7 +530,7 @@ test('contractor dashboard shows next steps for leads signatures funding and rev
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('dashboard-next-steps')).toContainText(
-    '1 public lead needs follow-up.'
+    '1 inbound lead is waiting for review.'
   );
   await expect(page.getByTestId('dashboard-next-steps')).toContainText(
     '1 agreement is waiting for signature.'

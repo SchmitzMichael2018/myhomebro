@@ -46,7 +46,7 @@ export function getPublicLeadHint(lead) {
   if (isContractorSent && status === "pending_customer_response") {
     return {
       title: "Next step",
-      body: "Wait for the customer to complete the intake form before reviewing the project details.",
+      body: "Wait for the customer to complete the form. Once it is submitted, review the intake and move it into drafting.",
       tone: "muted",
     };
   }
@@ -54,7 +54,7 @@ export function getPublicLeadHint(lead) {
   if (isContractorSent && status === "ready_for_review" && hasAnalysis(lead) && !hasConvertedAgreement(lead)) {
     return {
       title: "Next step",
-      body: "Review the completed intake and create a draft agreement when the scope looks right.",
+      body: "Review the completed intake, confirm the AI summary, and create the draft agreement when the scope looks right.",
       tone: "info",
     };
   }
@@ -62,7 +62,7 @@ export function getPublicLeadHint(lead) {
   if (isContractorSent && status === "ready_for_review") {
     return {
       title: "Next step",
-      body: "Analyze the intake and confirm project details before drafting the agreement.",
+      body: "Review the completed intake first. Then analyze it or move straight into a draft agreement when you are ready.",
       tone: "info",
     };
   }
@@ -78,7 +78,7 @@ export function getPublicLeadHint(lead) {
   if ((status === "accepted" || status === "contacted" || status === "qualified") && hasAnalysis(lead) && !hasConvertedAgreement(lead)) {
     return {
       title: "Next step",
-      body: "Review the AI suggestions and create a draft agreement when the scope looks right.",
+      body: "Review the AI suggestions and create the draft agreement when the scope looks right.",
       tone: "info",
     };
   }
@@ -86,7 +86,7 @@ export function getPublicLeadHint(lead) {
   if (hasConvertedCustomer(lead) && !hasConvertedAgreement(lead)) {
     return {
       title: "Next step",
-      body: "Create a draft agreement from this lead when you're ready to move into scope and pricing.",
+      body: "Create the draft agreement when you're ready to move into scope, pricing, and signature prep.",
       tone: "info",
     };
   }
@@ -94,7 +94,7 @@ export function getPublicLeadHint(lead) {
   if (status === "accepted" || status === "contacted" || status === "qualified") {
     return {
       title: "Next step",
-      body: "Follow up with the customer and review the lead details before drafting the project scope.",
+      body: "Create the draft agreement now, or analyze the intake first if you want AI help shaping the scope.",
       tone: "info",
     };
   }
@@ -102,7 +102,7 @@ export function getPublicLeadHint(lead) {
   if (status === "new") {
     return {
       title: "Next step",
-      body: "Review the lead details and decide whether to accept or reject it.",
+      body: "Review the intake details and accept the lead if it is a fit. Reject it only if you do not want to pursue the job.",
       tone: "info",
     };
   }
@@ -297,18 +297,32 @@ export function getDashboardNextSteps({
 }) {
   const items = [];
 
-  const leadsNeedingFollowUp = leads.filter((lead) => {
-    const status = normalizeStatus(lead?.status);
+  const inboundNewLeads = leads.filter((lead) => normalizeStatus(lead?.status) === "new").length;
+  if (inboundNewLeads > 0) {
+    items.push(
+      `${inboundNewLeads} inbound lead${inboundNewLeads === 1 ? " is" : "s are"} waiting for review.`
+    );
+  }
+
+  const contractorFormsReady = leads.filter((lead) => {
     return (
-      status === "new" ||
-      status === "ready_for_review" ||
-      ((status === "accepted" || status === "contacted" || status === "qualified") &&
-        !hasConvertedAgreement(lead))
+      normalizeStatus(lead?.source) === "contractor_sent_form" &&
+      normalizeStatus(lead?.status) === "ready_for_review"
     );
   }).length;
-  if (leadsNeedingFollowUp > 0) {
+  if (contractorFormsReady > 0) {
     items.push(
-      `${leadsNeedingFollowUp} public lead${leadsNeedingFollowUp === 1 ? " needs" : "s need"} follow-up.`
+      `${contractorFormsReady} contractor form${contractorFormsReady === 1 ? " is" : "s are"} ready for review.`
+    );
+  }
+
+  const aiReadyLeads = leads.filter((lead) => {
+    const status = normalizeStatus(lead?.status);
+    return ["accepted", "contacted", "qualified"].includes(status) && !hasConvertedAgreement(lead);
+  }).length;
+  if (aiReadyLeads > 0) {
+    items.push(
+      `${aiReadyLeads} lead${aiReadyLeads === 1 ? " is" : "s are"} ready for agreement drafting.`
     );
   }
 

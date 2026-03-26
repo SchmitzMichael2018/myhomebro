@@ -57,6 +57,20 @@ function sourceLabel(value) {
   return value || 'Unknown';
 }
 
+function statusLabel(value) {
+  const normalized = String(value || '').toLowerCase();
+  if (normalized === 'new') return 'New Inbound';
+  if (normalized === 'pending_customer_response') return 'Waiting on Customer';
+  if (normalized === 'ready_for_review') return 'Ready for Review';
+  if (normalized === 'accepted') return 'Accepted';
+  if (normalized === 'rejected') return 'Rejected';
+  if (normalized === 'contacted') return 'Contacted';
+  if (normalized === 'qualified') return 'Qualified';
+  if (normalized === 'closed') return 'Closed';
+  if (normalized === 'archived') return 'Archived';
+  return value || 'Unknown';
+}
+
 function leadCanSkipColdAcceptance(lead) {
   return String(lead?.source || '').toLowerCase() === 'contractor_sent_form';
 }
@@ -66,6 +80,50 @@ function leadCanRunAiActions(lead) {
   const status = String(lead.status || '').toLowerCase();
   if (status === 'accepted') return true;
   return leadCanSkipColdAcceptance(lead) && ['ready_for_review', 'contacted', 'qualified'].includes(status);
+}
+
+function getLeadPrimaryAction(lead) {
+  if (!lead) return null;
+  if (lead.converted_agreement) {
+    return { kind: 'open_agreement', label: 'Open Draft Agreement' };
+  }
+  if (leadCanSkipColdAcceptance(lead) && lead.source_intake_id) {
+    return { kind: 'review_intake', label: 'Review Intake' };
+  }
+  if (!leadCanSkipColdAcceptance(lead) && String(lead.status || '').toLowerCase() === 'new') {
+    return { kind: 'accept', label: 'Accept Lead' };
+  }
+  if (leadCanRunAiActions(lead)) {
+    return { kind: 'create_agreement', label: 'Create AI-Assisted Agreement' };
+  }
+  return null;
+}
+
+function getAnalysisConfidenceLabel(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return '';
+  if (normalized === 'recommended') return 'Recommended';
+  if (normalized === 'possible') return 'Possible';
+  if (normalized === 'none') return 'No strong match';
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function leadHasAnalysis(lead) {
+  return Boolean(lead?.ai_analysis && Object.keys(lead.ai_analysis).length);
+}
+
+function getLeadFunnelCurrentStep(lead) {
+  if (!lead) return 0;
+  if (lead.converted_agreement) return 2;
+  if (leadHasAnalysis(lead)) return 2;
+  const status = String(lead.status || '').toLowerCase();
+  if (leadCanSkipColdAcceptance(lead) && ['ready_for_review', 'contacted', 'qualified'].includes(status)) {
+    return 1;
+  }
+  if (!leadCanSkipColdAcceptance(lead) && ['accepted', 'contacted', 'qualified'].includes(status)) {
+    return 1;
+  }
+  return 0;
 }
 
 const defaultProfile = {
@@ -136,6 +194,8 @@ export default function ContractorPublicPresencePage() {
     [galleryRows, profile, qrData, reviewsRows]
   );
   const selectedLeadHint = useMemo(() => getPublicLeadHint(selectedLead), [selectedLead]);
+  const primaryLeadAction = useMemo(() => getLeadPrimaryAction(selectedLead), [selectedLead]);
+  const leadFunnelCurrentStep = useMemo(() => getLeadFunnelCurrentStep(selectedLead), [selectedLead]);
 
   async function loadAll() {
     try {
@@ -392,6 +452,23 @@ export default function ContractorPublicPresencePage() {
     } finally {
       setLeadBusy(false);
     }
+  }
+
+  async function runPrimaryLeadAction() {
+    if (!selectedLead || !primaryLeadAction) return;
+    if (primaryLeadAction.kind === 'accept') {
+      await acceptLead();
+      return;
+    }
+    if (primaryLeadAction.kind === 'review_intake') {
+      navigate(`/app/intake/new?intakeId=${selectedLead.source_intake_id}`);
+      return;
+    }
+    if (selectedLead.converted_agreement) {
+      navigate(`/app/agreements/${selectedLead.converted_agreement}`);
+      return;
+    }
+    await createAgreementFromLead();
   }
 
   async function convertLeadToCustomer() {
@@ -750,6 +827,45 @@ export default function ContractorPublicPresencePage() {
                       testId="public-lead-workflow-hint"
                       className="mb-4"
                     />
+                    <div
+                      data-testid="public-lead-funnel"
+                      className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3"
+                    >
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        Lead Funnel
+                      </div>
+                      <div className="mt-3 grid gap-2 md:grid-cols-3">
+                        {[
+                          ['Review', 'Confirm fit and intake details'],
+                          ['Analyze', 'Use AI and template guidance'],
+                          ['Draft', 'Open the agreement and continue pricing'],
+                        ].map(([label, detail], index) => {
+                          const isComplete = leadFunnelCurrentStep > index;
+                          const isCurrent = leadFunnelCurrentStep === index;
+                          return (
+                            <div
+                              key={label}
+                              data-testid={`public-lead-funnel-step-${label.toLowerCase()}`}
+                              className={`rounded-xl border px-3 py-2 text-sm ${
+                                isCurrent
+                                  ? 'border-slate-900 bg-slate-900 text-white'
+                                  : isComplete
+                                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                                  : 'border-slate-200 bg-slate-50 text-slate-600'
+                              }`}
+                            >
+                              <div className="text-xs font-semibold uppercase tracking-wide">
+                                Step {index + 1}
+                              </div>
+                              <div className="mt-1 font-semibold">{label}</div>
+                              <div className={`mt-1 text-xs ${isCurrent ? 'text-slate-200' : ''}`}>
+                                {detail}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="text-lg font-semibold text-slate-900">{selectedLead.full_name}</div>
@@ -758,7 +874,7 @@ export default function ContractorPublicPresencePage() {
                         </div>
                       </div>
                       <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusChipClass(selectedLead.status)}`}>
-                        {selectedLead.status}
+                        {statusLabel(selectedLead.status)}
                       </span>
                     </div>
                     <div className="mt-4 grid gap-3 md:grid-cols-2 text-sm text-slate-700">
@@ -797,10 +913,39 @@ export default function ContractorPublicPresencePage() {
                               Template: {selectedLead.ai_analysis.template_name}
                             </span>
                           ) : null}
+                          {selectedLead.ai_analysis.confidence ? (
+                            <span className="rounded-full border border-indigo-200 bg-white px-2 py-1 text-slate-700">
+                              {getAnalysisConfidenceLabel(selectedLead.ai_analysis.confidence)}
+                            </span>
+                          ) : null}
                         </div>
                         {selectedLead.ai_analysis.suggested_description ? (
                           <div className="mt-3 text-sm text-slate-700">
                             {selectedLead.ai_analysis.suggested_description}
+                          </div>
+                        ) : null}
+                        {selectedLead.ai_analysis.reason ? (
+                          <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                            Why this template path: {selectedLead.ai_analysis.reason}
+                          </div>
+                        ) : null}
+                        {Array.isArray(selectedLead.ai_analysis.recommended_templates) &&
+                        selectedLead.ai_analysis.recommended_templates.length ? (
+                          <div className="mt-3">
+                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Template Options
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                              {selectedLead.ai_analysis.recommended_templates.slice(0, 3).map((template, index) => (
+                                <span
+                                  key={`${template.id || template.name || 'template'}-${index}`}
+                                  className="rounded-full border border-slate-200 bg-white px-2 py-1 text-slate-700"
+                                >
+                                  {template.name || `Template ${index + 1}`}
+                                  {template.confidence ? ` · ${getAnalysisConfidenceLabel(template.confidence)}` : ''}
+                                </span>
+                              ))}
+                            </div>
                           </div>
                         ) : null}
                         <div className="mt-3 grid gap-3 md:grid-cols-2 text-xs text-slate-600">
@@ -814,17 +959,14 @@ export default function ContractorPublicPresencePage() {
                       </div>
                     ) : null}
                     <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      <select value={selectedLead.status} onChange={(e) => setSelectedLead((prev) => ({ ...prev, status: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm">
-                        <option value="new">New</option>
-                        <option value="pending_customer_response">Pending Customer Response</option>
-                        <option value="ready_for_review">Ready for Review</option>
-                        <option value="accepted">Accepted</option>
-                        <option value="rejected">Rejected</option>
-                        <option value="contacted">Contacted</option>
-                        <option value="qualified">Qualified</option>
-                        <option value="closed">Closed</option>
-                        <option value="archived">Archived</option>
-                      </select>
+                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Workflow
+                        </div>
+                        <div className="mt-1">
+                          Lead states are guided by the action buttons below so the pipeline stays consistent from review through agreement drafting.
+                        </div>
+                      </div>
                       <textarea value={selectedLead.internal_notes || ''} onChange={(e) => setSelectedLead((prev) => ({ ...prev, internal_notes: e.target.value }))} rows={4} className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2" placeholder="Internal notes" />
                     </div>
                     {selectedLead.converted_homeowner_name ? (
@@ -833,39 +975,43 @@ export default function ContractorPublicPresencePage() {
                       </div>
                     ) : null}
                     <div className="mt-4 flex flex-wrap justify-end gap-2">
-                      {!leadCanSkipColdAcceptance(selectedLead) && selectedLead.status !== 'accepted' ? (
-                        <button type="button" onClick={acceptLead} disabled={leadBusy} className="rounded-xl border border-indigo-300 bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-60">
-                          Accept
+                      {primaryLeadAction ? (
+                        <button
+                          type="button"
+                          onClick={runPrimaryLeadAction}
+                          disabled={leadBusy}
+                          className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                        >
+                          {primaryLeadAction.label}
                         </button>
                       ) : null}
-                      {!leadCanSkipColdAcceptance(selectedLead) && selectedLead.status !== 'rejected' ? (
+                      {!leadCanSkipColdAcceptance(selectedLead) && selectedLead.status === 'new' ? (
                         <button type="button" onClick={rejectLead} disabled={leadBusy || Boolean(selectedLead.converted_agreement)} className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60">
-                          Reject
-                        </button>
-                      ) : null}
-                      {leadCanSkipColdAcceptance(selectedLead) && selectedLead.source_intake_id ? (
-                        <button type="button" onClick={() => navigate(`/app/intake/new?intakeId=${selectedLead.source_intake_id}`)} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
-                          Review Intake
+                          Reject Lead
                         </button>
                       ) : null}
                       <button type="button" onClick={analyzeLeadWithAi} disabled={leadBusy || !leadCanRunAiActions(selectedLead)} className="rounded-xl border border-indigo-300 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60">
                         Analyze Intake with AI
                       </button>
-                      <button type="button" onClick={createAgreementFromLead} disabled={leadBusy || !leadCanRunAiActions(selectedLead)} className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60">
-                        Create AI-Assisted Agreement
-                      </button>
-                      <button type="button" onClick={() => updateLeadStatus('contacted')} disabled={leadBusy} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">
+                      {!selectedLead.converted_agreement &&
+                      leadCanRunAiActions(selectedLead) &&
+                      primaryLeadAction?.kind !== 'create_agreement' ? (
+                        <button type="button" onClick={createAgreementFromLead} disabled={leadBusy} className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60">
+                          Create AI-Assisted Agreement
+                        </button>
+                      ) : null}
+                      <button type="button" onClick={() => updateLeadStatus('contacted')} disabled={leadBusy || selectedLead.status === 'contacted'} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">
                         Mark Contacted
                       </button>
-                      <button type="button" onClick={() => updateLeadStatus('closed')} disabled={leadBusy} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">
+                      <button type="button" onClick={() => updateLeadStatus('closed')} disabled={leadBusy || selectedLead.status === 'closed'} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">
                         Mark Closed
                       </button>
-                      <button type="button" onClick={() => updateLeadStatus('archived')} disabled={leadBusy} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">
+                      <button type="button" onClick={() => updateLeadStatus('archived')} disabled={leadBusy || selectedLead.status === 'archived'} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">
                         Archive Lead
                       </button>
-                      {!selectedLead.converted_homeowner_id ? (
-                        <button type="button" onClick={convertLeadToCustomer} disabled={leadBusy} className="rounded-xl border border-blue-300 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-60">
-                          Convert to Customer
+                      {!selectedLead.converted_homeowner_id && leadCanRunAiActions(selectedLead) ? (
+                        <button type="button" onClick={convertLeadToCustomer} disabled={leadBusy} className="rounded-xl border border-blue-300 bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-60">
+                          Create Customer Record
                         </button>
                       ) : null}
                       {selectedLead.converted_agreement ? (
@@ -873,7 +1019,7 @@ export default function ContractorPublicPresencePage() {
                           Open Draft Agreement
                         </button>
                       ) : null}
-                      <button type="button" onClick={() => saveLead(selectedLead)} disabled={leadBusy} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60">
+                      <button type="button" onClick={() => saveLead(selectedLead)} disabled={leadBusy} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
                         {leadBusy ? 'Saving...' : 'Save Changes'}
                       </button>
                     </div>

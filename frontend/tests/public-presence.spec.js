@@ -334,17 +334,20 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await page.getByRole('button', { name: 'Public Leads' }).click();
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Casey Prospect');
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Public Profile');
+  await expect(page.getByTestId('public-lead-funnel')).toContainText('Review');
+  await expect(page.getByTestId('public-lead-funnel')).toContainText('Analyze');
+  await expect(page.getByTestId('public-lead-funnel')).toContainText('Draft');
   await expect(page.getByTestId('public-lead-workflow-hint')).toContainText(
-    'Review the lead details and decide whether to accept or reject it'
+    'Review the intake details and accept the lead if it is a fit'
   );
-  await page.getByRole('button', { name: 'Accept' }).click();
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('accepted');
+  await page.getByRole('button', { name: 'Accept Lead' }).click();
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Accepted');
   await page.getByRole('button', { name: 'Analyze Intake with AI' }).click();
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
     'Kitchen Remodel - Casey Prospect'
   );
   await expect(page.getByTestId('public-lead-workflow-hint')).toContainText(
-    'Review the AI suggestions and create a draft agreement'
+    'Review the AI suggestions and create the draft agreement'
   );
   await page.getByRole('button', { name: 'Create AI-Assisted Agreement' }).click();
   await page.waitForURL('**/app/agreements/901/wizard?step=1');
@@ -352,7 +355,7 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Public Leads' }).click();
   await page.getByRole('button', { name: 'Mark Contacted' }).click();
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('contacted');
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Contacted');
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
     'Converted to customer: Casey Prospect'
   );
@@ -681,7 +684,7 @@ test('landing-source intake and public-profile intake land in the same contracto
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Landing Page');
 
   await page.getByRole('button', { name: 'Landing Prospect' }).click();
-  await page.getByRole('button', { name: 'Accept' }).click();
+  await page.getByRole('button', { name: 'Accept Lead' }).click();
   await page.getByRole('button', { name: 'Analyze Intake with AI' }).click();
   await page.getByRole('button', { name: 'Create AI-Assisted Agreement' }).click();
   await page.waitForURL('**/app/agreements/901/wizard?step=1');
@@ -689,8 +692,8 @@ test('landing-source intake and public-profile intake land in the same contracto
   await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Public Leads' }).click();
   await page.getByRole('button', { name: 'Profile Prospect' }).click();
-  await page.getByRole('button', { name: 'Accept' }).click();
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('accepted');
+  await page.getByRole('button', { name: 'Accept Lead' }).click();
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Accepted');
 });
 
 test('public contractor profile renders gallery reviews and intake', async ({ page }) => {
@@ -1164,11 +1167,12 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
     'Contractor Form'
   );
+  await expect(page.getByTestId('public-lead-funnel')).toContainText('Analyze');
   await expect(page.getByTestId('public-lead-workflow-hint')).toContainText(
-    'Analyze the intake and confirm project details before drafting the agreement'
+    'Review the completed intake first. Then analyze it or move straight into a draft agreement'
   );
-  await expect(page.getByRole('button', { name: 'Accept' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Reject' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Accept Lead' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Reject Lead' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Review Intake' }).click();
   await page.waitForURL('**/app/intake/new?intakeId=501');
   await expect(page.getByPlaceholder('e.g., Jane Smith')).toHaveValue('Riley Customer');
@@ -1179,7 +1183,7 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
     'Bathroom Remodel - Riley Customer'
   );
   await expect(page.getByTestId('public-lead-workflow-hint')).toContainText(
-    'Review the completed intake and create a draft agreement'
+    'Review the completed intake, confirm the AI summary, and create the draft agreement'
   );
   await page.getByRole('button', { name: 'Create AI-Assisted Agreement' }).click();
   await page.waitForURL('**/app/agreements/901/wizard?step=1');

@@ -120,6 +120,39 @@ function formatCurrency(v) {
   });
 }
 
+function derivePricingSources(pricingReason = "") {
+  const reason = safeStr(pricingReason).toLowerCase();
+  const sources = [];
+  if (!reason) return sources;
+  if (
+    reason.includes("contractor") ||
+    reason.includes("historical jobs") ||
+    reason.includes("your history") ||
+    reason.includes("prior jobs")
+  ) {
+    sources.push("Contractor History");
+  }
+  if (
+    reason.includes("market") ||
+    reason.includes("regional") ||
+    reason.includes("benchmark") ||
+    reason.includes("baseline")
+  ) {
+    sources.push("Market");
+  }
+  if (reason.includes("template")) {
+    sources.push("Template");
+  }
+  if (
+    reason.includes("clarification") ||
+    reason.includes("refresh") ||
+    reason.includes("ai pricing preview")
+  ) {
+    sources.push("AI Refresh");
+  }
+  return [...new Set(sources)];
+}
+
 function formatEstimateConfidence(conf) {
   const c = String(conf || "").trim().toLowerCase();
   if (!c) return "";
@@ -362,6 +395,7 @@ function getEstimateAssistMeta(m) {
         ? `Materials: ${formatCurrency(materialsLow)} – ${formatCurrency(materialsHigh)}`
         : "",
     confidenceLabel: formatEstimateConfidence(confidence),
+    pricingSources: derivePricingSources(pricingReason),
     materials,
     type,
     durationDays,
@@ -1825,7 +1859,7 @@ export default function Step2Milestones({
 
             {pricingEstimateStale ? (
               <span className="text-xs text-amber-700">
-                Pricing inputs changed. Refresh estimate guidance to see updated ranges.
+                Pricing inputs changed. Refresh pricing guidance before you lock in milestone amounts.
               </span>
             ) : null}
 
@@ -1839,7 +1873,7 @@ export default function Step2Milestones({
 
             {templateApplied && !milestonesLocked ? (
               <span className="text-xs text-indigo-700">
-                Template structure is active.
+                Template structure is active. Review pricing and clarifications here instead of regenerating milestones.
               </span>
             ) : null}
 
@@ -2256,6 +2290,24 @@ export default function Step2Milestones({
 
                         {estimate.pricingReason ? (
                           <div className="text-gray-500">{estimate.pricingReason}</div>
+                        ) : null}
+
+                        {estimate.pricingSources?.length ? (
+                          <div>
+                            <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                              Pricing Source
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {estimate.pricingSources.map((source) => (
+                                <span
+                                  key={`${m.id || "milestone"}-${source}`}
+                                  className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700"
+                                >
+                                  {source}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
                         ) : null}
 
                         {estimate.confidenceLabel ? (

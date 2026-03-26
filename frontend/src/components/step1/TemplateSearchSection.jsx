@@ -41,7 +41,7 @@ function MatchBadge({ template, recommended, possible }) {
   if (possible || level === "medium") {
     return (
       <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
-        Possible Match
+        Possible
       </span>
     );
   }
@@ -49,7 +49,7 @@ function MatchBadge({ template, recommended, possible }) {
   if (level === "weak") {
     return (
       <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
-        Related
+        No strong match
       </span>
     );
   }
@@ -523,7 +523,7 @@ export default function TemplateSearchSection({
     : "Selected Template";
   const selectionHeaderText = isTemplateApplied
     ? "This template is already applied to the agreement. You can preview it below. Until the agreement is signed, you may still deselect it."
-    : "Search first if you already have a template for this job. If not, continue below and build the project manually.";
+    : "Search for a matching template first. If a good match exists, use it as the fastest path into milestones, clarifications, and pricing.";
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
@@ -673,19 +673,24 @@ export default function TemplateSearchSection({
           >
             <span className="font-semibold">
               {recommendationConfidence === "possible"
-                ? "Possible template match"
-                : "Recommended template match"}
+                ? "Possible"
+                : "Recommended"}
             </span>
             {templateRecommendationScore != null
               ? ` (score ${templateRecommendationScore})`
               : ""}
             : {templateRecommendationReason}
+            <div className="mt-2 text-[11px]">
+              {recommendationConfidence === "possible"
+                ? "Review this option first, then compare it with the alternatives below before applying."
+                : "Use this template to carry the project into milestones, clarifications, and pricing faster."}
+            </div>
           </div>
         ) : null}
 
         {showNoStrongMatchPanel && !isTemplateApplied ? (
           <div className="mt-3 rounded border border-dashed border-amber-300 bg-white px-3 py-3 text-sm text-amber-800">
-            <div className="font-medium">No strong saved template match yet.</div>
+            <div className="font-medium">No strong match yet.</div>
             <div className="mt-1 text-xs text-amber-700">
               {noTemplateReason ||
                 "You can continue with a blank agreement, review related templates below, or generate milestones from the project scope."}
@@ -996,7 +1001,7 @@ export default function TemplateSearchSection({
                   (selectedTemplate?._matchLevel === "medium" ||
                     recommendationConfidence === "possible") ? (
                     <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-                      Possible Match
+                      Possible
                     </span>
                   ) : null}
                 </div>

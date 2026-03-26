@@ -27,8 +27,8 @@ export default function IntakeAiRecommendationPanel({
 
   function confidenceLabel(value) {
     const normalized = String(value || "").trim().toLowerCase();
-    if (normalized === "recommended") return "Strong match";
-    if (normalized === "possible") return "Possible match";
+    if (normalized === "recommended") return "Recommended";
+    if (normalized === "possible") return "Possible";
     return "No strong match";
   }
 
