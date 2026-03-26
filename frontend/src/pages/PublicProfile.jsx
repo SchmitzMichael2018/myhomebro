@@ -59,7 +59,11 @@ export default function PublicProfile() {
       } catch (err) {
         console.error(err);
         if (!active) return;
-        setError(err?.response?.status === 404 ? 'This contractor profile is not available.' : 'Unable to load contractor profile.');
+        setError(
+          err?.response?.status === 404
+            ? 'This contractor profile is not available.'
+            : 'Unable to load this contractor profile.'
+        );
       } finally {
         if (active) setLoading(false);
       }
@@ -84,7 +88,7 @@ export default function PublicProfile() {
     try {
       setSubmitting(true);
       await api.post(`/projects/public/contractors/${slug}/intake/`, leadForm);
-      toast.success('Your project request was submitted.');
+      toast.success('Project request sent. The contractor can now review your intake and follow up.');
       setLeadForm(buildEmptyLeadForm(intakeSource));
     } catch (err) {
       console.error(err);
@@ -99,7 +103,7 @@ export default function PublicProfile() {
     try {
       setReviewSubmitting(true);
       await api.post(`/projects/public/contractors/${slug}/reviews/`, reviewForm);
-      toast.success('Thanks for your review. It will appear after moderation.');
+      toast.success('Thanks for sharing your review. It will appear after moderation.');
       setReviewForm(emptyReviewForm);
     } catch (err) {
       console.error(err);
@@ -110,7 +114,7 @@ export default function PublicProfile() {
   }
 
   if (loading) {
-    return <div className="px-4 py-16 text-center text-sm text-slate-500">Loading contractor profile…</div>;
+    return <div className="px-4 py-16 text-center text-sm text-slate-500">Loading public profile…</div>;
   }
 
   if (error || !profile) {
@@ -213,7 +217,7 @@ export default function PublicProfile() {
               ))}
             </div>
           ) : (
-            <div className="mt-4 text-sm text-slate-500">Gallery coming soon.</div>
+            <div className="mt-4 text-sm text-slate-500">No public project photos yet.</div>
           )}
         </section>
 
@@ -243,7 +247,7 @@ export default function PublicProfile() {
                 ))}
               </div>
             ) : (
-              <div className="mt-4 text-sm text-slate-500">No public reviews yet.</div>
+              <div className="mt-4 text-sm text-slate-500">No public reviews yet. Be the first to leave one.</div>
             )}
 
             <div id="review-form" className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-5">
@@ -297,7 +301,7 @@ export default function PublicProfile() {
         {profile.allow_public_intake ? (
           <section id="intake" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-2xl font-bold text-slate-900">Start Your Project</h2>
-            <p className="mt-2 text-sm text-slate-600">Tell this contractor about your project and they can follow up directly.</p>
+            <p className="mt-2 text-sm text-slate-600">Share a few project details and this contractor can review your request and follow up directly.</p>
             <form onSubmit={submitLead} className="mt-6 grid gap-4 md:grid-cols-2">
               <input value={leadForm.full_name} onChange={(e) => setLeadForm((prev) => ({ ...prev, full_name: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Full name" />
               <input value={leadForm.email} onChange={(e) => setLeadForm((prev) => ({ ...prev, email: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Email" />

@@ -156,7 +156,7 @@ export default function ContractorPublicPresencePage() {
       setSelectedLead(leadResults[0] || null);
     } catch (err) {
       console.error(err);
-      toast.error('Failed to load public presence.');
+      toast.error('Could not load public profile settings.');
     } finally {
       setLoading(false);
     }
@@ -415,7 +415,7 @@ export default function ContractorPublicPresencePage() {
   async function copyUrl() {
     try {
       await navigator.clipboard.writeText(qrData?.public_url || profile.public_url || '');
-      toast.success('Public URL copied.');
+      toast.success('Public profile link copied.');
     } catch (err) {
       console.error(err);
       toast.error('Unable to copy URL.');
@@ -435,7 +435,7 @@ export default function ContractorPublicPresencePage() {
               Public Presence
             </h1>
             <p className="mt-2 text-sm text-slate-600">
-              Manage your public contractor profile, gallery, leads, reviews, and shareable QR.
+              Manage your public profile, gallery, reviews, leads, and shareable QR from one place.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -664,9 +664,14 @@ export default function ContractorPublicPresencePage() {
           {activeTab === 'reviews' ? (
             <div className="mt-6 space-y-4" data-testid="public-presence-reviews-tab">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                Public review submissions stay hidden until you publish them here. Verified badges stay read-only unless a safe agreement-linked workflow sets them.
+                New public reviews stay hidden until you publish them here. Verified badges remain read-only unless an agreement-linked workflow sets them.
               </div>
 
+              {reviewsRows.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
+                  No reviews have been submitted yet. Share your profile link to start collecting customer feedback.
+                </div>
+              ) : (
               <div className="space-y-3">
                 {reviewsRows.map((review) => (
                   <div key={review.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -708,13 +713,18 @@ export default function ContractorPublicPresencePage() {
                   </div>
                 ))}
               </div>
+              )}
             </div>
           ) : null}
 
           {activeTab === 'leads' ? (
             <div className="mt-6 grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]" data-testid="public-presence-leads-tab">
               <div className="space-y-3">
-                {leadsRows.map((lead) => (
+                {leadsRows.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
+                    No leads yet. Share your public profile or QR code to start collecting project requests.
+                  </div>
+                ) : leadsRows.map((lead) => (
                   <button
                     key={lead.id}
                     type="button"
@@ -864,12 +874,12 @@ export default function ContractorPublicPresencePage() {
                         </button>
                       ) : null}
                       <button type="button" onClick={() => saveLead(selectedLead)} disabled={leadBusy} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60">
-                        {leadBusy ? 'Saving...' : 'Save Lead'}
+                        {leadBusy ? 'Saving...' : 'Save Changes'}
                       </button>
                     </div>
                   </>
                 ) : (
-                  <div className="text-sm text-slate-500">No public leads yet.</div>
+                  <div className="text-sm text-slate-500">Choose a lead to review its details, status, and next actions.</div>
                 )}
               </div>
             </div>

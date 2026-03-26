@@ -63,8 +63,10 @@ export default function LandingPage() {
           <span style={S.brandSub}>Bro</span>
         </div>
 
-        <p style={S.subhead}>Create project scope, milestone pricing, and payment-ready agreements in one place.</p>
-        <p style={S.subheadTiny}>No subscription required. Start for free.</p>
+        <p style={S.subhead}>
+          Create project scope, milestone pricing, signatures, and payment-ready agreements in one place.
+        </p>
+        <p style={S.subheadTiny}>No subscription required. Start free and pay only when you use the platform.</p>
 
         <div style={S.badges}>
           <Badge icon={Zap} text="AI-powered pricing and milestone generation tailored to your project." />
@@ -107,7 +109,7 @@ export default function LandingPage() {
           </div>
 
           <div style={S.pricingNote}>
-            Direct Pay: <b>2% + $1</b>. You only pay when you get paid. Intro rate for first 60 days. Volume discounts available.
+            Direct Pay: <b>1% + $1</b>. You only pay when you get paid. Intro pricing applies for your first 60 days, with lower escrow rates as volume grows.
           </div>
         </div>
       </div>

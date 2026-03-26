@@ -999,7 +999,7 @@ export default function AgreementWizard() {
             data-testid="agreement-wizard-subtitle"
             className="mt-1 text-sm font-medium text-indigo-200"
           >
-            {agreementId ? `Agreement #${agreementId}` : "New Agreement"} — Step {step} of 4
+            {agreementId ? `Agreement #${agreementId}` : "Draft agreement"} · Step {step} of 4
           </div>
         </div>
 
@@ -1040,7 +1040,7 @@ export default function AgreementWizard() {
       />
 
       {loadingAgreement ? (
-        <div className="mt-6 text-sm text-white/80">Loading agreement…</div>
+        <div className="mt-6 text-sm text-white/80">Loading agreement details…</div>
       ) : null}
 
       {taxonomyLoading ? (

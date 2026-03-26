@@ -1,8 +1,4 @@
 // frontend/src/components/Calendar.jsx
-// v2026-01-07 — Calendar
-// ✅ Click milestone assignments (gray) to open milestone modal
-console.log("Calendar.jsx v2026-01-07 (click assignment milestone_override)");
-
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
@@ -148,6 +144,7 @@ export default function Calendar() {
   const [events, setEvents] = useState([]);
   const [activeMilestone, setActiveMilestone] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   const [employeeOptions, setEmployeeOptions] = useState([]);
   const [employeeFilter, setEmployeeFilter] = useState("");
@@ -169,6 +166,7 @@ export default function Calendar() {
 
   const loadEvents = useCallback(async () => {
     try {
+      setLoading(true);
       const res = await api.get("/projects/milestones/calendar/");
       const milestones = Array.isArray(res.data) ? res.data : res.data?.results || [];
 
@@ -249,6 +247,8 @@ export default function Calendar() {
     } catch (err) {
       console.error(err);
       toast.error("Failed to load calendar.");
+    } finally {
+      setLoading(false);
     }
   }, [employeeFilter]);
 
@@ -345,6 +345,25 @@ export default function Calendar() {
 
   return (
     <div className="p-4 md:p-6">
+      <div className="mb-4">
+        <h1 className="text-2xl font-bold text-slate-900">Calendar</h1>
+        <p className="mt-1 text-sm text-slate-600">
+          Review milestone timing, assignments, and due dates in one schedule view.
+        </p>
+      </div>
+
+      {loading ? (
+        <div className="mb-4 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-500">
+          Loading calendar events…
+        </div>
+      ) : null}
+
+      {!loading && events.length === 0 ? (
+        <div className="mb-4 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-500">
+          No calendar events yet. Milestones and assignments will appear here as soon as they are scheduled.
+        </div>
+      ) : null}
+
       <FullCalendar
         plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
         initialView="dayGridMonth"

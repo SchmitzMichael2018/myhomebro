@@ -328,7 +328,7 @@ export default function SubcontractorsPage() {
             Subcontractors
           </h1>
           <p className="mt-2 text-sm text-slate-600">
-            Manage invitations, assignments, and submitted work.
+            Manage invitations, assignments, and submitted work in one place.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -390,7 +390,7 @@ export default function SubcontractorsPage() {
           <div className="mt-6 space-y-3" data-testid="subcontractors-directory">
             {directoryRows.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500">
-                No active subcontractors yet.
+                No active subcontractors yet. Send an invitation to start building your subcontractor list.
               </div>
             ) : (
               directoryRows.map((row) => (
@@ -440,7 +440,7 @@ export default function SubcontractorsPage() {
           <div className="mt-6 space-y-3" data-testid="subcontractors-invitations">
             {invitationRows.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500">
-                No invitations yet.
+                No invitations yet. Send an invite when you are ready to bring a subcontractor into a project.
               </div>
             ) : (
               invitationRows.map((row) => (
@@ -484,7 +484,7 @@ export default function SubcontractorsPage() {
           <div className="mt-6 space-y-3" data-testid="subcontractors-assignments">
             {assignmentRows.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500">
-                No subcontractor assignments yet.
+                No subcontractor assignments yet. Accepted subcontractors will appear here once work is assigned.
               </div>
             ) : (
               assignmentRows.map((row) => (
@@ -529,7 +529,7 @@ export default function SubcontractorsPage() {
           <div className="mt-6 space-y-3" data-testid="subcontractors-submissions">
             {submissionRows.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500">
-                No submitted work yet.
+                No submitted work yet. Submitted milestone work will appear here for review.
               </div>
             ) : (
               submissionRows.map((row) => {

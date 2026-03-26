@@ -171,7 +171,7 @@ export default function LoginModal() {
     };
 
     if (!payload.email || !payload.password) {
-      toast.error("Enter email and password.");
+      toast.error("Enter both email and password.");
       return;
     }
 
@@ -205,14 +205,14 @@ export default function LoginModal() {
         }
       }
 
-      toast.success("Signed in!");
+      toast.success("Signed in. Redirecting to your dashboard.");
       setVisible(false);
       window.location.href = "/dashboard";
     } catch (err) {
       const msg =
         err?.response?.data?.detail ||
         err?.response?.data?.message ||
-        "Sign-in failed.";
+        "Unable to sign in. Check your email and password and try again.";
       toast.error(String(msg));
       console.error("Login error:", err);
     } finally {
@@ -256,9 +256,13 @@ export default function LoginModal() {
 
             {inviteToken ? (
               <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>
-                Sign in to accept the invite and import the homeowner as a client.
+                Sign in to accept this invite and add the homeowner to your customer list.
               </div>
-            ) : null}
+            ) : (
+              <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>
+                Sign in to manage agreements, leads, payments, and project updates.
+              </div>
+            )}
           </div>
 
           <button className="mhb-modal-close" onClick={close} aria-label="Close">
@@ -383,7 +387,7 @@ export default function LoginModal() {
                 textAlign: "center",
               }}
             >
-              New contractor?{" "}
+              New here?{" "}
               <a
                 href="/contractor/signup"
                 style={{ fontWeight: 800, color: "#0ea5e9" }}

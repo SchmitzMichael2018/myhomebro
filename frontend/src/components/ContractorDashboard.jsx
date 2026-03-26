@@ -27,10 +27,6 @@ import {
 } from "lucide-react";
 import { getDashboardNextSteps } from "../lib/workflowHints.js";
 
-console.log(
-  "ContractorDashboard.jsx v2026-03-10 — added + New Intake quick action"
-);
-
 /* Ensure react-modal knows the root */
 Modal.setAppElement("#root");
 
@@ -1231,7 +1227,9 @@ export default function ContractorDashboard() {
 
   const pricingSubtitle = subtitleParts.join(" ");
 
-  const headerSubtitle = isEmployee ? "Here are the milestones assigned to you." : "Milestones and invoices at a glance.";
+  const headerSubtitle = isEmployee
+    ? "Here are the milestones currently assigned to you."
+    : "Track milestones, invoices, leads, and next actions in one place.";
 
   return (
     <PageShell title="Dashboard" subtitle={headerSubtitle} showLogo>
@@ -1368,10 +1366,10 @@ export default function ContractorDashboard() {
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
           {!isEmployee ? (
             <>
-              <ActionButton icon={FilePlus2} label="+ New Agreement" primary onClick={goNewAgreement} />
-              <ActionButton icon={ListPlus} label="+ New Intake" onClick={goNewIntake} />
-              <ActionButton icon={ListPlus} label="+ New Milestone" onClick={goNewMilestone} />
-              <ActionButton icon={Receipt} label="+ New Expense" onClick={openNewExpense} />
+              <ActionButton icon={FilePlus2} label="New Agreement" primary onClick={goNewAgreement} />
+              <ActionButton icon={ListPlus} label="New Intake" onClick={goNewIntake} />
+              <ActionButton icon={ListPlus} label="New Milestone" onClick={goNewMilestone} />
+              <ActionButton icon={Receipt} label="New Expense" onClick={openNewExpense} />
               <ActionButton icon={Receipt} label="Expenses" onClick={goExpenses} />
               <ActionButton icon={Receipt} label="Invoices" onClick={goInvoices} />
               <ActionButton icon={AlertTriangle} label="Disputes" onClick={goDisputes} />
