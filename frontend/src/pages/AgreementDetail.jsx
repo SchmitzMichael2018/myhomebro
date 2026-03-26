@@ -1095,6 +1095,7 @@ export default function AgreementDetail() {
     : norm.isSigned
     ? "❌ Awaiting Funding"
     : "❌ Not Signed";
+  const milestones = Array.isArray(norm?.milestones) ? norm.milestones : [];
   const agreementHint = getAgreementDetailHint({
     agreement,
     norm,
