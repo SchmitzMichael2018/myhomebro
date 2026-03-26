@@ -31,6 +31,7 @@ from projects.services.public_lead_notifications import (
     send_public_lead_accept_email,
     send_public_lead_reject_email,
 )
+from projects.services.public_lead_pipeline import normalize_public_lead_source
 from projects.services.agreements.project_create import resolve_contractor_for_user
 
 
@@ -81,10 +82,12 @@ def _public_profile_payload(request, profile):
 
 def _qr_payload(request, profile):
     public_url = request.build_absolute_uri(profile.public_url_path)
+    qr_target_url = request.build_absolute_uri(f"{profile.public_url_path}?source=qr")
     return {
         "slug": profile.slug,
         "public_url": public_url,
-        "qr_svg": make_qr_svg_data(public_url),
+        "qr_target_url": qr_target_url,
+        "qr_svg": make_qr_svg_data(qr_target_url),
         "download_filename": f"{profile.slug}-public-profile-qr.svg",
     }
 
@@ -551,7 +554,12 @@ class PublicContractorIntakeView(APIView):
         profile = _public_profile_or_404(slug)
         if not profile.allow_public_intake:
             return Response({"detail": "Public intake is not enabled for this contractor."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = PublicContractorLeadCreateSerializer(data=request.data)
+        payload = request.data.copy()
+        payload["source"] = normalize_public_lead_source(
+            request.data.get("source"),
+            default=PublicContractorLead.SOURCE_PUBLIC_PROFILE,
+        )
+        serializer = PublicContractorLeadCreateSerializer(data=payload)
         serializer.is_valid(raise_exception=True)
         serializer.save(contractor=profile.contractor, public_profile=profile)
         return Response({"ok": True, "message": "Your project request was submitted."}, status=status.HTTP_201_CREATED)

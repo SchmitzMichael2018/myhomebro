@@ -353,11 +353,13 @@ class PublicContractorLead(models.Model):
         (STATUS_ARCHIVED, "Archived"),
     ]
 
-    SOURCE_PROFILE = "profile"
+    SOURCE_LANDING_PAGE = "landing_page"
+    SOURCE_PUBLIC_PROFILE = "public_profile"
     SOURCE_QR = "qr"
     SOURCE_DIRECT = "direct"
     SOURCE_CHOICES = [
-        (SOURCE_PROFILE, "Profile"),
+        (SOURCE_LANDING_PAGE, "Landing Page"),
+        (SOURCE_PUBLIC_PROFILE, "Public Profile"),
         (SOURCE_QR, "QR"),
         (SOURCE_DIRECT, "Direct"),
     ]
@@ -372,7 +374,11 @@ class PublicContractorLead(models.Model):
         on_delete=models.CASCADE,
         related_name="leads",
     )
-    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default=SOURCE_PROFILE)
+    source = models.CharField(
+        max_length=20,
+        choices=SOURCE_CHOICES,
+        default=SOURCE_PUBLIC_PROFILE,
+    )
     full_name = models.CharField(max_length=255)
     email = models.EmailField(blank=True, default="")
     phone = models.CharField(max_length=40, blank=True, default="")

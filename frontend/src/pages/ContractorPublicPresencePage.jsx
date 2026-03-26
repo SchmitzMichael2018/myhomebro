@@ -41,6 +41,15 @@ function statusChipClass(value) {
   return 'border-slate-200 bg-slate-50 text-slate-700';
 }
 
+function sourceLabel(value) {
+  const normalized = String(value || '').toLowerCase();
+  if (normalized === 'landing_page') return 'Landing Page';
+  if (normalized === 'public_profile' || normalized === 'profile') return 'Public Profile';
+  if (normalized === 'qr') return 'QR';
+  if (normalized === 'direct') return 'Direct';
+  return value || 'Unknown';
+}
+
 const defaultProfile = {
   slug: '',
   business_name_public: '',
@@ -699,6 +708,9 @@ export default function ContractorPublicPresencePage() {
                   >
                     <div className="text-sm font-semibold">{lead.full_name}</div>
                     <div className="mt-1 text-xs opacity-80">{lead.project_type || 'New project request'}</div>
+                    <div className="mt-2 inline-flex rounded-full border border-current/20 px-2 py-0.5 text-[11px] font-semibold opacity-90">
+                      {sourceLabel(lead.source)}
+                    </div>
                   </button>
                 ))}
               </div>
@@ -722,7 +734,7 @@ export default function ContractorPublicPresencePage() {
                       </span>
                     </div>
                     <div className="mt-4 grid gap-3 md:grid-cols-2 text-sm text-slate-700">
-                      <div><span className="font-semibold text-slate-900">Source:</span> {selectedLead.source}</div>
+                      <div><span className="font-semibold text-slate-900">Source:</span> {sourceLabel(selectedLead.source)}</div>
                       <div><span className="font-semibold text-slate-900">Timeline:</span> {selectedLead.preferred_timeline || '-'}</div>
                       <div><span className="font-semibold text-slate-900">Budget:</span> {selectedLead.budget_text || '-'}</div>
                       <div><span className="font-semibold text-slate-900">Created:</span> {fmtDateTime(selectedLead.created_at)}</div>

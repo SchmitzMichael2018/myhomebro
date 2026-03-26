@@ -21,6 +21,12 @@ export default function StartProjectIntake() {
           customer_name: (searchParams.get("name") || "").trim(),
           customer_email: (searchParams.get("email") || "").trim(),
           customer_phone: (searchParams.get("phone") || "").trim(),
+          contractor_slug:
+            (searchParams.get("contractor_slug") ||
+              searchParams.get("contractor") ||
+              searchParams.get("slug") ||
+              "").trim(),
+          source: (searchParams.get("source") || "landing_page").trim(),
         };
 
         const { data } = await api.post("/projects/public-intake/start/", payload);

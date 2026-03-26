@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 import api from '../api';
 
-const emptyLeadForm = {
-  source: 'profile',
+const buildEmptyLeadForm = (source = 'public_profile') => ({
+  source,
   full_name: '',
   email: '',
   phone: '',
@@ -17,7 +17,7 @@ const emptyLeadForm = {
   project_description: '',
   preferred_timeline: '',
   budget_text: '',
-};
+});
 
 const emptyReviewForm = {
   customer_name: '',
@@ -33,13 +33,19 @@ function fmtRating(value) {
 
 export default function PublicProfile() {
   const { slug = '' } = useParams();
+  const [searchParams] = useSearchParams();
+  const intakeSource = searchParams.get('source') === 'qr' ? 'qr' : 'public_profile';
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
-  const [leadForm, setLeadForm] = useState(emptyLeadForm);
+  const [leadForm, setLeadForm] = useState(() => buildEmptyLeadForm(intakeSource));
   const [reviewForm, setReviewForm] = useState(emptyReviewForm);
+
+  useEffect(() => {
+    setLeadForm((prev) => ({ ...buildEmptyLeadForm(intakeSource), ...prev, source: intakeSource }));
+  }, [intakeSource]);
 
   useEffect(() => {
     let active = true;
@@ -79,7 +85,7 @@ export default function PublicProfile() {
       setSubmitting(true);
       await api.post(`/projects/public/contractors/${slug}/intake/`, leadForm);
       toast.success('Your project request was submitted.');
-      setLeadForm(emptyLeadForm);
+      setLeadForm(buildEmptyLeadForm(intakeSource));
     } catch (err) {
       console.error(err);
       toast.error(err?.response?.data?.detail || 'Unable to submit your request.');

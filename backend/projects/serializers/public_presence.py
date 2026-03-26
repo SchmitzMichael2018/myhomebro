@@ -206,14 +206,17 @@ class PublicContractorLeadCreateSerializer(serializers.ModelSerializer):
         ]
 
     def validate_source(self, value):
-        allowed = {
-            PublicContractorLead.SOURCE_PROFILE,
-            PublicContractorLead.SOURCE_QR,
-            PublicContractorLead.SOURCE_DIRECT,
+        mapping = {
+            "profile": PublicContractorLead.SOURCE_PUBLIC_PROFILE,
+            PublicContractorLead.SOURCE_PUBLIC_PROFILE: PublicContractorLead.SOURCE_PUBLIC_PROFILE,
+            PublicContractorLead.SOURCE_LANDING_PAGE: PublicContractorLead.SOURCE_LANDING_PAGE,
+            PublicContractorLead.SOURCE_QR: PublicContractorLead.SOURCE_QR,
+            PublicContractorLead.SOURCE_DIRECT: PublicContractorLead.SOURCE_DIRECT,
         }
-        if value not in allowed:
+        normalized = mapping.get(value)
+        if normalized is None:
             raise serializers.ValidationError("Invalid source.")
-        return value
+        return normalized
 
     def validate(self, attrs):
         if not (attrs.get("email") or attrs.get("phone")):

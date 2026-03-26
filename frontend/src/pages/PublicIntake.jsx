@@ -257,6 +257,7 @@ export default function PublicIntake() {
             <div className="md:col-span-2">
               <label className="mb-1 block text-sm font-medium">Address Line 1</label>
               <input
+                data-testid="public-intake-customer-address-line1"
                 className="w-full rounded border px-3 py-2 text-sm"
                 value={form.customer_address_line1}
                 onChange={(e) => setField("customer_address_line1", e.target.value)}
@@ -277,6 +278,7 @@ export default function PublicIntake() {
             <div>
               <label className="mb-1 block text-sm font-medium">City</label>
               <input
+                data-testid="public-intake-customer-city"
                 className="w-full rounded border px-3 py-2 text-sm"
                 value={form.customer_city}
                 onChange={(e) => setField("customer_city", e.target.value)}
@@ -287,6 +289,7 @@ export default function PublicIntake() {
             <div>
               <label className="mb-1 block text-sm font-medium">State</label>
               <input
+                data-testid="public-intake-customer-state"
                 className="w-full rounded border px-3 py-2 text-sm"
                 value={form.customer_state}
                 onChange={(e) => setField("customer_state", e.target.value)}
@@ -297,6 +300,7 @@ export default function PublicIntake() {
             <div>
               <label className="mb-1 block text-sm font-medium">ZIP / Postal Code</label>
               <input
+                data-testid="public-intake-customer-postal-code"
                 className="w-full rounded border px-3 py-2 text-sm"
                 value={form.customer_postal_code}
                 onChange={(e) => setField("customer_postal_code", e.target.value)}
@@ -335,11 +339,12 @@ export default function PublicIntake() {
             <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="md:col-span-2">
                 <label className="mb-1 block text-sm font-medium">Project Address Line 1</label>
-                <input
-                  className="w-full rounded border px-3 py-2 text-sm"
-                  value={form.project_address_line1}
-                  onChange={(e) => setField("project_address_line1", e.target.value)}
-                  placeholder="Project street address"
+              <input
+                data-testid="public-intake-project-address-line1"
+                className="w-full rounded border px-3 py-2 text-sm"
+                value={form.project_address_line1}
+                onChange={(e) => setField("project_address_line1", e.target.value)}
+                placeholder="Project street address"
                 />
               </div>
 
@@ -355,31 +360,34 @@ export default function PublicIntake() {
 
               <div>
                 <label className="mb-1 block text-sm font-medium">City</label>
-                <input
-                  className="w-full rounded border px-3 py-2 text-sm"
-                  value={form.project_city}
-                  onChange={(e) => setField("project_city", e.target.value)}
-                  placeholder="City"
+              <input
+                data-testid="public-intake-project-city"
+                className="w-full rounded border px-3 py-2 text-sm"
+                value={form.project_city}
+                onChange={(e) => setField("project_city", e.target.value)}
+                placeholder="City"
                 />
               </div>
 
               <div>
                 <label className="mb-1 block text-sm font-medium">State</label>
-                <input
-                  className="w-full rounded border px-3 py-2 text-sm"
-                  value={form.project_state}
-                  onChange={(e) => setField("project_state", e.target.value)}
-                  placeholder="State"
+              <input
+                data-testid="public-intake-project-state"
+                className="w-full rounded border px-3 py-2 text-sm"
+                value={form.project_state}
+                onChange={(e) => setField("project_state", e.target.value)}
+                placeholder="State"
                 />
               </div>
 
               <div>
                 <label className="mb-1 block text-sm font-medium">ZIP / Postal Code</label>
-                <input
-                  className="w-full rounded border px-3 py-2 text-sm"
-                  value={form.project_postal_code}
-                  onChange={(e) => setField("project_postal_code", e.target.value)}
-                  placeholder="ZIP / Postal code"
+              <input
+                data-testid="public-intake-project-postal-code"
+                className="w-full rounded border px-3 py-2 text-sm"
+                value={form.project_postal_code}
+                onChange={(e) => setField("project_postal_code", e.target.value)}
+                placeholder="ZIP / Postal code"
                 />
               </div>
             </div>
@@ -411,6 +419,7 @@ export default function PublicIntake() {
 
           <div className="mt-4">
             <textarea
+              data-testid="public-intake-accomplishment-text"
               className="w-full rounded border px-3 py-2 text-sm"
               rows={7}
               value={form.accomplishment_text}
@@ -427,6 +436,7 @@ export default function PublicIntake() {
             </div>
 
             <button
+              data-testid="public-intake-submit-button"
               type="button"
               onClick={handleSave}
               disabled={saving || !canSubmit}

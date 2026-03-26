@@ -530,11 +530,11 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(len(reviews_response.json()["results"]), 1)
         self.assertEqual(reviews_response.json()["results"][0]["customer_name"], "Taylor Homeowner")
 
-    def test_public_intake_creates_lead_for_correct_profile(self):
+    def test_public_profile_intake_creates_lead_for_correct_profile(self):
         response = self.client.post(
             f"/api/projects/public/contractors/{self.profile.slug}/intake/",
             {
-                "source": "profile",
+                "source": "public_profile",
                 "full_name": "Casey Prospect",
                 "email": "casey@example.com",
                 "phone": "555-444-3333",
@@ -548,6 +548,146 @@ class ContractorPublicPresenceApiTests(TestCase):
         lead = PublicContractorLead.objects.get(full_name="Casey Prospect")
         self.assertEqual(lead.contractor_id, self.contractor.id)
         self.assertEqual(lead.public_profile_id, self.profile.id)
+        self.assertEqual(lead.source, PublicContractorLead.SOURCE_PUBLIC_PROFILE)
+
+    def test_landing_page_public_intake_creates_same_lead_structure_with_source_attribution(self):
+        start_response = self.client.post(
+            "/api/projects/public-intake/start/",
+            {
+                "contractor_slug": self.profile.slug,
+                "source": "landing_page",
+                "customer_name": "Landing Prospect",
+                "customer_email": "landing@example.com",
+                "customer_phone": "555-333-2222",
+            },
+            format="json",
+        )
+        self.assertEqual(start_response.status_code, 201)
+        token = start_response.json()["token"]
+
+        patch_response = self.client.patch(
+            f"/api/projects/public-intake/?token={token}",
+            {
+                "customer_name": "Landing Prospect",
+                "customer_email": "landing@example.com",
+                "customer_phone": "555-333-2222",
+                "project_address_line1": "100 Landing Way",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+                "accomplishment_text": "Need a remodel estimate from the landing page.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(patch_response.status_code, 200)
+        lead = PublicContractorLead.objects.get(email="landing@example.com")
+        self.assertEqual(lead.contractor_id, self.contractor.id)
+        self.assertEqual(lead.public_profile_id, self.profile.id)
+        self.assertEqual(lead.source, PublicContractorLead.SOURCE_LANDING_PAGE)
+        self.assertEqual(lead.full_name, "Landing Prospect")
+        self.assertEqual(lead.project_address, "100 Landing Way")
+        self.assertEqual(lead.project_description, "Need a remodel estimate from the landing page.")
+
+    def test_landing_and_public_profile_intakes_appear_in_same_contractor_lead_flow(self):
+        self.client.post(
+            f"/api/projects/public/contractors/{self.profile.slug}/intake/",
+            {
+                "source": "public_profile",
+                "full_name": "Profile Prospect",
+                "email": "profile@example.com",
+                "phone": "555-000-1111",
+                "project_type": "Kitchen Remodel",
+                "project_description": "Profile intake request.",
+            },
+            format="json",
+        )
+
+        start_response = self.client.post(
+            "/api/projects/public-intake/start/",
+            {
+                "contractor_slug": self.profile.slug,
+                "source": "landing_page",
+                "customer_name": "Landing Flow Prospect",
+                "customer_email": "landing-flow@example.com",
+            },
+            format="json",
+        )
+        token = start_response.json()["token"]
+        self.client.patch(
+            f"/api/projects/public-intake/?token={token}",
+            {
+                "customer_name": "Landing Flow Prospect",
+                "customer_email": "landing-flow@example.com",
+                "project_address_line1": "88 Market St",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78702",
+                "accomplishment_text": "Landing flow project request.",
+            },
+            format="json",
+        )
+
+        self.client.force_authenticate(user=self.contractor_user)
+        lead_list_response = self.client.get("/api/projects/contractor/public-leads/")
+        self.assertEqual(lead_list_response.status_code, 200)
+        rows = lead_list_response.json()["results"]
+        sources = {row["email"]: row["source"] for row in rows}
+        self.assertEqual(sources["profile@example.com"], PublicContractorLead.SOURCE_PUBLIC_PROFILE)
+        self.assertEqual(sources["landing-flow@example.com"], PublicContractorLead.SOURCE_LANDING_PAGE)
+
+    def test_accepted_landing_page_lead_can_follow_same_customer_and_agreement_flow(self):
+        start_response = self.client.post(
+            "/api/projects/public-intake/start/",
+            {
+                "contractor_slug": self.profile.slug,
+                "source": "landing_page",
+                "customer_name": "Pipeline Prospect",
+                "customer_email": "pipeline@example.com",
+            },
+            format="json",
+        )
+        token = start_response.json()["token"]
+        self.client.patch(
+            f"/api/projects/public-intake/?token={token}",
+            {
+                "customer_name": "Pipeline Prospect",
+                "customer_email": "pipeline@example.com",
+                "project_address_line1": "99 Unified Ave",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78703",
+                "accomplishment_text": "Need a unified intake agreement flow.",
+            },
+            format="json",
+        )
+
+        lead = PublicContractorLead.objects.get(email="pipeline@example.com")
+        self.client.force_authenticate(user=self.contractor_user)
+        accept_response = self.client.post(
+            f"/api/projects/contractor/public-leads/{lead.id}/accept/",
+            {},
+            format="json",
+        )
+        self.assertEqual(accept_response.status_code, 200)
+
+        analyze_response = self.client.post(
+            f"/api/projects/contractor/public-leads/{lead.id}/analyze/",
+            {},
+            format="json",
+        )
+        self.assertEqual(analyze_response.status_code, 200)
+
+        create_response = self.client.post(
+            f"/api/projects/contractor/public-leads/{lead.id}/create-agreement/",
+            {},
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201)
+        lead.refresh_from_db()
+        self.assertEqual(lead.source, PublicContractorLead.SOURCE_LANDING_PAGE)
+        self.assertIsNotNone(lead.converted_homeowner_id)
+        self.assertIsNotNone(lead.converted_agreement_id)
 
     def test_public_review_submission_creates_non_public_unverified_review(self):
         response = self.client.post(

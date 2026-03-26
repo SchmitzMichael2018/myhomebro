@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 
 from projects.models_project_intake import ProjectIntake
 from projects.services.intake_analysis import analyze_project_intake
+from projects.services.public_lead_pipeline import sync_public_lead_from_project_intake
 
 
 class PublicIntakeView(APIView):
@@ -164,12 +165,14 @@ class PublicIntakeView(APIView):
             )
 
         intake.save(update_fields=changed + ["updated_at"])
+        lead = sync_public_lead_from_project_intake(intake)
 
         return Response(
             {
                 "detail": "Intake updated successfully.",
                 "id": intake.id,
                 "status": intake.status,
+                "lead_id": getattr(lead, "id", None),
                 "completed_at": intake.completed_at.isoformat() if intake.completed_at else None,
             },
             status=status.HTTP_200_OK,

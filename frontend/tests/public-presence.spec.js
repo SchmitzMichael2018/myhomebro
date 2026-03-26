@@ -64,7 +64,7 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
     leads: [
       {
         id: 11,
-        source: 'profile',
+        source: 'public_profile',
         full_name: 'Casey Prospect',
         email: 'casey@example.com',
         phone: '555-444-3333',
@@ -333,8 +333,9 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Public');
   await page.getByRole('button', { name: 'Public Leads' }).click();
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Casey Prospect');
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Public Profile');
   await expect(page.getByTestId('public-lead-workflow-hint')).toContainText(
-    'Review the intake and decide whether to accept or reject'
+    'Review the lead details and decide whether to accept or reject it'
   );
   await page.getByRole('button', { name: 'Accept' }).click();
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('accepted');
@@ -355,6 +356,341 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
     'Converted to customer: Casey Prospect'
   );
+});
+
+test('landing-source intake and public-profile intake land in the same contractor leads flow', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  const state = {
+    profile: {
+      slug: 'bright-build-co',
+      business_name_public: 'Bright Build Co',
+      tagline: 'Trusted renovations and repairs',
+      bio: 'We help homeowners with clean, reliable project delivery.',
+      city: 'Austin',
+      state: 'TX',
+      service_area_text: 'Austin metro',
+      years_in_business: 12,
+      website_url: 'https://bright.example.com',
+      phone_public: '555-111-2222',
+      email_public: 'hello@bright.example.com',
+      specialties: ['Roofing'],
+      work_types: ['Repairs'],
+      show_license_public: true,
+      show_phone_public: true,
+      show_email_public: false,
+      allow_public_intake: true,
+      allow_public_reviews: true,
+      is_public: true,
+      seo_title: '',
+      seo_description: '',
+      public_url: 'http://localhost:4173/contractors/bright-build-co',
+      logo_url: '',
+      cover_image_url: '',
+    },
+    qr: {
+      slug: 'bright-build-co',
+      public_url: 'http://localhost:4173/contractors/bright-build-co',
+      qr_target_url: 'http://localhost:4173/contractors/bright-build-co?source=qr',
+      qr_svg: 'data:image/svg+xml;base64,PHN2Zy8+',
+      download_filename: 'bright-build-co-public-profile-qr.svg',
+    },
+    leads: [],
+    nextLeadId: 100,
+    nextAgreementId: 901,
+  };
+
+  const baseLead = {
+    phone: '',
+    project_address: '',
+    city: '',
+    state: '',
+    zip_code: '',
+    project_type: '',
+    project_description: '',
+    preferred_timeline: '',
+    budget_text: '',
+    status: 'new',
+    internal_notes: '',
+    accepted_at: null,
+    ai_analysis: {},
+    created_at: '2026-03-25T11:00:00Z',
+    converted_homeowner_id: null,
+    converted_homeowner_name: '',
+    converted_agreement: null,
+    converted_at: null,
+  };
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        onboarding_status: 'complete',
+        connected: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractors/me/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 77,
+        created_at: '2026-03-01T10:00:00Z',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor/public-profile/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(state.profile),
+    });
+  });
+
+  await page.route('**/api/projects/contractor/public-profile/qr/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(state.qr),
+    });
+  });
+
+  await page.route('**/api/projects/contractor/gallery/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor/reviews/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor/public-leads/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: state.leads }),
+    });
+  });
+
+  await page.route(/.*\/api\/projects\/contractor\/public-leads\/\d+\/accept\/$/, async (route) => {
+    const id = Number(route.request().url().match(/public-leads\/(\d+)\/accept\//)?.[1]);
+    state.leads = state.leads.map((lead) =>
+      lead.id === id
+        ? {
+            ...lead,
+            status: 'accepted',
+            accepted_at: '2026-03-25T12:00:00Z',
+            converted_homeowner_id: 201,
+            converted_homeowner_name: lead.full_name,
+            converted_at: '2026-03-25T12:00:00Z',
+          }
+        : lead
+    );
+    const updated = state.leads.find((lead) => lead.id === id);
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(updated),
+    });
+  });
+
+  await page.route(/.*\/api\/projects\/contractor\/public-leads\/\d+\/analyze\/$/, async (route) => {
+    const id = Number(route.request().url().match(/public-leads\/(\d+)\/analyze\//)?.[1]);
+    const aiAnalysis = {
+      project_type: 'Remodel',
+      project_subtype: 'Kitchen Remodel',
+      suggested_title: `Draft Agreement - ${id}`,
+      suggested_description: 'Unified intake analysis result.',
+      clarifications_needed: [],
+      milestone_outline: [{ order: 1, title: 'Preparation' }],
+      recommended_templates: [],
+    };
+    state.leads = state.leads.map((lead) =>
+      lead.id === id ? { ...lead, ai_analysis: aiAnalysis } : lead
+    );
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ lead_id: id, ai_analysis: aiAnalysis }),
+    });
+  });
+
+  await page.route(/.*\/api\/projects\/contractor\/public-leads\/\d+\/create-agreement\/$/, async (route) => {
+    const id = Number(route.request().url().match(/public-leads\/(\d+)\/create-agreement\//)?.[1]);
+    const agreementId = state.nextAgreementId++;
+    state.leads = state.leads.map((lead) =>
+      lead.id === id ? { ...lead, converted_agreement: agreementId } : lead
+    );
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        agreement_id: agreementId,
+        detail_url: `/app/agreements/${agreementId}`,
+        wizard_url: `/app/agreements/${agreementId}/wizard?step=1`,
+        created: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/public/contractors/bright-build-co/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ...state.profile,
+        gallery: [],
+        reviews: [],
+        review_count: 0,
+        average_rating: null,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/public/contractors/bright-build-co/reviews/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route('**/api/projects/public/contractors/bright-build-co/intake/', async (route) => {
+    const body = route.request().postDataJSON();
+    state.leads.unshift({
+      id: state.nextLeadId++,
+      ...baseLead,
+      ...body,
+      source: 'public_profile',
+      created_at: '2026-03-25T11:00:00Z',
+    });
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, message: 'Your project request was submitted.' }),
+    });
+  });
+
+  await page.route(/.*\/api\/projects\/public-intake\/?.*/, async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: 501,
+          token: 'landing-token',
+          status: 'draft',
+          contractor_name: 'Bright Build Co',
+          customer_name: 'Landing Prospect',
+          customer_email: 'landing@example.com',
+          customer_phone: '555-333-2222',
+          customer_address_line1: '',
+          customer_address_line2: '',
+          customer_city: '',
+          customer_state: '',
+          customer_postal_code: '',
+          same_as_customer_address: true,
+          project_address_line1: '',
+          project_address_line2: '',
+          project_city: '',
+          project_state: '',
+          project_postal_code: '',
+          accomplishment_text: '',
+        }),
+      });
+      return;
+    }
+
+    const body = route.request().postDataJSON();
+    state.leads.unshift({
+      id: state.nextLeadId++,
+      ...baseLead,
+      source: 'landing_page',
+      full_name: body.customer_name,
+      email: body.customer_email,
+      phone: body.customer_phone || '',
+      project_address: body.project_address_line1,
+      city: body.project_city,
+      state: body.project_state,
+      zip_code: body.project_postal_code,
+      project_description: body.accomplishment_text,
+      created_at: '2026-03-25T11:30:00Z',
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        detail: 'Intake updated successfully.',
+        id: 501,
+        status: 'submitted',
+        lead_id: state.leads[0].id,
+        completed_at: '2026-03-25T11:35:00Z',
+      }),
+    });
+  });
+
+  await page.goto('/contractors/bright-build-co', { waitUntil: 'domcontentloaded' });
+  await page.getByPlaceholder('Full name').fill('Profile Prospect');
+  await page.getByPlaceholder('Email').fill('profile@example.com');
+  await page.getByPlaceholder('Tell us about your project').fill('Public profile intake request.');
+  await page.getByRole('button', { name: 'Submit Project Request' }).click();
+
+  await page.goto('/start-project/landing-token', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('public-intake-customer-address-line1').fill('100 Landing Way');
+  await page.getByTestId('public-intake-customer-city').fill('Austin');
+  await page.getByTestId('public-intake-customer-state').fill('TX');
+  await page.getByTestId('public-intake-customer-postal-code').fill('78701');
+  await page.getByTestId('public-intake-accomplishment-text').fill(
+    'Landing page intake request.'
+  );
+  await page.getByTestId('public-intake-submit-button').click();
+
+  await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Public Leads' }).click();
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Profile Prospect');
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Landing Prospect');
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Public Profile');
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Landing Page');
+
+  await page.getByRole('button', { name: 'Landing Prospect' }).click();
+  await page.getByRole('button', { name: 'Accept' }).click();
+  await page.getByRole('button', { name: 'Analyze Intake with AI' }).click();
+  await page.getByRole('button', { name: 'Create AI-Assisted Agreement' }).click();
+  await page.waitForURL('**/app/agreements/901/wizard?step=1');
+
+  await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Public Leads' }).click();
+  await page.getByRole('button', { name: 'Profile Prospect' }).click();
+  await page.getByRole('button', { name: 'Accept' }).click();
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('accepted');
 });
 
 test('public contractor profile renders gallery reviews and intake', async ({ page }) => {

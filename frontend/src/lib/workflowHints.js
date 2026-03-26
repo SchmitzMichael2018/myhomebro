@@ -68,7 +68,7 @@ export function getPublicLeadHint(lead) {
   if (status === "accepted" || status === "contacted" || status === "qualified") {
     return {
       title: "Next step",
-      body: "Follow up with the customer and review the intake details before drafting the project scope.",
+      body: "Follow up with the customer and review the lead details before drafting the project scope.",
       tone: "info",
     };
   }
@@ -76,7 +76,7 @@ export function getPublicLeadHint(lead) {
   if (status === "new") {
     return {
       title: "Next step",
-      body: "Review the intake and decide whether to accept or reject this lead.",
+      body: "Review the lead details and decide whether to accept or reject it.",
       tone: "info",
     };
   }

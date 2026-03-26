@@ -11,6 +11,7 @@ from projects.serializers.project_intake import ProjectIntakeSerializer
 from projects.services.intake_analysis import analyze_project_intake
 from projects.services.intake_conversion import convert_intake_to_agreement
 from projects.services.intake_public import send_intake_email
+from projects.services.public_lead_pipeline import ensure_public_profile_for_contractor
 
 
 class ProjectIntakeViewSet(viewsets.ModelViewSet):
@@ -32,7 +33,8 @@ class ProjectIntakeViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         contractor = getattr(self.request.user, "contractor", None)
-        serializer.save(contractor=contractor)
+        profile = ensure_public_profile_for_contractor(contractor) if contractor is not None else None
+        serializer.save(contractor=contractor, public_profile=profile, lead_source="direct")
 
     @action(detail=True, methods=["post"], url_path="analyze")
     def analyze(self, request, pk=None):

@@ -8,6 +8,13 @@ from django.db import models
 
 
 class ProjectIntake(models.Model):
+    LEAD_SOURCE_CHOICES = [
+        ("landing_page", "Landing Page"),
+        ("public_profile", "Public Profile"),
+        ("qr", "QR"),
+        ("direct", "Direct"),
+    ]
+
     INITIATED_BY_CHOICES = [
         ("contractor", "Contractor"),
         ("homeowner", "Homeowner"),
@@ -24,6 +31,22 @@ class ProjectIntake(models.Model):
         "projects.Contractor",
         on_delete=models.CASCADE,
         related_name="project_intakes",
+        null=True,
+        blank=True,
+    )
+
+    public_profile = models.ForeignKey(
+        "projects.ContractorPublicProfile",
+        on_delete=models.SET_NULL,
+        related_name="project_intakes",
+        null=True,
+        blank=True,
+    )
+
+    public_lead = models.OneToOneField(
+        "projects.PublicContractorLead",
+        on_delete=models.SET_NULL,
+        related_name="source_intake",
         null=True,
         blank=True,
     )
@@ -54,6 +77,12 @@ class ProjectIntake(models.Model):
         max_length=20,
         choices=STATUS_CHOICES,
         default="draft",
+    )
+
+    lead_source = models.CharField(
+        max_length=20,
+        choices=LEAD_SOURCE_CHOICES,
+        default="direct",
     )
 
     # Customer info captured during intake
