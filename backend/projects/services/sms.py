@@ -209,29 +209,10 @@ def send_sms(to: str, body: str) -> bool:
     If Twilio is not configured, returns False.
     Logs errors instead of failing silently.
     """
-    if not _twilio_enabled():
-        logger.warning("send_sms called but Twilio is not enabled; to=%r body=%r", to, body)
-        return False
+    from projects.services.sms_service import send_compliant_sms
 
-    if not is_sms_subscribed(to):
-        logger.info("SMS suppressed for locally opted-out phone number", extra={"to": normalize_phone_number(to)})
-        return False
-
-    normalized_to = _normalize_phone(to)
-    from_ = getattr(settings, "TWILIO_PHONE_NUMBER", None) or os.getenv("TWILIO_PHONE_NUMBER")
-
-    try:
-        client = _twilio_client()
-        logger.info("Sending SMS via Twilio: from=%s to=%s body=%s", from_, normalized_to, body)
-        msg = client.messages.create(to=normalized_to, from_=from_, body=body)
-        logger.info("Twilio SMS queued: sid=%s status=%s", getattr(msg, "sid", None), getattr(msg, "status", None))
-        return True
-    except TwilioRestException as exc:  # type: ignore[misc]
-        logger.error("TwilioRestException sending SMS to %s: %s", normalized_to, exc)
-        return False
-    except Exception as exc:  # pragma: no cover
-        logger.error("Unexpected error sending SMS to %s: %s", normalized_to, exc)
-        return False
+    result = send_compliant_sms(to, body, category="customer_care")
+    return bool(result.get("ok"))
 
 
 def sms_link_to_parties(agreement, *, link_url: str, note: str = "") -> int:

@@ -1,10 +1,11 @@
 from __future__ import annotations
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
@@ -15,7 +16,13 @@ from rest_framework.test import APIClient
 from projects.api.ai_agreement_views import ai_suggest_milestones
 from projects.models import (
     Agreement,
+    AgreementAIScope,
+    AgreementMode,
+    AgreementOutcomeMilestoneSnapshot,
+    AgreementOutcomeSnapshot,
     Contractor,
+    ContractorActivityEvent,
+    ContractorActivationEvent,
     ContractorGalleryItem,
     ContractorPublicProfile,
     ContractorReview,
@@ -33,23 +40,75 @@ from projects.models import (
     MilestoneFile,
     MilestonePayout,
     MilestonePayoutStatus,
+    MaintenanceStatus,
     Notification,
     Project,
+    ProjectBenchmarkAggregate,
+    ProjectEmailReportLog,
     ProjectStatus,
     PublicContractorLead,
+    RecurrencePattern,
+    Skill,
+    StateTradeLicenseRequirement,
+    SubcontractorComplianceStatus,
+    ContractorComplianceRecord,
     SubcontractorCompletionStatus,
 )
 from projects.models import AgreementWarranty
-from projects.models_templates import ProjectTemplate
-from projects.models_sms import SMSConsentStatus
+from projects.models_templates import ProjectTemplate, SeedBenchmarkProfile
+from projects.models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent, SMSConsentStatus
 from projects.models_project_intake import ProjectIntake
 from projects.models_subcontractor import (
     SubcontractorInvitation,
     SubcontractorInvitationStatus,
 )
 from projects.models_dispute import Dispute
-from projects.services.template_apply import apply_template_to_agreement
+from projects.services.agreement_completion import recompute_and_apply_agreement_completion
+from projects.services.project_learning import (
+    capture_agreement_outcome_snapshot,
+    rebuild_project_benchmarks,
+)
+from projects.services.benchmark_resolution import resolve_seed_benchmark_defaults
+from projects.services.compliance import (
+    contractor_has_required_license,
+    get_agreement_compliance_warning,
+    get_public_trust_indicators,
+    get_trade_license_requirement,
+    sync_legacy_contractor_compliance_records,
+)
+from projects.services.ai_orchestrator import orchestrate_user_request
+from projects.services.activity_feed import (
+    build_dashboard_activity_payload,
+    create_activity_event,
+    get_next_best_action,
+)
+from projects.services.estimation_engine import build_project_estimate
+from projects.services.regions import build_normalized_region_key
+from projects.services.template_apply import apply_template_to_agreement, save_agreement_as_template
+from projects.services.template_discovery import discover_templates
 from projects.services.milestone_payouts import sync_milestone_payout
+from projects.services.project_email_reports import (
+    build_project_email_report,
+    send_project_email_report,
+)
+from projects.services.recurring_maintenance import (
+    build_recurring_preview,
+    ensure_recurring_milestones,
+    handle_milestone_recurring_state_change,
+)
+from projects.services.subcontractor_compliance import (
+    apply_assignment_compliance_decision,
+    evaluate_subcontractor_assignment_compliance,
+)
+from projects.services.sms_service import (
+    get_sms_status_payload,
+    handle_inbound_sms,
+    handle_sms_status_callback,
+    send_compliant_sms,
+    set_sms_opt_in,
+    set_sms_opt_out,
+)
+from projects.services.sms_automation import build_sms_automation_summary, evaluate_sms_automation
 from payments.models import ConnectedAccount
 
 
@@ -359,6 +418,178 @@ class SubcontractorHubApiTests(TestCase):
         self.assertEqual(
             response.json()["assignment"]["assigned_milestones_count"],
             1,
+        )
+
+    def test_assignment_requires_compliance_decision_when_license_missing(self):
+        self.agreement.project_type = "Electrical"
+        self.agreement.project_address_state = "TX"
+        self.agreement.save(update_fields=["project_type", "project_address_state"])
+        StateTradeLicenseRequirement.objects.create(
+            state_code="TX",
+            state_name="Texas",
+            trade_key="electrical",
+            trade_label="Electrical",
+            license_required=True,
+            issuing_authority_name="Texas Department of Licensing and Regulation",
+            official_lookup_url="https://www.tdlr.texas.gov/",
+        )
+
+        response = self.client.post(
+            f"/api/projects/agreements/{self.agreement.id}/subcontractor-assignments/",
+            {
+                "invitation_id": self.accepted_invitation.id,
+                "milestone_ids": [self.milestone.id],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        payload = response.json()
+        self.assertTrue(payload["compliance_decision_required"])
+        self.assertEqual(payload["compliance_evaluation"]["compliance_status"], "missing_license")
+        self.milestone.refresh_from_db()
+        self.assertIsNone(self.milestone.assigned_subcontractor_invitation_id)
+
+    def test_assignment_request_license_marks_pending_and_sends_notification_email(self):
+        self.agreement.project_type = "Electrical"
+        self.agreement.project_address_state = "TX"
+        self.agreement.save(update_fields=["project_type", "project_address_state"])
+        StateTradeLicenseRequirement.objects.create(
+            state_code="TX",
+            state_name="Texas",
+            trade_key="electrical",
+            trade_label="Electrical",
+            license_required=True,
+            issuing_authority_name="Texas Department of Licensing and Regulation",
+            official_lookup_url="https://www.tdlr.texas.gov/",
+        )
+
+        response = self.client.post(
+            f"/api/projects/agreements/{self.agreement.id}/subcontractor-assignments/",
+            {
+                "invitation_id": self.accepted_invitation.id,
+                "milestone_ids": [self.milestone.id],
+                "compliance_action": "request_license",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.milestone.refresh_from_db()
+        self.assertEqual(
+            self.milestone.subcontractor_compliance_status,
+            SubcontractorComplianceStatus.PENDING_LICENSE,
+        )
+        self.assertTrue(self.milestone.subcontractor_license_required)
+        self.assertEqual(self.milestone.subcontractor_required_trade_key, "electrical")
+        self.assertIsNotNone(self.milestone.subcontractor_license_requested_at)
+        self.assertEqual(self.milestone.subcontractor_license_requested_by_id, self.contractor_user.id)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("compliance", mail.outbox[0].subject.lower())
+
+    def test_assignment_assign_anyway_persists_override_state(self):
+        self.agreement.project_type = "Electrical"
+        self.agreement.project_address_state = "TX"
+        self.agreement.save(update_fields=["project_type", "project_address_state"])
+        StateTradeLicenseRequirement.objects.create(
+            state_code="TX",
+            state_name="Texas",
+            trade_key="electrical",
+            trade_label="Electrical",
+            license_required=True,
+            issuing_authority_name="Texas Department of Licensing and Regulation",
+        )
+
+        response = self.client.post(
+            f"/api/projects/agreements/{self.agreement.id}/subcontractor-assignments/",
+            {
+                "invitation_id": self.accepted_invitation.id,
+                "milestone_ids": [self.milestone.id],
+                "compliance_action": "assign_anyway",
+                "override_reason": "Customer needs work started immediately.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.milestone.refresh_from_db()
+        self.assertEqual(
+            self.milestone.subcontractor_compliance_status,
+            SubcontractorComplianceStatus.OVERRIDDEN,
+        )
+        self.assertTrue(self.milestone.subcontractor_compliance_override)
+        self.assertIn("Customer needs work started immediately.", self.milestone.subcontractor_compliance_override_reason)
+        self.assertEqual(response.json()["assignment"]["compliance_status"], "overridden")
+
+    def test_assignment_choose_another_does_not_create_assignment(self):
+        self.agreement.project_type = "Electrical"
+        self.agreement.project_address_state = "TX"
+        self.agreement.save(update_fields=["project_type", "project_address_state"])
+        StateTradeLicenseRequirement.objects.create(
+            state_code="TX",
+            state_name="Texas",
+            trade_key="electrical",
+            trade_label="Electrical",
+            license_required=True,
+        )
+
+        response = self.client.post(
+            f"/api/projects/agreements/{self.agreement.id}/subcontractor-assignments/",
+            {
+                "invitation_id": self.accepted_invitation.id,
+                "milestone_ids": [self.milestone.id],
+                "compliance_action": "choose_another",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["assignment_created"])
+        self.milestone.refresh_from_db()
+        self.assertIsNone(self.milestone.assigned_subcontractor_invitation_id)
+
+    def test_assignment_recognizes_matching_license_on_file(self):
+        self.agreement.project_type = "Electrical"
+        self.agreement.project_address_state = "TX"
+        self.agreement.save(update_fields=["project_type", "project_address_state"])
+        StateTradeLicenseRequirement.objects.create(
+            state_code="TX",
+            state_name="Texas",
+            trade_key="electrical",
+            trade_label="Electrical",
+            license_required=True,
+        )
+        subcontractor_contractor = Contractor.objects.create(
+            user=self.subcontractor_user,
+            business_name="Accepted Sub Business",
+        )
+        ContractorComplianceRecord.objects.create(
+            contractor=subcontractor_contractor,
+            record_type=ContractorComplianceRecord.RecordType.LICENSE,
+            trade_key="electrical",
+            trade_label="Electrical",
+            state_code="TX",
+            status=ContractorComplianceRecord.Status.VERIFIED,
+        )
+
+        response = self.client.post(
+            f"/api/projects/agreements/{self.agreement.id}/subcontractor-assignments/",
+            {
+                "invitation_id": self.accepted_invitation.id,
+                "milestone_ids": [self.milestone.id],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.milestone.refresh_from_db()
+        self.assertEqual(
+            self.milestone.subcontractor_compliance_status,
+            SubcontractorComplianceStatus.COMPLIANT,
+        )
+        self.assertEqual(
+            response.json()["assignment"]["compliance_status"],
+            "compliant",
         )
 
     def test_contractor_can_review_submitted_work_from_hub_endpoint(self):
@@ -1759,6 +1990,586 @@ class SMSWebhookTests(TestCase):
         self.assertEqual(consent.last_keyword_type, SMSConsentStatus.KEYWORD_OPT_IN)
         self.assertEqual(consent.last_inbound_body, "START")
         self.assertIsNotNone(consent.opted_in_at)
+
+
+class SMSComplianceTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            email="sms-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.user,
+            business_name="SMS Contractor",
+            phone="+12105550001",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="SMS Homeowner",
+            email="sms-homeowner@example.com",
+            phone_number="+12105550002",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="SMS Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="SMS agreement test",
+        )
+        self.milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="HVAC Tune Up",
+            amount="250.00",
+        )
+        self.invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount="250.00",
+            status=InvoiceStatus.PENDING,
+            milestone_id_snapshot=self.milestone.id,
+            milestone_title_snapshot=self.milestone.title,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def test_opt_in_api_creates_consent_and_activity_event(self):
+        response = self.client.post(
+            "/api/projects/sms/opt-in/",
+            {
+                "agreement_id": self.agreement.id,
+                "source": "agreement",
+                "consent_text_snapshot": "I agree to receive project SMS updates.",
+                "consent_source_page": "/app/agreements/1",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["sms_enabled"])
+
+        consent = SMSConsent.objects.get(phone_number_e164="+12105550002")
+        self.assertTrue(consent.can_send_sms)
+        self.assertFalse(consent.opted_out)
+        self.assertEqual(consent.opted_in_source, SMSConsent.OPT_IN_SOURCE_AGREEMENT)
+        self.assertEqual(consent.homeowner_id, self.homeowner.id)
+        self.assertTrue(
+            ContractorActivityEvent.objects.filter(
+                contractor=self.contractor,
+                event_type="sms_opt_in",
+                metadata__phone="+12105550002",
+            ).exists()
+        )
+
+    def test_send_wrapper_blocks_without_consent_and_logs_activity(self):
+        result = send_compliant_sms(
+            self.homeowner.phone_number,
+            "Your agreement is ready.",
+            related_object=self.agreement,
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["blocked"])
+        self.assertEqual(result["status"], "blocked")
+        blocked_event = ContractorActivityEvent.objects.filter(
+            contractor=self.contractor,
+            event_type="sms_blocked",
+            metadata__phone="+12105550002",
+        ).order_by("-id").first()
+        self.assertIsNotNone(blocked_event)
+        self.assertIn("No SMS consent", blocked_event.summary)
+
+    def test_stop_keyword_blocks_sending_and_logs_opt_out(self):
+        set_sms_opt_in(
+            phone_number=self.homeowner.phone_number,
+            homeowner=self.homeowner,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+
+        payload = handle_inbound_sms(
+            from_phone=self.homeowner.phone_number,
+            body="STOP",
+            message_sid="SMSTOP1",
+        )
+
+        self.assertIn("unsubscribed", payload["message"].lower())
+
+        consent = SMSConsent.objects.get(phone_number_e164="+12105550002")
+        self.assertTrue(consent.opted_out)
+        self.assertFalse(consent.can_send_sms)
+
+        result = send_compliant_sms(
+            self.homeowner.phone_number,
+            "Payment released.",
+            related_object=self.agreement,
+        )
+        self.assertTrue(result["blocked"])
+        self.assertTrue(
+            ContractorActivityEvent.objects.filter(
+                contractor=self.contractor,
+                event_type="sms_opt_out",
+                metadata__phone="+12105550002",
+            ).exists()
+        )
+        self.assertTrue(
+            ContractorActivityEvent.objects.filter(
+                contractor=self.contractor,
+                event_type="sms_blocked",
+                metadata__phone="+12105550002",
+            ).exists()
+        )
+
+    def test_twilio_error_updates_consent_and_logs_failure(self):
+        set_sms_opt_in(
+            phone_number=self.homeowner.phone_number,
+            homeowner=self.homeowner,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+
+        class FakeTwilioRestException(Exception):
+            def __init__(self, message, code):
+                super().__init__(message)
+                self.code = code
+
+        fake_client = SimpleNamespace(
+            messages=SimpleNamespace(
+                create=lambda **kwargs: (_ for _ in ()).throw(
+                    FakeTwilioRestException("opted out by carrier", "21610")
+                )
+            )
+        )
+
+        with patch("projects.services.sms_service.TwilioRestException", FakeTwilioRestException), patch(
+            "projects.services.sms_service._twilio_ready",
+            return_value=True,
+        ), patch("projects.services.sms_service._twilio_client", return_value=fake_client):
+            result = send_compliant_sms(
+                self.homeowner.phone_number,
+                "Agreement update.",
+                related_object=self.agreement,
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["status"], "failed")
+        consent = SMSConsent.objects.get(phone_number_e164="+12105550002")
+        self.assertTrue(consent.opted_out)
+        self.assertEqual(consent.opted_out_source, SMSConsent.OPT_OUT_SOURCE_TWILIO_ERROR)
+        self.assertTrue(
+            ContractorActivityEvent.objects.filter(
+                contractor=self.contractor,
+                event_type="sms_failed",
+                metadata__phone="+12105550002",
+            ).exists()
+        )
+
+    def test_activity_event_trigger_sends_sms_and_logs_sent_event(self):
+        set_sms_opt_in(
+            phone_number=self.contractor.phone,
+            contractor=self.contractor,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        fake_message = SimpleNamespace(sid="SM12345", status="queued")
+        fake_now = timezone.make_aware(datetime(2026, 3, 27, 10, 0))
+        fake_create = patch(
+            "projects.services.sms_service._twilio_client",
+            return_value=SimpleNamespace(messages=SimpleNamespace(create=lambda **kwargs: fake_message)),
+        )
+        with patch("projects.services.sms_automation.timezone.localtime", return_value=fake_now), patch("projects.services.sms_service._twilio_ready", return_value=True), fake_create:
+            create_activity_event(
+                contractor=self.contractor,
+                agreement=self.agreement,
+                event_type="payment_released",
+                title="Payment released",
+                summary="Escrow release completed.",
+                dedupe_key="payment_released:test",
+            )
+
+        sent_event = ContractorActivityEvent.objects.filter(
+            contractor=self.contractor,
+            event_type="sms_sent",
+            metadata__twilio_sid="SM12345",
+        ).first()
+        self.assertIsNotNone(sent_event)
+        self.assertEqual(sent_event.agreement_id, self.agreement.id)
+        self.assertEqual(sent_event.metadata.get("phone"), "+12105550001")
+
+    def test_status_callback_marks_failure_and_updates_consent(self):
+        set_sms_opt_in(
+            phone_number=self.homeowner.phone_number,
+            homeowner=self.homeowner,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        create_activity_event(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            event_type="sms_sent",
+            title="SMS sent",
+            summary="Queued",
+            metadata={
+                "phone": "+12105550002",
+                "twilio_sid": "SM-CALLBACK",
+                "message_preview": "Queued",
+            },
+            dedupe_key="sms_sent:SM-CALLBACK",
+        )
+
+        response = self.client.post(
+            "/api/projects/twilio/status/",
+            {
+                "MessageSid": "SM-CALLBACK",
+                "MessageStatus": "failed",
+                "To": "+12105550002",
+                "ErrorCode": "21610",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        consent = SMSConsent.objects.get(phone_number_e164="+12105550002")
+        self.assertTrue(consent.opted_out)
+        failed_event = ContractorActivityEvent.objects.filter(
+            contractor=self.contractor,
+            event_type="sms_failed",
+            metadata__twilio_sid="SM-CALLBACK",
+        ).first()
+        self.assertIsNotNone(failed_event)
+
+    def test_inbound_webhook_and_status_api_return_current_sms_state(self):
+        set_sms_opt_in(
+            phone_number=self.homeowner.phone_number,
+            homeowner=self.homeowner,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+
+        webhook_response = self.client.post(
+            "/api/projects/twilio/inbound-sms/",
+            {
+                "From": "+12105550002",
+                "Body": "HELP",
+                "MessageSid": "SMHELP1",
+            },
+        )
+        self.assertEqual(webhook_response.status_code, 200)
+        self.assertIn("text/xml", webhook_response["Content-Type"])
+        self.assertIn("Reply STOP to opt out", webhook_response.content.decode("utf-8"))
+
+        status_response = self.client.get(
+            f"/api/projects/sms/status/?agreement_id={self.agreement.id}"
+        )
+        self.assertEqual(status_response.status_code, 200)
+        self.assertEqual(status_response.json()["phone_number_e164"], "+12105550002")
+        self.assertTrue(
+            ContractorActivityEvent.objects.filter(
+                contractor=self.contractor,
+                event_type="sms_help_requested",
+                metadata__phone="+12105550002",
+            ).exists()
+        )
+
+
+class SMSAutomationTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            email="sms-automation@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.user,
+            business_name="Automation Contractor",
+            phone="+12105550101",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Automation Homeowner",
+            email="automation-homeowner@example.com",
+            phone_number="+12105550102",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Automation Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Automation agreement",
+        )
+        self.milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Inspection",
+            amount="150.00",
+        )
+        self.invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount="150.00",
+            status=InvoiceStatus.APPROVED,
+            milestone_id_snapshot=self.milestone.id,
+            milestone_title_snapshot=self.milestone.title,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def test_payment_released_sends_immediately_when_consent_exists(self):
+        set_sms_opt_in(
+            phone_number=self.contractor.phone,
+            contractor=self.contractor,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        with patch("projects.services.sms_automation.send_compliant_sms", return_value={"ok": True, "twilio_sid": "SM-PAY", "status": "sent"}):
+            decision = evaluate_sms_automation(
+                "payment_released",
+                contractor=self.contractor,
+                agreement=self.agreement,
+                invoice=self.invoice,
+            )
+
+        self.assertTrue(decision["should_send"])
+        self.assertTrue(decision["sent"])
+        self.assertEqual(decision["reason_code"], "sent_immediately")
+        self.assertEqual(
+            SMSAutomationDecision.objects.latest("id").template_key,
+            "payment_released_contractor",
+        )
+
+    def test_missing_consent_suppresses_sms(self):
+        decision = evaluate_sms_automation(
+            "payment_released",
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invoice=self.invoice,
+        )
+
+        self.assertFalse(decision["sent"])
+        self.assertEqual(decision["reason_code"], "no_consent")
+        self.assertEqual(decision["channel"], "suppressed")
+
+    def test_opted_out_suppresses_sms(self):
+        set_sms_opt_in(
+            phone_number=self.homeowner.phone_number,
+            homeowner=self.homeowner,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        set_sms_opt_out(
+            phone_number=self.homeowner.phone_number,
+            homeowner=self.homeowner,
+            source=SMSConsent.OPT_OUT_SOURCE_API,
+        )
+
+        decision = evaluate_sms_automation(
+            "agreement_sent",
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            agreement=self.agreement,
+        )
+
+        self.assertEqual(decision["reason_code"], "opted_out")
+        self.assertEqual(decision["channel"], "suppressed")
+
+    def test_duplicate_event_within_cooldown_suppresses_sms(self):
+        set_sms_opt_in(
+            phone_number=self.contractor.phone,
+            contractor=self.contractor,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        SMSAutomationDecision.objects.create(
+            event_type="payment_released",
+            phone_number_e164="+12105550101",
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invoice=self.invoice,
+            should_send=True,
+            channel_decision="sms",
+            reason_code="sent_immediately",
+            priority="high",
+            template_key="payment_released_contractor",
+            message_preview="Payment released.",
+            sent=True,
+        )
+
+        decision = evaluate_sms_automation(
+            "payment_released",
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invoice=self.invoice,
+        )
+
+        self.assertEqual(decision["reason_code"], "duplicate_recent")
+        self.assertTrue(decision["cooldown_applied"])
+
+    def test_higher_value_event_suppresses_lower_value_one(self):
+        set_sms_opt_in(
+            phone_number=self.contractor.phone,
+            contractor=self.contractor,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        SMSAutomationDecision.objects.create(
+            event_type="payment_released",
+            phone_number_e164="+12105550101",
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invoice=self.invoice,
+            should_send=True,
+            channel_decision="sms",
+            reason_code="sent_immediately",
+            priority="high",
+            template_key="payment_released_contractor",
+            message_preview="Payment released.",
+            sent=True,
+        )
+
+        decision = evaluate_sms_automation(
+            "invoice_approved",
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invoice=self.invoice,
+        )
+
+        self.assertEqual(decision["reason_code"], "higher_value_event_already_sent")
+
+    def test_quiet_hours_defer_medium_priority_send(self):
+        set_sms_opt_in(
+            phone_number=self.homeowner.phone_number,
+            homeowner=self.homeowner,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        fake_now = timezone.make_aware(datetime(2026, 3, 27, 22, 30))
+        with patch("projects.services.sms_automation.timezone.localtime", return_value=fake_now):
+            decision = evaluate_sms_automation(
+                "milestone_pending_approval",
+                contractor=self.contractor,
+                homeowner=self.homeowner,
+                agreement=self.agreement,
+                milestone=self.milestone,
+            )
+
+        self.assertEqual(decision["reason_code"], "quiet_hours_deferred")
+        self.assertTrue(decision["deferred"])
+        self.assertEqual(DeferredSMSAutomation.objects.count(), 1)
+
+    def test_urgent_event_can_bypass_quiet_hours(self):
+        set_sms_opt_in(
+            phone_number=self.contractor.phone,
+            contractor=self.contractor,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        fake_now = timezone.make_aware(datetime(2026, 3, 27, 22, 30))
+        with patch("projects.services.sms_automation.timezone.localtime", return_value=fake_now), patch(
+            "projects.services.sms_automation.send_compliant_sms",
+            return_value={"ok": True, "twilio_sid": "SM-URGENT", "status": "sent"},
+        ):
+            decision = evaluate_sms_automation(
+                "payment_released",
+                contractor=self.contractor,
+                agreement=self.agreement,
+                invoice=self.invoice,
+            )
+
+        self.assertTrue(decision["sent"])
+        self.assertFalse(decision["deferred"])
+
+    def test_activity_triggered_automation_logs_decision_and_activity_event(self):
+        set_sms_opt_in(
+            phone_number=self.homeowner.phone_number,
+            homeowner=self.homeowner,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        fake_message = SimpleNamespace(sid="SM-ACTIVITY", status="queued")
+        fake_now = timezone.make_aware(datetime(2026, 3, 27, 10, 0))
+        with patch("projects.services.sms_automation.timezone.localtime", return_value=fake_now), patch(
+            "projects.services.sms_service._twilio_ready",
+            return_value=True,
+        ), patch(
+            "projects.services.sms_service._twilio_client",
+            return_value=SimpleNamespace(messages=SimpleNamespace(create=lambda **kwargs: fake_message)),
+        ):
+            create_activity_event(
+                contractor=self.contractor,
+                agreement=self.agreement,
+                milestone=self.milestone,
+                event_type="milestone_pending_approval",
+                title="Milestone submitted",
+                summary="Ready for homeowner review.",
+                dedupe_key="milestone_pending_approval:automation-test",
+            )
+
+        self.assertTrue(SMSAutomationDecision.objects.filter(event_type="milestone_pending_approval").exists())
+        self.assertTrue(
+            ContractorActivityEvent.objects.filter(
+                contractor=self.contractor,
+                event_type="sms_sent",
+            ).exists()
+        )
+
+    def test_dashboard_payload_and_agreement_detail_include_automation_summaries(self):
+        set_sms_opt_in(
+            phone_number=self.contractor.phone,
+            contractor=self.contractor,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        SMSAutomationDecision.objects.create(
+            event_type="payment_released",
+            phone_number_e164="+12105550101",
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invoice=self.invoice,
+            should_send=True,
+            channel_decision="sms",
+            reason_code="sent_immediately",
+            priority="high",
+            template_key="payment_released_contractor",
+            message_preview="Payment released.",
+            sent=True,
+        )
+
+        me_response = self.client.get("/api/projects/contractors/me/")
+        self.assertEqual(me_response.status_code, 200)
+        self.assertEqual(me_response.json()["sent_sms_count_7d"], 1)
+        self.assertIn("last_sms_automation_decision", me_response.json())
+
+        agreement_response = self.client.get(f"/api/projects/agreements/{self.agreement.id}/")
+        self.assertEqual(agreement_response.status_code, 200)
+        self.assertEqual(
+            agreement_response.json()["last_sms_automation_decision"]["reason_code"],
+            "sent_immediately",
+        )
+        self.assertEqual(len(agreement_response.json()["recent_sms_automation_decisions"]), 1)
+
+    def test_preview_endpoint_returns_deterministic_output_without_sending(self):
+        self.user.is_staff = True
+        self.user.save(update_fields=["is_staff"])
+        set_sms_opt_in(
+            phone_number=self.contractor.phone,
+            contractor=self.contractor,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        with patch("projects.services.sms_automation.send_compliant_sms") as mock_send:
+            response = self.client.get(
+                f"/api/projects/sms/automation/preview/?event_type=payment_released&agreement_id={self.agreement.id}"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["reason_code"], "preview_ready")
+        mock_send.assert_not_called()
 
 
 class SubcontractorMilestoneAssignmentTests(TestCase):
@@ -5296,3 +6107,2001 @@ class ProgressPaymentWorkflowTests(TestCase):
         self.assertEqual(payload["approved_to_date"], "2500.00")
         self.assertEqual(payload["paid_to_date"], "2250.00")
         self.assertEqual(payload["retainage_held"], "250.00")
+
+
+class ProjectLearningFoundationTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="learning-contractor@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Learning Contractor",
+            city="Austin",
+            state="TX",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Casey Prospect",
+            email="casey@example.com",
+            city="Austin",
+            state="TX",
+            zip_code="78701",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Kitchen Remodel",
+            project_city="Austin",
+            project_state="TX",
+            project_zip_code="78701",
+            status=ProjectStatus.IN_PROGRESS,
+        )
+        self.template = ProjectTemplate.objects.create(
+            contractor=self.contractor,
+            name="Kitchen Remodel Template",
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            estimated_days=21,
+        )
+
+    def _create_completed_agreement(
+        self,
+        *,
+        total_cost=Decimal("12000.00"),
+        estimated_amounts=None,
+        actual_total=None,
+        status=ProjectStatus.IN_PROGRESS,
+        use_template=True,
+        start_date=None,
+    ):
+        estimated_amounts = estimated_amounts or [Decimal("3000.00"), Decimal("6000.00")]
+        start_date = start_date or timezone.localdate() - timedelta(days=20)
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title=f"Kitchen Remodel {Agreement.objects.count() + 1}",
+            project_city="Austin",
+            project_state="TX",
+            project_zip_code="78701",
+            status=ProjectStatus.IN_PROGRESS,
+        )
+
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            selected_template=self.template if use_template else None,
+            selected_template_name_snapshot=self.template.name if use_template else "",
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            payment_mode="direct",
+            signature_policy="both_required",
+            total_cost=total_cost,
+            retainage_percent=Decimal("10.00"),
+            start=start_date,
+            end=start_date + timedelta(days=14),
+            project_address_city="Austin",
+            project_address_state="TX",
+            project_postal_code="78701",
+            status=status,
+            description="Kitchen remodel learning test.",
+        )
+
+        AgreementAIScope.objects.create(
+            agreement=agreement,
+            questions=[
+                {"key": "cabinet_supplier", "question": "Who is supplying cabinets?"},
+                {"key": "haul_away", "question": "Is debris hauling included?"},
+            ],
+            answers={
+                "cabinet_supplier": "Owner supplied",
+                "haul_away": "Included",
+            },
+        )
+
+        milestone_one = Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Demo",
+            description="Demo existing kitchen",
+            amount=Decimal("4000.00"),
+            start_date=start_date,
+            completion_date=start_date + timedelta(days=5),
+            completed=True,
+            completed_at=timezone.now() - timedelta(days=10),
+            is_invoiced=True,
+            normalized_milestone_type="demolition",
+            template_suggested_amount=estimated_amounts[0],
+            recommended_days_from_start=0,
+            recommended_duration_days=5,
+        )
+        milestone_two = Milestone.objects.create(
+            agreement=agreement,
+            order=2,
+            title="Install",
+            description="Install cabinets and finishes",
+            amount=Decimal("8000.00"),
+            start_date=start_date + timedelta(days=6),
+            completion_date=start_date + timedelta(days=15),
+            completed=True,
+            completed_at=timezone.now() - timedelta(days=1),
+            is_invoiced=True,
+            normalized_milestone_type="cabinet_installation",
+            ai_suggested_amount=estimated_amounts[1],
+            recommended_days_from_start=6,
+            recommended_duration_days=9,
+        )
+
+        Invoice.objects.create(
+            agreement=agreement,
+            amount=Decimal("4000.00"),
+            status=InvoiceStatus.PAID,
+            direct_pay_paid_at=timezone.now() - timedelta(days=10),
+            milestone_id_snapshot=milestone_one.id,
+            milestone_title_snapshot=milestone_one.title,
+            milestone_description_snapshot=milestone_one.description,
+        )
+        Invoice.objects.create(
+            agreement=agreement,
+            amount=actual_total or Decimal("8000.00"),
+            status=InvoiceStatus.PAID,
+            direct_pay_paid_at=timezone.now() - timedelta(days=1),
+            milestone_id_snapshot=milestone_two.id,
+            milestone_title_snapshot=milestone_two.title,
+            milestone_description_snapshot=milestone_two.description,
+        )
+        DrawRequest.objects.create(
+            agreement=agreement,
+            draw_number=1,
+            status=DrawRequestStatus.APPROVED,
+            title="Approved Draw",
+            gross_amount=Decimal("12000.00"),
+            retainage_amount=Decimal("1200.00"),
+            net_amount=Decimal("10800.00"),
+            current_requested_amount=Decimal("12000.00"),
+        )
+        return agreement
+
+    def test_snapshot_creation_when_agreement_becomes_completed(self):
+        agreement = self._create_completed_agreement()
+
+        with self.captureOnCommitCallbacks(execute=True):
+            changed, check = recompute_and_apply_agreement_completion(agreement.id)
+
+        self.assertTrue(changed)
+        self.assertTrue(check.ok)
+
+        snapshot = AgreementOutcomeSnapshot.objects.get(agreement=agreement)
+        self.assertFalse(snapshot.excluded_from_benchmarks)
+        self.assertEqual(snapshot.project_type, "Remodel")
+        self.assertEqual(snapshot.project_subtype, "Kitchen Remodel")
+        self.assertEqual(snapshot.template_id, self.template.id)
+        self.assertEqual(snapshot.final_agreed_total_amount, Decimal("12000.00"))
+        self.assertEqual(snapshot.final_paid_amount, Decimal("12000.00"))
+        self.assertEqual(snapshot.milestone_count, 2)
+        self.assertEqual(snapshot.clarification_summary["answered_count"], 2)
+        self.assertEqual(snapshot.milestones.count(), 2)
+
+    def test_snapshot_capture_is_idempotent_for_repeated_completion(self):
+        agreement = self._create_completed_agreement(status=ProjectStatus.COMPLETED)
+
+        first_snapshot = capture_agreement_outcome_snapshot(agreement)
+        snapshot_created_at = first_snapshot.snapshot_created_at
+        first_snapshot.final_paid_amount = Decimal("9999.00")
+        first_snapshot.save(update_fields=["final_paid_amount", "snapshot_updated_at"])
+
+        second_snapshot = capture_agreement_outcome_snapshot(agreement)
+        self.assertEqual(AgreementOutcomeSnapshot.objects.filter(agreement=agreement).count(), 1)
+        self.assertEqual(second_snapshot.id, first_snapshot.id)
+        self.assertEqual(second_snapshot.snapshot_created_at, snapshot_created_at)
+        self.assertEqual(second_snapshot.final_paid_amount, Decimal("12000.00"))
+
+    def test_non_completed_or_cancelled_agreements_are_excluded_from_benchmarks(self):
+        agreement = self._create_completed_agreement(status=ProjectStatus.CANCELLED)
+
+        snapshot = capture_agreement_outcome_snapshot(agreement)
+
+        self.assertTrue(snapshot.excluded_from_benchmarks)
+        self.assertIn("cancelled", snapshot.exclusion_reason.lower())
+        rebuild_project_benchmarks()
+        self.assertEqual(ProjectBenchmarkAggregate.objects.count(), 0)
+
+    def test_aggregate_rebuild_produces_expected_metrics(self):
+        agreement_one = self._create_completed_agreement(
+            total_cost=Decimal("10000.00"),
+            estimated_amounts=[Decimal("2500.00"), Decimal("6500.00")],
+            status=ProjectStatus.COMPLETED,
+            start_date=timezone.localdate() - timedelta(days=18),
+        )
+        agreement_two = self._create_completed_agreement(
+            total_cost=Decimal("14000.00"),
+            estimated_amounts=[Decimal("3000.00"), Decimal("7000.00")],
+            actual_total=Decimal("10000.00"),
+            status=ProjectStatus.COMPLETED,
+            start_date=timezone.localdate() - timedelta(days=25),
+        )
+
+        capture_agreement_outcome_snapshot(agreement_one)
+        capture_agreement_outcome_snapshot(agreement_two)
+
+        rebuild_project_benchmarks()
+
+        aggregate = ProjectBenchmarkAggregate.objects.get(
+            scope=ProjectBenchmarkAggregate.Scope.GLOBAL,
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            normalized_region_key="",
+        )
+        self.assertEqual(aggregate.completed_project_count, 2)
+        self.assertEqual(aggregate.average_final_total, Decimal("12000.00"))
+        self.assertEqual(aggregate.median_final_total, Decimal("12000.00"))
+        self.assertEqual(aggregate.min_final_total, Decimal("10000.00"))
+        self.assertEqual(aggregate.max_final_total, Decimal("14000.00"))
+        self.assertEqual(aggregate.average_milestone_count, Decimal("2.00"))
+        self.assertEqual(aggregate.estimate_variance_sample_size, 2)
+
+    def test_template_linked_aggregates_are_created(self):
+        agreement = self._create_completed_agreement(status=ProjectStatus.COMPLETED)
+        capture_agreement_outcome_snapshot(agreement)
+        rebuild_project_benchmarks()
+
+        template_aggregate = ProjectBenchmarkAggregate.objects.get(
+            scope=ProjectBenchmarkAggregate.Scope.TEMPLATE,
+            template=self.template,
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+        )
+        self.assertEqual(template_aggregate.completed_project_count, 1)
+        self.assertEqual(template_aggregate.average_final_total, Decimal("12000.00"))
+        self.assertEqual(template_aggregate.metadata["has_template_specificity"], True)
+
+    def test_milestone_snapshot_normalization_persists_child_rows(self):
+        agreement = self._create_completed_agreement(status=ProjectStatus.COMPLETED)
+
+        snapshot = capture_agreement_outcome_snapshot(agreement)
+
+        child_rows = list(
+            AgreementOutcomeMilestoneSnapshot.objects.filter(snapshot=snapshot).order_by("sort_order")
+        )
+        self.assertEqual(len(child_rows), 2)
+        self.assertEqual(child_rows[0].normalized_milestone_type, "demolition")
+        self.assertEqual(child_rows[1].normalized_milestone_type, "cabinet_installation")
+        self.assertEqual(snapshot.milestone_summary["pattern_key"], "demolition > cabinet_installation")
+
+
+class SeededBenchmarkFoundationTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            email="seeded-template-contractor@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.user,
+            business_name="Seeded Template Contractor",
+            city="Austin",
+            state="TX",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Jordan Homeowner",
+            email="jordan@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Seeded Template Project",
+            project_city="Austin",
+            project_state="TX",
+            project_zip_code="78701",
+        )
+        call_command("seed_project_templates")
+
+    def test_normalized_region_key_generation(self):
+        self.assertEqual(build_normalized_region_key(country="US"), "US")
+        self.assertEqual(build_normalized_region_key(country="us", state="tx"), "US-TX")
+        self.assertEqual(
+            build_normalized_region_key(country="us", state="tx", city="San Antonio"),
+            "US-TX-SAN_ANTONIO",
+        )
+
+    def test_city_state_country_normalization_consistency(self):
+        self.assertEqual(
+            build_normalized_region_key(country="u.s.", state=" Tx ", city="San-Antonio"),
+            "US-TX-SAN_ANTONIO",
+        )
+        self.assertEqual(
+            build_normalized_region_key(country="US", state="tx", city="san antonio"),
+            "US-TX-SAN_ANTONIO",
+        )
+
+    def test_normalized_region_key_persists_on_seeded_profiles(self):
+        national = SeedBenchmarkProfile.objects.get(benchmark_key="remodel:kitchen_remodel")
+        texas = SeedBenchmarkProfile.objects.get(benchmark_key="remodel:kitchen_remodel:tx")
+        san_antonio = SeedBenchmarkProfile.objects.get(benchmark_key="remodel:kitchen_remodel:tx:san_antonio")
+
+        self.assertEqual(national.normalized_region_key, "US")
+        self.assertEqual(texas.normalized_region_key, "US-TX")
+        self.assertEqual(san_antonio.normalized_region_key, "US-TX-SAN_ANTONIO")
+
+    def test_exact_city_level_benchmark_resolution(self):
+        result = resolve_seed_benchmark_defaults(
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            region_state="TX",
+            region_city="San Antonio",
+        )
+
+        self.assertEqual(result["benchmark_source"], "seeded_benchmark_profile")
+        self.assertEqual(result["match_scope"], "exact_subtype_city")
+        self.assertEqual(result["region_scope_used"], "city")
+        self.assertEqual(result["normalized_region_key"], "US-TX-SAN_ANTONIO")
+        self.assertEqual(result["region_priority_weight"], "1.20")
+        self.assertEqual(result["price_range"]["low"], "20500.00")
+        self.assertTrue(result["milestone_defaults"])
+        self.assertTrue(result["clarification_defaults"])
+
+    def test_state_level_fallback_when_city_override_is_missing(self):
+        result = resolve_seed_benchmark_defaults(
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            region_state="TX",
+            region_city="Dallas",
+        )
+
+        self.assertEqual(result["benchmark_source"], "seeded_benchmark_profile")
+        self.assertEqual(result["match_scope"], "exact_subtype_state")
+        self.assertEqual(result["region_scope_used"], "state")
+        self.assertEqual(result["normalized_region_key"], "US-TX")
+        self.assertIn("state-level", result["fallback_reason"].lower())
+
+    def test_subtype_to_type_fallback_within_same_geographic_chain(self):
+        result = resolve_seed_benchmark_defaults(
+            project_type="Remodel",
+            project_subtype="Laundry Remodel",
+            region_state="TX",
+        )
+
+        self.assertEqual(result["benchmark_source"], "seeded_benchmark_profile")
+        self.assertEqual(result["match_scope"], "type_only_state")
+        self.assertEqual(result["region_scope_used"], "state")
+        self.assertEqual(result["normalized_region_key"], "US-TX")
+        self.assertIn("fallback", result["fallback_reason"].lower())
+
+    def test_national_fallback_when_no_local_match_exists(self):
+        result = resolve_seed_benchmark_defaults(
+            project_type="Plumbing",
+            project_subtype="Plumbing Repair / Replacement",
+            region_state="FL",
+            region_city="Miami",
+        )
+
+        self.assertEqual(result["benchmark_source"], "seeded_benchmark_profile")
+        self.assertEqual(result["match_scope"], "exact_subtype_national")
+        self.assertEqual(result["region_scope_used"], "national")
+        self.assertEqual(result["normalized_region_key"], "US")
+        self.assertIn("national", result["fallback_reason"].lower())
+
+    def test_structured_resolver_output_includes_region_and_fallback_metadata(self):
+        result = resolve_seed_benchmark_defaults(
+            project_type="Roofing",
+            project_subtype="Roof Replacement",
+            region_state="CO",
+            region_city="Denver",
+        )
+
+        self.assertIn("region_scope_used", result)
+        self.assertIn("normalized_region_key", result)
+        self.assertIn("region_priority_weight", result)
+        self.assertIn("region_key_used", result)
+        self.assertIn("fallback_reason", result)
+        self.assertEqual(result["match_scope"], "exact_subtype_state")
+        self.assertEqual(result["region_scope_used"], "state")
+        self.assertEqual(result["normalized_region_key"], "US-CO")
+        self.assertEqual(result["source_metadata"]["location_multiplier"], "1.1200")
+
+    def test_system_template_regional_linkage_remains_intact(self):
+        template = ProjectTemplate.objects.get(is_system=True, benchmark_match_key="remodel:kitchen_remodel")
+
+        self.assertIsNotNone(template.benchmark_profile_id)
+        self.assertEqual(template.project_type, "Remodel")
+        self.assertEqual(template.project_subtype, "Kitchen Remodel")
+        self.assertTrue(template.default_clarifications)
+        self.assertTrue(template.milestones.exists())
+        self.assertIn("TX", template.region_tags)
+
+        result = resolve_seed_benchmark_defaults(
+            selected_template_id=template.id,
+            region_state="TX",
+            region_city="San Antonio",
+        )
+        self.assertEqual(result["template_id"], template.id)
+        self.assertEqual(result["benchmark_profile_id"], template.benchmark_profile_id)
+        self.assertTrue(result["source_metadata"]["template_linked"])
+
+    def test_seed_command_is_idempotent_with_regional_profiles(self):
+        first_template_count = ProjectTemplate.objects.filter(is_system=True).count()
+        first_profile_count = SeedBenchmarkProfile.objects.count()
+
+        call_command("seed_project_templates")
+
+        self.assertEqual(ProjectTemplate.objects.filter(is_system=True).count(), first_template_count)
+        self.assertEqual(SeedBenchmarkProfile.objects.count(), first_profile_count)
+        self.assertEqual(
+            SeedBenchmarkProfile.objects.get(benchmark_key="remodel:kitchen_remodel:tx").normalized_region_key,
+            "US-TX",
+        )
+
+    def test_contractor_custom_template_behavior_remains_intact(self):
+        system_template = ProjectTemplate.objects.get(is_system=True, benchmark_match_key="remodel:kitchen_remodel")
+        agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            selected_template=system_template,
+            selected_template_name_snapshot=system_template.name,
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            total_cost=Decimal("15000.00"),
+            description="Kitchen refresh from system starter.",
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Demo",
+            description="Demo scope",
+            amount=Decimal("5000.00"),
+        )
+
+        custom_template = save_agreement_as_template(
+            agreement=agreement,
+            contractor=self.contractor,
+            name="My Custom Kitchen Starter",
+        )
+
+        self.assertFalse(custom_template.is_system)
+        self.assertEqual(custom_template.source_system_template_id, system_template.id)
+        self.assertEqual(custom_template.benchmark_profile_id, system_template.benchmark_profile_id)
+        self.assertEqual(custom_template.contractor_id, self.contractor.id)
+
+    def test_runtime_resolution_returns_estimation_ready_shape(self):
+        result = resolve_seed_benchmark_defaults(
+            project_type="Painting",
+            project_subtype="Interior Painting",
+            region_state="CA",
+            region_city="San Diego",
+        )
+
+        self.assertIn("benchmark_profile_id", result)
+        self.assertIn("benchmark_source", result)
+        self.assertIn("match_scope", result)
+        self.assertIn("region_scope_used", result)
+        self.assertIn("normalized_region_key", result)
+        self.assertIn("region_priority_weight", result)
+        self.assertIn("price_range", result)
+        self.assertIn("duration_range", result)
+        self.assertIn("milestone_defaults", result)
+        self.assertIn("clarification_defaults", result)
+        self.assertIn("multipliers_available", result)
+        self.assertIn("region_key_used", result)
+
+
+class ProjectEstimationEngineTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            email="estimate-contractor@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.user,
+            business_name="Estimator Contractor",
+            city="San Antonio",
+            state="TX",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Estimator Homeowner",
+            email="estimate-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Estimator Project",
+            project_city="San Antonio",
+            project_state="TX",
+            project_zip_code="78205",
+        )
+        call_command("seed_project_templates")
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def _agreement(self, **overrides):
+        system_template = ProjectTemplate.objects.get(
+            is_system=True,
+            benchmark_match_key="remodel:kitchen_remodel",
+        )
+        agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            selected_template=system_template,
+            selected_template_name_snapshot=system_template.name,
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            description="Kitchen remodel with updated finishes.",
+            total_cost=Decimal("24000.00"),
+            project_address_city="San Antonio",
+            project_address_state="TX",
+            project_postal_code="78205",
+            **overrides,
+        )
+        AgreementAIScope.objects.create(
+            agreement=agreement,
+            answers={},
+        )
+        return agreement
+
+    def test_seeded_only_estimate_generation(self):
+        agreement = self._agreement()
+        result = build_project_estimate(agreement=agreement)
+
+        self.assertEqual(result["benchmark_source"], "seeded_only")
+        self.assertTrue(result["seeded_benchmark_used"])
+        self.assertFalse(result["learned_benchmark_used"])
+        self.assertEqual(result["benchmark_match_scope"], "exact_subtype_city")
+        self.assertGreater(Decimal(result["suggested_total_price"]), Decimal("0.00"))
+        self.assertTrue(result["milestone_suggestions"])
+
+    def test_regional_seeded_estimate_resolution(self):
+        agreement = self._agreement()
+        result = build_project_estimate(agreement=agreement)
+
+        self.assertEqual(result["source_metadata"]["seeded_normalized_region_key"], "US-TX-SAN_ANTONIO")
+        self.assertEqual(result["source_metadata"]["seeded_region_scope"], "city")
+        self.assertEqual(result["source_metadata"]["region_priority_weight"], "1.20")
+
+    def test_learned_benchmark_blending_when_sample_size_is_strong(self):
+        agreement = self._agreement()
+        ProjectBenchmarkAggregate.objects.create(
+            scope=ProjectBenchmarkAggregate.Scope.TEMPLATE,
+            template=agreement.selected_template,
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            country="US",
+            state="TX",
+            city="San Antonio",
+            normalized_region_key="US-TX-SAN_ANTONIO",
+            completed_project_count=12,
+            average_final_total=Decimal("32000.00"),
+            median_final_total=Decimal("31000.00"),
+            min_final_total=Decimal("25000.00"),
+            max_final_total=Decimal("42000.00"),
+            average_actual_duration_days=Decimal("29.00"),
+            median_actual_duration_days=Decimal("28.00"),
+            average_milestone_count=Decimal("5.00"),
+            amount_sample_size=12,
+            duration_sample_size=12,
+            amount_stddev=Decimal("2500.00"),
+            duration_stddev=Decimal("3.00"),
+            region_granularity="city",
+        )
+
+        result = build_project_estimate(agreement=agreement)
+
+        self.assertEqual(result["benchmark_source"], "seeded_plus_learned")
+        self.assertTrue(result["learned_benchmark_used"])
+        self.assertEqual(result["source_metadata"]["learned_scope"], "template_exact_subtype")
+        self.assertGreater(Decimal(result["source_metadata"]["learned_weight"]), Decimal("0.00"))
+
+    def test_clarification_driven_price_and_timeline_adjustments(self):
+        agreement = self._agreement()
+        agreement.ai_scope.answers = {
+            "square_footage": "320",
+            "finish_level": "premium",
+            "demolition_required": "yes",
+            "urgency": "urgent",
+        }
+        agreement.ai_scope.save(update_fields=["answers"])
+
+        result = build_project_estimate(agreement=agreement)
+
+        adjustment_labels = {row["label"] for row in result["price_adjustments"]}
+        timeline_labels = {row["label"] for row in result["timeline_adjustments"]}
+        self.assertIn("Finish level", adjustment_labels)
+        self.assertIn("Project size", adjustment_labels)
+        self.assertIn("Demolition", adjustment_labels)
+        self.assertIn("Compressed schedule", adjustment_labels)
+        self.assertIn("Project size", timeline_labels)
+        self.assertIn("Demolition", timeline_labels)
+        self.assertIn("Compressed schedule", timeline_labels)
+
+    def test_milestone_suggestion_output_shape(self):
+        agreement = self._agreement()
+        Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Demo & Prep",
+            description="Prep area",
+            amount=Decimal("4000.00"),
+            normalized_milestone_type="demolition",
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            order=2,
+            title="Install",
+            description="Install scope",
+            amount=Decimal("10000.00"),
+            normalized_milestone_type="installation",
+        )
+
+        result = build_project_estimate(agreement=agreement)
+        first = result["milestone_suggestions"][0]
+
+        self.assertIn("title", first)
+        self.assertIn("suggested_amount", first)
+        self.assertIn("suggested_duration_days", first)
+        self.assertIn("suggested_order", first)
+        self.assertIn("source", first)
+
+
+class TemplateMarketplaceDiscoveryTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            email="template-market-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.user,
+            business_name="Marketplace Contractor",
+            city="San Antonio",
+            state="TX",
+        )
+        self.other_user = user_model.objects.create_user(
+            email="template-market-other@example.com",
+            password="testpass123",
+        )
+        self.other_contractor = Contractor.objects.create(
+            user=self.other_user,
+            business_name="Regional Publisher",
+            city="Austin",
+            state="TX",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Template Market Homeowner",
+            email="template-market-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Template Market Project",
+            project_city="San Antonio",
+            project_state="TX",
+            project_zip_code="78205",
+        )
+        call_command("seed_project_templates")
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+        self.private_template = ProjectTemplate.objects.create(
+            contractor=self.other_contractor,
+            name="Private Roof Template",
+            project_type="Roofing",
+            project_subtype="Roof Replacement",
+            visibility=ProjectTemplate.Visibility.PRIVATE,
+            allow_discovery=False,
+        )
+        self.mine_template = ProjectTemplate.objects.create(
+            contractor=self.contractor,
+            name="My Private Kitchen Template",
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            visibility=ProjectTemplate.Visibility.PRIVATE,
+            allow_discovery=False,
+        )
+        self.regional_template = ProjectTemplate.objects.create(
+            contractor=self.other_contractor,
+            name="San Antonio Kitchen Pro",
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            description="Regional kitchen template",
+            visibility=ProjectTemplate.Visibility.REGIONAL,
+            allow_discovery=True,
+            normalized_region_key="US-TX-SAN_ANTONIO",
+            benchmark_match_key="remodel:kitchen_remodel",
+        )
+        self.public_template = ProjectTemplate.objects.create(
+            contractor=self.other_contractor,
+            name="National Kitchen Starter",
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            description="Public kitchen starter",
+            visibility=ProjectTemplate.Visibility.PUBLIC,
+            allow_discovery=True,
+            benchmark_match_key="remodel:kitchen_remodel",
+        )
+        ProjectBenchmarkAggregate.objects.create(
+            scope=ProjectBenchmarkAggregate.Scope.TEMPLATE,
+            template=self.regional_template,
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            country="US",
+            state="TX",
+            city="San Antonio",
+            normalized_region_key="US-TX-SAN_ANTONIO",
+            completed_project_count=6,
+            average_final_total=Decimal("28000.00"),
+            median_final_total=Decimal("27500.00"),
+            min_final_total=Decimal("22000.00"),
+            max_final_total=Decimal("34000.00"),
+            average_actual_duration_days=Decimal("24.00"),
+            median_actual_duration_days=Decimal("23.00"),
+            average_milestone_count=Decimal("5.00"),
+            amount_sample_size=6,
+            duration_sample_size=6,
+        )
+
+    def _agreement(self, **overrides):
+        system_template = ProjectTemplate.objects.get(
+            is_system=True,
+            benchmark_match_key="remodel:kitchen_remodel",
+        )
+        agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            selected_template=system_template,
+            selected_template_name_snapshot=system_template.name,
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            description="Kitchen remodel marketplace preview.",
+            total_cost=Decimal("24000.00"),
+            project_address_city="San Antonio",
+            project_address_state="TX",
+            project_postal_code="78205",
+            **overrides,
+        )
+        AgreementAIScope.objects.create(agreement=agreement, answers={})
+        return agreement
+
+    def test_private_templates_remain_private(self):
+        response = self.client.get("/api/projects/templates/discover/", {"source": "mine"})
+        self.assertEqual(response.status_code, 200)
+        ids = {row["id"] for row in response.json()["results"]}
+        self.assertIn(self.mine_template.id, ids)
+        self.assertNotIn(self.private_template.id, ids)
+
+        detail = self.client.get(f"/api/projects/templates/{self.private_template.id}/")
+        self.assertEqual(detail.status_code, 403)
+
+    def test_system_templates_appear_in_discovery(self):
+        response = self.client.get("/api/projects/templates/discover/", {"source": "system"})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(any(row["is_system"] for row in response.json()["results"]))
+
+    def test_regional_templates_rank_above_national_when_region_matches(self):
+        result = discover_templates(
+            contractor=self.contractor,
+            source="all",
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            region_state="TX",
+            region_city="San Antonio",
+            sort="relevant",
+        )
+        ids = [row.id for row in result["results"] if row.id in {self.regional_template.id, self.public_template.id}]
+        regional_row = next(row for row in result["results"] if row.id == self.regional_template.id)
+        self.assertEqual(ids[0], self.regional_template.id)
+        self.assertEqual(getattr(regional_row, "region_match_scope", ""), "city")
+
+    def test_project_type_subtype_and_search_filters_work(self):
+        response = self.client.get(
+            "/api/projects/templates/discover/",
+            {
+                "source": "all",
+                "project_type": "Remodel",
+                "project_subtype": "Kitchen Remodel",
+                "q": "National Kitchen",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        rows = response.json()["results"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["id"], self.public_template.id)
+
+    def test_visibility_transitions_are_explicit_and_reversible(self):
+        response = self.client.post(
+            f"/api/projects/templates/{self.mine_template.id}/visibility/",
+            {
+                "visibility": "regional",
+                "region_state": "TX",
+                "region_city": "San Antonio",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.mine_template.refresh_from_db()
+        self.assertEqual(self.mine_template.visibility, ProjectTemplate.Visibility.REGIONAL)
+        self.assertTrue(self.mine_template.allow_discovery)
+        self.assertEqual(self.mine_template.normalized_region_key, "US-TX-SAN_ANTONIO")
+
+        response = self.client.post(
+            f"/api/projects/templates/{self.mine_template.id}/visibility/",
+            {"visibility": "private"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.mine_template.refresh_from_db()
+        self.assertEqual(self.mine_template.visibility, ProjectTemplate.Visibility.PRIVATE)
+        self.assertFalse(self.mine_template.allow_discovery)
+
+    def test_ranking_metadata_output_shape_is_present(self):
+        response = self.client.get(
+            "/api/projects/templates/discover/",
+            {"source": "all", "project_type": "Remodel", "project_subtype": "Kitchen Remodel"},
+        )
+        self.assertEqual(response.status_code, 200)
+        first = response.json()["results"][0]
+        self.assertIn("rank_score", first)
+        self.assertIn("rank_reasons", first)
+        self.assertIn("region_match_scope", first)
+        self.assertIn("usage_count", first)
+        self.assertIn("completed_project_count", first)
+
+    def test_estimate_preview_endpoint_returns_structured_shape(self):
+        agreement = self._agreement()
+
+        response = self.client.post(
+            f"/api/projects/agreements/{agreement.id}/estimate-preview/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("suggested_total_price", data)
+        self.assertIn("suggested_price_low", data)
+        self.assertIn("suggested_duration_days", data)
+        self.assertIn("milestone_suggestions", data)
+        self.assertIn("confidence_level", data)
+        self.assertIn("confidence_reasoning", data)
+        self.assertIn("source_metadata", data)
+
+
+class ContractorComplianceFoundationTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            email="compliance-contractor@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.user,
+            business_name="Compliance Builder",
+            city="Austin",
+            state="TX",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Compliance Homeowner",
+            email="compliance-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Compliance Project",
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+        call_command("seed_state_trade_license_requirements")
+
+    def test_seeded_state_trade_requirement_resolution(self):
+        requirement = get_trade_license_requirement("TX", "Electrical")
+
+        self.assertIsNotNone(requirement)
+        self.assertEqual(requirement.state_code, "TX")
+        self.assertEqual(requirement.trade_key, "electrical")
+        self.assertTrue(requirement.license_required)
+        self.assertIn("tdlr", requirement.official_lookup_url.lower())
+
+    def test_profile_trade_preview_returns_requirement_for_selected_state_and_trade(self):
+        response = self.client.post(
+            "/api/projects/compliance/profile-preview/",
+            {"state": "TX", "skills": ["Electrical"]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["state_code"], "TX")
+        self.assertEqual(len(data["trade_requirements"]), 1)
+        self.assertEqual(data["trade_requirements"][0]["trade_key"], "electrical")
+        self.assertTrue(data["trade_requirements"][0]["required"])
+
+    def test_missing_required_license_detection(self):
+        result = contractor_has_required_license(self.contractor, "TX", "electrical")
+
+        self.assertFalse(result["has_license"])
+        self.assertEqual(result["status"], "missing")
+
+    def test_uploaded_license_is_recognized_for_required_trade(self):
+        self.contractor.license_number = "TX-ELEC-101"
+        self.contractor.license_expiration = timezone.localdate() + timedelta(days=45)
+        self.contractor.license_file = SimpleUploadedFile(
+            "license.pdf",
+            b"license-file",
+            content_type="application/pdf",
+        )
+        self.contractor.save()
+
+        sync_legacy_contractor_compliance_records(self.contractor)
+        result = contractor_has_required_license(self.contractor, "TX", "electrical")
+
+        self.assertTrue(result["has_license"])
+        self.assertIn(
+            result["status"],
+            {
+                ContractorComplianceRecord.Status.ON_FILE,
+                ContractorComplianceRecord.Status.VERIFIED,
+                ContractorComplianceRecord.Status.PENDING_REVIEW,
+            },
+        )
+
+    def test_public_trust_indicators_remain_conservative(self):
+        self.contractor.insurance_file = SimpleUploadedFile(
+            "insurance.pdf",
+            b"insurance-file",
+            content_type="application/pdf",
+        )
+        self.contractor.save(update_fields=["insurance_file"])
+        sync_legacy_contractor_compliance_records(self.contractor)
+
+        indicators = get_public_trust_indicators(self.contractor, show_license_public=True)
+        self.assertEqual(indicators, ["Insurance on file"])
+
+        self.contractor.license_number = "TX-GEN-200"
+        self.contractor.license_file = SimpleUploadedFile(
+            "license.pdf",
+            b"license-file",
+            content_type="application/pdf",
+        )
+        self.contractor.save(update_fields=["license_number", "license_file"])
+        sync_legacy_contractor_compliance_records(self.contractor)
+
+        indicators = get_public_trust_indicators(self.contractor, show_license_public=True)
+        self.assertIn("License on file", indicators)
+        self.assertIn("Insurance on file", indicators)
+
+    def test_agreement_level_warning_metadata_for_licensed_trade(self):
+        agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Electrical panel replacement",
+            project_type="Electrical",
+            project_subtype="Electrical",
+            project_address_state="TX",
+        )
+
+        warning = get_agreement_compliance_warning(agreement)
+
+        self.assertEqual(warning["trade_key"], "electrical")
+        self.assertEqual(warning["state_code"], "TX")
+        self.assertTrue(warning["required"])
+        self.assertEqual(warning["warning_level"], "warning")
+        self.assertIn("license", warning["message"].lower())
+
+    def test_seed_command_is_idempotent(self):
+        first_count = StateTradeLicenseRequirement.objects.count()
+
+        call_command("seed_state_trade_license_requirements")
+
+        self.assertEqual(StateTradeLicenseRequirement.objects.count(), first_count)
+
+    def test_contractor_me_payload_exposes_compliance_records_without_breaking_profile(self):
+        self.contractor.license_number = "TX-ROOF-300"
+        self.contractor.license_file = SimpleUploadedFile(
+            "roof-license.pdf",
+            b"roof-license",
+            content_type="application/pdf",
+        )
+        self.contractor.save(update_fields=["license_number", "license_file"])
+
+        response = self.client.get("/api/projects/contractors/me/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("compliance_records", payload)
+        self.assertIn("compliance_trade_requirements", payload)
+        self.assertIn("insurance_status", payload)
+        self.assertEqual(payload["license_number"], "TX-ROOF-300")
+
+
+class AIOrchestratorTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            email="orchestrator-contractor@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.user,
+            business_name="Orchestrator Builder",
+            city="San Antonio",
+            state="TX",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Orchestrator Homeowner",
+            email="orchestrator-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Orchestrator Project",
+            project_city="San Antonio",
+            project_state="TX",
+            project_zip_code="78205",
+        )
+        self.compliance_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Compliance Orchestrator Project",
+            project_city="San Antonio",
+            project_state="TX",
+            project_zip_code="78205",
+        )
+        call_command("seed_project_templates")
+        call_command("seed_state_trade_license_requirements")
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+        self.system_template = ProjectTemplate.objects.get(
+            is_system=True,
+            benchmark_match_key="remodel:kitchen_remodel",
+        )
+        self.regional_template = ProjectTemplate.objects.create(
+            contractor=self.contractor,
+            name="Regional Kitchen Winner",
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            visibility=ProjectTemplate.Visibility.REGIONAL,
+            allow_discovery=True,
+            normalized_region_key="US-TX-SAN_ANTONIO",
+            benchmark_match_key="remodel:kitchen_remodel",
+        )
+
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            selected_template=self.system_template,
+            selected_template_name_snapshot=self.system_template.name,
+            description="Kitchen remodel with updated finishes.",
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            project_address_city="San Antonio",
+            project_address_state="TX",
+            total_cost=Decimal("24000.00"),
+            milestone_count=0,
+        )
+        AgreementAIScope.objects.create(
+            agreement=self.agreement,
+            answers={"finish_level": "premium"},
+        )
+
+        self.compliance_agreement = Agreement.objects.create(
+            project=self.compliance_project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Electrical service upgrade",
+            project_type="Electrical",
+            project_subtype="Electrical",
+            project_address_city="San Antonio",
+            project_address_state="TX",
+        )
+        self.compliance_milestone = Milestone.objects.create(
+            agreement=self.compliance_agreement,
+            title="Electrical rough-in",
+            description="Install new circuits",
+            order=1,
+            normalized_milestone_type="electrical",
+            amount=Decimal("1800.00"),
+        )
+
+        self.sub_user = user_model.objects.create_user(
+            email="sub-orchestrator@example.com",
+            password="testpass123",
+        )
+        self.subcontractor = Contractor.objects.create(
+            user=self.sub_user,
+            business_name="Sub Electric",
+            city="San Antonio",
+            state="TX",
+        )
+        self.invitation = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.compliance_agreement,
+            invite_email="sub-orchestrator@example.com",
+            invite_name="Sub Electric",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=self.sub_user,
+            accepted_at=timezone.now(),
+        )
+
+    def test_orchestrator_selects_agreement_builder_for_resume_request(self):
+        result = orchestrate_user_request(
+            contractor=self.contractor,
+            payload={
+                "input": "Help me finish this agreement",
+                "context": {"agreement_id": self.agreement.id},
+            },
+        )
+
+        self.assertEqual(result["primary_intent"], "resume_agreement")
+        self.assertIn("agreement_builder", result["selected_routines"])
+        self.assertEqual(result["wizard_step_target"], 2)
+        self.assertEqual(result["recommended_action"]["label"], "Open Milestone Builder")
+
+    def test_template_recommendation_orchestration_returns_ranked_templates(self):
+        response = self.client.post(
+            "/api/projects/assistant/orchestrate/",
+            {
+                "input": "Recommend a template for this kitchen remodel",
+                "context": {
+                    "agreement_id": self.agreement.id,
+                    "project_type": "Remodel",
+                    "project_subtype": "Kitchen Remodel",
+                    "region_city": "San Antonio",
+                    "region_state": "TX",
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["primary_intent"], "apply_template")
+        self.assertTrue(data["preview_payload"]["templates"])
+        self.assertIn("rank_score", data["preview_payload"]["templates"][0])
+        self.assertIn("automation_plan", data)
+        self.assertTrue(data["automation_plan"]["preview_only"])
+        self.assertTrue(data["proposed_actions"])
+        self.assertTrue(data["guided_step"])
+
+    def test_estimation_orchestration_returns_structured_preview(self):
+        response = self.client.post(
+            "/api/projects/assistant/orchestrate/",
+            {
+                "input": "Estimate this project",
+                "context": {"agreement_id": self.agreement.id},
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["primary_intent"], "estimate_project")
+        self.assertIn("estimate_preview", data["preview_payload"])
+        self.assertIn("suggested_total_price", data["preview_payload"]["estimate_preview"])
+        self.assertIn("confidence_level", data["preview_payload"]["estimate_preview"])
+        self.assertTrue(data["predictive_insights"])
+        self.assertTrue(data["proactive_recommendations"])
+        self.assertTrue(data["proposed_actions"])
+
+    def test_compliance_orchestration_returns_safe_structured_warning(self):
+        response = self.client.post(
+            "/api/projects/assistant/orchestrate/",
+            {
+                "input": "Why is there a compliance warning on this agreement?",
+                "context": {"agreement_id": self.compliance_agreement.id},
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["primary_intent"], "check_compliance")
+        self.assertIn("compliance", data["preview_payload"])
+        self.assertTrue(data["preview_payload"]["compliance"]["required"])
+        self.assertIn("license", data["preview_payload"]["compliance"]["message"].lower())
+        self.assertTrue(data["proactive_recommendations"])
+        self.assertTrue(data["predictive_insights"])
+
+    def test_subcontractor_assignment_orchestration_exposes_three_decision_paths(self):
+        response = self.client.post(
+            "/api/projects/assistant/orchestrate/",
+            {
+                "input": "Assign this subcontractor to the milestone",
+                "context": {
+                    "agreement_id": self.compliance_agreement.id,
+                    "milestone_id": self.compliance_milestone.id,
+                    "subcontractor_invitation_id": self.invitation.id,
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["primary_intent"], "subcontractor_assignment")
+        self.assertTrue(data["confirmation_required"])
+        action_keys = {item["key"] for item in data["available_actions"]}
+        self.assertIn("assign_anyway", action_keys)
+        self.assertIn("request_license", action_keys)
+        self.assertIn("choose_another", action_keys)
+        self.assertTrue(data["confirmation_required_actions"])
+
+    def test_auto_build_preview_does_not_create_hidden_agreement_write(self):
+        before_count = Agreement.objects.count()
+
+        response = self.client.post(
+            "/api/projects/assistant/orchestrate/",
+            {
+                "input": "Build an agreement for this kitchen remodel lead and prepare everything for review",
+                "context": {
+                    "lead_id": self.homeowner.id,
+                    "project_type": "Remodel",
+                    "project_subtype": "Kitchen Remodel",
+                    "region_city": "San Antonio",
+                    "region_state": "TX",
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("automation_plan", data)
+        self.assertTrue(data["automation_plan"]["preview_only"])
+        self.assertIn("applyable_preview", data)
+        self.assertEqual(Agreement.objects.count(), before_count)
+
+    def test_low_confidence_navigation_request_can_fall_back_to_planner(self):
+        response = self.client.post(
+            "/api/projects/assistant/orchestrate/",
+            {"input": "", "context": {}},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["fallback_to_planner"])
+        self.assertEqual(data["planning_confidence"], "low")
+
+
+class ContractorActivationOnboardingTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            email="activation-contractor@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.user,
+            business_name="Activation Contractor",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Activation Homeowner",
+            email="activation-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Activation Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            payment_mode="direct",
+            description="Activation agreement",
+            project_type="HVAC",
+            project_subtype="Maintenance",
+        )
+        self.invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("150.00"),
+            status=InvoiceStatus.PENDING,
+            invoice_number="ACT-1001",
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def test_onboarding_patch_updates_progress_and_soft_prompt(self):
+        response = self.client.patch(
+            "/api/projects/contractors/onboarding/",
+            {
+                "business_name": "Activation Contractor",
+                "city": "San Antonio",
+                "state": "TX",
+                "zip": "78205",
+                "skills": ["HVAC", "Inspection"],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "in_progress")
+        self.assertEqual(payload["step"], "first_job")
+        self.assertEqual(payload["trade_count"], 2)
+        self.assertFalse(payload["show_soft_stripe_prompt"])
+
+        mark_response = self.client.patch(
+            "/api/projects/contractors/onboarding/",
+            {"mark_first_project_started": True},
+            format="json",
+        )
+        self.assertEqual(mark_response.status_code, 200)
+        marked_payload = mark_response.json()
+        self.assertEqual(marked_payload["status"], "in_progress")
+        self.assertEqual(marked_payload["step"], "stripe")
+        self.assertTrue(marked_payload["first_value_reached"])
+        self.assertTrue(marked_payload["show_soft_stripe_prompt"])
+        self.assertEqual(marked_payload["activation"]["last_step_reached"], "first_job")
+        self.assertTrue(
+            ContractorActivationEvent.objects.filter(
+                contractor=self.contractor,
+                event_type="trade_selected",
+            ).exists()
+        )
+
+    def test_direct_pay_link_returns_structured_stripe_requirement(self):
+        response = self.client.post(f"/api/projects/invoices/{self.invoice.id}/direct_pay_link/")
+
+        self.assertEqual(response.status_code, 409)
+        payload = response.json()
+        self.assertEqual(payload["code"], "STRIPE_ONBOARDING_REQUIRED")
+        self.assertEqual(payload["action_attempted"], "create_direct_pay_link")
+        self.assertEqual(payload["resume_url"], "/app/onboarding")
+        self.assertIn("onboarding", payload)
+        self.assertFalse(payload["stripe_status"]["connected"])
+
+    def test_contractor_me_exposes_onboarding_snapshot(self):
+        self.contractor.city = "San Antonio"
+        self.contractor.state = "TX"
+        self.contractor.save(update_fields=["city", "state"])
+
+        response = self.client.get("/api/projects/contractors/me/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("onboarding", payload)
+        self.assertIn("contractor_onboarding_status", payload)
+        self.assertEqual(payload["onboarding"]["step"], "welcome")
+
+    def test_onboarding_event_endpoint_tracks_activation_event(self):
+        response = self.client.post(
+            "/api/projects/contractors/onboarding/events/",
+            {
+                "event_type": "ai_used_for_project",
+                "step": "first_job",
+                "context": {"prompt_preview": "Bathroom remodel for Mike"},
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            ContractorActivationEvent.objects.filter(
+                contractor=self.contractor,
+                event_type="ai_used_for_project",
+                step="first_job",
+            ).exists()
+        )
+
+    def test_orchestrator_returns_onboarding_specialist(self):
+        response = self.client.post(
+            "/api/projects/assistant/orchestrate/",
+            {
+                "input": "Help me finish setup and start my first project",
+                "context": {"current_route": "/app/onboarding"},
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["primary_intent"], "contractor_onboarding")
+        self.assertIn("contractor_onboarding", data["selected_routines"])
+        self.assertEqual(data["navigation_target"], "/app/onboarding")
+        self.assertIn("onboarding", data["preview_payload"])
+
+
+class ContractorActivityFeedTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            email="activity-contractor@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.user,
+            business_name="Activity Contractor",
+            city="San Antonio",
+            state="TX",
+        )
+        hvac = Skill.objects.create(name="HVAC", slug="hvac")
+        self.contractor.skills.add(hvac)
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Activity Homeowner",
+            email="activity-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Activity Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Activity agreement",
+            project_type="Electrical",
+            project_subtype="Repair",
+            project_address_city="San Antonio",
+            project_address_state="TX",
+        )
+        self.milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Panel upgrade",
+            amount=Decimal("500.00"),
+            assigned_subcontractor_invitation=None,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+        call_command("seed_state_trade_license_requirements")
+
+    def test_create_activity_event_dedupes_by_key(self):
+        create_activity_event(
+            contractor=self.contractor,
+            actor_user=self.user,
+            agreement=self.agreement,
+            event_type="agreement_created",
+            title="Agreement draft created",
+            dedupe_key="agreement_created:1",
+        )
+        create_activity_event(
+            contractor=self.contractor,
+            actor_user=self.user,
+            agreement=self.agreement,
+            event_type="agreement_created",
+            title="Agreement draft created",
+            dedupe_key="agreement_created:1",
+        )
+
+        self.assertEqual(ContractorActivityEvent.objects.count(), 1)
+
+    def test_activity_feed_endpoint_returns_results_and_next_best_action(self):
+        create_activity_event(
+            contractor=self.contractor,
+            actor_user=self.user,
+            agreement=self.agreement,
+            event_type="agreement_created",
+            title="Agreement draft created",
+            summary="A draft agreement is ready.",
+            navigation_target=f"/app/agreements/{self.agreement.id}/wizard?step=1",
+            dedupe_key=f"agreement_created:{self.agreement.id}",
+        )
+
+        response = self.client.get("/api/projects/activity-feed/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("results", payload)
+        self.assertIn("next_best_action", payload)
+        self.assertEqual(payload["results"][0]["event_type"], "agreement_created")
+        self.assertEqual(payload["next_best_action"]["action_type"], "finish_onboarding")
+
+    def test_next_best_action_prefers_draft_after_onboarding_complete(self):
+        self.contractor.first_project_started_at = timezone.now()
+        self.contractor.first_agreement_created_at = timezone.now()
+        self.contractor.payouts_enabled = True
+        self.contractor.details_submitted = True
+        self.contractor.save(
+            update_fields=[
+                "first_project_started_at",
+                "first_agreement_created_at",
+                "payouts_enabled",
+                "details_submitted",
+            ]
+        )
+
+        action = get_next_best_action(self.contractor)
+
+        self.assertEqual(action["action_type"], "send_first_agreement")
+        self.assertIn(str(self.agreement.id), action["navigation_target"])
+
+    def test_compliance_request_creates_activity_event(self):
+        accepted_user = get_user_model().objects.create_user(
+            email="sub@example.com",
+            password="testpass123",
+        )
+        invitation = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="sub@example.com",
+            invite_name="Sub Contractor",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=accepted_user,
+        )
+        self.milestone.assigned_subcontractor_invitation = invitation
+        self.milestone.save(update_fields=["assigned_subcontractor_invitation"])
+
+        evaluation = evaluate_subcontractor_assignment_compliance(
+            contractor=self.contractor,
+            invitation=invitation,
+            agreement=self.agreement,
+            milestone=self.milestone,
+        )
+        apply_assignment_compliance_decision(
+            milestone=self.milestone,
+            evaluation=evaluation,
+            action="request_license",
+            acting_user=self.user,
+        )
+
+        self.assertTrue(
+            ContractorActivityEvent.objects.filter(
+                contractor=self.contractor,
+                event_type="subcontractor_license_requested",
+                milestone=self.milestone,
+            ).exists()
+        )
+
+    def test_dashboard_payload_flags_recurring_attention(self):
+        self.contractor.first_project_started_at = timezone.now()
+        self.contractor.first_agreement_created_at = timezone.now()
+        self.contractor.payouts_enabled = True
+        self.contractor.details_submitted = True
+        self.contractor.save(
+            update_fields=[
+                "first_project_started_at",
+                "first_agreement_created_at",
+                "payouts_enabled",
+                "details_submitted",
+            ]
+        )
+        self.agreement.agreement_mode = AgreementMode.MAINTENANCE
+        self.agreement.recurring_service_enabled = True
+        self.agreement.maintenance_status = MaintenanceStatus.ACTIVE
+        self.agreement.status = ProjectStatus.SIGNED
+        self.agreement.next_occurrence_date = timezone.localdate()
+        self.agreement.save(
+            update_fields=[
+                "agreement_mode",
+                "recurring_service_enabled",
+                "maintenance_status",
+                "status",
+                "next_occurrence_date",
+            ]
+        )
+
+        payload = build_dashboard_activity_payload(self.contractor, limit=5)
+
+        self.assertEqual(payload["next_best_action"]["action_type"], "review_recurring_occurrence")
+        create_activity_event(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            milestone=self.milestone,
+            event_type="recurring_occurrence_generated",
+            title="Recurring service occurrence generated",
+            dedupe_key="recurring:1",
+        )
+        refreshed = build_dashboard_activity_payload(self.contractor, limit=5)
+        self.assertEqual(refreshed["results"][0]["event_type"], "recurring_occurrence_generated")
+
+
+class ProjectEmailReportTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            email="reports-contractor@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.user,
+            business_name="Reporting Builder",
+            city="San Antonio",
+            state="TX",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Reporting Owner",
+            email="owner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Reporting Project",
+            project_city="San Antonio",
+            project_state="TX",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Reporting agreement",
+            total_cost=Decimal("24000.00"),
+            project_type="Electrical",
+            project_subtype="Electrical",
+            project_address_city="San Antonio",
+            project_address_state="TX",
+            report_recipient_name="Investor Contact",
+            report_recipient_email="investor@example.com",
+        )
+        self.milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Electrical rough-in",
+            description="Install new circuits",
+            amount=Decimal("1800.00"),
+            completed=True,
+            is_invoiced=True,
+            completed_at=timezone.now() - timedelta(days=1),
+            subcontractor_completion_status=SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW,
+            subcontractor_marked_complete_at=timezone.now() - timedelta(hours=2),
+        )
+        self.invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("1800.00"),
+            status=InvoiceStatus.PENDING,
+            milestone_title_snapshot=self.milestone.title,
+            milestone_completion_notes="Rough-in complete and ready for owner review.",
+            escrow_released=False,
+        )
+        self.milestone.invoice = self.invoice
+        self.milestone.save(update_fields=["invoice"])
+        call_command("seed_state_trade_license_requirements")
+
+    def test_milestone_approval_email_payload_generation(self):
+        payload = build_project_email_report(
+            event_type=ProjectEmailReportLog.EventType.MILESTONE_APPROVAL_REQUESTED,
+            agreement=self.agreement,
+            milestone=self.milestone,
+        )
+
+        self.assertEqual(payload.event_type, "milestone_approval_requested")
+        self.assertEqual(payload.recipient_email, "investor@example.com")
+        self.assertEqual(payload.context["milestone_title"], "Electrical rough-in")
+        self.assertEqual(payload.context["requested_amount"], "1800.00")
+        self.assertIn("/invoice/", payload.context["review_url"])
+
+    def test_payment_release_email_payload_generation(self):
+        self.invoice.escrow_released = True
+        self.invoice.escrow_released_at = timezone.now()
+        self.invoice.save(update_fields=["escrow_released", "escrow_released_at"])
+
+        payload = build_project_email_report(
+            event_type=ProjectEmailReportLog.EventType.PAYMENT_RELEASED,
+            agreement=self.agreement,
+            invoice=self.invoice,
+        )
+
+        self.assertEqual(payload.event_type, "payment_released")
+        self.assertEqual(payload.context["released_amount"], "1800.00")
+        self.assertEqual(payload.context["released_to_date"], "1800.00")
+
+    def test_compliance_alert_email_payload_generation_is_safe(self):
+        payload = build_project_email_report(
+            event_type=ProjectEmailReportLog.EventType.COMPLIANCE_ALERT,
+            agreement=self.agreement,
+            milestone=self.milestone,
+            compliance_note="Texas electrical license pending. License number TX-12345 should not be shown.",
+        )
+
+        self.assertEqual(payload.event_type, "compliance_alert")
+        self.assertIn("license pending", payload.context["compliance_note"].lower())
+        self.assertNotIn("TX-12345", payload.context["compliance_note"])
+
+    def test_weekly_summary_payload_generation(self):
+        self.invoice.escrow_released = True
+        self.invoice.escrow_released_at = timezone.now() - timedelta(days=2)
+        self.invoice.save(update_fields=["escrow_released", "escrow_released_at"])
+
+        payload = build_project_email_report(
+            event_type=ProjectEmailReportLog.EventType.WEEKLY_PROJECT_SUMMARY,
+            agreement=self.agreement,
+        )
+
+        self.assertEqual(payload.event_type, "weekly_project_summary")
+        self.assertIn("Electrical rough-in", payload.context["completed_milestones"])
+        self.assertEqual(payload.context["funds_released_this_week"], "1800.00")
+
+    @patch("projects.services.project_email_reports.EmailMultiAlternatives.send", return_value=1)
+    def test_duplicate_send_prevention(self, _send):
+        first = send_project_email_report(
+            event_type=ProjectEmailReportLog.EventType.MILESTONE_APPROVAL_REQUESTED,
+            agreement=self.agreement,
+            milestone=self.milestone,
+        )
+        second = send_project_email_report(
+            event_type=ProjectEmailReportLog.EventType.MILESTONE_APPROVAL_REQUESTED,
+            agreement=self.agreement,
+            milestone=self.milestone,
+        )
+
+        self.assertTrue(first["sent"])
+        self.assertFalse(second["sent"])
+        self.assertEqual(second["reason"], "duplicate")
+        self.assertEqual(ProjectEmailReportLog.objects.count(), 1)
+
+    @patch("projects.services.project_email_reports.EmailMultiAlternatives.send", return_value=1)
+    def test_milestone_submit_work_trigger_creates_report_log(self, _send):
+        submit_user = get_user_model().objects.create_user(
+            email="assigned-reporting-sub@example.com",
+            password="testpass123",
+        )
+        invitation = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="assigned-reporting-sub@example.com",
+            invite_name="Assigned Sub",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=submit_user,
+            accepted_at=timezone.now(),
+        )
+        workflow_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=2,
+            title="Panel trim-out",
+            description="Finish devices and final checks",
+            amount=Decimal("950.00"),
+            completed=False,
+            is_invoiced=False,
+            assigned_subcontractor_invitation=invitation,
+            subcontractor_completion_status=SubcontractorCompletionStatus.NOT_SUBMITTED,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=submit_user)
+        response = client.post(
+            f"/api/projects/milestones/{workflow_milestone.id}/submit-work/",
+            {"note": "Ready for review"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(
+            ProjectEmailReportLog.objects.filter(
+                agreement=self.agreement,
+                event_type=ProjectEmailReportLog.EventType.MILESTONE_APPROVAL_REQUESTED,
+            ).exists()
+        )
+
+
+class RecurringMaintenanceTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        self.user = get_user_model().objects.create_user(
+            email="maintenance@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.user,
+            business_name="Maintenance Builder",
+            city="San Antonio",
+            state="TX",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Maintenance Owner",
+            email="owner-maint@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="HVAC Service Plan",
+            project_city="San Antonio",
+            project_state="TX",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Quarterly HVAC maintenance",
+            total_cost=Decimal("1200.00"),
+            project_type="HVAC",
+            project_subtype="Maintenance",
+            agreement_mode=AgreementMode.MAINTENANCE,
+            recurring_service_enabled=True,
+            recurrence_pattern=RecurrencePattern.QUARTERLY,
+            recurrence_interval=1,
+            recurrence_start_date=timezone.localdate(),
+            auto_generate_next_occurrence=True,
+            maintenance_status=MaintenanceStatus.ACTIVE,
+            recurring_summary_label="Quarterly HVAC Maintenance",
+            report_recipient_email="investor-maint@example.com",
+        )
+        self.rule = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="HVAC Tune-Up",
+            description="Replace filter and inspect system performance.",
+            amount=Decimal("300.00"),
+            is_recurring_rule=True,
+            recurrence_pattern=RecurrencePattern.QUARTERLY,
+            recurrence_interval=1,
+            recurrence_anchor_date=self.agreement.recurrence_start_date,
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def test_maintenance_agreement_creation_serializes_recurring_fields(self):
+        response = self.client.get(f"/api/projects/agreements/{self.agreement.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["agreement_mode"], "maintenance")
+        self.assertTrue(response.data["recurring_service_enabled"])
+        self.assertEqual(response.data["recurrence_pattern"], "quarterly")
+        self.assertEqual(response.data["recurrence_interval"], 1)
+        self.assertEqual(response.data["recurring_summary_label"], "Quarterly HVAC Maintenance")
+        self.assertIn("preview_occurrences", response.data["recurring_preview"])
+
+    def test_recurring_occurrence_generation_is_idempotent(self):
+        created_first = ensure_recurring_milestones(self.agreement, horizon=1)
+        created_second = ensure_recurring_milestones(self.agreement, horizon=1)
+
+        self.assertEqual(len(created_first), 1)
+        self.assertEqual(len(created_second), 0)
+        self.assertEqual(
+            Milestone.objects.filter(
+                agreement=self.agreement,
+                generated_from_recurring_rule=True,
+                recurring_rule_parent=self.rule,
+            ).count(),
+            1,
+        )
+
+    def test_recurring_occurrence_created_after_completion(self):
+        ensure_recurring_milestones(self.agreement, horizon=1)
+        occurrence = Milestone.objects.get(
+            agreement=self.agreement,
+            generated_from_recurring_rule=True,
+            recurring_rule_parent=self.rule,
+        )
+        occurrence.completed = True
+        occurrence.completed_at = timezone.now()
+        occurrence.save(update_fields=["completed", "completed_at"])
+
+        created = handle_milestone_recurring_state_change(occurrence)
+
+        self.assertEqual(len(created), 1)
+        self.assertEqual(
+            Milestone.objects.filter(
+                agreement=self.agreement,
+                generated_from_recurring_rule=True,
+                recurring_rule_parent=self.rule,
+            ).count(),
+            2,
+        )
+        self.agreement.refresh_from_db()
+        self.assertIsNotNone(self.agreement.next_occurrence_date)
+
+    def test_paused_or_cancelled_agreements_do_not_generate_occurrences(self):
+        self.agreement.maintenance_status = MaintenanceStatus.PAUSED
+        self.agreement.save(update_fields=["maintenance_status"])
+        created_paused = ensure_recurring_milestones(self.agreement, horizon=1)
+
+        self.agreement.maintenance_status = MaintenanceStatus.CANCELLED
+        self.agreement.save(update_fields=["maintenance_status"])
+        created_cancelled = ensure_recurring_milestones(self.agreement, horizon=1)
+
+        self.assertEqual(created_paused, [])
+        self.assertEqual(created_cancelled, [])
+        self.assertEqual(
+            Milestone.objects.filter(agreement=self.agreement, generated_from_recurring_rule=True).count(),
+            0,
+        )
+
+    def test_invoice_and_reporting_payloads_work_for_recurring_occurrence(self):
+        ensure_recurring_milestones(self.agreement, horizon=1)
+        occurrence = Milestone.objects.get(
+            agreement=self.agreement,
+            generated_from_recurring_rule=True,
+            recurring_rule_parent=self.rule,
+        )
+        occurrence.completed = True
+        occurrence.is_invoiced = True
+        occurrence.completed_at = timezone.now()
+        occurrence.save(update_fields=["completed", "is_invoiced", "completed_at"])
+
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("300.00"),
+            status=InvoiceStatus.PENDING,
+            milestone_title_snapshot=occurrence.title,
+            milestone_completion_notes="Quarterly maintenance visit completed.",
+            escrow_released=True,
+            escrow_released_at=timezone.now(),
+        )
+        occurrence.invoice = invoice
+        occurrence.save(update_fields=["invoice"])
+
+        payload = build_project_email_report(
+            event_type=ProjectEmailReportLog.EventType.PAYMENT_RELEASED,
+            agreement=self.agreement,
+            invoice=invoice,
+        )
+
+        self.assertEqual(payload.event_type, "payment_released")
+        self.assertIn("Quarterly HVAC Maintenance", payload.context["recurring_service_label"])
+
+    def test_management_command_safe_repeat_execution(self):
+        call_command("generate_recurring_maintenance_milestones")
+        count_after_first = Milestone.objects.filter(
+            agreement=self.agreement,
+            generated_from_recurring_rule=True,
+        ).count()
+        call_command("generate_recurring_maintenance_milestones")
+        count_after_second = Milestone.objects.filter(
+            agreement=self.agreement,
+            generated_from_recurring_rule=True,
+        ).count()
+
+        self.assertEqual(count_after_first, 1)
+        self.assertEqual(count_after_second, 1)
+
+    def test_build_recurring_preview_returns_upcoming_occurrences(self):
+        preview = build_recurring_preview(self.agreement, horizon=3)
+
+        self.assertEqual(preview["agreement_mode"], "maintenance")
+        self.assertEqual(preview["recurrence_pattern"], "quarterly")
+        self.assertGreaterEqual(len(preview["preview_occurrences"]), 1)

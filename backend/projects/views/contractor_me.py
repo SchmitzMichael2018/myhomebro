@@ -10,6 +10,10 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from projects.models import Contractor, Skill
+from projects.services.compliance import get_profile_compliance_snapshot, sync_legacy_contractor_compliance_records
+from projects.services.contractor_onboarding import build_onboarding_snapshot, update_onboarding_progress
+from projects.services.sms_automation import build_sms_automation_summary
+from projects.services.sms_service import get_sms_status_payload
 
 
 INTRO_DAYS_TOTAL = 60
@@ -102,6 +106,12 @@ class ContractorMeView(APIView):
         intro_active, intro_days_remaining = _compute_intro(pricing_start_dt)
 
         ai_summary = _ai_payload()
+        sync_legacy_contractor_compliance_records(c)
+        compliance_snapshot = get_profile_compliance_snapshot(c)
+        update_onboarding_progress(c)
+        onboarding_snapshot = build_onboarding_snapshot(c)
+        sms_status = get_sms_status_payload(contractor=c)
+        sms_automation = build_sms_automation_summary(contractor=c)
 
         payload = {
             "id": c.id,
@@ -131,6 +141,31 @@ class ContractorMeView(APIView):
             "auto_subcontractor_payouts_enabled": bool(
                 getattr(c, "auto_subcontractor_payouts_enabled", False)
             ),
+            "compliance_records": compliance_snapshot["compliance_records"],
+            "compliance_trade_requirements": compliance_snapshot["trade_requirements"],
+            "insurance_status": compliance_snapshot["insurance_status"],
+            "onboarding": onboarding_snapshot,
+            "contractor_onboarding_status": onboarding_snapshot["status"],
+            "contractor_onboarding_step": onboarding_snapshot["step"],
+            "first_project_started_at": onboarding_snapshot["first_project_started_at"],
+            "first_agreement_created_at": onboarding_snapshot["first_agreement_created_at"],
+            "stripe_prompt_dismissed_at": onboarding_snapshot["stripe_prompt_dismissed_at"],
+            "stripe_connected_at": onboarding_snapshot["stripe_connected_at"],
+            "stripe_connected": bool(getattr(c, "stripe_connected", False)),
+            "charges_enabled": bool(getattr(c, "charges_enabled", False)),
+            "payouts_enabled": bool(getattr(c, "payouts_enabled", False)),
+            "details_submitted": bool(getattr(c, "details_submitted", False)),
+            "requirements_due_count": int(getattr(c, "requirements_due_count", 0) or 0),
+            "sms_status": sms_status,
+            "sms_enabled": sms_status.get("sms_enabled", False),
+            "sms_opted_out": sms_status.get("sms_opted_out", False),
+            "last_sms_event": sms_status.get("last_sms_event"),
+            "sms_automation_enabled": sms_automation["sms_automation_enabled"],
+            "last_sms_automation_decision": sms_automation["last_sms_automation_decision"],
+            "recent_sms_automation_decisions": sms_automation["recent_sms_automation_decisions"],
+            "suppressed_sms_count_7d": sms_automation["suppressed_sms_count_7d"],
+            "sent_sms_count_7d": sms_automation["sent_sms_count_7d"],
+            "deferred_sms_count_7d": sms_automation["deferred_sms_count_7d"],
 
             # included-by-default AI status
             "ai": ai_summary,
@@ -237,6 +272,8 @@ class ContractorMeView(APIView):
                 c.insurance_file = request.FILES["insurance_file"]
 
             c.save()
+            sync_legacy_contractor_compliance_records(c)
+            update_onboarding_progress(c)
 
         return Response({"detail": "Profile updated."}, status=200)
 
