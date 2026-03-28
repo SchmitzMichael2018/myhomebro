@@ -8,6 +8,8 @@ import RoleAwareWorkboard from "./RoleAwareWorkboard.jsx";
 import StatCard from "./StatCard.jsx";
 import { WorkflowHintList } from "./WorkflowHint.jsx";
 import Modal from "react-modal";
+import DashboardCard from "./dashboard/DashboardCard.jsx";
+import DashboardSection from "./dashboard/DashboardSection.jsx";
 import {
   Target,
   ListTodo,
@@ -24,6 +26,8 @@ import {
   X,
   ChevronDown,
   ChevronRight,
+  Sparkles,
+  ArrowRight,
 } from "lucide-react";
 import { getDashboardNextSteps } from "../lib/workflowHints.js";
 
@@ -234,6 +238,24 @@ function planLabel() {
 
 function directPayLabel() {
   return DIRECT_PAY_LABEL;
+}
+
+function formatActivityTimestamp(value) {
+  const dt = parseDateAny(value);
+  if (!dt) return "";
+  return dt.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function activityAccent(severity) {
+  if (severity === "critical") return "border-rose-200 bg-rose-50 text-rose-900";
+  if (severity === "warning") return "border-amber-200 bg-amber-50 text-amber-900";
+  if (severity === "success") return "border-emerald-200 bg-emerald-50 text-emerald-900";
+  return "border-slate-200 bg-slate-50 text-slate-900";
 }
 
 /* ---------- quick action button ---------- */
@@ -769,6 +791,10 @@ function EarnedBreakdownModal({ isOpen, onClose, invoices, expenses, loading }) 
 /* ========================================================================== */
 export default function ContractorDashboard() {
   const [who, setWho] = useState(null);
+  const [contractorProfile, setContractorProfile] = useState(null);
+  const [dismissedReminderKeys, setDismissedReminderKeys] = useState([]);
+  const [activityFeed, setActivityFeed] = useState([]);
+  const [nextBestAction, setNextBestAction] = useState(null);
 
   const [agreements, setAgreements] = useState([]);
   const [publicLeads, setPublicLeads] = useState([]);
@@ -950,6 +976,7 @@ export default function ContractorDashboard() {
 
       try {
         const { data } = await api.get("/projects/contractors/me/");
+        setContractorProfile(data || null);
 
         setPlanInfo({
           loading: false,
@@ -995,6 +1022,30 @@ export default function ContractorDashboard() {
 
     fetchIntroCountdown();
   }, [isEmployee]);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadActivityFeed = async () => {
+      if (!who || isEmployee) return;
+      try {
+        const { data } = await api.get("/projects/activity-feed/", {
+          params: { limit: 8 },
+        });
+        if (!mounted) return;
+        setActivityFeed(Array.isArray(data?.results) ? data.results : []);
+        setNextBestAction(data?.next_best_action || null);
+      } catch (err) {
+        console.error("Failed to load activity feed", err);
+        if (!mounted) return;
+        setActivityFeed([]);
+        setNextBestAction(null);
+      }
+    };
+    loadActivityFeed();
+    return () => {
+      mounted = false;
+    };
+  }, [who, isEmployee]);
 
   // Pricing via funding_preview (contractor-only)
   useEffect(() => {
@@ -1161,6 +1212,7 @@ export default function ContractorDashboard() {
 
   /* ----- navigation handlers ----- */
   const goNewAgreement = () => navigate(`/app/agreements`);
+  const goStartWithAi = () => navigate(`/app/assistant`);
   const goNewIntake = () => navigate(`/app/intake/new`);
   const goNewMilestone = () => navigate(`/app/milestones?new=1`);
   const goInvoices = () => navigate(`/app/invoices`);
@@ -1230,9 +1282,250 @@ export default function ContractorDashboard() {
   const headerSubtitle = isEmployee
     ? "Here are the milestones currently assigned to you."
     : "Track milestones, invoices, leads, and next actions in one place.";
+  const onboarding = contractorProfile?.onboarding || {};
+  const smsStatus = contractorProfile?.sms_status || {};
+  const reminderStorageKey = "mhb:dashboard-dismissed-reminders";
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(reminderStorageKey) || "[]");
+      setDismissedReminderKeys(Array.isArray(stored) ? stored : []);
+    } catch {
+      setDismissedReminderKeys([]);
+    }
+  }, []);
+
+  const reminders = useMemo(() => {
+    if (isEmployee) return [];
+    const items = [];
+    if (onboarding?.status !== "complete" && !onboarding?.first_value_reached) {
+      items.push({
+        key: "finish-first-agreement",
+        title: "Complete your first agreement",
+        message: "Finish your first project setup so MyHomeBro can tailor templates, milestones, and next steps.",
+        cta: "Resume onboarding",
+        action: () => navigate("/app/onboarding"),
+      });
+    }
+    if (onboarding?.show_soft_stripe_prompt) {
+      items.push({
+        key: "connect-stripe",
+        title: "Connect Stripe to get paid",
+        message: "You can keep exploring, but payment collection and payouts require a connected Stripe account.",
+        cta: "Resume Stripe setup",
+        action: () => navigate("/app/onboarding"),
+      });
+    }
+    if ((agreements || []).length > 0 && (milestones || []).length === 0) {
+      items.push({
+        key: "add-first-milestone",
+        title: "Add your first milestone",
+        message: "Milestones are the fastest way to turn a draft agreement into real project progress.",
+        cta: "Open milestones",
+        action: () => navigate("/app/milestones?new=1"),
+      });
+    }
+    return items.filter((item) => !dismissedReminderKeys.includes(item.key));
+  }, [agreements, dismissedReminderKeys, isEmployee, milestones, navigate, onboarding]);
+
+  const dismissReminder = (key) => {
+    setDismissedReminderKeys((prev) => {
+      const next = Array.from(new Set([...prev, key]));
+      try {
+        window.localStorage.setItem(reminderStorageKey, JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
+  const needsAttentionItems = useMemo(() => dashboardNextSteps.slice(0, 3), [dashboardNextSteps]);
 
   return (
     <PageShell title="Dashboard" subtitle={headerSubtitle} showLogo>
+      {reminders.length ? (
+        <div className="mb-4 space-y-3" data-testid="dashboard-onboarding-reminder">
+          {reminders.map((item) => (
+            <div key={item.key} className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-amber-900">{item.title}</div>
+                  <div className="mt-1 text-sm text-amber-800">{item.message}</div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => dismissReminder(item.key)}
+                    className="text-sm font-semibold text-amber-900 underline-offset-4 hover:underline"
+                  >
+                    Dismiss
+                  </button>
+                  <button
+                    type="button"
+                    onClick={item.action}
+                    className="rounded-xl bg-amber-900 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-950"
+                  >
+                    {item.cta}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {!isEmployee ? (
+        <DashboardSection
+          title="Focus"
+          subtitle="What needs your attention right now and the single highest-value next move."
+          className="mb-4"
+        >
+          <DashboardCard testId="dashboard-next-best-action">
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+              Next Best Action
+            </div>
+            {nextBestAction ? (
+              <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="text-lg font-semibold text-slate-900">{nextBestAction.title}</div>
+                  <div className="mt-1 text-sm text-slate-600">{nextBestAction.message}</div>
+                  {nextBestAction.rationale ? (
+                    <div className="mt-2 text-xs text-slate-500">{nextBestAction.rationale}</div>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate(nextBestAction.navigation_target || "/app/dashboard")}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                >
+                  {nextBestAction.cta_label || "Open"}
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3 text-sm text-slate-600">
+                Start by creating your first agreement or opening the AI assistant.
+              </div>
+            )}
+          </DashboardCard>
+
+          <DashboardCard testId="dashboard-needs-attention" tone="subtle">
+            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+              Needs Attention
+            </div>
+            {needsAttentionItems.length ? (
+              <div className="mt-3 space-y-2">
+                {needsAttentionItems.map((item, index) => (
+                  <div
+                    key={`${item}-${index}`}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700"
+                  >
+                    {item}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-3 text-sm text-slate-600">No urgent items right now.</div>
+            )}
+          </DashboardCard>
+        </DashboardSection>
+      ) : null}
+
+      {!isEmployee && contractorProfile ? (
+        <div
+          className="mb-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+          data-testid="dashboard-sms-status"
+        >
+          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+            SMS Updates
+          </div>
+          <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <div className="text-base font-semibold text-slate-900">
+                {contractorProfile?.sms_enabled
+                  ? "SMS updates enabled"
+                  : contractorProfile?.sms_opted_out
+                  ? "SMS updates opted out"
+                  : "SMS updates not enabled"}
+              </div>
+              <div className="mt-1 text-sm text-slate-600">
+                {smsStatus?.phone_number_e164
+                  ? `Phone on file: ${smsStatus.phone_number_e164}`
+                  : "Add consent before sending project SMS updates."}
+              </div>
+              {contractorProfile?.last_sms_event?.summary ? (
+                <div className="mt-2 text-xs text-slate-500">
+                  Last event: {contractorProfile.last_sms_event.summary}
+                </div>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate("/app/profile")}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Manage SMS
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {!isEmployee && contractorProfile ? (
+        <div
+          className="mb-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+          data-testid="dashboard-sms-automation"
+        >
+          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+            SMS Automation
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-4">
+            <div className="rounded-xl bg-slate-50 px-4 py-3">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Status
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                {contractorProfile?.sms_automation_enabled ? "Enabled" : "Off"}
+              </div>
+            </div>
+            <div className="rounded-xl bg-slate-50 px-4 py-3">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Sent 7d
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                {contractorProfile?.sent_sms_count_7d || 0}
+              </div>
+            </div>
+            <div className="rounded-xl bg-slate-50 px-4 py-3">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Suppressed 7d
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                {contractorProfile?.suppressed_sms_count_7d || 0}
+              </div>
+            </div>
+            <div className="rounded-xl bg-slate-50 px-4 py-3">
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Deferred 7d
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                {contractorProfile?.deferred_sms_count_7d || 0}
+              </div>
+            </div>
+          </div>
+          {contractorProfile?.last_sms_automation_decision ? (
+            <div className="mt-4 text-sm text-slate-600">
+              Last decision:{" "}
+              <span className="font-semibold text-slate-900">
+                {contractorProfile.last_sms_automation_decision.reason_code}
+              </span>
+              {" · "}
+              {contractorProfile.last_sms_automation_decision.message_preview || "No preview available."}
+            </div>
+          ) : (
+            <div className="mt-4 text-sm text-slate-600">
+              No automation decisions yet.
+            </div>
+          )}
+        </div>
+      ) : null}
+
       {!isEmployee ? (
         <>
           <div className="mhb-kicker">MyHomeBro Pricing</div>
@@ -1347,38 +1640,72 @@ export default function ContractorDashboard() {
 
       {!isEmployee ? <RoleAwareWorkboard /> : null}
 
-      {!isEmployee && dashboardNextSteps.length ? (
+      {!isEmployee ? (
         <>
-          <div className="mhb-kicker" style={{ marginTop: 18 }}>
-            Next Steps
-          </div>
-          <WorkflowHintList
-            items={dashboardNextSteps}
-            testId="dashboard-next-steps"
-          />
+          <DashboardSection
+            title="Context"
+            subtitle="Recent workflow context and fast actions when you need more than the top recommendation."
+            className="mt-6"
+          >
+            {dashboardNextSteps.length ? (
+              <WorkflowHintList
+                items={dashboardNextSteps}
+                testId="dashboard-next-steps"
+              />
+            ) : null}
+
+            <div className="space-y-3" data-testid="dashboard-activity-feed">
+              {activityFeed.length ? (
+                activityFeed.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => navigate(item.navigation_target || "/app/dashboard")}
+                    className={`w-full rounded-2xl border px-4 py-4 text-left shadow-sm ${activityAccent(item.severity)}`}
+                    data-testid={`dashboard-activity-item-${item.id}`}
+                  >
+                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <div className="text-sm font-semibold">{item.title}</div>
+                        <div className="mt-1 text-sm opacity-90">{item.summary}</div>
+                        {item.related_label ? (
+                          <div className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] opacity-70">
+                            {item.related_label}
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="text-xs font-semibold opacity-70">
+                        {formatActivityTimestamp(item.created_at)}
+                      </div>
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600"
+                  data-testid="dashboard-activity-feed-empty"
+                >
+                  No recent activity yet.
+                </div>
+              )}
+            </div>
+
+            <DashboardCard>
+              <div className="flex flex-wrap gap-3">
+                <ActionButton icon={Sparkles} label="Start with AI" primary onClick={goStartWithAi} />
+                <ActionButton icon={FilePlus2} label="New Agreement" primary onClick={goNewAgreement} />
+                <ActionButton icon={ListPlus} label="New Intake" onClick={goNewIntake} />
+                <ActionButton icon={ListPlus} label="New Milestone" onClick={goNewMilestone} />
+                <ActionButton icon={Receipt} label="New Expense" onClick={openNewExpense} />
+                <ActionButton icon={Receipt} label="Expenses" onClick={goExpenses} />
+                <ActionButton icon={Receipt} label="Invoices" onClick={goInvoices} />
+                <ActionButton icon={AlertTriangle} label="Disputes" onClick={goDisputes} />
+                <ActionButton icon={CalendarDays} label="Calendar" onClick={goCalendar} />
+              </div>
+            </DashboardCard>
+          </DashboardSection>
         </>
       ) : null}
-
-      <div className="mhb-kicker" style={{ marginTop: 18 }}>
-        Quick Actions
-      </div>
-      <div className="mhb-glass" style={{ padding: 12 }}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-          {!isEmployee ? (
-            <>
-              <ActionButton icon={FilePlus2} label="New Agreement" primary onClick={goNewAgreement} />
-              <ActionButton icon={ListPlus} label="New Intake" onClick={goNewIntake} />
-              <ActionButton icon={ListPlus} label="New Milestone" onClick={goNewMilestone} />
-              <ActionButton icon={Receipt} label="New Expense" onClick={openNewExpense} />
-              <ActionButton icon={Receipt} label="Expenses" onClick={goExpenses} />
-              <ActionButton icon={Receipt} label="Invoices" onClick={goInvoices} />
-              <ActionButton icon={AlertTriangle} label="Disputes" onClick={goDisputes} />
-            </>
-          ) : null}
-
-          <ActionButton icon={CalendarDays} label="Calendar" onClick={goCalendar} />
-        </div>
-      </div>
 
       {!isEmployee ? <ExpenseRequestModal isOpen={showExpenseModal} onClose={onExpenseModalClose} /> : null}
 

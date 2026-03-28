@@ -5,6 +5,8 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../api";
+import DashboardGrid from "./dashboard/DashboardGrid.jsx";
+import DashboardSection from "./dashboard/DashboardSection.jsx";
 import {
   ResponsiveContainer,
   BarChart,
@@ -479,6 +481,7 @@ export default function BusinessDashboard() {
   const snapshot = payload?.snapshot || {};
   const byCategory = payload?.by_category || [];
   const insights = payload?.insights || [];
+  const priorityInsights = insights.slice(0, 3);
   const revenueSeries = payload?.revenue_series || [];
   const feeSeries = payload?.fee_series || [];
   const payoutSeries = payload?.payout_series || [];
@@ -759,7 +762,12 @@ export default function BusinessDashboard() {
         </div>
       </div>
 
-      <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <DashboardSection
+        title="Business Signals"
+        subtitle="The highest-priority operational signals and payment settings."
+        className="mb-6"
+      >
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <div className="text-sm font-extrabold text-slate-900">Subcontractor Payout Automation</div>
@@ -792,14 +800,14 @@ export default function BusinessDashboard() {
       >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-base font-bold text-slate-900">AI Business Insights</div>
+            <div className="text-base font-bold text-slate-900">Business Signals</div>
             <div className="mt-1 text-sm text-slate-600">
-              Short operational signals based on your current dashboard, review, payout, and project data.
+              Short operational signals based on current payouts, workflow risk, and business state.
             </div>
           </div>
         </div>
 
-        {insights.length === 0 ? (
+        {priorityInsights.length === 0 ? (
           <div
             data-testid="dashboard-ai-insights-empty"
             className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600"
@@ -807,8 +815,8 @@ export default function BusinessDashboard() {
             No business insights need attention right now.
           </div>
         ) : (
-          <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            {insights.map((insight, index) => (
+          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            {priorityInsights.map((insight, index) => (
               <div
                 key={`${insight.category || "insight"}-${index}`}
                 data-testid={`dashboard-ai-insight-${index}`}
@@ -834,9 +842,14 @@ export default function BusinessDashboard() {
           </div>
         )}
       </section>
+      </DashboardSection>
 
-      {/* KPI grid */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <DashboardSection
+        title="Performance Snapshot"
+        subtitle="A tighter read on jobs, revenue, timing, escrow exposure, and disputes."
+        className="mb-6"
+      >
+      <DashboardGrid>
         <Stat
           label="Jobs Completed"
           value={int(snapshot.jobs_completed)}
@@ -865,22 +878,10 @@ export default function BusinessDashboard() {
         />
 
         <Stat
-          label="Avg Completion Time"
-          value={`${num(snapshot.avg_completion_days, 2)} days`}
-          sub="Completed jobs only"
-        />
-
-        <Stat
           label="Escrow Pending"
           value={money(snapshot.escrow_pending)}
           sub="Approved but not released"
           tone={Number(snapshot.escrow_pending || 0) > 0 ? "warn" : "default"}
-        />
-
-        <Stat
-          label="Platform Fees Paid"
-          value={money(snapshot.platform_fees_paid)}
-          sub="Fees deducted on paid invoices"
         />
 
         <Stat
@@ -889,8 +890,14 @@ export default function BusinessDashboard() {
           sub="Active disputes"
           tone={Number(snapshot.disputes_open || 0) > 0 ? "bad" : "default"}
         />
-      </div>
+      </DashboardGrid>
+      </DashboardSection>
 
+      <DashboardSection
+        title="Deep Dive"
+        subtitle="Charts, payout reporting, and category detail live below the primary signals."
+        className="mb-6"
+      >
       {Number(progressSummary.project_count || 0) > 0 ? (
         <section className="mt-6 rounded-xl border border-indigo-200 bg-indigo-50/70 p-5 shadow-sm">
           <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
@@ -1379,6 +1386,8 @@ export default function BusinessDashboard() {
           )}
         </div>
       </div>
+
+      </DashboardSection>
 
       {/* Footer note */}
       <div className="mhb-helper-text mt-4">

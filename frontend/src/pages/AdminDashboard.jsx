@@ -885,7 +885,7 @@ export default function AdminDashboard() {
                     {attentionItems.length === 0 ? (
                       <div className="text-sm text-slate-700">Nothing urgent right now.</div>
                     ) : (
-                      attentionItems.slice(0, 6).map((it, idx) => (
+                      attentionItems.slice(0, 5).map((it, idx) => (
                         <ActionItem key={idx} icon={it.icon} title={it.title} desc={it.desc} tone={it.tone} onClick={it.onClick} />
                       ))
                     )}
