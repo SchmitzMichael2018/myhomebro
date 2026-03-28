@@ -1,0 +1,17 @@
+Hi {{ recipient_name|default:"Project Owner" }},
+
+{{ contractor_name }} marked "{{ milestone_title }}" ready for review on {{ project_title }}.
+
+Requested amount: ${{ requested_amount }}
+Total budget: ${{ total_budget }}
+Released to date: ${{ released_to_date }}
+Remaining budget: ${{ remaining_budget }}
+
+{% if work_summary %}Work summary: {{ work_summary }}
+
+{% endif %}{% if review_url %}Review details: {{ review_url }}
+{% endif %}{% if approve_url %}Approve release: {{ approve_url }}
+{% endif %}{% if request_changes_url %}Request changes: {{ request_changes_url }}
+{% endif %}{% if project_url %}View project: {{ project_url }}
+{% endif %}
+MyHomeBro

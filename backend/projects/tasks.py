@@ -9,6 +9,7 @@ from django.apps import apps
 
 from .models import Agreement, Invoice, InvoiceStatus
 from projects.notifications import notify_invoice_created, notify_escrow_auto_released  # type: ignore
+from projects.services.project_email_reports import send_project_email_report
 
 # ✅ NEW: canonical agreement completion recompute
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
@@ -121,6 +122,14 @@ def task_auto_release_undisputed_invoices():
                 logger.warning(f"Agreement completion recompute failed for invoice {invoice.id}: {exc}")
 
             notify_escrow_auto_released(invoice)
+            try:
+                send_project_email_report(
+                    event_type="payment_released",
+                    agreement=invoice.agreement,
+                    invoice=invoice,
+                )
+            except Exception as exc:
+                logger.warning(f"Payment release report email failed for invoice {invoice.id}: {exc}")
             logger.info(f"Auto-released escrow for invoice {invoice.id}")
 
         except Exception as e:

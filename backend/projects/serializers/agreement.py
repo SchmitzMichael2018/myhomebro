@@ -31,6 +31,11 @@ try:
 except Exception:  # pragma: no cover
     ProjectTemplate = None  # type: ignore
 
+from projects.services.compliance import get_agreement_compliance_warning
+from projects.services.recurring_maintenance import build_recurring_preview, ensure_recurring_milestones
+from projects.services.sms_automation import build_sms_automation_summary
+from projects.services.sms_service import get_sms_status_payload
+
 
 def _to_decimal(val) -> Optional[Decimal]:
     if val in ("", None):
@@ -553,6 +558,14 @@ class AgreementSerializer(serializers.ModelSerializer):
     selected_template = serializers.SerializerMethodField()
     selected_template_id = serializers.SerializerMethodField()
     selected_template_name_snapshot = serializers.CharField(read_only=True)
+    compliance_warning = serializers.SerializerMethodField()
+    recurring_preview = serializers.SerializerMethodField()
+    sms_status = serializers.SerializerMethodField()
+    sms_enabled = serializers.SerializerMethodField()
+    sms_opted_out = serializers.SerializerMethodField()
+    last_sms_event = serializers.SerializerMethodField()
+    last_sms_automation_decision = serializers.SerializerMethodField()
+    recent_sms_automation_decisions = serializers.SerializerMethodField()
 
     class Meta:
         model = Agreement
@@ -589,6 +602,36 @@ class AgreementSerializer(serializers.ModelSerializer):
             return getattr(obj, "selected_template_id", None)
         except Exception:
             return None
+
+    def get_compliance_warning(self, obj):
+        try:
+            return get_agreement_compliance_warning(obj)
+        except Exception:
+            return {"warning_level": "none", "message": ""}
+
+    def get_recurring_preview(self, obj):
+        try:
+            return build_recurring_preview(obj, horizon=3)
+        except Exception:
+            return {}
+
+    def get_sms_status(self, obj):
+        return get_sms_status_payload(homeowner=self._homeowner_obj(obj), contractor=getattr(obj, "contractor", None))
+
+    def get_sms_enabled(self, obj):
+        return bool(self.get_sms_status(obj).get("sms_enabled", False))
+
+    def get_sms_opted_out(self, obj):
+        return bool(self.get_sms_status(obj).get("sms_opted_out", False))
+
+    def get_last_sms_event(self, obj):
+        return self.get_sms_status(obj).get("last_sms_event")
+
+    def get_last_sms_automation_decision(self, obj):
+        return build_sms_automation_summary(agreement=obj).get("last_sms_automation_decision")
+
+    def get_recent_sms_automation_decisions(self, obj):
+        return build_sms_automation_summary(agreement=obj).get("recent_sms_automation_decisions", [])
 
     def _req_flags(self, obj) -> tuple[bool, bool]:
         req_contr = _boolish(getattr(obj, "require_contractor_signature", None), True)
@@ -1191,6 +1234,71 @@ class AgreementSerializer(serializers.ModelSerializer):
         if payment_structure != "progress":
             attrs["retainage_percent"] = Decimal("0.00")
 
+        agreement_mode = str(
+            attrs.get("agreement_mode", getattr(self.instance, "agreement_mode", "standard")) or "standard"
+        ).strip().lower()
+        recurring_enabled = bool(
+            attrs.get("recurring_service_enabled", getattr(self.instance, "recurring_service_enabled", False))
+        )
+        maintenance_status = str(
+            attrs.get("maintenance_status", getattr(self.instance, "maintenance_status", "active")) or "active"
+        ).strip().lower()
+        recurrence_pattern = str(
+            attrs.get("recurrence_pattern", getattr(self.instance, "recurrence_pattern", "")) or ""
+        ).strip().lower()
+        recurrence_interval = attrs.get(
+            "recurrence_interval",
+            getattr(self.instance, "recurrence_interval", 1),
+        )
+
+        try:
+            recurrence_interval = int(recurrence_interval or 1)
+        except Exception:
+            raise serializers.ValidationError({"recurrence_interval": "Recurrence interval must be a whole number."})
+
+        if recurrence_interval < 1:
+            raise serializers.ValidationError({"recurrence_interval": "Recurrence interval must be at least 1."})
+        attrs["recurrence_interval"] = recurrence_interval
+
+        if agreement_mode == "maintenance" or recurring_enabled:
+            attrs["agreement_mode"] = "maintenance"
+            attrs["recurring_service_enabled"] = True
+            if not recurrence_pattern:
+                raise serializers.ValidationError(
+                    {"recurrence_pattern": "Choose a recurring cadence for maintenance agreements."}
+                )
+            effective_start = attrs.get(
+                "recurrence_start_date",
+                getattr(self.instance, "recurrence_start_date", None),
+            )
+            effective_end = attrs.get(
+                "recurrence_end_date",
+                getattr(self.instance, "recurrence_end_date", None),
+            )
+            if not effective_start:
+                raise serializers.ValidationError(
+                    {"recurrence_start_date": "Choose a recurrence start date for maintenance agreements."}
+                )
+            if effective_end and effective_end < effective_start:
+                raise serializers.ValidationError(
+                    {"recurrence_end_date": "End date cannot be before the recurrence start date."}
+                )
+        else:
+            attrs["agreement_mode"] = "standard"
+            attrs["recurring_service_enabled"] = False
+            attrs["recurrence_pattern"] = ""
+            attrs["recurrence_interval"] = 1
+            attrs["recurrence_start_date"] = None
+            attrs["recurrence_end_date"] = None
+            attrs["next_occurrence_date"] = None
+            attrs["auto_generate_next_occurrence"] = False
+            attrs["maintenance_status"] = "active"
+
+        if maintenance_status in {"paused", "cancelled", "completed"} and not (
+            agreement_mode == "maintenance" or recurring_enabled
+        ):
+            attrs["maintenance_status"] = "active"
+
         return attrs
 
     def create(self, validated_data):
@@ -1204,6 +1312,10 @@ class AgreementSerializer(serializers.ModelSerializer):
             validated_data["description"] = ""
 
         agreement = Agreement.objects.create(**validated_data)
+        try:
+            ensure_recurring_milestones(agreement, horizon=1)
+        except Exception:
+            pass
 
         self._stamp_external_attestation_if_needed(agreement, validated_data)
         if agreement.external_contract_attested_at:
@@ -1223,6 +1335,10 @@ class AgreementSerializer(serializers.ModelSerializer):
             validated_data["description"] = ""
 
         instance = super().update(instance, validated_data)
+        try:
+            ensure_recurring_milestones(instance, horizon=1)
+        except Exception:
+            pass
 
         self._stamp_external_attestation_if_needed(instance, validated_data)
         if instance.external_contract_attested_at:

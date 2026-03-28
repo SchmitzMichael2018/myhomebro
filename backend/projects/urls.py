@@ -53,6 +53,21 @@ from .views.public_intake_start import PublicIntakeStartView
 from .views.project_intake import ProjectIntakeViewSet
 
 from .views.contractor_me import ContractorMeView
+from .views.activity_feed import ContractorActivityFeedView
+from .views.compliance import ContractorCompliancePreviewView
+from .views.onboarding import (
+    ContractorOnboardingDismissStripePromptView,
+    ContractorOnboardingEventView,
+    ContractorOnboardingView,
+)
+from .views.sms_compliance import (
+    SMSAutomationPreviewView,
+    SMSOptInView,
+    SMSOptOutView,
+    SMSStatusView,
+    twilio_inbound_sms,
+    twilio_sms_status,
+)
 from .views.subaccounts import ContractorSubAccountViewSet, WhoAmIView
 
 from .views.funding import (
@@ -64,19 +79,21 @@ from .views.funding import (
 )
 
 from .views_template import (
-    TemplateListCreateView,
-    TemplateDetailView,
-    ApplyTemplateToAgreementView,
-    SaveAgreementAsTemplateView,
     TemplateGenerateMaterialsView,
 )
 
 from .views.template_views import (
+    ApplyTemplateToAgreementView,
+    SaveAgreementAsTemplateView,
+    TemplateDetailView,
+    TemplateDiscoverView,
     TemplateSuggestPricingView,
     TemplateApplyPricingView,
     TemplateImproveDescriptionView,
+    TemplateListCreateView,
     TemplateSuggestTypeSubtypeView,
     TemplateCreateFromScopeView,
+    TemplateVisibilityUpdateView,
 )
 
 from .views.agreements_amend import create_amendment
@@ -207,9 +224,11 @@ from .views.invoice_direct_pay import invoice_create_direct_pay_link
 
 from projects.api.ai_agreement_views import (
     ai_agreement_description,
+    ai_orchestrate_assistant,
     ai_suggest_milestones,
     ai_refresh_pricing_estimate,
     ai_draft_project,
+    agreement_estimate_preview,
 )
 
 from .views_template_recommend import TemplateRecommendView
@@ -252,6 +271,13 @@ agreements_router.register(
 )
 
 urlpatterns = [
+    path("activity-feed/", ContractorActivityFeedView.as_view(), name="activity-feed"),
+    path("twilio/inbound-sms/", twilio_inbound_sms, name="twilio-inbound-sms"),
+    path("twilio/status/", twilio_sms_status, name="twilio-sms-status"),
+    path("sms/automation/preview/", SMSAutomationPreviewView.as_view(), name="sms-automation-preview"),
+    path("sms/opt-in/", SMSOptInView.as_view(), name="sms-opt-in"),
+    path("sms/opt-out/", SMSOptOutView.as_view(), name="sms-opt-out"),
+    path("sms/status/", SMSStatusView.as_view(), name="sms-status"),
     # -------------------------------------------------
     # Admin Panel
     # -------------------------------------------------
@@ -266,8 +292,14 @@ urlpatterns = [
     # Project Templates
     # -------------------------------------------------
     path("templates/", TemplateListCreateView.as_view(), name="template-list-create"),
+    path("templates/discover/", TemplateDiscoverView.as_view(), name="template-discover"),
     path("templates/recommend/", TemplateRecommendView.as_view(), name="template-recommend"),
     path("templates/<int:pk>/", TemplateDetailView.as_view(), name="template-detail"),
+    path(
+        "templates/<int:pk>/visibility/",
+        TemplateVisibilityUpdateView.as_view(),
+        name="template-visibility-update",
+    ),
     path(
         "templates/<int:pk>/suggest_pricing/",
         TemplateSuggestPricingView.as_view(),
@@ -326,10 +358,12 @@ urlpatterns = [
     # -------------------------------------------------
     # Agreement AI
     # -------------------------------------------------
+    path("assistant/orchestrate/", ai_orchestrate_assistant),
     path("agreements/ai/description/", ai_agreement_description),
     path("agreements/ai/draft/", ai_draft_project),
     path("agreements/<int:agreement_id>/ai/suggest-milestones/", ai_suggest_milestones),
     path("agreements/<int:agreement_id>/ai/refresh-pricing-estimate/", ai_refresh_pricing_estimate),
+    path("agreements/<int:agreement_id>/estimate-preview/", agreement_estimate_preview),
     path(
         "agreements/<int:agreement_id>/refund/",
         AgreementRefundCompatView.as_view(),
@@ -592,6 +626,13 @@ urlpatterns = [
     # -------------------------------------------------
     path("notifications/", NotificationListView.as_view()),
     path("contractors/me/", ContractorMeView.as_view()),
+    path("contractors/onboarding/", ContractorOnboardingView.as_view()),
+    path("contractors/onboarding/events/", ContractorOnboardingEventView.as_view()),
+    path(
+        "contractors/onboarding/dismiss-stripe-prompt/",
+        ContractorOnboardingDismissStripePromptView.as_view(),
+    ),
+    path("compliance/profile-preview/", ContractorCompliancePreviewView.as_view()),
 
     path("milestones/calendar/", MilestoneCalendarView.as_view()),
     path("agreements/calendar/", AgreementCalendarView.as_view()),

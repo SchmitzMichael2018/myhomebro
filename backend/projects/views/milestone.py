@@ -39,8 +39,10 @@ from projects.models import (
     Invoice,
     InvoiceStatus,
     Agreement,
+    SubcontractorComplianceStatus,
     SubcontractorCompletionStatus,
 )
+from projects.models_subcontractor import SubcontractorInvitation, SubcontractorInvitationStatus
 from projects.serializers.milestone import MilestoneSerializer
 from projects.serializers.milestone_file import MilestoneFileSerializer
 from projects.serializers.milestone_comment import MilestoneCommentSerializer
@@ -56,6 +58,12 @@ from projects.services.agreement_locking import (
 )
 from projects.services.milestone_workflow import can_user_review_submitted_work
 from projects.services.milestone_payouts import sync_milestone_payout
+from projects.services.recurring_maintenance import handle_milestone_recurring_state_change
+from projects.services.subcontractor_compliance import (
+    apply_assignment_compliance_decision,
+    evaluate_subcontractor_assignment_compliance,
+    send_subcontractor_license_request_email,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -557,6 +565,11 @@ def _mark_milestone_complete_side_effects(*, request, milestone: Milestone, comp
             MilestoneFile.objects.create(milestone=milestone, uploaded_by=request.user, file=up)
         except Exception:
             pass
+
+    try:
+        handle_milestone_recurring_state_change(milestone)
+    except Exception:
+        pass
 
     milestone.refresh_from_db()
     return milestone
@@ -1201,6 +1214,111 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         milestone.refresh_from_db()
         return Response(
             MilestoneSerializer(milestone, context={"request": request}).data,
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="assign-subcontractor")
+    def assign_subcontractor(self, request, pk=None):
+        milestone: Milestone = self.get_object()
+        agreement = getattr(milestone, "agreement", None)
+        owner = getattr(getattr(agreement, "project", None), "contractor", None)
+        contractor = get_contractor_for_user(request.user)
+        if contractor is None or owner is None or contractor.id != owner.id:
+            return Response({"detail": "Only the owning contractor can assign subcontractors."}, status=status.HTTP_403_FORBIDDEN)
+
+        invitation_id = request.data.get("invitation_id")
+        if not invitation_id:
+            return Response({"invitation_id": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        invitation = get_object_or_404(
+            SubcontractorInvitation.objects.select_related("accepted_by_user"),
+            pk=invitation_id,
+            agreement_id=getattr(agreement, "id", None),
+            status=SubcontractorInvitationStatus.ACCEPTED,
+        )
+        compliance_action = str(request.data.get("compliance_action") or "").strip().lower()
+        override_reason = str(request.data.get("override_reason") or "").strip()
+
+        evaluation = evaluate_subcontractor_assignment_compliance(
+            contractor=contractor,
+            invitation=invitation,
+            agreement=agreement,
+            milestone=milestone,
+        )
+        if (
+            evaluation.get("compliance_status")
+            in {
+                SubcontractorComplianceStatus.MISSING_LICENSE,
+                SubcontractorComplianceStatus.MISSING_INSURANCE,
+                SubcontractorComplianceStatus.PENDING_LICENSE,
+            }
+            and compliance_action not in {"assign_anyway", "request_license", "choose_another"}
+        ):
+            return Response(
+                {
+                    "detail": "Compliance decision required before assigning this subcontractor.",
+                    "compliance_decision_required": True,
+                    "compliance_evaluation": evaluation,
+                    "milestone": {
+                        "id": milestone.id,
+                        "title": milestone.title,
+                    },
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        if compliance_action == "choose_another":
+            return Response(
+                {
+                    "assignment_created": False,
+                    "selection_reset": True,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        serializer = MilestoneSerializer(
+            milestone,
+            data={"assigned_subcontractor_invitation": invitation.id},
+            partial=True,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            milestone = serializer.save()
+            apply_assignment_compliance_decision(
+                milestone=milestone,
+                evaluation=evaluation,
+                action=compliance_action or "assign_anyway",
+                acting_user=request.user,
+                override_reason=override_reason,
+            )
+            milestone.save(
+                update_fields=[
+                    "subcontractor_license_required",
+                    "subcontractor_insurance_required",
+                    "subcontractor_required_trade_key",
+                    "subcontractor_required_state_code",
+                    "subcontractor_compliance_warning_snapshot",
+                    "subcontractor_compliance_override",
+                    "subcontractor_compliance_override_reason",
+                    "subcontractor_license_requested_at",
+                    "subcontractor_license_requested_by",
+                    "subcontractor_compliance_status",
+                ]
+            )
+        delivery = None
+        if compliance_action == "request_license":
+            delivery = send_subcontractor_license_request_email(
+                request=request,
+                invitation=invitation,
+                evaluation=evaluation,
+                milestones=[milestone],
+            )
+        milestone.refresh_from_db()
+        return Response(
+            {
+                "milestone": MilestoneSerializer(milestone, context={"request": request}).data,
+                "compliance_delivery": delivery,
+            },
             status=status.HTTP_200_OK,
         )
 

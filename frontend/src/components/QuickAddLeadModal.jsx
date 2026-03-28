@@ -42,6 +42,7 @@ export default function QuickAddLeadModal({
   renderFab = true,
   open,
   defaultOpen = false,
+  initialForm = null,
   onOpenChange,
   onCreated,
   onClose,
@@ -57,6 +58,7 @@ export default function QuickAddLeadModal({
   const nameInputRef = useRef(null);
   const phoneInputRef = useRef(null);
   const modalTitleId = useId();
+  const appliedPrefillSignatureRef = useRef('');
 
   function setOpenState(nextValue) {
     if (!isControlled) {
@@ -105,6 +107,31 @@ export default function QuickAddLeadModal({
       window.removeEventListener('keydown', onKeyDown);
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    const nextPrefill = initialForm && typeof initialForm === 'object' ? initialForm : null;
+    if (!nextPrefill) return;
+    const signature = JSON.stringify(nextPrefill);
+    if (signature === appliedPrefillSignatureRef.current) return;
+    appliedPrefillSignatureRef.current = signature;
+    setForm((prev) => ({
+      ...prev,
+      full_name: prev.full_name || String(nextPrefill.full_name || '').trim(),
+      phone: prev.phone || formatPhoneInput(nextPrefill.phone || ''),
+      email: prev.email || String(nextPrefill.email || '').trim(),
+      project_address: prev.project_address || String(nextPrefill.project_address || '').trim(),
+      project: prev.project || String(nextPrefill.project || '').trim(),
+      notes: prev.notes || String(nextPrefill.notes || '').trim(),
+    }));
+    if (
+      String(nextPrefill.email || '').trim() ||
+      String(nextPrefill.project_address || '').trim() ||
+      String(nextPrefill.project || '').trim() ||
+      String(nextPrefill.notes || '').trim()
+    ) {
+      setDetailsOpen(true);
+    }
+  }, [initialForm]);
 
   function updateField(field, value) {
     setForm((prev) => ({ ...prev, [field]: value }));

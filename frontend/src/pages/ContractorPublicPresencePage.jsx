@@ -1,10 +1,15 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 import api from '../api';
 import QuickAddLeadModal from '../components/QuickAddLeadModal.jsx';
+import { StartWithAIEntry } from '../components/StartWithAIAssistant.jsx';
 import { WorkflowHint } from '../components/WorkflowHint.jsx';
+import {
+  buildAssistantHandoffSignature,
+  getAssistantHandoff,
+} from '../lib/assistantHandoff.js';
 import { getPublicLeadHint, getPublicPresenceHint } from '../lib/workflowHints.js';
 
 const TABS = [
@@ -196,6 +201,7 @@ const defaultProfile = {
 };
 
 export default function ContractorPublicPresencePage() {
+  const location = useLocation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('profile');
@@ -203,6 +209,15 @@ export default function ContractorPublicPresencePage() {
   const [profileBusy, setProfileBusy] = useState(false);
   const [logoFile, setLogoFile] = useState(null);
   const [coverFile, setCoverFile] = useState(null);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [quickAddPrefill, setQuickAddPrefill] = useState(null);
+  const [assistantLeadBanner, setAssistantLeadBanner] = useState('');
+  const assistantHandoff = useMemo(() => getAssistantHandoff(location.state), [location.state]);
+  const assistantHandoffSignature = useMemo(
+    () => buildAssistantHandoffSignature(assistantHandoff),
+    [assistantHandoff]
+  );
+  const appliedAssistantRef = useRef('');
   const [qrData, setQrData] = useState(null);
   const [galleryRows, setGalleryRows] = useState([]);
   const [reviewsRows, setReviewsRows] = useState([]);
@@ -238,6 +253,30 @@ export default function ContractorPublicPresencePage() {
   const selectedLeadHint = useMemo(() => getPublicLeadHint(selectedLead), [selectedLead]);
   const primaryLeadAction = useMemo(() => getLeadPrimaryAction(selectedLead), [selectedLead]);
   const leadFunnelCurrentStep = useMemo(() => getLeadFunnelCurrentStep(selectedLead), [selectedLead]);
+  const leadAssistantContext = useMemo(
+    () => ({
+      current_route: '/app/public-presence',
+      lead_id: selectedLead?.id || null,
+      lead_summary: {
+        source: selectedLead?.source || '',
+        full_name: selectedLead?.full_name || '',
+        email: selectedLead?.email || '',
+        phone: selectedLead?.phone || '',
+        project_type: selectedLead?.project_type || '',
+        project_description: selectedLead?.project_description || '',
+        project_address: selectedLead?.project_address || '',
+        city: selectedLead?.city || '',
+        state: selectedLead?.state || '',
+        zip_code: selectedLead?.zip_code || '',
+        status: selectedLead?.status || '',
+        source_intake_id: selectedLead?.source_intake_id || null,
+        converted_agreement: selectedLead?.converted_agreement || null,
+        ai_analysis: selectedLead?.ai_analysis || null,
+        internal_notes: selectedLead?.internal_notes || '',
+      },
+    }),
+    [selectedLead]
+  );
 
   async function loadAll() {
     try {
@@ -267,6 +306,55 @@ export default function ContractorPublicPresencePage() {
   useEffect(() => {
     loadAll();
   }, []);
+
+  useEffect(() => {
+    if (!assistantHandoffSignature || assistantHandoffSignature === appliedAssistantRef.current) {
+      return;
+    }
+
+    if (assistantHandoff.context?.lead_id && Array.isArray(leadsRows) && leadsRows.length) {
+      const matchedLead = leadsRows.find(
+        (row) => String(row.id) === String(assistantHandoff.context.lead_id)
+      );
+      if (matchedLead) {
+        setActiveTab('leads');
+        setSelectedLead(matchedLead);
+      }
+    }
+
+    const prefillName =
+      assistantHandoff.prefillFields.full_name ||
+      assistantHandoff.prefillFields.customer_name ||
+      assistantHandoff.draftPayload.homeowner_name ||
+      '';
+    const prefillPhone =
+      assistantHandoff.prefillFields.phone || assistantHandoff.draftPayload.phone || '';
+    const prefillEmail =
+      assistantHandoff.prefillFields.email || assistantHandoff.draftPayload.email || '';
+
+    if (assistantHandoff.intent === 'create_lead' && (prefillName || prefillPhone || prefillEmail)) {
+      setActiveTab('leads');
+      setQuickAddPrefill({
+        full_name: prefillName,
+        phone: prefillPhone,
+        email: prefillEmail,
+        project_address:
+          assistantHandoff.prefillFields.address_line1 ||
+          assistantHandoff.draftPayload.address_line1 ||
+          '',
+        notes:
+          assistantHandoff.prefillFields.project_summary ||
+          assistantHandoff.draftPayload.description ||
+          '',
+      });
+      setQuickAddOpen(true);
+      setAssistantLeadBanner('AI prefilled a new lead capture based on your request.');
+    } else {
+      setAssistantLeadBanner('');
+    }
+
+    appliedAssistantRef.current = assistantHandoffSignature;
+  }, [assistantHandoff, assistantHandoffSignature, leadsRows]);
 
   async function saveProfile() {
     try {
@@ -560,6 +648,36 @@ export default function ContractorPublicPresencePage() {
     }
   }
 
+  function handleLeadAssistantAction(plan) {
+    if (!selectedLead) return false;
+    const actionKey = plan?.next_action?.action_key;
+    if (actionKey === 'send_intake_form') {
+      void sendLeadIntake();
+      return true;
+    }
+    if (actionKey === 'review_lead_intake') {
+      navigate(`/app/intake/new?intakeId=${selectedLead.source_intake_id}`);
+      return true;
+    }
+    if (actionKey === 'analyze_lead') {
+      void analyzeLeadWithAi();
+      return true;
+    }
+    if (actionKey === 'create_agreement_from_lead') {
+      void createAgreementFromLead();
+      return true;
+    }
+    if (actionKey === 'open_existing_agreement' && selectedLead.converted_agreement) {
+      navigate(`/app/agreements/${selectedLead.converted_agreement}`);
+      return true;
+    }
+    if (actionKey === 'create_customer_record') {
+      void convertLeadToCustomer();
+      return true;
+    }
+    return false;
+  }
+
   async function copyUrl() {
     try {
       await navigator.clipboard.writeText(qrData?.public_url || profile.public_url || '');
@@ -577,11 +695,16 @@ export default function ContractorPublicPresencePage() {
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-6">
       <QuickAddLeadModal
+        open={quickAddOpen}
+        onOpenChange={setQuickAddOpen}
+        initialForm={quickAddPrefill}
         onCreated={(lead) => {
           setLeadsRows((prev) => [lead, ...prev.filter((row) => row.id !== lead.id)]);
           setSelectedLead(lead);
           setActiveTab('leads');
+          setQuickAddPrefill(null);
         }}
+        onClose={() => setQuickAddPrefill(null)}
       />
       <header className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -900,11 +1023,27 @@ export default function ContractorPublicPresencePage() {
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 {selectedLead ? (
                   <>
+                    <StartWithAIEntry
+                      className="mb-4"
+                      testId="public-lead-ai-entry"
+                      title="Start with AI for this lead"
+                      description="Use the current lead context to decide whether to review, analyze, send intake, or draft the agreement."
+                      context={leadAssistantContext}
+                      onAction={handleLeadAssistantAction}
+                    />
                     <WorkflowHint
                       hint={selectedLeadHint}
                       testId="public-lead-workflow-hint"
                       className="mb-4"
                     />
+                    {assistantLeadBanner ? (
+                      <div
+                        data-testid="public-lead-assistant-banner"
+                        className="mb-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900"
+                      >
+                        {assistantLeadBanner}
+                      </div>
+                    ) : null}
                     <div
                       data-testid="public-lead-funnel"
                       className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3"

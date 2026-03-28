@@ -17,7 +17,7 @@ from .models_dispute import Dispute, DisputeAttachment
 from .models_invite import ContractorInvite  # noqa: F401
 from .models_project_intake import ProjectIntake
 from .models_project_taxonomy import ProjectType, ProjectSubtype  # noqa: E402,F401
-from .models_sms import SMSConsentStatus  # noqa: E402,F401
+from .models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent, SMSConsentStatus  # noqa: E402,F401
 from .models_subcontractor import SubcontractorInvitation  # noqa: E402,F401
 
 
@@ -68,6 +68,25 @@ class AgreementPaymentStructure(models.TextChoices):
     PROGRESS = "progress", "Progress Payments"
 
 
+class AgreementMode(models.TextChoices):
+    STANDARD = "standard", "Standard"
+    MAINTENANCE = "maintenance", "Maintenance"
+
+
+class RecurrencePattern(models.TextChoices):
+    WEEKLY = "weekly", "Weekly"
+    MONTHLY = "monthly", "Monthly"
+    QUARTERLY = "quarterly", "Quarterly"
+    YEARLY = "yearly", "Yearly"
+
+
+class MaintenanceStatus(models.TextChoices):
+    ACTIVE = "active", "Active"
+    PAUSED = "paused", "Paused"
+    COMPLETED = "completed", "Completed"
+    CANCELLED = "cancelled", "Cancelled"
+
+
 class AgreementSignaturePolicy(models.TextChoices):
     BOTH_REQUIRED = "both_required", "Both Parties Sign (Recommended)"
     CONTRACTOR_ONLY = "contractor_only", "Contractor Only (Work Order / Internal)"
@@ -114,6 +133,16 @@ class SubcontractorCompletionStatus(models.TextChoices):
     SUBMITTED_FOR_REVIEW = "submitted_for_review", "Submitted for Review"
     APPROVED = "approved", "Approved"
     NEEDS_CHANGES = "needs_changes", "Needs Changes"
+
+
+class SubcontractorComplianceStatus(models.TextChoices):
+    NOT_REQUIRED = "not_required", "Not Required"
+    COMPLIANT = "compliant", "Compliant"
+    MISSING_LICENSE = "missing_license", "Missing License"
+    MISSING_INSURANCE = "missing_insurance", "Missing Insurance"
+    PENDING_LICENSE = "pending_license", "Pending License"
+    OVERRIDDEN = "overridden", "Overridden"
+    UNKNOWN = "unknown", "Unknown"
 
 
 class MilestonePayoutStatus(models.TextChoices):
@@ -187,6 +216,15 @@ class Contractor(models.Model):
     stripe_status_updated_at = models.DateTimeField(default=timezone.now)
     stripe_deauthorized_at = models.DateTimeField(null=True, blank=True)
     auto_subcontractor_payouts_enabled = models.BooleanField(default=False)
+    contractor_onboarding_status = models.CharField(max_length=50, blank=True, default="not_started")
+    contractor_onboarding_step = models.CharField(max_length=50, blank=True, default="welcome")
+    first_project_started_at = models.DateTimeField(null=True, blank=True)
+    first_agreement_created_at = models.DateTimeField(null=True, blank=True)
+    stripe_prompt_dismissed_at = models.DateTimeField(null=True, blank=True)
+    stripe_connected_at = models.DateTimeField(null=True, blank=True)
+    onboarding_last_step_reached = models.CharField(max_length=50, blank=True, default="")
+    onboarding_step_entered_at = models.DateTimeField(null=True, blank=True)
+    onboarding_step_durations = models.JSONField(default=dict, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -228,6 +266,97 @@ class Contractor(models.Model):
     @property
     def stripe_action_required(self) -> bool:
         return int(self.requirements_due_count or 0) > 0
+
+    @property
+    def activation_started(self) -> bool:
+        return bool(self.first_project_started_at or self.first_agreement_created_at)
+
+
+class ContractorActivationEvent(models.Model):
+    contractor = models.ForeignKey(
+        Contractor,
+        on_delete=models.CASCADE,
+        related_name="activation_events",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contractor_activation_events",
+    )
+    event_type = models.CharField(max_length=100, db_index=True)
+    step = models.CharField(max_length=50, blank=True, default="")
+    context = models.JSONField(default=dict, blank=True)
+    seconds_in_step = models.PositiveIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.event_type} ({self.step or 'no-step'})"
+
+
+class ContractorActivityEvent(models.Model):
+    class Severity(models.TextChoices):
+        INFO = "info", "Info"
+        SUCCESS = "success", "Success"
+        WARNING = "warning", "Warning"
+        CRITICAL = "critical", "Critical"
+
+    contractor = models.ForeignKey(
+        Contractor,
+        on_delete=models.CASCADE,
+        related_name="activity_events",
+    )
+    actor_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contractor_activity_events",
+    )
+    agreement = models.ForeignKey(
+        "projects.Agreement",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="activity_events",
+    )
+    milestone = models.ForeignKey(
+        "projects.Milestone",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="activity_events",
+    )
+    related_entity_type = models.CharField(max_length=64, blank=True, default="")
+    related_entity_id = models.CharField(max_length=64, blank=True, default="")
+    event_type = models.CharField(max_length=100, db_index=True)
+    title = models.CharField(max_length=255)
+    summary = models.TextField(blank=True, default="")
+    severity = models.CharField(
+        max_length=16,
+        choices=Severity.choices,
+        default=Severity.INFO,
+        db_index=True,
+    )
+    related_label = models.CharField(max_length=255, blank=True, default="")
+    icon_hint = models.CharField(max_length=48, blank=True, default="")
+    navigation_target = models.CharField(max_length=255, blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+    dedupe_key = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+    dismissed_at = models.DateTimeField(null=True, blank=True)
+    surfaced_in_dashboard = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.event_type} ({self.contractor_id})"
 
 
 def contractor_public_asset_upload_to(instance, filename: str) -> str:
@@ -622,6 +751,36 @@ class Agreement(models.Model):
         db_index=True,
         help_text="SIMPLE keeps milestone-paid workflow intact. PROGRESS enables draw-based requests.",
     )
+    agreement_mode = models.CharField(
+        max_length=24,
+        choices=AgreementMode.choices,
+        default=AgreementMode.STANDARD,
+        db_index=True,
+        help_text="Standard keeps one-time project behavior. Maintenance enables recurring-service support.",
+    )
+    recurring_service_enabled = models.BooleanField(
+        default=False,
+        help_text="Whether this agreement should generate recurring maintenance milestone occurrences.",
+    )
+    recurrence_pattern = models.CharField(
+        max_length=24,
+        choices=RecurrencePattern.choices,
+        blank=True,
+        default="",
+    )
+    recurrence_interval = models.PositiveIntegerField(default=1)
+    recurrence_start_date = models.DateField(null=True, blank=True, db_index=True)
+    recurrence_end_date = models.DateField(null=True, blank=True, db_index=True)
+    next_occurrence_date = models.DateField(null=True, blank=True, db_index=True)
+    auto_generate_next_occurrence = models.BooleanField(default=True)
+    maintenance_status = models.CharField(
+        max_length=24,
+        choices=MaintenanceStatus.choices,
+        default=MaintenanceStatus.ACTIVE,
+        db_index=True,
+    )
+    service_window_notes = models.TextField(blank=True, default="")
+    recurring_summary_label = models.CharField(max_length=255, blank=True, default="")
     retainage_percent = models.DecimalField(
         max_digits=5,
         decimal_places=2,
@@ -734,6 +893,17 @@ class Agreement(models.Model):
         blank=True,
         null=True,
         help_text="Project ZIP / postal code.",
+    )
+    report_recipient_name = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Optional owner/investor-facing contact name for project report emails.",
+    )
+    report_recipient_email = models.EmailField(
+        blank=True,
+        default="",
+        help_text="Optional owner/investor-facing contact email for project report emails.",
     )
 
     status = models.CharField(
@@ -883,9 +1053,31 @@ class Agreement(models.Model):
     def requires_escrow(self) -> bool:
         return not self.is_direct_pay
 
+    @property
+    def is_maintenance(self) -> bool:
+        return self.agreement_mode == AgreementMode.MAINTENANCE or bool(self.recurring_service_enabled)
+
     def save(self, *args, **kwargs):
         if not self.contractor and self.project and self.project.contractor_id:
             self.contractor = self.project.contractor
+
+        if self.agreement_mode == AgreementMode.MAINTENANCE:
+            self.recurring_service_enabled = True
+        elif not self.recurring_service_enabled:
+            self.maintenance_status = MaintenanceStatus.ACTIVE
+
+        if not self.recurring_service_enabled:
+            self.recurrence_pattern = ""
+            self.recurrence_interval = 1
+            self.recurrence_start_date = None
+            self.recurrence_end_date = None
+            self.next_occurrence_date = None
+            self.auto_generate_next_occurrence = False
+            self.service_window_notes = self.service_window_notes or ""
+            self.recurring_summary_label = self.recurring_summary_label or ""
+
+        if self.recurrence_interval < 1:
+            self.recurrence_interval = 1
 
         # Sync taxonomy refs -> snapshot text fields
         if self.project_type_ref_id and not (self.project_type or "").strip():
@@ -1139,6 +1331,33 @@ class Milestone(models.Model):
         blank=True,
         help_text="Estimated time to complete the milestone.",
     )
+    is_recurring_rule = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Whether this milestone acts as the recurring-service rule/template for future occurrences.",
+    )
+    recurrence_pattern = models.CharField(
+        max_length=24,
+        choices=RecurrencePattern.choices,
+        blank=True,
+        default="",
+    )
+    recurrence_interval = models.PositiveIntegerField(default=1)
+    recurrence_anchor_date = models.DateField(null=True, blank=True, db_index=True)
+    recurrence_end_date = models.DateField(null=True, blank=True, db_index=True)
+    next_occurrence_date = models.DateField(null=True, blank=True, db_index=True)
+    recurring_rule_parent = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="generated_occurrences",
+    )
+    occurrence_sequence_number = models.PositiveIntegerField(default=0)
+    generated_from_recurring_rule = models.BooleanField(default=False, db_index=True)
+    service_period_start = models.DateField(null=True, blank=True)
+    service_period_end = models.DateField(null=True, blank=True)
+    scheduled_service_date = models.DateField(null=True, blank=True, db_index=True)
 
     # --- estimate assist snapshot fields ---
     normalized_milestone_type = models.CharField(
@@ -1333,6 +1552,33 @@ class Milestone(models.Model):
         blank=True,
         help_text="Optional subcontractor payout amount in cents for this milestone. Defaults to the milestone amount in V1.",
     )
+    subcontractor_compliance_status = models.CharField(
+        max_length=32,
+        choices=SubcontractorComplianceStatus.choices,
+        default=SubcontractorComplianceStatus.UNKNOWN,
+        db_index=True,
+        help_text="Advisory compliance state snapshot for the assigned subcontractor on this milestone.",
+    )
+    subcontractor_license_required = models.BooleanField(default=False)
+    subcontractor_insurance_required = models.BooleanField(default=False)
+    subcontractor_compliance_override = models.BooleanField(default=False)
+    subcontractor_compliance_override_reason = models.TextField(blank=True, default="")
+    subcontractor_license_requested_at = models.DateTimeField(null=True, blank=True)
+    subcontractor_license_requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="subcontractor_license_requests",
+        help_text="Contractor user who requested compliance documents before assignment acceptance.",
+    )
+    subcontractor_compliance_warning_snapshot = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Structured advisory compliance decision snapshot captured when the assignment changed.",
+    )
+    subcontractor_required_trade_key = models.CharField(max_length=64, blank=True, default="")
+    subcontractor_required_state_code = models.CharField(max_length=8, blank=True, default="")
 
     class Meta:
         ordering = ["order"]
@@ -1356,6 +1602,8 @@ class Milestone(models.Model):
             raise ValidationError("Milestone cannot be invoiced unless it is completed.")
         if self.invoice_id and (not self.completed or not self.is_invoiced):
             raise ValidationError("Milestone invoice link requires completed=True and is_invoiced=True.")
+        if self.recurrence_interval < 1:
+            raise ValidationError({"recurrence_interval": "Recurrence interval must be at least 1."})
 
     def __str__(self):
         return f"{self.order}. {self.title} (${self.amount})"
@@ -1715,6 +1963,49 @@ class Invoice(models.Model):
         return bool(self.direct_pay_checkout_url)
 
 
+class ProjectEmailReportLog(models.Model):
+    class EventType(models.TextChoices):
+        MILESTONE_APPROVAL_REQUESTED = "milestone_approval_requested", "Milestone Approval Requested"
+        PAYMENT_RELEASED = "payment_released", "Payment Released"
+        COMPLIANCE_ALERT = "compliance_alert", "Compliance Alert"
+        WEEKLY_PROJECT_SUMMARY = "weekly_project_summary", "Weekly Project Summary"
+
+    agreement = models.ForeignKey(
+        Agreement,
+        on_delete=models.CASCADE,
+        related_name="email_report_logs",
+    )
+    milestone = models.ForeignKey(
+        "projects.Milestone",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="email_report_logs",
+    )
+    invoice = models.ForeignKey(
+        "projects.Invoice",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="email_report_logs",
+    )
+    event_type = models.CharField(max_length=48, choices=EventType.choices, db_index=True)
+    recipient_email = models.EmailField(db_index=True)
+    recipient_name = models.CharField(max_length=255, blank=True, default="")
+    dedup_key = models.CharField(max_length=255, unique=True, db_index=True)
+    payload_snapshot = models.JSONField(default=dict, blank=True)
+    sent_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-sent_at", "-id"]
+        indexes = [
+            models.Index(fields=["agreement", "event_type", "sent_at"]),
+        ]
+
+    def __str__(self):
+        return f"ProjectEmailReportLog(agreement={self.agreement_id}, event={self.event_type}, recipient={self.recipient_email})"
+
+
 class Expense(models.Model):
     agreement = models.ForeignKey(
         Agreement, on_delete=models.CASCADE, related_name="misc_expenses"
@@ -1900,5 +2191,14 @@ from .models_attachments import AgreementAttachment, ExpenseRequestAttachment  #
 from .models_schedule import EmployeeWorkSchedule, EmployeeScheduleException  # noqa: E402,F401
 from .models_ai_artifacts import DisputeAIArtifact  # noqa: E402,F401
 from .models_expense_request import ExpenseRequest  # noqa: E402,F401
-from .models_templates import ProjectTemplate, ProjectTemplateMilestone  # noqa: E402,F401
+from .models_templates import ProjectTemplate, ProjectTemplateMilestone, SeedBenchmarkProfile  # noqa: E402,F401
 from .models_amendment_request import AmendmentRequest  # noqa: E402,F401
+from .models_learning import (
+    AgreementOutcomeSnapshot,
+    AgreementOutcomeMilestoneSnapshot,
+    ProjectBenchmarkAggregate,
+)  # noqa: E402,F401
+from .models_compliance import (
+    StateTradeLicenseRequirement,
+    ContractorComplianceRecord,
+)  # noqa: E402,F401

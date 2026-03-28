@@ -17,7 +17,9 @@ from projects.ai.agreement_milestone_writer import (
     suggest_pricing_refresh,
 )
 from projects.models import Agreement, Milestone
+from projects.services.ai_orchestrator import orchestrate_user_request
 from projects.services.ai.project_drafter import draft_project_structure
+from projects.services.estimation_engine import build_project_estimate
 
 
 def _get_contractor_for_user(user):
@@ -262,6 +264,62 @@ def ai_refresh_pricing_estimate(request, agreement_id: int):
         "pricing_estimates": out.get("pricing_estimates", []),
         "persisted_count": persisted_count,
         "_model": out.get("_model"),
+        **_ai_access_payload(),
+    }
+    return JsonResponse(payload, status=HTTP_200_OK)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def agreement_estimate_preview(request, agreement_id: int):
+    """
+    POST /api/projects/agreements/<id>/estimate-preview/
+    Returns a deterministic, read-only estimation preview for Step 2.
+    """
+    contractor = _get_contractor_for_user(request.user)
+    if not contractor:
+        return _deny("Contractor only.", "CONTRACTOR_ONLY")
+
+    agreement = _get_agreement_or_404(int(agreement_id))
+    if not agreement:
+        return _deny("Agreement not found.", "AGREEMENT_NOT_FOUND", status=HTTP_404_NOT_FOUND)
+
+    if agreement.contractor_id and agreement.contractor_id != contractor.id:
+        return _deny("Not your agreement.", "FORBIDDEN")
+
+    try:
+        out = build_project_estimate(agreement=agreement)
+    except Exception as e:
+        return JsonResponse({"detail": str(e)}, status=HTTP_400_BAD_REQUEST)
+
+    payload = {
+        "detail": "OK",
+        **out,
+        **_ai_access_payload(),
+    }
+    return JsonResponse(payload, status=HTTP_200_OK)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def ai_orchestrate_assistant(request):
+    """
+    POST /api/projects/assistant/orchestrate/
+    Returns a deterministic orchestration response that coordinates existing
+    workflows without mutating data.
+    """
+    contractor = _get_contractor_for_user(request.user)
+    if not contractor:
+        return _deny("Contractor only.", "CONTRACTOR_ONLY")
+
+    try:
+        out = orchestrate_user_request(contractor=contractor, payload=request.data or {})
+    except Exception as e:
+        return JsonResponse({"detail": str(e)}, status=HTTP_400_BAD_REQUEST)
+
+    payload = {
+        "detail": "OK",
+        **out,
         **_ai_access_payload(),
     }
     return JsonResponse(payload, status=HTTP_200_OK)

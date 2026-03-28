@@ -18,6 +18,13 @@ from rest_framework.views import APIView
 
 from ..models import ConnectedAccount
 from payments.stripe_config import stripe  # ✅ single source of truth for Stripe config
+from projects.services.contractor_activation_analytics import (
+    FUNNEL_EVENT_ONBOARDING_COMPLETED,
+    FUNNEL_EVENT_STRIPE_CONNECTED,
+    track_activation_event,
+)
+from projects.services.activity_feed import create_activity_event
+from projects.services.contractor_onboarding import build_onboarding_snapshot
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -35,6 +42,11 @@ def _get_site_urls() -> Tuple[str, str]:
     frontend = getattr(settings, "FRONTEND_URL", "http://localhost:3000").rstrip("/")
     site = getattr(settings, "SITE_URL", "http://127.0.0.1:8000").rstrip("/")
     return frontend, site
+
+
+def _stripe_return_url() -> str:
+    frontend, _site = _get_site_urls()
+    return f"{frontend}/app/onboarding"
 
 
 def _get_user_and_profile(request) -> tuple:
@@ -132,6 +144,8 @@ def _status_payload(acct: Optional[dict], profile: ConnectedAccount, user) -> di
     """
     acct_id = profile.stripe_account_id
 
+    contractor = getattr(user, "contractor_profile", None) or getattr(user, "contractor", None)
+
     if not acct:
         if not acct_id:
             return {
@@ -147,6 +161,9 @@ def _status_payload(acct: Optional[dict], profile: ConnectedAccount, user) -> di
                 "past_due": [],
                 "disabled_reason": None,
                 "link": None,
+                "requirements_pending": False,
+                "resume_url": "/app/onboarding",
+                "onboarding": build_onboarding_snapshot(contractor),
             }
 
         # Stripe retrieve failed but we have an account id
@@ -163,6 +180,9 @@ def _status_payload(acct: Optional[dict], profile: ConnectedAccount, user) -> di
             "past_due": [],
             "disabled_reason": None,
             "link": None,
+            "requirements_pending": False,
+            "resume_url": "/app/onboarding",
+            "onboarding": build_onboarding_snapshot(contractor),
         }
 
     acct_id = acct.get("id") or acct_id
@@ -182,6 +202,50 @@ def _status_payload(acct: Optional[dict], profile: ConnectedAccount, user) -> di
     # Sync flags to profile + contractor
     profile.set_flags(charges=charges, payouts=payouts, submitted=submitted)
     _sync_contractor_from_connected_account(user, acct_id, acct)
+    contractor = getattr(user, "contractor_profile", None) or getattr(user, "contractor", None)
+    if fully_connected and contractor is not None:
+        track_activation_event(
+            contractor,
+            event_type=FUNNEL_EVENT_STRIPE_CONNECTED,
+            step="stripe",
+            context={"charges_enabled": charges, "payouts_enabled": payouts},
+            user=user,
+            once=True,
+        )
+        create_activity_event(
+            contractor=contractor,
+            actor_user=user,
+            event_type="stripe_connected",
+            title="Stripe connected",
+            summary="Payments are connected and payouts can now flow through Stripe.",
+            severity="success",
+            related_label=getattr(contractor, "business_name", "") or "Payments",
+            icon_hint="stripe",
+            navigation_target="/app/onboarding",
+            metadata={"charges_enabled": charges, "payouts_enabled": payouts},
+            dedupe_key=f"stripe_connected:{contractor.id}",
+        )
+        track_activation_event(
+            contractor,
+            event_type=FUNNEL_EVENT_ONBOARDING_COMPLETED,
+            step="complete",
+            context={"source": "stripe_status"},
+            user=user,
+            once=True,
+        )
+        create_activity_event(
+            contractor=contractor,
+            actor_user=user,
+            event_type="onboarding_completed",
+            title="Onboarding completed",
+            summary="Your core setup is complete and payment-ready workflows are unlocked.",
+            severity="success",
+            related_label=getattr(contractor, "business_name", "") or "Onboarding",
+            icon_hint="onboarding",
+            navigation_target="/app/dashboard",
+            metadata={"source": "stripe_status"},
+            dedupe_key=f"onboarding_completed:{contractor.id}",
+        )
 
     return {
         "onboarding_status": status_str,
@@ -196,6 +260,9 @@ def _status_payload(acct: Optional[dict], profile: ConnectedAccount, user) -> di
         "past_due": past_due,
         "disabled_reason": disabled_reason,
         "link": None,
+        "requirements_pending": bool(currently_due or past_due),
+        "resume_url": "/app/onboarding",
+        "onboarding": build_onboarding_snapshot(contractor),
     }
 
 
@@ -239,13 +306,13 @@ class OnboardingStart(APIView):
 
         user, profile = _get_user_and_profile(request)
         acct_id = _create_or_get_connect_account_id(profile, user)
-        frontend_url, _ = _get_site_urls()
+        return_url = _stripe_return_url()
 
         try:
             link = stripe.AccountLink.create(
                 account=acct_id,
-                refresh_url=f"{frontend_url}/onboarding",
-                return_url=f"{frontend_url}/onboarding",
+                refresh_url=return_url,
+                return_url=return_url,
                 type="account_onboarding",
             )
             return Response({"url": link["url"], "onboarding_url": link["url"], "account_id": acct_id}, status=200)
@@ -266,7 +333,7 @@ class OnboardingManage(APIView):
 
         user, profile = _get_user_and_profile(request)
         acct_id = _create_or_get_connect_account_id(profile, user)
-        frontend_url, _ = _get_site_urls()
+        return_url = _stripe_return_url()
 
         try:
             acct = stripe.Account.retrieve(acct_id)
@@ -287,8 +354,8 @@ class OnboardingManage(APIView):
             link_type = "account_update" if fully_connected else "account_onboarding"
             link = stripe.AccountLink.create(
                 account=acct_id,
-                refresh_url=f"{frontend_url}/onboarding",
-                return_url=f"{frontend_url}/onboarding",
+                refresh_url=return_url,
+                return_url=return_url,
                 type=link_type,
             )
             return Response({"manage_url": link["url"], "account_id": acct_id}, status=200)

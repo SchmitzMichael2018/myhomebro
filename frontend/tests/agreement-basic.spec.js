@@ -17,6 +17,11 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
       'Draft agreement. Details will be completed after template selection or manual entry.',
     homeowner: null,
     status: 'draft',
+    compliance_warning: {
+      warning_level: 'warning',
+      message: 'Electrical work in Texas typically requires a license. Upload a license document if it is missing.',
+      official_lookup_url: 'https://www.tdlr.texas.gov/electricians/',
+    },
   };
 
   await page.addInitScript(() => {
@@ -172,7 +177,233 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   await expect(page).toHaveURL(
     new RegExp(`/app/agreements/${AGREEMENT_ID}/wizard\\?step=1$`)
   );
+  await expect(page.getByTestId('agreement-compliance-warning')).toContainText(
+    'typically requires a license'
+  );
   await expect(page.getByTestId('agreement-wizard-subtitle')).toContainText(
     `Agreement #${AGREEMENT_ID}`
+  );
+});
+
+test('maintenance agreement fields render in step 1 and recurring summary appears in step 2', async ({
+  page,
+}) => {
+  let agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Quarterly HVAC Plan',
+    title: 'Quarterly HVAC Plan',
+    project_type: 'HVAC',
+    project_subtype: 'Maintenance',
+    agreement_mode: 'maintenance',
+    recurring_service_enabled: true,
+    recurrence_pattern: 'quarterly',
+    recurrence_interval: 1,
+    recurrence_start_date: '2026-04-15',
+    recurrence_end_date: '',
+    next_occurrence_date: '2026-04-15',
+    auto_generate_next_occurrence: true,
+    maintenance_status: 'active',
+    recurring_summary_label: 'Quarterly HVAC Maintenance',
+    service_window_notes: 'Second Wednesday mornings.',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description: 'Recurring HVAC maintenance agreement.',
+    homeowner: null,
+    status: 'draft',
+    recurring_preview: {
+      recurrence_pattern: 'quarterly',
+      recurrence_interval: 1,
+      next_occurrence_date: '2026-04-15',
+      recurring_summary_label: 'Quarterly HVAC Maintenance',
+      preview_occurrences: [
+        {
+          rule_milestone_id: 1,
+          title: 'HVAC Tune-Up',
+          sequence_number: 1,
+          scheduled_service_date: '2026-04-15',
+          amount: '300.00',
+        },
+      ],
+    },
+    compliance_warning: {
+      warning_level: 'none',
+      message: '',
+    },
+  };
+
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        onboarding_status: 'not_started',
+        connected: false,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, value: 'HVAC', label: 'HVAC', owner_type: 'system' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 11,
+            value: 'Maintenance',
+            label: 'Maintenance',
+            owner_type: 'system',
+            project_type: 'HVAC',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/homeowners**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route('**/api/projects/contractors/me/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 77,
+        ai: { access: 'included', enabled: true, unlimited: true },
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/milestones\/?(\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 501,
+            agreement: AGREEMENT_ID,
+            title: 'HVAC Tune-Up - Visit 1',
+            description: 'Recurring generated visit.',
+            amount: '300.00',
+            generated_from_recurring_rule: true,
+            occurrence_sequence_number: 1,
+            scheduled_service_date: '2026-04-15',
+            start_date: '2026-04-15',
+            completion_date: '2026-04-15',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`),
+    async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+
+      if (request.method() === 'PATCH') {
+        const payload = request.postDataJSON();
+        agreement = {
+          ...agreement,
+          ...payload,
+          recurring_preview: {
+            ...(agreement.recurring_preview || {}),
+            recurrence_pattern: payload.recurrence_pattern || agreement.recurrence_pattern,
+            recurrence_interval:
+              payload.recurrence_interval || agreement.recurrence_interval || 1,
+            next_occurrence_date:
+              agreement.next_occurrence_date || payload.recurrence_start_date || '2026-04-15',
+            recurring_summary_label:
+              payload.recurring_summary_label || agreement.recurring_summary_label,
+            preview_occurrences: agreement.recurring_preview?.preview_occurrences || [],
+          },
+        };
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+
+      await route.fallback();
+    }
+  );
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('maintenance-settings-card')).toBeVisible();
+  await page.getByText('Maintenance / Recurring Service').click();
+  await page.getByTestId('maintenance-frequency-select').selectOption('quarterly');
+  await page.getByTestId('maintenance-interval-input').fill('1');
+  await page.getByTestId('maintenance-start-date-input').fill('2026-04-15');
+  await expect(page.getByTestId('maintenance-summary')).toContainText(
+    'Quarterly HVAC Maintenance'
+  );
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step2-recurring-summary')).toContainText(
+    'Quarterly HVAC Maintenance'
+  );
+  await expect(page.getByTestId('step2-recurring-summary')).toContainText(
+    'Next occurrence: 2026-04-15'
+  );
+  await expect(page.getByTestId('step2-recurring-upcoming')).toContainText(
+    'HVAC Tune-Up'
   );
 });

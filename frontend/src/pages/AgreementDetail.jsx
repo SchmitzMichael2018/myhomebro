@@ -870,20 +870,45 @@ export default function AgreementDetail() {
     }
   };
 
-  const assignMilestoneSubcontractor = async (milestoneId, invitationId) => {
-    const { data } = await api.patch(`/projects/milestones/${milestoneId}/`, {
-      assigned_subcontractor_invitation: invitationId,
-    });
+  const assignMilestoneSubcontractor = async (
+    milestoneId,
+    invitationId,
+    options = {}
+  ) => {
+    const payload = { invitation_id: invitationId };
+    if (options.complianceAction) {
+      payload.compliance_action = options.complianceAction;
+    }
+    if (options.overrideReason) {
+      payload.override_reason = options.overrideReason;
+    }
+    const { data } = await api.post(
+      `/projects/milestones/${milestoneId}/assign-subcontractor/`,
+      payload
+    );
+    const milestonePayload = data?.milestone || data;
+    if (!milestonePayload?.id) {
+      return data;
+    }
     setAgreement((prev) => {
       if (!prev) return prev;
       return {
         ...prev,
         milestones: (prev.milestones || []).map((milestone) =>
-          milestone.id === milestoneId ? { ...milestone, ...data } : milestone
+          milestone.id === milestoneId
+            ? { ...milestone, ...milestonePayload }
+            : milestone
         ),
       };
     });
-    toast.success("Subcontractor assigned.");
+    if (options.complianceAction === "request_license") {
+      toast.success("License request sent and assignment marked pending.");
+    } else if (options.complianceAction === "assign_anyway") {
+      toast.success("Subcontractor assigned with override.");
+    } else {
+      toast.success("Subcontractor assigned.");
+    }
+    return data;
   };
 
   const unassignMilestoneSubcontractor = async (milestoneId) => {
@@ -1137,6 +1162,73 @@ export default function AgreementDetail() {
             the <b>Invoices</b> section.
           </div>
         )}
+      </div>
+
+      <div
+        className="rounded border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm"
+        data-testid="agreement-sms-status"
+      >
+        <div className="font-semibold text-slate-900">SMS Status</div>
+        <div className="mt-1">
+          {agreement?.sms_enabled
+            ? "Customer SMS updates are enabled for this agreement."
+            : agreement?.sms_opted_out
+            ? "Customer has opted out of SMS updates for this agreement."
+            : "Customer SMS updates are not enabled for this agreement yet."}
+        </div>
+        {agreement?.sms_status?.phone_number_e164 ? (
+          <div className="mt-1 text-xs text-slate-500">
+            Phone: {agreement.sms_status.phone_number_e164}
+          </div>
+        ) : null}
+        {agreement?.last_sms_event?.summary ? (
+          <div className="mt-1 text-xs text-slate-500">
+            Last SMS event: {agreement.last_sms_event.summary}
+          </div>
+        ) : null}
+      </div>
+
+      <div
+        className="rounded border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm"
+        data-testid="agreement-sms-automation"
+      >
+        <div className="font-semibold text-slate-900">SMS Automation</div>
+        {agreement?.last_sms_automation_decision ? (
+          <div className="mt-2 space-y-1">
+            <div>
+              Last decision:{" "}
+              <span className="font-semibold text-slate-900">
+                {agreement.last_sms_automation_decision.reason_code}
+              </span>
+            </div>
+            <div className="text-xs text-slate-500">
+              {agreement.last_sms_automation_decision.message_preview || "No message preview available."}
+            </div>
+          </div>
+        ) : (
+          <div className="mt-2 text-sm text-slate-600">
+            No SMS automation decisions for this agreement yet.
+          </div>
+        )}
+        {Array.isArray(agreement?.recent_sms_automation_decisions) &&
+        agreement.recent_sms_automation_decisions.length ? (
+          <div className="mt-3 space-y-2">
+            {agreement.recent_sms_automation_decisions.slice(0, 4).map((item) => (
+              <div
+                key={item.id || `${item.event_type}-${item.created_at}`}
+                className="rounded-lg bg-slate-50 px-3 py-2"
+              >
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  {item.event_type}
+                </div>
+                <div className="mt-1 text-sm text-slate-800">
+                  {item.reason_code} · {item.channel_decision}
+                  {item.sent ? " · sent" : item.deferred ? " · deferred" : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <WorkflowHint
@@ -1981,8 +2073,9 @@ export default function AgreementDetail() {
                       <AssignSubcontractorInline
                         acceptedSubcontractors={acceptedSubcontractors}
                         currentAssignment={m.assigned_subcontractor}
-                        onAssign={(invitationId) =>
-                          assignMilestoneSubcontractor(m.id, invitationId)
+                        currentCompliance={m.subcontractor_assignment_compliance}
+                        onAssign={(invitationId, options) =>
+                          assignMilestoneSubcontractor(m.id, invitationId, options)
                         }
                         onUnassign={() => unassignMilestoneSubcontractor(m.id)}
                       />

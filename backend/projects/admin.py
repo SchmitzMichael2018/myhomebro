@@ -25,6 +25,9 @@ try:
         Invoice,
         Expense,
         AgreementAmendment,
+        AgreementOutcomeSnapshot,
+        AgreementOutcomeMilestoneSnapshot,
+        ProjectBenchmarkAggregate,
     )
 except Exception:  # pragma: no cover
     Skill = Contractor = Homeowner = Project = Agreement = AgreementWarranty = None
@@ -32,6 +35,7 @@ except Exception:  # pragma: no cover
     Milestone = MilestoneFile = MilestoneComment = None
     PublicContractorLead = None
     Invoice = Expense = AgreementAmendment = None
+    AgreementOutcomeSnapshot = AgreementOutcomeMilestoneSnapshot = ProjectBenchmarkAggregate = None
 
 # Optional/independent models (guarded with try so admin doesn’t break)
 try:
@@ -55,6 +59,7 @@ try:
     from .models_templates import (  # <-- corrected import
         ProjectTemplate,
         ProjectTemplateMilestone,
+        SeedBenchmarkProfile,
         MarketPricingBaseline,
         PricingObservation,
         PricingStatistic,
@@ -62,15 +67,32 @@ try:
 except Exception:  # pragma: no cover
     ProjectTemplate = None  # type: ignore
     ProjectTemplateMilestone = None  # type: ignore
+    SeedBenchmarkProfile = None  # type: ignore
     MarketPricingBaseline = None  # type: ignore
     PricingObservation = None  # type: ignore
     PricingStatistic = None  # type: ignore
+
+try:
+    from .models_compliance import (  # type: ignore
+        ContractorComplianceRecord,
+        StateTradeLicenseRequirement,
+    )
+except Exception:  # pragma: no cover
+    ContractorComplianceRecord = None  # type: ignore
+    StateTradeLicenseRequirement = None  # type: ignore
 
 # ✅ NEW: Project Intake model (guarded)
 try:
     from .models_project_intake import ProjectIntake  # type: ignore
 except Exception:  # pragma: no cover
     ProjectIntake = None  # type: ignore
+
+try:
+    from .models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent  # type: ignore
+except Exception:  # pragma: no cover
+    DeferredSMSAutomation = None  # type: ignore
+    SMSAutomationDecision = None  # type: ignore
+    SMSConsent = None  # type: ignore
 
 # Optional services used by admin actions (guarded)
 try:
@@ -173,6 +195,57 @@ if Homeowner is not None:
         list_display = ("id", "full_name", "email", "phone_number", "status", "city", "state", "created_at")
         search_fields = ("full_name", "email", "phone_number", "street_address", "city", "state", "zip_code")
         list_filter = ("status",)
+        readonly_fields = ("created_at", "updated_at")
+
+
+if SMSConsent is not None:
+    @admin.register(SMSConsent)
+    class SMSConsentAdmin(admin.ModelAdmin):
+        list_display = ("id", "phone_number_e164", "contractor", "homeowner", "can_send_sms", "opted_out", "opted_in_source", "updated_at")
+        search_fields = ("phone_number_e164", "contractor__business_name", "homeowner__full_name", "homeowner__email")
+        list_filter = ("can_send_sms", "opted_out", "opted_in_source", "opted_out_source")
+        readonly_fields = ("created_at", "updated_at")
+
+
+if SMSAutomationDecision is not None:
+    @admin.register(SMSAutomationDecision)
+    class SMSAutomationDecisionAdmin(admin.ModelAdmin):
+        list_display = ("id", "event_type", "phone_number_e164", "channel_decision", "priority", "reason_code", "sent", "created_at")
+        search_fields = ("phone_number_e164", "agreement__id", "invoice__invoice_number", "milestone__title", "reason_code", "template_key")
+        list_filter = ("should_send", "channel_decision", "priority", "reason_code", "template_key", "sent", "deferred")
+        readonly_fields = (
+            "event_type",
+            "phone_number_e164",
+            "contractor",
+            "homeowner",
+            "agreement",
+            "invoice",
+            "milestone",
+            "should_send",
+            "channel_decision",
+            "reason_code",
+            "priority",
+            "template_key",
+            "intent_key",
+            "intent_summary",
+            "message_preview",
+            "cooldown_applied",
+            "duplicate_suppressed",
+            "sent",
+            "deferred",
+            "sms_consent_snapshot_json",
+            "decision_context_json",
+            "twilio_message_sid",
+            "created_at",
+        )
+
+
+if DeferredSMSAutomation is not None:
+    @admin.register(DeferredSMSAutomation)
+    class DeferredSMSAutomationAdmin(admin.ModelAdmin):
+        list_display = ("id", "event_type", "phone_number_e164", "status", "scheduled_for", "created_at")
+        search_fields = ("phone_number_e164", "template_key", "event_type", "agreement__id")
+        list_filter = ("status", "event_type", "template_key")
         readonly_fields = ("created_at", "updated_at")
 
 
@@ -511,6 +584,11 @@ if ProjectTemplate is not None and ProjectTemplateMilestone is not None:
             "project_type",
             "project_subtype",
             "is_system",
+            "visibility",
+            "allow_discovery",
+            "normalized_region_key",
+            "source_system_template",
+            "benchmark_profile",
             "contractor",
             "is_active",
             "estimated_days",
@@ -520,6 +598,8 @@ if ProjectTemplate is not None and ProjectTemplateMilestone is not None:
         list_filter = (
             "is_system",
             "is_active",
+            "visibility",
+            "allow_discovery",
             "project_type",
             "project_subtype",
             "created_at",
@@ -564,6 +644,15 @@ if ProjectTemplate is not None and ProjectTemplateMilestone is not None:
                         "description",
                         "default_scope",
                         "default_clarifications",
+                        "visibility",
+                        "allow_discovery",
+                        "normalized_region_key",
+                        "published_at",
+                        "published_by",
+                        "benchmark_match_key",
+                        "benchmark_profile",
+                        "source_system_template",
+                        "region_tags",
                     )
                 },
             ),
@@ -727,6 +816,175 @@ if PricingStatistic is not None:
             "source_note",
             "contractor__business_name",
             "contractor__user__email",
+        )
+        readonly_fields = ("updated_at",)
+
+
+if SeedBenchmarkProfile is not None:
+    @admin.register(SeedBenchmarkProfile)
+    class SeedBenchmarkProfileAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "benchmark_key",
+            "project_type",
+            "project_subtype",
+            "region_scope_display",
+            "region_state",
+            "region_city",
+            "template",
+            "base_price_low",
+            "base_price_high",
+            "region_priority_weight",
+            "is_active",
+        )
+        list_filter = ("is_system", "is_active", "project_type", "project_subtype", "region_state", "region_city")
+        search_fields = (
+            "benchmark_key",
+            "benchmark_match_key",
+            "project_type",
+            "project_subtype",
+            "template__name",
+            "normalized_region_key",
+            "source_note",
+        )
+
+        @admin.display(description="Region Scope")
+        def region_scope_display(self, obj):
+            if obj.region_city and obj.region_state:
+                return "City"
+            if obj.region_state:
+                return "State"
+            if obj.normalized_region_key:
+                return "Normalized Region"
+            return "National"
+
+
+if StateTradeLicenseRequirement is not None:
+    @admin.register(StateTradeLicenseRequirement)
+    class StateTradeLicenseRequirementAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "state_code",
+            "trade_key",
+            "license_required",
+            "insurance_required",
+            "authority_short_name",
+            "active",
+            "last_reviewed_at",
+        )
+        list_filter = ("state_code", "license_required", "insurance_required", "active", "source_type")
+        search_fields = (
+            "state_code",
+            "state_name",
+            "trade_key",
+            "trade_label",
+            "issuing_authority_name",
+            "official_lookup_url",
+            "source_reference",
+        )
+        readonly_fields = ("created_at", "updated_at")
+
+
+if ContractorComplianceRecord is not None:
+    @admin.register(ContractorComplianceRecord)
+    class ContractorComplianceRecordAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "contractor",
+            "record_type",
+            "trade_key",
+            "state_code",
+            "identifier",
+            "expiration_date",
+            "status",
+            "source",
+            "updated_at",
+        )
+        list_filter = ("record_type", "status", "state_code", "source")
+        search_fields = (
+            "contractor__business_name",
+            "contractor__user__email",
+            "trade_key",
+            "trade_label",
+            "identifier",
+            "state_code",
+        )
+        readonly_fields = ("created_at", "updated_at")
+
+
+if AgreementOutcomeSnapshot is not None:
+    @admin.register(AgreementOutcomeSnapshot)
+    class AgreementOutcomeSnapshotAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "agreement",
+            "contractor",
+            "template",
+            "project_type",
+            "project_subtype",
+            "agreement_completed_date",
+            "final_agreed_total_amount",
+            "actual_duration_days",
+            "excluded_from_benchmarks",
+        )
+        list_filter = (
+            "excluded_from_benchmarks",
+            "project_type",
+            "project_subtype",
+            "payment_mode",
+            "agreement_completed_date",
+        )
+        search_fields = (
+            "agreement__project__number",
+            "agreement__project__title",
+            "contractor__business_name",
+            "project_type",
+            "project_subtype",
+            "normalized_region_key",
+        )
+        readonly_fields = ("snapshot_created_at", "snapshot_updated_at")
+
+
+if AgreementOutcomeMilestoneSnapshot is not None:
+    @admin.register(AgreementOutcomeMilestoneSnapshot)
+    class AgreementOutcomeMilestoneSnapshotAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "snapshot",
+            "sort_order",
+            "title",
+            "normalized_milestone_type",
+            "amount",
+            "actual_duration_days",
+        )
+        list_filter = ("normalized_milestone_type",)
+        search_fields = ("title", "normalized_milestone_type", "snapshot__agreement__project__title")
+        readonly_fields = ("created_at",)
+
+
+if ProjectBenchmarkAggregate is not None:
+    @admin.register(ProjectBenchmarkAggregate)
+    class ProjectBenchmarkAggregateAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "scope",
+            "project_type",
+            "project_subtype",
+            "normalized_region_key",
+            "template",
+            "contractor",
+            "completed_project_count",
+            "average_final_total",
+            "average_actual_duration_days",
+            "updated_at",
+        )
+        list_filter = ("scope", "project_type", "project_subtype")
+        search_fields = (
+            "project_type",
+            "project_subtype",
+            "normalized_region_key",
+            "template__name",
+            "contractor__business_name",
         )
         readonly_fields = ("updated_at",)
 

@@ -44,6 +44,18 @@ function PrettyJson({ data }) {
   );
 }
 
+function formatRecurrenceSummary(pattern, interval) {
+  const safePattern = safeTrim(pattern) || "monthly";
+  const safeInterval = Math.max(1, Number(interval || 1) || 1);
+  const labelMap = {
+    weekly: safeInterval === 1 ? "week" : "weeks",
+    monthly: safeInterval === 1 ? "month" : "months",
+    quarterly: safeInterval === 1 ? "quarter" : "quarters",
+    yearly: safeInterval === 1 ? "year" : "years",
+  };
+  return `Recurring every ${safeInterval} ${labelMap[safePattern] || safePattern}`;
+}
+
 export default function Step1Details({
   agreement,
   isEdit,
@@ -70,6 +82,13 @@ export default function Step1Details({
   projectSubtypeOptions,
   onTemplateApplied,
   refreshAgreement,
+  assistantGuidedFlow = {},
+  assistantTemplateRecommendations = [],
+  assistantTopTemplatePreview = {},
+  assistantProactiveRecommendations = [],
+  assistantPredictiveInsights = [],
+  assistantProposedActions = [],
+  assistantConfirmationRequiredActions = [],
 }) {
   void setQaBusy;
 
@@ -437,6 +456,20 @@ export default function Step1Details({
   const paymentMode = normalizePaymentMode(dLocal?.payment_mode);
   const paymentStructure = normalizePaymentStructure(dLocal?.payment_structure);
   const retainagePercent = safeTrim(dLocal?.retainage_percent) || "0.00";
+  const agreementMode = safeTrim(dLocal?.agreement_mode) || "standard";
+  const isMaintenanceMode = agreementMode === "maintenance";
+  const recurrencePattern = safeTrim(dLocal?.recurrence_pattern) || "monthly";
+  const recurrenceInterval = safeTrim(dLocal?.recurrence_interval) || "1";
+  const recurrenceStartDate = safeTrim(dLocal?.recurrence_start_date);
+  const recurrenceEndDate = safeTrim(dLocal?.recurrence_end_date);
+  const maintenanceStatus = safeTrim(dLocal?.maintenance_status) || "active";
+  const autoGenerateNextOccurrence = dLocal?.auto_generate_next_occurrence !== false;
+  const recurringSummaryLabel = safeTrim(dLocal?.recurring_summary_label);
+  const nextOccurrenceDate = safeTrim(
+    dLocal?.next_occurrence_date || agreement?.next_occurrence_date
+  );
+  const recurringSummaryText =
+    recurringSummaryLabel || formatRecurrenceSummary(recurrencePattern, recurrenceInterval);
 
   async function handlePaymentModeChange(mode) {
     if (locked) return;
@@ -518,6 +551,53 @@ export default function Step1Details({
       }
       toast.error(formatApiError(e, "Could not update retainage."));
     }
+  }
+
+  async function handleMaintenanceModeChange(nextMode) {
+    if (locked) return;
+    const normalized = safeTrim(nextMode) === "maintenance" ? "maintenance" : "standard";
+    const nextPatch =
+      normalized === "maintenance"
+        ? {
+            agreement_mode: "maintenance",
+            recurring_service_enabled: true,
+            recurrence_pattern: recurrencePattern || "monthly",
+            recurrence_interval: Math.max(1, Number(recurrenceInterval || 1) || 1),
+            recurrence_start_date: recurrenceStartDate || "",
+            recurrence_end_date: recurrenceEndDate || "",
+            maintenance_status: maintenanceStatus || "active",
+            auto_generate_next_occurrence: autoGenerateNextOccurrence,
+            service_window_notes: dLocal?.service_window_notes || "",
+            recurring_summary_label: dLocal?.recurring_summary_label || "",
+          }
+        : {
+            agreement_mode: "standard",
+            recurring_service_enabled: false,
+            recurrence_pattern: "",
+            recurrence_interval: 1,
+            recurrence_start_date: null,
+            recurrence_end_date: null,
+            maintenance_status: "active",
+            auto_generate_next_occurrence: false,
+            service_window_notes: "",
+            recurring_summary_label: "",
+          };
+
+    setDLocal((s) => ({
+      ...s,
+      ...nextPatch,
+      agreement_mode: normalized,
+    }));
+
+    if (!agreementId) return;
+    await patchAgreement(nextPatch, { silent: true });
+  }
+
+  async function handleMaintenanceFieldPatch(name, value) {
+    if (locked) return;
+    setDLocal((s) => ({ ...s, [name]: value }));
+    if (!agreementId) return;
+    await patchAgreement({ [name]: value }, { silent: true });
   }
 
   function persistAddressNow({ silent = true } = {}) {
@@ -833,6 +913,8 @@ export default function Step1Details({
     dLocal?.template_id,
   ]);
 
+  const complianceWarning = agreement?.compliance_warning || null;
+
   async function handleDeselectAppliedTemplate() {
     if (locked) return;
     if (!agreementId) return;
@@ -1008,6 +1090,114 @@ export default function Step1Details({
           </div>
         ) : null}
 
+        {complianceWarning?.warning_level && complianceWarning.warning_level !== "none" ? (
+          <div
+            data-testid="agreement-compliance-warning"
+            className={`mb-3 rounded-md border px-4 py-3 text-sm ${
+              complianceWarning.warning_level === "critical"
+                ? "border-rose-200 bg-rose-50 text-rose-900"
+                : complianceWarning.warning_level === "warning"
+                ? "border-amber-200 bg-amber-50 text-amber-900"
+                : "border-sky-200 bg-sky-50 text-sky-900"
+            }`}
+          >
+            <div className="font-semibold">Compliance note</div>
+            <div className="mt-1">
+              {complianceWarning.message || "This work may require a license in the project state."}
+            </div>
+            {complianceWarning.official_lookup_url ? (
+              <a
+                href={complianceWarning.official_lookup_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 inline-block text-xs font-semibold underline"
+              >
+                View official source
+              </a>
+            ) : null}
+          </div>
+        ) : null}
+
+        {assistantGuidedFlow?.guided_question ? (
+          <div
+            data-testid="assistant-guided-step1"
+            className="mb-3 rounded-md border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900"
+          >
+            <div className="font-semibold">Guided next step</div>
+            <div className="mt-1">{assistantGuidedFlow.guided_question}</div>
+            {assistantGuidedFlow.why_this_matters ? (
+              <div className="mt-1 text-xs text-indigo-800/90">
+                {assistantGuidedFlow.why_this_matters}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {assistantTemplateRecommendations.length ? (
+          <div
+            data-testid="assistant-template-preview-step1"
+            className="mb-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900"
+          >
+            <div className="font-semibold">Recommended template</div>
+            <div className="mt-1">{assistantTemplateRecommendations[0]?.name}</div>
+            {assistantTemplateRecommendations[0]?.rank_reasons?.length ? (
+              <div className="mt-1 text-xs text-sky-800/90">
+                {assistantTemplateRecommendations[0].rank_reasons.slice(0, 2).join(" • ")}
+              </div>
+            ) : null}
+            {assistantTopTemplatePreview?.milestone_count ? (
+              <div className="mt-1 text-xs text-sky-800/90">
+                Includes {assistantTopTemplatePreview.milestone_count} default milestone
+                {assistantTopTemplatePreview.milestone_count === 1 ? "" : "s"}.
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {assistantProactiveRecommendations.length ? (
+          <div
+            data-testid="assistant-proactive-step1"
+            className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          >
+            <div className="font-semibold">Proactive recommendations</div>
+            <div className="mt-2 space-y-2">
+              {assistantProactiveRecommendations.slice(0, 2).map((item) => (
+                <div key={`${item.recommendation_type}-${item.title}`}>
+                  <div className="font-medium">{item.title}</div>
+                  <div className="text-xs text-amber-800/90">{item.message}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {assistantPredictiveInsights.length ? (
+          <div
+            data-testid="assistant-predictive-step1"
+            className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900"
+          >
+            <div className="font-semibold">Predictive insight</div>
+            <div className="mt-1">{assistantPredictiveInsights[0]?.title}</div>
+            <div className="mt-1 text-xs text-slate-700">
+              {assistantPredictiveInsights[0]?.summary}
+            </div>
+          </div>
+        ) : null}
+
+        {assistantConfirmationRequiredActions.length ? (
+          <div
+            data-testid="assistant-confirmation-step1"
+            className="mb-3 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900"
+          >
+            <div className="font-semibold">Actions requiring confirmation</div>
+            <div className="mt-1 text-xs text-rose-800/90">
+              {assistantConfirmationRequiredActions[0]?.action_label ||
+                assistantProposedActions[0]?.action_label ||
+                "Review AI-prepared changes before saving them."}
+            </div>
+          </div>
+        ) : null}
+
         {last400 ? (
           <div className="mb-3">
             <div className="text-sm font-semibold text-red-700">
@@ -1114,6 +1304,220 @@ export default function Step1Details({
               schedulePatch={schedulePatch}
               onLocalChange={handleStep1LocalChange}
             />
+
+            <div
+              data-testid="maintenance-settings-card"
+              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+            >
+              <div className="text-sm font-semibold text-slate-900">Agreement Mode</div>
+              <div className="mt-1 text-sm text-slate-600">
+                Use maintenance mode for recurring service agreements that generate repeat visits over time.
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                <button
+                  type="button"
+                  onClick={() => handleMaintenanceModeChange("standard")}
+                  disabled={locked}
+                  className={`rounded-xl border px-4 py-3 text-left transition ${
+                    !isMaintenanceMode
+                      ? "border-indigo-300 bg-indigo-50"
+                      : "border-slate-200 bg-white hover:bg-slate-50"
+                  } disabled:opacity-60`}
+                >
+                  <div className="font-semibold text-slate-900">Standard Agreement</div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    One-time project with normal milestone planning.
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleMaintenanceModeChange("maintenance")}
+                  disabled={locked}
+                  className={`rounded-xl border px-4 py-3 text-left transition ${
+                    isMaintenanceMode
+                      ? "border-emerald-300 bg-emerald-50"
+                      : "border-slate-200 bg-white hover:bg-slate-50"
+                  } disabled:opacity-60`}
+                >
+                  <div className="font-semibold text-slate-900">Maintenance / Recurring Service</div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    Generate repeat service occurrences while keeping the same approval, invoice, and payment flow.
+                  </div>
+                </button>
+              </div>
+
+              {isMaintenanceMode ? (
+                <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
+                  <div
+                    data-testid="maintenance-summary"
+                    className="rounded-md border border-emerald-200 bg-white px-3 py-3 text-sm text-slate-700"
+                  >
+                    <div className="font-semibold text-slate-900">
+                      {recurringSummaryText}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600">
+                      {recurrenceStartDate
+                        ? `Starts ${recurrenceStartDate}`
+                        : "Pick a start date to generate the first service occurrence."}
+                      {nextOccurrenceDate ? ` • Next service: ${nextOccurrenceDate}` : ""}
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        Frequency
+                      </label>
+                      <select
+                        data-testid="maintenance-frequency-select"
+                        value={recurrencePattern}
+                        disabled={locked}
+                        onChange={(e) =>
+                          handleMaintenanceFieldPatch("recurrence_pattern", e.target.value)
+                        }
+                        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                      >
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly">Monthly</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="yearly">Yearly</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        Interval
+                      </label>
+                      <input
+                        data-testid="maintenance-interval-input"
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={recurrenceInterval}
+                        disabled={locked}
+                        onChange={(e) =>
+                          setDLocal((s) => ({ ...s, recurrence_interval: e.target.value }))
+                        }
+                        onBlur={(e) =>
+                          handleMaintenanceFieldPatch(
+                            "recurrence_interval",
+                            Math.max(1, Number(e.target.value || 1) || 1)
+                          )
+                        }
+                        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        Start Date
+                      </label>
+                      <input
+                        data-testid="maintenance-start-date-input"
+                        type="date"
+                        value={recurrenceStartDate}
+                        disabled={locked}
+                        onChange={(e) =>
+                          handleMaintenanceFieldPatch("recurrence_start_date", e.target.value)
+                        }
+                        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        End Date
+                      </label>
+                      <input
+                        type="date"
+                        value={recurrenceEndDate}
+                        disabled={locked}
+                        onChange={(e) =>
+                          handleMaintenanceFieldPatch("recurrence_end_date", e.target.value || null)
+                        }
+                        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        Maintenance Status
+                      </label>
+                      <select
+                        value={maintenanceStatus}
+                        disabled={locked}
+                        onChange={(e) =>
+                          handleMaintenanceFieldPatch("maintenance_status", e.target.value)
+                        }
+                        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                      >
+                        <option value="active">Active</option>
+                        <option value="paused">Paused</option>
+                        <option value="completed">Completed</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        Summary Label
+                      </label>
+                      <input
+                        type="text"
+                        value={recurringSummaryLabel}
+                        disabled={locked}
+                        onChange={(e) =>
+                          setDLocal((s) => ({ ...s, recurring_summary_label: e.target.value }))
+                        }
+                        onBlur={(e) =>
+                          handleMaintenanceFieldPatch("recurring_summary_label", e.target.value)
+                        }
+                        placeholder="Monthly HVAC Maintenance"
+                        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-3">
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={autoGenerateNextOccurrence}
+                        disabled={locked}
+                        onChange={(e) =>
+                          handleMaintenanceFieldPatch(
+                            "auto_generate_next_occurrence",
+                            e.target.checked
+                          )
+                        }
+                      />
+                      Auto-generate the next service occurrence
+                    </label>
+                  </div>
+
+                  <div className="mt-3">
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      Service Window Notes
+                    </label>
+                    <textarea
+                      value={dLocal?.service_window_notes || ""}
+                      disabled={locked}
+                      onChange={(e) =>
+                        setDLocal((s) => ({ ...s, service_window_notes: e.target.value }))
+                      }
+                      onBlur={(e) =>
+                        handleMaintenanceFieldPatch("service_window_notes", e.target.value)
+                      }
+                      rows={3}
+                      placeholder="Example: Second Tuesday of each month, 8am–12pm."
+                      className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </div>
 
             <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="text-sm font-semibold text-slate-900">Payment Structure</div>

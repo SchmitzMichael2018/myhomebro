@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import api, { getAccessToken } from "../api";
 import { useAuth } from "../context/AuthContext";
+import { handleStripeRequirementError } from "../lib/stripeRequirement.js";
 
 // InvoiceList.jsx
 // v2026-03-03b — ✅ Option A alignment + milestone numbering fix + LIVE route fix
@@ -521,7 +522,11 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
       if (onRefresh) await onRefresh();
     } catch (err) {
       console.error(err);
-      toast.error(err?.response?.data?.detail || err?.response?.data?.error || "Failed to create Direct Pay link.");
+      const stripeRequirement = handleStripeRequirementError(
+        err,
+        "Failed to create Direct Pay link."
+      );
+      toast.error(stripeRequirement.message);
     } finally {
       setDirectPayIds((prev) => ({ ...prev, [invoiceId]: false }));
     }
@@ -550,7 +555,11 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
       if (onRefresh) await onRefresh();
     } catch (err) {
       console.error(err);
-      toast.error(err?.response?.data?.detail || err?.response?.data?.error || "Failed to email pay link.");
+      const stripeRequirement = handleStripeRequirementError(
+        err,
+        "Failed to email pay link."
+      );
+      toast.error(stripeRequirement.message);
     } finally {
       setDirectPayEmailIds((prev) => ({ ...prev, [invoiceId]: false }));
     }

@@ -1,5 +1,5 @@
 // src/pages/ContractorSignUp.jsx
-// v2025-11-09 — Contractor registration → login tokens → to /onboarding
+// v2026-03-27 - activation-first registration -> login tokens -> resumable onboarding
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api, { setTokens } from "../api";
@@ -22,7 +22,9 @@ export default function ContractorSignUp() {
   const [busy, setBusy] = useState(false);
   const [showPass, setShowPass] = useState(false);
 
-  useEffect(() => { firstRef.current?.focus(); }, []);
+  useEffect(() => {
+    firstRef.current?.focus();
+  }, []);
 
   const onChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -40,13 +42,11 @@ export default function ContractorSignUp() {
   };
 
   async function registerContractor() {
-    // Your backend exposes POST /api/auth/contractor-register/ (no extra /accounts):contentReference[oaicite:5]{index=5}:contentReference[oaicite:6]{index=6}
     const payload = {
       email: form.email.trim(),
       password: form.password,
       first_name: form.first_name.trim(),
       last_name: form.last_name.trim(),
-      // Optional extras (serializer supports phone_number + Contractor created)
       phone_number: form.phone.replace(/\D/g, ""),
     };
     return api.post("/auth/contractor-register/", payload);
@@ -55,12 +55,13 @@ export default function ContractorSignUp() {
   const onSubmit = async (e) => {
     e.preventDefault();
     const msg = validate();
-    if (msg) { toast.error(msg); return; }
+    if (msg) {
+      toast.error(msg);
+      return;
+    }
     setBusy(true);
     try {
-      const { data, status } = await registerContractor();
-
-      // If email verification disabled, tokens are included; otherwise show message only:contentReference[oaicite:7]{index=7}
+      const { data } = await registerContractor();
       const access = data?.access;
       const refresh = data?.refresh;
 
@@ -71,7 +72,6 @@ export default function ContractorSignUp() {
         return;
       }
 
-      // No token → verification required
       toast.success(data?.message || "Registration successful. Please verify your email.");
       navigate("/");
     } catch (err) {
@@ -82,8 +82,6 @@ export default function ContractorSignUp() {
         err?.message ||
         "Sign up failed.";
       toast.error(String(detail));
-      // console for debugging
-      // eslint-disable-next-line no-console
       console.error("ContractorSignUp error:", err);
     } finally {
       setBusy(false);
@@ -98,46 +96,91 @@ export default function ContractorSignUp() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <label className="block">
             <span className="text-sm font-medium">First name</span>
-            <input ref={firstRef} name="first_name" value={form.first_name} onChange={onChange}
-                   className="w-full border rounded px-3 py-2" autoComplete="given-name" required />
+            <input
+              ref={firstRef}
+              name="first_name"
+              value={form.first_name}
+              onChange={onChange}
+              className="w-full border rounded px-3 py-2"
+              autoComplete="given-name"
+              required
+            />
           </label>
           <label className="block">
             <span className="text-sm font-medium">Last name</span>
-            <input name="last_name" value={form.last_name} onChange={onChange}
-                   className="w-full border rounded px-3 py-2" autoComplete="family-name" required />
+            <input
+              name="last_name"
+              value={form.last_name}
+              onChange={onChange}
+              className="w-full border rounded px-3 py-2"
+              autoComplete="family-name"
+              required
+            />
           </label>
         </div>
 
         <label className="block">
           <span className="text-sm font-medium">Email</span>
-          <input type="email" name="email" value={form.email} onChange={onChange}
-                 className="w-full border rounded px-3 py-2" autoComplete="email" required />
+          <input
+            type="email"
+            name="email"
+            value={form.email}
+            onChange={onChange}
+            className="w-full border rounded px-3 py-2"
+            autoComplete="email"
+            required
+          />
         </label>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <label className="block">
             <span className="text-sm font-medium">Password</span>
             <div className="relative">
-              <input type={showPass ? "text" : "password"} name="password" value={form.password} onChange={onChange}
-                     className="w-full border rounded px-3 py-2 pr-16" autoComplete="new-password" required minLength={8} />
-              <button type="button" onClick={() => setShowPass((v) => !v)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-blue-600">
+              <input
+                type={showPass ? "text" : "password"}
+                name="password"
+                value={form.password}
+                onChange={onChange}
+                className="w-full border rounded px-3 py-2 pr-16"
+                autoComplete="new-password"
+                required
+                minLength={8}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPass((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-blue-600"
+              >
                 {showPass ? "Hide" : "Show"}
               </button>
             </div>
           </label>
           <label className="block">
             <span className="text-sm font-medium">Confirm password</span>
-            <input type="password" name="confirm" value={form.confirm} onChange={onChange}
-                   className="w-full border rounded px-3 py-2" autoComplete="new-password" required minLength={8} />
+            <input
+              type="password"
+              name="confirm"
+              value={form.confirm}
+              onChange={onChange}
+              className="w-full border rounded px-3 py-2"
+              autoComplete="new-password"
+              required
+              minLength={8}
+            />
           </label>
         </div>
 
         <label className="block">
           <span className="text-sm font-medium">Phone (optional)</span>
-          <input name="phone" value={form.phone} onChange={onChange}
-                 className="w-full border rounded px-3 py-2" placeholder="(555) 555-5555"
-                 inputMode="tel" pattern="^\d{10}$" />
+          <input
+            name="phone"
+            value={form.phone}
+            onChange={onChange}
+            className="w-full border rounded px-3 py-2"
+            placeholder="(555) 555-5555"
+            inputMode="tel"
+            pattern="^\\d{10}$"
+          />
           <span className="text-xs text-slate-500">Digits only, e.g. 2105551212</span>
         </label>
 
@@ -146,13 +189,17 @@ export default function ContractorSignUp() {
           <span>I agree to the Terms of Service and Privacy Policy.</span>
         </label>
 
-        <button type="submit" disabled={busy}
-                className="w-full py-2 rounded-lg bg-blue-600 text-white font-semibold disabled:opacity-60">
-          {busy ? "Creating your account…" : "Create Account"}
+        <button
+          type="submit"
+          disabled={busy}
+          className="w-full py-2 rounded-lg bg-blue-600 text-white font-semibold disabled:opacity-60"
+        >
+          {busy ? "Creating your account..." : "Create Account"}
         </button>
 
         <p className="text-xs text-gray-500">
-          You’ll be redirected to connect your Stripe account next.
+          You will choose your trades, service area, and first job next. Stripe setup can wait
+          until you need payments.
         </p>
       </form>
     </div>

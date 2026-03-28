@@ -11,6 +11,7 @@ from django.utils import timezone
 
 from projects.models import Agreement, Contractor, Milestone
 from projects.models_templates import ProjectTemplate
+from projects.services.regions import build_normalized_region_key
 
 try:
     from projects.models_ai_scope import AgreementAIScope
@@ -720,7 +721,29 @@ def save_agreement_as_template(
         default_clarifications=template_questions,
         is_system=False,
         is_active=is_active,
+        visibility=ProjectTemplate.Visibility.PRIVATE,
+        allow_discovery=False,
         created_from_agreement=agreement,
+        source_system_template=agreement.selected_template if getattr(getattr(agreement, "selected_template", None), "is_system", False) else None,
+        benchmark_profile=getattr(getattr(agreement, "selected_template", None), "benchmark_profile", None),
+        benchmark_match_key=(
+            getattr(getattr(agreement, "selected_template", None), "benchmark_match_key", "")
+            or f"{agreement.project_type}:{agreement.project_subtype}".lower()
+        ),
+        normalized_region_key=build_normalized_region_key(
+            country="US",
+            state=(
+                getattr(agreement, "project_address_state", "")
+                or getattr(getattr(agreement, "project", None), "project_state", "")
+                or getattr(contractor, "state", "")
+            ),
+            city=(
+                getattr(agreement, "project_address_city", "")
+                or getattr(getattr(agreement, "project", None), "project_city", "")
+                or getattr(contractor, "city", "")
+            ),
+        ),
+        region_tags=list(getattr(getattr(agreement, "selected_template", None), "region_tags", []) or []),
     )
 
     milestone_qs = agreement.milestones.all().order_by("order", "id")

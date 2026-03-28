@@ -59,6 +59,18 @@ function reviewStatusLabel(status) {
   return String(status || "").replaceAll("_", " ") || "Pending";
 }
 
+function complianceStatusLabel(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "compliant") return "Compliant";
+  if (normalized === "pending_license") return "Pending License";
+  if (normalized === "overridden") return "Overridden";
+  if (normalized === "missing_license") return "Missing License";
+  if (normalized === "missing_insurance") return "Missing Insurance";
+  if (normalized === "not_required") return "Not Required";
+  if (normalized === "unknown") return "Unknown";
+  return "Unreviewed";
+}
+
 function SummaryCard({ label, value }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -109,6 +121,8 @@ export default function SubcontractorsPage() {
   const [reviewNotes, setReviewNotes] = useState({});
   const [assignMilestones, setAssignMilestones] = useState([]);
   const [assignMilestonesLoading, setAssignMilestonesLoading] = useState(false);
+  const [assignDecision, setAssignDecision] = useState(null);
+  const [assignOverrideReason, setAssignOverrideReason] = useState("");
   const [inviteForm, setInviteForm] = useState({
     agreement_id: "",
     invite_name: "",
@@ -271,18 +285,33 @@ export default function SubcontractorsPage() {
     }
   }
 
-  async function submitAssignment() {
+  async function submitAssignment(complianceAction = "") {
     if (!assignForm.agreement_id || !assignForm.invitation_id || !assignForm.milestone_ids.length) {
       toast.error("Agreement, subcontractor, and milestones are required.");
       return;
     }
     try {
       setAssignBusy(true);
+      const payload = { ...assignForm };
+      if (complianceAction) {
+        payload.compliance_action = complianceAction;
+      }
+      if (assignOverrideReason) {
+        payload.override_reason = assignOverrideReason;
+      }
       await api.post(
         `/projects/agreements/${assignForm.agreement_id}/subcontractor-assignments/`,
-        assignForm
+        payload
       );
-      toast.success("Milestones assigned.");
+      setAssignDecision(null);
+      setAssignOverrideReason("");
+      toast.success(
+        complianceAction === "request_license"
+          ? "License request sent and assignment marked pending."
+          : complianceAction === "assign_anyway"
+          ? "Milestones assigned with override."
+          : "Milestones assigned."
+      );
       setAssignOpen(false);
       setAssignForm({
         agreement_id: "",
@@ -293,10 +322,30 @@ export default function SubcontractorsPage() {
       await loadHubData();
     } catch (error) {
       console.error(error);
-      toast.error(error?.response?.data?.detail || "Failed to assign subcontractor.");
+      const payload = error?.response?.data;
+      if (error?.response?.status === 409 && payload?.compliance_decision_required) {
+        setAssignOpen(false);
+        setAssignDecision(payload);
+        return;
+      }
+      toast.error(payload?.detail || "Failed to assign subcontractor.");
     } finally {
       setAssignBusy(false);
     }
+  }
+
+  async function handleAssignmentDecision(action) {
+    if (action === "choose_another") {
+      setAssignDecision(null);
+      setAssignOverrideReason("");
+      setAssignOpen(true);
+      setAssignForm((prev) => ({
+        ...prev,
+        invitation_id: "",
+      }));
+      return;
+    }
+    await submitAssignment(action);
   }
 
   async function reviewSubmission(submissionId, action) {
@@ -502,6 +551,11 @@ export default function SubcontractorsPage() {
                         Work value {row.total_assigned_amount ? `$${Number(row.total_assigned_amount).toFixed(2)}` : "—"} ·
                         Earliest due {formatDate(row.earliest_due_date)}
                       </div>
+                      {row.compliance_warning_snapshot?.warning_message ? (
+                        <div className="mt-2 text-sm text-slate-700">
+                          {row.compliance_warning_snapshot.warning_message}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <span
@@ -510,6 +564,14 @@ export default function SubcontractorsPage() {
                         )}`}
                       >
                         {String(row.status || "").replaceAll("_", " ")}
+                      </span>
+                      <span
+                        data-testid={`subcontractor-assignment-compliance-${row.invitation_id}`}
+                        className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusChip(
+                          row.compliance_status
+                        )}`}
+                      >
+                        {complianceStatusLabel(row.compliance_status)}
                       </span>
                       <Link
                         to={`/app/agreements/${row.agreement_id}`}
@@ -682,6 +744,69 @@ export default function SubcontractorsPage() {
         </ModalShell>
       ) : null}
 
+      {assignDecision ? (
+        <ModalShell
+          title="Assignment Compliance Review"
+          subtitle="This assignment needs a documented decision before it proceeds."
+          onClose={() => setAssignDecision(null)}
+        >
+          <div
+            data-testid="subcontractors-assignment-compliance-decision"
+            className="rounded-xl border border-amber-200 bg-amber-50 p-4"
+          >
+            <div className="text-sm font-semibold text-slate-900">
+              Compliance review needed
+            </div>
+            <div className="mt-2 text-sm text-slate-700">
+              {assignDecision?.compliance_evaluation?.warning_message}
+            </div>
+            <div className="mt-2 text-xs text-slate-600">
+              {assignDecision?.compliance_evaluation?.trade_label ||
+                assignDecision?.compliance_evaluation?.trade_key ||
+                "Trade"}{" "}
+              in {assignDecision?.compliance_evaluation?.state_code || "the selected state"}
+            </div>
+            <textarea
+              data-testid="subcontractors-assignment-override-reason"
+              rows={2}
+              value={assignOverrideReason}
+              onChange={(e) => setAssignOverrideReason(e.target.value)}
+              className="mt-3 w-full rounded-lg border border-amber-300 px-3 py-2 text-sm"
+              placeholder="Optional note for assigning anyway"
+            />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                data-testid="subcontractors-assignment-assign-anyway"
+                onClick={() => handleAssignmentDecision("assign_anyway")}
+                disabled={assignBusy}
+                className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+              >
+                Assign anyway
+              </button>
+              <button
+                type="button"
+                data-testid="subcontractors-assignment-request-license"
+                onClick={() => handleAssignmentDecision("request_license")}
+                disabled={assignBusy}
+                className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+              >
+                Request license
+              </button>
+              <button
+                type="button"
+                data-testid="subcontractors-assignment-choose-another"
+                onClick={() => handleAssignmentDecision("choose_another")}
+                disabled={assignBusy}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+              >
+                Choose another
+              </button>
+            </div>
+          </div>
+        </ModalShell>
+      ) : null}
+
       {assignOpen ? (
         <ModalShell
           title="Create Assignment"
@@ -782,7 +907,7 @@ export default function SubcontractorsPage() {
             <button
               type="button"
               data-testid="subcontractors-assignment-submit"
-              onClick={submitAssignment}
+              onClick={() => submitAssignment()}
               disabled={assignBusy}
               className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
             >

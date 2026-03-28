@@ -1,6 +1,7 @@
 // /frontend/src/components/SendFundingLinkButton.jsx
 import React, { useMemo, useState } from "react";
 import { getAccessToken } from "../api";
+import { dispatchStripeRequirement, isStripeRequirementPayload } from "../lib/stripeRequirement.js";
 
 /**
  * SendFundingLinkButton
@@ -98,6 +99,11 @@ export default function SendFundingLinkButton({
       }
 
       if (!res.ok) {
+        if (res.status === 409 && isStripeRequirementPayload(data)) {
+          dispatchStripeRequirement(data);
+          if (onError) onError(data?.message || data?.detail || "Stripe setup is required.");
+          return;
+        }
         const msg =
           data?.detail ||
           data?.error ||

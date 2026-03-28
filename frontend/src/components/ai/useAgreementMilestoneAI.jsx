@@ -361,6 +361,43 @@ function normalizePricingEstimates(list) {
   }));
 }
 
+function normalizeEstimatePreview(data) {
+  const source = data && typeof data === "object" ? data : {};
+  return {
+    suggested_total_price: source?.suggested_total_price ?? "0.00",
+    suggested_price_low: source?.suggested_price_low ?? "0.00",
+    suggested_price_high: source?.suggested_price_high ?? "0.00",
+    suggested_duration_days: Number(source?.suggested_duration_days || 0),
+    suggested_duration_low: Number(source?.suggested_duration_low || 0),
+    suggested_duration_high: Number(source?.suggested_duration_high || 0),
+    suggested_milestones: Array.isArray(source?.suggested_milestones)
+      ? source.suggested_milestones
+      : Array.isArray(source?.milestone_suggestions)
+      ? source.milestone_suggestions
+      : [],
+    milestone_suggestions: Array.isArray(source?.milestone_suggestions)
+      ? source.milestone_suggestions
+      : Array.isArray(source?.suggested_milestones)
+      ? source.suggested_milestones
+      : [],
+    price_adjustments: Array.isArray(source?.price_adjustments) ? source.price_adjustments : [],
+    timeline_adjustments: Array.isArray(source?.timeline_adjustments) ? source.timeline_adjustments : [],
+    explanation_lines: Array.isArray(source?.explanation_lines) ? source.explanation_lines : [],
+    benchmark_source: safeStr(source?.benchmark_source),
+    benchmark_match_scope: safeStr(source?.benchmark_match_scope),
+    learned_benchmark_used: !!source?.learned_benchmark_used,
+    seeded_benchmark_used: !!source?.seeded_benchmark_used,
+    template_used: safeStr(source?.template_used),
+    confidence_level: safeStr(source?.confidence_level),
+    confidence_reasoning: safeStr(source?.confidence_reasoning),
+    structured_result_version: safeStr(source?.structured_result_version),
+    source_metadata:
+      source?.source_metadata && typeof source.source_metadata === "object"
+        ? source.source_metadata
+        : {},
+  };
+}
+
 function hasTemplateDerivedQuestions(agreementData) {
   const questions = Array.isArray(agreementData?.ai_scope?.questions)
     ? agreementData.ai_scope.questions
@@ -453,6 +490,7 @@ export default function useAgreementMilestoneAI({
   const [aiLoading, setAiLoading] = useState(false);
   const [aiApplying, setAiApplying] = useState(false);
   const [pricingRefreshing, setPricingRefreshing] = useState(false);
+  const [estimateRefreshing, setEstimateRefreshing] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiPreview, setAiPreview] = useState(null);
 
@@ -688,10 +726,44 @@ export default function useAgreementMilestoneAI({
     }
   }, [agreementId, locked, onCreditsUpdate]);
 
+  const estimateProject = useCallback(async () => {
+    if (!agreementId) {
+      throw new Error("Save draft first.");
+    }
+
+    setAiError("");
+    setEstimateRefreshing(true);
+
+    try {
+      const res = await api.post(`/projects/agreements/${agreementId}/estimate-preview/`, {});
+
+      if (typeof onCreditsUpdate === "function") {
+        onCreditsUpdate({
+          access: res?.data?.ai_access || "included",
+          enabled: true,
+          unlimited: true,
+          loading: false,
+        });
+      }
+
+      return {
+        estimate: normalizeEstimatePreview(res?.data || {}),
+        raw: res?.data || {},
+      };
+    } catch (e) {
+      const msg = e?.response?.data?.detail || e?.message || "Estimate preview failed.";
+      setAiError(msg);
+      throw e;
+    } finally {
+      setEstimateRefreshing(false);
+    }
+  }, [agreementId, onCreditsUpdate]);
+
   return {
     aiLoading,
     aiApplying,
     pricingRefreshing,
+    estimateRefreshing,
     aiError,
     aiPreview,
     setAiPreview,
@@ -699,6 +771,7 @@ export default function useAgreementMilestoneAI({
     runAiSuggest,
     applyAiMilestones,
     refreshPricingEstimate,
+    estimateProject,
     replaceAiQuestionsOnAgreement,
 
     helpers: {
@@ -706,6 +779,7 @@ export default function useAgreementMilestoneAI({
       normalizeAiMilestones,
       normalizeAiQuestions,
       normalizePricingEstimates,
+      normalizeEstimatePreview,
       canonicalizeQuestions,
       normalizeAnswersForCanonicalQuestions,
       normalizeCreatedMilestones,

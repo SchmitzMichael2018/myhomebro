@@ -4,6 +4,7 @@ import api, { getAgreementClosureStatus, closeAndArchiveAgreement } from "../api
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
 import SendInvoiceButton from "./SendInvoiceButton";
+import { handleStripeRequirementError } from "../lib/stripeRequirement.js";
 
 const money = (amount) =>
   Number(amount || 0).toLocaleString("en-US", {
@@ -280,11 +281,11 @@ export default function InvoiceDetail() {
       await fetchInvoice();
     } catch (err) {
       console.error(err);
-      toast.error(
-        err?.response?.data?.detail ||
-          err?.response?.data?.error ||
-          "Failed to create Direct Pay link."
+      const stripeRequirement = handleStripeRequirementError(
+        err,
+        "Failed to create Direct Pay link."
       );
+      toast.error(stripeRequirement.message);
     } finally {
       setDirectPayLoading(false);
     }
@@ -313,11 +314,11 @@ export default function InvoiceDetail() {
       await fetchInvoice();
     } catch (err) {
       console.error(err);
-      toast.error(
-        err?.response?.data?.detail ||
-          err?.response?.data?.error ||
-          "Failed to email Direct Pay link."
+      const stripeRequirement = handleStripeRequirementError(
+        err,
+        "Failed to email Direct Pay link."
       );
+      toast.error(stripeRequirement.message);
     } finally {
       setDirectPayEmailLoading(false);
     }

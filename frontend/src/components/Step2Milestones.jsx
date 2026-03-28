@@ -12,7 +12,12 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import toast from "react-hot-toast";
 import api from "../api";
 import ClarificationsModal from "./ClarificationsModal.jsx";
+import { StartWithAIEntry } from "./StartWithAIAssistant.jsx";
 import useAgreementMilestoneAI from "./ai/useAgreementMilestoneAI.jsx";
+import {
+  normalizeAssistantMilestoneSuggestion,
+  normalizeAssistantQuestion,
+} from "../lib/assistantHandoff.js";
 
 function toDateOnly(v) {
   if (!v) return "";
@@ -166,6 +171,47 @@ function formatDurationDays(days) {
   const n = Number(days);
   if (!Number.isFinite(n) || n <= 0) return "";
   return `${n} day${n === 1 ? "" : "s"}`;
+}
+
+function formatRecurringCadence(pattern, interval) {
+  const safePattern = safeStr(pattern) || "monthly";
+  const safeInterval = Math.max(1, Number(interval || 1) || 1);
+  const labels = {
+    weekly: safeInterval === 1 ? "week" : "weeks",
+    monthly: safeInterval === 1 ? "month" : "months",
+    quarterly: safeInterval === 1 ? "quarter" : "quarters",
+    yearly: safeInterval === 1 ? "year" : "years",
+  };
+  return `Every ${safeInterval} ${labels[safePattern] || safePattern}`;
+}
+
+function addDays(dateValue, offsetDays) {
+  const iso = toDateOnly(dateValue);
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-").map(Number);
+  const next = new Date(y, (m || 1) - 1, d || 1);
+  if (Number.isNaN(next.getTime())) return "";
+  next.setDate(next.getDate() + Number(offsetDays || 0));
+  const yy = next.getFullYear();
+  const mm = String(next.getMonth() + 1).padStart(2, "0");
+  const dd = String(next.getDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+function estimateAmountDiffers(currentAmount, suggestedAmount) {
+  const current = parseAmountStrict(currentAmount);
+  const next = parseAmountStrict(suggestedAmount);
+  if (!Number.isFinite(next) || next <= 0) return false;
+  if (!Number.isFinite(current) || current <= 0) return true;
+  return Math.abs(current - next) >= 0.01;
+}
+
+function timelineDiffers(currentRow, nextStart, nextCompletion) {
+  return (
+    toDateOnly(currentRow?.start_date || currentRow?.start) !== toDateOnly(nextStart) ||
+    toDateOnly(currentRow?.completion_date || currentRow?.end_date || currentRow?.end) !==
+      toDateOnly(nextCompletion)
+  );
 }
 
 function computeMilestoneLock(agreement) {
@@ -532,6 +578,12 @@ export default function Step2Milestones({
   onNext,
   reloadMilestones,
   refreshAgreement,
+  assistantSuggestedMilestones = [],
+  assistantClarificationQuestions = [],
+  assistantEstimatePreview = {},
+  assistantProactiveRecommendations = [],
+  assistantPredictiveInsights = [],
+  assistantGuidedFlow = {},
 }) {
   const [overlapConfirm, setOverlapConfirm] = useState(null);
 
@@ -588,15 +640,40 @@ export default function Step2Milestones({
   const [agreementMeta, setAgreementMeta] = useState(null);
 
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+
+  const recurringPreview = agreementMeta?.recurring_preview || {};
+  const recurringSummary = useMemo(() => {
+    if (!agreementMeta || agreementMeta?.agreement_mode !== "maintenance") return null;
+    return {
+      cadence: formatRecurringCadence(
+        recurringPreview?.recurrence_pattern || agreementMeta?.recurrence_pattern,
+        recurringPreview?.recurrence_interval || agreementMeta?.recurrence_interval
+      ),
+      nextOccurrence:
+        recurringPreview?.next_occurrence_date || agreementMeta?.next_occurrence_date || "",
+      previewOccurrences: Array.isArray(recurringPreview?.preview_occurrences)
+        ? recurringPreview.preview_occurrences
+        : [],
+      status: safeStr(agreementMeta?.maintenance_status) || "active",
+      label: safeStr(recurringPreview?.recurring_summary_label || agreementMeta?.recurring_summary_label),
+    };
+  }, [agreementMeta, recurringPreview]);
   const [saveTemplateBusy, setSaveTemplateBusy] = useState(false);
   const [saveTemplateName, setSaveTemplateName] = useState("");
   const [saveTemplateDescription, setSaveTemplateDescription] = useState("");
   const [fallbackMilestones, setFallbackMilestones] = useState(null);
   const [stagedSuggestedMilestoneIds, setStagedSuggestedMilestoneIds] = useState([]);
+  const [stagedSuggestedTimelineIds, setStagedSuggestedTimelineIds] = useState([]);
   const [pricingEstimateStale, setPricingEstimateStale] = useState(false);
   const [dismissedPricingReviewSignature, setDismissedPricingReviewSignature] = useState("");
+  const [estimatePreview, setEstimatePreview] = useState(null);
+  const [estimateBanner, setEstimateBanner] = useState("");
+  const [assistantApplyingMilestones, setAssistantApplyingMilestones] = useState(false);
+  const [dismissedAssistantSuggestionSignature, setDismissedAssistantSuggestionSignature] =
+    useState("");
   const pricingFreshSignatureRef = useRef("");
   const didInitPricingSignatureRef = useRef(false);
+  const estimateAutoLoadSignatureRef = useRef("");
 
   const effectiveMilestones = useMemo(() => {
     return Array.isArray(fallbackMilestones) ? fallbackMilestones : Array.isArray(milestones) ? milestones : [];
@@ -642,6 +719,32 @@ export default function Step2Milestones({
     pricingReviewState.count > 0 &&
     pricingReviewState.signature &&
     pricingReviewState.signature !== dismissedPricingReviewSignature;
+  const assistantSuggestionRows = useMemo(
+    () =>
+      (Array.isArray(assistantSuggestedMilestones) ? assistantSuggestedMilestones : [])
+        .map((item, idx) => normalizeAssistantMilestoneSuggestion(item, idx))
+        .filter(Boolean),
+    [assistantSuggestedMilestones]
+  );
+  const assistantSuggestionSignature = useMemo(
+    () => JSON.stringify(assistantSuggestionRows),
+    [assistantSuggestionRows]
+  );
+  const showAssistantMilestoneSuggestions =
+    assistantSuggestionRows.length > 0 &&
+    assistantSuggestionSignature &&
+    assistantSuggestionSignature !== dismissedAssistantSuggestionSignature;
+  const assistantClarificationRows = useMemo(
+    () =>
+      (Array.isArray(assistantClarificationQuestions) ? assistantClarificationQuestions : [])
+        .map((item, idx) => normalizeAssistantQuestion(item, idx))
+        .filter(Boolean),
+    [assistantClarificationQuestions]
+  );
+  const assistantEstimatePreviewSignature = useMemo(
+    () => JSON.stringify(assistantEstimatePreview || {}),
+    [assistantEstimatePreview]
+  );
   const hasStagedSuggestedAmountChanges = useMemo(() => {
     if (!Array.isArray(stagedSuggestedMilestoneIds) || !stagedSuggestedMilestoneIds.length) return false;
     const fallbackById = new Map(
@@ -661,6 +764,29 @@ export default function Step2Milestones({
       return amountsDifferMeaningfully(savedRow?.amount, parseAmountStrict(fallbackRow?.amount));
     });
   }, [fallbackMilestones, milestones, stagedSuggestedMilestoneIds]);
+  const hasStagedSuggestedTimelineChanges = useMemo(() => {
+    if (!Array.isArray(stagedSuggestedTimelineIds) || !stagedSuggestedTimelineIds.length) return false;
+    const fallbackById = new Map(
+      (Array.isArray(fallbackMilestones) ? fallbackMilestones : [])
+        .filter((row) => row?.id != null)
+        .map((row) => [row.id, row])
+    );
+    const savedById = new Map(
+      (Array.isArray(milestones) ? milestones : [])
+        .filter((row) => row?.id != null)
+        .map((row) => [row.id, row])
+    );
+    return stagedSuggestedTimelineIds.some((id) => {
+      const fallbackRow = fallbackById.get(id);
+      const savedRow = savedById.get(id);
+      if (!fallbackRow || !savedRow) return false;
+      return timelineDiffers(
+        savedRow,
+        fallbackRow?.start_date || fallbackRow?.start,
+        fallbackRow?.completion_date || fallbackRow?.end_date || fallbackRow?.end
+      );
+    });
+  }, [fallbackMilestones, milestones, stagedSuggestedTimelineIds]);
   const isCreateDraftDirty = useMemo(() => {
     const title = safeStr(mLocal?.title);
     const description = safeStr(mLocal?.description);
@@ -684,7 +810,10 @@ export default function Step2Milestones({
     );
   }, [editForm, editMilestone, editOpen, effectiveMilestones]);
   const hasUnsavedStep2Changes =
-    hasStagedSuggestedAmountChanges || isCreateDraftDirty || isEditDraftDirty;
+    hasStagedSuggestedAmountChanges ||
+    hasStagedSuggestedTimelineChanges ||
+    isCreateDraftDirty ||
+    isEditDraftDirty;
   const step2UnsavedMessage = "You have unsaved pricing or milestone changes. Leave without saving?";
 
   useEffect(() => {
@@ -696,6 +825,12 @@ export default function Step2Milestones({
     if (hasStagedSuggestedAmountChanges) return;
     setStagedSuggestedMilestoneIds([]);
   }, [hasStagedSuggestedAmountChanges, stagedSuggestedMilestoneIds]);
+
+  useEffect(() => {
+    if (!Array.isArray(stagedSuggestedTimelineIds) || !stagedSuggestedTimelineIds.length) return;
+    if (hasStagedSuggestedTimelineChanges) return;
+    setStagedSuggestedTimelineIds([]);
+  }, [hasStagedSuggestedTimelineChanges, stagedSuggestedTimelineIds]);
 
   useEffect(() => {
     if (!hasUnsavedStep2Changes) return undefined;
@@ -806,6 +941,7 @@ export default function Step2Milestones({
     }
     setFallbackMilestones(null);
     setStagedSuggestedMilestoneIds([]);
+    setStagedSuggestedTimelineIds([]);
   }
 
   async function refreshAfterAiBulkSuccess() {
@@ -942,6 +1078,25 @@ export default function Step2Milestones({
         !!scopeSummary,
     };
   }, [agreementMeta, materialsWho, measurementNotes, selectedTemplateMeta]);
+  const estimateContextSignature = useMemo(
+    () =>
+      JSON.stringify({
+        agreementId,
+        projectType: agreementMeta?.project_type || "",
+        projectSubtype: agreementMeta?.project_subtype || "",
+        templateId: agreementMeta?.selected_template?.id || agreementMeta?.selected_template_id || null,
+        regionState: agreementMeta?.project_address_state || "",
+        regionCity: agreementMeta?.project_address_city || "",
+        answers: agreementMeta?.ai_scope?.answers || {},
+        milestones: (Array.isArray(milestones) ? milestones : []).map((row) => ({
+          id: row?.id ?? null,
+          order: row?.order ?? null,
+          title: safeStr(row?.title),
+          amount: row?.amount ?? "",
+        })),
+      }),
+    [agreementId, agreementMeta, milestones]
+  );
 
   useEffect(() => {
     if (!saveTemplateOpen) return;
@@ -955,6 +1110,27 @@ export default function Step2Milestones({
     setSaveTemplateName((prev) => prev || (titleGuess ? `${titleGuess} Template` : ""));
     setSaveTemplateDescription((prev) => prev || "");
   }, [saveTemplateOpen, agreementMeta]);
+
+  useEffect(() => {
+    if (!assistantEstimatePreview || !Object.keys(assistantEstimatePreview).length) return;
+    if (estimateAutoLoadSignatureRef.current === `assistant:${assistantEstimatePreviewSignature}`) return;
+    estimateAutoLoadSignatureRef.current = `assistant:${assistantEstimatePreviewSignature}`;
+    setEstimatePreview(assistantEstimatePreview);
+    setEstimateBanner("Estimate updated based on your project details. Review before applying suggestions.");
+  }, [assistantEstimatePreview, assistantEstimatePreviewSignature]);
+
+  useEffect(() => {
+    if (!agreementId) return;
+    if (!agreementMeta) return;
+    if (!effectiveMilestones.length) return;
+    if (estimateAutoLoadSignatureRef.current === estimateContextSignature) return;
+
+    estimateAutoLoadSignatureRef.current = estimateContextSignature;
+    handleRefreshProjectEstimate({ successMessage: "" }).catch((err) => {
+      console.warn("initialEstimatePreview failed:", err);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agreementId, agreementMeta, effectiveMilestones.length, estimateContextSignature]);
 
   function buildStep2Answers() {
     const answers = {};
@@ -1048,12 +1224,14 @@ export default function Step2Milestones({
     aiLoading,
     aiApplying,
     pricingRefreshing,
+    estimateRefreshing,
     aiError,
     aiPreview,
     setAiPreview,
     runAiSuggest,
     applyAiMilestones,
     refreshPricingEstimate,
+    estimateProject,
   } = useAgreementMilestoneAI({
     agreementId,
     locked: milestonesLocked || templateApplied,
@@ -1061,6 +1239,14 @@ export default function Step2Milestones({
     refreshMilestones: refreshMilestonesSafe,
     onMilestonesReplaced: null,
   });
+  const combinedClarificationQuestions = useMemo(
+    () =>
+      mergeQuestionsByCanonicalKey(
+        Array.isArray(aiPreview?.questions) ? aiPreview.questions : [],
+        assistantClarificationRows
+      ),
+    [aiPreview?.questions, assistantClarificationRows]
+  );
 
   const total = effectiveMilestones.reduce((s, m) => s + money(m.amount), 0);
 
@@ -1220,6 +1406,111 @@ export default function Step2Milestones({
     );
   }
 
+  async function handleRefreshProjectEstimate({ successMessage = "Estimate refreshed from current project details." } = {}) {
+    if (!agreementId) return null;
+    const result = await estimateProject();
+    setEstimatePreview(result?.estimate || null);
+    if (successMessage) {
+      setEstimateBanner(successMessage);
+      toast.success(successMessage);
+    }
+    return result;
+  }
+
+  function applyEstimateSuggestedAmounts() {
+    const suggestions = Array.isArray(estimatePreview?.milestone_suggestions)
+      ? estimatePreview.milestone_suggestions
+      : [];
+    if (!suggestions.length) {
+      toast("No milestone amount suggestions are available yet.");
+      return;
+    }
+
+    const suggestionById = new Map(
+      suggestions.filter((row) => row?.milestone_id != null).map((row) => [row.milestone_id, row])
+    );
+    let appliedCount = 0;
+    const stagedIds = [];
+    const nextRows = effectiveMilestones.map((row, idx) => {
+      const match =
+        suggestionById.get(row?.id) ||
+        suggestions.find((item) => Number(item?.suggested_order || 0) === idx + 1);
+      const suggestedAmount = parseAmountStrict(match?.suggested_amount);
+      if (!Number.isFinite(suggestedAmount) || suggestedAmount <= 0) {
+        return { ...row };
+      }
+      appliedCount += 1;
+      if (estimateAmountDiffers(row?.amount, suggestedAmount)) {
+        stagedIds.push(row?.id);
+      }
+      return {
+        ...row,
+        order: row?.order != null ? row.order : idx + 1,
+        amount: roundSuggestedAmount(suggestedAmount) ?? suggestedAmount,
+      };
+    });
+
+    if (!appliedCount) {
+      toast("No milestone amount suggestions were available to apply.");
+      return;
+    }
+
+    setFallbackMilestones(sortFallbackMilestones(nextRows));
+    setStagedSuggestedMilestoneIds((prev) => [...new Set([...(prev || []), ...stagedIds.filter(Boolean)])]);
+    setEstimateBanner("Estimate suggestions are staged locally. Review and save when ready.");
+    toast.success(
+      `Applied estimate amounts to ${appliedCount} milestone${appliedCount === 1 ? "" : "s"} for review.`
+    );
+  }
+
+  function applyEstimateSuggestedTimeline() {
+    const suggestions = Array.isArray(estimatePreview?.milestone_suggestions)
+      ? estimatePreview.milestone_suggestions
+      : [];
+    if (!suggestions.length) {
+      toast("No timeline suggestions are available yet.");
+      return;
+    }
+
+    const baseStart =
+      toDateOnly(agreementMeta?.start) ||
+      toDateOnly(effectiveMilestones[0]?.start_date || effectiveMilestones[0]?.start);
+    if (!baseStart) {
+      toast("Add an agreement start date or a milestone start date before applying timeline suggestions.");
+      return;
+    }
+
+    const suggestionById = new Map(
+      suggestions.filter((row) => row?.milestone_id != null).map((row) => [row.milestone_id, row])
+    );
+    const stagedIds = [];
+    let cursor = baseStart;
+    const nextRows = effectiveMilestones.map((row, idx) => {
+      const match =
+        suggestionById.get(row?.id) ||
+        suggestions.find((item) => Number(item?.suggested_order || 0) === idx + 1);
+      const durationDays = Math.max(Number(match?.suggested_duration_days || row?.recommended_duration_days || 0), 1);
+      const startDate = cursor;
+      const completionDate = addDays(startDate, durationDays - 1);
+      cursor = addDays(completionDate, 1);
+      if (timelineDiffers(row, startDate, completionDate)) {
+        stagedIds.push(row?.id);
+      }
+      return {
+        ...row,
+        order: row?.order != null ? row.order : idx + 1,
+        start_date: startDate,
+        completion_date: completionDate,
+        recommended_duration_days: durationDays,
+      };
+    });
+
+    setFallbackMilestones(sortFallbackMilestones(nextRows));
+    setStagedSuggestedTimelineIds((prev) => [...new Set([...(prev || []), ...stagedIds.filter(Boolean)])]);
+    setEstimateBanner("Estimate timeline suggestions are staged locally. Review and save when ready.");
+    toast.success("Applied suggested milestone timeline for review.");
+  }
+
   function applySuggestedPricesToAll() {
     if (!effectiveMilestones.length) {
       toast("No milestones are available to update.");
@@ -1282,7 +1573,7 @@ export default function Step2Milestones({
     handleEditClick(firstChanged.milestone, firstChanged.idx);
   }
 
-  async function persistStagedMilestoneAmounts() {
+  async function persistStagedMilestoneChanges() {
     if (!Array.isArray(fallbackMilestones) || !fallbackMilestones.length) return 0;
 
     const baseById = new Map(
@@ -1291,16 +1582,23 @@ export default function Step2Milestones({
         .map((row) => [row.id, row])
     );
 
-    const stagedAmountRows = fallbackMilestones.filter((row) => {
+    const stagedRows = fallbackMilestones.filter((row) => {
       if (!row?.id) return false;
       const base = baseById.get(row.id);
       if (!base) return false;
-      return amountsDifferMeaningfully(base?.amount, parseAmountStrict(row?.amount));
+      return (
+        amountsDifferMeaningfully(base?.amount, parseAmountStrict(row?.amount)) ||
+        timelineDiffers(
+          base,
+          row?.start_date || row?.start,
+          row?.completion_date || row?.end_date || row?.end
+        )
+      );
     });
 
-    if (!stagedAmountRows.length) return 0;
+    if (!stagedRows.length) return 0;
 
-    for (const row of stagedAmountRows) {
+    for (const row of stagedRows) {
       await updateMilestone({
         id: row.id,
         title: safeStr(row.title),
@@ -1318,7 +1616,7 @@ export default function Step2Milestones({
       toast("Milestone amounts were saved, but the latest agreement data could not be fully reloaded.");
     }
 
-    return stagedAmountRows.length;
+    return stagedRows.length;
   }
 
   function isOverlapError(err) {
@@ -1669,10 +1967,10 @@ export default function Step2Milestones({
       return;
     }
 
-    const persistedCount = await persistStagedMilestoneAmounts();
+    const persistedCount = await persistStagedMilestoneChanges();
     if (persistedCount > 0) {
       toast.success(
-        `Saved suggested pricing for ${persistedCount} milestone${persistedCount === 1 ? "" : "s"}.`
+        `Saved staged estimate changes for ${persistedCount} milestone${persistedCount === 1 ? "" : "s"}.`
       );
     }
 
@@ -1701,6 +1999,101 @@ export default function Step2Milestones({
       if (!shouldLeave) return;
     }
     if (typeof onBack === "function") onBack();
+  }
+
+  const assistantContext = useMemo(
+    () => ({
+      current_route: agreementId
+        ? `/app/agreements/${agreementId}/wizard?step=2`
+        : "/app/agreements/new/wizard?step=2",
+      agreement_id: agreementId || null,
+      agreement_summary: {
+        title:
+          agreementMeta?.project_title ||
+          agreementMeta?.title ||
+          "",
+        project_title:
+          agreementMeta?.project_title ||
+          agreementMeta?.title ||
+          "",
+        project_summary:
+          agreementMeta?.description ||
+          agreementMeta?.project_description ||
+          "",
+        description:
+          agreementMeta?.description ||
+          agreementMeta?.project_description ||
+          "",
+        customer_name:
+          agreementMeta?.homeowner_name ||
+          agreementMeta?.customer_name ||
+          "",
+        milestone_count: effectiveMilestones.length,
+        pending_clarifications: Array.isArray(mergedClarificationQuestions)
+          ? mergedClarificationQuestions
+              .map((item) => item?.label || item?.question || item?.key || "")
+              .filter(Boolean)
+          : [],
+        status: agreementMeta?.status || "draft",
+      },
+      template_id:
+        agreementMeta?.selected_template?.id ||
+        agreementMeta?.selected_template_id ||
+        null,
+      template_summary: {
+        name:
+          agreementMeta?.selected_template?.name ||
+          agreementMeta?.selected_template_name_snapshot ||
+          "",
+      },
+      milestone_summary: {
+        count: effectiveMilestones.length,
+        suggested_titles: effectiveMilestones.map((item) => item?.title).filter(Boolean),
+      },
+    }),
+    [agreementId, agreementMeta, effectiveMilestones, mergedClarificationQuestions]
+  );
+
+  function handleAssistantAction(plan) {
+    if (plan?.next_action?.action_key === "review_clarifications") {
+      setClarOpen(true);
+      return true;
+    }
+    return false;
+  }
+
+  async function handleApplyAssistantSuggestedMilestones() {
+    if (!agreementId || !assistantSuggestionRows.length) return;
+    if (milestonesLocked) {
+      lockToast();
+      return;
+    }
+
+    try {
+      setAssistantApplyingMilestones(true);
+      for (const row of assistantSuggestionRows) {
+        await saveMilestone({
+          title: row.title || "",
+          description: row.description || "",
+          amount: row.amount || "",
+          start_date: row.start_date || "",
+          completion_date: row.completion_date || "",
+        });
+      }
+      setDismissedAssistantSuggestionSignature(assistantSuggestionSignature);
+      toast.success(
+        `Added ${assistantSuggestionRows.length} suggested milestone${
+          assistantSuggestionRows.length === 1 ? "" : "s"
+        }.`
+      );
+      await refreshMilestonesSafe();
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.detail || err?.message || "Could not add assistant milestones."
+      );
+    } finally {
+      setAssistantApplyingMilestones(false);
+    }
   }
 
   return (
@@ -1759,6 +2152,183 @@ export default function Step2Milestones({
               Template structure is active. AI milestone regeneration is disabled here.
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {recurringSummary ? (
+        <div
+          data-testid="step2-recurring-summary"
+          className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-800">
+              Recurring Service
+            </span>
+            <span className="text-sm font-semibold text-slate-900">
+              {recurringSummary.label || recurringSummary.cadence}
+            </span>
+          </div>
+          <div className="mt-1 text-xs text-emerald-900/90">
+            Status: {recurringSummary.status}
+            {recurringSummary.nextOccurrence
+              ? ` • Next occurrence: ${recurringSummary.nextOccurrence}`
+              : ""}
+          </div>
+          {recurringSummary.previewOccurrences.length ? (
+            <div data-testid="step2-recurring-upcoming" className="mt-3 space-y-2">
+              {recurringSummary.previewOccurrences.slice(0, 3).map((row) => (
+                <div
+                  key={`recurring-preview-${row.rule_milestone_id}-${row.sequence_number}-${row.scheduled_service_date}`}
+                  className="rounded border border-emerald-100 bg-white px-3 py-2 text-xs text-slate-700"
+                >
+                  <div className="font-semibold text-slate-900">
+                    {row.title} • Visit {row.sequence_number}
+                  </div>
+                  <div className="mt-1">
+                    Service date: {row.scheduled_service_date || "Pending"}
+                    {row.amount ? ` • ${formatCurrency(row.amount)}` : ""}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <StartWithAIEntry
+        className="mb-3"
+        testId="milestones-ai-entry"
+        title="Start with AI inside milestones"
+        description="Use current pricing, template, and clarification context to keep milestone work moving."
+        context={assistantContext}
+        onAction={handleAssistantAction}
+      />
+
+      {assistantGuidedFlow?.guided_question ? (
+        <div
+          data-testid="assistant-guided-step2"
+          className="mb-3 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3"
+        >
+          <div className="text-sm font-semibold text-indigo-900">Guided next step</div>
+          <div className="mt-1 text-xs text-indigo-800">{assistantGuidedFlow.guided_question}</div>
+          {assistantGuidedFlow.why_this_matters ? (
+            <div className="mt-1 text-xs text-indigo-800/90">
+              {assistantGuidedFlow.why_this_matters}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {assistantProactiveRecommendations.length ? (
+        <div
+          data-testid="assistant-proactive-step2"
+          className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3"
+        >
+          <div className="text-sm font-semibold text-amber-900">Proactive recommendations</div>
+          <div className="mt-2 space-y-2">
+            {assistantProactiveRecommendations.slice(0, 2).map((item) => (
+              <div key={`${item.recommendation_type}-${item.title}`}>
+                <div className="text-sm font-medium text-amber-950">{item.title}</div>
+                <div className="text-xs text-amber-800">{item.message}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {assistantPredictiveInsights.length ? (
+        <div
+          data-testid="assistant-predictive-step2"
+          className="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3"
+        >
+          <div className="text-sm font-semibold text-slate-900">Predictive insight</div>
+          <div className="mt-1 text-sm text-slate-800">{assistantPredictiveInsights[0]?.title}</div>
+          <div className="mt-1 text-xs text-slate-600">{assistantPredictiveInsights[0]?.summary}</div>
+        </div>
+      ) : null}
+
+      {assistantClarificationRows.length ? (
+        <div
+          data-testid="assistant-clarification-banner"
+          className="mb-3 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3"
+        >
+          <div className="text-sm font-semibold text-indigo-900">Assistant Clarifications Ready</div>
+          <div className="mt-1 text-xs text-indigo-800">
+            AI preloaded clarification questions into the existing review flow. Review them before
+            finalizing pricing.
+          </div>
+          <ul className="mt-3 space-y-2 text-sm text-indigo-950">
+            {assistantClarificationRows.map((question) => (
+              <li
+                key={question.key}
+                data-testid={`assistant-clarification-${question.key}`}
+                className="rounded border border-indigo-100 bg-white px-3 py-2"
+              >
+                {question.label}
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={() => setClarOpen(true)}
+            className="mt-3 rounded border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-900 hover:bg-indigo-100"
+          >
+            Review Clarifications
+          </button>
+        </div>
+      ) : null}
+
+      {showAssistantMilestoneSuggestions ? (
+        <div
+          data-testid="assistant-suggested-milestones"
+          className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-4"
+        >
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-emerald-900">
+                Assistant Suggested Milestones
+              </div>
+              <div className="mt-1 text-xs text-emerald-800">
+                These are suggested only. Review them before adding them to the agreement.
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleApplyAssistantSuggestedMilestones}
+                disabled={assistantApplyingMilestones || milestonesLocked}
+                className="rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {assistantApplyingMilestones ? "Adding…" : "Add Suggested Milestones"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDismissedAssistantSuggestionSignature(assistantSuggestionSignature)}
+                className="rounded border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-900 hover:bg-emerald-100"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+          <ul className="mt-4 space-y-2">
+            {assistantSuggestionRows.map((row, idx) => (
+              <li
+                key={`${row.title}-${idx}`}
+                data-testid={`assistant-suggested-milestone-${idx}`}
+                className="rounded border border-emerald-100 bg-white px-3 py-3 text-sm text-slate-800"
+              >
+                <div className="font-semibold text-slate-900">{row.title}</div>
+                {safeStr(row.description) ? (
+                  <div className="mt-1 text-xs text-slate-600">{row.description}</div>
+                ) : null}
+                {safeStr(row.amount) ? (
+                  <div className="mt-1 text-xs text-emerald-800">
+                    Suggested amount: {formatCurrency(Number(row.amount))}
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
 
@@ -1925,11 +2495,191 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
+      {estimatePreview ? (
+        <div
+          className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-4"
+          data-testid="step2-estimate-panel"
+        >
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Estimate Summary</div>
+              <div className="mt-1 text-xs text-slate-600">
+                Suggested estimate based on project details, templates, seeded benchmarks, and similar jobs when available.
+              </div>
+              {estimateBanner ? (
+                <div
+                  className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800"
+                  data-testid="step2-estimate-banner"
+                >
+                  {estimateBanner}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  handleRefreshProjectEstimate({
+                    successMessage: "Estimate refreshed from current project details.",
+                  }).catch((e) =>
+                    toast.error(e?.response?.data?.detail || e?.message || "Estimate refresh failed.")
+                  )
+                }
+                disabled={estimateRefreshing}
+                className="rounded border px-3 py-2 text-sm font-medium hover:bg-white disabled:opacity-60"
+                data-testid="step2-refresh-estimate"
+              >
+                {estimateRefreshing ? "Refreshing Estimate…" : "Refresh Estimate"}
+              </button>
+              <button
+                type="button"
+                onClick={applyEstimateSuggestedAmounts}
+                disabled={milestonesLocked}
+                className="rounded border px-3 py-2 text-sm font-medium hover:bg-white disabled:opacity-60"
+                data-testid="step2-apply-estimate-amounts"
+              >
+                Apply Suggested Amounts
+              </button>
+              <button
+                type="button"
+                onClick={applyEstimateSuggestedTimeline}
+                disabled={milestonesLocked}
+                className="rounded border px-3 py-2 text-sm font-medium hover:bg-white disabled:opacity-60"
+                data-testid="step2-apply-estimate-timeline"
+              >
+                Apply Suggested Timeline
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+            <div className="rounded-md border bg-white px-3 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Suggested Total</div>
+              <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-estimate-total">
+                {formatCurrency(estimatePreview.suggested_total_price)}
+              </div>
+              <div className="text-xs text-slate-600">
+                Range {formatCurrency(estimatePreview.suggested_price_low)} – {formatCurrency(estimatePreview.suggested_price_high)}
+              </div>
+            </div>
+            <div className="rounded-md border bg-white px-3 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Timeline</div>
+              <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-estimate-duration">
+                {formatDurationDays(estimatePreview.suggested_duration_days)}
+              </div>
+              <div className="text-xs text-slate-600">
+                Range {formatDurationDays(estimatePreview.suggested_duration_low)} – {formatDurationDays(estimatePreview.suggested_duration_high)}
+              </div>
+            </div>
+            <div className="rounded-md border bg-white px-3 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Confidence</div>
+              <div className="mt-1 text-sm font-semibold text-slate-900" data-testid="step2-estimate-confidence">
+                {formatEstimateConfidence(estimatePreview.confidence_level) || "Estimate available"}
+              </div>
+              <div className="mt-1 text-xs text-slate-600">{estimatePreview.confidence_reasoning}</div>
+            </div>
+            <div className="rounded-md border bg-white px-3 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Source</div>
+              <div className="mt-1 text-sm font-semibold text-slate-900" data-testid="step2-estimate-source">
+                {safeStr(estimatePreview.template_used) || "Project benchmark"}
+              </div>
+              <div className="mt-1 text-xs text-slate-600">
+                {safeStr(estimatePreview.benchmark_source).replace(/_/g, " ")}
+                {estimatePreview.source_metadata?.seeded_region_scope
+                  ? ` • ${estimatePreview.source_metadata.seeded_region_scope}`
+                  : ""}
+              </div>
+            </div>
+          </div>
+
+          {Array.isArray(estimatePreview.explanation_lines) && estimatePreview.explanation_lines.length ? (
+            <div className="mt-4 rounded-md border bg-white px-3 py-3" data-testid="step2-estimate-explanations">
+              <div className="text-sm font-semibold text-slate-900">Why this changed</div>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+                {estimatePreview.explanation_lines.map((line, idx) => (
+                  <li key={`estimate-line-${idx}`}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+            <div className="rounded-md border bg-white px-3 py-3">
+              <div className="text-sm font-semibold text-slate-900">Adjustments</div>
+              {(
+                (Array.isArray(estimatePreview.price_adjustments)
+                  ? estimatePreview.price_adjustments.length
+                  : 0) ||
+                (Array.isArray(estimatePreview.timeline_adjustments)
+                  ? estimatePreview.timeline_adjustments.length
+                  : 0)
+              ) ? (
+                <div className="mt-2 space-y-2 text-sm">
+                  {(Array.isArray(estimatePreview.price_adjustments)
+                    ? estimatePreview.price_adjustments
+                    : []
+                  ).map((row, idx) => (
+                    <div key={`price-adjustment-${idx}`} className="rounded border border-slate-100 px-2 py-2">
+                      <div className="font-medium text-slate-900">{row.label}</div>
+                      <div className="text-slate-700">{formatCurrency(row.amount)}</div>
+                      <div className="text-xs text-slate-500">{row.reason}</div>
+                    </div>
+                  ))}
+                  {(Array.isArray(estimatePreview.timeline_adjustments)
+                    ? estimatePreview.timeline_adjustments
+                    : []
+                  ).map((row, idx) => (
+                    <div key={`timeline-adjustment-${idx}`} className="rounded border border-slate-100 px-2 py-2">
+                      <div className="font-medium text-slate-900">{row.label}</div>
+                      <div className="text-slate-700">
+                        {Number(row.days) > 0 ? "+" : ""}
+                        {row.days} day{Math.abs(Number(row.days)) === 1 ? "" : "s"}
+                      </div>
+                      <div className="text-xs text-slate-500">{row.reason}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-2 text-sm text-slate-500">No explicit clarification adjustments were needed for the current estimate.</div>
+              )}
+            </div>
+
+            <div className="rounded-md border bg-white px-3 py-3" data-testid="step2-estimate-milestones">
+              <div className="text-sm font-semibold text-slate-900">Suggested Milestones</div>
+              <div className="mt-1 text-xs text-slate-600">
+                Suggestions are editable. Review before saving any milestone changes.
+              </div>
+              <div className="mt-2 space-y-2">
+                {(estimatePreview.milestone_suggestions || []).map((row, idx) => (
+                  <div key={`estimate-milestone-${idx}`} className="rounded border border-slate-100 px-3 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-medium text-slate-900">
+                        {row.suggested_order || idx + 1}. {row.title}
+                      </div>
+                      <div className="text-sm text-slate-700">
+                        {formatCurrency(row.suggested_amount)} • {formatDurationDays(row.suggested_duration_days)}
+                      </div>
+                    </div>
+                    {safeStr(row.description) ? (
+                      <div className="mt-1 text-xs text-slate-600">{row.description}</div>
+                    ) : null}
+                    {safeStr(row.source_note) ? (
+                      <div className="mt-1 text-[11px] text-slate-500">{row.source_note}</div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <ClarificationsModal
         open={clarOpen}
         agreementId={agreementId}
         initialAgreement={clarificationsAgreementMeta}
-        overrideQuestions={Array.isArray(aiPreview?.questions) ? aiPreview.questions : []}
+        overrideQuestions={combinedClarificationQuestions}
         excludeKeys={[
           "permits_responsibility",
           "materials_responsibility",
@@ -1981,6 +2731,13 @@ export default function Step2Milestones({
             await refreshMilestonesSafe();
           } catch (err) {
             console.warn("refreshAfterClarificationsSave failed:", err);
+          }
+          if (updatedAgreement && pricingImpactAnswersChanged(previousAnswers, nextAnswers)) {
+            handleRefreshProjectEstimate({
+              successMessage: "Estimate updated based on your project details.",
+            }).catch((err) => {
+              console.warn("refreshEstimateAfterClarifications failed:", err);
+            });
           }
           setClarReviewed(true);
           if (pendingNextRef.current) {
@@ -2230,7 +2987,11 @@ export default function Step2Milestones({
             {effectiveMilestones.map((m, idx) => {
               const estimate = getEstimateAssistMeta(m);
               return (
-                <tr key={m.id || `${m.title}-${idx}`} className="border-t align-top">
+                <tr
+                  key={m.id || `${m.title}-${idx}`}
+                  className="border-t align-top"
+                  data-testid={`step2-milestone-row-${m.id || idx + 1}`}
+                >
                   <td className="px-3 py-2">{m?.order ?? idx + 1}</td>
 
                   <td className="px-3 py-2">
@@ -2246,13 +3007,15 @@ export default function Step2Milestones({
 
                   <td className="whitespace-pre-wrap px-3 py-2">{m.description || "—"}</td>
 
-                  <td className="px-3 py-2">{friendly(toDateOnly(m.start_date || m.start))}</td>
+                  <td className="px-3 py-2" data-testid={`step2-milestone-start-${m.id || idx + 1}`}>
+                    {friendly(toDateOnly(m.start_date || m.start))}
+                  </td>
 
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2" data-testid={`step2-milestone-due-${m.id || idx + 1}`}>
                     {friendly(toDateOnly(m.completion_date || m.end_date || m.end))}
                   </td>
 
-                  <td className="px-3 py-2">
+                  <td className="px-3 py-2" data-testid={`step2-milestone-amount-${m.id || idx + 1}`}>
                     {Number(m.amount || 0).toLocaleString(undefined, { style: "currency", currency: "USD" })}
                   </td>
 

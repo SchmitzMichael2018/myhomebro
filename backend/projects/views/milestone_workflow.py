@@ -19,6 +19,8 @@ from projects.services.milestone_payouts import sync_milestone_payout
 from projects.services.subcontractor_notifications import (
     create_subcontractor_activity_notification,
 )
+from projects.services.activity_feed import create_activity_event
+from projects.services.project_email_reports import send_project_email_report
 from projects.utils.accounts import get_contractor_for_user, get_subaccount_for_user
 
 
@@ -180,6 +182,32 @@ def submit_work_for_review(request, milestone_id: int):
         actor_user=request.user,
         event_type=Notification.EVENT_SUBCONTRACTOR_REVIEW,
     )
+    try:
+        send_project_email_report(
+            event_type="milestone_approval_requested",
+            agreement=milestone.agreement,
+            milestone=milestone,
+        )
+    except Exception:
+        pass
+    try:
+        create_activity_event(
+            contractor=getattr(milestone.agreement, "contractor", None),
+            actor_user=request.user,
+            agreement=milestone.agreement,
+            milestone=milestone,
+            event_type="milestone_pending_approval",
+            title="Milestone submitted for approval",
+            summary="A completed milestone is waiting for contractor review.",
+            severity="info",
+            related_label=milestone.title,
+            icon_hint="milestone",
+            navigation_target="/app/reviewer/queue",
+            metadata={"milestone_id": milestone.id, "agreement_id": milestone.agreement_id},
+            dedupe_key=f"milestone_pending_approval:{milestone.id}:{milestone.subcontractor_marked_complete_at.isoformat() if milestone.subcontractor_marked_complete_at else milestone.id}",
+        )
+    except Exception:
+        pass
     return Response(MilestoneSerializer(milestone, context={"request": request}).data, status=200)
 
 

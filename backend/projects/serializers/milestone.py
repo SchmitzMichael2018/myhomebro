@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Optional, Any, Dict
 
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework import serializers
 
 from projects.models import (
@@ -32,6 +33,7 @@ from projects.services.milestone_workflow import (
     is_valid_delegated_reviewer_subaccount,
 )
 from projects.services.milestone_payouts import payout_amount_cents_for_milestone, serialize_payout_for_milestone
+from projects.services.recurring_maintenance import handle_milestone_recurring_state_change
 
 
 def _normalize_pricing_mode(materials_responsibility) -> str:
@@ -174,6 +176,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
     payout_stripe_transfer_id = serializers.SerializerMethodField()
     payout_failure_reason = serializers.SerializerMethodField()
     payout_execution_mode = serializers.SerializerMethodField()
+    subcontractor_assignment_compliance = serializers.SerializerMethodField()
 
     allow_overlap = serializers.BooleanField(write_only=True, required=False, default=False)
     assigned_subcontractor_invitation = serializers.PrimaryKeyRelatedField(
@@ -248,6 +251,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "payout_stripe_transfer_id",
             "payout_failure_reason",
             "payout_execution_mode",
+            "subcontractor_assignment_compliance",
         )
 
     # ------------------------ helpers (read) ------------------------ #
@@ -680,6 +684,25 @@ class MilestoneSerializer(serializers.ModelSerializer):
         payload = self._get_payout_payload(obj)
         return "" if payload is None else payload.get("payout_execution_mode") or ""
 
+    def get_subcontractor_assignment_compliance(self, obj: Milestone) -> dict[str, Any]:
+        requested_by = getattr(obj, "subcontractor_license_requested_by", None)
+        requested_by_display = ""
+        if requested_by is not None:
+            requested_by_display = getattr(requested_by, "get_full_name", lambda: "")() or ""
+            requested_by_display = requested_by_display or getattr(requested_by, "email", "") or ""
+        return {
+            "status": getattr(obj, "subcontractor_compliance_status", ""),
+            "license_required": bool(getattr(obj, "subcontractor_license_required", False)),
+            "insurance_required": bool(getattr(obj, "subcontractor_insurance_required", False)),
+            "override_flag": bool(getattr(obj, "subcontractor_compliance_override", False)),
+            "override_reason": getattr(obj, "subcontractor_compliance_override_reason", "") or "",
+            "requested_license_at": getattr(obj, "subcontractor_license_requested_at", None),
+            "requested_license_by_display": requested_by_display,
+            "required_trade_key": getattr(obj, "subcontractor_required_trade_key", "") or "",
+            "required_state_code": getattr(obj, "subcontractor_required_state_code", "") or "",
+            "warning_snapshot": getattr(obj, "subcontractor_compliance_warning_snapshot", {}) or {},
+        }
+
     # ------------------------ validation ------------------------ #
     @staticmethod
     def _as_date(value) -> Optional[date]:
@@ -825,6 +848,41 @@ class MilestoneSerializer(serializers.ModelSerializer):
         attrs.pop("allow_overlap", None)
         return attrs
 
+    def create(self, validated_data):
+        agreement = validated_data.get("agreement")
+        if (
+            agreement is not None
+            and getattr(agreement, "agreement_mode", "") == "maintenance"
+            and bool(getattr(agreement, "recurring_service_enabled", False))
+            and not bool(validated_data.get("generated_from_recurring_rule"))
+            and validated_data.get("recurring_rule_parent") is None
+        ):
+            validated_data.setdefault("is_recurring_rule", True)
+            validated_data.setdefault(
+                "recurrence_pattern",
+                getattr(agreement, "recurrence_pattern", "") or "monthly",
+            )
+            validated_data.setdefault(
+                "recurrence_interval",
+                getattr(agreement, "recurrence_interval", 1) or 1,
+            )
+            validated_data.setdefault(
+                "recurrence_anchor_date",
+                getattr(agreement, "recurrence_start_date", None)
+                or validated_data.get("start_date")
+                or timezone.localdate(),
+            )
+            validated_data.setdefault(
+                "recurrence_end_date",
+                getattr(agreement, "recurrence_end_date", None),
+            )
+        instance = super().create(validated_data)
+        try:
+            handle_milestone_recurring_state_change(instance)
+        except Exception:
+            pass
+        return instance
+
     def update(self, instance, validated_data):
         if "assigned_subcontractor_invitation" in validated_data:
             new_assignment = validated_data.get("assigned_subcontractor_invitation")
@@ -839,11 +897,25 @@ class MilestoneSerializer(serializers.ModelSerializer):
                 validated_data["subcontractor_reviewed_at"] = None
                 validated_data["subcontractor_reviewed_by"] = None
                 validated_data["subcontractor_review_response_note"] = ""
+                validated_data["subcontractor_compliance_status"] = "unknown"
+                validated_data["subcontractor_license_required"] = False
+                validated_data["subcontractor_insurance_required"] = False
+                validated_data["subcontractor_compliance_override"] = False
+                validated_data["subcontractor_compliance_override_reason"] = ""
+                validated_data["subcontractor_license_requested_at"] = None
+                validated_data["subcontractor_license_requested_by"] = None
+                validated_data["subcontractor_compliance_warning_snapshot"] = {}
+                validated_data["subcontractor_required_trade_key"] = ""
+                validated_data["subcontractor_required_state_code"] = ""
         instance = super().update(instance, validated_data)
         try:
             from projects.services.milestone_payouts import sync_milestone_payout
 
             sync_milestone_payout(instance.id)
+        except Exception:
+            pass
+        try:
+            handle_milestone_recurring_state_change(instance)
         except Exception:
             pass
         return instance
@@ -906,5 +978,6 @@ class MilestoneSerializer(serializers.ModelSerializer):
         data["payout_stripe_transfer_id"] = self.get_payout_stripe_transfer_id(instance)
         data["payout_failure_reason"] = self.get_payout_failure_reason(instance)
         data["payout_execution_mode"] = self.get_payout_execution_mode(instance)
+        data["subcontractor_assignment_compliance"] = self.get_subcontractor_assignment_compliance(instance)
 
         return data

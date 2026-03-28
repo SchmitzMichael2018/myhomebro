@@ -8,6 +8,7 @@ from rest_framework import permissions, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.utils import timezone
 
 from projects.ai.template_builder import (
     create_template_from_scope,
@@ -30,7 +31,14 @@ from projects.services.template_apply import (
     get_request_contractor,
     save_agreement_as_template,
 )
+from projects.services.template_discovery import (
+    attach_template_learning_metrics,
+    can_access_template,
+    discover_templates,
+    get_template_detail_queryset,
+)
 from projects.services.template_pricing import suggest_template_pricing
+from projects.services.regions import build_normalized_region_key
 
 
 def _safe_str(value) -> str:
@@ -47,16 +55,7 @@ def _to_decimal(value, default: str = "0.00") -> Decimal:
 
 
 def _template_queryset():
-    return (
-        ProjectTemplate.objects.annotate(
-            template_milestone_count=Count("milestones")
-        ).prefetch_related(
-            Prefetch(
-                "milestones",
-                queryset=ProjectTemplateMilestone.objects.all().order_by("sort_order", "id"),
-            )
-        )
-    )
+    return get_template_detail_queryset()
 
 
 class TemplateListCreateView(APIView):
@@ -115,11 +114,10 @@ class TemplateDetailView(APIView):
         except ProjectTemplate.DoesNotExist:
             raise ValidationError("Template not found.")
 
-        if template.is_system:
-            return template
-
-        if contractor is None or template.contractor_id != contractor.id:
+        region_key = request.query_params.get("normalized_region_key", "").strip()
+        if not can_access_template(template, contractor, region_key=region_key):
             raise PermissionDenied("You do not have access to this template.")
+        attach_template_learning_metrics([template])
 
         return template
 
@@ -186,7 +184,7 @@ class ApplyTemplateToAgreementView(APIView):
         except ProjectTemplate.DoesNotExist:
             raise ValidationError("Template not found.")
 
-        if not template.is_system and template.contractor_id != contractor.id:
+        if not can_access_template(template, contractor):
             raise PermissionDenied("You do not have access to this template.")
 
         try:
@@ -291,9 +289,8 @@ class TemplateSuggestPricingView(APIView):
         except ProjectTemplate.DoesNotExist:
             raise ValidationError("Template not found.")
 
-        if not template.is_system:
-            if contractor is None or template.contractor_id != contractor.id:
-                raise PermissionDenied("You do not have access to this template.")
+        if not can_access_template(template, contractor):
+            raise PermissionDenied("You do not have access to this template.")
 
         region_state = _safe_str(request.data.get("region_state"))
         region_city = _safe_str(request.data.get("region_city"))
@@ -477,3 +474,98 @@ class TemplateCreateFromScopeView(APIView):
             raise ValidationError(str(exc))
 
         return Response(result, status=status.HTTP_200_OK)
+
+
+class TemplateDiscoverView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        contractor = get_request_contractor(request.user)
+        discovery = discover_templates(
+            contractor=contractor,
+            source=request.query_params.get("source", "mine"),
+            project_type=request.query_params.get("project_type", ""),
+            project_subtype=request.query_params.get("project_subtype", ""),
+            query=request.query_params.get("q", ""),
+            sort=request.query_params.get("sort", "relevant"),
+            benchmark_match_key=request.query_params.get("benchmark_match_key", ""),
+            region_state=request.query_params.get("region_state", ""),
+            region_city=request.query_params.get("region_city", ""),
+            normalized_region_key=request.query_params.get("normalized_region_key", ""),
+        )
+        serializer = ProjectTemplateListSerializer(discovery["results"], many=True)
+        return Response(
+            {
+                "results": serializer.data,
+                "meta": discovery["meta"],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class TemplateVisibilityUpdateView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk: int):
+        contractor = get_request_contractor(request.user)
+        if contractor is None:
+            raise PermissionDenied("Only contractors can update template visibility.")
+
+        try:
+            template = ProjectTemplate.objects.get(pk=pk)
+        except ProjectTemplate.DoesNotExist:
+            raise ValidationError("Template not found.")
+
+        if template.is_system:
+            raise PermissionDenied("System templates are managed through the system seed/admin path.")
+        if template.contractor_id != contractor.id:
+            raise PermissionDenied("You do not have permission to update this template.")
+
+        visibility = _safe_str(request.data.get("visibility")).lower() or ProjectTemplate.Visibility.PRIVATE
+        if visibility not in {
+            ProjectTemplate.Visibility.PRIVATE,
+            ProjectTemplate.Visibility.REGIONAL,
+            ProjectTemplate.Visibility.PUBLIC,
+        }:
+            raise ValidationError({"visibility": "Invalid template visibility."})
+
+        allow_discovery = visibility in {
+            ProjectTemplate.Visibility.REGIONAL,
+            ProjectTemplate.Visibility.PUBLIC,
+        }
+        normalized_region_key = _safe_str(request.data.get("normalized_region_key"))
+        region_state = _safe_str(request.data.get("region_state")) or _safe_str(getattr(contractor, "state", ""))
+        region_city = _safe_str(request.data.get("region_city")) or _safe_str(getattr(contractor, "city", ""))
+
+        if visibility == ProjectTemplate.Visibility.REGIONAL and not normalized_region_key:
+            normalized_region_key = build_normalized_region_key(
+                country="US",
+                state=region_state,
+                city=region_city,
+            )
+            if normalized_region_key == "US":
+                raise ValidationError({"normalized_region_key": "Regional templates require a normalized region key."})
+
+        template.visibility = visibility
+        template.allow_discovery = allow_discovery
+        template.normalized_region_key = normalized_region_key if visibility == ProjectTemplate.Visibility.REGIONAL else (normalized_region_key if visibility == ProjectTemplate.Visibility.PUBLIC else "")
+
+        if allow_discovery:
+            template.published_at = timezone.now()
+            template.published_by = request.user
+        else:
+            template.published_at = None
+            template.published_by = None
+
+        template.save(
+            update_fields=[
+                "visibility",
+                "allow_discovery",
+                "normalized_region_key",
+                "published_at",
+                "published_by",
+                "updated_at",
+            ]
+        )
+        template = _template_queryset().get(pk=template.pk)
+        return Response(ProjectTemplateDetailSerializer(template).data, status=status.HTTP_200_OK)

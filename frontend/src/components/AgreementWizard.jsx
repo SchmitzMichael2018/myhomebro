@@ -11,7 +11,7 @@
 // - keeps existing wizard structure intact
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../api";
 
@@ -19,7 +19,15 @@ import Step1Details from "./Step1Details.jsx";
 import Step2Milestones from "./Step2Milestones.jsx";
 import Step3WarrantyAttachments from "./Step3WarrantyAttachments.jsx";
 import Step4Finalize from "./Step4Finalize.jsx";
+import { StartWithAIEntry } from "./StartWithAIAssistant.jsx";
 import { WorkflowHint } from "./WorkflowHint.jsx";
+import {
+  buildAssistantHandoffSignature,
+  getAssistantHandoff,
+  isBlankAssistantValue,
+  mergeAssistantFields,
+} from "../lib/assistantHandoff.js";
+import { trackOnboardingEvent } from "../lib/onboardingAnalytics.js";
 import { getAgreementWizardHint } from "../lib/workflowHints.js";
 
 /* ---------------- helpers ---------------- */
@@ -185,6 +193,17 @@ const EMPTY_DLOCAL = {
   project_title: "",
   project_type: "",
   project_subtype: "",
+  agreement_mode: "standard",
+  recurring_service_enabled: false,
+  recurrence_pattern: "monthly",
+  recurrence_interval: "1",
+  recurrence_start_date: "",
+  recurrence_end_date: "",
+  maintenance_status: "active",
+  auto_generate_next_occurrence: true,
+  service_window_notes: "",
+  recurring_summary_label: "",
+  next_occurrence_date: "",
   payment_mode: "escrow",
   payment_structure: "simple",
   retainage_percent: "0.00",
@@ -208,6 +227,7 @@ const EMPTY_MLOCAL = {
 /* ---------------- component ---------------- */
 
 export default function AgreementWizard() {
+  const location = useLocation();
   const navigate = useNavigate();
   const params = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -216,6 +236,12 @@ export default function AgreementWizard() {
   const agreementIdParam = agreementIdParamRaw ? Number(agreementIdParamRaw) : null;
 
   const step = clampStep(searchParams.get("step") || 1);
+  const assistantHandoff = useMemo(() => getAssistantHandoff(location.state), [location.state]);
+  const assistantHandoffSignature = useMemo(
+    () => buildAssistantHandoffSignature(assistantHandoff),
+    [assistantHandoff]
+  );
+  const activationJourney = Boolean(location.state?.activationJourney);
 
   const [agreement, setAgreementState] = useState(null);
   const [loadingAgreement, setLoadingAgreement] = useState(false);
@@ -248,8 +274,10 @@ export default function AgreementWizard() {
   const [qaName, setQaName] = useState("");
   const [qaEmail, setQaEmail] = useState("");
   const [qaBusy, setQaBusy] = useState(false);
+  const [assistantAppliedSummary, setAssistantAppliedSummary] = useState("");
 
   const didInitialFetchRef = useRef(false);
+  const appliedAssistantSignatureRef = useRef("");
 
   const agreementId = useMemo(
     () => deriveAgreementId(agreement, agreementIdParam),
@@ -433,6 +461,23 @@ export default function AgreementWizard() {
           project_title: data?.project_title || data?.title || data?.project?.title || prev.project_title,
           project_type: data?.project_type || prev.project_type,
           project_subtype: data?.project_subtype ?? prev.project_subtype,
+          agreement_mode: data?.agreement_mode || prev.agreement_mode || "standard",
+          recurring_service_enabled:
+            data?.recurring_service_enabled ?? prev.recurring_service_enabled ?? false,
+          recurrence_pattern: data?.recurrence_pattern || prev.recurrence_pattern || "monthly",
+          recurrence_interval:
+            data?.recurrence_interval != null
+              ? String(data.recurrence_interval)
+              : prev.recurrence_interval || "1",
+          recurrence_start_date: data?.recurrence_start_date || prev.recurrence_start_date || "",
+          recurrence_end_date: data?.recurrence_end_date || prev.recurrence_end_date || "",
+          maintenance_status: data?.maintenance_status || prev.maintenance_status || "active",
+          auto_generate_next_occurrence:
+            data?.auto_generate_next_occurrence ?? prev.auto_generate_next_occurrence ?? true,
+          service_window_notes: data?.service_window_notes ?? prev.service_window_notes ?? "",
+          recurring_summary_label:
+            data?.recurring_summary_label ?? prev.recurring_summary_label ?? "",
+          next_occurrence_date: data?.next_occurrence_date || prev.next_occurrence_date || "",
           payment_mode: data?.payment_mode || prev.payment_mode,
           payment_structure: data?.payment_structure || prev.payment_structure || "simple",
           retainage_percent:
@@ -554,6 +599,131 @@ export default function AgreementWizard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!assistantHandoffSignature || assistantHandoffSignature === appliedAssistantSignatureRef.current) {
+      return;
+    }
+
+    const prefill = assistantHandoff.prefillFields || {};
+    const draftPayload = assistantHandoff.draftPayload || {};
+
+    const mappedDraft = {
+      homeowner:
+        draftPayload.homeowner != null
+          ? String(draftPayload.homeowner)
+          : prefill.homeowner_id != null
+          ? String(prefill.homeowner_id)
+          : "",
+      project_title:
+        draftPayload.project_title || draftPayload.title || prefill.project_title || "",
+      project_type: draftPayload.project_type || prefill.project_type || "",
+      project_subtype: draftPayload.project_subtype || prefill.project_subtype || "",
+      agreement_mode: draftPayload.agreement_mode || prefill.agreement_mode || "",
+      recurring_service_enabled:
+        draftPayload.recurring_service_enabled ?? prefill.recurring_service_enabled ?? "",
+      recurrence_pattern: draftPayload.recurrence_pattern || prefill.recurrence_pattern || "",
+      recurrence_interval:
+        draftPayload.recurrence_interval != null
+          ? String(draftPayload.recurrence_interval)
+          : prefill.recurrence_interval != null
+          ? String(prefill.recurrence_interval)
+          : "",
+      recurrence_start_date:
+        draftPayload.recurrence_start_date || prefill.recurrence_start_date || "",
+      recurrence_end_date:
+        draftPayload.recurrence_end_date || prefill.recurrence_end_date || "",
+      maintenance_status: draftPayload.maintenance_status || prefill.maintenance_status || "",
+      auto_generate_next_occurrence:
+        draftPayload.auto_generate_next_occurrence ?? prefill.auto_generate_next_occurrence ?? "",
+      service_window_notes:
+        draftPayload.service_window_notes || prefill.service_window_notes || "",
+      recurring_summary_label:
+        draftPayload.recurring_summary_label || prefill.recurring_summary_label || "",
+      payment_mode: draftPayload.payment_mode || prefill.payment_mode || "",
+      description:
+        draftPayload.description || draftPayload.project_summary || prefill.project_summary || "",
+      address_line1: draftPayload.address_line1 || prefill.address_line1 || "",
+      address_line2: draftPayload.address_line2 || prefill.address_line2 || "",
+      address_city: draftPayload.city || draftPayload.address_city || prefill.city || "",
+      address_state: draftPayload.state || draftPayload.address_state || prefill.state || "",
+      address_postal_code:
+        draftPayload.postal_code ||
+        draftPayload.address_postal_code ||
+        prefill.postal_code ||
+        "",
+    };
+
+    let appliedDraftKeys = [];
+    setDLocal((prev) => {
+      const { next, appliedKeys } = mergeAssistantFields(prev, mappedDraft);
+      appliedDraftKeys = appliedKeys;
+      return next;
+    });
+
+    const nextQaName =
+      prefill.customer_name || prefill.full_name || draftPayload.homeowner_name || "";
+    const nextQaEmail = prefill.email || draftPayload.email || "";
+
+    if (isBlankAssistantValue(dLocal?.homeowner) && !isBlankAssistantValue(nextQaName)) {
+      setQaName((prev) => {
+        if (!isBlankAssistantValue(prev)) return prev;
+        return nextQaName;
+      });
+      setShowQuickAdd(true);
+    }
+    if (!isBlankAssistantValue(nextQaEmail)) {
+      setQaEmail((prev) => {
+        if (!isBlankAssistantValue(prev)) return prev;
+        return nextQaEmail;
+      });
+    }
+
+    if (assistantHandoff.wizardStepTarget) {
+      goStep(assistantHandoff.wizardStepTarget);
+    }
+
+    const appliedLabels = [];
+    const hasCustomerPrefill =
+      !isBlankAssistantValue(nextQaName) || !isBlankAssistantValue(nextQaEmail);
+    if (appliedDraftKeys.length) appliedLabels.push("agreement fields");
+    if (hasCustomerPrefill) appliedLabels.push("customer details");
+    setAssistantAppliedSummary(
+      appliedLabels.length
+        ? `AI prefilled some ${appliedLabels.join(" and ")} based on your request.`
+        : ""
+    );
+
+    if (assistantHandoff.templateRecommendations?.length) {
+      trackOnboardingEvent({
+        eventType: "template_selected",
+        step: "first_job",
+        context: {
+          recommendation_count: assistantHandoff.templateRecommendations.length,
+          top_template_id: assistantHandoff.templateRecommendations[0]?.id || null,
+        },
+        once: true,
+      });
+    }
+
+    if (assistantHandoff.estimatePreview && Object.keys(assistantHandoff.estimatePreview).length) {
+      trackOnboardingEvent({
+        eventType: "estimate_preview_viewed",
+        step: "first_job",
+        context: {
+          confidence: assistantHandoff.estimatePreview.confidence_level || "",
+        },
+        once: true,
+      });
+    }
+
+    appliedAssistantSignatureRef.current = assistantHandoffSignature;
+  }, [
+    assistantHandoff,
+    assistantHandoffSignature,
+    dLocal?.homeowner,
+    goStep,
+  ]);
+
   const homeownerOptions = useMemo(() => {
     return (people || []).map((h) => {
       const company = safeStr(h.company_name);
@@ -634,6 +804,29 @@ export default function AgreementWizard() {
       project_subtype: dLocal.project_subtype || "",
       project_type_ref: selectedType?.id || null,
       project_subtype_ref: selectedSubtype?.id || null,
+      agreement_mode: dLocal.agreement_mode || "standard",
+      recurring_service_enabled:
+        dLocal.agreement_mode === "maintenance"
+          ? true
+          : !!dLocal.recurring_service_enabled,
+      recurrence_pattern:
+        dLocal.agreement_mode === "maintenance" ? dLocal.recurrence_pattern || "monthly" : "",
+      recurrence_interval:
+        dLocal.agreement_mode === "maintenance"
+          ? Number(dLocal.recurrence_interval || 1) || 1
+          : 1,
+      recurrence_start_date:
+        dLocal.agreement_mode === "maintenance" ? dLocal.recurrence_start_date || null : null,
+      recurrence_end_date:
+        dLocal.agreement_mode === "maintenance" ? dLocal.recurrence_end_date || null : null,
+      maintenance_status:
+        dLocal.agreement_mode === "maintenance" ? dLocal.maintenance_status || "active" : "active",
+      auto_generate_next_occurrence:
+        dLocal.agreement_mode === "maintenance" ? dLocal.auto_generate_next_occurrence !== false : false,
+      service_window_notes:
+        dLocal.agreement_mode === "maintenance" ? dLocal.service_window_notes || "" : "",
+      recurring_summary_label:
+        dLocal.agreement_mode === "maintenance" ? dLocal.recurring_summary_label || "" : "",
       payment_mode: dLocal.payment_mode || "escrow",
       payment_structure: dLocal.payment_structure || "simple",
       retainage_percent:
@@ -927,6 +1120,32 @@ export default function AgreementWizard() {
             prev.project_title,
           project_type: hydratedAgreement?.project_type ?? prev.project_type,
           project_subtype: hydratedAgreement?.project_subtype ?? prev.project_subtype,
+          agreement_mode:
+            hydratedAgreement?.agreement_mode ?? prev.agreement_mode ?? "standard",
+          recurring_service_enabled:
+            hydratedAgreement?.recurring_service_enabled ?? prev.recurring_service_enabled ?? false,
+          recurrence_pattern:
+            hydratedAgreement?.recurrence_pattern ?? prev.recurrence_pattern ?? "monthly",
+          recurrence_interval:
+            hydratedAgreement?.recurrence_interval != null
+              ? String(hydratedAgreement.recurrence_interval)
+              : prev.recurrence_interval ?? "1",
+          recurrence_start_date:
+            hydratedAgreement?.recurrence_start_date ?? prev.recurrence_start_date ?? "",
+          recurrence_end_date:
+            hydratedAgreement?.recurrence_end_date ?? prev.recurrence_end_date ?? "",
+          maintenance_status:
+            hydratedAgreement?.maintenance_status ?? prev.maintenance_status ?? "active",
+          auto_generate_next_occurrence:
+            hydratedAgreement?.auto_generate_next_occurrence ??
+            prev.auto_generate_next_occurrence ??
+            true,
+          service_window_notes:
+            hydratedAgreement?.service_window_notes ?? prev.service_window_notes ?? "",
+          recurring_summary_label:
+            hydratedAgreement?.recurring_summary_label ?? prev.recurring_summary_label ?? "",
+          next_occurrence_date:
+            hydratedAgreement?.next_occurrence_date ?? prev.next_occurrence_date ?? "",
           description: hydratedAgreement?.description ?? prev.description,
           payment_mode: hydratedAgreement?.payment_mode || prev.payment_mode,
           payment_structure:
@@ -984,6 +1203,70 @@ export default function AgreementWizard() {
     () => getAgreementWizardHint({ step, agreement }),
     [agreement, step]
   );
+  const assistantContext = useMemo(
+    () => ({
+      current_route: `/app/agreements/${agreementId || "new"}/wizard?step=${step}`,
+      agreement_id: agreementId || null,
+      agreement_summary: {
+        title: dLocal.project_title || agreement?.project_title || agreement?.title || "",
+        project_title: dLocal.project_title || agreement?.project_title || agreement?.title || "",
+        project_summary: dLocal.description || agreement?.description || "",
+        description: dLocal.description || agreement?.description || "",
+        customer_name:
+          homeownerOptions.find((option) => option.value === dLocal.homeowner)?.label || "",
+        project_type: dLocal.project_type || agreement?.project_type || "",
+        project_subtype: dLocal.project_subtype || agreement?.project_subtype || "",
+        agreement_mode: dLocal.agreement_mode || agreement?.agreement_mode || "standard",
+        recurrence_pattern: dLocal.recurrence_pattern || agreement?.recurrence_pattern || "",
+        recurrence_interval: dLocal.recurrence_interval || agreement?.recurrence_interval || "",
+        next_occurrence_date: dLocal.next_occurrence_date || agreement?.next_occurrence_date || "",
+        milestone_count: milestones.length,
+        ready_to_finalize: step >= 4,
+        pending_clarifications: [],
+        status: agreement?.status || "draft",
+      },
+      template_id:
+        agreement?.selected_template?.id ||
+        agreement?.selected_template_id ||
+        null,
+      template_summary: {
+        name:
+          agreement?.selected_template?.name ||
+          agreement?.selected_template_name_snapshot ||
+          "",
+      },
+      milestone_summary: {
+        count: milestones.length,
+        suggested_titles: milestones.map((item) => item?.title).filter(Boolean),
+      },
+    }),
+    [
+      agreement,
+      agreementId,
+      dLocal.description,
+      dLocal.homeowner,
+      dLocal.project_subtype,
+      dLocal.project_title,
+      dLocal.project_type,
+      homeownerOptions,
+      milestones,
+      step,
+    ]
+  );
+  const handleAssistantAction = useCallback(
+    (plan) => {
+      if (plan?.wizard_step_target && plan.wizard_step_target !== step) {
+        goStep(plan.wizard_step_target);
+        return true;
+      }
+      if (plan?.next_action?.action_key === "review_clarifications") {
+        goStep(2);
+        return true;
+      }
+      return false;
+    },
+    [step]
+  );
 
   return (
     <div className="mx-auto max-w-6xl p-4">
@@ -1039,6 +1322,36 @@ export default function AgreementWizard() {
         className="mt-4"
       />
 
+      <StartWithAIEntry
+        className="mt-4"
+        testId="agreement-wizard-ai-entry"
+        title="Start with AI inside this agreement"
+        description="Use the current agreement context to resume the right step, review clarifications, or move into milestone work."
+        context={assistantContext}
+        onAction={handleAssistantAction}
+      />
+
+      {assistantAppliedSummary ? (
+        <div
+          data-testid="agreement-assistant-prefill-banner"
+          className="mt-4 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900"
+        >
+          {assistantAppliedSummary}
+        </div>
+      ) : null}
+
+      {activationJourney && agreementId ? (
+        <div
+          data-testid="first-agreement-success-banner"
+          className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
+        >
+          <div className="font-semibold">Your first agreement is ready.</div>
+          <div className="mt-1">
+            Next steps: send the agreement, assign subcontractors if needed, and start tracking progress.
+          </div>
+        </div>
+      ) : null}
+
       {loadingAgreement ? (
         <div className="mt-6 text-sm text-white/80">Loading agreement details…</div>
       ) : null}
@@ -1076,6 +1389,13 @@ export default function AgreementWizard() {
             projectSubtypeOptions={projectSubtypeOptions}
             onTemplateApplied={handleTemplateApplied}
             refreshAgreement={refreshAgreement}
+            assistantGuidedFlow={assistantHandoff.guidedFlow}
+            assistantTemplateRecommendations={assistantHandoff.templateRecommendations}
+            assistantTopTemplatePreview={assistantHandoff.topTemplatePreview}
+            assistantProactiveRecommendations={assistantHandoff.proactiveRecommendations}
+            assistantPredictiveInsights={assistantHandoff.predictiveInsights}
+            assistantProposedActions={assistantHandoff.proposedActions}
+            assistantConfirmationRequiredActions={assistantHandoff.confirmationRequiredActions}
           />
         </div>
       ) : null}
@@ -1097,6 +1417,12 @@ export default function AgreementWizard() {
             onNext={() => goStep(3)}
             reloadMilestones={loadMilestones}
             refreshAgreement={refreshAgreement}
+            assistantSuggestedMilestones={assistantHandoff.suggestedMilestones}
+            assistantClarificationQuestions={assistantHandoff.clarificationQuestions}
+            assistantEstimatePreview={assistantHandoff.estimatePreview}
+            assistantProactiveRecommendations={assistantHandoff.proactiveRecommendations}
+            assistantPredictiveInsights={assistantHandoff.predictiveInsights}
+            assistantGuidedFlow={assistantHandoff.guidedFlow}
           />
         </div>
       ) : null}

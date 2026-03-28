@@ -4,6 +4,9 @@ async function mockContractorDashboard(page, operationsPayload, options = {}) {
   const milestones = options.milestones || [];
   const agreements = options.agreements || [];
   const publicLeads = options.publicLeads || [];
+  const activityFeed = options.activityFeed || [];
+  const nextBestAction = options.nextBestAction || null;
+  const contractorMe = options.contractorMe || {};
 
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
@@ -40,6 +43,11 @@ async function mockContractorDashboard(page, operationsPayload, options = {}) {
       body: JSON.stringify({
         id: 77,
         created_at: '2026-03-01T10:00:00Z',
+        sms_enabled: false,
+        sms_opted_out: false,
+        sms_status: {},
+        last_sms_event: null,
+        ...contractorMe,
       }),
     });
   });
@@ -116,6 +124,17 @@ async function mockContractorDashboard(page, operationsPayload, options = {}) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ results: publicLeads }),
+    });
+  });
+
+  await page.route('**/api/projects/activity-feed/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: activityFeed,
+        next_best_action: nextBestAction,
+      }),
     });
   });
 }
@@ -541,4 +560,105 @@ test('contractor dashboard shows next steps for leads signatures funding and rev
   await expect(page.getByTestId('dashboard-next-steps')).toContainText(
     '1 milestone is awaiting review.'
   );
+});
+
+test('contractor dashboard shows next best action and recent activity feed', async ({ page }) => {
+  await mockContractorDashboard(
+    page,
+    {
+      identity_type: 'contractor_owner',
+      today: [],
+      tomorrow: [],
+      this_week: [],
+      recent_activity: [],
+      empty_states: {
+        recent_activity: 'No recent worker activity yet.',
+      },
+    },
+    {
+      activityFeed: [
+        {
+          id: 901,
+          event_type: 'payment_released',
+          title: 'Payment released',
+          summary: 'Funds were released for the Kitchen Remodel invoice.',
+          severity: 'success',
+          created_at: '2026-03-24T12:00:00Z',
+          navigation_target: '/app/invoices/901',
+          related_label: 'Kitchen Remodel',
+        },
+      ],
+      nextBestAction: {
+        action_type: 'send_first_agreement',
+        title: 'Send your next agreement',
+        message: 'You already have a draft agreement ready for review and sending.',
+        cta_label: 'Open draft',
+        navigation_target: '/app/agreements/321/wizard?step=1',
+        rationale: 'Draft agreements create the fastest path to homeowner action and funding.',
+      },
+    }
+  );
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('dashboard-next-best-action')).toContainText(
+    'Send your next agreement'
+  );
+  await expect(page.getByTestId('dashboard-next-best-action')).toContainText('Open draft');
+  await expect(page.getByTestId('dashboard-activity-feed')).toContainText('Payment released');
+  await expect(page.getByTestId('dashboard-activity-feed')).toContainText(
+    'Funds were released for the Kitchen Remodel invoice.'
+  );
+});
+
+test('contractor dashboard shows sms status summary from contractor profile', async ({ page }) => {
+  await mockContractorDashboard(
+    page,
+    {
+      identity_type: 'contractor_owner',
+      today: [],
+      tomorrow: [],
+      this_week: [],
+      recent_activity: [],
+      empty_states: {
+        recent_activity: 'No recent worker activity yet.',
+      },
+    },
+    {
+      contractorMe: {
+        sms_enabled: true,
+        sms_opted_out: false,
+        sms_automation_enabled: true,
+        sent_sms_count_7d: 3,
+        suppressed_sms_count_7d: 5,
+        deferred_sms_count_7d: 1,
+        last_sms_automation_decision: {
+          reason_code: 'duplicate_recent',
+          message_preview: 'Payment released for Agreement #321.',
+        },
+        sms_status: {
+          phone_number_e164: '+12105550002',
+        },
+        last_sms_event: {
+          event_type: 'sms_sent',
+          created_at: '2026-03-24T12:00:00Z',
+          summary: 'A compliant SMS notification was queued.',
+        },
+      },
+    }
+  );
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('dashboard-sms-status')).toContainText('SMS updates enabled');
+  await expect(page.getByTestId('dashboard-sms-status')).toContainText(
+    'Phone on file: +12105550002'
+  );
+  await expect(page.getByTestId('dashboard-sms-status')).toContainText(
+    'Last event: A compliant SMS notification was queued.'
+  );
+  await expect(page.getByTestId('dashboard-sms-automation')).toContainText('Enabled');
+  await expect(page.getByTestId('dashboard-sms-automation')).toContainText('Sent 7d');
+  await expect(page.getByTestId('dashboard-sms-automation')).toContainText('3');
+  await expect(page.getByTestId('dashboard-sms-automation')).toContainText('duplicate_recent');
 });
