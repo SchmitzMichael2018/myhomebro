@@ -102,11 +102,11 @@ export default function Sidebar({ variant = "desktop" }) {
       data-close-sidebar="1"
       className={({ isActive }) =>
         [
-          "flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition",
-          "border",
+          "flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm font-semibold transition duration-150",
+          "border shadow-[0_10px_24px_-20px_rgba(15,23,42,0.45)]",
           isActive
-            ? "bg-slate-900 text-white border-black/10 shadow-sm"
-            : "bg-white/60 text-slate-800 border-black/10 hover:bg-white hover:text-slate-900",
+            ? "bg-slate-950 text-white border-slate-900/40 shadow-[0_18px_34px_-24px_rgba(15,23,42,0.85)]"
+            : "bg-white/72 text-slate-800 border-slate-200/80 hover:bg-white hover:text-slate-950",
         ].join(" ")
       }
       title={title || (typeof label === "string" ? label : undefined)}
@@ -125,11 +125,11 @@ export default function Sidebar({ variant = "desktop" }) {
       data-close-sidebar="1"
       className={({ isActive }) =>
         [
-          "ml-6 flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition",
-          "border",
+          "ml-6 flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition",
+          "border shadow-[0_8px_22px_-20px_rgba(15,23,42,0.38)]",
           isActive
-            ? "bg-slate-900 text-white border-black/10 shadow-sm"
-            : "bg-white/40 text-slate-700 border-black/10 hover:bg-white hover:text-slate-900",
+            ? "bg-slate-950 text-white border-slate-900/40"
+            : "bg-white/55 text-slate-700 border-slate-200/70 hover:bg-white hover:text-slate-900",
         ].join(" ")
       }
     >
@@ -184,21 +184,21 @@ export default function Sidebar({ variant = "desktop" }) {
 
     return (
       <>
-        <div className="px-2 text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-500">
+        <div className="px-2 pt-1 text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400">
           Core
         </div>
         <Item to={`${APP_BASE}/dashboard`} label="Dashboard" emoji="🏠" />
         <Item to={`${APP_BASE}/agreements`} label="Agreements" emoji="📄" />
         <Item to={`${APP_BASE}/invoices`} label="Invoices" emoji="💳" />
 
-        <div className="px-2 pt-3 text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-500">
+        <div className="px-2 pt-4 text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400">
           Work
         </div>
         <Item to={`${APP_BASE}/milestones`} label="Milestones" emoji="🧩" />
         <Item to={`${APP_BASE}/subcontractors`} label="Subcontractors" emoji="🧰" />
         <Item to={`${APP_BASE}/assignments`} label="Assignments" emoji="🧭" />
 
-        <div className="px-2 pt-3 text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-500">
+        <div className="px-2 pt-4 text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400">
           Business
         </div>
         <Item to={`${APP_BASE}/customers`} label="Customers" emoji="👥" />
@@ -206,7 +206,7 @@ export default function Sidebar({ variant = "desktop" }) {
         <Item to={`${APP_BASE}/assistant`} label="Start with AI" emoji="✨" />
         <Item to={`${APP_BASE}/business`} label="Business Dashboard" emoji="📈" />
 
-        <div className="px-2 pt-3 text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-500">
+        <div className="px-2 pt-4 text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400">
           Settings
         </div>
         <Item to={`${APP_BASE}/profile`} label="Profile" emoji="👤" />
@@ -406,10 +406,10 @@ export default function Sidebar({ variant = "desktop" }) {
             className="h-8 w-8 rounded-md object-contain"
           />
           <div>
-            <div className="text-base font-extrabold tracking-tight text-slate-900">
+            <div className="text-base font-extrabold tracking-tight text-slate-950">
               MyHomeBro
             </div>
-            <div className="text-xs text-slate-600">{consoleLabel}</div>
+            <div className="text-xs font-medium text-slate-500">{consoleLabel}</div>
           </div>
         </div>
       </div>
@@ -425,7 +425,7 @@ export default function Sidebar({ variant = "desktop" }) {
         )}
 
         <div>
-          <div className="px-2 text-xs font-extrabold uppercase tracking-wide text-slate-600 mb-2">
+          <div className="mb-2 px-2 text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400">
             Main
           </div>
           {isContractorOwner ? (
@@ -438,7 +438,7 @@ export default function Sidebar({ variant = "desktop" }) {
                   context: { current_route: `${location.pathname}${location.search || ""}` },
                 })
               }
-              className="mb-3 hidden w-full items-center justify-center gap-2 rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-slate-800 transition hover:bg-slate-50 xl:flex"
+              className="mb-3 hidden w-full items-center justify-center gap-2 rounded-2xl border border-slate-200/80 bg-white px-3 py-2.5 text-sm font-extrabold text-slate-800 shadow-[0_12px_24px_-20px_rgba(15,23,42,0.45)] transition hover:bg-slate-50 xl:flex"
             >
               <span aria-hidden="true">✨</span>
               Open AI Panel
@@ -449,7 +449,7 @@ export default function Sidebar({ variant = "desktop" }) {
 
         {accountNav ? (
           <div>
-            <div className="px-2 text-xs font-extrabold uppercase tracking-wide text-slate-600 mb-2">
+            <div className="mb-2 px-2 text-[10px] font-bold uppercase tracking-[0.24em] text-slate-400">
               Account
             </div>
             <div className="space-y-2">{accountNav}</div>
@@ -457,15 +457,15 @@ export default function Sidebar({ variant = "desktop" }) {
         ) : null}
       </nav>
 
-      <div className="px-4 py-3 border-t border-black/10">
+      <div className="border-t border-slate-200/80 bg-[linear-gradient(180deg,rgba(255,255,255,0.36),rgba(248,250,252,0.86))] px-4 py-4">
         <button
           onClick={handleLogout}
           data-close-sidebar="1"
-          className="w-full rounded-xl bg-rose-600 px-3 py-2 text-sm font-extrabold text-white hover:bg-rose-700"
+          className="w-full rounded-2xl bg-rose-600 px-3 py-2.5 text-sm font-extrabold text-white shadow-[0_14px_28px_-18px_rgba(225,29,72,0.55)] hover:bg-rose-700"
         >
           Logout
         </button>
-        <div className="mt-2 text-[11px] text-slate-600 text-center">
+        <div className="mt-3 text-[11px] text-slate-500 text-center">
           © {new Date().getFullYear()} MyHomeBro
         </div>
       </div>
@@ -478,11 +478,11 @@ export default function Sidebar({ variant = "desktop" }) {
 
   return (
     <aside
-      className="hidden md:flex md:flex-col md:w-60 lg:w-64 border-r border-black/10"
+      className="hidden border-r border-slate-200/80 md:flex md:w-60 md:flex-col lg:w-64"
       style={{
         minHeight: "100vh",
-        background: "rgba(255,255,255,0.72)",
-        backdropFilter: "blur(10px)",
+        background: "linear-gradient(180deg, rgba(255,255,255,0.9), rgba(248,250,252,0.86))",
+        backdropFilter: "blur(14px)",
       }}
     >
       {inner}

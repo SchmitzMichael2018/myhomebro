@@ -1,1306 +1,75 @@
-// src/components/ContractorDashboard.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../api";
 import { toast } from "react-hot-toast";
+import { ArrowRight } from "lucide-react";
+import api from "../api";
 import PageShell from "./PageShell.jsx";
-import RoleAwareWorkboard from "./RoleAwareWorkboard.jsx";
-import StatCard from "./StatCard.jsx";
-import { WorkflowHintList } from "./WorkflowHint.jsx";
-import Modal from "react-modal";
 import DashboardCard from "./dashboard/DashboardCard.jsx";
 import DashboardSection from "./dashboard/DashboardSection.jsx";
-import {
-  Target,
-  ListTodo,
-  CheckCircle2,
-  BadgeDollarSign,
-  BadgeCheck,
-  WalletMinimal,
-  FilePlus2,
-  ListPlus,
-  Receipt,
-  CalendarDays,
-  AlertTriangle,
-  Wrench,
-  X,
-  ChevronDown,
-  ChevronRight,
-  Sparkles,
-  ArrowRight,
-} from "lucide-react";
 import { getDashboardNextSteps } from "../lib/workflowHints.js";
 
-/* Ensure react-modal knows the root */
-Modal.setAppElement("#root");
-
-/* ---------- small helpers ---------- */
-const money = (n) => Number(n || 0);
-const sum = (arr, key = "amount") => arr.reduce((a, x) => a + money(x?.[key]), 0);
-const norm = (s) => (s || "").toString().toLowerCase();
-
-function parseDateAny(v) {
-  if (!v) return null;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
-function startOfMonth(d) {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
-}
-function startOfYear(d) {
-  return new Date(d.getFullYear(), 0, 1);
-}
-function daysAgo(n) {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d;
-}
-function inRange(dateObj, from, to) {
-  if (!dateObj) return false;
-  const t = dateObj.getTime();
-  if (from && t < from.getTime()) return false;
-  if (to && t > to.getTime()) return false;
-  return true;
-}
-const currency = (n) =>
-  Number(n || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
-
-/* ========================================================================== */
-/* ============================ Milestone helpers ============================ */
-/* ========================================================================== */
-
-const getInvoiceIdFromMilestone = (m) => {
-  const inv = m?.invoice;
-  if (inv && typeof inv === "object") return inv?.id ?? inv?.invoice_id ?? inv?.pk ?? null;
-  return m?.invoice_id ?? m?.invoiceId ?? m?.invoice ?? null;
-};
-
-const milestoneStatus = (m) => norm(m?.status || m?.milestone_status || m?.state || "");
-
-// robust “completed” detection (matches your newer MilestoneList behavior)
-const isMilestoneCompleted = (m) => {
-  if (!m) return false;
-
-  if (m.completed === true) return true;
-  if (m.is_completed === true) return true;
-
-  if (!!m.completed_at || !!m.completed_on || !!m.completed_date) return true;
-  if (!!m.submitted_at || !!m.submitted_on || !!m.completion_submitted_at) return true;
-
-  const st = milestoneStatus(m);
-
-  if (["completed", "complete", "done", "finished"].includes(st)) return true;
-
-  if (
-    [
-      "review",
-      "in_review",
-      "pending_review",
-      "submitted",
-      "pending_approval",
-      "awaiting_approval",
-      "approval_pending",
-    ].includes(st)
-  ) {
-    return true;
-  }
-
-  return false;
-};
-
-const isMilestoneIncomplete = (m) => !isMilestoneCompleted(m);
-
-// Paid milestone = invoice is paid OR escrow released (via invoices list or embedded invoice object)
-const isMilestonePaid = (m, invoicesById) => {
-  if (!m) return false;
-
-  const invObj = m?.invoice && typeof m.invoice === "object" ? m.invoice : null;
-  const invoiceId = getInvoiceIdFromMilestone(m);
-  const inv = invObj || (invoiceId ? invoicesById[String(invoiceId)] : null);
-  if (!inv) return false;
-
-  const s = norm(inv?.status || inv?.invoice_status || inv?.state || "");
-  const display = norm(inv?.display_status || "");
-
-  const escrowReleased =
-    inv?.escrow_released === true ||
-    inv?.escrow_released === 1 ||
-    inv?.escrow_released === "true" ||
-    !!inv?.escrow_released_at;
-
-  if (escrowReleased) return true;
-  if (display === "paid") return true;
-  if (s === "paid" || s === "earned" || s === "released") return true;
-  if (s.includes("paid")) return true;
-
-  return false;
-};
-
-// Ready to invoice = completed AND NOT invoiced AND NOT paid
-const isMilestoneReadyToInvoice = (m, invoicesById) => {
-  if (!isMilestoneCompleted(m)) return false;
-  if (isMilestonePaid(m, invoicesById)) return false;
-
-  const hasInv =
-    m?.is_invoiced === true ||
-    !!getInvoiceIdFromMilestone(m);
-
-  return !hasInv;
-};
-
-// ✅ Rework milestone detection (best-effort)
-const isReworkMilestone = (m) => {
-  if (!m) return false;
-
-  if (m.is_rework === true || m.rework === true) return true;
-  if (m.rework_of_dispute || m.rework_of_dispute_id) return true;
-  if (m.dispute_id && norm(m.title).includes("rework")) return true;
-
-  const t = norm(m.title);
-  if (!t) return false;
-  if (t.startsWith("rework")) return true;
-  if (t.includes("rework — dispute") || t.includes("rework - dispute")) return true;
-  if (t.includes("rework") && t.includes("dispute")) return true;
-
-  return false;
-};
-
-// ✅ Invoice disputed detection (best-effort, tries to ignore resolved/closed disputes)
-const isDisputedInvoice = (inv) => {
-  const s = norm(inv?.status);
-  const display = norm(inv?.display_status);
-
-  const disputeStatus = norm(
-    inv?.dispute_status ||
-      inv?.dispute_state ||
-      inv?.latest_dispute_status ||
-      inv?.open_dispute_status ||
-      inv?.dispute?.status ||
-      inv?.dispute?.state ||
-      ""
+const currency = (n) => Number(n || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
+const norm = (v) => (v || "").toString().toLowerCase();
+const parseDate = (v) => (v ? new Date(v) : null);
+const validDate = (v) => v && !Number.isNaN(v.getTime());
+const startOfYear = (d) => new Date(d.getFullYear(), 0, 1);
+const inRange = (d, from, to) => validDate(d) && (!from || d >= from) && (!to || d <= to);
+const sum = (items, key = "amount") => (items || []).reduce((a, x) => a + Number(x?.[key] || 0), 0);
+const agreementAmount = (a) => Number(a?.contract_amount || a?.total_amount || a?.total_price || a?.amount || 0);
+const agreementStatus = (a) =>
+  String(a?.status || a?.state || "draft").replaceAll("_", " ").replace(/\b\w/g, (m) => m.toUpperCase());
+const milestoneState = (m) => norm(m?.status || m?.milestone_status || m?.state || "");
+const milestoneComplete = (m) =>
+  !!(
+    m?.completed ||
+    m?.is_completed ||
+    m?.completed_at ||
+    m?.completed_on ||
+    m?.completed_date ||
+    m?.submitted_at ||
+    ["completed", "complete", "done", "finished", "review", "in_review", "pending_review", "submitted", "pending_approval", "awaiting_approval", "approval_pending"].includes(milestoneState(m))
   );
-
-  const openFlag = inv?.dispute_is_open ?? inv?.has_open_dispute ?? inv?.dispute_open ?? null;
-  if (openFlag === false) return false;
-
-  if (
-    disputeStatus.includes("resolved") ||
-    disputeStatus.includes("closed") ||
-    disputeStatus.includes("dismiss")
-  ) {
-    return false;
-  }
-
-  return s.includes("dispute") || display.includes("dispute");
-};
-
-/**
- * ✅ Invoice bucketing rules (escrow-aware + disputed)
- */
-const invBucket = (inv) => {
-  if (isDisputedInvoice(inv)) return "disputed";
-
-  const s = norm(inv?.status);
+const invoiceBucket = (inv) => {
+  const status = norm(inv?.status);
   const display = norm(inv?.display_status);
-
-  const escrowReleased =
-    inv?.escrow_released === true ||
-    inv?.escrow_released === 1 ||
-    inv?.escrow_released === "true";
-
-  if (escrowReleased || display === "paid") return "earned";
-  if (["paid", "earned", "released"].includes(s)) return "earned";
-
-  if (["pending", "pending_approval", "sent", "awaiting_approval"].includes(s))
-    return "pending";
-
-  if (["approved", "ready_to_pay"].includes(s)) return "approved";
-
+  const dispute = norm(inv?.dispute_status || inv?.dispute_state || inv?.latest_dispute_status || "");
+  const disputed =
+    (status.includes("dispute") || display.includes("dispute")) &&
+    !dispute.includes("resolved") &&
+    !dispute.includes("closed") &&
+    !dispute.includes("dismiss");
+  if (disputed) return "disputed";
+  if (inv?.escrow_released || display === "paid" || ["paid", "earned", "released"].includes(status)) return "earned";
+  if (["approved", "ready_to_pay"].includes(status)) return "approved";
   return "pending";
 };
 
-const fmtRate = (rateDecimal) => {
-  const r = Number(rateDecimal);
-  if (!Number.isFinite(r)) return null;
-  return `${(r * 100).toFixed(2)}%`;
-};
-
-// ✅ pricing labels (keep in sync with backend/backend/payments/fees.py)
-const INTRO_RATE_LABEL = "3.00%";
-const STANDARD_START_RATE_LABEL = "4.50%";
-
-// ✅ Direct Pay pricing (LOCKED)
-const DIRECT_PAY_LABEL = "1% + $1";
-
-function planLabel() {
-  return "Included";
-}
-
-function directPayLabel() {
-  return DIRECT_PAY_LABEL;
-}
-
-function formatActivityTimestamp(value) {
-  const dt = parseDateAny(value);
-  if (!dt) return "";
-  return dt.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function activityAccent(severity) {
-  if (severity === "critical") return "border-rose-200 bg-rose-50 text-rose-900";
-  if (severity === "warning") return "border-amber-200 bg-amber-50 text-amber-900";
-  if (severity === "success") return "border-emerald-200 bg-emerald-50 text-emerald-900";
-  return "border-slate-200 bg-slate-50 text-slate-900";
-}
-
-function getAgreementAmountValue(agreement) {
-  return Number(
-    agreement?.contract_amount ||
-      agreement?.total_amount ||
-      agreement?.total_price ||
-      agreement?.amount ||
-      0
-  );
-}
-
-function getAgreementStatusLabel(agreement) {
-  return String(agreement?.status || agreement?.state || "draft")
-    .replaceAll("_", " ")
-    .replace(/\b\w/g, (m) => m.toUpperCase());
-}
-
-/* ---------- quick action button ---------- */
-function ActionButton({ icon: Icon, label, onClick, primary }) {
-  return (
-    <button
-      className={`mhb-btn${primary ? " primary" : ""}`}
-      onClick={onClick}
-      type="button"
-      title={label}
-      style={{
-        padding: "12px 16px",
-        fontSize: 14,
-        display: "flex",
-        alignItems: "center",
-      }}
-    >
-      {Icon ? <Icon size={18} /> : null}
-      <span style={{ marginLeft: 8, fontWeight: 900 }}>{label}</span>
-    </button>
-  );
-}
-
-
-/* ========================================================================== */
-/* =================  INLINE: ExpenseRequestModal (no import)  ============== */
-/* ========================================================================== */
-function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
-  const [agreements, setAgreements] = useState([]);
-  const [sub, setSub] = useState(false);
-
-  const [form, setForm] = useState({
-    agreement: defaultAgreementId || "",
-    description: "",
-    amount: "",
-    incurred_date: new Date().toISOString().slice(0, 10),
-    notes_to_homeowner: "",
-    file: null,
-  });
-
-  useEffect(() => {
-    const loadAgreements = async () => {
-      try {
-        const { data } = await api.get("/projects/agreements/");
-        const list = Array.isArray(data?.results) ? data.results : data || [];
-        setAgreements(list);
-      } catch (e) {
-        console.error(e);
-      }
-    };
-    if (isOpen) {
-      loadAgreements();
-      setForm((f) => ({ ...f, agreement: defaultAgreementId || "" }));
-    }
-  }, [isOpen, defaultAgreementId]);
-
-  const onChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
-  const onFile = (e) => setForm({ ...form, file: e.target.files?.[0] || null });
-
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!form.description.trim() || !form.amount) {
-      toast.error("Description and amount are required.");
-      return;
-    }
-    try {
-      setSub(true);
-      const fd = new FormData();
-      if (form.agreement) fd.append("agreement", form.agreement);
-      fd.append("description", form.description.trim());
-      fd.append("amount", form.amount);
-      if (form.incurred_date) fd.append("incurred_date", form.incurred_date);
-      if (form.notes_to_homeowner) fd.append("notes_to_homeowner", form.notes_to_homeowner);
-      if (form.file) fd.append("receipt", form.file);
-
-      const createRes = await api.post("/projects/expenses/", fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      const created = createRes.data;
-
-      await api.post(`/projects/expenses/${created.id}/contractor_sign/`);
-      await api.post(`/projects/expenses/${created.id}/send_to_homeowner/`);
-
-      toast.success("Expense sent to customer.");
-      onClose(true);
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to create/send expense.");
-    } finally {
-      setSub(false);
-    }
-  };
-
-  return (
-    <Modal
-      isOpen={isOpen}
-      onRequestClose={() => onClose(false)}
-      className="max-w-2xl w-[90vw] bg-white rounded-xl shadow-2xl p-6 mx-auto mt-24 outline-none"
-      overlayClassName="fixed inset-0 bg-black/50 flex items-start justify-center"
-    >
-      <div className="flex items-start justify-between mb-4">
-        <h2 className="text-xl font-semibold">New Expense</h2>
-        <button onClick={() => onClose(false)} className="px-3 py-1.5 rounded-lg border" type="button">
-          Close
-        </button>
-      </div>
-
-      <form onSubmit={submit} className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm text-gray-700 mb-1">Agreement (optional)</label>
-            <select
-              name="agreement"
-              value={form.agreement}
-              onChange={onChange}
-              className="w-full border rounded-lg px-3 py-2"
-            >
-              <option value="">— None —</option>
-              {agreements.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.title || `Agreement #${a.id}`}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm text-gray-700 mb-1">Incurred Date</label>
-            <input
-              type="date"
-              name="incurred_date"
-              value={form.incurred_date}
-              onChange={onChange}
-              className="w-full border rounded-lg px-3 py-2"
-            />
-          </div>
-
-          <div className="md:col-span-2">
-            <label className="block text-sm text-gray-700 mb-1">Description</label>
-            <input
-              name="description"
-              value={form.description}
-              onChange={onChange}
-              className="w-full border rounded-lg px-3 py-2"
-              placeholder="e.g. Dump fee, rental, small materials"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-gray-700 mb-1">Amount</label>
-            <input
-              type="number"
-              step="0.01"
-              name="amount"
-              value={form.amount}
-              onChange={onChange}
-              className="w-full border rounded-lg px-3 py-2"
-              placeholder="0.00"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-gray-700 mb-1">Receipt (PDF or Image)</label>
-            <input type="file" accept="image/*,pdf" onChange={onFile} className="w-full" />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm text-gray-700 mb-1">Notes to Customer (optional)</label>
-          <textarea
-            name="notes_to_homeowner"
-            value={form.notes_to_homeowner}
-            onChange={onChange}
-            className="w-full border rounded-lg px-3 py-2 min-h-[90px]"
-            placeholder="Explain why this expense is needed."
-          />
-        </div>
-
-        <div className="flex justify-end gap-2">
-          <button type="button" onClick={() => onClose(false)} className="px-4 py-2 rounded-lg border">
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={sub}
-            className={`px-4 py-2 rounded-lg text-white font-semibold ${
-              sub ? "bg-gray-500" : "bg-blue-600 hover:bg-blue-700"
-            }`}
-          >
-            {sub ? "Sending…" : "Sign & Send to Customer"}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
-
-/* ========================================================================== */
-/* ======================= Earned Drilldown Modal =========================== */
-/* ========================================================================== */
-
-function agreementKeyFromItem(item, fallbackPrefix) {
-  const agId =
-    item?.agreement_id ??
-    item?.agreement ??
-    item?.agreement?.id ??
-    item?.agreementId ??
-    null;
-
-  if (agId != null && String(agId).trim() !== "") return `ag-${agId}`;
-  return `${fallbackPrefix}-no-agreement`;
-}
-
-function agreementTitleFromItem(item, fallbackTitle = "Other (No Agreement)") {
-  const t =
-    item?.agreement_title ||
-    item?.agreementTitle ||
-    item?.agreement?.title ||
-    item?.agreement?.project_title ||
-    item?.project_title ||
-    item?.projectTitle ||
-    "";
-
-  const agId =
-    item?.agreement_id ??
-    item?.agreement ??
-    item?.agreement?.id ??
-    item?.agreementId ??
-    null;
-
-  if (t && String(t).trim()) return String(t);
-  if (agId != null && String(agId).trim() !== "") return `Agreement #${agId}`;
-  return fallbackTitle;
-}
-
-// Best-effort "earned timestamp"
-function dateForInvoice(inv) {
-  return (
-    parseDateAny(inv?.escrow_released_at) ||
-    parseDateAny(inv?.paid_at) ||
-    parseDateAny(inv?.direct_pay_paid_at) ||
-    parseDateAny(inv?.updated_at) ||
-    parseDateAny(inv?.created_at) ||
-    null
-  );
-}
-function dateForExpense(ex) {
-  return (
-    parseDateAny(ex?.paid_at) ||
-    parseDateAny(ex?.updated_at) ||
-    parseDateAny(ex?.created_at) ||
-    null
-  );
-}
-
-function EarnedBreakdownModal({ isOpen, onClose, invoices, expenses, loading }) {
-  const [range, setRange] = useState("30d"); // 30d | month | year | all
-  const [openAgreements, setOpenAgreements] = useState({});
-
-  useEffect(() => {
-    if (!isOpen) return;
-    setOpenAgreements({});
-    setRange("30d");
-  }, [isOpen]);
-
-  const { fromDate, toDate, rangeLabel } = useMemo(() => {
-    const now = new Date();
-    if (range === "month") return { fromDate: startOfMonth(now), toDate: null, rangeLabel: "This Month" };
-    if (range === "year") return { fromDate: startOfYear(now), toDate: null, rangeLabel: "This Year" };
-    if (range === "all") return { fromDate: null, toDate: null, rangeLabel: "All Time" };
-    return { fromDate: daysAgo(30), toDate: null, rangeLabel: "Last 30 Days" };
-  }, [range]);
-
-  const filtered = useMemo(() => {
-    const invList = Array.isArray(invoices) ? invoices : [];
-    const expList = Array.isArray(expenses) ? expenses : [];
-
-    const escrow = invList.filter(
-      (inv) => inv?.escrow_released === true || inv?.escrow_released === 1 || inv?.escrow_released === "true"
-    );
-
-    const directPay = invList.filter((inv) => {
-      const st = norm(inv?.status);
-      const hasDirectPayStamp =
-        !!inv?.direct_pay_paid_at ||
-        !!inv?.direct_pay_payment_intent_id ||
-        !!inv?.direct_pay_checkout_session_id ||
-        !!inv?.direct_pay_checkout_url;
-      const looksPaid = st === "paid" || st.includes("paid") || norm(inv?.display_status) === "paid";
-      return hasDirectPayStamp && looksPaid;
-    });
-
-    const escrowR = escrow.filter((inv) => inRange(dateForInvoice(inv), fromDate, toDate));
-    const directR = directPay.filter((inv) => inRange(dateForInvoice(inv), fromDate, toDate));
-    const expR = expList.filter(
-      (ex) => (norm(ex?.status) === "paid" || !!ex?.paid_at) && inRange(dateForExpense(ex), fromDate, toDate)
-    );
-
-    return { escrow: escrowR, directPay: directR, expenses: expR };
-  }, [invoices, expenses, fromDate, toDate]);
-
-  const grouped = useMemo(() => {
-    const map = new Map();
-
-    function ensureGroup(key, title) {
-      if (!map.has(key)) {
-        map.set(key, { key, title, escrow: [], directPay: [], expenses: [] });
-      }
-      return map.get(key);
-    }
-
-    for (const inv of filtered.escrow) {
-      const k = agreementKeyFromItem(inv, "inv");
-      const title = agreementTitleFromItem(inv);
-      ensureGroup(k, title).escrow.push(inv);
-    }
-    for (const inv of filtered.directPay) {
-      const k = agreementKeyFromItem(inv, "inv");
-      const title = agreementTitleFromItem(inv);
-      ensureGroup(k, title).directPay.push(inv);
-    }
-    for (const ex of filtered.expenses) {
-      const k = agreementKeyFromItem(ex, "exp");
-      const title = agreementTitleFromItem(ex, "Other (No Agreement)");
-      ensureGroup(k, title).expenses.push(ex);
-    }
-
-    const arr = Array.from(map.values()).map((g) => {
-      const escrowAmt = sum(g.escrow);
-      const directAmt = sum(g.directPay);
-      const expAmt = sum(g.expenses);
-      return { ...g, escrowAmt, directAmt, expAmt, totalAmt: escrowAmt + directAmt + expAmt };
-    });
-
-    arr.sort((a, b) => (b.totalAmt || 0) - (a.totalAmt || 0));
-    return arr;
-  }, [filtered]);
-
-  const totals = useMemo(() => {
-    const escrowAmt = sum(filtered.escrow);
-    const directAmt = sum(filtered.directPay);
-    const expAmt = sum(filtered.expenses);
-    return {
-      escrowAmt,
-      directAmt,
-      expAmt,
-      totalAmt: escrowAmt + directAmt + expAmt,
-      escrowCount: filtered.escrow.length,
-      directCount: filtered.directPay.length,
-      expCount: filtered.expenses.length,
-    };
-  }, [filtered]);
-
-  const toggleAgreement = (key) => setOpenAgreements((prev) => ({ ...prev, [key]: !prev[key] }));
-
-  const rowStyle = {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: 12,
-    padding: "8px 0",
-    borderBottom: "1px solid #f1f5f9",
-    fontSize: 13,
-  };
-
-  const renderInvoiceRow = (inv) => {
-    const label = inv?.invoice_number ? `Invoice ${inv.invoice_number}` : inv?.id ? `Invoice #${inv.id}` : "Invoice";
-    const sub = inv?.title || inv?.milestone_title || inv?.description || "";
-    return (
-      <div key={`inv-${inv.id || Math.random()}`} style={rowStyle}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 800, color: "#0f172a" }}>{label}</div>
-          {sub ? (
-            <div style={{ color: "#64748b", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {sub}
-            </div>
-          ) : null}
-        </div>
-        <div style={{ fontWeight: 900 }}>{currency(inv?.amount || 0)}</div>
-      </div>
-    );
-  };
-
-  const renderExpenseRow = (ex) => {
-    const label = ex?.id ? `Expense #${ex.id}` : "Expense";
-    const sub = ex?.description || "";
-    return (
-      <div key={`ex-${ex.id || Math.random()}`} style={rowStyle}>
-        <div style={{ minWidth: 0 }}>
-          <div style={{ fontWeight: 800, color: "#0f172a" }}>{label}</div>
-          {sub ? (
-            <div style={{ color: "#64748b", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {sub}
-            </div>
-          ) : null}
-        </div>
-        <div style={{ fontWeight: 900 }}>{currency(ex?.amount || 0)}</div>
-      </div>
-    );
-  };
-
-  return (
-    <Modal
-      isOpen={isOpen}
-      onRequestClose={() => onClose()}
-      className="max-w-4xl w-[94vw] bg-white rounded-xl shadow-2xl p-6 mx-auto mt-16 outline-none"
-      overlayClassName="fixed inset-0 bg-black/50 flex items-start justify-center"
-    >
-      <div className="flex items-start justify-between mb-3">
-        <div>
-          <div className="text-xl font-semibold">Earned Breakdown</div>
-          <div className="text-sm text-slate-600">
-            {rangeLabel} • Total: {currency(totals.totalAmt)}
-          </div>
-        </div>
-
-        <button onClick={() => onClose()} type="button" className="px-3 py-2 rounded-lg border flex items-center gap-2">
-          <X size={16} />
-          Close
-        </button>
-      </div>
-
-      <div className="flex flex-wrap gap-2 items-center mb-4">
-        <div className="text-sm text-slate-700 font-semibold">Range:</div>
-        <select value={range} onChange={(e) => setRange(e.target.value)} className="border rounded-lg px-3 py-2 text-sm">
-          <option value="30d">Last 30 Days</option>
-          <option value="month">This Month</option>
-          <option value="year">This Year</option>
-          <option value="all">All Time</option>
-        </select>
-
-        <div className="text-xs text-slate-500" style={{ marginLeft: 8 }}>
-          Escrow: {totals.escrowCount} • {currency(totals.escrowAmt)} &nbsp;|&nbsp;
-          Direct Pay: {totals.directCount} • {currency(totals.directAmt)} &nbsp;|&nbsp;
-          Expenses: {totals.expCount} • {currency(totals.expAmt)}
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="text-sm text-slate-600">Loading earned items…</div>
-      ) : grouped.length ? (
-        <div style={{ maxHeight: "70vh", overflow: "auto", paddingRight: 4 }}>
-          {grouped.map((g) => {
-            const open = !!openAgreements[g.key];
-            const totalCount = (g.escrow?.length || 0) + (g.directPay?.length || 0) + (g.expenses?.length || 0);
-
-            return (
-              <div
-                key={g.key}
-                style={{
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 14,
-                  padding: 12,
-                  marginBottom: 12,
-                  background: "#fff",
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => toggleAgreement(g.key)}
-                  style={{
-                    width: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    gap: 12,
-                    background: "transparent",
-                    border: "none",
-                    padding: 0,
-                    cursor: "pointer",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                    {open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 900, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {g.title}
-                      </div>
-                      <div style={{ color: "#64748b", fontSize: 12 }}>
-                        {totalCount} item{totalCount === 1 ? "" : "s"} • Total {currency(g.totalAmt)}
-                        {g.escrow?.length ? ` • Escrow ${g.escrow.length} (${currency(g.escrowAmt)})` : ""}
-                        {g.directPay?.length ? ` • Direct ${g.directPay.length} (${currency(g.directAmt)})` : ""}
-                        {g.expenses?.length ? ` • Expenses ${g.expenses.length} (${currency(g.expAmt)})` : ""}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ fontWeight: 900, color: "#111827" }}>{currency(g.totalAmt)}</div>
-                </button>
-
-                {open ? (
-                  <div style={{ marginTop: 10 }}>
-                    {g.escrow?.length ? (
-                      <div style={{ marginBottom: 10 }}>
-                        <div style={{ fontWeight: 900, fontSize: 13, color: "#0f172a", marginBottom: 4 }}>
-                          Escrow Releases • {g.escrow.length} • {currency(g.escrowAmt)}
-                        </div>
-                        <div style={{ borderTop: "1px solid #f1f5f9" }}>{g.escrow.map((inv) => renderInvoiceRow(inv))}</div>
-                      </div>
-                    ) : null}
-
-                    {g.directPay?.length ? (
-                      <div style={{ marginBottom: 10 }}>
-                        <div style={{ fontWeight: 900, fontSize: 13, color: "#0f172a", marginBottom: 4 }}>
-                          Direct Pay • {g.directPay.length} • {currency(g.directAmt)}
-                        </div>
-                        <div style={{ borderTop: "1px solid #f1f5f9" }}>{g.directPay.map((inv) => renderInvoiceRow(inv))}</div>
-                      </div>
-                    ) : null}
-
-                    {g.expenses?.length ? (
-                      <div style={{ marginBottom: 2 }}>
-                        <div style={{ fontWeight: 900, fontSize: 13, color: "#0f172a", marginBottom: 4 }}>
-                          Expenses Paid • {g.expenses.length} • {currency(g.expAmt)}
-                        </div>
-                        <div style={{ borderTop: "1px solid #f1f5f9" }}>{g.expenses.map((ex) => renderExpenseRow(ex))}</div>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="text-sm text-slate-500">No earned items in this range.</div>
-      )}
-    </Modal>
-  );
-}
-
-/* ========================================================================== */
-/* =============================== MAIN VIEW ================================= */
-/* ========================================================================== */
 export default function ContractorDashboard() {
+  const navigate = useNavigate();
+  const reminderStorageKey = "mhb:dashboard-dismissed-reminders";
   const [who, setWho] = useState(null);
   const [contractorProfile, setContractorProfile] = useState(null);
   const [dismissedReminderKeys, setDismissedReminderKeys] = useState([]);
-  const [activityFeed, setActivityFeed] = useState([]);
   const [nextBestAction, setNextBestAction] = useState(null);
-
   const [agreements, setAgreements] = useState([]);
   const [publicLeads, setPublicLeads] = useState([]);
   const [milestones, setMilestones] = useState([]);
   const [invoices, setInvoices] = useState([]);
-
-  const [showExpenseModal, setShowExpenseModal] = useState(false);
-
-  // Earned modal + paid expenses cache
-  const [showEarnedModal, setShowEarnedModal] = useState(false);
-  const [earnedLoading, setEarnedLoading] = useState(false);
   const [earnedExpenses, setEarnedExpenses] = useState([]);
-  const [earnedExpensesLoading, setEarnedExpensesLoading] = useState(false);
 
-  const navigate = useNavigate();
+  const isEmployee = String(who?.role || "").startsWith("employee_");
 
-  // Intro pricing countdown state (60-day intro) — contractor only
-  const [introDaysRemaining, setIntroDaysRemaining] = useState(null);
-  const [introActive, setIntroActive] = useState(false);
-
-  // Pricing card — contractor only
-  const [pricing, setPricing] = useState({
-    loading: true,
-    rate: null,
-    fixed_fee: 1,
-    is_intro: null,
-    tier_name: null,
-    error: "",
-  });
-
-  // plan/billing snapshot
-  const [planInfo, setPlanInfo] = useState({
-    loading: true,
-    planLabel: "Included",
-    directPayLabel: DIRECT_PAY_LABEL,
-  });
-
-  const role = who?.role || "";
-  const isEmployee = role && String(role).startsWith("employee_");
-
-  // Route bases
-  const APP_BASE = "/app";
-  const EMP_BASE = "/app/employee";
-  const BASE = isEmployee ? EMP_BASE : APP_BASE;
-
-  /* ----- whoami ----- */
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      try {
-        const { data } = await api.get("/projects/whoami/");
-        if (!mounted) return;
-        setWho(data || null);
-      } catch (e) {
-        console.error(e);
-        if (!mounted) return;
-        setWho(null);
-      }
-    })();
-    return () => (mounted = false);
+    api.get("/projects/whoami/").then(({ data }) => mounted && setWho(data || null)).catch((e) => {
+      console.error(e);
+      if (mounted) setWho(null);
+    });
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  /* ----- load dashboard data ----- */
-  useEffect(() => {
-    let mounted = true;
-
-    (async () => {
-      if (!who) return;
-
-      try {
-        if (isEmployee) {
-          const mRes = await api.get("/projects/employee/milestones/");
-          if (!mounted) return;
-          const list = Array.isArray(mRes.data?.milestones) ? mRes.data.milestones : [];
-          setMilestones(list);
-          setInvoices([]);
-          return;
-        }
-
-        const [mRes, iRes, aRes, lRes] = await Promise.allSettled([
-          api.get("/projects/milestones/"),
-          api.get("/projects/invoices/"),
-          api.get("/projects/agreements/"),
-          api.get("/projects/contractor/public-leads/"),
-        ]);
-
-        if (!mounted) return;
-
-        if (mRes.status === "fulfilled") {
-          const list = Array.isArray(mRes.value.data) ? mRes.value.data : mRes.value.data?.results || [];
-          setMilestones(list);
-        } else {
-          console.error(mRes.reason);
-          toast.error("Failed to load milestones.");
-        }
-
-        if (iRes.status === "fulfilled") {
-          const list = Array.isArray(iRes.value.data) ? iRes.value.data : iRes.value.data?.results || [];
-          setInvoices(list);
-        } else {
-          console.error(iRes.reason);
-          toast.error("Failed to load invoices.");
-        }
-
-        if (aRes.status === "fulfilled") {
-          const list = Array.isArray(aRes.value.data)
-            ? aRes.value.data
-            : aRes.value.data?.results || [];
-          setAgreements(list);
-        } else {
-          console.error(aRes.reason);
-          setAgreements([]);
-        }
-
-        if (lRes.status === "fulfilled") {
-          const list = Array.isArray(lRes.value.data)
-            ? lRes.value.data
-            : lRes.value.data?.results || [];
-          setPublicLeads(list);
-        } else {
-          console.error(lRes.reason);
-          setPublicLeads([]);
-        }
-      } catch (e) {
-        console.error(e);
-        toast.error("Failed to load dashboard data.");
-      }
-    })();
-
-    return () => (mounted = false);
-  }, [who, isEmployee]);
-
-  // ✅ Load PAID expenses in background so Earned card can show YTD total
-  useEffect(() => {
-    let mounted = true;
-
-    const loadPaidExpenses = async () => {
-      if (!who || isEmployee) return;
-
-      setEarnedExpensesLoading(true);
-      try {
-        // Preferred endpoint
-        const res = await api.get("/projects/expense-requests/", { params: { include_archived: 1 } });
-        const list = Array.isArray(res.data) ? res.data : res.data?.results || [];
-        const paidOnly = (list || []).filter((x) => norm(x?.status) === "paid" || !!x?.paid_at);
-
-        if (!mounted) return;
-        setEarnedExpenses(paidOnly);
-      } catch (e) {
-        console.error(e);
-        try {
-          // Fallback endpoint
-          const res2 = await api.get("/projects/expenses/", { params: { include_archived: 1 } });
-          const list2 = Array.isArray(res2.data) ? res2.data : res2.data?.results || [];
-          const paidOnly2 = (list2 || []).filter((x) => norm(x?.status) === "paid" || !!x?.paid_at);
-
-          if (!mounted) return;
-          setEarnedExpenses(paidOnly2);
-        } catch (e2) {
-          console.error(e2);
-          if (!mounted) return;
-          setEarnedExpenses([]);
-        }
-      } finally {
-        if (mounted) setEarnedExpensesLoading(false);
-      }
-    };
-
-    loadPaidExpenses();
-    return () => {
-      mounted = false;
-    };
-  }, [who, isEmployee]);
-
-  // Intro pricing + plan
-  useEffect(() => {
-    const fetchIntroCountdown = async () => {
-      if (isEmployee) return;
-
-      try {
-        const { data } = await api.get("/projects/contractors/me/");
-        setContractorProfile(data || null);
-
-        setPlanInfo({
-          loading: false,
-          planLabel: planLabel(data),
-          directPayLabel: directPayLabel(data),
-        });
-
-        const createdRaw =
-          data.created_at ||
-          data.contractor_created_at ||
-          data.contractor?.created_at ||
-          data.user_created_at ||
-          data.user?.date_joined;
-
-        if (!createdRaw) {
-          setIntroActive(false);
-          setIntroDaysRemaining(null);
-          return;
-        }
-
-        const createdDate = new Date(createdRaw);
-        if (Number.isNaN(createdDate.getTime())) {
-          setIntroActive(false);
-          setIntroDaysRemaining(null);
-          return;
-        }
-
-        const INTRO_DAYS = 60;
-        const nowDt = new Date();
-        const msPerDay = 1000 * 60 * 60 * 24;
-        const daysActive = Math.floor((nowDt.getTime() - createdDate.getTime()) / msPerDay);
-        const remainingDays = INTRO_DAYS - daysActive;
-
-        setIntroActive(remainingDays > 0);
-        setIntroDaysRemaining(Math.max(0, remainingDays));
-      } catch (err) {
-        console.error("Failed to load contractor profile for intro countdown", err);
-        setIntroActive(false);
-        setIntroDaysRemaining(null);
-        setPlanInfo((p) => ({ ...p, loading: false }));
-      }
-    };
-
-    fetchIntroCountdown();
-  }, [isEmployee]);
-
-  useEffect(() => {
-    let mounted = true;
-    const loadActivityFeed = async () => {
-      if (!who || isEmployee) return;
-      try {
-        const { data } = await api.get("/projects/activity-feed/", {
-          params: { limit: 8 },
-        });
-        if (!mounted) return;
-        setActivityFeed(Array.isArray(data?.results) ? data.results : []);
-        setNextBestAction(data?.next_best_action || null);
-      } catch (err) {
-        console.error("Failed to load activity feed", err);
-        if (!mounted) return;
-        setActivityFeed([]);
-        setNextBestAction(null);
-      }
-    };
-    loadActivityFeed();
-    return () => {
-      mounted = false;
-    };
-  }, [who, isEmployee]);
-
-  // Pricing via funding_preview (contractor-only)
-  useEffect(() => {
-    let mounted = true;
-
-    const loadPricing = async () => {
-      if (isEmployee) {
-        setPricing({ loading: false, rate: null, fixed_fee: 1, is_intro: null, tier_name: null, error: "" });
-        return;
-      }
-
-      try {
-        setPricing((p) => ({ ...p, loading: true, error: "" }));
-
-        const { data } = await api.get("/projects/agreements/");
-        const list = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];
-
-        if (!list.length) {
-          if (!mounted) return;
-          setPricing({ loading: false, rate: null, fixed_fee: 1, is_intro: null, tier_name: null, error: "" });
-          return;
-        }
-
-        const latest = [...list].sort((a, b) => (b?.id || 0) - (a?.id || 0))[0];
-        const agreementId = latest?.id;
-
-        if (!agreementId) {
-          if (!mounted) return;
-          setPricing({ loading: false, rate: null, fixed_fee: 1, is_intro: null, tier_name: null, error: "" });
-          return;
-        }
-
-        const { data: fp } = await api.get(`/projects/agreements/${agreementId}/funding_preview/`);
-        if (!mounted) return;
-
-        setPricing({
-          loading: false,
-          rate: fp?.rate ?? null,
-          fixed_fee: fp?.fixed_fee ?? 1,
-          is_intro: fp?.is_intro ?? null,
-          tier_name: fp?.tier_name ?? (fp?.is_intro ? "INTRO" : null),
-          error: "",
-        });
-      } catch (err) {
-        console.error("Failed to load pricing (funding_preview)", err);
-        if (!mounted) return;
-        setPricing({ loading: false, rate: null, fixed_fee: 1, is_intro: null, tier_name: null, error: "" });
-      }
-    };
-
-    loadPricing();
-    return () => {
-      mounted = false;
-    };
-  }, [isEmployee]);
-
-  // Build invoice lookup map (so milestones can compute Paid)
-  const invoicesById = useMemo(() => {
-    const map = {};
-    for (const inv of Array.isArray(invoices) ? invoices : []) {
-      const id = inv?.id ?? inv?.invoice_id ?? inv?.pk ?? null;
-      if (id != null && String(id).trim() !== "") map[String(id)] = inv;
-    }
-    return map;
-  }, [invoices]);
-
-  /* ----- milestone stats (aligned with MilestoneList filters) ----- */
-  const mStats = useMemo(() => {
-    const all = Array.isArray(milestones) ? milestones : [];
-    const allAmt = sum(all);
-
-    const rework = all.filter(isReworkMilestone);
-    const reworkAmt = sum(rework);
-
-    const nonRework = all.filter((m) => !isReworkMilestone(m));
-
-    const incomp = nonRework.filter(isMilestoneIncomplete);
-    const incompAmt = sum(incomp);
-
-    const ready = nonRework.filter((m) => isMilestoneReadyToInvoice(m, invoicesById));
-    const readyAmt = sum(ready);
-
-    const paid = nonRework.filter((m) => isMilestonePaid(m, invoicesById));
-    const paidAmt = sum(paid);
-
-    return {
-      totalCount: all.length,
-      totalAmount: allAmt,
-
-      incompleteCount: incomp.length,
-      incompleteAmount: incompAmt,
-
-      readyCount: ready.length,
-      readyAmount: readyAmt,
-
-      paidCount: paid.length,
-      paidAmount: paidAmt,
-
-      reworkCount: rework.length,
-      reworkAmount: reworkAmt,
-    };
-  }, [milestones, invoicesById]);
-
-  /* ----- invoice stats ----- */
-  const iStats = useMemo(() => {
-    const buckets = { pending: [], approved: [], earned: [], disputed: [] };
-    for (const inv of invoices) {
-      const b = invBucket(inv);
-      if (!buckets[b]) buckets[b] = [];
-      buckets[b].push(inv);
-    }
-    return {
-      pendingCount: buckets.pending.length,
-      pendingAmount: sum(buckets.pending),
-      approvedCount: buckets.approved.length,
-      approvedAmount: sum(buckets.approved),
-      disputedCount: buckets.disputed.length,
-      disputedAmount: sum(buckets.disputed),
-      earnedCount: buckets.earned.length,
-      earnedAmount: sum(buckets.earned),
-    };
-  }, [invoices]);
-  const dashboardNextSteps = useMemo(
-    () =>
-      getDashboardNextSteps({
-        leads: publicLeads,
-        agreements,
-        milestones,
-      }),
-    [agreements, milestones, publicLeads]
-  );
-
-  // ✅ Earned YTD (Jan 1 -> today) for the stat card
-  const earnedYtdAmount = useMemo(() => {
-    const from = startOfYear(new Date());
-    const to = new Date();
-
-    const invList = Array.isArray(invoices) ? invoices : [];
-    const expList = Array.isArray(earnedExpenses) ? earnedExpenses : [];
-
-    // escrow released invoices
-    const escrowInv = invList.filter(
-      (inv) => inv?.escrow_released === true || inv?.escrow_released === 1 || inv?.escrow_released === "true"
-    );
-
-    // direct pay invoices
-    const directInv = invList.filter((inv) => {
-      const st = norm(inv?.status);
-      const hasDirectPayStamp =
-        !!inv?.direct_pay_paid_at ||
-        !!inv?.direct_pay_payment_intent_id ||
-        !!inv?.direct_pay_checkout_session_id ||
-        !!inv?.direct_pay_checkout_url;
-      const looksPaid = st === "paid" || st.includes("paid") || norm(inv?.display_status) === "paid";
-      return hasDirectPayStamp && looksPaid;
-    });
-
-    const escrowYtd = escrowInv.filter((inv) => inRange(dateForInvoice(inv), from, to));
-    const directYtd = directInv.filter((inv) => inRange(dateForInvoice(inv), from, to));
-    const expYtd = expList.filter((ex) => inRange(dateForExpense(ex), from, to));
-
-    return sum(escrowYtd) + sum(directYtd) + sum(expYtd);
-  }, [invoices, earnedExpenses]);
-
-  /* ----- navigation handlers ----- */
-  const goNewAgreement = () => navigate(`/app/agreements`);
-  const goStartWithAi = () => navigate(`/app/assistant`);
-  const goNewIntake = () => navigate(`/app/intake/new`);
-  const goNewMilestone = () => navigate(`/app/milestones?new=1`);
-  const goInvoices = () => navigate(`/app/invoices`);
-  const goInvoicesDisputed = () => navigate(`/app/invoices?filter=disputed`);
-  const goCalendar = () => navigate(`/app/calendar`);
-  const goDisputes = () => navigate(`/app/disputes`);
-  const goReworkMilestones = () => navigate(`/app/milestones?filter=rework`);
-  const goExpenses = () => navigate(`/app/expenses`);
-
-  const openNewExpense = () => setShowExpenseModal(true);
-  const onExpenseModalClose = () => setShowExpenseModal(false);
-
-  const openEarnedModal = async () => {
-    setShowEarnedModal(true);
-    // We already loaded paid expenses in background; keep UX snappy.
-    setEarnedLoading(earnedExpensesLoading);
-  };
-
-  const closeEarnedModal = () => setShowEarnedModal(false);
-
-  /* =======================================================================
-   * Pricing Card
-   * ======================================================================= */
-  const fixedFeeLabel = `+ $${Number(pricing.fixed_fee || 1).toFixed(0)}`;
-  const ratePercentFromBackend = pricing.rate != null ? fmtRate(pricing.rate) : null;
-  const isIntroTierBackend = pricing.is_intro === true || String(pricing.tier_name || "").toUpperCase() === "INTRO";
-
-  const currentRatePercent = ratePercentFromBackend
-    ? ratePercentFromBackend
-    : introActive
-    ? INTRO_RATE_LABEL
-    : STANDARD_START_RATE_LABEL;
-
-  const currentRateTitle = pricing.loading ? "Checking your rate…" : `Current Rate: ${currentRatePercent} ${fixedFeeLabel}`;
-
-  const daysLeftText =
-    introDaysRemaining !== null
-      ? `${introDaysRemaining} day${introDaysRemaining === 1 ? "" : "s"} remaining`
-      : null;
-
-  const subtitleParts = [];
-  if (!planInfo.loading) {
-    subtitleParts.push(`AI: ${planInfo.planLabel}. Direct Pay: ${planInfo.directPayLabel}.`);
-    subtitleParts.push("AI tools are included with your account.");
-  }
-
-  if (pricing.loading) {
-    subtitleParts.push("Loading pricing…");
-  } else {
-    if (introActive) {
-      subtitleParts.push(`Intro pricing is active (${daysLeftText || "days remaining"}).`);
-      subtitleParts.push("Intro (first 60 days): 3.00% + $1.");
-    } else {
-      subtitleParts.push("Intro pricing window has ended.");
-      subtitleParts.push("Standard escrow pricing is tiered by monthly volume.");
-    }
-
-    if (ratePercentFromBackend) {
-      subtitleParts.push(isIntroTierBackend ? "This rate is based on your current intro tier." : "This rate is based on your current tier.");
-    } else {
-      subtitleParts.push("Create your first agreement to lock in tier calculations and previews.");
-    }
-  }
-
-  const pricingSubtitle = subtitleParts.join(" ");
-
-  const headerSubtitle = isEmployee
-    ? "Here are the milestones currently assigned to you."
-    : "Track milestones, invoices, leads, and next actions in one place.";
-  const onboarding = contractorProfile?.onboarding || {};
-  const smsStatus = contractorProfile?.sms_status || {};
-  const reminderStorageKey = "mhb:dashboard-dismissed-reminders";
   useEffect(() => {
     try {
       const stored = JSON.parse(window.localStorage.getItem(reminderStorageKey) || "[]");
@@ -1310,661 +79,168 @@ export default function ContractorDashboard() {
     }
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (!who) return;
+      if (isEmployee) {
+        try {
+          const { data } = await api.get("/projects/employee/milestones/");
+          if (mounted) setMilestones(Array.isArray(data?.milestones) ? data.milestones : []);
+        } catch (e) {
+          console.error(e);
+        }
+        return;
+      }
+      const [m, i, a, l, c, f, x] = await Promise.allSettled([
+        api.get("/projects/milestones/"),
+        api.get("/projects/invoices/"),
+        api.get("/projects/agreements/"),
+        api.get("/projects/contractor/public-leads/"),
+        api.get("/projects/contractors/me/"),
+        api.get("/projects/activity-feed/", { params: { limit: 5 } }),
+        api.get("/projects/expense-requests/", { params: { include_archived: 1 } }),
+      ]);
+      if (!mounted) return;
+      const list = (r) => (r.status === "fulfilled" ? (Array.isArray(r.value.data) ? r.value.data : r.value.data?.results || []) : []);
+      setMilestones(list(m));
+      setInvoices(list(i));
+      setAgreements(list(a));
+      setPublicLeads(list(l));
+      setContractorProfile(c.status === "fulfilled" ? c.value.data || null : null);
+      setNextBestAction(f.status === "fulfilled" ? f.value.data?.next_best_action || null : null);
+      setEarnedExpenses(list(x).filter((item) => norm(item?.status) === "paid" || !!item?.paid_at));
+      if (m.status !== "fulfilled" || i.status !== "fulfilled") toast.error("Failed to load dashboard data.");
+    })().catch((e) => {
+      console.error(e);
+      toast.error("Failed to load dashboard data.");
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [isEmployee, who]);
+
+  const headerSubtitle = isEmployee
+    ? "Here are the milestones currently assigned to you."
+    : "Track milestones, invoices, leads, and next actions in one place.";
+  const dashboardNextSteps = useMemo(() => getDashboardNextSteps({ leads: publicLeads, agreements, milestones }), [agreements, milestones, publicLeads]);
+  const onboarding = contractorProfile?.onboarding || {};
   const reminders = useMemo(() => {
     if (isEmployee) return [];
     const items = [];
-    if (onboarding?.status !== "complete" && !onboarding?.first_value_reached) {
-      items.push({
-        key: "finish-first-agreement",
-        title: "Complete your first agreement",
-        message: "Finish your first project setup so MyHomeBro can tailor templates, milestones, and next steps.",
-        cta: "Resume onboarding",
-        action: () => navigate("/app/onboarding"),
-      });
-    }
-    if (onboarding?.show_soft_stripe_prompt) {
-      items.push({
-        key: "connect-stripe",
-        title: "Connect Stripe to get paid",
-        message: "You can keep exploring, but payment collection and payouts require a connected Stripe account.",
-        cta: "Resume Stripe setup",
-        action: () => navigate("/app/onboarding"),
-      });
-    }
-    if ((agreements || []).length > 0 && (milestones || []).length === 0) {
-      items.push({
-        key: "add-first-milestone",
-        title: "Add your first milestone",
-        message: "Milestones are the fastest way to turn a draft agreement into real project progress.",
-        cta: "Open milestones",
-        action: () => navigate("/app/milestones?new=1"),
-      });
-    }
+    if (onboarding?.status !== "complete" && !onboarding?.first_value_reached) items.push({ key: "finish-first-agreement", title: "Complete your first agreement", message: "Finish your first project setup so MyHomeBro can tailor templates, milestones, and next steps.", cta: "Resume onboarding", action: () => navigate("/app/onboarding") });
+    if (onboarding?.show_soft_stripe_prompt) items.push({ key: "connect-stripe", title: "Connect Stripe to get paid", message: "You can keep exploring, but payment collection and payouts require a connected Stripe account.", cta: "Resume Stripe setup", action: () => navigate("/app/onboarding") });
+    if (agreements.length > 0 && milestones.length === 0) items.push({ key: "add-first-milestone", title: "Add your first milestone", message: "Milestones are the fastest way to turn a draft agreement into real project progress.", cta: "Open milestones", action: () => navigate("/app/milestones?new=1") });
     return items.filter((item) => !dismissedReminderKeys.includes(item.key));
-  }, [agreements, dismissedReminderKeys, isEmployee, milestones, navigate, onboarding]);
+  }, [agreements.length, dismissedReminderKeys, isEmployee, milestones.length, navigate, onboarding]);
 
-  const dismissReminder = (key) => {
-    setDismissedReminderKeys((prev) => {
-      const next = Array.from(new Set([...prev, key]));
-      try {
-        window.localStorage.setItem(reminderStorageKey, JSON.stringify(next));
-      } catch {}
-      return next;
-    });
-  };
-  const needsAttentionItems = useMemo(() => dashboardNextSteps.slice(0, 3), [dashboardNextSteps]);
-  const overdueItems = useMemo(() => {
-    const now = new Date();
-    return milestones
-      .filter((m) => {
-        const due = parseDateAny(m?.completion_date);
-        return due && due < now && !isMilestoneCompleted(m);
-      })
-      .slice(0, 4)
-      .map((m) => ({
-        id: `overdue-${m.id}`,
-        title: m.title || "Overdue milestone",
-        meta: m.agreement_title || m.project_title || "Agreement work",
-        actionLabel: "Open milestone",
-        onClick: () => navigate(`/app/milestones/${m.id}`),
-      }));
-  }, [milestones, navigate]);
-  const waitingApprovalItems = useMemo(() => {
-    return milestones
-      .filter((m) => {
-        const status = milestoneStatus(m);
-        return ["submitted", "pending_approval", "awaiting_approval", "review"].includes(status);
-      })
-      .slice(0, 4)
-      .map((m) => ({
-        id: `approval-${m.id}`,
-        title: m.title || "Waiting approval",
-        meta: m.agreement_title || m.project_title || "Milestone review",
-        actionLabel: "Review",
-        onClick: () => navigate(`/app/milestones/${m.id}`),
-      }));
-  }, [milestones, navigate]);
+  const dismissReminder = (key) => setDismissedReminderKeys((prev) => {
+    const next = Array.from(new Set([...prev, key]));
+    try { window.localStorage.setItem(reminderStorageKey, JSON.stringify(next)); } catch {}
+    return next;
+  });
+
+  const iStats = useMemo(() => {
+    const buckets = { pending: [], approved: [], earned: [], disputed: [] };
+    invoices.forEach((inv) => buckets[invoiceBucket(inv)].push(inv));
+    return { pendingAmount: sum(buckets.pending), approvedAmount: sum(buckets.approved), disputedAmount: sum(buckets.disputed) };
+  }, [invoices]);
+
+  const earnedYtdAmount = useMemo(() => {
+    const from = startOfYear(new Date());
+    const to = new Date();
+    const escrow = invoices.filter((inv) => inv?.escrow_released).filter((inv) => inRange(parseDate(inv?.escrow_released_at || inv?.updated_at || inv?.created_at), from, to));
+    const direct = invoices.filter((inv) => (!!inv?.direct_pay_paid_at || !!inv?.direct_pay_payment_intent_id || !!inv?.direct_pay_checkout_url) && (norm(inv?.status).includes("paid") || norm(inv?.display_status) === "paid")).filter((inv) => inRange(parseDate(inv?.direct_pay_paid_at || inv?.updated_at || inv?.created_at), from, to));
+    const expenses = earnedExpenses.filter((ex) => inRange(parseDate(ex?.paid_at || ex?.updated_at || ex?.created_at), from, to));
+    return sum(escrow) + sum(direct) + sum(expenses);
+  }, [earnedExpenses, invoices]);
+
+  const overdueItems = useMemo(() => milestones.filter((m) => validDate(parseDate(m?.completion_date)) && parseDate(m?.completion_date) < new Date() && !milestoneComplete(m)).slice(0, 4).map((m) => ({ id: `overdue-${m.id}`, title: m.title || "Overdue milestone", meta: m.agreement_title || m.project_title || "Agreement work", actionLabel: "Open milestone", onClick: () => navigate(`/app/milestones/${m.id}`) })), [milestones, navigate]);
+  const waitingApprovalItems = useMemo(() => milestones.filter((m) => ["submitted", "pending_approval", "awaiting_approval", "review"].includes(milestoneState(m))).slice(0, 4).map((m) => ({ id: `approval-${m.id}`, title: m.title || "Waiting approval", meta: m.agreement_title || m.project_title || "Milestone review", actionLabel: "Review", onClick: () => navigate(`/app/milestones/${m.id}`) })), [milestones, navigate]);
   const prioritizedActions = useMemo(() => {
     const actions = [];
-    if (nextBestAction) {
-      actions.push({
-        id: nextBestAction.action_type || "primary-next-best-action",
-        title: nextBestAction.title,
-        message: nextBestAction.message,
-        cta: nextBestAction.cta_label || "Open",
-        onClick: () => navigate(nextBestAction.navigation_target || "/app/dashboard"),
-      });
-    }
-    dashboardNextSteps.slice(0, 2).forEach((item, index) => {
-      actions.push({
-        id: `workflow-${index}`,
-        title: item,
-        message: "Keep momentum on the next open workflow step.",
-        cta: "Open agreements",
-        onClick: () => navigate("/app/agreements"),
-      });
-    });
+    if (nextBestAction) actions.push({ id: nextBestAction.action_type || "primary-next-best-action", title: nextBestAction.title, message: nextBestAction.message, cta: nextBestAction.cta_label || "Open", onClick: () => navigate(nextBestAction.navigation_target || "/app/dashboard") });
+    dashboardNextSteps.slice(0, 2).forEach((step, i) => actions.push({ id: `workflow-${i}`, title: step, message: "Keep momentum on the next open workflow step.", cta: "Open agreements", onClick: () => navigate("/app/agreements") }));
     return actions.slice(0, 3);
   }, [dashboardNextSteps, navigate, nextBestAction]);
+
   const activeAgreementRows = useMemo(() => {
-    const milestoneByAgreement = milestones.reduce((acc, milestone) => {
-      const agreementId = milestone?.agreement || milestone?.agreement_id;
-      if (!agreementId) return acc;
-      if (!acc[agreementId]) acc[agreementId] = [];
-      acc[agreementId].push(milestone);
+    const byAgreement = milestones.reduce((acc, m) => {
+      const id = m?.agreement || m?.agreement_id;
+      if (!id) return acc;
+      acc[id] = acc[id] || [];
+      acc[id].push(m);
       return acc;
     }, {});
-
-    return agreements
-      .filter((agreement) => !["completed", "cancelled", "archived"].includes(norm(agreement?.status)))
-      .slice(0, 8)
-      .map((agreement) => {
-        const relatedMilestones = milestoneByAgreement[agreement.id] || [];
-        const overdue = relatedMilestones.find((m) => {
-          const due = parseDateAny(m?.completion_date);
-          return due && due < new Date() && !isMilestoneCompleted(m);
-        });
-        const review = relatedMilestones.find((m) =>
-          ["submitted", "pending_approval", "awaiting_approval", "review"].includes(
-            milestoneStatus(m)
-          )
-        );
-
-        let nextStep = "Review agreement";
-        let actionLabel = "Open agreement";
-        let actionTarget = `/app/agreements/${agreement.id}`;
-
-        if (norm(agreement?.status) === "draft") {
-          nextStep = "Finish and send";
-          actionTarget = `/app/agreements/${agreement.id}/wizard?step=1`;
-        } else if (review) {
-          nextStep = "Review submitted milestone";
-          actionLabel = "Open milestone";
-          actionTarget = `/app/milestones/${review.id}`;
-        } else if (overdue) {
-          nextStep = "Resolve overdue work";
-          actionLabel = "Open milestone";
-          actionTarget = `/app/milestones/${overdue.id}`;
-        } else if (norm(agreement?.status) === "signed" && agreement?.escrow_funded === false) {
-          nextStep = "Collect funding";
-        }
-
-        return {
-          id: agreement.id,
-          title: agreement.project_title || agreement.title || `Agreement #${agreement.id}`,
-          status: getAgreementStatusLabel(agreement),
-          amount: currency(getAgreementAmountValue(agreement)),
-          nextStep,
-          actionLabel,
-          actionTarget,
-        };
-      });
+    return agreements.filter((a) => !["completed", "cancelled", "archived"].includes(norm(a?.status))).slice(0, 8).map((agreement) => {
+      const related = byAgreement[agreement.id] || [];
+      const overdue = related.find((m) => validDate(parseDate(m?.completion_date)) && parseDate(m?.completion_date) < new Date() && !milestoneComplete(m));
+      const review = related.find((m) => ["submitted", "pending_approval", "awaiting_approval", "review"].includes(milestoneState(m)));
+      let nextStep = "Review agreement";
+      let actionLabel = "Open agreement";
+      let actionTarget = `/app/agreements/${agreement.id}`;
+      if (norm(agreement?.status) === "draft") {
+        nextStep = "Finish and send";
+        actionTarget = `/app/agreements/${agreement.id}/wizard?step=1`;
+      } else if (review) {
+        nextStep = "Review submitted milestone";
+        actionLabel = "Open milestone";
+        actionTarget = `/app/milestones/${review.id}`;
+      } else if (overdue) {
+        nextStep = "Resolve overdue work";
+        actionLabel = "Open milestone";
+        actionTarget = `/app/milestones/${overdue.id}`;
+      } else if (norm(agreement?.status) === "signed" && agreement?.escrow_funded === false) {
+        nextStep = "Collect funding";
+      }
+      return { id: agreement.id, title: agreement.project_title || agreement.title || `Agreement #${agreement.id}`, status: agreementStatus(agreement), amount: currency(agreementAmount(agreement)), nextStep, actionLabel, actionTarget };
+    });
   }, [agreements, milestones]);
+
+  if (isEmployee) {
+    return (
+      <PageShell title="Dashboard" subtitle={headerSubtitle} showLogo>
+        <DashboardSection title="Assigned Work" subtitle="Your current milestone workload at a glance.">
+          <DashboardCard className="rounded-[28px] border-slate-300/80 bg-white shadow-[0_22px_56px_-38px_rgba(15,23,42,0.4)]">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"><div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Assigned</div><div className="mt-2 text-3xl font-black text-slate-950">{milestones.length}</div></div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"><div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Incomplete</div><div className="mt-2 text-3xl font-black text-slate-950">{mStats.incompleteCount}</div></div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"><div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Rework</div><div className="mt-2 text-3xl font-black text-slate-950">{mStats.reworkCount}</div></div>
+            </div>
+          </DashboardCard>
+        </DashboardSection>
+      </PageShell>
+    );
+  }
 
   return (
     <PageShell title="Dashboard" subtitle={headerSubtitle} showLogo>
-      {reminders.length ? (
-        <div className="mb-4 space-y-3" data-testid="dashboard-onboarding-reminder">
-          {reminders.map((item) => (
-            <div key={item.key} className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <div className="text-sm font-semibold text-amber-900">{item.title}</div>
-                  <div className="mt-1 text-sm text-amber-800">{item.message}</div>
+      <div className="space-y-6">
+        {reminders.length ? <div className="space-y-3" data-testid="dashboard-onboarding-reminder">{reminders.map((item) => <div key={item.key} className="rounded-[28px] border border-amber-200/80 bg-gradient-to-r from-amber-50 via-white to-white px-5 py-4 shadow-[0_18px_45px_-32px_rgba(180,83,9,0.45)]"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-700">Keep Moving</div><div className="mt-1 text-base font-semibold text-slate-950">{item.title}</div><div className="mt-1 text-sm text-slate-600">{item.message}</div></div><div className="flex items-center gap-3"><button type="button" onClick={() => dismissReminder(item.key)} className="text-sm font-semibold text-slate-500 underline-offset-4 hover:text-slate-900 hover:underline">Dismiss</button><button type="button" onClick={item.action} className="rounded-2xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_14px_28px_-16px_rgba(15,23,42,0.8)] transition hover:bg-slate-800">{item.cta}</button></div></div></div>)}</div> : null}
+        <div className="rounded-[32px] border border-white/65 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.98),_rgba(248,250,252,0.97)_54%,_rgba(244,247,251,0.94))] p-5 shadow-[0_24px_60px_-42px_rgba(15,23,42,0.32)] ring-1 ring-slate-200/60 sm:p-7">
+          <DashboardSection eyebrow="Overview" subtitle="Money first, urgent work second, and clear next actions." className="space-y-7">
+            <div data-testid="dashboard-summary-bar" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[{ label: "Earned (YTD)", value: currency(earnedYtdAmount) }, { label: "Pending Approval", value: currency(iStats.pendingAmount) }, { label: "Ready for Payout", value: currency(iStats.approvedAmount) }, { label: "Disputed", value: currency(iStats.disputedAmount) }].map((stat) => <div key={stat.label} className="rounded-[24px] border border-slate-200/70 bg-white/95 px-5 py-5 shadow-[0_14px_28px_-24px_rgba(15,23,42,0.22)] backdrop-blur"><div className="text-[9px] font-semibold uppercase tracking-[0.24em] text-slate-400">{stat.label}</div><div className="mt-3 text-[2.15rem] font-black leading-none tracking-[-0.04em] text-slate-950">{stat.value}</div></div>)}</div>
+            <div className="grid items-start gap-5 xl:grid-cols-[1.48fr_0.92fr]">
+              <DashboardCard testId="dashboard-needs-attention" className="overflow-hidden rounded-[28px] border-rose-100/80 bg-white p-0 shadow-[0_24px_56px_-38px_rgba(15,23,42,0.28)] ring-1 ring-rose-50/80">
+                <div className="border-b border-slate-200/80 bg-[linear-gradient(135deg,rgba(255,255,255,0.99),rgba(255,250,250,0.98),rgba(255,247,237,0.9))] px-6 py-6"><div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-rose-500">Needs Attention</div><div className="mt-2 text-[2.05rem] font-black tracking-[-0.04em] text-slate-950">Urgent work and approvals</div><div className="mt-1.5 text-sm text-slate-600">Focus here first when you open the dashboard.</div></div>
+                <div className="grid gap-5 px-6 py-6 lg:grid-cols-2">
+                  <div><div className="flex items-center justify-between"><div className="text-sm font-bold uppercase tracking-[0.14em] text-rose-700">Overdue Work</div><div className="rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-semibold text-rose-700">{overdueItems.length}</div></div>{overdueItems.length ? <div className="mt-3 space-y-3">{overdueItems.map((item) => <div key={item.id} className="rounded-2xl border border-rose-200/85 bg-rose-50/90 px-4 py-4 shadow-[0_14px_30px_-24px_rgba(225,29,72,0.28)]"><div className="text-sm font-semibold text-slate-950">{item.title}</div><div className="mt-1 text-sm text-slate-600">{item.meta}</div><button type="button" onClick={item.onClick} className="mt-4 inline-flex min-w-[132px] items-center justify-center rounded-2xl bg-slate-950 px-3.5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800">{item.actionLabel}</button></div>)}</div> : <div className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/90 px-4 py-5 text-sm text-slate-600">No overdue items.</div>}</div>
+                  <div><div className="flex items-center justify-between"><div className="text-sm font-bold uppercase tracking-[0.14em] text-amber-700">Waiting Approval</div><div className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-700">{waitingApprovalItems.length}</div></div>{waitingApprovalItems.length ? <div className="mt-3 space-y-3">{waitingApprovalItems.map((item) => <div key={item.id} className="rounded-2xl border border-amber-200/85 bg-amber-50/75 px-4 py-4 shadow-[0_14px_30px_-24px_rgba(217,119,6,0.18)]"><div className="text-sm font-semibold text-slate-950">{item.title}</div><div className="mt-1 text-sm text-slate-600">{item.meta}</div><button type="button" onClick={item.onClick} className="mt-4 inline-flex min-w-[132px] items-center justify-center rounded-2xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">{item.actionLabel}</button></div>)}</div> : <div className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50/90 px-4 py-5 text-sm text-slate-600">Nothing waiting for approval.</div>}</div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => dismissReminder(item.key)}
-                    className="text-sm font-semibold text-amber-900 underline-offset-4 hover:underline"
-                  >
-                    Dismiss
-                  </button>
-                  <button
-                    type="button"
-                    onClick={item.action}
-                    className="rounded-xl bg-amber-900 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-950"
-                  >
-                    {item.cta}
-                  </button>
-                </div>
-              </div>
+              </DashboardCard>
+              <DashboardCard testId="dashboard-next-best-action" className="rounded-[28px] border-slate-300/70 bg-[linear-gradient(180deg,rgba(250,251,253,0.98),rgba(255,255,255,0.98))] p-0 shadow-[0_20px_48px_-38px_rgba(15,23,42,0.24)]">
+                <div className="border-b border-slate-200/80 px-5 py-5"><div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-500">Next Best Action</div><div className="mt-2 text-[1.9rem] font-black tracking-[-0.03em] text-slate-950">Guided next steps</div><div className="mt-1 text-sm text-slate-600">Follow the highest-value move, then the next one if needed.</div></div>
+                {prioritizedActions.length ? <div className="space-y-3 px-5 py-5">{prioritizedActions.map((action, index) => <div key={action.id} className={`rounded-[24px] border px-4 py-4 ${index === 0 ? "border-slate-950 bg-slate-950 text-white shadow-[0_18px_36px_-24px_rgba(15,23,42,0.78)]" : "border-slate-200/80 bg-white/88 shadow-[0_10px_24px_-22px_rgba(15,23,42,0.16)]"}`}><div className={`text-[11px] font-semibold uppercase tracking-[0.16em] ${index === 0 ? "text-slate-300" : "text-slate-400"}`}>{index === 0 ? "Primary" : `Then ${index + 1}`}</div><div className="mt-2 text-lg font-bold tracking-[-0.02em]">{action.title}</div><div className={`mt-2 text-sm ${index === 0 ? "text-slate-200" : "text-slate-600"}`}>{action.message}</div><div className="mt-4 flex justify-start"><button type="button" onClick={action.onClick} className={`inline-flex min-w-[132px] items-center justify-center gap-2 rounded-2xl px-3.5 py-2.5 text-sm font-semibold transition ${index === 0 ? "bg-white text-slate-950 hover:bg-slate-100" : "border border-slate-200 bg-slate-50/80 text-slate-700 hover:bg-white"}`}>{action.cta}<ArrowRight className="h-4 w-4" /></button></div></div>)}</div> : <div className="px-5 py-5"><div className="rounded-[24px] border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-600">Start by creating your first agreement or opening the AI assistant.</div></div>}
+              </DashboardCard>
             </div>
-          ))}
+          </DashboardSection>
         </div>
-      ) : null}
-
-      {!isEmployee ? (
-        <DashboardSection
-          title="Dashboard"
-          subtitle="Money first, urgent work second, and clear next actions."
-          className="mb-6"
-        >
-          <div
-            data-testid="dashboard-summary-bar"
-            className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
-          >
-            {[
-              { label: "Earned (YTD)", value: currency(earnedYtdAmount) },
-              { label: "Pending Approval", value: currency(iStats.pendingAmount) },
-              { label: "Ready for Payout", value: currency(iStats.approvedAmount) },
-              { label: "Disputed", value: currency(iStats.disputedAmount) },
-            ].map((stat) => (
-              <div
-                key={stat.label}
-                className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm"
-              >
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  {stat.label}
-                </div>
-                <div className="mt-3 text-2xl font-black text-slate-950">{stat.value}</div>
-              </div>
-            ))}
-          </div>
-
-          <div className="grid gap-4 xl:grid-cols-[1.45fr_0.9fr]">
-            <DashboardCard testId="dashboard-needs-attention" className="border-slate-300">
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Needs Attention
-              </div>
-              <div className="mt-4 space-y-4">
-                <div>
-                  <div className="text-sm font-bold text-slate-900">Overdue Work</div>
-                  {overdueItems.length ? (
-                    <div className="mt-3 space-y-2">
-                      {overdueItems.map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 md:flex-row md:items-center md:justify-between"
-                        >
-                          <div>
-                            <div className="text-sm font-semibold text-slate-900">{item.title}</div>
-                            <div className="mt-1 text-xs text-slate-600">{item.meta}</div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={item.onClick}
-                            className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-                          >
-                            {item.actionLabel}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="mt-2 text-sm text-slate-600">No overdue items.</div>
-                  )}
-                </div>
-
-                <div>
-                  <div className="text-sm font-bold text-slate-900">Waiting Approval</div>
-                  {waitingApprovalItems.length ? (
-                    <div className="mt-3 space-y-2">
-                      {waitingApprovalItems.map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 md:flex-row md:items-center md:justify-between"
-                        >
-                          <div>
-                            <div className="text-sm font-semibold text-slate-900">{item.title}</div>
-                            <div className="mt-1 text-xs text-slate-600">{item.meta}</div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={item.onClick}
-                            className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                          >
-                            {item.actionLabel}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="mt-2 text-sm text-slate-600">Nothing waiting for approval.</div>
-                  )}
-                </div>
-              </div>
-            </DashboardCard>
-
-            <DashboardCard testId="dashboard-next-best-action" className="border-slate-300">
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Next Best Action
-              </div>
-              {prioritizedActions.length ? (
-                <div className="mt-4 space-y-3">
-                  {prioritizedActions.map((action, index) => (
-                    <div
-                      key={action.id}
-                      className={`rounded-xl border px-4 py-4 ${
-                        index === 0 ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-slate-50"
-                      }`}
-                    >
-                      <div className="text-sm font-semibold">{action.title}</div>
-                      <div className={`mt-2 text-sm ${index === 0 ? "text-slate-200" : "text-slate-600"}`}>
-                        {action.message}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={action.onClick}
-                        className={`mt-4 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold ${
-                          index === 0
-                            ? "bg-white text-slate-900 hover:bg-slate-100"
-                            : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                        }`}
-                      >
-                        {action.cta}
-                        <ArrowRight className="h-4 w-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-3 text-sm text-slate-600">
-                  Start by creating your first agreement or opening the AI assistant.
-                </div>
-              )}
-            </DashboardCard>
-          </div>
-        </DashboardSection>
-      ) : null}
-
-      {!isEmployee ? (
-        <DashboardSection
-          title="Active Work"
-          subtitle="Open agreements and the next operational move for each project."
-          className="mb-6"
-        >
-          <DashboardCard testId="dashboard-active-work" className="border-slate-300">
-            {activeAgreementRows.length ? (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">
-                      <th className="py-3 pr-4">Project</th>
-                      <th className="py-3 pr-4">Status</th>
-                      <th className="py-3 pr-4">Amount</th>
-                      <th className="py-3 pr-4">Next Step</th>
-                      <th className="py-3">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {activeAgreementRows.map((row) => (
-                      <tr key={row.id} data-testid={`dashboard-active-work-row-${row.id}`}>
-                        <td className="py-4 pr-4 font-semibold text-slate-900">{row.title}</td>
-                        <td className="py-4 pr-4 text-slate-700">{row.status}</td>
-                        <td className="py-4 pr-4 font-semibold text-slate-900">{row.amount}</td>
-                        <td className="py-4 pr-4 text-slate-700">{row.nextStep}</td>
-                        <td className="py-4">
-                          <button
-                            type="button"
-                            onClick={() => navigate(row.actionTarget)}
-                            className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                          >
-                            {row.actionLabel}
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="text-sm text-slate-600">No active agreements yet.</div>
-            )}
+        <DashboardSection title="Active Work" subtitle="Open agreements and the next operational move for each project." className="space-y-4">
+          <DashboardCard testId="dashboard-active-work" className="rounded-[28px] border-slate-300/70 bg-white shadow-[0_20px_48px_-38px_rgba(15,23,42,0.24)]">
+            {activeAgreementRows.length ? <div className="overflow-x-auto"><table className="min-w-full border-separate border-spacing-y-3 text-sm"><thead><tr className="text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500"><th className="px-3 pb-1">Project</th><th className="px-3 pb-1">Status</th><th className="px-3 pb-1">Amount</th><th className="px-3 pb-1">Next Step</th><th className="px-3 pb-1 text-right">Action</th></tr></thead><tbody>{activeAgreementRows.map((row) => <tr key={row.id} data-testid={`dashboard-active-work-row-${row.id}`}><td className="rounded-l-[20px] border-y border-l border-slate-200/80 bg-slate-50/80 px-4 py-4"><div className="font-semibold text-slate-950">{row.title}</div></td><td className="border-y border-slate-200/80 bg-slate-50/80 px-4 py-4"><span className="inline-flex rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">{row.status}</span></td><td className="border-y border-slate-200/80 bg-slate-50/80 px-4 py-4 font-semibold text-slate-950">{row.amount}</td><td className="border-y border-slate-200/80 bg-slate-50/80 px-4 py-4 text-slate-700">{row.nextStep}</td><td className="rounded-r-[20px] border-y border-r border-slate-200/80 bg-slate-50/80 px-4 py-4 text-right"><button type="button" onClick={() => navigate(row.actionTarget)} className="inline-flex min-w-[138px] items-center justify-center rounded-2xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-700 shadow-[0_10px_20px_-18px_rgba(15,23,42,0.25)] transition hover:bg-slate-100">{row.actionLabel}</button></td></tr>)}</tbody></table></div> : <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50/80 px-5 py-8 text-center"><div className="text-base font-semibold text-slate-900">No active agreements yet.</div><div className="mt-1 text-sm text-slate-600">Start a project or draft an agreement to see work appear here.</div></div>}
           </DashboardCard>
         </DashboardSection>
-      ) : null}
-
-      {false && !isEmployee && contractorProfile ? (
-        <div
-          className="mb-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-          data-testid="dashboard-sms-status"
-        >
-          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-            SMS Updates
-          </div>
-          <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <div className="text-base font-semibold text-slate-900">
-                {contractorProfile?.sms_enabled
-                  ? "SMS updates enabled"
-                  : contractorProfile?.sms_opted_out
-                  ? "SMS updates opted out"
-                  : "SMS updates not enabled"}
-              </div>
-              <div className="mt-1 text-sm text-slate-600">
-                {smsStatus?.phone_number_e164
-                  ? `Phone on file: ${smsStatus.phone_number_e164}`
-                  : "Add consent before sending project SMS updates."}
-              </div>
-              {contractorProfile?.last_sms_event?.summary ? (
-                <div className="mt-2 text-xs text-slate-500">
-                  Last event: {contractorProfile.last_sms_event.summary}
-                </div>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              onClick={() => navigate("/app/profile")}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Manage SMS
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {false && !isEmployee && contractorProfile ? (
-        <div
-          className="mb-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-          data-testid="dashboard-sms-automation"
-        >
-          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-            SMS Automation
-          </div>
-          <div className="mt-3 grid gap-3 md:grid-cols-4">
-            <div className="rounded-xl bg-slate-50 px-4 py-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Status
-              </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
-                {contractorProfile?.sms_automation_enabled ? "Enabled" : "Off"}
-              </div>
-            </div>
-            <div className="rounded-xl bg-slate-50 px-4 py-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Sent 7d
-              </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
-                {contractorProfile?.sent_sms_count_7d || 0}
-              </div>
-            </div>
-            <div className="rounded-xl bg-slate-50 px-4 py-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Suppressed 7d
-              </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
-                {contractorProfile?.suppressed_sms_count_7d || 0}
-              </div>
-            </div>
-            <div className="rounded-xl bg-slate-50 px-4 py-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                Deferred 7d
-              </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
-                {contractorProfile?.deferred_sms_count_7d || 0}
-              </div>
-            </div>
-          </div>
-          {contractorProfile?.last_sms_automation_decision ? (
-            <div className="mt-4 text-sm text-slate-600">
-              Last decision:{" "}
-              <span className="font-semibold text-slate-900">
-                {contractorProfile.last_sms_automation_decision.reason_code}
-              </span>
-              {" · "}
-              {contractorProfile.last_sms_automation_decision.message_preview || "No preview available."}
-            </div>
-          ) : (
-            <div className="mt-4 text-sm text-slate-600">
-              No automation decisions yet.
-            </div>
-          )}
-        </div>
-      ) : null}
-
-      {false && !isEmployee ? (
-        <>
-          <div className="mhb-kicker">MyHomeBro Pricing</div>
-          <div className="mhb-grid" style={{ marginBottom: 6 }}>
-            <StatCard icon={BadgeDollarSign} title={currentRateTitle} subtitle={pricingSubtitle} count={null} amount={null} onClick={null} />
-          </div>
-        </>
-      ) : null}
-
-      <div className="mhb-kicker">Milestones</div>
-      <div className="mhb-grid" style={{ marginBottom: 6 }}>
-        <StatCard
-          icon={Target}
-          title={isEmployee ? "My Assigned Milestones" : "All Milestones"}
-          subtitle={isEmployee ? "Only milestones assigned to you." : "Across your active agreements."}
-          count={mStats.totalCount}
-          amount={mStats.totalAmount}
-          onClick={() => navigate(`/app/milestones`)}
-        />
-
-        <StatCard
-          icon={ListTodo}
-          title="Incomplete"
-          subtitle="Not yet completed."
-          count={mStats.incompleteCount}
-          amount={mStats.incompleteAmount}
-          onClick={() => navigate(`/app/milestones?filter=incomplete`)}
-        />
-
-        {!isEmployee ? (
-          <>
-            <StatCard
-              icon={CheckCircle2}
-              title="Ready to Invoice"
-              subtitle="Completed (Not Invoiced)."
-              count={mStats.readyCount}
-              amount={mStats.readyAmount}
-              onClick={() => navigate(`/app/milestones?filter=complete_not_invoiced`)}
-            />
-
-            <StatCard
-              icon={BadgeDollarSign}
-              title="Paid"
-              subtitle="Escrow released / paid."
-              count={mStats.paidCount}
-              amount={mStats.paidAmount}
-              onClick={() => navigate(`/app/milestones?filter=paid`)}
-            />
-          </>
-        ) : (
-          <StatCard
-            icon={CheckCircle2}
-            title="Completed"
-            subtitle="Completed by you."
-            count={0}
-            amount={0}
-            onClick={() => navigate(`/app/milestones`)}
-          />
-        )}
-
-        <StatCard
-          icon={Wrench}
-          title="Rework Work Orders"
-          subtitle="Milestones created from disputes."
-          count={mStats.reworkCount}
-          amount={mStats.reworkAmount}
-          onClick={goReworkMilestones}
-        />
       </div>
-
-      {!isEmployee ? (
-        <>
-          <div className="mhb-kicker" style={{ marginTop: 14 }}>
-            Invoices
-          </div>
-          <div className="mhb-grid">
-            <StatCard
-              icon={BadgeDollarSign}
-              title="Pending Approval"
-              subtitle="Sent to homeowner — awaiting approval."
-              count={iStats.pendingCount}
-              amount={iStats.pendingAmount}
-              onClick={goInvoices}
-            />
-            <StatCard
-              icon={BadgeCheck}
-              title="Approved"
-              subtitle="Approved — ready for payout."
-              count={iStats.approvedCount}
-              amount={iStats.approvedAmount}
-              onClick={goInvoices}
-            />
-            <StatCard
-              icon={AlertTriangle}
-              title="Disputed"
-              subtitle="Frozen until resolved."
-              count={iStats.disputedCount}
-              amount={iStats.disputedAmount}
-              onClick={goInvoicesDisputed}
-            />
-            <StatCard
-              icon={WalletMinimal}
-              title="Earned (YTD)"
-              subtitle="Jan 1 → today. Click for breakdown."
-              count={null}
-              amount={earnedYtdAmount}
-              onClick={openEarnedModal}
-            />
-          </div>
-        </>
-      ) : null}
-
-      {false && !isEmployee ? <RoleAwareWorkboard /> : null}
-
-      {false && !isEmployee ? (
-        <>
-          <DashboardSection
-            title="Context"
-            subtitle="Recent workflow context and fast actions when you need more than the top recommendation."
-            className="mt-6"
-          >
-            {dashboardNextSteps.length ? (
-              <WorkflowHintList
-                items={dashboardNextSteps}
-                testId="dashboard-next-steps"
-              />
-            ) : null}
-
-            <div className="space-y-3" data-testid="dashboard-activity-feed">
-              {activityFeed.length ? (
-                activityFeed.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => navigate(item.navigation_target || "/app/dashboard")}
-                    className={`w-full rounded-2xl border px-4 py-4 text-left shadow-sm ${activityAccent(item.severity)}`}
-                    data-testid={`dashboard-activity-item-${item.id}`}
-                  >
-                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                      <div>
-                        <div className="text-sm font-semibold">{item.title}</div>
-                        <div className="mt-1 text-sm opacity-90">{item.summary}</div>
-                        {item.related_label ? (
-                          <div className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] opacity-70">
-                            {item.related_label}
-                          </div>
-                        ) : null}
-                      </div>
-                      <div className="text-xs font-semibold opacity-70">
-                        {formatActivityTimestamp(item.created_at)}
-                      </div>
-                    </div>
-                  </button>
-                ))
-              ) : (
-                <div
-                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600"
-                  data-testid="dashboard-activity-feed-empty"
-                >
-                  No recent activity yet.
-                </div>
-              )}
-            </div>
-
-            <DashboardCard>
-              <div className="flex flex-wrap gap-3">
-                <ActionButton icon={Sparkles} label="Start with AI" primary onClick={goStartWithAi} />
-                <ActionButton icon={FilePlus2} label="New Agreement" primary onClick={goNewAgreement} />
-                <ActionButton icon={ListPlus} label="New Intake" onClick={goNewIntake} />
-                <ActionButton icon={ListPlus} label="New Milestone" onClick={goNewMilestone} />
-                <ActionButton icon={Receipt} label="New Expense" onClick={openNewExpense} />
-                <ActionButton icon={Receipt} label="Expenses" onClick={goExpenses} />
-                <ActionButton icon={Receipt} label="Invoices" onClick={goInvoices} />
-                <ActionButton icon={AlertTriangle} label="Disputes" onClick={goDisputes} />
-                <ActionButton icon={CalendarDays} label="Calendar" onClick={goCalendar} />
-              </div>
-            </DashboardCard>
-          </DashboardSection>
-        </>
-      ) : null}
-
-      {!isEmployee ? <ExpenseRequestModal isOpen={showExpenseModal} onClose={onExpenseModalClose} /> : null}
-
-      {!isEmployee ? (
-        <EarnedBreakdownModal
-          isOpen={showEarnedModal}
-          onClose={closeEarnedModal}
-          invoices={invoices}
-          expenses={earnedExpenses}
-          loading={earnedLoading}
-        />
-      ) : null}
     </PageShell>
   );
 }
