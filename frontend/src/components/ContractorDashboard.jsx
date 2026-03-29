@@ -258,6 +258,22 @@ function activityAccent(severity) {
   return "border-slate-200 bg-slate-50 text-slate-900";
 }
 
+function getAgreementAmountValue(agreement) {
+  return Number(
+    agreement?.contract_amount ||
+      agreement?.total_amount ||
+      agreement?.total_price ||
+      agreement?.amount ||
+      0
+  );
+}
+
+function getAgreementStatusLabel(agreement) {
+  return String(agreement?.status || agreement?.state || "draft")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
 /* ---------- quick action button ---------- */
 function ActionButton({ icon: Icon, label, onClick, primary }) {
   return (
@@ -1337,6 +1353,113 @@ export default function ContractorDashboard() {
     });
   };
   const needsAttentionItems = useMemo(() => dashboardNextSteps.slice(0, 3), [dashboardNextSteps]);
+  const overdueItems = useMemo(() => {
+    const now = new Date();
+    return milestones
+      .filter((m) => {
+        const due = parseDateAny(m?.completion_date);
+        return due && due < now && !isMilestoneCompleted(m);
+      })
+      .slice(0, 4)
+      .map((m) => ({
+        id: `overdue-${m.id}`,
+        title: m.title || "Overdue milestone",
+        meta: m.agreement_title || m.project_title || "Agreement work",
+        actionLabel: "Open milestone",
+        onClick: () => navigate(`/app/milestones/${m.id}`),
+      }));
+  }, [milestones, navigate]);
+  const waitingApprovalItems = useMemo(() => {
+    return milestones
+      .filter((m) => {
+        const status = milestoneStatus(m);
+        return ["submitted", "pending_approval", "awaiting_approval", "review"].includes(status);
+      })
+      .slice(0, 4)
+      .map((m) => ({
+        id: `approval-${m.id}`,
+        title: m.title || "Waiting approval",
+        meta: m.agreement_title || m.project_title || "Milestone review",
+        actionLabel: "Review",
+        onClick: () => navigate(`/app/milestones/${m.id}`),
+      }));
+  }, [milestones, navigate]);
+  const prioritizedActions = useMemo(() => {
+    const actions = [];
+    if (nextBestAction) {
+      actions.push({
+        id: nextBestAction.action_type || "primary-next-best-action",
+        title: nextBestAction.title,
+        message: nextBestAction.message,
+        cta: nextBestAction.cta_label || "Open",
+        onClick: () => navigate(nextBestAction.navigation_target || "/app/dashboard"),
+      });
+    }
+    dashboardNextSteps.slice(0, 2).forEach((item, index) => {
+      actions.push({
+        id: `workflow-${index}`,
+        title: item,
+        message: "Keep momentum on the next open workflow step.",
+        cta: "Open agreements",
+        onClick: () => navigate("/app/agreements"),
+      });
+    });
+    return actions.slice(0, 3);
+  }, [dashboardNextSteps, navigate, nextBestAction]);
+  const activeAgreementRows = useMemo(() => {
+    const milestoneByAgreement = milestones.reduce((acc, milestone) => {
+      const agreementId = milestone?.agreement || milestone?.agreement_id;
+      if (!agreementId) return acc;
+      if (!acc[agreementId]) acc[agreementId] = [];
+      acc[agreementId].push(milestone);
+      return acc;
+    }, {});
+
+    return agreements
+      .filter((agreement) => !["completed", "cancelled", "archived"].includes(norm(agreement?.status)))
+      .slice(0, 8)
+      .map((agreement) => {
+        const relatedMilestones = milestoneByAgreement[agreement.id] || [];
+        const overdue = relatedMilestones.find((m) => {
+          const due = parseDateAny(m?.completion_date);
+          return due && due < new Date() && !isMilestoneCompleted(m);
+        });
+        const review = relatedMilestones.find((m) =>
+          ["submitted", "pending_approval", "awaiting_approval", "review"].includes(
+            milestoneStatus(m)
+          )
+        );
+
+        let nextStep = "Review agreement";
+        let actionLabel = "Open agreement";
+        let actionTarget = `/app/agreements/${agreement.id}`;
+
+        if (norm(agreement?.status) === "draft") {
+          nextStep = "Finish and send";
+          actionTarget = `/app/agreements/${agreement.id}/wizard?step=1`;
+        } else if (review) {
+          nextStep = "Review submitted milestone";
+          actionLabel = "Open milestone";
+          actionTarget = `/app/milestones/${review.id}`;
+        } else if (overdue) {
+          nextStep = "Resolve overdue work";
+          actionLabel = "Open milestone";
+          actionTarget = `/app/milestones/${overdue.id}`;
+        } else if (norm(agreement?.status) === "signed" && agreement?.escrow_funded === false) {
+          nextStep = "Collect funding";
+        }
+
+        return {
+          id: agreement.id,
+          title: agreement.project_title || agreement.title || `Agreement #${agreement.id}`,
+          status: getAgreementStatusLabel(agreement),
+          amount: currency(getAgreementAmountValue(agreement)),
+          nextStep,
+          actionLabel,
+          actionTarget,
+        };
+      });
+  }, [agreements, milestones]);
 
   return (
     <PageShell title="Dashboard" subtitle={headerSubtitle} showLogo>
@@ -1373,62 +1496,186 @@ export default function ContractorDashboard() {
 
       {!isEmployee ? (
         <DashboardSection
-          title="Focus"
-          subtitle="What needs your attention right now and the single highest-value next move."
-          className="mb-4"
+          title="Dashboard"
+          subtitle="Money first, urgent work second, and clear next actions."
+          className="mb-6"
         >
-          <DashboardCard testId="dashboard-next-best-action">
-            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Next Best Action
-            </div>
-            {nextBestAction ? (
-              <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <div className="text-lg font-semibold text-slate-900">{nextBestAction.title}</div>
-                  <div className="mt-1 text-sm text-slate-600">{nextBestAction.message}</div>
-                  {nextBestAction.rationale ? (
-                    <div className="mt-2 text-xs text-slate-500">{nextBestAction.rationale}</div>
-                  ) : null}
+          <div
+            data-testid="dashboard-summary-bar"
+            className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
+          >
+            {[
+              { label: "Earned (YTD)", value: currency(earnedYtdAmount) },
+              { label: "Pending Approval", value: currency(iStats.pendingAmount) },
+              { label: "Ready for Payout", value: currency(iStats.approvedAmount) },
+              { label: "Disputed", value: currency(iStats.disputedAmount) },
+            ].map((stat) => (
+              <div
+                key={stat.label}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm"
+              >
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  {stat.label}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => navigate(nextBestAction.navigation_target || "/app/dashboard")}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-                >
-                  {nextBestAction.cta_label || "Open"}
-                  <ArrowRight className="h-4 w-4" />
-                </button>
+                <div className="mt-3 text-2xl font-black text-slate-950">{stat.value}</div>
               </div>
-            ) : (
-              <div className="mt-3 text-sm text-slate-600">
-                Start by creating your first agreement or opening the AI assistant.
-              </div>
-            )}
-          </DashboardCard>
+            ))}
+          </div>
 
-          <DashboardCard testId="dashboard-needs-attention" tone="subtle">
-            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Needs Attention
-            </div>
-            {needsAttentionItems.length ? (
-              <div className="mt-3 space-y-2">
-                {needsAttentionItems.map((item, index) => (
-                  <div
-                    key={`${item}-${index}`}
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700"
-                  >
-                    {item}
-                  </div>
-                ))}
+          <div className="grid gap-4 xl:grid-cols-[1.45fr_0.9fr]">
+            <DashboardCard testId="dashboard-needs-attention" className="border-slate-300">
+              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                Needs Attention
+              </div>
+              <div className="mt-4 space-y-4">
+                <div>
+                  <div className="text-sm font-bold text-slate-900">Overdue Work</div>
+                  {overdueItems.length ? (
+                    <div className="mt-3 space-y-2">
+                      {overdueItems.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex flex-col gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 md:flex-row md:items-center md:justify-between"
+                        >
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">{item.title}</div>
+                            <div className="mt-1 text-xs text-slate-600">{item.meta}</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={item.onClick}
+                            className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                          >
+                            {item.actionLabel}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-sm text-slate-600">No overdue items.</div>
+                  )}
+                </div>
+
+                <div>
+                  <div className="text-sm font-bold text-slate-900">Waiting Approval</div>
+                  {waitingApprovalItems.length ? (
+                    <div className="mt-3 space-y-2">
+                      {waitingApprovalItems.map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 md:flex-row md:items-center md:justify-between"
+                        >
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">{item.title}</div>
+                            <div className="mt-1 text-xs text-slate-600">{item.meta}</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={item.onClick}
+                            className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            {item.actionLabel}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-sm text-slate-600">Nothing waiting for approval.</div>
+                  )}
+                </div>
+              </div>
+            </DashboardCard>
+
+            <DashboardCard testId="dashboard-next-best-action" className="border-slate-300">
+              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                Next Best Action
+              </div>
+              {prioritizedActions.length ? (
+                <div className="mt-4 space-y-3">
+                  {prioritizedActions.map((action, index) => (
+                    <div
+                      key={action.id}
+                      className={`rounded-xl border px-4 py-4 ${
+                        index === 0 ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-slate-50"
+                      }`}
+                    >
+                      <div className="text-sm font-semibold">{action.title}</div>
+                      <div className={`mt-2 text-sm ${index === 0 ? "text-slate-200" : "text-slate-600"}`}>
+                        {action.message}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={action.onClick}
+                        className={`mt-4 inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold ${
+                          index === 0
+                            ? "bg-white text-slate-900 hover:bg-slate-100"
+                            : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        {action.cta}
+                        <ArrowRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-3 text-sm text-slate-600">
+                  Start by creating your first agreement or opening the AI assistant.
+                </div>
+              )}
+            </DashboardCard>
+          </div>
+        </DashboardSection>
+      ) : null}
+
+      {!isEmployee ? (
+        <DashboardSection
+          title="Active Work"
+          subtitle="Open agreements and the next operational move for each project."
+          className="mb-6"
+        >
+          <DashboardCard testId="dashboard-active-work" className="border-slate-300">
+            {activeAgreementRows.length ? (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">
+                      <th className="py-3 pr-4">Project</th>
+                      <th className="py-3 pr-4">Status</th>
+                      <th className="py-3 pr-4">Amount</th>
+                      <th className="py-3 pr-4">Next Step</th>
+                      <th className="py-3">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {activeAgreementRows.map((row) => (
+                      <tr key={row.id} data-testid={`dashboard-active-work-row-${row.id}`}>
+                        <td className="py-4 pr-4 font-semibold text-slate-900">{row.title}</td>
+                        <td className="py-4 pr-4 text-slate-700">{row.status}</td>
+                        <td className="py-4 pr-4 font-semibold text-slate-900">{row.amount}</td>
+                        <td className="py-4 pr-4 text-slate-700">{row.nextStep}</td>
+                        <td className="py-4">
+                          <button
+                            type="button"
+                            onClick={() => navigate(row.actionTarget)}
+                            className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            {row.actionLabel}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             ) : (
-              <div className="mt-3 text-sm text-slate-600">No urgent items right now.</div>
+              <div className="text-sm text-slate-600">No active agreements yet.</div>
             )}
           </DashboardCard>
         </DashboardSection>
       ) : null}
 
-      {!isEmployee && contractorProfile ? (
+      {false && !isEmployee && contractorProfile ? (
         <div
           className="mb-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
           data-testid="dashboard-sms-status"
@@ -1467,7 +1714,7 @@ export default function ContractorDashboard() {
         </div>
       ) : null}
 
-      {!isEmployee && contractorProfile ? (
+      {false && !isEmployee && contractorProfile ? (
         <div
           className="mb-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
           data-testid="dashboard-sms-automation"
@@ -1526,7 +1773,7 @@ export default function ContractorDashboard() {
         </div>
       ) : null}
 
-      {!isEmployee ? (
+      {false && !isEmployee ? (
         <>
           <div className="mhb-kicker">MyHomeBro Pricing</div>
           <div className="mhb-grid" style={{ marginBottom: 6 }}>
@@ -1638,9 +1885,9 @@ export default function ContractorDashboard() {
         </>
       ) : null}
 
-      {!isEmployee ? <RoleAwareWorkboard /> : null}
+      {false && !isEmployee ? <RoleAwareWorkboard /> : null}
 
-      {!isEmployee ? (
+      {false && !isEmployee ? (
         <>
           <DashboardSection
             title="Context"

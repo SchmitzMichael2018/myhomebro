@@ -184,23 +184,42 @@ export default function Sidebar({ variant = "desktop" }) {
 
     return (
       <>
+        <div className="px-2 text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-500">
+          Core
+        </div>
         <Item to={`${APP_BASE}/dashboard`} label="Dashboard" emoji="🏠" />
-        <Item to={`${APP_BASE}/assistant`} label="Start with AI" emoji="✨" />
-        <Item to={`${APP_BASE}/business`} label="Business Dashboard" emoji="📈" />
-        <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" emoji="🔍" />
         <Item to={`${APP_BASE}/agreements`} label="Agreements" emoji="📄" />
-        <Item to={`${APP_BASE}/templates`} label="Templates" emoji="🧱" />
+        <Item to={`${APP_BASE}/invoices`} label="Invoices" emoji="💳" />
+
+        <div className="px-2 pt-3 text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-500">
+          Work
+        </div>
         <Item to={`${APP_BASE}/milestones`} label="Milestones" emoji="🧩" />
         <Item to={`${APP_BASE}/subcontractors`} label="Subcontractors" emoji="🧰" />
-        <Item to={`${APP_BASE}/public-presence`} label="Public Presence" emoji="🌐" />
         <Item to={`${APP_BASE}/assignments`} label="Assignments" emoji="🧭" />
-        <Item to={`${APP_BASE}/team-schedule`} label="Team Schedule" emoji="🧑‍🏭" />
-        <Item to={`${APP_BASE}/team`} label="Team" emoji="🧑‍🤝‍🧑" />
-        <Item to={`${APP_BASE}/invoices`} label="Invoices" emoji="💳" />
+
+        <div className="px-2 pt-3 text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-500">
+          Business
+        </div>
         <Item to={`${APP_BASE}/customers`} label="Customers" emoji="👥" />
-        <Item to={`${APP_BASE}/calendar`} label="Calendar" emoji="🗓️" />
         <Item to={`${APP_BASE}/expenses`} label="Expenses" emoji="📊" />
-        <Item to={`${APP_BASE}/disputes`} label="Disputes" emoji="⚖️" />
+        <Item to={`${APP_BASE}/assistant`} label="Start with AI" emoji="✨" />
+        <Item to={`${APP_BASE}/business`} label="Business Dashboard" emoji="📈" />
+
+        <div className="px-2 pt-3 text-[11px] font-extrabold uppercase tracking-[0.18em] text-slate-500">
+          Settings
+        </div>
+        <Item to={`${APP_BASE}/profile`} label="Profile" emoji="👤" />
+        <Item
+          to={`${APP_BASE}/onboarding`}
+          emoji="🔗"
+          label={
+            <>
+              <span>Stripe</span>
+              <StripeOnboardingStatus className="ml-2" />
+            </>
+          }
+        />
       </>
     );
   }, [canAccessReviewerQueue, isEmployee, isAdmin, isOnAdminRoute, isSubcontractor]);
@@ -218,21 +237,7 @@ export default function Sidebar({ variant = "desktop" }) {
       return null;
     }
 
-    return (
-      <>
-        <Item to={`${APP_BASE}/profile`} label="My Profile" emoji="👤" />
-        <Item
-          to={`${APP_BASE}/onboarding`}
-          emoji="🔗"
-          label={
-            <>
-              <span>Stripe Onboarding</span>
-              <StripeOnboardingStatus className="ml-2" />
-            </>
-          }
-        />
-      </>
-    );
+    return null;
   }, [isEmployee, isAdmin, isSubcontractor]);
 
   // Close-out listener
@@ -442,12 +447,14 @@ export default function Sidebar({ variant = "desktop" }) {
           <div className="space-y-2">{mainNav}</div>
         </div>
 
-        <div>
-          <div className="px-2 text-xs font-extrabold uppercase tracking-wide text-slate-600 mb-2">
-            Account
+        {accountNav ? (
+          <div>
+            <div className="px-2 text-xs font-extrabold uppercase tracking-wide text-slate-600 mb-2">
+              Account
+            </div>
+            <div className="space-y-2">{accountNav}</div>
           </div>
-          <div className="space-y-2">{accountNav}</div>
-        </div>
+        ) : null}
       </nav>
 
       <div className="px-4 py-3 border-t border-black/10">
