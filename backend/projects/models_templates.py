@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from django.db import models
+from django.conf import settings
 
 from projects.models import AgreementPaymentStructure
 
@@ -13,6 +14,13 @@ class ProjectTemplate(models.Model):
     - is_system=True  => built-in/admin-managed template
     - contractor set  => contractor-owned reusable template
     """
+
+    class Visibility(models.TextChoices):
+        PRIVATE = "private", "Private"
+        TEAM = "team", "Team"
+        REGIONAL = "regional", "Regional"
+        PUBLIC = "public", "Public"
+        SYSTEM = "system", "System"
 
     contractor = models.ForeignKey(
         "projects.Contractor",
@@ -42,12 +50,51 @@ class ProjectTemplate(models.Model):
 
     default_scope = models.TextField(blank=True, default="")
     default_clarifications = models.JSONField(blank=True, default=list)
+    benchmark_match_key = models.CharField(
+        max_length=120,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Stable key used to align system templates with seeded and learned benchmark layers.",
+    )
+    region_tags = models.JSONField(
+        blank=True,
+        default=list,
+        help_text="Optional region/state tags for system template applicability.",
+    )
 
     # NEW: project-level materials guidance for the whole template
     project_materials_hint = models.TextField(blank=True, default="")
 
     is_system = models.BooleanField(default=False, db_index=True)
     is_active = models.BooleanField(default=True, db_index=True)
+    visibility = models.CharField(
+        max_length=24,
+        choices=Visibility.choices,
+        default=Visibility.PRIVATE,
+        db_index=True,
+        help_text="Discovery visibility for contractor-facing template marketplace flows.",
+    )
+    allow_discovery = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Whether this template can appear outside the owner's private library.",
+    )
+    normalized_region_key = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Primary region applicability key shared with benchmark and learning systems.",
+    )
+    published_at = models.DateTimeField(null=True, blank=True)
+    published_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="published_project_templates",
+    )
 
     created_from_agreement = models.ForeignKey(
         "projects.Agreement",
@@ -55,6 +102,22 @@ class ProjectTemplate(models.Model):
         null=True,
         blank=True,
         related_name="derived_templates",
+    )
+    source_system_template = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="customized_templates",
+        help_text="If this contractor template was copied from a built-in template, keep the lineage here.",
+    )
+    benchmark_profile = models.ForeignKey(
+        "projects.SeedBenchmarkProfile",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="linked_templates",
+        help_text="Optional seeded benchmark profile aligned to this template.",
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -65,6 +128,9 @@ class ProjectTemplate(models.Model):
         indexes = [
             models.Index(fields=["project_type", "project_subtype"]),
             models.Index(fields=["is_system", "is_active"]),
+            models.Index(fields=["benchmark_match_key"]),
+            models.Index(fields=["visibility", "allow_discovery"]),
+            models.Index(fields=["normalized_region_key"]),
         ]
 
     def __str__(self) -> str:
@@ -349,3 +415,76 @@ class PricingStatistic(models.Model):
         scope_label = self.scope or "unknown"
         milestone_label = self.normalized_milestone_type or "any"
         return f"{scope_label} | {self.project_type} | {milestone_label}"
+
+
+class SeedBenchmarkProfile(models.Model):
+    """
+    Seeded benchmark/config baseline used before learned benchmarks are strong.
+
+    Phase C learned aggregates should later blend with these seeded defaults using
+    the shared matching keys: project_type, project_subtype, benchmark_match_key,
+    template, and normalized region.
+    """
+
+    benchmark_key = models.CharField(max_length=120, unique=True, db_index=True)
+    benchmark_match_key = models.CharField(max_length=120, blank=True, default="", db_index=True)
+
+    project_type = models.CharField(max_length=100, db_index=True, blank=True, default="")
+    project_subtype = models.CharField(max_length=100, blank=True, default="")
+
+    region_state = models.CharField(max_length=64, blank=True, default="")
+    region_city = models.CharField(max_length=128, blank=True, default="")
+    normalized_region_key = models.CharField(max_length=255, blank=True, default="", db_index=True)
+
+    template = models.ForeignKey(
+        "projects.ProjectTemplate",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="seed_benchmark_profiles",
+    )
+
+    is_system = models.BooleanField(default=True, db_index=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    base_price_low = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    base_price_high = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    base_duration_days_low = models.PositiveIntegerField(default=1)
+    base_duration_days_high = models.PositiveIntegerField(default=1)
+    default_milestone_count = models.PositiveIntegerField(default=0)
+
+    default_milestone_pattern = models.JSONField(
+        blank=True,
+        default=list,
+        help_text="Ordered milestone archetypes and defaults used for seeded project setup.",
+    )
+    default_clarification_questions = models.JSONField(
+        blank=True,
+        default=list,
+        help_text="Default clarification drivers/questions for this benchmark profile.",
+    )
+    finish_level_multipliers = models.JSONField(blank=True, default=dict)
+    complexity_multipliers = models.JSONField(blank=True, default=dict)
+    location_multiplier = models.DecimalField(max_digits=8, decimal_places=4, default=Decimal("1.0000"))
+    region_priority_weight = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        default=Decimal("1.00"),
+        help_text="Future estimator blending weight; current resolver remains deterministic and fallback-based.",
+    )
+
+    source_note = models.CharField(max_length=255, blank=True, default="")
+    rationale = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["project_type", "project_subtype", "region_state", "region_city", "benchmark_key"]
+        indexes = [
+            models.Index(fields=["project_type", "project_subtype"]),
+            models.Index(fields=["benchmark_match_key"]),
+            models.Index(fields=["normalized_region_key"]),
+            models.Index(fields=["is_system", "is_active"]),
+        ]
+
+    def __str__(self) -> str:
+        region = self.region_city or self.region_state or "global"
+        return f"{self.project_type} | {self.project_subtype or 'generic'} | {region}"
