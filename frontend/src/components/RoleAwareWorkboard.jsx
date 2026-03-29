@@ -21,6 +21,42 @@ const SECTION_PRIORITY = {
   later_this_week: 3,
 };
 
+const ACTION_HINTS = {
+  "Open Agreement": "Review the full agreement and take the next project step.",
+  "Open Milestone": "Open this milestone to review details and update progress.",
+  "View Milestone": "Open this milestone to review details and update progress.",
+  "Open Draft": "Continue editing this draft before sending it out.",
+};
+
+function ActionHintButton({ itemId, idx, action, onAction }) {
+  const hint = ACTION_HINTS[action.label];
+  const tooltipId = hint ? `workboard-action-hint-${itemId}-${idx}` : undefined;
+
+  return (
+    <div className="group relative">
+      <button
+        type="button"
+        data-testid={`workboard-action-${itemId}-${idx}`}
+        onClick={() => onAction(action)}
+        title={hint || action.label}
+        aria-describedby={tooltipId}
+        className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 sm:min-w-[108px]"
+      >
+        {action.label}
+      </button>
+      {hint ? (
+        <div
+          id={tooltipId}
+          role="tooltip"
+          className="pointer-events-none absolute left-1/2 top-full z-20 mt-1.5 w-52 -translate-x-1/2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-600 opacity-0 shadow-lg transition duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+        >
+          {hint}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function formatDateTimeShort(value) {
   if (!value) return "";
   try {
@@ -289,15 +325,13 @@ function ItemCard({ item, onAction }) {
         {(item.actions || []).length ? (
           <div className="flex shrink-0 flex-wrap gap-1.5 sm:justify-end">
             {(item.actions || []).map((action, idx) => (
-              <button
+              <ActionHintButton
                 key={`${item.id}-${idx}`}
-                type="button"
-                data-testid={`workboard-action-${item.id}-${idx}`}
-                onClick={() => onAction(action)}
-                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 sm:min-w-[108px]"
-              >
-                {action.label}
-              </button>
+                itemId={item.id}
+                idx={idx}
+                action={action}
+                onAction={onAction}
+              />
             ))}
           </div>
         ) : null}

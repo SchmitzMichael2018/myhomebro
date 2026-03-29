@@ -1,5 +1,5 @@
 // src/components/ContractorDashboard.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useId, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api";
 import { toast } from "react-hot-toast";
@@ -259,13 +259,15 @@ function activityAccent(severity) {
 }
 
 /* ---------- quick action button ---------- */
-function ActionButton({ icon: Icon, label, onClick, primary }) {
-  return (
+function ActionButton({ icon: Icon, label, onClick, primary, hint }) {
+  const tooltipId = useId();
+  const button = (
     <button
       className={`mhb-btn${primary ? " primary" : ""}`}
       onClick={onClick}
       type="button"
       title={label}
+      aria-describedby={hint ? tooltipId : undefined}
       style={{
         padding: "12px 16px",
         fontSize: 14,
@@ -276,6 +278,21 @@ function ActionButton({ icon: Icon, label, onClick, primary }) {
       {Icon ? <Icon size={18} /> : null}
       <span style={{ marginLeft: 8, fontWeight: 900 }}>{label}</span>
     </button>
+  );
+
+  if (!hint) return button;
+
+  return (
+    <div className="group relative inline-flex">
+      {button}
+      <div
+        id={tooltipId}
+        role="tooltip"
+        className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 w-52 -translate-x-1/2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-600 opacity-0 shadow-lg transition duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+      >
+        {hint}
+      </div>
+    </div>
   );
 }
 
@@ -1456,13 +1473,23 @@ export default function ContractorDashboard() {
                 </div>
               ) : null}
             </div>
-            <button
-              type="button"
-              onClick={() => navigate("/app/profile")}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Manage SMS
-            </button>
+            <div className="group relative">
+              <button
+                type="button"
+                onClick={() => navigate("/app/profile")}
+                aria-describedby="dashboard-manage-sms-hint"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Manage SMS
+              </button>
+              <div
+                id="dashboard-manage-sms-hint"
+                role="tooltip"
+                className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 w-56 -translate-x-1/2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-600 opacity-0 shadow-lg transition duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+              >
+                Update your SMS preferences and review phone setup.
+              </div>
+            </div>
           </div>
         </div>
       ) : null}
@@ -1692,15 +1719,57 @@ export default function ContractorDashboard() {
 
             <DashboardCard>
               <div className="flex flex-wrap gap-3">
-                <ActionButton icon={Sparkles} label="Start with AI" primary onClick={goStartWithAi} />
-                <ActionButton icon={FilePlus2} label="New Agreement" primary onClick={goNewAgreement} />
-                <ActionButton icon={ListPlus} label="New Intake" onClick={goNewIntake} />
-                <ActionButton icon={ListPlus} label="New Milestone" onClick={goNewMilestone} />
+                <ActionButton
+                  icon={Sparkles}
+                  label="Start with AI"
+                  primary
+                  onClick={goStartWithAi}
+                  hint="Use AI to plan the next job, agreement, or milestone."
+                />
+                <ActionButton
+                  icon={FilePlus2}
+                  label="New Agreement"
+                  primary
+                  onClick={goNewAgreement}
+                  hint="Start a new agreement and move it toward signature."
+                />
+                <ActionButton
+                  icon={ListPlus}
+                  label="New Intake"
+                  onClick={goNewIntake}
+                  hint="Capture a new project lead before turning it into work."
+                />
+                <ActionButton
+                  icon={ListPlus}
+                  label="New Milestone"
+                  onClick={goNewMilestone}
+                  hint="Add a milestone so work, approval, and payment can move forward."
+                />
                 <ActionButton icon={Receipt} label="New Expense" onClick={openNewExpense} />
-                <ActionButton icon={Receipt} label="Expenses" onClick={goExpenses} />
-                <ActionButton icon={Receipt} label="Invoices" onClick={goInvoices} />
-                <ActionButton icon={AlertTriangle} label="Disputes" onClick={goDisputes} />
-                <ActionButton icon={CalendarDays} label="Calendar" onClick={goCalendar} />
+                <ActionButton
+                  icon={Receipt}
+                  label="Expenses"
+                  onClick={goExpenses}
+                  hint="Review expense requests, receipts, and customer-facing charges."
+                />
+                <ActionButton
+                  icon={Receipt}
+                  label="Invoices"
+                  onClick={goInvoices}
+                  hint="Review invoices, approvals, payouts, and payment status."
+                />
+                <ActionButton
+                  icon={AlertTriangle}
+                  label="Disputes"
+                  onClick={goDisputes}
+                  hint="Open disputes that need a response or resolution."
+                />
+                <ActionButton
+                  icon={CalendarDays}
+                  label="Calendar"
+                  onClick={goCalendar}
+                  hint="See scheduled work and upcoming project dates."
+                />
               </div>
             </DashboardCard>
           </DashboardSection>
