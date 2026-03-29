@@ -9,7 +9,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from projects.models import Milestone, Notification, SubcontractorCompletionStatus
+from projects.models import (
+    Milestone,
+    Notification,
+    SubcontractorComplianceStatus,
+    SubcontractorCompletionStatus,
+)
 from projects.models_subcontractor import (
     SubcontractorInvitation,
     SubcontractorInvitationStatus,
@@ -28,6 +33,12 @@ from projects.services.subcontractor_invitations import (
 )
 from projects.services.subcontractor_notifications import (
     create_subcontractor_activity_notification,
+)
+from projects.services.project_email_reports import send_project_email_report
+from projects.services.subcontractor_compliance import (
+    apply_assignment_compliance_decision,
+    evaluate_subcontractor_assignment_compliance,
+    send_subcontractor_license_request_email,
 )
 from projects.views.subcontractor_invitations import _get_owned_agreement
 
@@ -96,6 +107,64 @@ def _assignment_status(assigned_count: int, submitted_count: int, needs_changes_
     return "in_progress"
 
 
+def _milestone_compliance_payload(milestone: Milestone) -> dict:
+    return {
+        "status": getattr(milestone, "subcontractor_compliance_status", "") or "",
+        "license_required": bool(getattr(milestone, "subcontractor_license_required", False)),
+        "insurance_required": bool(getattr(milestone, "subcontractor_insurance_required", False)),
+        "override_flag": bool(getattr(milestone, "subcontractor_compliance_override", False)),
+        "override_reason": getattr(milestone, "subcontractor_compliance_override_reason", "") or "",
+        "requested_license_at": getattr(milestone, "subcontractor_license_requested_at", None),
+        "required_trade_key": getattr(milestone, "subcontractor_required_trade_key", "") or "",
+        "required_state_code": getattr(milestone, "subcontractor_required_state_code", "") or "",
+        "warning_snapshot": getattr(milestone, "subcontractor_compliance_warning_snapshot", {}) or {},
+    }
+
+
+def _aggregate_assignment_compliance(milestones: list[Milestone]) -> dict:
+    severity = {
+        SubcontractorComplianceStatus.MISSING_LICENSE: 6,
+        SubcontractorComplianceStatus.MISSING_INSURANCE: 5,
+        SubcontractorComplianceStatus.PENDING_LICENSE: 4,
+        SubcontractorComplianceStatus.OVERRIDDEN: 3,
+        SubcontractorComplianceStatus.UNKNOWN: 2,
+        SubcontractorComplianceStatus.NOT_REQUIRED: 1,
+        SubcontractorComplianceStatus.COMPLIANT: 0,
+    }
+    selected = None
+    for milestone in milestones:
+        payload = _milestone_compliance_payload(milestone)
+        if selected is None or severity.get(payload["status"], -1) > severity.get(selected["status"], -1):
+            selected = payload
+    return selected or {
+        "status": "",
+        "license_required": False,
+        "insurance_required": False,
+        "override_flag": False,
+        "override_reason": "",
+        "requested_license_at": None,
+        "required_trade_key": "",
+        "required_state_code": "",
+        "warning_snapshot": {},
+    }
+
+
+def _decision_required_response(*, evaluation: dict, invitation: SubcontractorInvitation, milestones: list[Milestone]) -> Response:
+    return Response(
+        {
+            "detail": "Compliance decision required before assigning this subcontractor.",
+            "compliance_decision_required": True,
+            "compliance_evaluation": evaluation,
+            "invitation_id": invitation.id,
+            "milestones": [
+                {"id": milestone.id, "title": milestone.title}
+                for milestone in milestones
+            ],
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
 def _serialize_assignment_row(invitation: SubcontractorInvitation, milestones: list[Milestone]) -> dict:
     assigned_count = len(milestones)
     submitted_count = sum(
@@ -125,6 +194,7 @@ def _serialize_assignment_row(invitation: SubcontractorInvitation, milestones: l
         (milestone.completion_date for milestone in milestones if milestone.completion_date),
         default=None,
     )
+    compliance = _aggregate_assignment_compliance(milestones)
 
     return {
         "id": invitation.id,
@@ -149,6 +219,15 @@ def _serialize_assignment_row(invitation: SubcontractorInvitation, milestones: l
         "total_assigned_amount": f"{total_assigned_amount:.2f}",
         "earliest_due_date": earliest_due,
         "notes": invitation.invited_message or "",
+        "compliance_status": compliance["status"],
+        "license_required": compliance["license_required"],
+        "insurance_required": compliance["insurance_required"],
+        "required_trade_key": compliance["required_trade_key"],
+        "required_state_code": compliance["required_state_code"],
+        "compliance_override": compliance["override_flag"],
+        "compliance_override_reason": compliance["override_reason"],
+        "requested_license_at": compliance["requested_license_at"],
+        "compliance_warning_snapshot": compliance["warning_snapshot"],
         "milestones": [
             {
                 "id": milestone.id,
@@ -157,6 +236,7 @@ def _serialize_assignment_row(invitation: SubcontractorInvitation, milestones: l
                 "status": getattr(milestone, "status", "") or "pending",
                 "work_submission_status": milestone.subcontractor_completion_status,
                 "assigned_amount": milestone.amount,
+                "assignment_compliance": _milestone_compliance_payload(milestone),
             }
             for milestone in milestones
         ],
@@ -420,6 +500,8 @@ class AgreementSubcontractorAssignmentsView(APIView):
 
         invitation_id = request.data.get("invitation_id")
         milestone_ids = request.data.get("milestone_ids") or []
+        compliance_action = str(request.data.get("compliance_action") or "").strip().lower()
+        override_reason = str(request.data.get("override_reason") or "").strip()
         if not invitation_id:
             return Response({"invitation_id": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
         if not isinstance(milestone_ids, list) or not milestone_ids:
@@ -444,10 +526,47 @@ class AgreementSubcontractorAssignmentsView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        evaluations = [
+            evaluate_subcontractor_assignment_compliance(
+                contractor=contractor,
+                invitation=invitation,
+                agreement=agreement,
+                milestone=milestone,
+            )
+            for milestone in milestones
+        ]
+        blocking = [
+            evaluation
+            for evaluation in evaluations
+            if evaluation.get("compliance_status")
+            in {
+                SubcontractorComplianceStatus.MISSING_LICENSE,
+                SubcontractorComplianceStatus.MISSING_INSURANCE,
+                SubcontractorComplianceStatus.PENDING_LICENSE,
+            }
+        ]
+        if blocking and compliance_action not in {"assign_anyway", "request_license", "choose_another"}:
+            return _decision_required_response(
+                evaluation=blocking[0],
+                invitation=invitation,
+                milestones=milestones,
+            )
+        if compliance_action == "choose_another":
+            return Response(
+                {
+                    "agreement_id": agreement.id,
+                    "assignment_created": False,
+                    "compliance_decision_required": False,
+                    "selection_reset": True,
+                },
+                status=status.HTTP_200_OK,
+            )
+
         errors = {}
         updated = []
+        delivery = None
         with transaction.atomic():
-            for milestone in milestones:
+            for milestone, evaluation in zip(milestones, evaluations):
                 serializer = MilestoneSerializer(
                     milestone,
                     data={"assigned_subcontractor_invitation": invitation.id},
@@ -457,7 +576,46 @@ class AgreementSubcontractorAssignmentsView(APIView):
                 if not serializer.is_valid():
                     errors[str(milestone.id)] = serializer.errors
                     continue
-                updated.append(serializer.save())
+                updated_milestone = serializer.save()
+                apply_assignment_compliance_decision(
+                    milestone=updated_milestone,
+                    evaluation=evaluation,
+                    action=compliance_action or "assign_anyway",
+                    acting_user=request.user,
+                    override_reason=override_reason,
+                )
+                updated_milestone.save(
+                    update_fields=[
+                        "subcontractor_license_required",
+                        "subcontractor_insurance_required",
+                        "subcontractor_required_trade_key",
+                        "subcontractor_required_state_code",
+                        "subcontractor_compliance_warning_snapshot",
+                        "subcontractor_compliance_override",
+                        "subcontractor_compliance_override_reason",
+                        "subcontractor_license_requested_at",
+                        "subcontractor_license_requested_by",
+                        "subcontractor_compliance_status",
+                    ]
+                )
+                updated.append(updated_milestone)
+
+            if not errors and (compliance_action == "request_license") and updated:
+                delivery = send_subcontractor_license_request_email(
+                    request=request,
+                    invitation=invitation,
+                    evaluation=blocking[0] if blocking else evaluations[0],
+                    milestones=updated,
+                )
+                try:
+                    send_project_email_report(
+                        event_type="compliance_alert",
+                        agreement=agreement,
+                        milestone=updated[0],
+                        compliance_note=(blocking[0] if blocking else evaluations[0]).get("warning_message", ""),
+                    )
+                except Exception:
+                    pass
 
         if errors:
             return Response({"detail": "Some milestones could not be assigned.", "errors": errors}, status=status.HTTP_400_BAD_REQUEST)
@@ -471,6 +629,7 @@ class AgreementSubcontractorAssignmentsView(APIView):
                 "agreement_id": agreement.id,
                 "assignment": row,
                 "updated_milestone_ids": [milestone.id for milestone in updated],
+                "compliance_delivery": delivery,
             },
             status=status.HTTP_200_OK,
         )

@@ -19,6 +19,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 
 from projects.models import Invoice
+from projects.services.contractor_onboarding import build_stripe_requirement_payload
 from projects.services.direct_pay import create_direct_pay_checkout_for_invoice
 
 log = logging.getLogger(__name__)
@@ -99,6 +100,15 @@ def invoice_email_direct_pay_link(request, pk: int):
     contractor = getattr(request.user, "contractor_profile", None)
     if not contractor or invoice.agreement.contractor_id != contractor.id:
         return JsonResponse({"error": "Not allowed."}, status=403)
+    if not bool(getattr(contractor, "stripe_connected", False)):
+        payload = build_stripe_requirement_payload(
+            contractor,
+            action_key="email_direct_pay_link",
+            action_label="Email Direct Pay Link",
+            source="invoice_direct_pay_email",
+            return_path=f"/app/invoices/{invoice.id}",
+        )
+        return JsonResponse(payload, status=409)
 
     agreement = getattr(invoice, "agreement", None)
 

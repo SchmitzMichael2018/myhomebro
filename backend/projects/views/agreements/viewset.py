@@ -20,6 +20,12 @@ from projects.services.agreements.create import create_agreement_from_validated
 from projects.services.agreements.address import sync_project_address_from_agreement
 from projects.services.agreements.editability import enforce_editability, prepare_payload
 from projects.services.agreements.refunds import build_refund_preview, execute_refund
+from projects.services.contractor_onboarding import mark_first_project_started
+from projects.services.contractor_activation_analytics import (
+    FUNNEL_EVENT_AGREEMENT_DRAFT_CREATED,
+    track_activation_event,
+)
+from projects.services.activity_feed import create_activity_event
 from projects.services.agreements.pdf_loader import load_pdf_services
 from projects.services.agreements.pdf_stream import serve_agreement_preview_or_final
 
@@ -374,6 +380,40 @@ class AgreementViewSet(viewsets.ModelViewSet):
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
             self.perform_create(serializer)
+            if contractor is not None:
+                try:
+                    mark_first_project_started(contractor)
+                    track_activation_event(
+                        contractor,
+                        event_type=FUNNEL_EVENT_AGREEMENT_DRAFT_CREATED,
+                        step="first_job",
+                        context={
+                            "agreement_id": serializer.instance.id,
+                            "project_type": getattr(serializer.instance, "project_type", "") or "",
+                            "project_subtype": getattr(serializer.instance, "project_subtype", "") or "",
+                        },
+                        user=user,
+                    )
+                    create_activity_event(
+                        contractor=contractor,
+                        actor_user=user,
+                        agreement=serializer.instance,
+                        event_type="agreement_created",
+                        title="Agreement draft created",
+                        summary="A new agreement draft is ready for review and sending.",
+                        severity="success",
+                        related_label=getattr(serializer.instance, "title", "") or "Draft agreement",
+                        icon_hint="agreement",
+                        navigation_target=f"/app/agreements/{serializer.instance.id}/wizard?step=1",
+                        metadata={
+                            "agreement_id": serializer.instance.id,
+                            "project_type": getattr(serializer.instance, "project_type", "") or "",
+                            "project_subtype": getattr(serializer.instance, "project_subtype", "") or "",
+                        },
+                        dedupe_key=f"agreement_created:{serializer.instance.id}",
+                    )
+                except Exception:
+                    pass
 
             try:
                 sync_project_address_from_agreement(serializer.instance)
@@ -739,6 +779,23 @@ class AgreementViewSet(viewsets.ModelViewSet):
 
         try:
             payload = send_signature_request_to_homeowner(ag)
+            try:
+                create_activity_event(
+                    contractor=getattr(ag, "contractor", None),
+                    actor_user=request.user,
+                    agreement=ag,
+                    event_type="agreement_sent",
+                    title="Agreement sent for signature",
+                    summary="The homeowner can now review and sign this agreement.",
+                    severity="info",
+                    related_label=getattr(ag, "title", "") or "Agreement",
+                    icon_hint="send",
+                    navigation_target=f"/app/agreements/{ag.id}",
+                    metadata={"agreement_id": ag.id},
+                    dedupe_key=f"agreement_sent:{ag.id}",
+                )
+            except Exception:
+                pass
             return Response(payload, status=status.HTTP_200_OK)
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -757,6 +814,23 @@ class AgreementViewSet(viewsets.ModelViewSet):
 
         try:
             payload = send_final_link_for_agreement(ag, force_send=True)
+            try:
+                create_activity_event(
+                    contractor=getattr(ag, "contractor", None),
+                    actor_user=request.user,
+                    agreement=ag,
+                    event_type="agreement_sent",
+                    title="Final agreement link sent",
+                    summary="The final agreement link was sent to the homeowner.",
+                    severity="info",
+                    related_label=getattr(ag, "title", "") or "Agreement",
+                    icon_hint="send",
+                    navigation_target=f"/app/agreements/{ag.id}",
+                    metadata={"agreement_id": ag.id, "final_link": True},
+                    dedupe_key=f"agreement_final_link:{ag.id}",
+                )
+            except Exception:
+                pass
             return Response(payload, status=status.HTTP_200_OK)
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)

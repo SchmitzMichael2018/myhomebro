@@ -1,0 +1,14 @@
+Hi {{ recipient_name|default:"Project Owner" }},
+
+There is a compliance note on {{ project_title }}.
+
+{% if milestone_title %}Related milestone: {{ milestone_title }}
+{% endif %}Compliance note: {{ compliance_note }}
+Total budget: ${{ total_budget }}
+Released to date: ${{ released_to_date }}
+Remaining budget: ${{ remaining_budget }}
+
+{% if review_url %}Review details: {{ review_url }}
+{% endif %}{% if project_url %}View project: {{ project_url }}
+{% endif %}
+MyHomeBro

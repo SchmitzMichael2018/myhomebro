@@ -95,6 +95,22 @@ function detectZipFieldName(data) {
   return null;
 }
 
+function formatComplianceLabel(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return text
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatComplianceDate(value) {
+  if (!value) return "No expiration date";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleDateString();
+}
+
 export default function ContractorProfile() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -131,6 +147,14 @@ export default function ContractorProfile() {
 
   // Mini sidebar active tab
   const [activeTab, setActiveTab] = useState("business"); // 'business' | 'billing' | 'account'
+  const [complianceTradeRequirements, setComplianceTradeRequirements] = useState([]);
+  const [complianceRecords, setComplianceRecords] = useState([]);
+  const [insuranceStatus, setInsuranceStatus] = useState({
+    has_insurance: false,
+    status: "missing",
+  });
+  const [compliancePreviewLoading, setCompliancePreviewLoading] = useState(false);
+  const [compliancePreviewError, setCompliancePreviewError] = useState("");
 
   // ✅ NEW: escrow pricing snapshot (tiered)
   const [escrowInfo, setEscrowInfo] = useState({
@@ -152,6 +176,11 @@ export default function ContractorProfile() {
     const me = await api.get("/projects/contractors/me/");
     const data = me?.data || {};
     setMeData(data);
+    setComplianceTradeRequirements(
+      Array.isArray(data.compliance_trade_requirements) ? data.compliance_trade_requirements : []
+    );
+    setComplianceRecords(Array.isArray(data.compliance_records) ? data.compliance_records : []);
+    setInsuranceStatus(data.insurance_status || { has_insurance: false, status: "missing" });
     return data;
   };
 
@@ -271,6 +300,44 @@ export default function ContractorProfile() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== "business") return undefined;
+
+    const state = String(form.state || "").trim().toUpperCase();
+    const skills = Array.isArray(form.skills) ? form.skills : [];
+    if (!state || !skills.length) {
+      setCompliancePreviewError("");
+      setCompliancePreviewLoading(false);
+      return undefined;
+    }
+
+    let active = true;
+    const timer = setTimeout(async () => {
+      try {
+        setCompliancePreviewLoading(true);
+        setCompliancePreviewError("");
+        const { data } = await api.post("/projects/compliance/profile-preview/", {
+          state,
+          skills,
+        });
+        if (!active) return;
+        setComplianceTradeRequirements(
+          Array.isArray(data?.trade_requirements) ? data.trade_requirements : []
+        );
+      } catch (err) {
+        if (!active) return;
+        setCompliancePreviewError("Unable to refresh compliance requirements right now.");
+      } finally {
+        if (active) setCompliancePreviewLoading(false);
+      }
+    }, 300);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [activeTab, form.state, form.skills]);
 
   const onChange = (key) => (e) => {
     const val = e?.target?.value ?? e;
@@ -732,6 +799,80 @@ export default function ContractorProfile() {
           </div>
         </div>
 
+        <div
+          data-testid="contractor-compliance-preview"
+          className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Licensing & insurance guidance</div>
+              <div className="mt-1 text-xs text-slate-600">
+                MyHomeBro uses your selected state and trades to flag common licensing requirements.
+              </div>
+            </div>
+            {compliancePreviewLoading ? (
+              <div className="text-xs font-medium text-slate-500">Checking…</div>
+            ) : null}
+          </div>
+
+          {compliancePreviewError ? (
+            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              {compliancePreviewError}
+            </div>
+          ) : null}
+
+          {complianceTradeRequirements.length ? (
+            <div className="mt-4 space-y-3">
+              {complianceTradeRequirements.map((item, idx) => {
+                const tone =
+                  item.warning_level === "critical"
+                    ? "border-rose-200 bg-rose-50 text-rose-900"
+                    : item.warning_level === "warning"
+                    ? "border-amber-200 bg-amber-50 text-amber-900"
+                    : "border-sky-200 bg-sky-50 text-sky-900";
+                return (
+                  <div
+                    key={`${item.trade_key || idx}-${item.state_code || form.state}`}
+                    className={`rounded-lg border px-3 py-3 ${tone}`}
+                  >
+                    <div className="text-sm font-semibold">
+                      {formatComplianceLabel(item.trade_key)} in {item.state_code || form.state || "this state"}
+                    </div>
+                    <div className="mt-1 text-sm">
+                      {item.message || "No specific statewide license requirement is currently configured."}
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-3 text-xs">
+                      <span>
+                        License required: {item.required ? "Typically yes" : "Not typically statewide"}
+                      </span>
+                      <span>
+                        Insurance: {item.insurance_required ? "Expected" : "Not specifically flagged"}
+                      </span>
+                      <span>
+                        License on file: {item.contractor_has_license_on_file ? "Yes" : "No"}
+                      </span>
+                    </div>
+                    {item.official_lookup_url ? (
+                      <a
+                        href={item.official_lookup_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-2 inline-block text-xs font-semibold underline"
+                      >
+                        View official source
+                      </a>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="mt-3 text-sm text-slate-600">
+              Select a state and one or more trades to see requirement guidance.
+            </div>
+          )}
+        </div>
+
         {/* License fields */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
           <div>
@@ -791,6 +932,75 @@ export default function ContractorProfile() {
           </div>
         </div>
 
+        <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <div
+            data-testid="contractor-compliance-records"
+            className="rounded-xl border border-slate-200 bg-white p-4"
+          >
+            <div className="text-sm font-semibold text-slate-900">Documents on file</div>
+            <div className="mt-1 text-xs text-slate-600">
+              Uploaded compliance records remain editable and do not imply live state verification.
+            </div>
+            {complianceRecords.length ? (
+              <div className="mt-4 space-y-3">
+                {complianceRecords.map((record) => (
+                  <div
+                    key={record.id}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-semibold text-slate-900">
+                        {formatComplianceLabel(record.record_type)}
+                        {record.trade_key ? ` · ${formatComplianceLabel(record.trade_key)}` : ""}
+                      </div>
+                      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                        {formatComplianceLabel(record.status)}
+                      </div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-600">
+                      {record.state_code ? <span>State: {record.state_code}</span> : null}
+                      {record.identifier ? <span>ID: {record.identifier}</span> : null}
+                      <span>Expiration: {formatComplianceDate(record.expiration_date)}</span>
+                    </div>
+                    {record.file_url ? (
+                      <a
+                        href={record.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-2 inline-block text-xs font-semibold text-blue-700 underline"
+                      >
+                        View uploaded document
+                      </a>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-3 text-sm text-slate-600">
+                No license or insurance documents are on file yet.
+              </div>
+            )}
+          </div>
+
+          <div
+            data-testid="contractor-insurance-status"
+            className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+          >
+            <div className="text-sm font-semibold text-slate-900">Insurance status</div>
+            <div className="mt-3 text-sm text-slate-700">
+              {insuranceStatus?.has_insurance ? "Insurance certificate on file." : "Insurance certificate missing."}
+            </div>
+            <div className="mt-2 text-xs text-slate-500">
+              Status: {formatComplianceLabel(insuranceStatus?.status || "missing")}
+            </div>
+            {!insuranceStatus?.has_insurance ? (
+              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                Upload an insurance certificate so MyHomeBro can surface insurance-on-file trust signals safely.
+              </div>
+            ) : null}
+          </div>
+        </div>
+
         <div className="mt-6">
           <button
             type="submit"
@@ -805,11 +1015,42 @@ export default function ContractorProfile() {
   };
 
   const planBadgeActive = isAiProActive(meData);
+  const onboarding = meData?.onboarding || {};
+  const showSetupReminder =
+    onboarding?.status && (onboarding.status !== "complete" || onboarding?.show_soft_stripe_prompt);
 
   return (
     <div className="flex justify-center">
       <div className="w-full max-w-5xl bg-white rounded-lg shadow p-6 mt-6">
         <h2 className="text-2xl font-bold mb-4">My Profile</h2>
+
+        {showSetupReminder ? (
+          <div
+            className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"
+            data-testid="profile-stripe-reminder"
+          >
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-amber-900">
+                  {onboarding?.show_soft_stripe_prompt
+                    ? "Stripe onboarding incomplete"
+                    : "Account setup still in progress"}
+                </div>
+                <div className="mt-1 text-sm text-amber-800">
+                  {onboarding?.show_soft_stripe_prompt
+                    ? "You are ready to explore the app, but payments require a connected Stripe account."
+                    : "Finish your trades, region, and first-job setup to unlock tailored guidance."}
+                </div>
+              </div>
+              <a
+                href="/app/onboarding"
+                className="rounded-lg bg-amber-900 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-950"
+              >
+                {onboarding?.show_soft_stripe_prompt ? "Resume Stripe setup" : "Resume onboarding"}
+              </a>
+            </div>
+          </div>
+        ) : null}
 
         {/* Top-level alerts for Business Profile tab */}
         {activeTab === "business" && error ? (

@@ -19,6 +19,7 @@ from projects.models import (
     MilestoneAssignment,
 )
 from projects.utils.accounts import get_subaccount_for_user
+from projects.services.recurring_maintenance import handle_milestone_recurring_state_change
 from projects.utils.subaccount_scope import get_visible_milestones_for_subaccount
 
 
@@ -354,4 +355,8 @@ def mark_milestone_complete(request, milestone_id: int):
     m.completed = True
     m.completed_at = timezone.now()
     m.save(update_fields=["completed", "completed_at"])
+    try:
+        handle_milestone_recurring_state_change(m)
+    except Exception:
+        pass
     return Response({"updated": True, "completed": True, "completed_at": m.completed_at})

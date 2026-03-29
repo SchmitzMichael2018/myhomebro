@@ -1091,6 +1091,28 @@ def stripe_webhook(request):
                     update_fields.append(f)
             if update_fields:
                 ag.save(update_fields=update_fields)
+            try:
+                from projects.services.activity_feed import create_activity_event
+
+                create_activity_event(
+                    contractor=getattr(ag, "contractor", None),
+                    agreement=ag,
+                    event_type="escrow_funded",
+                    title="Escrow funded",
+                    summary="Escrow funds were received for this agreement.",
+                    severity="success",
+                    related_label=getattr(ag, "title", "") or "Agreement",
+                    icon_hint="payment",
+                    navigation_target=f"/app/agreements/{ag.id}",
+                    metadata={
+                        "agreement_id": ag.id,
+                        "stripe_payment_intent_id": pi_id,
+                        "funded_amount": str(paid),
+                    },
+                    dedupe_key=f"escrow_funded:{pi_id}",
+                )
+            except Exception:
+                pass
 
             # Upsert payments.Payment record (escrow funding)
             try:

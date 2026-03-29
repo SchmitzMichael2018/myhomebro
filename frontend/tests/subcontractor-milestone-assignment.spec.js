@@ -28,6 +28,10 @@ test('agreement detail renders subcontractor assignment state and lets contracto
     },
     payout_amount: null,
     payout_status: null,
+    subcontractor_assignment_compliance: {
+      status: '',
+      warning_snapshot: {},
+    },
   };
 
   const acceptedSubcontractors = [
@@ -141,6 +145,50 @@ test('agreement detail renders subcontractor assignment state and lets contracto
     });
   });
 
+  await page.route(`**/api/projects/milestones/${MILESTONE_ID}/assign-subcontractor/`, async (route) => {
+    const body = route.request().postDataJSON();
+    milestoneState.assigned_subcontractor_invitation = 77;
+    milestoneState.assigned_subcontractor = {
+      invitation_id: 77,
+      user_id: 88,
+      display_name: 'Accepted Sub',
+      email: 'accepted-sub@example.com',
+      accepted_at: '2026-03-23T12:00:00Z',
+    };
+    milestoneState.assigned_subcontractor_display = 'Accepted Sub';
+    milestoneState.assigned_worker_display = 'Accepted Sub';
+    milestoneState.assigned_worker = {
+      kind: 'subcontractor',
+      user_id: 88,
+      display_name: 'Accepted Sub',
+      email: 'accepted-sub@example.com',
+      invitation_id: 77,
+    };
+    milestoneState.payout_amount = '2500.00';
+    milestoneState.payout_status = 'not_eligible';
+    milestoneState.subcontractor_assignment_compliance = {
+      status:
+        body.compliance_action === 'request_license'
+          ? 'pending_license'
+          : body.compliance_action === 'assign_anyway'
+          ? 'overridden'
+          : 'compliant',
+      warning_snapshot: {
+        warning_message:
+          body.compliance_action === 'request_license'
+            ? 'Electrical work in Texas typically requires a license. Documentation has been requested before acceptance.'
+            : body.compliance_action === 'assign_anyway'
+            ? 'This assignment was overridden without all expected compliance documents on file.'
+            : 'Electrical work in Texas typically requires compliance documents, and matching records are on file.',
+      },
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ milestone: milestoneState }),
+    });
+  });
+
   await page.route(`**/api/projects/milestones/${MILESTONE_ID}/**`, async (route) => {
     if (route.request().method() !== 'PATCH') {
       await route.fallback();
@@ -156,6 +204,10 @@ test('agreement detail renders subcontractor assignment state and lets contracto
       milestoneState.assigned_worker = null;
       milestoneState.payout_amount = null;
       milestoneState.payout_status = null;
+      milestoneState.subcontractor_assignment_compliance = {
+        status: '',
+        warning_snapshot: {},
+      };
     } else if (body.delegated_reviewer_subaccount === null) {
       milestoneState.reviewer = {
         kind: 'contractor_owner',
@@ -173,28 +225,7 @@ test('agreement detail renders subcontractor assignment state and lets contracto
         is_delegated: true,
       };
       milestoneState.reviewer_display = 'Internal Reviewer';
-    } else {
-      milestoneState.assigned_subcontractor_invitation = 77;
-      milestoneState.assigned_subcontractor = {
-        invitation_id: 77,
-        user_id: 88,
-        display_name: 'Accepted Sub',
-        email: 'accepted-sub@example.com',
-        accepted_at: '2026-03-23T12:00:00Z',
-      };
-      milestoneState.assigned_subcontractor_display = 'Accepted Sub';
-      milestoneState.assigned_worker_display = 'Accepted Sub';
-      milestoneState.assigned_worker = {
-        kind: 'subcontractor',
-        user_id: 88,
-        display_name: 'Accepted Sub',
-        email: 'accepted-sub@example.com',
-        invitation_id: 77,
-      };
-      milestoneState.payout_amount = '2500.00';
-      milestoneState.payout_status = 'not_eligible';
     }
-
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -224,6 +255,194 @@ test('agreement detail renders subcontractor assignment state and lets contracto
 
   await milestoneCard.getByTestId('subcontractor-unassign-button').click();
   await expect(milestoneCard).toContainText('Assigned Worker: Unassigned');
+});
+
+test('agreement detail lets contractor request license before assigning subcontractor', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  const milestoneState = {
+    id: MILESTONE_ID,
+    title: 'Electrical Rough-In',
+    amount: '2500.00',
+    status: 'pending',
+    assigned_subcontractor_invitation: null,
+    assigned_subcontractor: null,
+    assigned_subcontractor_display: '',
+    assigned_worker_display: '',
+    subcontractor_assignment_compliance: {
+      status: '',
+      warning_snapshot: {},
+    },
+  };
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        onboarding_status: 'complete',
+        connected: true,
+      }),
+    });
+  });
+
+  await page.route(new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`), async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: AGREEMENT_ID,
+        title: 'Electrical Upgrade Agreement',
+        project_title: 'Electrical Upgrade Agreement',
+        homeowner_name: 'Jordan Demo',
+        homeowner_email: 'jordan@example.com',
+        total_cost: '12000.00',
+        payment_mode: 'escrow',
+        status: 'signed',
+        signed_by_contractor: true,
+        signed_by_homeowner: true,
+        escrow_funded: false,
+        invoices: [],
+        milestones: [milestoneState],
+        pdf_versions: [],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/321/funding_preview/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        project_amount: '12000.00',
+        platform_fee: '361.00',
+        contractor_payout: '11639.00',
+        homeowner_escrow: '12361.00',
+        rate: 0.03,
+        is_intro: false,
+        tier_name: 'starter',
+        high_risk_applied: false,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/warranties/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([]),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/321/subcontractor-invitations/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        agreement_id: AGREEMENT_ID,
+        pending_invitations: [],
+        accepted_subcontractors: [
+          {
+            id: 77,
+            invite_email: 'accepted-sub@example.com',
+            invite_name: 'Accepted Sub',
+            accepted_name: 'Accepted Sub',
+            accepted_at: '2026-03-23T12:00:00Z',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/subaccounts/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([]),
+    });
+  });
+
+  let assignAttempts = 0;
+  await page.route(`**/api/projects/milestones/${MILESTONE_ID}/assign-subcontractor/`, async (route) => {
+    assignAttempts += 1;
+    const body = route.request().postDataJSON();
+    if (!body.compliance_action) {
+      await route.fulfill({
+        status: 409,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          detail: 'Compliance decision required before assigning this subcontractor.',
+          compliance_decision_required: true,
+          compliance_evaluation: {
+            compliance_status: 'missing_license',
+            warning_message:
+              'Electrical work in Texas typically requires a license. This subcontractor does not have a matching license on file.',
+            trade_label: 'Electrical',
+            state_code: 'TX',
+          },
+        }),
+      });
+      return;
+    }
+
+    milestoneState.assigned_subcontractor_invitation = 77;
+    milestoneState.assigned_subcontractor = {
+      invitation_id: 77,
+      user_id: 88,
+      display_name: 'Accepted Sub',
+      email: 'accepted-sub@example.com',
+      accepted_at: '2026-03-23T12:00:00Z',
+    };
+    milestoneState.assigned_worker_display = 'Accepted Sub';
+    milestoneState.subcontractor_assignment_compliance = {
+      status: 'pending_license',
+      warning_snapshot: {
+        warning_message:
+          'Electrical work in Texas typically requires a license. Documentation has been requested before acceptance.',
+      },
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ milestone: milestoneState }),
+    });
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  const milestoneCard = page.getByTestId(`milestone-card-${MILESTONE_ID}`);
+  await milestoneCard.getByTestId('subcontractor-assignment-select').selectOption('77');
+  await milestoneCard.getByTestId('subcontractor-assign-button').click();
+  await expect(
+    milestoneCard.getByTestId('subcontractor-assignment-compliance-decision')
+  ).toContainText('Electrical work in Texas typically requires a license');
+  await milestoneCard.getByTestId('subcontractor-assignment-request-license').click();
+  await expect(
+    milestoneCard.getByTestId('subcontractor-assignment-compliance-chip')
+  ).toContainText('Pending License');
+  await expect(
+    milestoneCard.getByTestId('subcontractor-assignment-current-warning')
+  ).toContainText('Documentation has been requested before acceptance');
+  expect(assignAttempts).toBe(2);
 });
 
 test('agreement detail shows subcontractor review state and lets contractor clear it', async ({

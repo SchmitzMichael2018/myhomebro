@@ -3,11 +3,17 @@
 // Still posts to canonical /projects/homeowners/
 // v2026-02-11 — Add Company Name field for subcontractor / GC customers
 
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
 import AddressAutocomplete from "./AddressAutocomplete.jsx";
+import { StartWithAIEntry } from "./StartWithAIAssistant.jsx";
+import {
+  buildAssistantHandoffSignature,
+  getAssistantHandoff,
+  mergeAssistantFields,
+} from "../lib/assistantHandoff.js";
 
 const US_STATES = [
   ["AL","Alabama"],["AK","Alaska"],["AZ","Arizona"],["AR","Arkansas"],["CA","California"],["CO","Colorado"],["CT","Connecticut"],["DE","Delaware"],
@@ -25,6 +31,7 @@ function formatPhoneUS(value){let d=String(value||"").replace(/\D/g,"");if(d.len
 function isValidUSPhone(input){const d=String(input||"").replace(/\D/g,"");return d.length===10||(d.length===11&&d.startsWith("1"));}
 
 export default function CustomerForm(){
+  const location = useLocation();
   const navigate = useNavigate();
 
   // ✅ App route targets
@@ -46,6 +53,18 @@ export default function CustomerForm(){
   });
 
   const [isSaving, setIsSaving] = useState(false);
+  const [assistantBanner, setAssistantBanner] = useState("");
+  const assistantHandoff = useMemo(() => getAssistantHandoff(location.state), [location.state]);
+  const assistantHandoffSignature = useMemo(
+    () => buildAssistantHandoffSignature(assistantHandoff),
+    [assistantHandoff]
+  );
+  const appliedAssistantSignatureRef = useRef("");
+  const assistantContext = {
+    current_route: "/app/customers/new",
+    lead_id: null,
+    lead_summary: {},
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -53,6 +72,56 @@ export default function CustomerForm(){
     if (name === "phone_number") return setForm((p) => ({ ...p, phone_number: formatPhoneUS(value) }));
     setForm((p) => ({ ...p, [name]: value }));
   };
+
+  useEffect(() => {
+    if (!assistantHandoffSignature || assistantHandoffSignature === appliedAssistantSignatureRef.current) {
+      return;
+    }
+
+    const mappedPrefill = {
+      company_name:
+        assistantHandoff.prefillFields.company_name || assistantHandoff.draftPayload.company_name || "",
+      full_name:
+        assistantHandoff.prefillFields.full_name ||
+        assistantHandoff.prefillFields.customer_name ||
+        assistantHandoff.draftPayload.homeowner_name ||
+        "",
+      email: assistantHandoff.prefillFields.email || assistantHandoff.draftPayload.email || "",
+      phone_number:
+        assistantHandoff.prefillFields.phone || assistantHandoff.draftPayload.phone || "",
+      street_address:
+        assistantHandoff.prefillFields.address_line1 ||
+        assistantHandoff.draftPayload.address_line1 ||
+        "",
+      address_line_2:
+        assistantHandoff.prefillFields.address_line2 ||
+        assistantHandoff.draftPayload.address_line2 ||
+        "",
+      city: assistantHandoff.prefillFields.city || assistantHandoff.draftPayload.city || "",
+      state: assistantHandoff.prefillFields.state || assistantHandoff.draftPayload.state || "",
+      zip_code:
+        assistantHandoff.prefillFields.postal_code ||
+        assistantHandoff.draftPayload.postal_code ||
+        "",
+    };
+
+    let appliedKeys = [];
+    setForm((prev) => {
+      const normalizedIncoming = {
+        ...mappedPrefill,
+        phone_number: mappedPrefill.phone_number ? formatPhoneUS(mappedPrefill.phone_number) : "",
+        zip_code: mappedPrefill.zip_code ? formatZip(mappedPrefill.zip_code) : "",
+      };
+      const { next, appliedKeys: mergedKeys } = mergeAssistantFields(prev, normalizedIncoming);
+      appliedKeys = mergedKeys;
+      return next;
+    });
+
+    setAssistantBanner(
+      appliedKeys.length ? "AI prefilled some customer fields based on your request." : ""
+    );
+    appliedAssistantSignatureRef.current = assistantHandoffSignature;
+  }, [assistantHandoff, assistantHandoffSignature]);
 
   function buildPayload(src){
     const out = {};
@@ -112,6 +181,23 @@ export default function CustomerForm(){
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto">
       <h2 className="text-2xl font-bold mb-6 text-gray-800">Create New Customer</h2>
+
+      <StartWithAIEntry
+        className="mb-6"
+        testId="customer-form-ai-entry"
+        title="Start with AI inside customer setup"
+        description="Use AI to confirm the missing customer details before you finish this record."
+        context={assistantContext}
+      />
+
+      {assistantBanner ? (
+        <div
+          data-testid="customer-assistant-prefill-banner"
+          className="mb-6 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900"
+        >
+          {assistantBanner}
+        </div>
+      ) : null}
 
       <form onSubmit={handleSubmit} className="p-6 bg-white rounded-xl shadow-md space-y-8" noValidate>
         <div className="space-y-6">

@@ -77,10 +77,12 @@ export default function PublicProfile() {
   const trustItems = useMemo(() => {
     if (!profile) return [];
     const items = [];
-    if (profile.show_license_public) items.push('Licensed business');
+    if (Array.isArray(profile.public_trust_indicators)) {
+      items.push(...profile.public_trust_indicators);
+    }
     if (profile.years_in_business) items.push(`${profile.years_in_business}+ years in business`);
     if (Array.isArray(profile.work_types)) items.push(...profile.work_types.slice(0, 2));
-    return items;
+    return [...new Set(items)];
   }, [profile]);
 
   async function submitLead(event) {

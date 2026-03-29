@@ -207,6 +207,7 @@ def recompute_and_apply_agreement_completion(agreement_id: int) -> Tuple[bool, C
             return (False, check)
 
         if ag.status == ProjectStatus.COMPLETED:
+            transaction.on_commit(lambda: _refresh_learning_snapshot(int(ag.id)))
             return (False, check)
 
         # Only advance forward; do not override CANCELLED
@@ -232,5 +233,12 @@ def recompute_and_apply_agreement_completion(agreement_id: int) -> Tuple[bool, C
         if hasattr(ag, "completed_at"):
             fields.append("completed_at")
         ag.save(update_fields=fields)
+        transaction.on_commit(lambda: _refresh_learning_snapshot(int(ag.id)))
 
         return (True, check)
+
+
+def _refresh_learning_snapshot(agreement_id: int) -> None:
+    from projects.services.project_learning import on_agreement_completed
+
+    on_agreement_completed(int(agreement_id))

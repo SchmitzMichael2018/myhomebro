@@ -1,0 +1,13 @@
+Hi {{ recipient_name|default:"Project Owner" }},
+
+Payment was released on {{ project_title }}.
+
+Released amount: ${{ released_amount }}
+Total budget: ${{ total_budget }}
+Released to date: ${{ released_to_date }}
+Remaining budget: ${{ remaining_budget }}
+
+{% if review_url %}Review details: {{ review_url }}
+{% endif %}{% if project_url %}View project: {{ project_url }}
+{% endif %}
+MyHomeBro

@@ -1,0 +1,17 @@
+<html><body style="font-family:Arial,sans-serif;background:#f6f7fb;padding:24px;">
+<div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:24px;">
+  <h2 style="margin:0 0 12px;color:#111827;">Milestone Approval Requested</h2>
+  <p style="color:#374151;">{{ contractor_name }} marked <strong>{{ milestone_title }}</strong> ready for review on <strong>{{ project_title }}</strong>.</p>
+  <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin:14px 0;">
+    <div>Requested amount: <strong>${{ requested_amount }}</strong></div>
+    <div>Total budget: ${{ total_budget }}</div>
+    <div>Released to date: ${{ released_to_date }}</div>
+    <div>Remaining budget: ${{ remaining_budget }}</div>
+    {% if work_summary %}<div style="margin-top:10px;color:#4b5563;">{{ work_summary }}</div>{% endif %}
+  </div>
+  {% if review_url %}<p><a href="{{ review_url }}">Review details</a></p>{% endif %}
+  {% if approve_url %}<p><a href="{{ approve_url }}">Approve release</a></p>{% endif %}
+  {% if request_changes_url %}<p><a href="{{ request_changes_url }}">Request changes</a></p>{% endif %}
+  {% if project_url %}<p><a href="{{ project_url }}">View project</a></p>{% endif %}
+</div>
+</body></html>

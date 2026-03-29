@@ -1,0 +1,18 @@
+<html><body style="font-family:Arial,sans-serif;background:#f6f7fb;padding:24px;">
+<div style="max-width:640px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:24px;">
+  <h2 style="margin:0 0 12px;color:#111827;">Weekly Project Summary</h2>
+  <p style="color:#374151;">{{ project_title }} from {{ week_start }} to {{ week_end }}.</p>
+  <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:14px;margin:14px 0;">
+    <div>Funds released this week: <strong>${{ funds_released_this_week }}</strong></div>
+    <div>Total budget: ${{ total_budget }}</div>
+    <div>Released to date: ${{ released_to_date }}</div>
+    <div>Remaining budget: ${{ remaining_budget }}</div>
+  </div>
+  <h3 style="margin:16px 0 8px;color:#111827;">Highlights</h3>
+  <ul>{% for item in highlights %}<li>{{ item }}</li>{% endfor %}</ul>
+  {% if pending_approval_milestones %}<h3 style="margin:16px 0 8px;color:#111827;">Pending Approval</h3><ul>{% for item in pending_approval_milestones %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}
+  {% if completed_milestones %}<h3 style="margin:16px 0 8px;color:#111827;">Completed This Week</h3><ul>{% for item in completed_milestones %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}
+  {% if compliance_note %}<p style="color:#92400e;"><strong>Compliance note:</strong> {{ compliance_note }}</p>{% endif %}
+  {% if project_url %}<p><a href="{{ project_url }}">View project</a></p>{% endif %}
+</div>
+</body></html>

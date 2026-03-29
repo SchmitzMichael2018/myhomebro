@@ -30,6 +30,7 @@ from rest_framework.views import APIView
 import stripe
 
 from projects.models import Agreement, AgreementFundingLink, Milestone
+from projects.services.contractor_onboarding import build_stripe_requirement_payload
 from projects.services.mailer import email_escrow_funding_request
 from payments.fees import compute_fee_summary, INTRO_DAYS  # ✅ pull intro days for UI consistency
 
@@ -222,6 +223,19 @@ class SendFundingLinkView(APIView):
             agreement = Agreement.objects.get(pk=pk)
         except Agreement.DoesNotExist:
             return Response({"detail": "Agreement not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        contractor = getattr(agreement, "contractor", None)
+        if contractor is not None and not bool(getattr(contractor, "stripe_connected", False)):
+            return Response(
+                build_stripe_requirement_payload(
+                    contractor,
+                    action_key="send_funding_link",
+                    action_label="Send Escrow Funding Link",
+                    source="agreement_funding",
+                    return_path=f"/app/agreements/{agreement.id}/wizard?step=4",
+                ),
+                status=status.HTTP_409_CONFLICT,
+            )
 
         try:
             payload = send_funding_link_for_agreement(

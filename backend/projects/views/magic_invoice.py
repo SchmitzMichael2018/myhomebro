@@ -18,6 +18,9 @@ from ..serializers.invoices import InvoiceSerializer
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
 from projects.services.milestone_payouts import sync_payout_for_invoice
 from projects.services.pricing_observations import record_pricing_observation_for_invoice
+from projects.services.project_email_reports import send_project_email_report
+from projects.services.activity_feed import create_activity_event
+from projects.services.contractor_onboarding import build_stripe_requirement_payload
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +170,18 @@ class MagicInvoiceApproveView(APIView):
         if not contractor:
             return Response({"detail": "Agreement is missing contractor."}, status=400)
 
+        if not bool(getattr(contractor, "stripe_connected", False)):
+            return Response(
+                build_stripe_requirement_payload(
+                    contractor,
+                    action_key="release_invoice_payment",
+                    action_label="Release Invoice Payment",
+                    source="magic_invoice_approve",
+                    return_path=f"/invoice/{invoice.public_token}",
+                ),
+                status=409,
+            )
+
         destination_acct = getattr(contractor, "stripe_account_id", None)
         if not destination_acct or not str(destination_acct).startswith("acct_"):
             return Response({"detail": "Contractor is not connected to Stripe."}, status=400)
@@ -245,6 +260,32 @@ class MagicInvoiceApproveView(APIView):
                     recompute_and_apply_agreement_completion(getattr(invoice, "agreement_id", None))
                 except Exception as exc:
                     logger.warning("Agreement completion recompute failed (transfer exists path): %s", exc)
+                try:
+                    send_project_email_report(
+                        event_type="payment_released",
+                        agreement=invoice.agreement,
+                        invoice=invoice,
+                    )
+                except Exception as exc:
+                    logger.warning("Payment release report email failed (transfer exists path): %s", exc)
+                try:
+                    create_activity_event(
+                        contractor=getattr(invoice.agreement, "contractor", None),
+                        actor_user=request.user,
+                        agreement=invoice.agreement,
+                        milestone=getattr(invoice, "source_milestone", None),
+                        event_type="payment_released",
+                        title="Payment released",
+                        summary="Funds were released for an approved milestone invoice.",
+                        severity="success",
+                        related_label=getattr(invoice, "milestone_title_snapshot", "") or getattr(invoice.agreement, "title", "") or "Invoice",
+                        icon_hint="payment",
+                        navigation_target=f"/app/invoices/{invoice.id}",
+                        metadata={"invoice_id": invoice.id, "agreement_id": invoice.agreement_id},
+                        dedupe_key=f"payment_released:{invoice.id}",
+                    )
+                except Exception:
+                    pass
 
                 return Response(
                     {
@@ -317,6 +358,32 @@ class MagicInvoiceApproveView(APIView):
                 recompute_and_apply_agreement_completion(getattr(invoice, "agreement_id", None))
             except Exception as exc:
                 logger.warning("Agreement completion recompute failed (transfer created path): %s", exc)
+            try:
+                send_project_email_report(
+                    event_type="payment_released",
+                    agreement=invoice.agreement,
+                    invoice=invoice,
+                )
+            except Exception as exc:
+                logger.warning("Payment release report email failed (transfer created path): %s", exc)
+            try:
+                create_activity_event(
+                    contractor=getattr(invoice.agreement, "contractor", None),
+                    actor_user=request.user,
+                    agreement=invoice.agreement,
+                    milestone=getattr(invoice, "source_milestone", None),
+                    event_type="payment_released",
+                    title="Payment released",
+                    summary="Funds were released for an approved milestone invoice.",
+                    severity="success",
+                    related_label=getattr(invoice, "milestone_title_snapshot", "") or getattr(invoice.agreement, "title", "") or "Invoice",
+                    icon_hint="payment",
+                    navigation_target=f"/app/invoices/{invoice.id}",
+                    metadata={"invoice_id": invoice.id, "agreement_id": invoice.agreement_id},
+                    dedupe_key=f"payment_released:{invoice.id}",
+                )
+            except Exception:
+                pass
 
             return Response(
                 {
@@ -338,6 +405,24 @@ class MagicInvoiceApproveView(APIView):
                     invoice.status = InvoiceStatus.APPROVED
                     invoice.approved_at = timezone.now()
                     invoice.save(update_fields=["status", "approved_at"])
+                    try:
+                        create_activity_event(
+                            contractor=getattr(invoice.agreement, "contractor", None),
+                            actor_user=request.user,
+                            agreement=invoice.agreement,
+                            milestone=getattr(invoice, "source_milestone", None),
+                            event_type="invoice_approved",
+                            title="Invoice approved",
+                            summary="An invoice is approved and ready for payment handling.",
+                            severity="success",
+                            related_label=getattr(invoice, "milestone_title_snapshot", "") or "Invoice",
+                            icon_hint="payment",
+                            navigation_target=f"/app/invoices/{invoice.id}",
+                            metadata={"invoice_id": invoice.id, "agreement_id": invoice.agreement_id},
+                            dedupe_key=f"invoice_approved:{invoice.id}",
+                        )
+                    except Exception:
+                        pass
                 sync_payout_for_invoice(invoice)
 
                 intent = stripe.PaymentIntent.create(

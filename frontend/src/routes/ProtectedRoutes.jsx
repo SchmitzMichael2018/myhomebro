@@ -58,6 +58,7 @@ import ReviewerQueuePage from "../pages/ReviewerQueuePage.jsx";
 import PayoutHistoryPage from "../pages/PayoutHistoryPage.jsx";
 import PayoutDetailPage from "../pages/PayoutDetailPage.jsx";
 import ContractorPublicPresencePage from "../pages/ContractorPublicPresencePage.jsx";
+import AIAssistantPage from "../pages/AIAssistantPage.jsx";
 
 import { useWhoAmI } from "../hooks/useWhoAmI";
 
@@ -134,6 +135,7 @@ export function protectedRoutes() {
 
         <Route element={<RoleGate allow={["contractor", "contractor_owner"]} />}>
           <Route path="dashboard" element={<ContractorDashboard />} />
+          <Route path="assistant" element={<AIAssistantPage />} />
           <Route path="payouts/history" element={<PayoutHistoryPage />} />
           <Route path="payouts/history/:id" element={<PayoutDetailPage />} />
 

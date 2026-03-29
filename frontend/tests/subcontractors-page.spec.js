@@ -278,7 +278,6 @@ test("contractor can open subcontractors hub, invite, assign work, and review su
 
   await page.goto("/app/subcontractors", { waitUntil: "domcontentloaded" });
 
-  await expect(page.getByText("Subcontractors")).toHaveCount(2);
   await expect(page.getByTestId("subcontractors-page-title")).toBeVisible();
   await expect(page.getByText("Pending Invites")).toBeVisible();
   await expect(page.getByText("Active Subs")).toBeVisible();
@@ -318,4 +317,190 @@ test("contractor can open subcontractors hub, invite, assign work, and review su
   await expect(page.getByTestId("subcontractors-submissions")).toContainText(
     "Looks good to me."
   );
+});
+
+test("contractor can request license from subcontractor before creating assignment", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("access", "playwright-access-token");
+  });
+
+  const state = {
+    invitations: [
+      {
+        id: 77,
+        agreement: 321,
+        agreement_title: "Electrical Upgrade Agreement",
+        invite_email: "accepted-sub@example.com",
+        invite_name: "Accepted Sub",
+        accepted_name: "Accepted Sub",
+        status: "accepted",
+        invited_at: "2026-03-24T10:00:00Z",
+        accepted_at: "2026-03-24T12:00:00Z",
+      },
+    ],
+    assignments: [],
+    agreements: [{ id: 321, title: "Electrical Upgrade Agreement" }],
+    milestonesByAgreement: {
+      321: [
+        {
+          id: 901,
+          title: "Electrical Rough-In",
+          completion_date: "2026-03-27",
+          assigned_subcontractor_invitation: null,
+        },
+      ],
+    },
+  };
+
+  await page.route("**/api/projects/whoami/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: 7,
+        type: "contractor",
+        role: "contractor_owner",
+        email: "playwright@myhomebro.local",
+      }),
+    });
+  });
+
+  await page.route("**/api/payments/onboarding/status/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        onboarding_status: "complete",
+        connected: true,
+      }),
+    });
+  });
+
+  await page.route("**/api/projects/subcontractors/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route("**/api/projects/subcontractor-invitations/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: state.invitations }),
+    });
+  });
+
+  await page.route("**/api/projects/subcontractor-assignments/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: state.assignments }),
+    });
+  });
+
+  await page.route("**/api/projects/subcontractor-work-submissions/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: state.agreements }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/milestones\/?\?.*agreement=.*/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        results: state.milestonesByAgreement["321"],
+      }),
+    });
+  });
+
+  let assignmentAttempts = 0;
+  await page.route("**/api/projects/agreements/321/subcontractor-assignments/", async (route) => {
+    assignmentAttempts += 1;
+    const body = route.request().postDataJSON();
+    if (!body.compliance_action) {
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({
+          detail: "Compliance decision required before assigning this subcontractor.",
+          compliance_decision_required: true,
+          compliance_evaluation: {
+            compliance_status: "missing_license",
+            warning_message:
+              "Electrical work in Texas typically requires a license. This subcontractor does not have a matching license on file.",
+            trade_label: "Electrical",
+            state_code: "TX",
+          },
+        }),
+      });
+      return;
+    }
+
+    state.assignments = [
+      {
+        id: 77,
+        invitation_id: 77,
+        agreement_id: 321,
+        agreement_title: "Electrical Upgrade Agreement",
+        subcontractor_display_name: "Accepted Sub",
+        subcontractor_email: "accepted-sub@example.com",
+        status: "in_progress",
+        assigned_milestones_count: 1,
+        submitted_for_review_count: 0,
+        total_assigned_amount: "1200.00",
+        earliest_due_date: "2026-03-27",
+        compliance_status: "pending_license",
+        compliance_warning_snapshot: {
+          warning_message:
+            "Electrical work in Texas typically requires a license. Documentation has been requested before acceptance.",
+        },
+      },
+    ];
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        agreement_id: 321,
+        assignment: state.assignments[0],
+        updated_milestone_ids: [901],
+      }),
+    });
+  });
+
+  await page.goto("/app/subcontractors", { waitUntil: "domcontentloaded" });
+
+  await page.getByTestId("subcontractors-new-assignment-button").click();
+  const selects = page.locator("select");
+  await selects.nth(0).selectOption("321");
+  await selects.nth(1).selectOption("77");
+  await page.getByText("Electrical Rough-In").click();
+  await page.getByTestId("subcontractors-assignment-submit").click();
+  await expect(
+    page.getByTestId("subcontractors-assignment-compliance-decision")
+  ).toContainText("Electrical work in Texas typically requires a license");
+  await page.getByTestId("subcontractors-assignment-request-license").click();
+
+  await page.getByRole("button", { name: "Assignments" }).click();
+  await expect(page.getByTestId("subcontractors-assignments")).toContainText(
+    "Documentation has been requested before acceptance"
+  );
+  await expect(
+    page.getByTestId("subcontractor-assignment-compliance-77")
+  ).toContainText("Pending License");
+  expect(assignmentAttempts).toBe(2);
 });

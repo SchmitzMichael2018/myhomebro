@@ -2,6 +2,12 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
+import { StartWithAIEntry } from "../components/StartWithAIAssistant.jsx";
+import {
+  buildAssistantHandoffSignature,
+  getAssistantHandoff,
+  normalizeAssistantQuestion,
+} from "../lib/assistantHandoff.js";
 
 function safeTrim(v) {
   return v == null ? "" : String(v).trim();
@@ -95,6 +101,34 @@ function OptionBadge({ ownerType }) {
   );
 }
 
+function VisibilityBadge({ visibility }) {
+  const normalized = safeTrim(visibility).toLowerCase() || "private";
+  const styles = {
+    system: "bg-slate-900 text-white",
+    private: "bg-slate-200 text-slate-700",
+    regional: "bg-amber-100 text-amber-800",
+    public: "bg-sky-100 text-sky-800",
+    team: "bg-violet-100 text-violet-800",
+  };
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+        styles[normalized] || styles.private
+      }`}
+    >
+      {normalized === "system"
+        ? "System"
+        : normalized.charAt(0).toUpperCase() + normalized.slice(1)}
+    </span>
+  );
+}
+
+function formatRegionLabel(value) {
+  const raw = safeTrim(value);
+  if (!raw) return "National";
+  return raw.replace(/^US-/, "").replaceAll("_", " ").replaceAll("-", " / ");
+}
+
 function ConfidenceBadge({ value }) {
   const normalized = safeTrim(value).toLowerCase();
 
@@ -125,11 +159,12 @@ function ConfidenceBadge({ value }) {
   return null;
 }
 
-function TabButton({ active, onClick, children }) {
+function TabButton({ active, onClick, children, ...rest }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      {...rest}
       className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${
         active
           ? "bg-indigo-600 text-white"
@@ -270,17 +305,25 @@ export default function TemplatesPage() {
   const [err, setErr] = useState("");
   const [templates, setTemplates] = useState([]);
 
+  const [discoverySource, setDiscoverySource] = useState("mine");
   const [search, setSearch] = useState("");
+  const [projectTypeFilter, setProjectTypeFilter] = useState("");
+  const [projectSubtypeFilter, setProjectSubtypeFilter] = useState("");
+  const [regionStateFilter, setRegionStateFilter] = useState("");
+  const [regionCityFilter, setRegionCityFilter] = useState("");
+  const [sortBy, setSortBy] = useState("relevant");
   const [selectedId, setSelectedId] = useState(null);
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailErr, setDetailErr] = useState("");
   const [deletingId, setDeletingId] = useState(null);
+  const [visibilitySaving, setVisibilitySaving] = useState("");
 
   const [activeTab, setActiveTab] = useState("setup");
   const [editMode, setEditMode] = useState(false);
   const [creatingNew, setCreatingNew] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState(false);
+  const [assistantPrefillBanner, setAssistantPrefillBanner] = useState("");
 
   const [editHeader, setEditHeader] = useState(buildBlankHeader());
   const [editMilestones, setEditMilestones] = useState([buildBlankMilestone(1)]);
@@ -288,19 +331,38 @@ export default function TemplatesPage() {
   const [aiBusy, setAiBusy] = useState(false);
   const [materialsRefreshing, setMaterialsRefreshing] = useState(false);
   const appliedPrefillRef = React.useRef("");
+  const assistantAppliedRef = React.useRef("");
   const intakePrefillMeta = location.state?.templateDraftPrefill || null;
+  const assistantHandoff = useMemo(() => getAssistantHandoff(location.state), [location.state]);
+  const assistantHandoffSignature = useMemo(
+    () => buildAssistantHandoffSignature(assistantHandoff),
+    [assistantHandoff]
+  );
 
   async function loadTemplates() {
     try {
       setLoading(true);
       setErr("");
 
-      const { data } = await api.get("/projects/templates/");
+      const { data } = await api.get("/projects/templates/discover/", {
+        params: {
+          source: discoverySource,
+          q: search || undefined,
+          project_type: projectTypeFilter || undefined,
+          project_subtype: projectSubtypeFilter || undefined,
+          region_state: regionStateFilter || undefined,
+          region_city: regionCityFilter || undefined,
+          sort: sortBy || "relevant",
+        },
+      });
       const rows = Array.isArray(data) ? data : data?.results || [];
       setTemplates(rows);
 
-      if (!selectedId && rows.length) {
+      if ((!selectedId || !rows.some((row) => String(row.id) === String(selectedId))) && rows.length) {
         setSelectedId(rows[0].id);
+      }
+      if (!rows.length && !creatingNew) {
+        setSelectedId(null);
       }
     } catch (e) {
       setErr(
@@ -315,7 +377,15 @@ export default function TemplatesPage() {
 
   useEffect(() => {
     loadTemplates();
-  }, []);
+  }, [
+    discoverySource,
+    search,
+    projectTypeFilter,
+    projectSubtypeFilter,
+    regionStateFilter,
+    regionCityFilter,
+    sortBy,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -365,24 +435,7 @@ export default function TemplatesPage() {
     };
   }, [selectedId, creatingNew]);
 
-  const filteredTemplates = useMemo(() => {
-    const q = safeTrim(search).toLowerCase();
-    if (!q) return templates;
-
-    return templates.filter((tpl) => {
-      const hay = [
-        tpl?.name,
-        tpl?.project_type,
-        tpl?.project_subtype,
-        tpl?.description,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-      return hay.includes(q);
-    });
-  }, [templates, search]);
+  const filteredTemplates = useMemo(() => templates, [templates]);
 
   const selectedTemplate = useMemo(() => {
     return (
@@ -392,18 +445,18 @@ export default function TemplatesPage() {
     );
   }, [filteredTemplates, templates, selectedId]);
 
-  const builtInTemplates = useMemo(() => {
-    return filteredTemplates.filter(
-      (tpl) =>
-        (tpl?.owner_type || (tpl?.is_system ? "system" : "contractor")) ===
-        "system"
-    );
-  }, [filteredTemplates]);
-
   const customTemplates = useMemo(() => {
     return filteredTemplates.filter(
       (tpl) =>
         (tpl?.owner_type || (tpl?.is_system ? "system" : "contractor")) !==
+        "system"
+    );
+  }, [filteredTemplates]);
+
+  const builtInTemplates = useMemo(() => {
+    return filteredTemplates.filter(
+      (tpl) =>
+        (tpl?.owner_type || (tpl?.is_system ? "system" : "contractor")) ===
         "system"
     );
   }, [filteredTemplates]);
@@ -432,6 +485,32 @@ export default function TemplatesPage() {
       { fixed: 0, low: 0, high: 0 }
     );
   }, [currentMilestones]);
+  const assistantContext = useMemo(
+    () => ({
+      current_route: "/app/templates",
+      template_id: selectedDetail?.id || selectedTemplate?.id || null,
+      template_summary: {
+        name: currentHeader?.name || selectedDetail?.name || selectedTemplate?.name || "",
+        project_type:
+          currentHeader?.project_type ||
+          selectedDetail?.project_type ||
+          selectedTemplate?.project_type ||
+          "",
+        project_subtype:
+          currentHeader?.project_subtype ||
+          selectedDetail?.project_subtype ||
+          selectedTemplate?.project_subtype ||
+          "",
+        description:
+          currentHeader?.description || selectedDetail?.description || selectedTemplate?.description || "",
+      },
+      milestone_summary: {
+        count: currentMilestones.length,
+        suggested_titles: currentMilestones.map((row) => row?.title).filter(Boolean),
+      },
+    }),
+    [currentHeader, currentMilestones, selectedDetail, selectedTemplate]
+  );
 
   function startNewTemplate() {
     setSelectedId(null);
@@ -481,6 +560,87 @@ export default function TemplatesPage() {
         : [buildBlankMilestone(1)]
     );
   }, [location.state]);
+
+  useEffect(() => {
+    if (
+      !assistantHandoffSignature ||
+      assistantHandoffSignature === assistantAppliedRef.current
+    ) {
+      return;
+    }
+
+    const assistantQuestions = (assistantHandoff.clarificationQuestions || [])
+      .map((item, idx) => normalizeAssistantQuestion(item, idx))
+      .filter(Boolean)
+      .map((item) => ({
+        key: item.key,
+        label: item.label,
+        help: item.help,
+        required: item.required,
+        type: item.type,
+        options: Array.isArray(item.options) ? item.options : [],
+      }));
+
+    const headerPatch = {
+      name:
+        safeTrim(assistantHandoff.prefillFields.template_name) ||
+        safeTrim(assistantHandoff.prefillFields.template_query) ||
+        safeTrim(assistantHandoff.prefillFields.project_type)
+          ? `${safeTrim(
+              assistantHandoff.prefillFields.template_name ||
+                assistantHandoff.prefillFields.template_query ||
+                assistantHandoff.prefillFields.project_type
+            )} Template`
+          : "",
+      project_type:
+        assistantHandoff.prefillFields.project_type || assistantHandoff.draftPayload.project_type || "",
+      project_subtype:
+        assistantHandoff.prefillFields.project_subtype ||
+        assistantHandoff.draftPayload.project_subtype ||
+        "",
+      description:
+        assistantHandoff.prefillFields.project_summary ||
+        assistantHandoff.draftPayload.description ||
+        "",
+      default_scope:
+        assistantHandoff.prefillFields.project_summary ||
+        assistantHandoff.draftPayload.description ||
+        "",
+      default_clarifications: assistantQuestions,
+    };
+
+    if (
+      Object.values(headerPatch).some((value) =>
+        Array.isArray(value) ? value.length > 0 : safeTrim(value)
+      )
+    ) {
+      setSelectedId(null);
+      setSelectedDetail(null);
+      setDetailErr("");
+      setCreatingNew(true);
+      setEditMode(true);
+      setActiveTab("setup");
+      setEditHeader((prev) => ({
+        ...prev,
+        name: safeTrim(prev.name) || headerPatch.name || prev.name,
+        project_type: prev.project_type || headerPatch.project_type || "",
+        project_subtype: prev.project_subtype || headerPatch.project_subtype || "",
+        description: prev.description || headerPatch.description || "",
+        default_scope: prev.default_scope || headerPatch.default_scope || "",
+        default_clarifications:
+          Array.isArray(prev.default_clarifications) && prev.default_clarifications.length
+            ? prev.default_clarifications
+            : assistantQuestions,
+      }));
+      setAssistantPrefillBanner(
+        "AI prefilled this template draft from your request. Review the structure and clarifications before saving."
+      );
+    } else {
+      setAssistantPrefillBanner("");
+    }
+
+    assistantAppliedRef.current = assistantHandoffSignature;
+  }, [assistantHandoff, assistantHandoffSignature]);
 
   function startEditMode() {
     if (!selectedDetail || isSelectedBuiltIn) return;
@@ -582,6 +742,38 @@ export default function TemplatesPage() {
       );
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  async function handleVisibilityChange(nextVisibility) {
+    if (!selectedDetail?.id || selectedDetail?.is_system) return;
+
+    try {
+      setVisibilitySaving(nextVisibility);
+      const payload = {
+        visibility: nextVisibility,
+      };
+      if (nextVisibility === "regional") {
+        payload.region_state = regionStateFilter || "";
+        payload.region_city = regionCityFilter || "";
+        payload.normalized_region_key =
+          safeTrim(selectedDetail?.normalized_region_key) || undefined;
+      }
+      const { data } = await api.post(
+        `/projects/templates/${selectedDetail.id}/visibility/`,
+        payload
+      );
+      setSelectedDetail(data);
+      toast.success(`Template visibility set to ${nextVisibility}.`);
+      await loadTemplates();
+    } catch (e) {
+      toast.error(
+        e?.response?.data?.detail ||
+          e?.response?.data?.error ||
+          "Could not update template visibility."
+      );
+    } finally {
+      setVisibilitySaving("");
     }
   }
 
@@ -836,19 +1028,112 @@ export default function TemplatesPage() {
         </div>
       </div>
 
+      <StartWithAIEntry
+        className="mb-4"
+        testId="templates-ai-entry"
+        title="Start with AI inside templates"
+        description="Use the current template context to apply it, refine the milestone structure, or jump into agreement drafting."
+        context={assistantContext}
+      />
+
       <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
-        <label className="mb-1 block text-sm font-medium text-slate-800">
-          Search Templates
-        </label>
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder='Search by name, type, subtype, or keyword like "bathroom"...'
-          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-        />
-        <div className="mt-1 text-[11px] text-slate-500">
-          Search across built-in templates and your custom templates.
+        <div className="flex flex-wrap gap-2">
+          <TabButton
+            data-testid="templates-market-tab-mine"
+            active={discoverySource === "mine"}
+            onClick={() => setDiscoverySource("mine")}
+          >
+            My Templates
+          </TabButton>
+          <TabButton
+            data-testid="templates-market-tab-system"
+            active={discoverySource === "system"}
+            onClick={() => setDiscoverySource("system")}
+          >
+            System Templates
+          </TabButton>
+          <TabButton
+            data-testid="templates-market-tab-regional"
+            active={discoverySource === "regional"}
+            onClick={() => setDiscoverySource("regional")}
+          >
+            Regional Templates
+          </TabButton>
+          <TabButton
+            data-testid="templates-market-tab-public"
+            active={discoverySource === "public"}
+            onClick={() => setDiscoverySource("public")}
+          >
+            Public Templates
+          </TabButton>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <div className="xl:col-span-2">
+            <label className="mb-1 block text-sm font-medium text-slate-800">
+              Search Templates
+            </label>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder='Search by name, type, subtype, or keyword like "bathroom"...'
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-800">
+              Project Type
+            </label>
+            <input
+              value={projectTypeFilter}
+              onChange={(e) => setProjectTypeFilter(e.target.value)}
+              placeholder="Remodel"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-800">
+              Project Subtype
+            </label>
+            <input
+              value={projectSubtypeFilter}
+              onChange={(e) => setProjectSubtypeFilter(e.target.value)}
+              placeholder="Kitchen Remodel"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-800">
+              State
+            </label>
+            <input
+              value={regionStateFilter}
+              onChange={(e) => setRegionStateFilter(e.target.value)}
+              placeholder="TX"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-800">
+              Sort
+            </label>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            >
+              <option value="relevant">Most relevant</option>
+              <option value="most_used">Most used</option>
+              <option value="regional">Best regional match</option>
+              <option value="newest">Newest</option>
+              <option value="benchmark">Best benchmark support</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-2 text-[11px] text-slate-500">
+          Discovery respects template visibility rules. Private templates stay private, while system, regional, and public templates surface only when allowed by policy and region relevance.
         </div>
       </div>
 
@@ -864,6 +1149,16 @@ export default function TemplatesPage() {
           <div className="mt-1 text-sm text-indigo-800">
             This draft was prefilled from intake analysis. Review the template details, milestones, and clarifications before saving it to your template library.
           </div>
+        </div>
+      ) : null}
+
+      {!showIntakePrefillBanner && assistantPrefillBanner ? (
+        <div
+          data-testid="templates-assistant-prefill-banner"
+          className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3"
+        >
+          <div className="text-sm font-semibold text-indigo-900">Template Draft From AI</div>
+          <div className="mt-1 text-sm text-indigo-800">{assistantPrefillBanner}</div>
         </div>
       ) : null}
 
@@ -888,7 +1183,11 @@ export default function TemplatesPage() {
                 {customTemplates.length ? (
                   <div>
                     <div className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-600">
-                      My Templates
+                      {discoverySource === "regional"
+                        ? "Regional Templates"
+                        : discoverySource === "public"
+                        ? "Public Templates"
+                        : "My Templates"}
                     </div>
                     {customTemplates.map((tpl) => {
                       const isSelected = !creatingNew && String(selectedId) === String(tpl.id);
@@ -898,6 +1197,7 @@ export default function TemplatesPage() {
                       return (
                         <button
                           key={`custom-${tpl.id}`}
+                          data-testid={`template-discovery-card-${tpl.id}`}
                           type="button"
                           onClick={() => setSelectedId(tpl.id)}
                           className={`w-full border-b border-slate-200 px-4 py-3 text-left hover:bg-indigo-50 ${
@@ -909,6 +1209,7 @@ export default function TemplatesPage() {
                               {tpl?.name || "Template"}
                             </div>
                             <OptionBadge ownerType={ownerType} />
+                            <VisibilityBadge visibility={tpl?.visibility || tpl?.source_label} />
                           </div>
 
                           <div className="mt-1 text-xs text-slate-500">
@@ -926,7 +1227,7 @@ export default function TemplatesPage() {
                 {builtInTemplates.length ? (
                   <div>
                     <div className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 px-4 py-2 text-xs font-bold uppercase tracking-wide text-slate-600">
-                      Built-In Templates
+                      System Templates
                     </div>
                     {builtInTemplates.map((tpl) => {
                       const isSelected = !creatingNew && String(selectedId) === String(tpl.id);
@@ -936,6 +1237,7 @@ export default function TemplatesPage() {
                       return (
                         <button
                           key={`system-${tpl.id}`}
+                          data-testid={`template-discovery-card-${tpl.id}`}
                           type="button"
                           onClick={() => setSelectedId(tpl.id)}
                           className={`w-full border-b border-slate-200 px-4 py-3 text-left hover:bg-indigo-50 ${
@@ -947,6 +1249,7 @@ export default function TemplatesPage() {
                               {tpl?.name || "Template"}
                             </div>
                             <OptionBadge ownerType={ownerType} />
+                            <VisibilityBadge visibility={tpl?.visibility || tpl?.source_label} />
                           </div>
 
                           <div className="mt-1 text-xs text-slate-500">
@@ -1010,14 +1313,43 @@ export default function TemplatesPage() {
                 ) : null}
 
                 {!creatingNew && selectedDetail && !selectedDetail?.is_system ? (
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteTemplate(selectedDetail)}
-                    disabled={deletingId === selectedDetail?.id}
-                    className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
-                  >
-                    {deletingId === selectedDetail?.id ? "Deleting…" : "Delete"}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteTemplate(selectedDetail)}
+                      disabled={deletingId === selectedDetail?.id}
+                      className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
+                    >
+                      {deletingId === selectedDetail?.id ? "Deleting…" : "Delete"}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="template-visibility-private"
+                      onClick={() => handleVisibilityChange("private")}
+                      disabled={visibilitySaving === "private"}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      Private
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="template-visibility-regional"
+                      onClick={() => handleVisibilityChange("regional")}
+                      disabled={visibilitySaving === "regional"}
+                      className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+                    >
+                      Regional
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="template-visibility-public"
+                      onClick={() => handleVisibilityChange("public")}
+                      disabled={visibilitySaving === "public"}
+                      className="rounded-lg border border-sky-200 bg-white px-3 py-2 text-xs font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-60"
+                    >
+                      Public
+                    </button>
+                  </>
                 ) : null}
               </div>
             </div>
@@ -1071,6 +1403,21 @@ export default function TemplatesPage() {
                         : 1}{" "}
                       day{Number(currentHeader?.estimated_days || 0) === 1 ? "" : "s"}
                     </span>
+                    {!creatingNew ? (
+                      <span className="rounded bg-slate-100 px-2 py-1">
+                        Visibility: {safeTrim(selectedDetail?.visibility || selectedDetail?.source_label) || "private"}
+                      </span>
+                    ) : null}
+                    {!creatingNew && safeTrim(selectedDetail?.normalized_region_key) ? (
+                      <span className="rounded bg-slate-100 px-2 py-1">
+                        Region: {formatRegionLabel(selectedDetail.normalized_region_key)}
+                      </span>
+                    ) : null}
+                    {!creatingNew && Number(selectedDetail?.usage_count || 0) > 0 ? (
+                      <span className="rounded bg-slate-100 px-2 py-1">
+                        Used {selectedDetail.usage_count}x
+                      </span>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -1092,6 +1439,22 @@ export default function TemplatesPage() {
                   Materials
                 </TabButton>
               </div>
+
+              {!creatingNew && selectedDetail ? (
+                <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                  <div className="font-semibold text-slate-900">Marketplace Signals</div>
+                  <div className="mt-1 flex flex-wrap gap-3 text-xs text-slate-600">
+                    <span>Benchmark support: {safeTrim(selectedDetail?.benchmark_support_label) || "none"}</span>
+                    <span>Region match: {safeTrim(selectedTemplate?.region_match_scope) || "global"}</span>
+                    <span>Completed projects: {Number(selectedDetail?.completed_project_count || 0)}</span>
+                  </div>
+                  {Array.isArray(selectedTemplate?.rank_reasons) && selectedTemplate.rank_reasons.length ? (
+                    <div className="mt-2 text-xs text-slate-500">
+                      Ranked for: {selectedTemplate.rank_reasons.join(", ").replaceAll("_", " ")}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
               {activeTab === "setup" ? (
                 <SectionCard title="Project Setup">

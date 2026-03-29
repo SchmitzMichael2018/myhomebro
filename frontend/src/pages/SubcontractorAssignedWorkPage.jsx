@@ -23,6 +23,17 @@ function formatDate(value) {
   }
 }
 
+function complianceStatusLabel(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "pending_license") return "Pending license";
+  if (normalized === "overridden") return "Assigned with override";
+  if (normalized === "compliant") return "Compliance on file";
+  if (normalized === "missing_license") return "License missing";
+  if (normalized === "missing_insurance") return "Insurance missing";
+  if (normalized === "not_required") return "No tracked requirement";
+  return "Compliance review in progress";
+}
+
 export default function SubcontractorAssignedWorkPage() {
   const [loading, setLoading] = useState(true);
   const [groups, setGroups] = useState([]);
@@ -288,6 +299,20 @@ export default function SubcontractorAssignedWorkPage() {
                         </div>
                       </div>
                     </div>
+
+                    {milestone.assignment_compliance?.warning_snapshot?.warning_message ? (
+                      <div
+                        data-testid={`assigned-milestone-compliance-${milestone.id}`}
+                        className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-slate-700"
+                      >
+                        <div className="font-semibold text-slate-900">
+                          {complianceStatusLabel(milestone.assignment_compliance?.status)}
+                        </div>
+                        <div className="mt-1">
+                          {milestone.assignment_compliance.warning_snapshot.warning_message}
+                        </div>
+                      </div>
+                    ) : null}
 
                     <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
                       <div className="text-sm font-semibold text-slate-900">

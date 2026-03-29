@@ -10,6 +10,7 @@ from rest_framework import status
 from rest_framework.exceptions import PermissionDenied
 
 from projects.models import Invoice
+from projects.services.contractor_onboarding import build_stripe_requirement_payload
 from projects.services.direct_pay import create_direct_pay_checkout_for_invoice
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
 from projects.services.pricing_observations import record_pricing_observation_for_invoice
@@ -91,6 +92,18 @@ def invoice_create_direct_pay_link(request, pk: int):
     contractor = getattr(request.user, "contractor_profile", None)
     if not contractor or getattr(invoice.agreement, "contractor_id", None) != contractor.id:
         raise PermissionDenied("Not allowed.")
+
+    if not bool(getattr(contractor, "stripe_connected", False)):
+        return Response(
+            build_stripe_requirement_payload(
+                contractor,
+                action_key="create_direct_pay_link",
+                action_label="Create Direct Pay Link",
+                source="invoice_direct_pay",
+                return_path=f"/app/invoices/{invoice.id}",
+            ),
+            status=status.HTTP_409_CONFLICT,
+        )
 
     agreement = getattr(invoice, "agreement", None)
 

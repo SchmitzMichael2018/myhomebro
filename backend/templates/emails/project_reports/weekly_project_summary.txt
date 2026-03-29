@@ -1,0 +1,23 @@
+Hi {{ recipient_name|default:"Project Owner" }},
+
+Weekly summary for {{ project_title }} ({{ week_start }} to {{ week_end }}).
+
+Funds released this week: ${{ funds_released_this_week }}
+Total budget: ${{ total_budget }}
+Released to date: ${{ released_to_date }}
+Remaining budget: ${{ remaining_budget }}
+
+Highlights:
+{% for item in highlights %}- {{ item }}
+{% endfor %}
+{% if pending_approval_milestones %}Pending approval:
+{% for item in pending_approval_milestones %}- {{ item }}
+{% endfor %}
+{% endif %}{% if completed_milestones %}Completed this week:
+{% for item in completed_milestones %}- {{ item }}
+{% endfor %}
+{% endif %}{% if compliance_note %}Compliance note: {{ compliance_note }}
+{% endif %}
+{% if project_url %}View project: {{ project_url }}
+{% endif %}
+MyHomeBro

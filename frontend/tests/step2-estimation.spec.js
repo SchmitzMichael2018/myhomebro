@@ -1,0 +1,259 @@
+import { expect, test } from '@playwright/test';
+
+const AGREEMENT_ID = 321;
+
+async function installBaseAuthMocks(page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        onboarding_status: 'complete',
+        connected: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractors/me/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 77,
+        ai: { access: 'included', enabled: true, unlimited: true },
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, value: 'Remodel', label: 'Remodel', owner_type: 'system' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 10, value: 'Kitchen Remodel', label: 'Kitchen Remodel', owner_type: 'system' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/homeowners**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, company_name: 'Demo Customer', full_name: 'Jordan Demo' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+}
+
+test('step 2 estimate panel renders and suggestions apply safely into local milestone state', async ({
+  page,
+}) => {
+  await installBaseAuthMocks(page);
+
+  await page.route(new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`), async (route) => {
+    const request = route.request();
+    if (request.method() === 'PATCH') {
+      const payload = request.postDataJSON();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: AGREEMENT_ID,
+          agreement_id: AGREEMENT_ID,
+          project_title: 'Kitchen Remodel Agreement',
+          title: 'Kitchen Remodel Agreement',
+          description: 'Kitchen remodel with upgraded finishes.',
+          project_type: 'Remodel',
+          project_subtype: 'Kitchen Remodel',
+          project_address_city: 'San Antonio',
+          project_address_state: 'TX',
+          start: '2026-04-01',
+          selected_template_id: 55,
+          selected_template: { id: 55, name: 'Kitchen Remodel Starter' },
+          ai_scope: {
+            answers: payload?.ai_scope?.answers || {
+              finish_level: 'premium',
+              demolition_required: 'yes',
+            },
+            questions: [],
+          },
+          status: 'draft',
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: AGREEMENT_ID,
+        agreement_id: AGREEMENT_ID,
+        project_title: 'Kitchen Remodel Agreement',
+        title: 'Kitchen Remodel Agreement',
+        description: 'Kitchen remodel with upgraded finishes.',
+        project_type: 'Remodel',
+        project_subtype: 'Kitchen Remodel',
+        project_address_city: 'San Antonio',
+        project_address_state: 'TX',
+        start: '2026-04-01',
+        selected_template_id: 55,
+        selected_template: { id: 55, name: 'Kitchen Remodel Starter' },
+        ai_scope: {
+          answers: {
+            finish_level: 'premium',
+            demolition_required: 'yes',
+          },
+          questions: [],
+        },
+        status: 'draft',
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/milestones\/?\?.*agreement=321.*$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 801,
+            agreement: AGREEMENT_ID,
+            order: 1,
+            title: 'Demo & Prep',
+            description: 'Protect work area and demo existing finishes.',
+            amount: '4000.00',
+            start_date: '2026-04-01',
+            completion_date: '2026-04-02',
+            normalized_milestone_type: 'demolition',
+          },
+          {
+            id: 802,
+            agreement: AGREEMENT_ID,
+            order: 2,
+            title: 'Install & Finish',
+            description: 'Install cabinets, finishes, and fixtures.',
+            amount: '12000.00',
+            start_date: '2026-04-03',
+            completion_date: '2026-04-08',
+            normalized_milestone_type: 'installation',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/321/estimate-preview/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        suggested_total_price: '25300.00',
+        suggested_price_low: '22770.00',
+        suggested_price_high: '27830.00',
+        suggested_duration_days: 12,
+        suggested_duration_low: 10,
+        suggested_duration_high: 13,
+        milestone_suggestions: [
+          {
+            milestone_id: 801,
+            title: 'Demo & Prep',
+            suggested_amount: '5300.00',
+            suggested_duration_days: 3,
+            suggested_order: 1,
+            source: 'existing_milestone',
+            source_note: 'Demolition increased the first milestone.',
+          },
+          {
+            milestone_id: 802,
+            title: 'Install & Finish',
+            suggested_amount: '20000.00',
+            suggested_duration_days: 9,
+            suggested_order: 2,
+            source: 'existing_milestone',
+            source_note: 'Premium finish selections increased install cost.',
+          },
+        ],
+        price_adjustments: [
+          { label: 'Finish level', amount: '2800.00', reason: 'Premium finish selections were provided.' },
+          { label: 'Demolition', amount: '1500.00', reason: 'Demolition was included.' },
+        ],
+        timeline_adjustments: [
+          { label: 'Demolition', days: 2, reason: 'Demo added prep time.' },
+        ],
+        explanation_lines: [
+          'Started from seeded benchmark `template_linked_profile` for `Remodel`.',
+          'Finish level: Premium finish selections were provided.',
+        ],
+        benchmark_source: 'seeded_plus_learned',
+        benchmark_match_scope: 'template_linked_profile',
+        learned_benchmark_used: true,
+        seeded_benchmark_used: true,
+        template_used: 'Kitchen Remodel Starter',
+        confidence_level: 'medium',
+        confidence_reasoning:
+          'Confidence is moderate because a seeded benchmark matched the project family and region.',
+        structured_result_version: '2026-03-26-estimator-v1',
+        source_metadata: {
+          seeded_region_scope: 'city',
+          seeded_normalized_region_key: 'US-TX-SAN_ANTONIO',
+        },
+      }),
+    });
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step2-estimate-panel')).toBeVisible();
+  await expect(page.getByTestId('step2-estimate-total')).toContainText('$25,300.00');
+  await expect(page.getByTestId('step2-estimate-confidence')).toContainText('Moderate');
+  await expect(page.getByTestId('step2-estimate-source')).toContainText('Kitchen Remodel Starter');
+
+  await page.getByTestId('step2-apply-estimate-amounts').click();
+  await expect(page.getByTestId('step2-milestone-amount-801')).toContainText('$5,300.00');
+  await expect(page.getByTestId('step2-estimate-banner')).toContainText('staged locally');
+
+  await page.getByTestId('step2-apply-estimate-timeline').click();
+  await expect(page.getByTestId('step2-milestone-start-801')).toContainText('Apr 1, 2026');
+  await expect(page.getByTestId('step2-milestone-due-801')).toContainText('Apr 3, 2026');
+  await expect(page.getByTestId('step2-milestone-start-802')).toContainText('Apr 4, 2026');
+});

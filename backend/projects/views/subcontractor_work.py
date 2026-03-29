@@ -190,6 +190,17 @@ def _milestone_payload(milestone: Milestone) -> dict:
         "work_review_response_note": getattr(milestone, "subcontractor_review_response_note", "") or "",
         "can_current_user_submit_work": can_user_submit_work(milestone, user),
         "can_current_user_review_work": can_user_review_submitted_work(milestone, user),
+        "assignment_compliance": {
+            "status": getattr(milestone, "subcontractor_compliance_status", "") or "",
+            "license_required": bool(getattr(milestone, "subcontractor_license_required", False)),
+            "insurance_required": bool(getattr(milestone, "subcontractor_insurance_required", False)),
+            "override_flag": bool(getattr(milestone, "subcontractor_compliance_override", False)),
+            "override_reason": getattr(milestone, "subcontractor_compliance_override_reason", "") or "",
+            "requested_license_at": getattr(milestone, "subcontractor_license_requested_at", None),
+            "required_trade_key": getattr(milestone, "subcontractor_required_trade_key", "") or "",
+            "required_state_code": getattr(milestone, "subcontractor_required_state_code", "") or "",
+            "warning_snapshot": getattr(milestone, "subcontractor_compliance_warning_snapshot", {}) or {},
+        },
     }
 
 

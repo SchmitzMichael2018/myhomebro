@@ -10,6 +10,7 @@ import toast from "react-hot-toast";
 import { useWhoAmI } from "../hooks/useWhoAmI.js";
 import RefundEscrowModal from "./RefundEscrowModal";
 import StripeOnboardingStatus from "./StripeOnboardingStatus";
+import { useAssistantDock } from "./AssistantDock.jsx";
 
 /**
  * Sidebar
@@ -26,6 +27,7 @@ export default function Sidebar({ variant = "desktop" }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { data, isContractor, isEmployee, isSubcontractor } = useWhoAmI();
+  const { openAssistant } = useAssistantDock();
 
   const [refundOpen, setRefundOpen] = useState(false);
 
@@ -34,6 +36,7 @@ export default function Sidebar({ variant = "desktop" }) {
   const [closeoutAgreementId, setCloseoutAgreementId] = useState(null);
   const [closeoutStatus, setCloseoutStatus] = useState(null);
   const [closingOut, setClosingOut] = useState(false);
+  const [stripeRequirement, setStripeRequirement] = useState(null);
 
   const APP_BASE = "/app";
   const EMP_BASE = "/app/employee";
@@ -182,6 +185,7 @@ export default function Sidebar({ variant = "desktop" }) {
     return (
       <>
         <Item to={`${APP_BASE}/dashboard`} label="Dashboard" emoji="🏠" />
+        <Item to={`${APP_BASE}/assistant`} label="Start with AI" emoji="✨" />
         <Item to={`${APP_BASE}/business`} label="Business Dashboard" emoji="📈" />
         <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" emoji="🔍" />
         <Item to={`${APP_BASE}/agreements`} label="Agreements" emoji="📄" />
@@ -253,6 +257,17 @@ export default function Sidebar({ variant = "desktop" }) {
     return () => window.removeEventListener("mhb:invoice_paid", onInvoicePaid);
   }, [isContractorOwner]);
 
+  useEffect(() => {
+    if (isAdmin || isEmployee || isSubcontractor) return undefined;
+
+    const onStripeRequirement = (event) => {
+      setStripeRequirement(event?.detail || null);
+    };
+
+    window.addEventListener("mhb:stripe_requirement", onStripeRequirement);
+    return () => window.removeEventListener("mhb:stripe_requirement", onStripeRequirement);
+  }, [isAdmin, isEmployee, isSubcontractor]);
+
   const confirmCloseout = async () => {
     if (!closeoutAgreementId) return;
     setClosingOut(true);
@@ -319,6 +334,65 @@ export default function Sidebar({ variant = "desktop" }) {
         </div>
       )}
 
+      {stripeRequirement ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div
+            className="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl"
+            data-testid="stripe-requirement-modal"
+          >
+            <div className="text-xs font-extrabold uppercase tracking-wide text-slate-500">
+              Payments Setup Required
+            </div>
+            <h3 className="mt-2 text-lg font-extrabold text-slate-900">
+              {stripeRequirement?.action_label || "Connect Stripe to continue"}
+            </h3>
+            <p className="mt-2 text-sm text-slate-700">
+              {stripeRequirement?.message || "You can keep exploring, but this payment action requires Stripe setup."}
+            </p>
+
+            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              <div className="font-semibold text-slate-900">Why this showed up</div>
+              <div className="mt-1">
+                {stripeRequirement?.detail || "Stripe Connect must be completed before MyHomeBro can send or receive payment-related funds."}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-700">
+                  Charges: {stripeRequirement?.stripe_status?.charges_enabled ? "enabled" : "not ready"}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-700">
+                  Payouts: {stripeRequirement?.stripe_status?.payouts_enabled ? "enabled" : "not ready"}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-700">
+                  Requirements due: {Number(stripeRequirement?.stripe_status?.requirements_due_count || 0)}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setStripeRequirement(null)}
+                className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-200"
+              >
+                Keep Exploring
+              </button>
+              <button
+                type="button"
+                data-testid="stripe-requirement-connect"
+                onClick={() => {
+                  const target = stripeRequirement?.resume_url || "/app/onboarding";
+                  setStripeRequirement(null);
+                  navigate(target);
+                }}
+                className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-extrabold text-white hover:bg-slate-800"
+              >
+                Connect Stripe
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <div className="px-4 pt-4 pb-3 border-b border-black/10">
         <div className="flex items-center gap-2">
           <img
@@ -349,6 +423,22 @@ export default function Sidebar({ variant = "desktop" }) {
           <div className="px-2 text-xs font-extrabold uppercase tracking-wide text-slate-600 mb-2">
             Main
           </div>
+          {isContractorOwner ? (
+            <button
+              type="button"
+              data-testid="assistant-dock-open-button"
+              onClick={() =>
+                openAssistant({
+                  title: "Start with AI",
+                  context: { current_route: `${location.pathname}${location.search || ""}` },
+                })
+              }
+              className="mb-3 hidden w-full items-center justify-center gap-2 rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-slate-800 transition hover:bg-slate-50 xl:flex"
+            >
+              <span aria-hidden="true">✨</span>
+              Open AI Panel
+            </button>
+          ) : null}
           <div className="space-y-2">{mainNav}</div>
         </div>
 
