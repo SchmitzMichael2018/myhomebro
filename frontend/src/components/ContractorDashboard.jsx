@@ -1354,39 +1354,42 @@ export default function ContractorDashboard() {
     });
   };
   const needsAttentionItems = useMemo(() => dashboardNextSteps.slice(0, 3), [dashboardNextSteps]);
+  const showWorkflowHints = !isEmployee && dashboardNextSteps.length > 0;
+  const showActivityFeed = !isEmployee && activityFeed.length > 0;
 
   return (
     <PageShell title="Dashboard" subtitle={headerSubtitle} showLogo>
-      {reminders.length ? (
-        <div className="mb-4 space-y-3" data-testid="dashboard-onboarding-reminder">
-          {reminders.map((item) => (
-            <div key={item.key} className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <div className="text-sm font-semibold text-amber-900">{item.title}</div>
-                  <div className="mt-1 text-sm text-amber-800">{item.message}</div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => dismissReminder(item.key)}
-                    className="text-sm font-semibold text-amber-900 underline-offset-4 hover:underline"
-                  >
-                    Dismiss
-                  </button>
-                  <button
-                    type="button"
-                    onClick={item.action}
-                    className="rounded-xl bg-amber-900 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-950"
-                  >
-                    {item.cta}
-                  </button>
+      <div className="space-y-4 rounded-[30px] bg-white/[0.05] p-1 backdrop-blur-[1px]">
+        {reminders.length ? (
+          <div className="mb-4 space-y-3" data-testid="dashboard-onboarding-reminder">
+            {reminders.map((item) => (
+              <div key={item.key} className="rounded-2xl border border-amber-200/75 bg-amber-50/85 px-4 py-3 shadow-sm">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-amber-900">{item.title}</div>
+                    <div className="mt-1 text-sm text-amber-800">{item.message}</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => dismissReminder(item.key)}
+                      className="text-sm font-semibold text-amber-900 underline-offset-4 hover:underline"
+                    >
+                      Dismiss
+                    </button>
+                    <button
+                      type="button"
+                      onClick={item.action}
+                      className="rounded-xl bg-amber-900 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-950"
+                    >
+                      {item.cta}
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
-      ) : null}
+            ))}
+          </div>
+        ) : null}
 
       {!isEmployee ? (
         <DashboardSection
@@ -1447,10 +1450,10 @@ export default function ContractorDashboard() {
 
       {!isEmployee && contractorProfile ? (
         <div
-          className="mb-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+          className="mb-4 rounded-2xl border border-white/30 bg-white/62 p-4 shadow-[0_10px_28px_rgba(15,23,42,0.07)] backdrop-blur-sm"
           data-testid="dashboard-sms-status"
         >
-          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
             SMS Updates
           </div>
           <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -1478,7 +1481,7 @@ export default function ContractorDashboard() {
                 type="button"
                 onClick={() => navigate("/app/profile")}
                 aria-describedby="dashboard-manage-sms-hint"
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
               >
                 Manage SMS
               </button>
@@ -1496,39 +1499,39 @@ export default function ContractorDashboard() {
 
       {!isEmployee && contractorProfile ? (
         <div
-          className="mb-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+          className="mb-4 rounded-2xl border border-white/28 bg-white/58 p-4 shadow-[0_8px_22px_rgba(15,23,42,0.05)] backdrop-blur-sm"
           data-testid="dashboard-sms-automation"
         >
-          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
             SMS Automation
           </div>
-          <div className="mt-3 grid gap-3 md:grid-cols-4">
-            <div className="rounded-xl bg-slate-50 px-4 py-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+          <div className="mt-3 grid gap-2 md:grid-cols-4">
+            <div className="rounded-xl bg-slate-50/90 px-3 py-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                 Status
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-900">
                 {contractorProfile?.sms_automation_enabled ? "Enabled" : "Off"}
               </div>
             </div>
-            <div className="rounded-xl bg-slate-50 px-4 py-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <div className="rounded-xl bg-slate-50/90 px-3 py-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                 Sent 7d
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-900">
                 {contractorProfile?.sent_sms_count_7d || 0}
               </div>
             </div>
-            <div className="rounded-xl bg-slate-50 px-4 py-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <div className="rounded-xl bg-slate-50/90 px-3 py-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                 Suppressed 7d
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-900">
                 {contractorProfile?.suppressed_sms_count_7d || 0}
               </div>
             </div>
-            <div className="rounded-xl bg-slate-50 px-4 py-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <div className="rounded-xl bg-slate-50/90 px-3 py-2.5">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                 Deferred 7d
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-900">
@@ -1537,16 +1540,16 @@ export default function ContractorDashboard() {
             </div>
           </div>
           {contractorProfile?.last_sms_automation_decision ? (
-            <div className="mt-4 text-sm text-slate-600">
+            <div className="mt-3 text-xs text-slate-500">
               Last decision:{" "}
-              <span className="font-semibold text-slate-900">
+              <span className="font-semibold text-slate-700">
                 {contractorProfile.last_sms_automation_decision.reason_code}
               </span>
               {" · "}
               {contractorProfile.last_sms_automation_decision.message_preview || "No preview available."}
             </div>
           ) : (
-            <div className="mt-4 text-sm text-slate-600">
+            <div className="mt-3 text-xs text-slate-500">
               No automation decisions yet.
             </div>
           )}
@@ -1554,12 +1557,14 @@ export default function ContractorDashboard() {
       ) : null}
 
       {!isEmployee ? (
-        <>
-          <div className="mhb-kicker">MyHomeBro Pricing</div>
-          <div className="mhb-grid" style={{ marginBottom: 6 }}>
+        <div className="mb-4 rounded-2xl border border-white/26 bg-white/56 p-3.5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] backdrop-blur-sm">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+            MyHomeBro Pricing
+          </div>
+          <div className="mhb-grid" style={{ marginBottom: 0 }}>
             <StatCard icon={BadgeDollarSign} title={currentRateTitle} subtitle={pricingSubtitle} count={null} amount={null} onClick={null} />
           </div>
-        </>
+        </div>
       ) : null}
 
       <div className="mhb-kicker">Milestones</div>
@@ -1670,11 +1675,11 @@ export default function ContractorDashboard() {
       {!isEmployee ? (
         <>
           <DashboardSection
-            title="Context"
-            subtitle="Recent workflow context and fast actions when you need more than the top recommendation."
+            title="Activity & Tools"
+            subtitle="Keep recent workflow context nearby without letting it compete with the main focus area."
             className="mt-6"
           >
-            {dashboardNextSteps.length ? (
+            {showWorkflowHints ? (
               <WorkflowHintList
                 items={dashboardNextSteps}
                 testId="dashboard-next-steps"
@@ -1682,7 +1687,7 @@ export default function ContractorDashboard() {
             ) : null}
 
             <div className="space-y-3" data-testid="dashboard-activity-feed">
-              {activityFeed.length ? (
+              {showActivityFeed ? (
                 activityFeed.map((item) => (
                   <button
                     key={item.id}
@@ -1709,7 +1714,7 @@ export default function ContractorDashboard() {
                 ))
               ) : (
                 <div
-                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600"
+                  className="rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-3 text-sm text-slate-500"
                   data-testid="dashboard-activity-feed-empty"
                 >
                   No recent activity yet.
@@ -1717,7 +1722,7 @@ export default function ContractorDashboard() {
               )}
             </div>
 
-            <DashboardCard>
+            <DashboardCard tone="subtle">
               <div className="flex flex-wrap gap-3">
                 <ActionButton
                   icon={Sparkles}
@@ -1775,6 +1780,8 @@ export default function ContractorDashboard() {
           </DashboardSection>
         </>
       ) : null}
+
+      </div>
 
       {!isEmployee ? <ExpenseRequestModal isOpen={showExpenseModal} onClose={onExpenseModalClose} /> : null}
 

@@ -2097,7 +2097,7 @@ export default function Step2Milestones({
   }
 
   return (
-    <div className="rounded-lg border bg-white p-4">
+    <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       {milestonesLocked ? (
         <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <div className="font-semibold">Locked</div>
@@ -2196,7 +2196,7 @@ export default function Step2Milestones({
       ) : null}
 
       <StartWithAIEntry
-        className="mb-3"
+        className=""
         testId="milestones-ai-entry"
         title="Start with AI inside milestones"
         description="Use current pricing, template, and clarification context to keep milestone work moving."
@@ -2332,8 +2332,8 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
-      <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Milestones</h3>
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold text-slate-900">Milestone Editor</h3>
         <div className="text-sm text-gray-600">
           Schedule:{" "}
           {minStart && maxEnd ? (
@@ -2346,7 +2346,13 @@ export default function Step2Milestones({
         </div>
       </div>
 
-      <div className="mb-4 rounded-lg border p-3">
+      <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+        <div className="mb-3">
+          <h4 className="text-sm font-semibold text-slate-900">Actions</h4>
+          <p className="mt-1 text-xs text-slate-600">
+            Review clarifications, refresh estimate guidance, and stage milestone suggestions before you save.
+          </p>
+        </div>
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap items-center gap-3">
             <button
@@ -2450,7 +2456,7 @@ export default function Step2Milestones({
             {aiError ? <span className="text-sm text-red-600">{aiError}</span> : null}
           </div>
         </div>
-      </div>
+      </section>
 
       {showPricingReviewPrompt ? (
         <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3">
@@ -2496,8 +2502,8 @@ export default function Step2Milestones({
       ) : null}
 
       {estimatePreview ? (
-        <div
-          className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-4"
+        <section
+          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
           data-testid="step2-estimate-panel"
         >
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -2672,7 +2678,7 @@ export default function Step2Milestones({
               </div>
             </div>
           </div>
-        </div>
+        </section>
       ) : null}
 
       <ClarificationsModal
@@ -2885,6 +2891,14 @@ export default function Step2Milestones({
           </div>
         </div>
       ) : null}
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-3">
+        <h4 className="text-sm font-semibold text-slate-900">Add or edit milestones</h4>
+        <p className="mt-1 text-xs text-slate-600">
+          Keep milestone editing as the primary task here. Save staged changes only after you review pricing and dates.
+        </p>
+      </div>
 
       <div className="mb-2 grid grid-cols-1 gap-3 md:grid-cols-12">
         <input
@@ -3163,6 +3177,7 @@ export default function Step2Milestones({
           </tfoot>
         </table>
       </div>
+      </section>
 
       <div className="mt-4 flex items-center justify-between">
         <button type="button" onClick={handleBackClick} className="rounded border px-3 py-2 text-sm">

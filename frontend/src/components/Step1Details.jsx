@@ -56,6 +56,18 @@ function formatRecurrenceSummary(pattern, interval) {
   return `Recurring every ${safeInterval} ${labelMap[safePattern] || safePattern}`;
 }
 
+function StepSection({ title, description = "", children, className = "" }) {
+  return (
+    <section className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-sm ${className}`}>
+      <div className="mb-4">
+        <h3 className="text-base font-semibold text-slate-900">{title}</h3>
+        {description ? <p className="mt-1 text-sm text-slate-600">{description}</p> : null}
+      </div>
+      {children}
+    </section>
+  );
+}
+
 export default function Step1Details({
   agreement,
   isEdit,
@@ -1075,8 +1087,8 @@ export default function Step1Details({
 
   return (
     <>
-      <div className="rounded-lg border bg-white p-4">
-        <div className="mb-2 text-sm text-gray-600">
+      <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="text-sm text-gray-600">
           {isEdit ? <>Agreement #{agreementId}</> : <>New Agreement</>}
         </div>
 
@@ -1199,7 +1211,7 @@ export default function Step1Details({
         ) : null}
 
         {last400 ? (
-          <div className="mb-3">
+          <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
             <div className="text-sm font-semibold text-red-700">
               Server response (400)
             </div>
@@ -1207,108 +1219,128 @@ export default function Step1Details({
           </div>
         ) : null}
 
-        <div className="grid grid-cols-1 gap-3">
-          <TemplateSearchSection
-            locked={locked}
-            agreementId={agreementId}
-            dLocal={dLocal}
-            onLocalChange={handleStep1LocalChange}
-            projectTypeOptions={projectTypeOptions}
-            projectSubtypeOptions={projectSubtypeOptions}
-            templatesLoading={templatesLoading}
-            templatesErr={templatesErr}
-            filteredTemplates={filteredTemplates}
-            templateSearch={templateSearch}
-            setTemplateSearch={setTemplateSearch}
-            selectedTemplateId={selectedTemplateId}
-            recommendedTemplateId={recommendedTemplateId}
-            recommendationConfidence={recommendationConfidence}
-            recommendationLoading={recommendationLoading}
-            templateRecommendationReason={templateRecommendationReason}
-            templateRecommendationScore={templateRecommendationScore}
-            selectedTemplate={selectedTemplate}
-            applyingTemplateId={applyingTemplateId}
-            handleTemplatePick={handleTemplatePick}
-            handleApplyTemplate={handleTemplateApplyWithOptions}
-            handleDeleteTemplate={handleDeleteTemplate}
-            handleUpdateTemplateDays={handleUpdateTemplateDays}
-            setSelectedTemplateId={setSelectedTemplateId}
-            setShowSaveTemplateModal={setShowSaveTemplateModal}
-            noTemplateMatch={noTemplateMatch}
-            noTemplateReason={noTemplateReason}
-            templateDetail={templateDetail}
-            templateDetailLoading={templateDetailLoading}
-            templateDetailErr={templateDetailErr}
-            aiCredits={aiCredits}
-            aiBusy={aiBusy}
-            aiErr={aiErr}
-            aiPreview={aiPreview}
-            setAiPreview={setAiPreview}
-            refreshAiCredits={refreshAiCredits}
-            runAiDescription={runAiDescription}
-            applyAiDescription={applyAiDescription}
-            hasSomeContext={hasSomeContext}
-            onAddProjectType={handleCreateNewType}
-            onAddProjectSubtype={handleCreateNewSubtype}
-            aiMilestoneBusy={aiMilestoneBusy}
-            aiMilestoneApplying={aiMilestoneApplying}
-            aiMilestoneErr={aiMilestoneErr}
-            aiMilestonePreview={aiMilestonePreview}
-            setAiMilestonePreview={setAiMilestonePreview}
-            runAiMilestonesFromScope={runAiMilestonesFromScope}
-            applyAiMilestonesFromScope={applyAiMilestonesFromScope}
-            spreadEnabled={spreadEnabled}
-            setSpreadEnabled={setSpreadEnabled}
-            spreadTotal={spreadTotal}
-            setSpreadTotal={setSpreadTotal}
-            autoSchedule={autoSchedule}
-            setAutoSchedule={setAutoSchedule}
-            appliedTemplateId={appliedTemplateId}
-            onDeselectAppliedTemplate={handleDeselectAppliedTemplate}
-            onTemplateApplied={handleTemplateApplied}
-          />
-
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <CustomerSection
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.95fr)] xl:items-start">
+          <div className="space-y-6">
+            <TemplateSearchSection
               locked={locked}
+              agreementId={agreementId}
               dLocal={dLocal}
-              homeownerOptions={homeownerOptions}
-              empty={empty}
-              peopleLoadedOnce={peopleLoadedOnce}
-              reloadPeople={reloadPeople}
               onLocalChange={handleStep1LocalChange}
-              customerAddrLoading={customerAddrLoading}
-              customerAddrMissing={customerAddrMissing}
-              selectedCustomer={selectedCustomer}
-              showQuickAdd={showQuickAdd}
-              setShowQuickAdd={setShowQuickAdd}
-              qaName={qaName}
-              setQaName={setQaName}
-              qaEmail={qaEmail}
-              setQaEmail={setQaEmail}
-              qaBusy={qaBusy}
-              onQuickAdd={onQuickAdd}
+              projectTypeOptions={projectTypeOptions}
+              projectSubtypeOptions={projectSubtypeOptions}
+              templatesLoading={templatesLoading}
+              templatesErr={templatesErr}
+              filteredTemplates={filteredTemplates}
+              templateSearch={templateSearch}
+              setTemplateSearch={setTemplateSearch}
+              selectedTemplateId={selectedTemplateId}
+              recommendedTemplateId={recommendedTemplateId}
+              recommendationConfidence={recommendationConfidence}
+              recommendationLoading={recommendationLoading}
+              templateRecommendationReason={templateRecommendationReason}
+              templateRecommendationScore={templateRecommendationScore}
+              selectedTemplate={selectedTemplate}
+              applyingTemplateId={applyingTemplateId}
+              handleTemplatePick={handleTemplatePick}
+              handleApplyTemplate={handleTemplateApplyWithOptions}
+              handleDeleteTemplate={handleDeleteTemplate}
+              handleUpdateTemplateDays={handleUpdateTemplateDays}
+              setSelectedTemplateId={setSelectedTemplateId}
+              setShowSaveTemplateModal={setShowSaveTemplateModal}
+              noTemplateMatch={noTemplateMatch}
+              noTemplateReason={noTemplateReason}
+              templateDetail={templateDetail}
+              templateDetailLoading={templateDetailLoading}
+              templateDetailErr={templateDetailErr}
+              aiCredits={aiCredits}
+              aiBusy={aiBusy}
+              aiErr={aiErr}
+              aiPreview={aiPreview}
+              setAiPreview={setAiPreview}
+              refreshAiCredits={refreshAiCredits}
+              runAiDescription={runAiDescription}
+              applyAiDescription={applyAiDescription}
+              hasSomeContext={hasSomeContext}
+              onAddProjectType={handleCreateNewType}
+              onAddProjectSubtype={handleCreateNewSubtype}
+              aiMilestoneBusy={aiMilestoneBusy}
+              aiMilestoneApplying={aiMilestoneApplying}
+              aiMilestoneErr={aiMilestoneErr}
+              aiMilestonePreview={aiMilestonePreview}
+              setAiMilestonePreview={setAiMilestonePreview}
+              runAiMilestonesFromScope={runAiMilestonesFromScope}
+              applyAiMilestonesFromScope={applyAiMilestonesFromScope}
+              spreadEnabled={spreadEnabled}
+              setSpreadEnabled={setSpreadEnabled}
+              spreadTotal={spreadTotal}
+              setSpreadTotal={setSpreadTotal}
+              autoSchedule={autoSchedule}
+              setAutoSchedule={setAutoSchedule}
+              appliedTemplateId={appliedTemplateId}
+              onDeselectAppliedTemplate={handleDeselectAppliedTemplate}
+              onTemplateApplied={handleTemplateApplied}
             />
 
-            <AddressSection
-              locked={locked}
-              addrSearch={addrSearch}
-              setAddrSearch={setAddrSearch}
-              dLocal={dLocal}
-              setDLocal={setDLocal}
-              isNewAgreement={isNewAgreement}
-              cacheKey={cacheKey}
-              writeCache={writeCache}
-              patchAgreement={patchAgreement}
-              persistAddressNow={persistAddressNow}
-              schedulePatch={schedulePatch}
-              onLocalChange={handleStep1LocalChange}
-            />
-
-            <div
-              data-testid="maintenance-settings-card"
-              className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+            <StepSection
+              title="Customer"
+              description="Select the customer for this agreement, or add one quickly if you need to keep moving."
             >
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <CustomerSection
+                  locked={locked}
+                  dLocal={dLocal}
+                  homeownerOptions={homeownerOptions}
+                  empty={empty}
+                  peopleLoadedOnce={peopleLoadedOnce}
+                  reloadPeople={reloadPeople}
+                  onLocalChange={handleStep1LocalChange}
+                  customerAddrLoading={customerAddrLoading}
+                  customerAddrMissing={customerAddrMissing}
+                  selectedCustomer={selectedCustomer}
+                  showQuickAdd={showQuickAdd}
+                  setShowQuickAdd={setShowQuickAdd}
+                  qaName={qaName}
+                  setQaName={setQaName}
+                  qaEmail={qaEmail}
+                  setQaEmail={setQaEmail}
+                  qaBusy={qaBusy}
+                  onQuickAdd={onQuickAdd}
+                />
+              </div>
+            </StepSection>
+
+            <StepSection
+              title="Project Address"
+              description="Confirm where the work is happening so documents, compliance, and scheduling stay aligned."
+            >
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <AddressSection
+                  locked={locked}
+                  addrSearch={addrSearch}
+                  setAddrSearch={setAddrSearch}
+                  dLocal={dLocal}
+                  setDLocal={setDLocal}
+                  isNewAgreement={isNewAgreement}
+                  cacheKey={cacheKey}
+                  writeCache={writeCache}
+                  patchAgreement={patchAgreement}
+                  persistAddressNow={persistAddressNow}
+                  schedulePatch={schedulePatch}
+                  onLocalChange={handleStep1LocalChange}
+                />
+              </div>
+            </StepSection>
+          </div>
+
+          <div className="space-y-6">
+            <StepSection
+              title="Project Basics"
+              description="Choose how this agreement should behave before you move into milestone planning."
+            >
+              <div
+                data-testid="maintenance-settings-card"
+                className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+              >
               <div className="text-sm font-semibold text-slate-900">Agreement Mode</div>
               <div className="mt-1 text-sm text-slate-600">
                 Use maintenance mode for recurring service agreements that generate repeat visits over time.
@@ -1517,82 +1549,90 @@ export default function Step1Details({
                   </div>
                 </div>
               ) : null}
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="text-sm font-semibold text-slate-900">Payment Structure</div>
-              <div className="mt-1 text-sm text-slate-600">
-                How will you get paid for this project?
               </div>
+            </StepSection>
 
-              <div className="mt-4 grid gap-3">
-                <button
-                  type="button"
-                  onClick={() => handlePaymentStructureChange("simple")}
-                  disabled={locked}
-                  className={`rounded-xl border px-4 py-3 text-left transition ${
-                    paymentStructure === "simple"
-                      ? "border-indigo-300 bg-indigo-50"
-                      : "border-slate-200 bg-white hover:bg-slate-50"
-                  } disabled:opacity-60`}
-                >
-                  <div className="font-semibold text-slate-900">Simple Payments</div>
+            <StepSection
+              title="Payment Setup"
+              description="Set the payment structure now so milestone planning and final review stay aligned."
+            >
+              <div className="space-y-4">
+                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="text-sm font-semibold text-slate-900">Payment Structure</div>
                   <div className="mt-1 text-sm text-slate-600">
-                    Get paid when milestones are completed
+                    How will you get paid for this project?
                   </div>
-                </button>
 
-                <button
-                  type="button"
-                  onClick={() => handlePaymentStructureChange("progress")}
-                  disabled={locked}
-                  className={`rounded-xl border px-4 py-3 text-left transition ${
-                    paymentStructure === "progress"
-                      ? "border-indigo-300 bg-indigo-50"
-                      : "border-slate-200 bg-white hover:bg-slate-50"
-                  } disabled:opacity-60`}
-                >
-                  <div className="font-semibold text-slate-900">Progress Payments</div>
-                  <div className="mt-1 text-sm text-slate-600">
-                    Get paid based on progress, with approvals and retainage
-                  </div>
-                </button>
-              </div>
+                  <div className="mt-4 grid gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handlePaymentStructureChange("simple")}
+                      disabled={locked}
+                      className={`rounded-xl border px-4 py-3 text-left transition ${
+                        paymentStructure === "simple"
+                          ? "border-indigo-300 bg-indigo-50"
+                          : "border-slate-200 bg-white hover:bg-slate-50"
+                      } disabled:opacity-60`}
+                    >
+                      <div className="font-semibold text-slate-900">Simple Payments</div>
+                      <div className="mt-1 text-sm text-slate-600">
+                        Get paid when milestones are completed
+                      </div>
+                    </button>
 
-              {paymentStructure === "progress" ? (
-                <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                    Retainage %
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.01"
-                    value={retainagePercent}
-                    disabled={locked}
-                    onChange={(e) =>
-                      setDLocal((s) => ({ ...s, retainage_percent: e.target.value }))
-                    }
-                    onBlur={(e) => handleRetainageChange(e.target.value)}
-                    className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                  />
-                  <div className="mt-2 text-xs text-slate-500">
-                    This retainage is used when draw requests are created after signing.
+                    <button
+                      type="button"
+                      onClick={() => handlePaymentStructureChange("progress")}
+                      disabled={locked}
+                      className={`rounded-xl border px-4 py-3 text-left transition ${
+                        paymentStructure === "progress"
+                          ? "border-indigo-300 bg-indigo-50"
+                          : "border-slate-200 bg-white hover:bg-slate-50"
+                      } disabled:opacity-60`}
+                    >
+                      <div className="font-semibold text-slate-900">Progress Payments</div>
+                      <div className="mt-1 text-sm text-slate-600">
+                        Get paid based on progress, with approvals and retainage
+                      </div>
+                    </button>
                   </div>
+
+                  {paymentStructure === "progress" ? (
+                    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        Retainage %
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.01"
+                        value={retainagePercent}
+                        disabled={locked}
+                        onChange={(e) =>
+                          setDLocal((s) => ({ ...s, retainage_percent: e.target.value }))
+                        }
+                        onBlur={(e) => handleRetainageChange(e.target.value)}
+                        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                      />
+                      <div className="mt-2 text-xs text-slate-500">
+                        This retainage is used when draw requests are created after signing.
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
-              ) : null}
-            </div>
 
-            <PaymentModeSection
-              locked={locked}
-              paymentMode={paymentMode}
-              onChangeMode={handlePaymentModeChange}
-            />
+                <PaymentModeSection
+                  locked={locked}
+                  paymentMode={paymentMode}
+                  onChangeMode={handlePaymentModeChange}
+                />
+              </div>
+            </StepSection>
           </div>
         </div>
 
-        <div className="mt-6 flex justify-end gap-2">
+        <div className="flex justify-end gap-2 border-t border-slate-200 pt-5">
           <button
             data-testid="agreement-save-draft-button"
             type="button"

@@ -1021,8 +1021,7 @@ export default function ContractorProfile() {
 
   return (
     <div className="flex justify-center">
-      <div className="w-full max-w-5xl bg-white rounded-lg shadow p-6 mt-6">
-        <h2 className="text-2xl font-bold mb-4">My Profile</h2>
+      <div className="w-full rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
 
         {showSetupReminder ? (
           <div
@@ -1067,7 +1066,7 @@ export default function ContractorProfile() {
         <div className="flex flex-col md:flex-row gap-6">
           {/* Mini sidebar */}
           <div className="md:w-56 w-full">
-            <div className="text-xs font-semibold text-slate-500 uppercase mb-2">
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
               Account
             </div>
             <nav className="space-y-1">
@@ -1076,7 +1075,7 @@ export default function ContractorProfile() {
                 onClick={() => setActiveTab("business")}
                 className={`flex w-full items-center justify-between rounded px-3 py-2 text-sm ${
                   activeTab === "business"
-                    ? "bg-blue-600 text-white font-semibold"
+                    ? "bg-slate-900 text-white font-semibold shadow-sm"
                     : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                 }`}
               >
@@ -1088,7 +1087,7 @@ export default function ContractorProfile() {
                 onClick={() => setActiveTab("billing")}
                 className={`flex w-full items-center justify-between rounded px-3 py-2 text-sm ${
                   activeTab === "billing"
-                    ? "bg-blue-600 text-white font-semibold"
+                    ? "bg-slate-900 text-white font-semibold shadow-sm"
                     : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                 }`}
               >
@@ -1105,7 +1104,7 @@ export default function ContractorProfile() {
                 onClick={() => setActiveTab("account")}
                 className={`flex w-full items-center justify-between rounded px-3 py-2 text-sm ${
                   activeTab === "account"
-                    ? "bg-blue-600 text-white font-semibold"
+                    ? "bg-slate-900 text-white font-semibold shadow-sm"
                     : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                 }`}
               >
@@ -1118,12 +1117,12 @@ export default function ContractorProfile() {
           <div className="flex-1">
             {activeTab === "business" ? (
               <>
-                <h3 className="text-lg font-semibold mb-3">Business Profile</h3>
+                <h3 className="mb-3 text-lg font-semibold text-slate-900">Business Profile</h3>
                 {renderBusinessProfileForm()}
               </>
             ) : activeTab === "billing" ? (
               <>
-                <h3 className="text-lg font-semibold mb-3">Plan &amp; Billing</h3>
+                <h3 className="mb-3 text-lg font-semibold text-slate-900">Plan &amp; Billing</h3>
                 {renderBilling()}
               </>
             ) : (

@@ -185,7 +185,7 @@ export default function Step3WarrantyAttachments({
   };
 
   return (
-    <div className="rounded-lg border bg-white p-4 space-y-6">
+    <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       {locked ? (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <div className="font-semibold">Locked</div>
@@ -195,51 +195,63 @@ export default function Step3WarrantyAttachments({
         </div>
       ) : null}
 
-      {/* Warranty */}
-      <div>
-        <label className={`inline-flex items-center gap-2 ${locked ? "opacity-70" : ""}`}>
-          <input
-            type="checkbox"
-            checked={useDefaultWarranty}
-            onChange={(e) => !locked && setUseDefaultWarranty(e.target.checked)}
-            disabled={locked}
-          />
-          <span className="text-sm">Use default 12-month workmanship warranty</span>
-        </label>
-
-        {useDefaultWarranty ? (
-          <div className="mt-3 rounded border p-3 bg-gray-50 text-sm whitespace-pre-wrap">
-            {DEFAULT_WARRANTY}
+      <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h3 className="text-base font-semibold text-slate-900">Warranty</h3>
+            <p className="mt-1 text-sm text-slate-600">
+              Choose the standard workmanship warranty or replace it with custom terms before final review.
+            </p>
           </div>
-        ) : (
-          <div className="mt-3">
-            <label className="block text-sm font-medium mb-1">Custom Warranty</label>
-            <textarea
-              className="w-full rounded border px-3 py-2 text-sm min-h-[120px]"
-              placeholder="Enter your custom warranty text…"
-              value={customWarranty}
-              onChange={(e) => !locked && setCustomWarranty(e.target.value)}
-              disabled={locked}
-            />
-          </div>
-        )}
-
-        <div className="mt-3">
           <button
             type="button"
             onClick={onSaveWarranty}
             disabled={locked}
-            className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-60"
+            className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
           >
             Save Warranty
           </button>
         </div>
-      </div>
+
+        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+          <label className={`inline-flex items-center gap-2 ${locked ? "opacity-70" : ""}`}>
+            <input
+              type="checkbox"
+              checked={useDefaultWarranty}
+              onChange={(e) => !locked && setUseDefaultWarranty(e.target.checked)}
+              disabled={locked}
+            />
+            <span className="text-sm font-medium text-slate-900">
+              Use default 12-month workmanship warranty
+            </span>
+          </label>
+
+          {useDefaultWarranty ? (
+            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm whitespace-pre-wrap text-slate-700">
+              {DEFAULT_WARRANTY}
+            </div>
+          ) : (
+            <div className="mt-3">
+              <label className="mb-1 block text-sm font-medium text-slate-800">Custom Warranty</label>
+              <textarea
+                className="min-h-[120px] w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                placeholder="Enter your custom warranty text…"
+                value={customWarranty}
+                onChange={(e) => !locked && setCustomWarranty(e.target.value)}
+                disabled={locked}
+              />
+            </div>
+          )}
+        </div>
+      </section>
 
       {/* Attachments */}
-      <div className="rounded-2xl border">
+      <section className="rounded-2xl border border-slate-200 bg-white">
         <div className="p-4 border-b">
-          <h3 className="text-base font-semibold">Attachments &amp; Addenda</h3>
+          <h3 className="text-base font-semibold text-slate-900">Attachments &amp; Addenda</h3>
+          <p className="mt-1 text-sm text-slate-600">
+            Add warranty PDFs, spec sheets, permits, or supporting files that should travel with the agreement.
+          </p>
         </div>
 
         <div className="p-4 space-y-3">
@@ -412,7 +424,7 @@ export default function Step3WarrantyAttachments({
             {locked ? "Next" : "Save & Next"}
           </button>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

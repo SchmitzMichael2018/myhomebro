@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
 import { StartWithAIEntry } from "../components/StartWithAIAssistant.jsx";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import {
   buildAssistantHandoffSignature,
   getAssistantHandoff,
@@ -178,8 +179,8 @@ function TabButton({ active, onClick, children, ...rest }) {
 
 function SectionCard({ title, children }) {
   return (
-    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-700">
+    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/90 p-5 shadow-sm">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
         {title}
       </div>
       <div className="mt-3">{children}</div>
@@ -991,29 +992,23 @@ export default function TemplatesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl p-4 md:p-6">
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">
-            Templates
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Build reusable project templates with AI-assisted structure, pricing, schedule, and materials.
-          </p>
-        </div>
-
+    <ContractorPageSurface
+      eyebrow="Core"
+      title="Templates"
+      subtitle="Build reusable project templates with AI-assisted structure, pricing, schedule, and materials."
+      actions={
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={startNewTemplate}
-            className="rounded-lg border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
+            className="rounded-xl border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50"
           >
             New Template Draft
           </button>
 
           <Link
             to="/app/agreements/new/wizard?step=1"
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
           >
             New Agreement
           </Link>
@@ -1021,12 +1016,13 @@ export default function TemplatesPage() {
           <button
             type="button"
             onClick={() => navigate("/app/agreements/new/wizard?step=1")}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
           >
             Use in Step 1
           </button>
         </div>
-      </div>
+      }
+    >
 
       <StartWithAIEntry
         className="mb-4"
@@ -1036,7 +1032,7 @@ export default function TemplatesPage() {
         context={assistantContext}
       />
 
-      <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+      <div className="mb-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap gap-2">
           <TabButton
             data-testid="templates-market-tab-mine"
@@ -1163,7 +1159,7 @@ export default function TemplatesPage() {
       ) : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
-        <div className="rounded-xl border border-slate-200 bg-white">
+        <div className="rounded-[22px] border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-4 py-3">
             <div className="text-sm font-semibold text-slate-900">
               Template Library
@@ -2009,6 +2005,6 @@ export default function TemplatesPage() {
           )}
         </div>
       </div>
-    </div>
+    </ContractorPageSurface>
   );
 }

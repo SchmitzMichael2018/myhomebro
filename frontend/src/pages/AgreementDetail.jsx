@@ -37,6 +37,7 @@ import AssignReviewerInline from "../components/AssignReviewerInline";
 // ✅ Assignment UI
 import AssignEmployeeInline from "../components/AssignEmployeeInline";
 import { WorkflowHint } from "../components/WorkflowHint.jsx";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { getAgreementDetailHint } from "../lib/workflowHints.js";
 import {
   assignAgreementToSubaccount,
@@ -1128,71 +1129,78 @@ export default function AgreementDetail() {
   });
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <ContractorPageSurface
+      eyebrow="Core"
+      title="Agreement Detail"
+      subtitle="Review signatures, funding, milestones, and project actions from one consistent agreement workspace."
+      actions={
+        <button
+          onClick={() => navigate("/agreements")}
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+        >
+          Back to Agreements
+        </button>
+      }
+    >
       <button
         onClick={() => navigate("/agreements")}
-        className="text-blue-600 hover:underline"
+        className="hidden"
       >
         ← Back
       </button>
 
-      <div className="bg-blue-50 border-l-4 border-blue-600 p-4 rounded shadow-sm">
-        <h2 className="text-2xl font-bold mb-1">
-          {norm.title}
-          <PaymentModeBadge mode={norm.payment_mode} />
-        </h2>
-        <p>
-          <strong>Customer:</strong> {norm.homeownerName}{" "}
-          <span className="text-gray-500">({norm.homeownerEmail})</span>
-        </p>
-        <p>
-          <strong>Total Cost:</strong> ${norm.totalCost.toFixed(2)}
-        </p>
-        <p>
-          <strong>Payment Mode:</strong> {paymentModeLabel(norm.payment_mode)}
-        </p>
-        <p>
-          <strong>Status:</strong> {statusText}
-        </p>
-
-        {norm.isDirectPay && (
-          <div className="mt-2 text-xs text-slate-700">
-            Direct Pay agreements don&apos;t use escrow. When milestones are
-            invoiced, you&apos;ll create a Stripe pay link for each invoice in
-            the <b>Invoices</b> section.
+      <section className="rounded-[28px] border border-sky-200 bg-gradient-to-br from-sky-50 to-white p-6 shadow-sm">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="text-3xl font-bold tracking-tight text-slate-950">
+                {norm.title}
+              </h2>
+              <PaymentModeBadge mode={norm.payment_mode} />
+            </div>
+            <div className="text-sm text-slate-600">
+              <span className="font-semibold text-slate-900">{norm.homeownerName}</span>
+              {norm.homeownerEmail && norm.homeownerEmail !== "—" ? (
+                <span className="ml-2 text-slate-500">{norm.homeownerEmail}</span>
+              ) : null}
+            </div>
+            {norm.isDirectPay && (
+              <div className="max-w-2xl text-xs text-slate-600">
+                Direct Pay agreements don&apos;t use escrow. Payment collection happens through invoice pay links as milestones are invoiced.
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      <div
-        className="rounded border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm"
-        data-testid="agreement-sms-status"
-      >
-        <div className="font-semibold text-slate-900">SMS Status</div>
-        <div className="mt-1">
-          {agreement?.sms_enabled
-            ? "Customer SMS updates are enabled for this agreement."
-            : agreement?.sms_opted_out
-            ? "Customer has opted out of SMS updates for this agreement."
-            : "Customer SMS updates are not enabled for this agreement yet."}
+          <div className="grid min-w-[280px] grid-cols-1 gap-3 sm:grid-cols-2">
+            <SummaryCard label="Status" value={statusText} className="border-sky-200 bg-white" />
+            <SummaryCard
+              label="Payment Mode"
+              value={paymentModeLabel(norm.payment_mode)}
+              className="border-sky-200 bg-white"
+            />
+            <SummaryCard
+              label="Customer"
+              value={norm.homeownerName}
+              className="border-sky-200 bg-white"
+            />
+            <SummaryCard
+              label="Project Total"
+              value={formatMoney(norm.totalCost)}
+              className="border-sky-200 bg-white"
+            />
+          </div>
         </div>
-        {agreement?.sms_status?.phone_number_e164 ? (
-          <div className="mt-1 text-xs text-slate-500">
-            Phone: {agreement.sms_status.phone_number_e164}
-          </div>
-        ) : null}
-        {agreement?.last_sms_event?.summary ? (
-          <div className="mt-1 text-xs text-slate-500">
-            Last SMS event: {agreement.last_sms_event.summary}
-          </div>
-        ) : null}
-      </div>
+      </section>
 
-      <div
-        className="rounded border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm"
+
+      {false ? (
+      <details
+        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm"
         data-testid="agreement-sms-automation"
       >
-        <div className="font-semibold text-slate-900">SMS Automation</div>
+        <summary className="cursor-pointer list-none font-semibold text-slate-900">
+          SMS Automation
+        </summary>
         {agreement?.last_sms_automation_decision ? (
           <div className="mt-2 space-y-1">
             <div>
@@ -1229,31 +1237,30 @@ export default function AgreementDetail() {
             ))}
           </div>
         ) : null}
-      </div>
+      </details>
+      ) : null}
 
       <WorkflowHint
         hint={agreementHint}
         testId="agreement-detail-hint"
       />
 
-      {/* ✅ NEW: Agreement assignment selector */}
-      {isContractor && (
-        <AssignEmployeeInline
-          label="Assign Entire Agreement"
-          help="Assigning an agreement makes all milestones visible to that employee unless a milestone is explicitly assigned to someone else."
-          onAssign={(subId) => assignAgreement(subId)}
-          onUnassign={(subId) => unassignAgreement(subId)}
-        />
-      )}
-
-      {/* Actions */}
-      <div className="flex flex-wrap gap-3 items-start">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-3">
+          <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+            Primary Actions
+          </h3>
+          <div className="mt-1 text-sm text-slate-600">
+            Handle signatures, documents, and the next key job action from one place.
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-3 items-start">
         {!norm.isSigned && (
           <button
             onClick={() => setSigOpen(true)}
-            className="px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700"
+            className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
           >
-            Open Signature
+            Sign
           </button>
         )}
 
@@ -1269,7 +1276,7 @@ export default function AgreementDetail() {
         {!norm.isDirectPay && norm.isSigned && !norm.escrowFunded && (
           <button
             onClick={startEscrow}
-            className="px-4 py-2 rounded bg-yellow-500 text-white hover:bg-yellow-600"
+            className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-600"
           >
             Fund Escrow
           </button>
@@ -1278,7 +1285,7 @@ export default function AgreementDetail() {
         {!norm.isDirectPay && norm.escrowFunded && (
           <button
             onClick={() => setRefundOpen(true)}
-            className="px-4 py-2 rounded bg-rose-600 text-white hover:bg-rose-700"
+            className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-700"
             title="Refund Control Center (unreleased escrow only)."
           >
             Refund Escrow
@@ -1287,14 +1294,14 @@ export default function AgreementDetail() {
 
         <button
           onClick={previewPdf}
-          className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700"
+          className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
         >
           Preview PDF
         </button>
 
         <button
           onClick={downloadPDF}
-          className="px-4 py-2 rounded bg-blue-700 text-white hover:bg-blue-800"
+          className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-950"
         >
           Download PDF
         </button>
@@ -1304,17 +1311,36 @@ export default function AgreementDetail() {
             data-testid="invite-subcontractor-button"
             type="button"
             onClick={() => setInviteFormOpen((open) => !open)}
-            className="px-4 py-2 rounded bg-slate-900 text-white hover:bg-slate-950"
+            className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
           >
             {inviteFormOpen ? "Close Invite Form" : "Invite Subcontractor"}
           </button>
         )}
       </div>
+      </div>
+
+      <section className="space-y-4">
+        <div>
+          <h3 className="text-lg font-semibold text-slate-900">Assignment / Team</h3>
+          <div className="mt-1 text-sm text-slate-600">
+            Manage who owns the agreement and who is helping deliver the work.
+          </div>
+        </div>
+
+      {/* ✅ NEW: Agreement assignment selector */}
+      {isContractor && (
+        <AssignEmployeeInline
+          label="Assign Entire Agreement"
+          help="Assigning an agreement makes all milestones visible to that employee unless a milestone is explicitly assigned to someone else."
+          onAssign={(subId) => assignAgreement(subId)}
+          onUnassign={(subId) => unassignAgreement(subId)}
+        />
+      )}
 
       {isContractor && (
         <div
           data-testid="subcontractor-section"
-          className="bg-white rounded shadow p-6 space-y-4"
+          className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4"
         >
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
@@ -1496,9 +1522,18 @@ export default function AgreementDetail() {
           )}
         </div>
       )}
+      </section>
+
+      <section className="space-y-4">
+        <div>
+          <h3 className="text-lg font-semibold text-slate-900">Documents</h3>
+          <div className="mt-1 text-sm text-slate-600">
+            Keep the live PDF, attachments, and warranty records together so document review feels like one workflow.
+          </div>
+        </div>
 
       {/* ✅ PDF Versions */}
-      <div className="bg-white rounded shadow p-6 space-y-3">
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-3">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <h3 className="text-lg font-semibold">PDF Versions</h3>
           <button
@@ -1661,7 +1696,7 @@ export default function AgreementDetail() {
 
       <div
         data-testid="agreement-warranties-section"
-        className="bg-white rounded shadow p-6 space-y-4"
+        className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4"
       >
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
@@ -1901,11 +1936,20 @@ export default function AgreementDetail() {
 
       {/* Attachments */}
       <AttachmentManager agreementId={id} canEdit={isContractor} />
+      </section>
 
       {/* Milestones */}
-      <div className="bg-white rounded shadow p-6 space-y-3">
+      <section className="space-y-4">
+        <div>
+          <h3 className="text-lg font-semibold text-slate-900">Milestones</h3>
+          <div className="mt-1 text-sm text-slate-600">
+            Track execution, assignment overrides, review state, and payout readiness in one place.
+          </div>
+        </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-3">
         <div className="flex items-end justify-between gap-3 flex-wrap">
-          <h3 className="text-lg font-semibold">Milestones</h3>
+          <h3 className="text-lg font-semibold">Milestone Control</h3>
           <div className="text-xs text-gray-500">
             Assign individual milestones to override agreement assignment.
           </div>
@@ -2209,6 +2253,7 @@ export default function AgreementDetail() {
           </div>
         )}
       </div>
+      </section>
 
       {/* Project Totals & Fee Summary (Contractor View) */}
       {!norm.isDirectPay && (
@@ -2279,6 +2324,87 @@ export default function AgreementDetail() {
           )}
         </div>
       )}
+
+      <section className="space-y-4">
+        <div>
+          <h3 className="text-lg font-semibold text-slate-900">Secondary Details</h3>
+          <div className="mt-1 text-sm text-slate-600">
+            Communication diagnostics and lower-priority agreement details stay available here without competing with the core job controls above.
+          </div>
+        </div>
+
+        <details
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm"
+          data-testid="agreement-sms-status"
+        >
+          <summary className="cursor-pointer list-none font-semibold text-slate-900">
+            SMS Status
+          </summary>
+          <div className="mt-2">
+            {agreement?.sms_enabled
+              ? "Customer SMS updates are enabled for this agreement."
+              : agreement?.sms_opted_out
+              ? "Customer has opted out of SMS updates for this agreement."
+              : "Customer SMS updates are not enabled for this agreement yet."}
+          </div>
+          {agreement?.sms_status?.phone_number_e164 ? (
+            <div className="mt-1 text-xs text-slate-500">
+              Phone: {agreement.sms_status.phone_number_e164}
+            </div>
+          ) : null}
+          {agreement?.last_sms_event?.summary ? (
+            <div className="mt-1 text-xs text-slate-500">
+              Last SMS event: {agreement.last_sms_event.summary}
+            </div>
+          ) : null}
+        </details>
+
+        <details
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm"
+          data-testid="agreement-sms-automation"
+        >
+          <summary className="cursor-pointer list-none font-semibold text-slate-900">
+            SMS Automation
+          </summary>
+          {agreement?.last_sms_automation_decision ? (
+            <div className="mt-2 space-y-1">
+              <div>
+                Last decision:{" "}
+                <span className="font-semibold text-slate-900">
+                  {agreement.last_sms_automation_decision.reason_code}
+                </span>
+              </div>
+              <div className="text-xs text-slate-500">
+                {agreement.last_sms_automation_decision.message_preview ||
+                  "No message preview available."}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-2 text-sm text-slate-600">
+              No SMS automation decisions for this agreement yet.
+            </div>
+          )}
+          {Array.isArray(agreement?.recent_sms_automation_decisions) &&
+          agreement.recent_sms_automation_decisions.length ? (
+            <div className="mt-3 space-y-2">
+              {agreement.recent_sms_automation_decisions.slice(0, 4).map((item) => (
+                <div
+                  key={item.id || `${item.event_type}-${item.created_at}`}
+                  className="rounded-lg bg-slate-50 px-3 py-2"
+                >
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    {item.event_type}
+                  </div>
+                  <div className="mt-1 text-sm text-slate-800">
+                    {item.reason_code} · {item.channel_decision}
+                    {item.sent ? " · sent" : item.deferred ? " · deferred" : ""}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </details>
+      </section>
 
       {isProgressPayments && (
         <>
@@ -2451,7 +2577,7 @@ export default function AgreementDetail() {
       )}
 
       {!isProgressPayments ? (
-      <div className="bg-white rounded shadow p-6">
+        <div className="bg-white rounded shadow p-6">
         <h3 className="text-lg font-semibold mb-3">Invoices</h3>
         {!norm.invoices || norm.invoices.length === 0 ? (
           <p className="text-gray-500">No invoices yet.</p>
@@ -2464,7 +2590,7 @@ export default function AgreementDetail() {
             ))}
           </ul>
         )}
-      </div>
+        </div>
       ) : null}
 
       {drawModalOpen ? (
@@ -2727,7 +2853,7 @@ export default function AgreementDetail() {
         fileUrl={pdfUrl}
         title={`Agreement #${id} — Preview`}
       />
-    </div>
+    </ContractorPageSurface>
   );
 }
 

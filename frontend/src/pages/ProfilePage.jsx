@@ -2,12 +2,18 @@
 import React from "react";
 import ContractorProfile from "../components/ContractorProfile";
 import ProfileDangerZone from "../components/ProfileDangerZone";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 
 export default function ProfilePage() {
   return (
-    <div className="mx-auto max-w-4xl p-4 sm:p-6">
+    <ContractorPageSurface
+      eyebrow="Settings"
+      title="Profile & Billing"
+      subtitle="Manage your business profile, plan details, Stripe status, and account settings from a consistent account surface."
+      className="max-w-[1180px]"
+    >
       <ContractorProfile />
       <ProfileDangerZone />
-    </div>
+    </ContractorPageSurface>
   );
 }

@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import toast from "react-hot-toast";
 import api from "../api";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 
 console.log("ExpensesPage.jsx v2026-02-20e — resend-safe: only sign drafts; resend uses send_to_homeowner");
 
@@ -286,14 +287,15 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
   return (
     <form
       onSubmit={onSubmit}
-      className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-3 mb-6 p-4 bg-gray-50 rounded-lg"
+      className="grid grid-cols-1 gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:grid-cols-2 md:grid-cols-12"
     >
       <div className="md:col-span-4">
+        <label className="mb-1.5 block text-sm font-medium text-slate-700">Agreement</label>
         <select
           name="agreement"
           value={form.agreement}
           onChange={onChange}
-          className="form-input w-full"
+          className="form-input min-h-[46px] w-full rounded-xl border-slate-200"
           required
         >
           <option value="">— Select Agreement —</option>
@@ -306,17 +308,19 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
       </div>
 
       <div className="md:col-span-3">
+        <label className="mb-1.5 block text-sm font-medium text-slate-700">Description</label>
         <input
           name="description"
           placeholder="Expense title (e.g., Nails, Dumpster fee)"
           value={form.description}
           onChange={onChange}
-          className="form-input w-full"
+          className="form-input min-h-[46px] w-full rounded-xl border-slate-200"
           required
         />
       </div>
 
       <div className="md:col-span-2">
+        <label className="mb-1.5 block text-sm font-medium text-slate-700">Amount</label>
         <input
           name="amount"
           type="number"
@@ -324,53 +328,56 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
           placeholder="Amount"
           value={form.amount}
           onChange={onChange}
-          className="form-input w-full"
+          className="form-input min-h-[46px] w-full rounded-xl border-slate-200"
           required
         />
       </div>
 
       <div className="md:col-span-3">
+        <label className="mb-1.5 block text-sm font-medium text-slate-700">Expense Date</label>
         <input
           name="incurred_date"
           type="date"
           value={form.incurred_date}
           onChange={onChange}
-          className="form-input w-full"
+          className="form-input min-h-[46px] w-full rounded-xl border-slate-200"
           required
         />
       </div>
 
       <div className="md:col-span-8">
+        <label className="mb-1.5 block text-sm font-medium text-slate-700">Customer Note</label>
         <input
           name="note"
           placeholder="Details for customer: store/vendor + what was purchased + why (optional)"
           value={form.note}
           onChange={onChange}
-          className="form-input w-full"
+          className="form-input min-h-[46px] w-full rounded-xl border-slate-200"
         />
-        <div className="mt-1 text-[11px] text-gray-500">
+        <div className="mt-2 text-[11px] text-gray-500">
           Example: “Home Depot — roofing nails + sealant. Needed to complete flashing.”
         </div>
       </div>
 
       <div className="md:col-span-4">
+        <label className="mb-1.5 block text-sm font-medium text-slate-700">Receipts / Files</label>
         <input
           type="file"
           multiple
           onChange={onFiles}
-          className="form-input w-full bg-white"
+          className="form-input min-h-[46px] w-full rounded-xl border-slate-200 bg-white"
           accept="image/*,.pdf"
         />
         {form.files?.length ? (
-          <div className="mt-1 text-xs text-gray-600">
+          <div className="mt-2 text-xs text-gray-600">
             Selected: <span className="font-semibold">{form.files.length}</span>{" "}
             file{form.files.length === 1 ? "" : "s"}
           </div>
         ) : null}
       </div>
 
-      <div className="md:col-span-12 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+      <div className="md:col-span-12 flex flex-col items-start justify-between gap-4 border-t border-slate-200 pt-4 sm:flex-row sm:items-center">
+        <label className="inline-flex min-h-[46px] items-center gap-2 rounded-xl bg-slate-50 px-3 text-sm text-gray-700">
           <input
             type="checkbox"
             name="send_to_homeowner"
@@ -383,7 +390,7 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
         <button
           type="submit"
           disabled={submitting}
-          className="w-full sm:w-auto bg-blue-600 text-white py-2 px-5 rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
+          className="inline-flex min-h-[46px] w-full items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:bg-gray-400 sm:w-auto"
         >
           {submitting ? "Adding…" : "+ Add Expense"}
         </button>
@@ -794,25 +801,29 @@ export default function ExpensesPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto p-6">
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Expenses</h1>
-          <div className="text-sm text-gray-600 mt-1">
-            Unified on Expense Requests with multiple receipts/photos. Resend supported.
-          </div>
-        </div>
-
+    <ContractorPageSurface
+      eyebrow="Business"
+      title="Expenses"
+      subtitle="Track customer-facing expense requests, receipts, and resend status from one cleaner workspace."
+      actions={
         <div className="text-sm text-gray-700">
           Total:&nbsp;<span className="font-semibold">{toMoney(totalAmount)}</span>
         </div>
+      }
+    >
+      <div className="space-y-6">
+      <div>
+        <div className="text-sm text-gray-600">
+          Unified on Expense Requests with multiple receipts/photos. Resend supported.
+        </div>
       </div>
 
-      <div className="mt-4">
+      <div>
         <AddExpenseForm agreements={agreements} onAdd={handleAddExpenseRequest} submitting={submitting} />
       </div>
 
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-sm text-gray-700">
           Showing <span className="font-semibold">{filtered.length}</span> expense{filtered.length === 1 ? "" : "s"}
         </div>
@@ -822,7 +833,7 @@ export default function ExpensesPage() {
           <select
             value={agreementFilter}
             onChange={(e) => setAgreementFilter(e.target.value)}
-            className="form-input bg-white"
+            className="form-input min-h-[42px] rounded-xl border-slate-200 bg-white"
           >
             <option value="">All agreements</option>
             {agreements.map((a) => (
@@ -835,16 +846,16 @@ export default function ExpensesPage() {
           <button
             type="button"
             onClick={fetchExpenseRequests}
-            className="px-3 py-2 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
+            className="min-h-[42px] rounded-xl border border-gray-300 bg-white px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             Refresh
           </button>
         </div>
       </div>
 
-      <div className="rounded-xl bg-white shadow ring-1 ring-black/5 overflow-x-auto">
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
         <table className="min-w-[1150px] w-full text-sm">
-          <thead className="bg-gray-50 text-gray-600">
+          <thead className="bg-slate-50 text-gray-600">
             <tr>
               <th className="px-3 py-2 text-left">Created</th>
               <th className="px-3 py-2 text-left">Agreement</th>
@@ -867,12 +878,14 @@ export default function ExpensesPage() {
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-3 py-8 text-center text-gray-500">
-                  No expenses recorded.
-                </td>
-              </tr>
-            ) : (
-              filtered.map((er, idx) => {
+                  <td colSpan={9} className="px-3 py-12 text-center text-gray-500">
+                    <div className="mx-auto max-w-md rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-sm text-slate-500">
+                      No expenses recorded.
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filtered.map((er, idx) => {
                 const aId = String(er.agreement || er.agreement_id || "");
                 const a = agreementsMap.get(aId);
 
@@ -883,34 +896,34 @@ export default function ExpensesPage() {
                 const receiptUrl = er.receipt_url || null;
 
                 return (
-                  <tr key={er.id || idx} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{prettyDT(created)}</td>
+                  <tr key={er.id || idx} className="hover:bg-gray-50/80">
+                    <td className="px-3 py-3 text-gray-700 whitespace-nowrap">{prettyDT(created)}</td>
 
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-3">
                       <div className="font-medium text-gray-900">{agreementText}</div>
                       {aId ? <div className="text-xs text-gray-500">Agreement ID: {aId}</div> : null}
                     </td>
 
-                    <td className="px-3 py-2">{projectFromExpenseRequest(er, agreementsMap)}</td>
+                    <td className="px-3 py-3">{projectFromExpenseRequest(er, agreementsMap)}</td>
 
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-3">
                       <div className="text-gray-900 font-medium">{er.description || "—"}</div>
                       {er.notes_to_homeowner ? (
                         <div className="text-xs text-gray-500 mt-1 line-clamp-1">{er.notes_to_homeowner}</div>
                       ) : null}
                     </td>
 
-                    <td className="px-3 py-2 text-right font-semibold">{toMoney(er.amount)}</td>
+                    <td className="px-3 py-3 text-right font-semibold">{toMoney(er.amount)}</td>
 
-                    <td className="px-3 py-2 whitespace-nowrap">{expenseDate}</td>
+                    <td className="px-3 py-3 whitespace-nowrap">{expenseDate}</td>
 
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-3">
                       <span className={`inline-flex items-center px-2.5 py-1 rounded-full border text-xs font-medium ${statusPillClasses(status)}`}>
                         {statusLabel(status)}
                       </span>
                     </td>
 
-                    <td className="px-3 py-2 whitespace-nowrap">
+                    <td className="px-3 py-3 whitespace-nowrap">
                       {receiptUrl ? (
                         <a className="text-blue-700 underline font-medium" href={receiptUrl} target="_blank" rel="noreferrer">
                           Open
@@ -920,9 +933,9 @@ export default function ExpensesPage() {
                       )}
                     </td>
 
-                    <td className="px-3 py-2">
-                      <div className="flex flex-wrap gap-2 justify-end">
-                        <label className="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 cursor-pointer">
+                    <td className="px-3 py-3">
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <label className="cursor-pointer rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
                           Upload
                           <input
                             type="file"
@@ -936,7 +949,7 @@ export default function ExpensesPage() {
                         <button
                           type="button"
                           onClick={() => openModal(er)}
-                          className="px-3 py-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
+                           className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
                         >
                           View
                         </button>
@@ -948,9 +961,9 @@ export default function ExpensesPage() {
                             openModal(er);
                             setTimeout(() => handleSendOrResend(er), 0);
                           }}
-                          className={`px-3 py-1.5 rounded-lg text-white ${
-                            canSend(status) ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-400 cursor-not-allowed"
-                          }`}
+                           className={`rounded-lg px-3 py-2 text-sm font-semibold text-white ${
+                             canSend(status) ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-400 cursor-not-allowed"
+                           }`}
                         >
                           {sendButtonLabel(status)}
                         </button>
@@ -958,7 +971,7 @@ export default function ExpensesPage() {
                         <button
                           type="button"
                           onClick={() => handleDeleteExpenseRequest(er.id)}
-                          className="px-3 py-1.5 rounded-lg border border-red-300 bg-white hover:bg-red-50 text-red-700"
+                           className="rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
                         >
                           Delete
                         </button>
@@ -970,6 +983,7 @@ export default function ExpensesPage() {
             )}
           </tbody>
         </table>
+      </div>
       </div>
 
       <SimpleModal
@@ -1222,6 +1236,7 @@ export default function ExpensesPage() {
           </div>
         )}
       </SimpleModal>
-    </div>
+      </div>
+    </ContractorPageSurface>
   );
 }

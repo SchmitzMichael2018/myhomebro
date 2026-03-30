@@ -43,6 +43,7 @@ import {
   Download,
   ExternalLink,
 } from "lucide-react";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 
 console.log("AgreementList.jsx v2026-03-03 — Customer wording pass");
 
@@ -108,13 +109,13 @@ const getPaymentMode = (r) => {
 
 function statusPillClass(status) {
   const s = safeLower(status);
-  if (s === "draft") return "bg-gray-100 text-gray-800";
-  if (s === "signed") return "bg-amber-100 text-amber-800";
-  if (s === "funded") return "bg-green-100 text-green-800";
-  if (s === "in_progress") return "bg-blue-100 text-blue-800";
-  if (s === "completed") return "bg-slate-200 text-slate-900";
-  if (s === "cancelled") return "bg-red-100 text-red-800";
-  return "bg-gray-100 text-gray-800";
+  if (s === "draft") return "border border-slate-200 bg-slate-100 text-slate-800";
+  if (s === "signed") return "border border-amber-200 bg-amber-50 text-amber-800";
+  if (s === "funded") return "border border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (s === "in_progress") return "border border-sky-200 bg-sky-50 text-sky-800";
+  if (s === "completed") return "border border-slate-300 bg-slate-200 text-slate-900";
+  if (s === "cancelled") return "border border-rose-200 bg-rose-50 text-rose-800";
+  return "border border-slate-200 bg-slate-100 text-slate-800";
 }
 
 function prettyStatus(status) {
@@ -1226,20 +1227,24 @@ export default function AgreementList() {
   // --- existing actions & UI below (unchanged from your file) ---
 
   return (
-    <div className="p-6 space-y-4">
+    <ContractorPageSurface
+      eyebrow="Core"
+      title="Agreements"
+      subtitle="Manage signatures, funding, progress, and amendments from a cleaner shared workspace."
+    >
       {/* Header */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/90 p-3 shadow-sm">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search by project, customer, type, subtype, email, ID…"
-          className="border rounded-lg px-3 py-2 w-80"
+          className="w-80 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-slate-400"
         />
 
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="border rounded-lg px-3 py-2"
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm"
         >
           <option value="all">All Status</option>
           <option value="draft">draft</option>
@@ -1250,7 +1255,7 @@ export default function AgreementList() {
           <option value="cancelled">cancelled</option>
         </select>
 
-        <label className="inline-flex items-center gap-2 px-3 py-2 border rounded-lg bg-white">
+        <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm">
           <input
             type="checkbox"
             checked={showArchived}
@@ -1266,7 +1271,7 @@ export default function AgreementList() {
         <select
           value={pageSize}
           onChange={(e) => setPageSize(Number(e.target.value))}
-          className="border rounded-lg px-3 py-2"
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm"
         >
           {[10, 20, 50, 100, 250].map((n) => (
             <option key={n} value={n}>
@@ -1277,7 +1282,7 @@ export default function AgreementList() {
 
         <button
           onClick={() => load({ force: true, source: "refresh-button" })}
-          className="inline-flex items-center gap-2 px-3 py-2 border rounded-lg hover:bg-gray-50"
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
           title="Refresh"
         >
           <RefreshCw size={16} /> Refresh
@@ -1286,7 +1291,7 @@ export default function AgreementList() {
         <div className="flex-1" />
 
         <button
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+          className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
           title="New Agreement"
           onClick={() => navigate(`${BASE}/agreements/new/wizard?step=1`)}
         >
@@ -1294,10 +1299,10 @@ export default function AgreementList() {
         </button>
 
         <button
-          className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg ${
+          className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-semibold shadow-sm ${
             selected.size >= 2
               ? "bg-indigo-600 text-white hover:bg-indigo-700"
-              : "bg-gray-300 text-gray-600 cursor-not-allowed"
+              : "bg-slate-200 text-slate-500 cursor-not-allowed"
           }`}
           disabled={selected.size < 2}
           onClick={mergeSelected}
@@ -1308,48 +1313,50 @@ export default function AgreementList() {
       </div>
 
       {/* Table */}
-      <div className="rounded-xl border bg-white shadow-sm overflow-x-auto">
+      <div className="min-h-[420px] overflow-x-auto rounded-[22px] border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
         <table className="min-w-full text-sm">
-          <thead className="bg-gray-50">
+          <thead className="bg-slate-50/90">
             <tr>
-              <th className="p-2 border">
+              <th className="px-3 py-3 text-center">
                 <input
                   type="checkbox"
                   onChange={toggleAll}
                   checked={page.length > 0 && page.every((r) => selected.has(r.id))}
                 />
               </th>
-              <th className="p-2 text-left border">Primary</th>
-              <th className="p-2 text-left border">Agreement ID</th>
-              <th className="p-2 text-left border">Status</th>
-              <th className="p-2 text-left border">Escrow</th>
-              <th className="p-2 text-left border">PDF</th>
-              <th className="p-2 text-left border">Project</th>
-              <th className="p-2 text-left border">Type</th>
-              <th className="p-2 text-left border">Subtype</th>
-              <th className="p-2 text-left border">Customer</th>
-              <th className="p-2 text-left border">Start</th>
-              <th className="p-2 text-left border">End</th>
-              <th className="p-2 text-right border">Milestones</th>
-              <th className="p-2 text-left border">% Complete</th>
-              <th className="p-2 text-left border">Signatures</th>
-              <th className="p-2 text-right border">Total</th>
-              <th className="p-2 text-right border">Invoices</th>
-              <th className="p-2 text-left border">Actions</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Primary</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Agreement ID</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Status</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Escrow</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">PDF</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Project</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Type</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Subtype</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Customer</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Start</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">End</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Milestones</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">% Complete</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Signatures</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Total</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Invoices</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Actions</th>
             </tr>
           </thead>
 
-          <tbody>
+          <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr>
-                <td className="p-3 border text-gray-600" colSpan={18}>
+                <td className="px-6 py-14 text-center text-sm text-slate-500" colSpan={18}>
                   Loading…
                 </td>
               </tr>
             ) : page.length === 0 ? (
               <tr>
-                <td className="p-3 border text-gray-500" colSpan={18}>
-                  No agreements found.
+                <td className="px-8 py-16 text-center" colSpan={18}>
+                  <div className="mx-auto max-w-md rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-sm text-slate-500">
+                    No agreements found.
+                  </div>
                 </td>
               </tr>
             ) : (
@@ -1372,6 +1379,23 @@ export default function AgreementList() {
 
                 const canArchive = !isArchived && (isCompleted || statusLower === "cancelled");
                 const canUnarchive = isArchived;
+                const nextStepLabel = isArchived
+                  ? "Restore if work should stay visible"
+                  : fullySigned
+                  ? canMarkComplete
+                    ? "Mark complete and close out"
+                    : "Use Amend for signed changes"
+                  : statusLower === "draft"
+                  ? "Finish editing and send"
+                  : statusLower === "signed"
+                  ? "Collect funding or begin work"
+                  : statusLower === "funded"
+                  ? "Track milestones and invoicing"
+                  : statusLower === "in_progress"
+                  ? "Keep milestones moving"
+                  : isCompleted
+                  ? "Archive when ready"
+                  : "Review agreement details";
 
                 const contrReq = reqContractor(r);
                 const custReq = reqCustomer(r);
@@ -1382,11 +1406,11 @@ export default function AgreementList() {
                 return (
                   <tr
                     key={r.id}
-                    className="odd:bg-white even:bg-gray-50 hover:bg-blue-50 cursor-pointer"
+                    className="cursor-pointer bg-white transition-colors hover:bg-sky-50/70"
                     onClick={() => goView(r.id)}
                     title="Click to view agreement"
                   >
-                    <td className="p-2 border">
+                    <td className="px-3 py-4 align-top">
                       <input
                         type="checkbox"
                         checked={isChecked}
@@ -1398,19 +1422,19 @@ export default function AgreementList() {
                       />
                     </td>
 
-                    <td className="p-2 border">
+                    <td className="px-3 py-4 align-top">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           choosePrimary(r.id);
                         }}
                         disabled={!isChecked}
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg border ${
+                        className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${
                           isChecked
                             ? isPrimary
-                              ? "bg-yellow-100 border-yellow-300"
-                              : "hover:bg-gray-50"
-                            : "text-gray-400 cursor-not-allowed"
+                              ? "bg-yellow-100 border-yellow-300 text-amber-800"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-gray-50"
+                            : "text-gray-400 cursor-not-allowed border-slate-200"
                         }`}
                         title={isChecked ? (isPrimary ? "Primary" : "Set as Primary") : "Select row first"}
                       >
@@ -1419,11 +1443,11 @@ export default function AgreementList() {
                       </button>
                     </td>
 
-                    <td className="p-2 border">#{r.id}</td>
+                    <td className="px-3 py-4 align-top font-medium text-slate-700">#{r.id}</td>
 
-                    <td className="p-2 border">
+                    <td className="px-3 py-4 align-top">
                       <span
-                        className={`px-2 py-0.5 rounded-full text-xs font-semibold ${statusPillClass(r.status)}`}
+                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusPillClass(r.status)}`}
                         title={isArchived ? "Archived" : ""}
                       >
                         {prettyStatus(r.status)}
@@ -1431,65 +1455,69 @@ export default function AgreementList() {
                       </span>
                     </td>
 
-                    <td className="p-2 border">
+                    <td className="px-3 py-4 align-top">
                       <EscrowBadge r={r} />
                     </td>
 
-                    <td className="p-2 border">
+                    <td className="px-3 py-4 align-top">
                       <PdfBadge r={r} />
                     </td>
 
-                    <td className="p-2 border max-w-[320px] truncate" title={renderProject(r)}>
-                      {renderProject(r)}
-                    </td>
-
-                    <td className="p-2 border whitespace-nowrap" title={renderType(r)}>
-                      {renderType(r)}
-                    </td>
-
-                    <td className="p-2 border whitespace-nowrap" title={renderSubtype(r)}>
-                      {renderSubtype(r)}
-                    </td>
-
-                    <td className="p-2 border max-w-[320px] truncate" title={homeowner}>
-                      {homeowner}
-                    </td>
-
-                    <td className="p-2 border">{fmtDate(r.start)}</td>
-                    <td className="p-2 border">{fmtDate(r.end)}</td>
-
-                    <td className="p-2 border text-right">
-                      {stat.total ? `${stat.complete} / ${stat.total}` : "—"}
-                    </td>
-
-                    <td className="p-2 border">
-                      <div className="flex items-center gap-2">
-                        <Progress percent={stat.percent} />
-                        <span className="w-10 text-xs">{stat.percent}%</span>
+                    <td className="max-w-[320px] px-3 py-4 align-top" title={renderProject(r)}>
+                      <div className="min-w-0">
+                        <div className="truncate font-semibold text-slate-900">{renderProject(r)}</div>
+                        <div className="mt-1 text-xs font-medium uppercase tracking-[0.14em] text-slate-400">Next Step</div>
+                        <div className="mt-1 text-sm text-slate-700">{nextStepLabel}</div>
                       </div>
                     </td>
 
-                    <td className="p-2 border">
+                    <td className="whitespace-nowrap px-3 py-4 align-top text-slate-700" title={renderType(r)}>
+                      {renderType(r)}
+                    </td>
+
+                    <td className="whitespace-nowrap px-3 py-4 align-top text-slate-700" title={renderSubtype(r)}>
+                      {renderSubtype(r)}
+                    </td>
+
+                    <td className="max-w-[320px] px-3 py-4 align-top" title={homeowner}>
+                      <div className="truncate text-slate-700">{homeowner}</div>
+                    </td>
+
+                    <td className="px-3 py-4 align-top text-slate-700">{fmtDate(r.start)}</td>
+                    <td className="px-3 py-4 align-top text-slate-700">{fmtDate(r.end)}</td>
+
+                    <td className="px-3 py-4 align-top text-right text-slate-700">
+                      {stat.total ? `${stat.complete} / ${stat.total}` : "—"}
+                    </td>
+
+                    <td className="px-3 py-4 align-top">
+                      <div className="flex items-center gap-2">
+                        <Progress percent={stat.percent} />
+                        <span className="w-10 text-xs font-medium text-slate-600">{stat.percent}%</span>
+                      </div>
+                    </td>
+
+                    <td className="px-3 py-4 align-top">
                       <div className="flex items-center gap-2">
                         <SignatureBadge state={contrState} who="Contractor" />
                         <SignatureBadge state={custState} who="Customer" />
                       </div>
                     </td>
 
-                    <td className="p-2 border text-right">
+                    <td className="px-3 py-4 align-top text-right font-semibold text-slate-900">
                       {fmtMoney(r.display_total ?? r.total_cost)}
                     </td>
 
-                    <td className="p-2 border text-right">{Number(r.invoices_count || 0)}</td>
+                    <td className="px-3 py-4 align-top text-right font-medium text-slate-700">{Number(r.invoices_count || 0)}</td>
 
-                    <td className="p-2 border">
-                      <div className="flex flex-wrap items-center gap-2">
+                    <td className="px-3 py-4 align-top">
+                      <div className="flex flex-wrap items-center gap-2.5">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             goView(r.id);
                           }}
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md border hover:bg-gray-50"
+                          className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
                           title="View agreement"
                         >
                           <Eye size={14} /> View
@@ -1501,8 +1529,10 @@ export default function AgreementList() {
                             goEdit(r.id);
                           }}
                           disabled={fullySigned}
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border ${
-                            fullySigned ? "border-gray-300 text-gray-400 cursor-not-allowed" : "hover:bg-gray-50"
+                          className={`inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm font-semibold ${
+                            fullySigned
+                              ? "border-gray-300 text-gray-400 cursor-not-allowed"
+                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                           }`}
                           title={fullySigned ? "Fully signed. Use Amend to modify." : "Continue Editing"}
                         >
@@ -1516,7 +1546,7 @@ export default function AgreementList() {
                               createAmendment(r);
                             }}
                             disabled={busyAmendRow === r.id}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-amber-400 text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+                            className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
                             title="Create amendment"
                           >
                             {busyAmendRow === r.id ? (
@@ -1537,11 +1567,11 @@ export default function AgreementList() {
                             markComplete(r, stat);
                           }}
                           disabled={!canMarkComplete || busyCompleteRow === r.id}
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border ${
-                            canMarkComplete
-                              ? "border-green-300 text-green-800 hover:bg-green-50"
-                              : "border-gray-300 text-gray-400 cursor-not-allowed"
-                          }`}
+                           className={`inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm font-semibold ${
+                             canMarkComplete
+                               ? "border-green-300 bg-green-50 text-green-800 hover:bg-green-100"
+                               : "border-gray-300 text-gray-400 cursor-not-allowed"
+                           }`}
                           title={canMarkComplete ? "Mark agreement completed" : "Requires 100% milestones + funded/in_progress/signed"}
                         >
                           {busyCompleteRow === r.id ? (
@@ -1562,7 +1592,7 @@ export default function AgreementList() {
                               unarchiveAgreement(r);
                             }}
                             disabled={busyArchiveRow === r.id}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-slate-300 text-slate-800 hover:bg-slate-50 disabled:opacity-60"
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
                             title="Unarchive agreement"
                           >
                             {busyArchiveRow === r.id ? (
@@ -1582,9 +1612,9 @@ export default function AgreementList() {
                               archiveAgreement(r);
                             }}
                             disabled={!canArchive || busyArchiveRow === r.id}
-                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border ${
+                            className={`inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm font-semibold ${
                               canArchive
-                                ? "border-slate-300 text-slate-800 hover:bg-slate-50"
+                                ? "border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
                                 : "border-gray-300 text-gray-400 cursor-not-allowed"
                             }`}
                             title={canArchive ? "Archive agreement" : "Archive enabled only for completed/cancelled"}
@@ -1607,9 +1637,9 @@ export default function AgreementList() {
                             deleteDraft(r);
                           }}
                           disabled={busyDeleteRow === r.id}
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-md ${
+                          className={`inline-flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-semibold ${
                             String(r.status).toLowerCase() === "draft"
-                              ? "border border-red-300 text-red-700 hover:bg-red-50"
+                              ? "border border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
                               : "border border-gray-300 text-gray-400 cursor-not-allowed"
                           }`}
                           title="Delete Draft"
@@ -1626,10 +1656,10 @@ export default function AgreementList() {
         </table>
       </div>
 
-      <div className="mhb-helper-text mt-3">
+      <div className="mhb-helper-text rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
         Showing {Math.min(page.length, filtered.length)} of {filtered.length}. Select 2+ rows, choose a <b>Primary</b> (star), then click{" "}
         <b>Merge Selected</b>. Fully executed agreements can no longer be edited directly; use <b>Amend</b> to create a new Amendment and re-sign.
       </div>
-    </div>
+    </ContractorPageSurface>
   );
 }

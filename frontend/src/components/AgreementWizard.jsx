@@ -29,6 +29,7 @@ import {
 } from "../lib/assistantHandoff.js";
 import { trackOnboardingEvent } from "../lib/onboardingAnalytics.js";
 import { getAgreementWizardHint } from "../lib/workflowHints.js";
+import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 
 /* ---------------- helpers ---------------- */
 
@@ -1269,34 +1270,39 @@ export default function AgreementWizard() {
   );
 
   return (
-    <div className="mx-auto max-w-6xl p-4">
+    <ContractorPageSurface
+      eyebrow="Core"
+      title="Agreement Wizard"
+      subtitle={`${agreementId ? `Agreement #${agreementId}` : "Draft agreement"} · Step ${step} of 4`}
+      actions={
+        agreementId ? (
+          <button
+            type="button"
+            onClick={() => navigate(`/app/agreements/${agreementId}`)}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            View Agreement
+          </button>
+        ) : null
+      }
+    >
       <div className="flex items-start justify-between gap-4">
         <div>
           <div
             data-testid="agreement-wizard-heading"
-            className="text-xl font-semibold text-white"
+            className="sr-only"
           >
             Agreement Wizard
           </div>
           <div
             data-testid="agreement-wizard-subtitle"
-            className="mt-1 text-sm font-medium text-indigo-200"
+            className="sr-only"
           >
             {agreementId ? `Agreement #${agreementId}` : "Draft agreement"} · Step {step} of 4
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {agreementId ? (
-            <button
-              type="button"
-              onClick={() => navigate(`/app/agreements/${agreementId}`)}
-              className="rounded-md border border-white/30 px-3 py-2 text-sm text-white hover:bg-white/10"
-            >
-              View Agreement
-            </button>
-          ) : null}
-        </div>
+        <div className="flex items-center gap-2" />
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
@@ -1308,7 +1314,7 @@ export default function AgreementWizard() {
             className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
               step === n
                 ? "border-indigo-600 bg-indigo-600 text-white"
-                : "border-white/25 bg-white/15 text-white hover:bg-white/20"
+                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
             }`}
           >
             {label}
@@ -1353,11 +1359,11 @@ export default function AgreementWizard() {
       ) : null}
 
       {loadingAgreement ? (
-        <div className="mt-6 text-sm text-white/80">Loading agreement details…</div>
+        <div className="mt-6 text-sm text-slate-500">Loading agreement details…</div>
       ) : null}
 
       {taxonomyLoading ? (
-        <div className="mt-2 text-xs text-white/70">Loading project taxonomy…</div>
+        <div className="mt-2 text-xs text-slate-500">Loading project taxonomy…</div>
       ) : null}
 
       {step === 1 ? (
@@ -1479,6 +1485,6 @@ export default function AgreementWizard() {
           />
         </div>
       ) : null}
-    </div>
+    </ContractorPageSurface>
   );
 }

@@ -528,7 +528,7 @@ export default function TemplateSearchSection({
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="mb-4">
-        <div className="text-base font-semibold text-gray-900">Project Setup</div>
+        <div className="text-base font-semibold text-gray-900">Project Basics</div>
         <div className="mt-1 text-sm text-gray-600">
           Start with a template if one already exists for this kind of job.
         </div>
@@ -1231,7 +1231,7 @@ export default function TemplateSearchSection({
       <div className="mt-5 border-t border-slate-200 pt-5">
         <div className="mb-3">
           <div className="text-sm font-semibold text-gray-900">
-            Project Details
+            Project Basics
           </div>
           <div className="mt-1 text-xs text-gray-600">
             If no template exists, complete the fields below and MyHomeBro will
@@ -1399,7 +1399,16 @@ export default function TemplateSearchSection({
           </div>
         </div>
 
-        <div className="mt-4">
+        <div className="mt-5 border-t border-slate-200 pt-5">
+          <div className="mb-3">
+            <div className="text-sm font-semibold text-gray-900">
+              Scope of Work
+            </div>
+            <div className="mt-1 text-xs text-gray-600">
+              Describe what is included so the customer understands the job and
+              milestone planning stays accurate.
+            </div>
+          </div>
           <div className="mb-1 flex items-center justify-between gap-2">
             <label className="block text-sm font-medium">
               Description / Scope of Work

@@ -7,6 +7,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import api from "../api";
 import DashboardGrid from "./dashboard/DashboardGrid.jsx";
 import DashboardSection from "./dashboard/DashboardSection.jsx";
+import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 import {
   ResponsiveContainer,
   BarChart,
@@ -491,6 +492,16 @@ export default function BusinessDashboard() {
   const progressSummary = payload?.progress_summary || {};
   const payoutQuery = useMemo(() => buildPayoutQuery(range), [range]);
   const recentPayouts = useMemo(() => payoutRows.slice(0, 5), [payoutRows]);
+  const pendingExposure = useMemo(
+    () =>
+      Number(snapshot.escrow_pending || 0) +
+      Number(payoutSummary?.total_ready_amount || 0),
+    [payoutSummary?.total_ready_amount, snapshot.escrow_pending]
+  );
+  const latestWorkflowRisk = useMemo(() => {
+    if (!workflowSeries.length) return 0;
+    return Number(workflowSeries[workflowSeries.length - 1]?.overdue_milestones || 0);
+  }, [workflowSeries]);
 
   const categoryChart = useMemo(() => {
     // Recharts expects numbers; backend returns strings for money fields
@@ -730,22 +741,17 @@ export default function BusinessDashboard() {
     return <div className="p-6 text-center text-red-600 font-semibold">{error}</div>;
   }
   return (
-    <div className="p-6">
-      {/* Header */}
-      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-extrabold text-gray-900">Business Dashboard</h2>
-          <p className="mhb-helper-text mt-4">
-            Business health snapshot: jobs, revenue, categories, timing, escrow, fees.
-          </p>
-        </div>
-
+    <ContractorPageSurface
+      eyebrow="Business"
+      title="Business Dashboard"
+      subtitle="Business health snapshot for jobs, revenue, categories, timing, escrow, and fees."
+      actions={
         <div className="flex items-center gap-2">
           <label className="text-xs font-semibold text-gray-600">Range</label>
           <select
             value={range}
             onChange={(e) => setRange(e.target.value)}
-            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm"
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm"
           >
             <option value="30">Last 30 days</option>
             <option value="90">Last 90 days</option>
@@ -755,22 +761,23 @@ export default function BusinessDashboard() {
 
           <button
             onClick={fetchData}
-            className="rounded-lg bg-gray-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-800"
+            className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
           >
             Refresh
           </button>
         </div>
-      </div>
+      }
+    >
 
       <DashboardSection
-        title="Business Signals"
-        subtitle="The highest-priority operational signals and payment settings."
+        title="Business Alerts"
+        subtitle="High-priority work and payout signals should stand out before deeper reporting."
         className="mb-6"
       >
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <div className="text-sm font-extrabold text-slate-900">Subcontractor Payout Automation</div>
+            <div className="text-sm font-extrabold text-slate-900">Payout Automation</div>
             <div className="mt-2 text-sm text-slate-700">
               Automatically pay subcontractors when payouts are ready.
             </div>
@@ -796,13 +803,13 @@ export default function BusinessDashboard() {
 
       <section
         data-testid="dashboard-ai-insights-section"
-        className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+        className="mb-6 rounded-2xl border border-amber-200 bg-white p-5 shadow-sm"
       >
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-base font-bold text-slate-900">Business Signals</div>
+            <div className="text-base font-bold text-slate-900">Needs Attention</div>
             <div className="mt-1 text-sm text-slate-600">
-              Short operational signals based on current payouts, workflow risk, and business state.
+              Awaiting review, overdue work, payout blockers, and related contractor risk signals.
             </div>
           </div>
         </div>
@@ -846,34 +853,69 @@ export default function BusinessDashboard() {
 
       <DashboardSection
         title="Performance Snapshot"
-        subtitle="A tighter read on jobs, revenue, timing, escrow exposure, and disputes."
+        subtitle="The top contractor business metrics worth scanning first."
         className="mb-6"
       >
-      <DashboardGrid>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
-          label="Jobs Completed"
-          value={int(snapshot.jobs_completed)}
-          sub="Agreements completed in range"
-          tone={Number(snapshot.jobs_completed || 0) > 0 ? "good" : "default"}
+          label="Revenue"
+          value={money(snapshot.total_revenue)}
+          sub="Paid invoices in range"
+          tone={Number(snapshot.total_revenue || 0) > 0 ? "good" : "default"}
         />
-
         <Stat
           label="Active Jobs"
           value={int(snapshot.active_jobs)}
-          sub="Agreements still active"
+          sub={`${int(snapshot.jobs_completed)} completed in range`}
           tone={Number(snapshot.active_jobs || 0) > 0 ? "warn" : "default"}
         />
-
         <Stat
-          label="Total Revenue"
+          label="Pending Payout / Escrow"
+          value={money(pendingExposure)}
+          sub={`Subs ready: ${money(payoutSummary?.total_ready_amount)} · Escrow: ${money(snapshot.escrow_pending)}`}
+          tone={pendingExposure > 0 ? "warn" : "default"}
+        />
+        <Stat
+          label="Disputes / Risk"
+          value={int(snapshot.disputes_open)}
+          sub={
+            latestWorkflowRisk > 0
+              ? `${int(latestWorkflowRisk)} overdue milestones`
+              : "No overdue workflow risk"
+          }
+          tone={
+            Number(snapshot.disputes_open || 0) > 0 || latestWorkflowRisk > 0
+              ? "bad"
+              : "default"
+          }
+        />
+      </div>
+
+      <DashboardGrid className="hidden">
+        <Stat
+          label="Revenue"
           value={money(snapshot.total_revenue)}
           sub="Paid invoices in range"
           tone={Number(snapshot.total_revenue || 0) > 0 ? "good" : "default"}
         />
 
         <Stat
-          label="Avg Revenue / Job"
-          value={money(snapshot.avg_revenue_per_job)}
+          label="Active Jobs"
+          value={int(snapshot.active_jobs)}
+          sub={`${int(snapshot.jobs_completed)} completed in range`}
+          tone={Number(snapshot.active_jobs || 0) > 0 ? "warn" : "default"}
+        />
+
+        <Stat
+          label="Pending Payout / Escrow"
+          value={money(pendingExposure)}
+          sub={`Subs ready: ${money(payoutSummary?.total_ready_amount)} · Escrow: ${money(snapshot.escrow_pending)}`}
+          tone={pendingExposure > 0 ? "warn" : "default"}
+        />
+
+        <Stat
+          label="Disputes / Risk"
+          value={int(snapshot.disputes_open)}
           sub="Total revenue ÷ completed jobs"
         />
 
@@ -895,9 +937,44 @@ export default function BusinessDashboard() {
 
       <DashboardSection
         title="Deep Dive"
-        subtitle="Charts, payout reporting, and category detail live below the primary signals."
+        subtitle="The rest of the reporting stays available below the decision-making surface."
         className="mb-6"
       >
+      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <div className="text-base font-bold text-slate-900">Operational Context</div>
+            <div className="mt-1 text-sm text-slate-600">
+              Supporting metrics that matter, without crowding the first scan of the page.
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Stat
+            label="Jobs Completed"
+            value={int(snapshot.jobs_completed)}
+            sub="Completed agreements in range"
+            tone={Number(snapshot.jobs_completed || 0) > 0 ? "good" : "default"}
+          />
+          <Stat
+            label="Avg Revenue / Job"
+            value={money(snapshot.avg_revenue_per_job)}
+            sub="Average paid revenue per completed job"
+          />
+          <Stat
+            label="Avg Completion Days"
+            value={num(snapshot.avg_completion_days, 1)}
+            sub="Average cycle time"
+          />
+          <Stat
+            label="Platform Fees Paid"
+            value={money(snapshot.platform_fees_paid)}
+            sub="Fees recorded in range"
+          />
+        </div>
+      </section>
+
       {Number(progressSummary.project_count || 0) > 0 ? (
         <section className="mt-6 rounded-xl border border-indigo-200 bg-indigo-50/70 p-5 shadow-sm">
           <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
@@ -978,64 +1055,6 @@ export default function BusinessDashboard() {
           </ChartCard>
 
           <ChartCard
-            title="Fees Over Time"
-            description="Platform fees plus any estimated processing fees available from invoice payout fields."
-            testId="dashboard-chart-fees"
-          >
-            {hasSeriesValue(feeChart, ["platform_fee", "estimated_processing_fee", "total_fee"]) ? (
-              <>
-                <div className="mb-3 flex flex-wrap gap-3 text-xs text-slate-600">
-                  <span>Platform fees: {money(feeSummary.platform_fee_total)}</span>
-                  <span>
-                    Estimated processing: {money(feeSummary.estimated_processing_fee_total)}
-                  </span>
-                </div>
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={feeChart}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="bucket_label" tick={{ fontSize: 12 }} />
-                      <YAxis tickFormatter={axisMoney} width={70} />
-                      <Tooltip formatter={(value) => money(value)} />
-                      <Legend />
-                      <Bar
-                        dataKey="platform_fee"
-                        name="Platform Fees"
-                        stackId="fees"
-                        fill="#334155"
-                        shape={(props) => (
-                          <ClickableBarShape
-                            {...props}
-                            chartType="fees"
-                            onBucketClick={openDrilldown}
-                            dataKey="platform_fee"
-                          />
-                        )}
-                      />
-                      <Bar
-                        dataKey="estimated_processing_fee"
-                        name="Estimated Processing"
-                        stackId="fees"
-                        fill="#94a3b8"
-                        shape={(props) => (
-                          <ClickableBarShape
-                            {...props}
-                            chartType="fees"
-                            onBucketClick={openDrilldown}
-                            dataKey="estimated_processing_fee"
-                          />
-                        )}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </>
-            ) : (
-              <ChartEmptyState text="No fee activity in this range yet." />
-            )}
-          </ChartCard>
-
-          <ChartCard
             title="Subcontractor Payouts"
             description="Paid, ready, and failed subcontractor payout amounts over time."
             testId="dashboard-chart-payouts"
@@ -1093,6 +1112,64 @@ export default function BusinessDashboard() {
               </div>
             ) : (
               <ChartEmptyState text="No subcontractor payout activity in this range yet." />
+            )}
+          </ChartCard>
+
+          <ChartCard
+            title="Fees Over Time"
+            description="Platform fees plus any estimated processing fees available from invoice payout fields."
+            testId="dashboard-chart-fees"
+          >
+            {hasSeriesValue(feeChart, ["platform_fee", "estimated_processing_fee", "total_fee"]) ? (
+              <>
+                <div className="mb-3 flex flex-wrap gap-3 text-xs text-slate-600">
+                  <span>Platform fees: {money(feeSummary.platform_fee_total)}</span>
+                  <span>
+                    Estimated processing: {money(feeSummary.estimated_processing_fee_total)}
+                  </span>
+                </div>
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={feeChart}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="bucket_label" tick={{ fontSize: 12 }} />
+                      <YAxis tickFormatter={axisMoney} width={70} />
+                      <Tooltip formatter={(value) => money(value)} />
+                      <Legend />
+                      <Bar
+                        dataKey="platform_fee"
+                        name="Platform Fees"
+                        stackId="fees"
+                        fill="#334155"
+                        shape={(props) => (
+                          <ClickableBarShape
+                            {...props}
+                            chartType="fees"
+                            onBucketClick={openDrilldown}
+                            dataKey="platform_fee"
+                          />
+                        )}
+                      />
+                      <Bar
+                        dataKey="estimated_processing_fee"
+                        name="Estimated Processing"
+                        stackId="fees"
+                        fill="#94a3b8"
+                        shape={(props) => (
+                          <ClickableBarShape
+                            {...props}
+                            chartType="fees"
+                            onBucketClick={openDrilldown}
+                            dataKey="estimated_processing_fee"
+                          />
+                        )}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            ) : (
+              <ChartEmptyState text="No fee activity in this range yet." />
             )}
           </ChartCard>
 
@@ -1390,7 +1467,7 @@ export default function BusinessDashboard() {
       </DashboardSection>
 
       {/* Footer note */}
-      <div className="mhb-helper-text mt-4">
+      <div className="mhb-helper-text rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
         Data reflects your completed agreements and paid invoices within the selected range.
       </div>
 
@@ -1402,6 +1479,6 @@ export default function BusinessDashboard() {
         data={drilldownData}
         onClose={closeDrilldown}
       />
-    </div>
+    </ContractorPageSurface>
   );
 }

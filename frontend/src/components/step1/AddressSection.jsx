@@ -19,15 +19,11 @@ export default function AddressSection({
 }) {
   return (
     <>
-      <div className="md:col-span-2 mt-4 border-t pt-4">
-        <h3 className="text-sm font-semibold mb-2">Project Address (Required)</h3>
-        <div className="text-xs text-gray-500">
-          Search for the address, then confirm or adjust the structured fields below.
-        </div>
-      </div>
-
       <div className="md:col-span-2">
         <label className="block text-sm font-medium mb-1">Address Search</label>
+        <div className="mb-2 text-xs text-gray-500">
+          Search first, then confirm the structured address fields below.
+        </div>
 
         <AddressAutocomplete
           value={addrSearch}
