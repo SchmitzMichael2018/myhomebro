@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 
 import api from "../api";
 import { useWhoAmI } from "../hooks/useWhoAmI";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 
 function formatDateTime(value) {
   if (!value) return "-";
@@ -90,28 +91,34 @@ export default function ReviewerQueuePage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-6">
-      <div>
-        <h1
-          data-testid="reviewer-queue-title"
-          className="text-2xl font-bold text-slate-900"
-        >
-          Awaiting Review
-        </h1>
-        <p className="mt-2 text-sm text-slate-600">
-          Review submitted milestone work assigned to you and send it back if it
-          needs changes.
-        </p>
+    <ContractorPageSurface
+      eyebrow="Work"
+      title="Awaiting Review"
+      subtitle="Review submitted milestone work assigned to you and send it back if it needs changes."
+      className="max-w-[1320px]"
+    >
+      <div
+        data-testid="reviewer-queue-title"
+        className="sr-only"
+      >
+        Awaiting Review
       </div>
 
       {loading ? (
-        <div className="text-sm text-slate-500">Loading review queue...</div>
+        <div className="rounded-2xl border border-slate-200 bg-white/90 px-6 py-10 text-center text-sm text-slate-700 shadow-sm">
+          Loading review queue...
+        </div>
       ) : groups.length === 0 ? (
         <div
           data-testid="reviewer-queue-empty"
-          className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm"
+          className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-6 py-12 text-center shadow-sm"
         >
-          No milestones are awaiting your review right now.
+          <div className="text-base font-semibold text-slate-900">
+            No milestones are awaiting your review right now.
+          </div>
+          <div className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-700">
+            New work submissions will appear here so you can approve them quickly or send them back with notes.
+          </div>
         </div>
       ) : (
         <div className="space-y-6">
@@ -235,6 +242,6 @@ export default function ReviewerQueuePage() {
           ))}
         </div>
       )}
-    </div>
+    </ContractorPageSurface>
   );
 }

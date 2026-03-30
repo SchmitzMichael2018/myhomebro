@@ -182,7 +182,7 @@ export default function Milestones() {
             key={item.label}
             className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-sm"
           >
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
               {item.label}
             </div>
             <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
@@ -194,7 +194,7 @@ export default function Milestones() {
 
       {!isEmployee && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 text-sm text-slate-600">
+          <div className="mb-3 text-sm leading-6 text-slate-700">
             Use filters to focus on what needs attention first, then open any milestone for details, review, or payout context.
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -221,13 +221,13 @@ export default function Milestones() {
       )}
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 px-4 py-3 text-sm text-slate-600">
+        <div className="border-b border-slate-200 px-4 py-3 text-sm text-slate-700">
           {loading ? "Loading…" : `${filtered.length} milestone(s)`}
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-600">
+            <thead className="bg-slate-50/80 text-slate-700">
               <tr>
                 <th className="px-4 py-3 text-left">Title</th>
                 <th className="px-4 py-3 text-left">Agreement</th>
@@ -273,12 +273,12 @@ export default function Milestones() {
 
               {!loading && filtered.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-slate-500">
-                    <div className="mx-auto max-w-xl rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8">
+                  <td colSpan={5} className="px-4 py-10 text-center text-slate-700">
+                    <div className="mx-auto max-w-xl rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-6 py-7">
                       <div className="text-base font-semibold text-slate-900">
                         {filterKey === "rework" ? "No rework milestones found" : "No milestones found"}
                       </div>
-                      <div className="mt-2 text-sm leading-6 text-slate-600">
+                      <div className="mt-2 text-sm leading-6 text-slate-700">
                         {filterKey === "rework"
                           ? "Rework items will appear here once a dispute or corrective workflow creates them."
                           : "Track milestone progress here as agreements move into active work, completion, and payout review."}

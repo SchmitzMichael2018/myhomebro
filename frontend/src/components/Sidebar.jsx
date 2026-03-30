@@ -12,6 +12,28 @@ import RefundEscrowModal from "./RefundEscrowModal";
 import StripeOnboardingStatus from "./StripeOnboardingStatus";
 import { useAssistantDock } from "./AssistantDock.jsx";
 
+const NAV_HINTS = {
+  "/app/dashboard": "See urgent work, next actions, and current project status.",
+  "/app/assistant": "Use AI to start work faster and get guided next steps.",
+  "/app/business": "Review revenue, alerts, payouts, and business performance.",
+  "/app/reviewer/queue": "Open items that still need approval or review.",
+  "/app/agreements": "Manage drafts, signatures, and active agreements.",
+  "/app/templates": "Reuse proven agreement structures and estimate starting points.",
+  "/app/milestones": "Track work progress, approvals, and invoice readiness.",
+  "/app/subcontractors": "Manage subcontractor relationships and assignment readiness.",
+  "/app/public-presence": "Control how your business appears to customers online.",
+  "/app/assignments": "Review who owns each job, task, or handoff.",
+  "/app/team-schedule": "See team availability and upcoming field work.",
+  "/app/team": "Manage team members, roles, and internal access.",
+  "/app/invoices": "Review invoices, payouts, and payment status.",
+  "/app/customers": "Keep track of customer relationships and recent additions.",
+  "/app/calendar": "See upcoming dates, work windows, and due items.",
+  "/app/expenses": "Log expenses, receipts, and billable charges.",
+  "/app/disputes": "Respond to disputes and track resolution status.",
+  "/app/profile": "Update your business profile, preferences, and account settings.",
+  "/app/onboarding": "Resume setup steps like Stripe and activation tasks.",
+};
+
 /**
  * Sidebar
  *
@@ -96,27 +118,44 @@ export default function Sidebar({ variant = "desktop" }) {
   }, [isAdmin, isEmployee, isSubcontractor]);
 
   // Primary item (MAIN section)
-  const Item = ({ to, label, emoji, title }) => (
-    <NavLink
-      to={to}
-      data-close-sidebar="1"
-      className={({ isActive }) =>
-        [
-          "flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition",
-          "border",
-          isActive
-            ? "bg-slate-900 text-white border-black/10 shadow-sm"
-            : "bg-white/60 text-slate-800 border-black/10 hover:bg-white hover:text-slate-900",
-        ].join(" ")
-      }
-      title={title || (typeof label === "string" ? label : undefined)}
-    >
-      <span className="text-base" aria-hidden="true">
-        {emoji}
-      </span>
-      <span className="flex items-center">{label}</span>
-    </NavLink>
-  );
+  const Item = ({ to, label, emoji, title, hint }) => {
+    const tooltipId = React.useId();
+    const resolvedHint = hint || NAV_HINTS[to];
+
+    return (
+      <div className="group relative">
+        <NavLink
+          to={to}
+          data-close-sidebar="1"
+          aria-describedby={resolvedHint ? tooltipId : undefined}
+          className={({ isActive }) =>
+            [
+              "flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition",
+              "border",
+              isActive
+                ? "bg-slate-900 text-white border-black/10 shadow-sm"
+                : "bg-white/60 text-slate-800 border-black/10 hover:bg-white hover:text-slate-900",
+            ].join(" ")
+          }
+          title={title || (typeof label === "string" ? label : undefined)}
+        >
+          <span className="text-base" aria-hidden="true">
+            {emoji}
+          </span>
+          <span className="flex items-center">{label}</span>
+        </NavLink>
+        {resolvedHint ? (
+          <div
+            id={tooltipId}
+            role="tooltip"
+            className="pointer-events-none absolute left-full top-1/2 z-20 ml-3 hidden w-56 -translate-y-1/2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 shadow-lg opacity-0 transition duration-150 group-hover:opacity-100 group-focus-within:opacity-100 xl:block"
+          >
+            {resolvedHint}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
 
   // Admin nested item
   const SubItem = ({ to, label }) => (

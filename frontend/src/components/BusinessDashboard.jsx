@@ -734,11 +734,11 @@ export default function BusinessDashboard() {
   }, [payoutQuery]);
 
   if (loading) {
-    return <div className="p-6 text-center text-gray-500">Loading dashboard...</div>;
+    return <div className="p-6 text-center text-slate-700">Loading dashboard...</div>;
   }
 
   if (error) {
-    return <div className="p-6 text-center text-red-600 font-semibold">{error}</div>;
+    return <div className="p-6 text-center font-semibold text-red-600">{error}</div>;
   }
   return (
     <ContractorPageSurface
@@ -747,7 +747,7 @@ export default function BusinessDashboard() {
       subtitle="Business health snapshot for jobs, revenue, categories, timing, escrow, and fees."
       actions={
         <div className="flex items-center gap-2">
-          <label className="text-xs font-semibold text-gray-600">Range</label>
+          <label className="text-xs font-semibold text-slate-700">Range</label>
           <select
             value={range}
             onChange={(e) => setRange(e.target.value)}
@@ -772,9 +772,9 @@ export default function BusinessDashboard() {
       <DashboardSection
         title="Business Alerts"
         subtitle="High-priority work and payout signals should stand out before deeper reporting."
-        className="mb-6"
+        className="mb-5"
       >
-      <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm">
+      <div className="rounded-xl border border-slate-200 bg-slate-50/55 p-4 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <div className="text-sm font-extrabold text-slate-900">Payout Automation</div>
@@ -854,7 +854,7 @@ export default function BusinessDashboard() {
       <DashboardSection
         title="Performance Snapshot"
         subtitle="The top contractor business metrics worth scanning first."
-        className="mb-6"
+        className="mb-5"
       >
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
@@ -937,10 +937,10 @@ export default function BusinessDashboard() {
 
       <DashboardSection
         title="Deep Dive"
-        subtitle="The rest of the reporting stays available below the decision-making surface."
-        className="mb-6"
+        subtitle="Supporting reporting stays available here once the top metrics and alerts have been reviewed."
+        className="mb-5"
       >
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-xl border border-slate-200 bg-white/95 p-5 shadow-sm">
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="text-base font-bold text-slate-900">Operational Context</div>
@@ -976,7 +976,7 @@ export default function BusinessDashboard() {
       </section>
 
       {Number(progressSummary.project_count || 0) > 0 ? (
-        <section className="mt-6 rounded-xl border border-indigo-200 bg-indigo-50/70 p-5 shadow-sm">
+        <section className="mt-5 rounded-xl border border-indigo-200 bg-indigo-50/55 p-5 shadow-sm">
           <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <div>
               <div className="text-base font-bold text-slate-900">Progress Project Financials</div>
@@ -1002,12 +1002,12 @@ export default function BusinessDashboard() {
 
       <section
         data-testid="dashboard-charts-section"
-        className="mt-6 rounded-xl border border-slate-200 bg-slate-50/70 p-5 shadow-sm"
+        className="mt-5 rounded-xl border border-slate-200 bg-slate-50/55 p-5 shadow-sm"
       >
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="text-base font-bold text-slate-900">Charts</div>
-            <div className="mt-1 text-sm text-slate-600">
+            <div className="mt-1 text-sm text-slate-700">
               Trend lines for revenue, fees, subcontractor payouts, and overdue work across the selected range.
             </div>
           </div>

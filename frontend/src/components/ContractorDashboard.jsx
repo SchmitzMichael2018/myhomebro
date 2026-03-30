@@ -6,7 +6,6 @@ import { toast } from "react-hot-toast";
 import PageShell from "./PageShell.jsx";
 import RoleAwareWorkboard from "./RoleAwareWorkboard.jsx";
 import StatCard from "./StatCard.jsx";
-import { WorkflowHintList } from "./WorkflowHint.jsx";
 import Modal from "react-modal";
 import DashboardCard from "./dashboard/DashboardCard.jsx";
 import DashboardSection from "./dashboard/DashboardSection.jsx";
@@ -269,10 +268,12 @@ function ActionButton({ icon: Icon, label, onClick, primary, hint }) {
       title={label}
       aria-describedby={hint ? tooltipId : undefined}
       style={{
-        padding: "12px 16px",
+        padding: primary ? "13px 16px" : "12px 16px",
         fontSize: 14,
         display: "flex",
         alignItems: "center",
+        justifyContent: "flex-start",
+        width: "100%",
       }}
     >
       {Icon ? <Icon size={18} /> : null}
@@ -283,12 +284,12 @@ function ActionButton({ icon: Icon, label, onClick, primary, hint }) {
   if (!hint) return button;
 
   return (
-    <div className="group relative inline-flex">
+    <div className="group relative flex">
       {button}
       <div
         id={tooltipId}
         role="tooltip"
-        className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 w-52 -translate-x-1/2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-600 opacity-0 shadow-lg transition duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+        className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 w-56 -translate-x-1/2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 opacity-0 shadow-lg transition duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
       >
         {hint}
       </div>
@@ -1300,7 +1301,6 @@ export default function ContractorDashboard() {
     ? "Here are the milestones currently assigned to you."
     : "Track milestones, invoices, leads, and next actions in one place.";
   const onboarding = contractorProfile?.onboarding || {};
-  const smsStatus = contractorProfile?.sms_status || {};
   const reminderStorageKey = "mhb:dashboard-dismissed-reminders";
   useEffect(() => {
     try {
@@ -1354,20 +1354,19 @@ export default function ContractorDashboard() {
     });
   };
   const needsAttentionItems = useMemo(() => dashboardNextSteps.slice(0, 3), [dashboardNextSteps]);
-  const showWorkflowHints = !isEmployee && dashboardNextSteps.length > 0;
   const showActivityFeed = !isEmployee && activityFeed.length > 0;
 
   return (
     <PageShell title="Dashboard" subtitle={headerSubtitle} showLogo>
-      <div className="space-y-4 rounded-[30px] bg-white/[0.05] p-1 backdrop-blur-[1px]">
+      <div className="space-y-5 rounded-[30px] bg-white/[0.035] p-1 lg:-mx-3 xl:-mx-5 backdrop-blur-[1px]">
         {reminders.length ? (
           <div className="mb-4 space-y-3" data-testid="dashboard-onboarding-reminder">
             {reminders.map((item) => (
-              <div key={item.key} className="rounded-2xl border border-amber-200/75 bg-amber-50/85 px-4 py-3 shadow-sm">
+              <div key={item.key} className="rounded-2xl border border-amber-200/75 bg-amber-50/80 px-4 py-2.5 shadow-sm">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div>
                     <div className="text-sm font-semibold text-amber-900">{item.title}</div>
-                    <div className="mt-1 text-sm text-amber-800">{item.message}</div>
+                    <div className="mt-1 text-sm text-amber-900/90">{item.message}</div>
                   </div>
                   <div className="flex items-center gap-3">
                     <button
@@ -1392,112 +1391,156 @@ export default function ContractorDashboard() {
         ) : null}
 
       {!isEmployee ? (
-        <DashboardSection
-          title="Focus"
-          subtitle="What needs your attention right now and the single highest-value next move."
-          className="mb-4"
-        >
-          <DashboardCard testId="dashboard-next-best-action">
-            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Next Best Action
-            </div>
-            {nextBestAction ? (
-              <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <div className="text-lg font-semibold text-slate-900">{nextBestAction.title}</div>
-                  <div className="mt-1 text-sm text-slate-600">{nextBestAction.message}</div>
-                  {nextBestAction.rationale ? (
-                    <div className="mt-2 text-xs text-slate-500">{nextBestAction.rationale}</div>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => navigate(nextBestAction.navigation_target || "/app/dashboard")}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-                >
-                  {nextBestAction.cta_label || "Open"}
-                  <ArrowRight className="h-4 w-4" />
-                </button>
+        <div className="mb-4 grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <DashboardSection
+            title="Focus"
+            subtitle="What needs your attention right now and the single highest-value next move."
+          >
+            <DashboardCard
+              testId="dashboard-next-best-action"
+              className="border-slate-200/90 shadow-[0_16px_38px_rgba(15,23,42,0.08)]"
+            >
+              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-600">
+                Next Best Action
               </div>
-            ) : (
-              <div className="mt-3 text-sm text-slate-600">
-                Start by creating your first agreement or opening the AI assistant.
-              </div>
-            )}
-          </DashboardCard>
-
-          <DashboardCard testId="dashboard-needs-attention" tone="subtle">
-            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Needs Attention
-            </div>
-            {needsAttentionItems.length ? (
-              <div className="mt-3 space-y-2">
-                {needsAttentionItems.map((item, index) => (
-                  <div
-                    key={`${item}-${index}`}
-                    className="rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-700"
-                  >
-                    {item}
+              {nextBestAction ? (
+                <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <div className="text-xl font-semibold text-slate-950">{nextBestAction.title}</div>
+                    <div className="mt-1.5 text-sm text-slate-700">{nextBestAction.message}</div>
+                    {nextBestAction.rationale ? (
+                      <div className="mt-2 text-xs text-slate-600">{nextBestAction.rationale}</div>
+                    ) : null}
                   </div>
-                ))}
-              </div>
-            ) : (
-              <div className="mt-3 text-sm text-slate-600">No urgent items right now.</div>
-            )}
-          </DashboardCard>
-        </DashboardSection>
-      ) : null}
-
-      {!isEmployee && contractorProfile ? (
-        <div
-          className="mb-4 rounded-2xl border border-white/30 bg-white/62 p-4 shadow-[0_10px_28px_rgba(15,23,42,0.07)] backdrop-blur-sm"
-          data-testid="dashboard-sms-status"
-        >
-          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-            SMS Updates
-          </div>
-          <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <div className="text-base font-semibold text-slate-900">
-                {contractorProfile?.sms_enabled
-                  ? "SMS updates enabled"
-                  : contractorProfile?.sms_opted_out
-                  ? "SMS updates opted out"
-                  : "SMS updates not enabled"}
-              </div>
-              <div className="mt-1 text-sm text-slate-600">
-                {smsStatus?.phone_number_e164
-                  ? `Phone on file: ${smsStatus.phone_number_e164}`
-                  : "Add consent before sending project SMS updates."}
-              </div>
-              {contractorProfile?.last_sms_event?.summary ? (
-                <div className="mt-2 text-xs text-slate-500">
-                  Last event: {contractorProfile.last_sms_event.summary}
+                  <button
+                    type="button"
+                    onClick={() => navigate(nextBestAction.navigation_target || "/app/dashboard")}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-900"
+                  >
+                    {nextBestAction.cta_label || "Open"}
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
                 </div>
-              ) : null}
-            </div>
-            <div className="group relative">
-              <button
-                type="button"
-                onClick={() => navigate("/app/profile")}
-                aria-describedby="dashboard-manage-sms-hint"
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white/90 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-white"
-              >
-                Manage SMS
-              </button>
-              <div
-                id="dashboard-manage-sms-hint"
-                role="tooltip"
-                className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 w-56 -translate-x-1/2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-600 opacity-0 shadow-lg transition duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
-              >
-                Update your SMS preferences and review phone setup.
+              ) : (
+                <div className="mt-3 text-sm text-slate-700">
+                  Start by creating your first agreement or opening the AI assistant.
+                </div>
+              )}
+            </DashboardCard>
+
+            <DashboardCard
+              testId="dashboard-needs-attention"
+              tone="subtle"
+              className="border-amber-200/80 bg-amber-50/90 shadow-[0_12px_30px_rgba(245,158,11,0.08)]"
+            >
+              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
+                Needs Attention
               </div>
-            </div>
-          </div>
+              {needsAttentionItems.length ? (
+                <div className="mt-3 space-y-2.5">
+                  {needsAttentionItems.map((item, index) => (
+                    <div
+                      key={`${item}-${index}`}
+                      className="rounded-xl border border-amber-200/80 bg-white px-3.5 py-3 text-sm font-medium text-slate-800"
+                    >
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-3 text-sm text-slate-700">No urgent items right now.</div>
+              )}
+            </DashboardCard>
+          </DashboardSection>
+
+          <DashboardSection
+            title="Quick Actions"
+            subtitle="Jump straight into the next contractor task."
+            className="xl:sticky xl:top-5"
+          >
+            <DashboardCard
+              testId="dashboard-quick-actions-rail"
+              tone="subtle"
+              className="border-slate-200/90 bg-white/90 p-4 shadow-[0_14px_32px_rgba(15,23,42,0.06)]"
+            >
+              <div className="grid gap-2.5">
+                <ActionButton
+                  icon={Sparkles}
+                  label="Start with AI"
+                  primary
+                  onClick={goStartWithAi}
+                  hint="Use AI to plan the next job, agreement, or milestone."
+                />
+                <ActionButton
+                  icon={FilePlus2}
+                  label="New Agreement"
+                  primary
+                  onClick={goNewAgreement}
+                  hint="Start a new agreement and move it toward signature."
+                />
+                <ActionButton
+                  icon={ListPlus}
+                  label="New Intake"
+                  onClick={goNewIntake}
+                  hint="Capture a new project lead before turning it into work."
+                />
+                <ActionButton
+                  icon={ListPlus}
+                  label="New Milestone"
+                  onClick={goNewMilestone}
+                  hint="Add a milestone so work, approval, and payment can move forward."
+                />
+                <ActionButton
+                  icon={Receipt}
+                  label="New Expense"
+                  onClick={openNewExpense}
+                  hint="Log an expense and send it to the customer when needed."
+                />
+                <ActionButton
+                  icon={Receipt}
+                  label="Expenses"
+                  onClick={goExpenses}
+                  hint="Review expense requests, receipts, and customer-facing charges."
+                />
+                <ActionButton
+                  icon={Receipt}
+                  label="Invoices"
+                  onClick={goInvoices}
+                  hint="Review invoices, approvals, payouts, and payment status."
+                />
+                <ActionButton
+                  icon={AlertTriangle}
+                  label="Disputes"
+                  onClick={goDisputes}
+                  hint="Open disputes that need a response or resolution."
+                />
+                <ActionButton
+                  icon={CalendarDays}
+                  label="Calendar"
+                  onClick={goCalendar}
+                  hint="See scheduled work and upcoming project dates."
+                />
+              </div>
+            </DashboardCard>
+
+            <DashboardCard
+              tone="subtle"
+              className="border-white/30 bg-white/70 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]"
+            >
+              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600">
+                MyHomeBro Pricing
+              </div>
+              <div className="mt-3 rounded-xl border border-slate-200/80 bg-white px-3.5 py-3">
+                <div className="text-sm font-semibold text-slate-900">{currentRateTitle}</div>
+                <div className="mt-1 text-sm text-slate-700">{pricingSubtitle}</div>
+              </div>
+            </DashboardCard>
+          </DashboardSection>
         </div>
       ) : null}
 
-      {!isEmployee && contractorProfile ? (
+
+      {false ? (
         <div
           className="mb-4 rounded-2xl border border-white/28 bg-white/58 p-4 shadow-[0_8px_22px_rgba(15,23,42,0.05)] backdrop-blur-sm"
           data-testid="dashboard-sms-automation"
@@ -1556,7 +1599,7 @@ export default function ContractorDashboard() {
         </div>
       ) : null}
 
-      {!isEmployee ? (
+      {false ? (
         <div className="mb-4 rounded-2xl border border-white/26 bg-white/56 p-3.5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] backdrop-blur-sm">
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
             MyHomeBro Pricing
@@ -1674,21 +1717,14 @@ export default function ContractorDashboard() {
 
       {!isEmployee ? (
         <>
-          <DashboardSection
-            title="Activity & Tools"
-            subtitle="Keep recent workflow context nearby without letting it compete with the main focus area."
-            className="mt-6"
-          >
-            {showWorkflowHints ? (
-              <WorkflowHintList
-                items={dashboardNextSteps}
-                testId="dashboard-next-steps"
-              />
-            ) : null}
-
-            <div className="space-y-3" data-testid="dashboard-activity-feed">
-              {showActivityFeed ? (
-                activityFeed.map((item) => (
+          {showActivityFeed ? (
+            <DashboardSection
+              title="Recent Activity"
+              subtitle="Recent project signals and workflow updates."
+              className="mt-6"
+            >
+              <div className="space-y-3" data-testid="dashboard-activity-feed">
+                {activityFeed.map((item) => (
                   <button
                     key={item.id}
                     type="button"
@@ -1699,85 +1735,22 @@ export default function ContractorDashboard() {
                     <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                       <div>
                         <div className="text-sm font-semibold">{item.title}</div>
-                        <div className="mt-1 text-sm opacity-90">{item.summary}</div>
+                        <div className="mt-1 text-sm text-current/95">{item.summary}</div>
                         {item.related_label ? (
-                          <div className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] opacity-70">
+                          <div className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] opacity-75">
                             {item.related_label}
                           </div>
                         ) : null}
                       </div>
-                      <div className="text-xs font-semibold opacity-70">
+                      <div className="text-xs font-semibold opacity-75">
                         {formatActivityTimestamp(item.created_at)}
                       </div>
                     </div>
                   </button>
-                ))
-              ) : (
-                <div
-                  className="rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-3 text-sm text-slate-500"
-                  data-testid="dashboard-activity-feed-empty"
-                >
-                  No recent activity yet.
-                </div>
-              )}
-            </div>
-
-            <DashboardCard tone="subtle">
-              <div className="flex flex-wrap gap-3">
-                <ActionButton
-                  icon={Sparkles}
-                  label="Start with AI"
-                  primary
-                  onClick={goStartWithAi}
-                  hint="Use AI to plan the next job, agreement, or milestone."
-                />
-                <ActionButton
-                  icon={FilePlus2}
-                  label="New Agreement"
-                  primary
-                  onClick={goNewAgreement}
-                  hint="Start a new agreement and move it toward signature."
-                />
-                <ActionButton
-                  icon={ListPlus}
-                  label="New Intake"
-                  onClick={goNewIntake}
-                  hint="Capture a new project lead before turning it into work."
-                />
-                <ActionButton
-                  icon={ListPlus}
-                  label="New Milestone"
-                  onClick={goNewMilestone}
-                  hint="Add a milestone so work, approval, and payment can move forward."
-                />
-                <ActionButton icon={Receipt} label="New Expense" onClick={openNewExpense} />
-                <ActionButton
-                  icon={Receipt}
-                  label="Expenses"
-                  onClick={goExpenses}
-                  hint="Review expense requests, receipts, and customer-facing charges."
-                />
-                <ActionButton
-                  icon={Receipt}
-                  label="Invoices"
-                  onClick={goInvoices}
-                  hint="Review invoices, approvals, payouts, and payment status."
-                />
-                <ActionButton
-                  icon={AlertTriangle}
-                  label="Disputes"
-                  onClick={goDisputes}
-                  hint="Open disputes that need a response or resolution."
-                />
-                <ActionButton
-                  icon={CalendarDays}
-                  label="Calendar"
-                  onClick={goCalendar}
-                  hint="See scheduled work and upcoming project dates."
-                />
+                ))}
               </div>
-            </DashboardCard>
-          </DashboardSection>
+            </DashboardSection>
+          ) : null}
         </>
       ) : null}
 
