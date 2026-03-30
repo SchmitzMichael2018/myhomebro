@@ -1130,6 +1130,7 @@ export default function AgreementDetail() {
 
   return (
     <ContractorPageSurface
+      tier="wide"
       eyebrow="Core"
       title="Agreement Detail"
       subtitle="Review signatures, funding, milestones, and project actions from one consistent agreement workspace."

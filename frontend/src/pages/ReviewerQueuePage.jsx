@@ -92,10 +92,10 @@ export default function ReviewerQueuePage() {
 
   return (
     <ContractorPageSurface
+      tier="compact"
       eyebrow="Work"
       title="Awaiting Review"
       subtitle="Review submitted milestone work assigned to you and send it back if it needs changes."
-      className="max-w-[1320px]"
     >
       <div
         data-testid="reviewer-queue-title"
@@ -105,28 +105,31 @@ export default function ReviewerQueuePage() {
       </div>
 
       {loading ? (
-        <div className="rounded-2xl border border-slate-200 bg-white/90 px-6 py-10 text-center text-sm text-slate-700 shadow-sm">
-          Loading review queue...
+        <div className="rounded-2xl border border-slate-200 bg-white/90 px-5 py-5 text-center text-sm text-slate-700 shadow-sm">
+          <div className="font-semibold text-slate-900">Loading review queue...</div>
+          <div className="mt-1 text-sm text-slate-600">
+            Submitted milestone work will appear here once it is ready for review.
+          </div>
         </div>
       ) : groups.length === 0 ? (
         <div
           data-testid="reviewer-queue-empty"
-          className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-6 py-12 text-center shadow-sm"
+          className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-5 py-5 text-center shadow-sm"
         >
           <div className="text-base font-semibold text-slate-900">
             No milestones are awaiting your review right now.
           </div>
-          <div className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-700">
+          <div className="mx-auto mt-1.5 max-w-xl text-sm leading-5 text-slate-700">
             New work submissions will appear here so you can approve them quickly or send them back with notes.
           </div>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {groups.map((group) => (
             <section
               key={group.agreement_id}
               data-testid={`reviewer-queue-group-${group.agreement_id}`}
-              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
             >
               <div className="border-b border-slate-100 pb-3">
                 <h2 className="text-lg font-semibold text-slate-900">

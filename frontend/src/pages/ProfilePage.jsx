@@ -7,10 +7,10 @@ import ContractorPageSurface from "../components/dashboard/ContractorPageSurface
 export default function ProfilePage() {
   return (
     <ContractorPageSurface
+      tier="wide"
       eyebrow="Settings"
       title="Profile & Billing"
       subtitle="Manage your business profile, plan details, Stripe status, and account settings from a consistent account surface."
-      className="max-w-[1180px]"
     >
       <ContractorProfile />
       <ProfileDangerZone />

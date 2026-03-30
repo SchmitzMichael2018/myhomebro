@@ -742,6 +742,7 @@ export default function BusinessDashboard() {
   }
   return (
     <ContractorPageSurface
+      tier="full"
       eyebrow="Business"
       title="Business Dashboard"
       subtitle="Business health snapshot for jobs, revenue, categories, timing, escrow, and fees."

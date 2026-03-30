@@ -387,7 +387,7 @@ export default function AssignmentsPage() {
      Render
   ----------------------------- */
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-4">
+    <div className="mx-auto max-w-[1320px] space-y-3.5 p-4 md:p-5">
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold">Assignments</h1>
@@ -402,7 +402,7 @@ export default function AssignmentsPage() {
         </Btn>
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white p-4">
+      <div className="rounded-xl border border-gray-200 bg-white p-3.5 shadow-sm">
         <div className="flex flex-col md:flex-row gap-3 md:items-center">
           <input
             value={search}
@@ -418,11 +418,21 @@ export default function AssignmentsPage() {
       </div>
 
       {loading ? (
-        <div className="text-gray-500">Loading…</div>
+        <div className="rounded-2xl border border-slate-200 bg-white px-5 py-5 text-center text-sm text-slate-700 shadow-sm">
+          <div className="font-semibold text-slate-900">Loading assignments...</div>
+          <div className="mt-1 text-sm text-slate-600">
+            Agreement rows and milestone assignment controls will appear here.
+          </div>
+        </div>
       ) : filteredAgreements.length === 0 ? (
-        <div className="text-gray-500">No agreements match your filters.</div>
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-5 py-5 text-center text-sm text-slate-700 shadow-sm">
+          <div className="font-semibold text-slate-900">No agreements match your filters.</div>
+          <div className="mt-1 text-sm text-slate-600">
+            Adjust search or filter settings to find agreements ready for assignment.
+          </div>
+        </div>
       ) : (
-        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           {/* header row */}
           <div className="grid grid-cols-12 gap-3 px-4 py-3 text-xs font-semibold text-gray-500 border-b bg-gray-50">
             <div className="col-span-4">Agreement</div>

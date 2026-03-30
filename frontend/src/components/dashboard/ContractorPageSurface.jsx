@@ -1,16 +1,37 @@
 import React from "react";
 
+const TIER_STYLES = {
+  full: {
+    outer: "max-w-[1660px] px-2 pb-6 pt-3 md:px-4 lg:px-5 xl:px-6 2xl:px-7",
+    inner: "rounded-[30px] border border-slate-200/85 bg-white/90 p-4 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur-sm md:p-5 lg:p-6",
+    content: "space-y-4.5",
+  },
+  wide: {
+    outer: "max-w-[1460px] px-3 pb-7 pt-3 md:px-5 lg:px-7 xl:px-8",
+    inner: "rounded-[30px] border border-slate-200/85 bg-white/90 p-4 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur-sm md:p-6 lg:p-7",
+    content: "space-y-5",
+  },
+  compact: {
+    outer: "max-w-[1120px] px-3 pb-6 pt-3 md:px-4 lg:px-5",
+    inner: "rounded-[28px] border border-slate-200/85 bg-white/92 p-4 shadow-[0_20px_48px_rgba(15,23,42,0.07)] backdrop-blur-sm md:p-5 lg:p-6",
+    content: "space-y-4",
+  },
+};
+
 export default function ContractorPageSurface({
   eyebrow,
   title,
   subtitle,
   actions = null,
   children,
+  tier = "wide",
   className = "",
 }) {
+  const styles = TIER_STYLES[tier] || TIER_STYLES.wide;
+
   return (
-    <div className={`mx-auto w-full max-w-[1440px] px-3 pb-7 pt-3 md:px-5 lg:px-7 xl:px-8 ${className}`.trim()}>
-      <div className="rounded-[30px] border border-slate-200/85 bg-white/90 p-4 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur-sm md:p-6 lg:p-7">
+    <div className={`mx-auto w-full ${styles.outer} ${className}`.trim()}>
+      <div className={styles.inner}>
         {(title || subtitle || eyebrow || actions) ? (
           <div className="mb-5 flex flex-col gap-3.5 border-b border-slate-200/80 pb-4 md:flex-row md:items-end md:justify-between">
             <div className="min-w-0">
@@ -29,7 +50,7 @@ export default function ContractorPageSurface({
             {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
           </div>
         ) : null}
-        <div className="space-y-5">{children}</div>
+        <div className={styles.content}>{children}</div>
       </div>
     </div>
   );

@@ -190,13 +190,13 @@ export default function TeamSchedule() {
 
   return (
     <ContractorPageSurface
+      tier="compact"
       eyebrow="Work"
       title="Team Schedule"
       subtitle="Set weekly work days and exception dates so contractor scheduling stays predictable and easy to review."
-      className="max-w-[1360px]"
     >
-    <div className="space-y-4">
-      <div className="flex items-end justify-between flex-wrap gap-3">
+    <div className="space-y-3.5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <div className="text-sm text-slate-700">
             Set weekly work days (Sun–Sat) and add exceptions (days off / extra work days).
@@ -211,7 +211,7 @@ export default function TeamSchedule() {
         </button>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm">
         <label className="block text-sm font-semibold text-gray-700 mb-2">Select employee</label>
         <select
           value={selectedId}
@@ -239,17 +239,22 @@ export default function TeamSchedule() {
       </div>
 
       {!selectedId ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-6 py-12 text-center shadow-sm">
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-5 py-5 text-center shadow-sm">
           <div className="text-base font-semibold text-slate-900">Select an employee to edit their schedule.</div>
-          <div className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-700">
+          <div className="mx-auto mt-1.5 max-w-xl text-sm leading-5 text-slate-700">
             Weekly availability, default hours, and exception days will appear here once you choose a team member.
           </div>
         </div>
       ) : !schedule ? (
-        <div className="text-gray-500">Loading schedule…</div>
+        <div className="rounded-2xl border border-slate-200 bg-white/90 px-5 py-5 text-center text-sm text-slate-700 shadow-sm">
+          <div className="font-semibold text-slate-900">Loading schedule...</div>
+          <div className="mt-1 text-sm text-slate-600">
+            Weekly defaults and one-time exceptions are loading for this team member.
+          </div>
+        </div>
       ) : (
         <>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm">
             <div className="flex items-start justify-between flex-wrap gap-3">
               <div>
                 <div className="font-bold text-slate-950">Weekly work days</div>
@@ -327,7 +332,7 @@ export default function TeamSchedule() {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm">
             <div className="flex items-start justify-between flex-wrap gap-3">
               <div>
                 <div className="font-bold text-slate-950">Schedule exceptions</div>
@@ -385,9 +390,9 @@ export default function TeamSchedule() {
 
             <div className="mt-4">
               {exceptions.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-5 py-7 text-center">
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-5 py-5 text-center">
                   <div className="text-sm font-semibold text-slate-900">No exceptions yet</div>
-                  <div className="mt-1 text-sm text-slate-700">
+                  <div className="mt-1 text-sm leading-5 text-slate-700">
                     Add a day off or extra work day here when the schedule needs a one-time change.
                   </div>
                 </div>

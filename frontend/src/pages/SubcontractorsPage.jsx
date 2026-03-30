@@ -370,8 +370,8 @@ export default function SubcontractorsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-6">
-      <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+    <div className="mx-auto max-w-[1440px] space-y-4 p-4 md:p-5">
+      <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <h1 data-testid="subcontractors-page-title" className="text-2xl font-bold text-slate-900">
             Subcontractors
@@ -400,7 +400,7 @@ export default function SubcontractorsPage() {
         </div>
       </header>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <SummaryCard label="Pending Invites" value={pendingInvitesCount} />
         <SummaryCard label="Active Subs" value={activeSubsCount} />
         <SummaryCard label="Assigned Work" value={assignedWorkCount} />
@@ -412,7 +412,7 @@ export default function SubcontractorsPage() {
         testId="subcontractors-workflow-hint"
       />
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <section className="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm">
         <div className="flex flex-wrap gap-2">
           {TABS.map((tab) => (
             <button
@@ -436,10 +436,13 @@ export default function SubcontractorsPage() {
         ) : null}
 
         {!loading && activeTab === "directory" ? (
-          <div className="mt-6 space-y-3" data-testid="subcontractors-directory">
+          <div className="mt-4 space-y-2.5" data-testid="subcontractors-directory">
             {directoryRows.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500">
-                No active subcontractors yet. Send an invitation to start building your subcontractor list.
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-3.5 text-sm text-slate-600">
+                <div className="font-semibold text-slate-900">No active subcontractors yet.</div>
+                <div className="mt-1 leading-5">
+                  Send an invitation to start building your subcontractor list.
+                </div>
               </div>
             ) : (
               directoryRows.map((row) => (
@@ -486,10 +489,13 @@ export default function SubcontractorsPage() {
         ) : null}
 
         {!loading && activeTab === "invitations" ? (
-          <div className="mt-6 space-y-3" data-testid="subcontractors-invitations">
+          <div className="mt-4 space-y-2.5" data-testid="subcontractors-invitations">
             {invitationRows.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500">
-                No invitations yet. Send an invite when you are ready to bring a subcontractor into a project.
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-3.5 text-sm text-slate-600">
+                <div className="font-semibold text-slate-900">No invitations yet.</div>
+                <div className="mt-1 leading-5">
+                  Send an invite when you are ready to bring a subcontractor into a project.
+                </div>
               </div>
             ) : (
               invitationRows.map((row) => (
@@ -530,10 +536,13 @@ export default function SubcontractorsPage() {
         ) : null}
 
         {!loading && activeTab === "assignments" ? (
-          <div className="mt-6 space-y-3" data-testid="subcontractors-assignments">
+          <div className="mt-4 space-y-2.5" data-testid="subcontractors-assignments">
             {assignmentRows.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500">
-                No subcontractor assignments yet. Accepted subcontractors will appear here once work is assigned.
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-3.5 text-sm text-slate-600">
+                <div className="font-semibold text-slate-900">No subcontractor assignments yet.</div>
+                <div className="mt-1 leading-5">
+                  Accepted subcontractors will appear here once work is assigned.
+                </div>
               </div>
             ) : (
               assignmentRows.map((row) => (
@@ -588,10 +597,13 @@ export default function SubcontractorsPage() {
         ) : null}
 
         {!loading && activeTab === "submissions" ? (
-          <div className="mt-6 space-y-3" data-testid="subcontractors-submissions">
+          <div className="mt-4 space-y-2.5" data-testid="subcontractors-submissions">
             {submissionRows.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500">
-                No submitted work yet. Submitted milestone work will appear here for review.
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 px-4 py-3.5 text-sm text-slate-600">
+                <div className="font-semibold text-slate-900">No submitted work yet.</div>
+                <div className="mt-1 leading-5">
+                  Submitted milestone work will appear here for review.
+                </div>
               </div>
             ) : (
               submissionRows.map((row) => {

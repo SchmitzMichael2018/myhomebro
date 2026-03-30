@@ -231,6 +231,7 @@ export default function Customers() {
 
   return (
     <ContractorPageSurface
+      tier="full"
       eyebrow="Business"
       title="My Customers"
       subtitle="Track customer relationships, keep contact details close, and move from lead to active project with less friction."

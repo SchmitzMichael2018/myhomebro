@@ -382,7 +382,7 @@ function EmptyTasksCard() {
     <div
       className="mhb-glass"
       data-testid="role-workboard-empty"
-      style={{ padding: 12, marginTop: 18 }}
+      style={{ padding: 10, marginTop: 12 }}
     >
       <div className="text-sm font-medium text-slate-700">No upcoming tasks right now.</div>
     </div>
@@ -392,7 +392,7 @@ function EmptyTasksCard() {
 function RecentActivitySection({ items, emptyText, onAction }) {
   return (
     <div>
-      <div className="mhb-kicker" style={{ marginTop: 18 }}>
+      <div className="mhb-kicker" style={{ marginTop: 12, marginBottom: 8 }}>
         Recent Activity
       </div>
       <div
@@ -403,7 +403,7 @@ function RecentActivitySection({ items, emptyText, onAction }) {
         {items.length === 0 ? (
           <div
             data-testid="role-workboard-recent-activity-empty"
-            className="text-sm text-gray-500"
+            className="text-sm text-slate-600"
           >
             {emptyText}
           </div>

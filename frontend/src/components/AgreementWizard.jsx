@@ -1271,6 +1271,7 @@ export default function AgreementWizard() {
 
   return (
     <ContractorPageSurface
+      tier="wide"
       eyebrow="Core"
       title="Agreement Wizard"
       subtitle={`${agreementId ? `Agreement #${agreementId}` : "Draft agreement"} · Step ${step} of 4`}

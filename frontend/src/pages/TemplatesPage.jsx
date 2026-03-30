@@ -993,6 +993,7 @@ export default function TemplatesPage() {
 
   return (
     <ContractorPageSurface
+      tier="wide"
       eyebrow="Core"
       title="Templates"
       subtitle="Build reusable project templates with AI-assisted structure, pricing, schedule, and materials."

@@ -802,6 +802,7 @@ export default function ExpensesPage() {
 
   return (
     <ContractorPageSurface
+      tier="full"
       eyebrow="Business"
       title="Expenses"
       subtitle="Track customer-facing expense requests, receipts, and resend status from one cleaner workspace."

@@ -167,6 +167,7 @@ export default function Milestones() {
 
   return (
     <ContractorPageSurface
+      tier="full"
       eyebrow="Work"
       title={title}
       subtitle="Track progress, review late work, and keep each agreement moving without digging through every project."

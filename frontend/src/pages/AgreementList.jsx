@@ -1228,6 +1228,7 @@ export default function AgreementList() {
 
   return (
     <ContractorPageSurface
+      tier="full"
       eyebrow="Core"
       title="Agreements"
       subtitle="Manage signatures, funding, progress, and amendments from a cleaner shared workspace."

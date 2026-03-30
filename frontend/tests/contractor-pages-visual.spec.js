@@ -429,6 +429,22 @@ const pageConfigs = [
     },
   },
   {
+    label: 'Team Schedule',
+    slug: 'team-schedule.png',
+    url: '/app/team-schedule',
+    waitFor: async (page) => {
+      await page.getByRole('heading', { name: 'Team Schedule' }).waitFor({ state: 'visible' });
+    },
+  },
+  {
+    label: 'Awaiting Review',
+    slug: 'reviewer-queue.png',
+    url: '/app/reviewer/queue',
+    waitFor: async (page) => {
+      await page.getByRole('heading', { name: 'Awaiting Review' }).waitFor({ state: 'visible' });
+    },
+  },
+  {
     label: 'Customers Page',
     slug: 'customers-page.png',
     url: '/app/customers',
@@ -465,7 +481,7 @@ const pageConfigs = [
     slug: 'profile-page.png',
     url: '/app/profile',
     waitFor: async (page) => {
-      await page.getByText('Business Profile').first().waitFor({ state: 'visible' });
+      await page.getByRole('heading', { name: 'Profile & Billing' }).waitFor({ state: 'visible' });
     },
   },
   {
@@ -485,8 +501,8 @@ const dashboardConfig = {
 };
 
 const agreementPageConfigs = pageConfigs.slice(0, 6);
-const operationsPageConfigs = pageConfigs.slice(6, 9);
-const businessPageConfigs = pageConfigs.slice(9);
+const operationsPageConfigs = pageConfigs.slice(6, 11);
+const businessPageConfigs = pageConfigs.slice(11);
 
 function json(route, body, status = 200) {
   return route.fulfill({
