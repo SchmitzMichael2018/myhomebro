@@ -1312,6 +1312,104 @@ export default function ContractorDashboard() {
     ? "Here are the milestones currently assigned to you."
     : "Track milestones, invoices, leads, and next actions in one place.";
   const onboarding = contractorProfile?.onboarding || {};
+  const isOnboardingComplete = useMemo(() => {
+    const stripeSignals = [
+      onboarding?.stripe_ready,
+      contractorProfile?.stripe_ready,
+      contractorProfile?.stripe_connected,
+      contractorProfile?.payouts_enabled,
+      contractorProfile?.charges_enabled,
+      contractorProfile?.can_receive_payouts,
+      contractorProfile?.stripe_status?.connected,
+      contractorProfile?.stripe_status?.payouts_enabled,
+      contractorProfile?.stripe_status?.charges_enabled,
+      contractorProfile?.payments?.connected,
+      contractorProfile?.payments?.payouts_enabled,
+    ];
+
+    const hasStripeReady =
+      onboarding?.status === "complete" || stripeSignals.some((value) => value === true);
+
+    const hasName = Boolean(
+      contractorProfile?.business_name
+        || contractorProfile?.company_name
+        || contractorProfile?.display_name
+        || contractorProfile?.name
+        || contractorProfile?.full_name
+    );
+
+    const hasLocation = Boolean(
+      contractorProfile?.city
+        || contractorProfile?.state
+        || contractorProfile?.zip
+        || contractorProfile?.postal_code
+        || contractorProfile?.address
+        || contractorProfile?.service_area
+    );
+
+    const hasTradeInfo = Array.isArray(contractorProfile?.skills)
+      ? contractorProfile.skills.length > 0
+      : Boolean(
+          contractorProfile?.trade
+            || contractorProfile?.trade_name
+            || contractorProfile?.specialty
+            || contractorProfile?.project_type
+        );
+
+    return hasStripeReady && hasName && (hasLocation || hasTradeInfo);
+  }, [contractorProfile, onboarding]);
+  const hasProjectsStarted = useMemo(
+    () => (agreements || []).length > 0 || (milestones || []).length > 0 || (invoices || []).length > 0,
+    [agreements, invoices, milestones]
+  );
+  const heroAction = useMemo(() => {
+    const staleOnboardingAction =
+      isOnboardingComplete
+      && (norm(nextBestAction?.title) === "finish onboarding"
+        || norm(nextBestAction?.cta_label) === "resume onboarding");
+
+    if (nextBestAction && !staleOnboardingAction) {
+      return {
+        title: nextBestAction.title,
+        message: nextBestAction.message,
+        rationale: nextBestAction.rationale,
+        ctaLabel: nextBestAction.cta_label || "Open",
+        navigationTarget: nextBestAction.navigation_target || "/app/dashboard",
+        action: null,
+      };
+    }
+
+    if (isOnboardingComplete && hasProjectsStarted) {
+      return {
+        title: "Create your next agreement",
+        message: "Use AI assistance to draft a new agreement, scope, estimate, and milestone plan faster.",
+        rationale: "",
+        ctaLabel: "Create a new agreement with AI assistance",
+        navigationTarget: "/app/assistant",
+        action: null,
+      };
+    }
+
+    if (isOnboardingComplete) {
+      return {
+        title: "Start your first project",
+        message: "Use AI to create your first agreement and project plan. It will guide you step by step.",
+        rationale: "",
+        ctaLabel: "Start with AI",
+        navigationTarget: "/app/assistant",
+        action: goStartFirstProjectWithAi,
+      };
+    }
+
+    return {
+      title: "Finish onboarding",
+      message: "Complete your setup so MyHomeBro can tailor templates, pricing, and payment guidance.",
+      rationale: "",
+      ctaLabel: "Resume onboarding",
+      navigationTarget: "/app/onboarding",
+      action: null,
+    };
+  }, [goStartFirstProjectWithAi, hasProjectsStarted, isOnboardingComplete, nextBestAction]);
   const reminderStorageKey = "mhb:dashboard-dismissed-reminders";
   useEffect(() => {
     try {
@@ -1430,29 +1528,29 @@ export default function ContractorDashboard() {
               <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-600">
                 Next Best Action
               </div>
-              {nextBestAction ? (
-                <div className="mt-3 flex flex-col gap-4">
-                  <div>
-                    <div className="text-xl font-semibold text-slate-950">{nextBestAction.title}</div>
-                    <div className="mt-1.5 text-sm text-slate-700">{nextBestAction.message}</div>
-                    {nextBestAction.rationale ? (
-                      <div className="mt-2 text-xs text-slate-600">{nextBestAction.rationale}</div>
-                    ) : null}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => navigate(nextBestAction.navigation_target || "/app/dashboard")}
-                    className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-900"
-                  >
-                    {nextBestAction.cta_label || "Open"}
-                    <ArrowRight className="h-4 w-4" />
-                  </button>
+              <div className="mt-3 flex flex-col gap-4">
+                <div>
+                  <div className="text-xl font-semibold text-slate-950">{heroAction.title}</div>
+                  <div className="mt-1.5 text-sm text-slate-700">{heroAction.message}</div>
+                  {heroAction.rationale ? (
+                    <div className="mt-2 text-xs text-slate-600">{heroAction.rationale}</div>
+                  ) : null}
                 </div>
-              ) : (
-                <div className="mt-3 text-sm text-slate-700">
-                  Start by creating your first agreement or opening the AI assistant.
-                </div>
-              )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof heroAction.action === "function") {
+                      heroAction.action();
+                      return;
+                    }
+                    navigate(heroAction.navigationTarget || "/app/dashboard");
+                  }}
+                  className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-900"
+                >
+                  {heroAction.ctaLabel}
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
             </DashboardCard>
 
             <DashboardCard

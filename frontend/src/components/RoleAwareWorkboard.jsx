@@ -566,6 +566,9 @@ export default function RoleAwareWorkboard({ title = null, subtitle = null }) {
     }));
   }
 
+  const taskSections = buildTaskSections(payload);
+  const scheduleSummary = useMemo(() => buildScheduleSummaries(payload), [payload]);
+
   if (loading) {
     return (
       <div className="mhb-glass" data-testid="role-workboard-loading" style={{ padding: 12 }}>
@@ -573,9 +576,6 @@ export default function RoleAwareWorkboard({ title = null, subtitle = null }) {
       </div>
     );
   }
-
-  const taskSections = buildTaskSections(payload);
-  const scheduleSummary = useMemo(() => buildScheduleSummaries(payload), [payload]);
 
   return (
     <div data-testid="role-workboard">
