@@ -1038,14 +1038,14 @@ export default function ContractorProfile() {
                 <div className="mt-1 text-sm text-amber-800">
                   {onboarding?.show_soft_stripe_prompt
                     ? "You are ready to explore the app, but payments require a connected Stripe account."
-                    : "Finish your trades, region, and first-job setup to unlock tailored guidance."}
+                    : "Finish your setup details so MyHomeBro can tailor guidance for your first project."}
                 </div>
               </div>
               <a
                 href="/app/onboarding"
                 className="rounded-lg bg-amber-900 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-950"
               >
-                {onboarding?.show_soft_stripe_prompt ? "Resume Stripe setup" : "Resume onboarding"}
+                {onboarding?.show_soft_stripe_prompt ? "Resume Stripe setup" : "Finish setup"}
               </a>
             </div>
           </div>

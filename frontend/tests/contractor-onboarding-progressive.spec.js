@@ -215,13 +215,13 @@ test('contractor onboarding supports activation-first progression and soft Strip
   await page.getByRole('button', { name: 'Continue' }).click();
 
   await expect(page.getByTestId('contractor-onboarding-first-job')).toContainText(
-    'Tell me about your job'
+    'Start your first project'
   );
   await expect(page.getByTestId('contractor-onboarding-first-job')).toContainText(
-    'Most contractors complete this in under 2 minutes.'
+    'AI will guide you through your first agreement'
   );
   await page.getByTestId('contractor-onboarding-job-input').fill('Bathroom remodel for Mike');
-  await page.getByTestId('contractor-onboarding-start-ai').click();
+  await page.getByRole('button', { name: 'Start my first project with AI' }).click();
   await page.waitForURL('**/app/assistant');
   expect(activationEvents.some((item) => item.event_type === 'ai_used_for_project')).toBeTruthy();
 
@@ -250,7 +250,7 @@ test('contractor onboarding supports activation-first progression and soft Strip
 
   await page.goto('/app/onboarding', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('contractor-onboarding-soft-stripe-prompt')).toContainText(
-    'Set up payments now to get paid faster'
+    'Connect Stripe before you send payment workflows'
   );
 });
 

@@ -1231,6 +1231,17 @@ export default function ContractorDashboard() {
   /* ----- navigation handlers ----- */
   const goNewAgreement = () => navigate(`/app/agreements`);
   const goStartWithAi = () => navigate(`/app/assistant`);
+  const goStartFirstProjectWithAi = () =>
+    navigate(`/app/assistant`, {
+      state: {
+        assistantPrompt: "Help me create my first agreement and start my first project",
+        assistantContext: {
+          current_route: "/app/dashboard",
+          onboarding_mode: true,
+          onboarding_step: "first_job",
+        },
+      },
+    });
   const goNewIntake = () => navigate(`/app/intake/new`);
   const goNewMilestone = () => navigate(`/app/milestones?new=1`);
   const goInvoices = () => navigate(`/app/invoices`);
@@ -1314,12 +1325,20 @@ export default function ContractorDashboard() {
   const reminders = useMemo(() => {
     if (isEmployee) return [];
     const items = [];
-    if (onboarding?.status !== "complete" && !onboarding?.first_value_reached) {
+    if (onboarding?.status === "complete" && !onboarding?.first_value_reached && (agreements || []).length === 0) {
       items.push({
-        key: "finish-first-agreement",
-        title: "Complete your first agreement",
-        message: "Finish your first project setup so MyHomeBro can tailor templates, milestones, and next steps.",
-        cta: "Resume onboarding",
+        key: "start-first-project",
+        title: "Start your first project",
+        message: "Use AI to create your first agreement and project plan. It will guide you step by step.",
+        cta: "Start with AI",
+        action: goStartFirstProjectWithAi,
+      });
+    } else if (onboarding?.status !== "complete" && !onboarding?.first_value_reached) {
+      items.push({
+        key: "finish-setup",
+        title: "Finish your setup",
+        message: "Complete your business setup so MyHomeBro can tailor templates, milestones, and guided project creation.",
+        cta: "Finish setup",
         action: () => navigate("/app/onboarding"),
       });
     }
@@ -1342,7 +1361,15 @@ export default function ContractorDashboard() {
       });
     }
     return items.filter((item) => !dismissedReminderKeys.includes(item.key));
-  }, [agreements, dismissedReminderKeys, isEmployee, milestones, navigate, onboarding]);
+  }, [
+    agreements,
+    dismissedReminderKeys,
+    goStartFirstProjectWithAi,
+    isEmployee,
+    milestones,
+    navigate,
+    onboarding,
+  ]);
 
   const dismissReminder = (key) => {
     setDismissedReminderKeys((prev) => {
@@ -1358,7 +1385,7 @@ export default function ContractorDashboard() {
 
   return (
     <PageShell title="Dashboard" subtitle={headerSubtitle} showLogo>
-      <div className="space-y-5 rounded-[30px] bg-white/[0.035] p-1 lg:-mx-3 xl:-mx-5 backdrop-blur-[1px]">
+      <div className="space-y-3.5 rounded-[30px] bg-white/[0.03] px-1 py-0.5 lg:-mx-1 xl:-mx-2 2xl:-mx-3 backdrop-blur-[1px]">
         {reminders.length ? (
           <div className="mb-4 space-y-3" data-testid="dashboard-onboarding-reminder">
             {reminders.map((item) => (
@@ -1391,20 +1418,20 @@ export default function ContractorDashboard() {
         ) : null}
 
       {!isEmployee ? (
-        <div className="mb-4 grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="mb-2 grid items-start gap-3 xl:grid-cols-[minmax(0,0.94fr)_minmax(0,1.08fr)_272px] 2xl:grid-cols-[minmax(0,0.98fr)_minmax(0,1.14fr)_280px]">
           <DashboardSection
             title="Focus"
             subtitle="What needs your attention right now and the single highest-value next move."
           >
             <DashboardCard
               testId="dashboard-next-best-action"
-              className="border-slate-200/90 shadow-[0_16px_38px_rgba(15,23,42,0.08)]"
+              className="border-slate-200/90 p-4 shadow-[0_16px_38px_rgba(15,23,42,0.08)]"
             >
               <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-600">
                 Next Best Action
               </div>
               {nextBestAction ? (
-                <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="mt-3 flex flex-col gap-4">
                   <div>
                     <div className="text-xl font-semibold text-slate-950">{nextBestAction.title}</div>
                     <div className="mt-1.5 text-sm text-slate-700">{nextBestAction.message}</div>
@@ -1415,7 +1442,7 @@ export default function ContractorDashboard() {
                   <button
                     type="button"
                     onClick={() => navigate(nextBestAction.navigation_target || "/app/dashboard")}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-900"
+                    className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-900"
                   >
                     {nextBestAction.cta_label || "Open"}
                     <ArrowRight className="h-4 w-4" />
@@ -1431,20 +1458,25 @@ export default function ContractorDashboard() {
             <DashboardCard
               testId="dashboard-needs-attention"
               tone="subtle"
-              className="border-amber-200/80 bg-amber-50/90 shadow-[0_12px_30px_rgba(245,158,11,0.08)]"
+              className="border-amber-200/80 bg-amber-50/90 p-4 shadow-[0_12px_30px_rgba(245,158,11,0.08)]"
             >
               <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
                 Needs Attention
               </div>
               {needsAttentionItems.length ? (
                 <div className="mt-3 space-y-2.5">
-                  {needsAttentionItems.map((item, index) => (
-                    <div
-                      key={`${item}-${index}`}
-                      className="rounded-xl border border-amber-200/80 bg-white px-3.5 py-3 text-sm font-medium text-slate-800"
+                  {needsAttentionItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => navigate(item.href || "/app/dashboard")}
+                      className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl border border-amber-200/80 bg-white px-3.5 py-3 text-left text-sm font-medium text-slate-800 transition hover:border-amber-300 hover:bg-amber-50/60 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
                     >
-                      {item}
-                    </div>
+                      <span className="min-w-0 flex-1">{item.label}</span>
+                      <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-amber-900">
+                        {item.ctaText || "Open"}
+                      </span>
+                    </button>
                   ))}
                 </div>
               ) : (
@@ -1454,14 +1486,111 @@ export default function ContractorDashboard() {
           </DashboardSection>
 
           <DashboardSection
+            title="Work Overview"
+            subtitle="Milestones and invoices that drive progress and payout."
+          >
+            <div className="space-y-3">
+              <DashboardCard
+                tone="subtle"
+                className="border-slate-200/90 bg-white/92 p-3.5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
+              >
+                <div className="mhb-kicker !mb-2">Milestones</div>
+                <div className="mhb-grid" style={{ marginBottom: 0 }}>
+                  <StatCard
+                    icon={Target}
+                    title="All Milestones"
+                    subtitle="Across your active agreements."
+                    count={mStats.totalCount}
+                    amount={mStats.totalAmount}
+                    onClick={() => navigate(`/app/milestones`)}
+                  />
+                  <StatCard
+                    icon={ListTodo}
+                    title="Incomplete"
+                    subtitle="Not yet completed."
+                    count={mStats.incompleteCount}
+                    amount={mStats.incompleteAmount}
+                    onClick={() => navigate(`/app/milestones?filter=incomplete`)}
+                  />
+                  <StatCard
+                    icon={CheckCircle2}
+                    title="Ready to Invoice"
+                    subtitle="Completed (Not Invoiced)."
+                    count={mStats.readyCount}
+                    amount={mStats.readyAmount}
+                    onClick={() => navigate(`/app/milestones?filter=complete_not_invoiced`)}
+                  />
+                  <StatCard
+                    icon={BadgeDollarSign}
+                    title="Paid"
+                    subtitle="Escrow released / paid."
+                    count={mStats.paidCount}
+                    amount={mStats.paidAmount}
+                    onClick={() => navigate(`/app/milestones?filter=paid`)}
+                  />
+                  <StatCard
+                    icon={Wrench}
+                    title="Rework Work Orders"
+                    subtitle="Milestones created from disputes."
+                    count={mStats.reworkCount}
+                    amount={mStats.reworkAmount}
+                    onClick={goReworkMilestones}
+                  />
+                </div>
+              </DashboardCard>
+
+              <DashboardCard
+                tone="subtle"
+                className="border-slate-200/90 bg-white/92 p-3.5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
+              >
+                <div className="mhb-kicker !mb-2">Invoices</div>
+                <div className="mhb-grid" style={{ marginBottom: 0 }}>
+                  <StatCard
+                    icon={BadgeDollarSign}
+                    title="Pending Approval"
+                    subtitle="Sent to homeowner â€” awaiting approval."
+                    count={iStats.pendingCount}
+                    amount={iStats.pendingAmount}
+                    onClick={goInvoices}
+                  />
+                  <StatCard
+                    icon={BadgeCheck}
+                    title="Approved"
+                    subtitle="Approved â€” ready for payout."
+                    count={iStats.approvedCount}
+                    amount={iStats.approvedAmount}
+                    onClick={goInvoices}
+                  />
+                  <StatCard
+                    icon={AlertTriangle}
+                    title="Disputed"
+                    subtitle="Frozen until resolved."
+                    count={iStats.disputedCount}
+                    amount={iStats.disputedAmount}
+                    onClick={goInvoicesDisputed}
+                  />
+                  <StatCard
+                    icon={WalletMinimal}
+                    title="Earned (YTD)"
+                    subtitle="Jan 1 â†’ today. Click for breakdown."
+                    count={null}
+                    amount={earnedYtdAmount}
+                    onClick={openEarnedModal}
+                  />
+                </div>
+              </DashboardCard>
+            </div>
+          </DashboardSection>
+
+          <DashboardSection
             title="Quick Actions"
             subtitle="Jump straight into the next contractor task."
-            className="xl:sticky xl:top-5"
+            className="xl:sticky xl:top-4"
           >
             <DashboardCard
               testId="dashboard-quick-actions-rail"
               tone="subtle"
-              className="border-slate-200/90 bg-white/90 p-4 shadow-[0_14px_32px_rgba(15,23,42,0.06)]"
+              className="border-slate-200/90 bg-white/90 p-3.5 shadow-[0_14px_32px_rgba(15,23,42,0.06)]"
             >
               <div className="grid gap-2.5">
                 <ActionButton
@@ -1523,18 +1652,6 @@ export default function ContractorDashboard() {
               </div>
             </DashboardCard>
 
-            <DashboardCard
-              tone="subtle"
-              className="border-white/30 bg-white/70 p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]"
-            >
-              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600">
-                MyHomeBro Pricing
-              </div>
-              <div className="mt-3 rounded-xl border border-slate-200/80 bg-white px-3.5 py-3">
-                <div className="text-sm font-semibold text-slate-900">{currentRateTitle}</div>
-                <div className="mt-1 text-sm text-slate-700">{pricingSubtitle}</div>
-              </div>
-            </DashboardCard>
           </DashboardSection>
         </div>
       ) : null}
@@ -1610,68 +1727,50 @@ export default function ContractorDashboard() {
         </div>
       ) : null}
 
-      <div className="mhb-kicker">Milestones</div>
-      <div className="mhb-grid" style={{ marginBottom: 6 }}>
-        <StatCard
-          icon={Target}
-          title={isEmployee ? "My Assigned Milestones" : "All Milestones"}
-          subtitle={isEmployee ? "Only milestones assigned to you." : "Across your active agreements."}
-          count={mStats.totalCount}
-          amount={mStats.totalAmount}
-          onClick={() => navigate(`/app/milestones`)}
-        />
+      {isEmployee ? (
+        <>
+          <div className="mhb-kicker">Milestones</div>
+          <div className="mhb-grid" style={{ marginBottom: 6 }}>
+            <StatCard
+              icon={Target}
+              title="My Assigned Milestones"
+              subtitle="Only milestones assigned to you."
+              count={mStats.totalCount}
+              amount={mStats.totalAmount}
+              onClick={() => navigate(`/app/milestones`)}
+            />
 
-        <StatCard
-          icon={ListTodo}
-          title="Incomplete"
-          subtitle="Not yet completed."
-          count={mStats.incompleteCount}
-          amount={mStats.incompleteAmount}
-          onClick={() => navigate(`/app/milestones?filter=incomplete`)}
-        />
+            <StatCard
+              icon={ListTodo}
+              title="Incomplete"
+              subtitle="Not yet completed."
+              count={mStats.incompleteCount}
+              amount={mStats.incompleteAmount}
+              onClick={() => navigate(`/app/milestones?filter=incomplete`)}
+            />
 
-        {!isEmployee ? (
-          <>
             <StatCard
               icon={CheckCircle2}
-              title="Ready to Invoice"
-              subtitle="Completed (Not Invoiced)."
-              count={mStats.readyCount}
-              amount={mStats.readyAmount}
-              onClick={() => navigate(`/app/milestones?filter=complete_not_invoiced`)}
+              title="Completed"
+              subtitle="Completed by you."
+              count={0}
+              amount={0}
+              onClick={() => navigate(`/app/milestones`)}
             />
 
             <StatCard
-              icon={BadgeDollarSign}
-              title="Paid"
-              subtitle="Escrow released / paid."
-              count={mStats.paidCount}
-              amount={mStats.paidAmount}
-              onClick={() => navigate(`/app/milestones?filter=paid`)}
+              icon={Wrench}
+              title="Rework Work Orders"
+              subtitle="Milestones created from disputes."
+              count={mStats.reworkCount}
+              amount={mStats.reworkAmount}
+              onClick={goReworkMilestones}
             />
-          </>
-        ) : (
-          <StatCard
-            icon={CheckCircle2}
-            title="Completed"
-            subtitle="Completed by you."
-            count={0}
-            amount={0}
-            onClick={() => navigate(`/app/milestones`)}
-          />
-        )}
+          </div>
+        </>
+      ) : null}
 
-        <StatCard
-          icon={Wrench}
-          title="Rework Work Orders"
-          subtitle="Milestones created from disputes."
-          count={mStats.reworkCount}
-          amount={mStats.reworkAmount}
-          onClick={goReworkMilestones}
-        />
-      </div>
-
-      {!isEmployee ? (
+      {false ? (
         <>
           <div className="mhb-kicker" style={{ marginTop: 14 }}>
             Invoices
@@ -1751,6 +1850,7 @@ export default function ContractorDashboard() {
               </div>
             </DashboardSection>
           ) : null}
+
         </>
       ) : null}
 

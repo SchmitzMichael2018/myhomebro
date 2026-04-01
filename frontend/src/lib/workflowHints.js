@@ -330,10 +330,22 @@ export function getDashboardNextSteps({
 }) {
   const items = [];
 
+  const makeItem = ({ id, label, href, ctaText }) => ({
+    id,
+    label,
+    href,
+    ctaText: ctaText || "Open",
+  });
+
   const inboundNewLeads = leads.filter((lead) => normalizeStatus(lead?.status) === "new").length;
   if (inboundNewLeads > 0) {
     items.push(
-      `${inboundNewLeads} inbound lead${inboundNewLeads === 1 ? " is" : "s are"} waiting for review.`
+      makeItem({
+        id: "inbound-leads",
+        label: `${inboundNewLeads} inbound lead${inboundNewLeads === 1 ? " is" : "s are"} waiting for review.`,
+        href: "/app/public-presence",
+        ctaText: "Review leads",
+      })
     );
   }
 
@@ -345,7 +357,12 @@ export function getDashboardNextSteps({
   }).length;
   if (contractorFormsReady > 0) {
     items.push(
-      `${contractorFormsReady} contractor form${contractorFormsReady === 1 ? " is" : "s are"} ready for review.`
+      makeItem({
+        id: "contractor-forms-ready",
+        label: `${contractorFormsReady} contractor form${contractorFormsReady === 1 ? " is" : "s are"} ready for review.`,
+        href: "/app/public-presence",
+        ctaText: "Open intake queue",
+      })
     );
   }
 
@@ -356,7 +373,12 @@ export function getDashboardNextSteps({
   }).length;
   if (manualLeads > 0) {
     items.push(
-      `${manualLeads} manual lead${manualLeads === 1 ? " is" : "s are"} ready for follow-up.`
+      makeItem({
+        id: "manual-leads-follow-up",
+        label: `${manualLeads} manual lead${manualLeads === 1 ? " is" : "s are"} ready for follow-up.`,
+        href: "/app/public-presence",
+        ctaText: "Follow up",
+      })
     );
   }
 
@@ -371,7 +393,12 @@ export function getDashboardNextSteps({
   }).length;
   if (aiReadyLeads > 0) {
     items.push(
-      `${aiReadyLeads} lead${aiReadyLeads === 1 ? " is" : "s are"} ready for agreement drafting.`
+      makeItem({
+        id: "agreement-drafting",
+        label: `${aiReadyLeads} lead${aiReadyLeads === 1 ? " is" : "s are"} ready for agreement drafting.`,
+        href: "/app/assistant",
+        ctaText: "Draft with AI",
+      })
     );
   }
 
@@ -383,7 +410,12 @@ export function getDashboardNextSteps({
   ).length;
   if (agreementsWaitingForSignature > 0) {
     items.push(
-      `${agreementsWaitingForSignature} agreement${agreementsWaitingForSignature === 1 ? " is" : "s are"} waiting for signature.`
+      makeItem({
+        id: "awaiting-signature",
+        label: `${agreementsWaitingForSignature} agreement${agreementsWaitingForSignature === 1 ? " is" : "s are"} waiting for signature.`,
+        href: "/app/agreements?status=awaiting_signature",
+        ctaText: "View agreements",
+      })
     );
   }
 
@@ -398,7 +430,12 @@ export function getDashboardNextSteps({
   }).length;
   if (projectsWaitingForFunding > 0) {
     items.push(
-      `${projectsWaitingForFunding} project${projectsWaitingForFunding === 1 ? " is" : "s are"} waiting for funding.`
+      makeItem({
+        id: "funding-needed",
+        label: `${projectsWaitingForFunding} project${projectsWaitingForFunding === 1 ? " is" : "s are"} waiting for funding.`,
+        href: "/app/agreements?status=funding_needed",
+        ctaText: "Review funding",
+      })
     );
   }
 
@@ -410,7 +447,12 @@ export function getDashboardNextSteps({
   }).length;
   if (milestonesAwaitingReview > 0) {
     items.push(
-      `${milestonesAwaitingReview} milestone${milestonesAwaitingReview === 1 ? " is" : "s are"} awaiting review.`
+      makeItem({
+        id: "milestones-awaiting-review",
+        label: `${milestonesAwaitingReview} milestone${milestonesAwaitingReview === 1 ? " is" : "s are"} awaiting review.`,
+        href: "/app/milestones?filter=review",
+        ctaText: "Open milestones",
+      })
     );
   }
 
