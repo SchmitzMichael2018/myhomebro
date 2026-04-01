@@ -270,6 +270,13 @@ export default function AgreementList() {
   const instanceId = instanceIdRef.current;
   const navigate = useNavigate();
   const location = useLocation();
+  const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const statusParam = params.get("status");
+  const statusFilterLabel = useMemo(() => {
+    if (statusParam === "awaiting_signature") return "Awaiting Signature";
+    if (statusParam === "funding_needed") return "Funding Needed";
+    return "";
+  }, [statusParam]);
 
   // ✅ Base route for contractor vs employee console
   const BASE = useMemo(() => {
@@ -317,6 +324,7 @@ export default function AgreementList() {
     pageSize,
     showArchived,
     loading,
+    statusParam,
   });
 
   useEffect(() => {
@@ -592,7 +600,20 @@ export default function AgreementList() {
   const filtered = useMemo(() => {
     const search = q.trim().toLowerCase();
     return rows
-      .filter((r) => (statusFilter === "all" ? true : String(r.status || "").toLowerCase() === statusFilter))
+      .filter((r) => {
+        const status = safeLower(r.status);
+        if (statusParam === "awaiting_signature") {
+          return !r.signature_is_satisfied && !r.is_fully_signed && status !== "signed";
+        }
+        if (statusParam === "funding_needed") {
+          return (
+            (r.signature_is_satisfied || r.is_fully_signed || status === "signed")
+            && !r.escrow_funded
+            && getPaymentMode(r) !== "direct"
+          );
+        }
+        return statusFilter === "all" ? true : status === statusFilter;
+      })
       .filter((r) => {
         if (!search) return true;
         const homeownerLabel = homeownerDisplay(r);
@@ -619,7 +640,7 @@ export default function AgreementList() {
 
         return hay.includes(search);
       });
-  }, [rows, q, statusFilter, homeownerDisplay]);
+  }, [rows, q, statusFilter, statusParam, homeownerDisplay]);
 
   const page = filtered.slice(0, pageSize);
 
@@ -1311,6 +1332,21 @@ export default function AgreementList() {
           <Layers size={16} /> Merge Selected
         </button>
       </div>
+
+      {statusFilterLabel ? (
+        <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-800">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span>Filtered: {statusFilterLabel}</span>
+            <button
+              type="button"
+              onClick={() => navigate(`${BASE}/agreements`)}
+              className="text-sm font-semibold underline underline-offset-4 hover:no-underline"
+            >
+              Clear filter
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {/* Table */}
       <div className="min-h-[420px] overflow-x-auto rounded-[22px] border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.06)]">

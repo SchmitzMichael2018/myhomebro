@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 
@@ -79,6 +79,23 @@ function parseDateValue(value) {
   if (!value) return null;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function startOfToday() {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function money(value) {
+  return Number(value || 0);
+}
+
+function formatCurrency(value) {
+  return Number(value || 0).toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+  });
 }
 
 function taskDateForSort(item) {
@@ -273,6 +290,33 @@ function buildTaskSections(payload) {
   })).filter((section) => section.items.length > 0);
 }
 
+function buildScheduleSummaries(payload) {
+  const todayStart = startOfToday();
+  const todayItems = Array.isArray(payload?.today) ? payload.today : [];
+  const tomorrowItems = Array.isArray(payload?.tomorrow) ? payload.tomorrow : [];
+  const weekItems = Array.isArray(payload?.this_week) ? payload.this_week : [];
+
+  const pastDueItems = todayItems.filter((item) => {
+    if (item?.item_type === "overdue") return true;
+    const dueDate = taskDateForSort(item);
+    return dueDate ? dueDate.getTime() < todayStart.getTime() : false;
+  });
+
+  const dueTodayItems = todayItems.filter((item) => item?.item_type !== "overdue");
+
+  const summarize = (items) => ({
+    count: items.length,
+    amount: items.reduce((sum, item) => sum + money(item?.amount), 0),
+  });
+
+  return {
+    past_due: summarize(pastDueItems),
+    today: summarize(dueTodayItems),
+    tomorrow: summarize(tomorrowItems),
+    this_week: summarize(weekItems),
+  };
+}
+
 function buildSingleRowMeta(item) {
   if (item.completion_date) return `Due: ${formatDateShort(item.completion_date)}`;
   if (item.start_date) return `Starts: ${formatDateShort(item.start_date)}`;
@@ -386,6 +430,33 @@ function EmptyTasksCard() {
     >
       <div className="text-sm font-medium text-slate-700">No upcoming tasks right now.</div>
     </div>
+  );
+}
+
+function ScheduleSummaryCard({ title, subtitle, count, amount, onClick, testId }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-testid={testId}
+      className="mhb-glass h-full w-full text-left transition hover:-translate-y-[1px]"
+      style={{ padding: 12 }}
+    >
+      <div className="flex h-full flex-col justify-between gap-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[15px] font-semibold leading-5 text-slate-900">{title}</div>
+            <div className="mt-1 text-[13px] leading-5 text-slate-600">{subtitle}</div>
+          </div>
+          <div className="shrink-0 text-right text-[20px] font-bold tracking-tight text-slate-950">
+            {formatCurrency(amount)}
+          </div>
+        </div>
+        <div className="text-sm font-medium text-slate-600">
+          {count} {count === 1 ? "item" : "items"}
+        </div>
+      </div>
+    </button>
   );
 }
 
@@ -504,6 +575,7 @@ export default function RoleAwareWorkboard({ title = null, subtitle = null }) {
   }
 
   const taskSections = buildTaskSections(payload);
+  const scheduleSummary = useMemo(() => buildScheduleSummaries(payload), [payload]);
 
   return (
     <div data-testid="role-workboard">
@@ -513,6 +585,41 @@ export default function RoleAwareWorkboard({ title = null, subtitle = null }) {
           {subtitle ? <p className="mt-2 text-sm text-slate-600">{subtitle}</p> : null}
         </div>
       ) : null}
+
+      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <ScheduleSummaryCard
+          title="Past Due"
+          subtitle="Items that need immediate attention."
+          count={scheduleSummary.past_due.count}
+          amount={scheduleSummary.past_due.amount}
+          onClick={() => navigate("/app/calendar?range=overdue")}
+          testId="role-workboard-card-past-due"
+        />
+        <ScheduleSummaryCard
+          title="Due Today"
+          subtitle="Immediate actions and scheduled work."
+          count={scheduleSummary.today.count}
+          amount={scheduleSummary.today.amount}
+          onClick={() => navigate("/app/calendar?range=today")}
+          testId="role-workboard-card-today"
+        />
+        <ScheduleSummaryCard
+          title="Due Tomorrow"
+          subtitle="What is coming up next."
+          count={scheduleSummary.tomorrow.count}
+          amount={scheduleSummary.tomorrow.amount}
+          onClick={() => navigate("/app/calendar?range=tomorrow")}
+          testId="role-workboard-card-tomorrow"
+        />
+        <ScheduleSummaryCard
+          title="This Week"
+          subtitle="Upcoming work and payment activity."
+          count={scheduleSummary.this_week.count}
+          amount={scheduleSummary.this_week.amount}
+          onClick={() => navigate("/app/calendar?range=week")}
+          testId="role-workboard-card-this-week"
+        />
+      </div>
 
       {taskSections.length === 0 ? (
         <EmptyTasksCard />
