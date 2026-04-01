@@ -1,5 +1,59 @@
 import { expect, test } from '@playwright/test';
 
+function isoDateOffset(days) {
+  const value = new Date();
+  value.setHours(12, 0, 0, 0);
+  value.setDate(value.getDate() + days);
+  return value.toISOString();
+}
+
+function buildScheduleAgreements() {
+  return [
+    {
+      id: 9001,
+      title: 'Late Roof Repair',
+      project_title: 'Late Roof Repair',
+      status: 'draft',
+      due_date: isoDateOffset(-1),
+    },
+    {
+      id: 9002,
+      title: 'Completed Old Job',
+      project_title: 'Completed Old Job',
+      status: 'completed',
+      due_date: isoDateOffset(-2),
+    },
+    {
+      id: 9003,
+      title: 'Today Paint Prep',
+      project_title: 'Today Paint Prep',
+      status: 'signed',
+      due_date: isoDateOffset(0),
+    },
+    {
+      id: 9004,
+      title: 'Tomorrow Tile Install',
+      project_title: 'Tomorrow Tile Install',
+      status: 'signed',
+      due_date: isoDateOffset(1),
+    },
+    {
+      id: 9005,
+      title: 'Week Window Replacement',
+      project_title: 'Week Window Replacement',
+      status: 'signed',
+      due_date: isoDateOffset(4),
+    },
+    {
+      id: 9006,
+      title: 'Far Future Project',
+      project_title: 'Far Future Project',
+      status: 'signed',
+      due_date: isoDateOffset(12),
+    },
+  ];
+}
+
 async function mockContractorDashboard(page, options = {}) {
   const milestones = options.milestones || [];
   const agreements = options.agreements || [];
@@ -73,11 +127,27 @@ async function mockContractorDashboard(page, options = {}) {
     });
   });
 
-  await page.route(/\/api\/projects\/agreements\/?$/, async (route) => {
+  await page.route(/\/api\/projects\/agreements\/?(?:\?.*)?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ results: agreements }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/\d+\/milestones\/?(?:\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route('**/api/projects/homeowners/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
     });
   });
 
@@ -221,14 +291,15 @@ test('contractor dashboard renders current quick actions and workflow entry poin
 
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByRole('button', { name: 'Start with AI', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'New Agreement', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'New Intake', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'New Milestone', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Expenses', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Invoices', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Disputes', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Calendar', exact: true })).toBeVisible();
+  const quickActions = page.getByTestId('dashboard-quick-actions-rail');
+  await expect(quickActions.getByRole('button', { name: 'Start with AI', exact: true })).toBeVisible();
+  await expect(quickActions.getByRole('button', { name: 'New Agreement', exact: true })).toBeVisible();
+  await expect(quickActions.getByRole('button', { name: 'New Intake', exact: true })).toBeVisible();
+  await expect(quickActions.getByRole('button', { name: 'New Milestone', exact: true })).toBeVisible();
+  await expect(quickActions.getByRole('button', { name: 'Expenses', exact: true })).toBeVisible();
+  await expect(quickActions.getByRole('button', { name: 'Invoices', exact: true })).toBeVisible();
+  await expect(quickActions.getByRole('button', { name: 'Disputes', exact: true })).toBeVisible();
+  await expect(quickActions.getByRole('button', { name: 'Calendar', exact: true })).toBeVisible();
 
   await expect(page.getByText('All Milestones')).toBeVisible();
   await expect(page.getByText('Ready to Invoice')).toBeVisible();
@@ -277,22 +348,201 @@ test('contractor dashboard suppresses stale onboarding hero copy after setup is 
       },
     },
     nextBestAction: {
-      action_type: 'resume_onboarding',
-      title: 'Finish onboarding',
-      message: 'Complete your setup so MyHomeBro can tailor templates, pricing, and payment guidance.',
-      cta_label: 'Resume onboarding',
-      navigation_target: '/app/onboarding',
-      rationale: 'Setup completion unlocks better guidance.',
+      action_type: 'create_agreement',
+      title: 'Start your next agreement',
+      message: 'Use AI to quickly create your next project agreement.',
+      cta_label: 'Start with AI',
+      navigation_target: '/app/assistant',
+      rationale: 'No blockers or active workflows were found.',
     },
   });
 
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByTestId('dashboard-next-best-action')).toContainText('Onboarding Complete');
+  await expect(page.getByTestId('dashboard-next-best-action')).toContainText('Start your next agreement');
   await expect(page.getByTestId('dashboard-next-best-action')).toContainText(
-    "Stripe and profile setup are ready. Start your first project and I'll walk you through it."
+    'Use AI to quickly create your next project agreement.'
   );
-  await expect(page.getByTestId('dashboard-next-best-action')).toContainText('Start your first project');
-  await expect(page.getByTestId('dashboard-next-best-action')).not.toContainText('Finish onboarding');
-  await expect(page.getByTestId('dashboard-next-best-action')).not.toContainText('Resume onboarding');
+  await expect(page.getByTestId('dashboard-next-best-action')).toContainText('Start with AI');
+});
+
+test('contractor dashboard hero CTA follows backend next best action targets', async ({ page }) => {
+  await mockContractorDashboard(page, {
+    nextBestAction: {
+      action_type: 'review_pending_approvals',
+      title: 'Review pending approvals',
+      message: 'Items are waiting on your review or approval follow-through.',
+      cta_label: 'View items',
+      navigation_target: '/app/agreements?focus=needs_attention&filter=pending_approval',
+    },
+    agreements: [
+      {
+        id: 901,
+        title: 'Pending Approval Agreement',
+        project_title: 'Pending Approval Agreement',
+        status: 'pending_approval',
+        pending_approval_count: 1,
+      },
+    ],
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('dashboard-next-best-action')).toContainText('Review pending approvals');
+  await page.getByTestId('dashboard-next-best-action').getByRole('button', { name: 'View items' }).click();
+  await expect(page).toHaveURL(/\/app\/agreements\?focus=needs_attention&filter=pending_approval/);
+  await expect(page.getByTestId('agreement-list-filter-banner')).toContainText('Filtered: Pending Approval');
+});
+
+test('clicking awaiting signature needs-attention item opens AgreementList filtered view', async ({
+  page,
+}) => {
+  await mockContractorDashboard(page, {
+    agreements: [
+      {
+        id: 321,
+        title: 'Unsigned Kitchen Remodel',
+        project_title: 'Unsigned Kitchen Remodel',
+        status: 'draft',
+        signature_is_satisfied: false,
+        is_fully_signed: false,
+        escrow_funded: false,
+      },
+      {
+        id: 654,
+        title: 'Funded Bath Remodel',
+        project_title: 'Funded Bath Remodel',
+        status: 'funded',
+        signature_is_satisfied: true,
+        is_fully_signed: true,
+        escrow_funded: true,
+      },
+    ],
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('dashboard-needs-attention-item-awaiting_signature').click();
+
+  await expect(page).toHaveURL(/\/app\/agreements\?focus=needs_attention&filter=awaiting_signature/);
+  await expect(page.getByTestId('agreement-list-filter-banner')).toContainText(
+    'Filtered: Awaiting Signature'
+  );
+  await expect(page.getByText('Unsigned Kitchen Remodel')).toBeVisible();
+  await expect(page.getByText('Funded Bath Remodel')).not.toBeVisible();
+
+  await page.getByTestId('agreement-list-filter-banner').getByRole('button', { name: 'Clear filter' }).click();
+  await expect(page).toHaveURL(/\/app\/agreements$/);
+  await expect(page.getByTestId('agreement-list-filter-banner')).toHaveCount(0);
+});
+
+test('clicking awaiting funding needs-attention item opens AgreementList filtered view', async ({
+  page,
+}) => {
+  await mockContractorDashboard(page, {
+    agreements: [
+      {
+        id: 777,
+        title: 'Waiting Funding Project',
+        project_title: 'Waiting Funding Project',
+        status: 'signed',
+        signature_is_satisfied: true,
+        is_fully_signed: true,
+        escrow_funded: false,
+        payment_mode: 'escrow',
+      },
+      {
+        id: 778,
+        title: 'Direct Pay Project',
+        project_title: 'Direct Pay Project',
+        status: 'signed',
+        signature_is_satisfied: true,
+        is_fully_signed: true,
+        escrow_funded: false,
+        payment_mode: 'direct',
+      },
+    ],
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('dashboard-needs-attention-item-awaiting_funding').click();
+
+  await expect(page).toHaveURL(/\/app\/agreements\?focus=needs_attention&filter=awaiting_funding/);
+  await expect(page.getByTestId('agreement-list-filter-banner')).toContainText(
+    'Filtered: Awaiting Funding'
+  );
+  await expect(page.getByText('Waiting Funding Project')).toBeVisible();
+  await expect(page.getByText('Direct Pay Project')).not.toBeVisible();
+});
+
+test('clicking past due schedule card opens AgreementList late filter and reset clears it', async ({
+  page,
+}) => {
+  await mockContractorDashboard(page, {
+    agreements: buildScheduleAgreements(),
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  await page.locator('[data-testid="dashboard-schedule-late"] [role="button"]').click();
+
+  await expect(page).toHaveURL(/\/app\/agreements\?focus=schedule&range=late/);
+  await expect(page.getByTestId('agreement-list-filter-banner')).toContainText(
+    'Filtered: Past Due / Late'
+  );
+  await expect(page.getByText('Late Roof Repair')).toBeVisible();
+  await expect(page.getByText('Completed Old Job')).not.toBeVisible();
+  await expect(page.getByText('Today Paint Prep')).not.toBeVisible();
+
+  await page.getByTestId('agreement-list-filter-banner').getByRole('button', { name: 'Clear filter' }).click();
+  await expect(page).toHaveURL(/\/app\/agreements$/);
+  await expect(page.getByTestId('agreement-list-filter-banner')).toHaveCount(0);
+});
+
+test('clicking due today schedule card opens AgreementList today filter', async ({ page }) => {
+  await mockContractorDashboard(page, {
+    agreements: buildScheduleAgreements(),
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  await page.locator('[data-testid="dashboard-schedule-today"] [role="button"]').click();
+
+  await expect(page).toHaveURL(/\/app\/agreements\?focus=schedule&range=today/);
+  await expect(page.getByTestId('agreement-list-filter-banner')).toContainText('Filtered: Due Today');
+  await expect(page.getByText('Today Paint Prep')).toBeVisible();
+  await expect(page.getByText('Tomorrow Tile Install')).not.toBeVisible();
+});
+
+test('clicking due tomorrow schedule card opens AgreementList tomorrow filter', async ({ page }) => {
+  await mockContractorDashboard(page, {
+    agreements: buildScheduleAgreements(),
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  await page.locator('[data-testid="dashboard-schedule-tomorrow"] [role="button"]').click();
+
+  await expect(page).toHaveURL(/\/app\/agreements\?focus=schedule&range=tomorrow/);
+  await expect(page.getByTestId('agreement-list-filter-banner')).toContainText('Filtered: Due Tomorrow');
+  await expect(page.getByText('Tomorrow Tile Install')).toBeVisible();
+  await expect(page.getByText('Today Paint Prep')).not.toBeVisible();
+});
+
+test('clicking this week schedule card opens AgreementList week filter', async ({ page }) => {
+  await mockContractorDashboard(page, {
+    agreements: buildScheduleAgreements(),
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  await page.locator('[data-testid="dashboard-schedule-week"] [role="button"]').click();
+
+  await expect(page).toHaveURL(/\/app\/agreements\?focus=schedule&range=week/);
+  await expect(page.getByTestId('agreement-list-filter-banner')).toContainText('Filtered: This Week');
+  await expect(page.getByText('Today Paint Prep')).toBeVisible();
+  await expect(page.getByText('Tomorrow Tile Install')).toBeVisible();
+  await expect(page.getByText('Week Window Replacement')).toBeVisible();
+  await expect(page.getByText('Far Future Project')).not.toBeVisible();
 });

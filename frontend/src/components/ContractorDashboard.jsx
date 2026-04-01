@@ -54,6 +54,31 @@ function daysAgo(n) {
   d.setDate(d.getDate() - n);
   return d;
 }
+function startOfToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+function endOfToday() {
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+function startOfTomorrow() {
+  const d = startOfToday();
+  d.setDate(d.getDate() + 1);
+  return d;
+}
+function endOfTomorrow() {
+  const d = endOfToday();
+  d.setDate(d.getDate() + 1);
+  return d;
+}
+function endOfWeek() {
+  const d = endOfToday();
+  d.setDate(d.getDate() + 6);
+  return d;
+}
 function inRange(dateObj, from, to) {
   if (!dateObj) return false;
   const t = dateObj.getTime();
@@ -63,6 +88,45 @@ function inRange(dateObj, from, to) {
 }
 const currency = (n) =>
   Number(n || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
+
+function getMilestoneDueDate(m) {
+  return (
+    parseDateAny(m?.due_date) ||
+    parseDateAny(m?.dueDate) ||
+    parseDateAny(m?.milestone_due_date) ||
+    parseDateAny(m?.scheduled_date) ||
+    parseDateAny(m?.target_date) ||
+    parseDateAny(m?.date) ||
+    parseDateAny(m?.end_date) ||
+    null
+  );
+}
+
+function getInvoiceDueDate(inv) {
+  return (
+    parseDateAny(inv?.due_date) ||
+    parseDateAny(inv?.dueDate) ||
+    parseDateAny(inv?.approval_due_date) ||
+    parseDateAny(inv?.scheduled_release_date) ||
+    parseDateAny(inv?.created_at) ||
+    null
+  );
+}
+
+function pluralizeNeedsAttention(count, noun) {
+  return `${count} ${noun}${count === 1 ? " is" : "s are"}`;
+}
+
+function buildNeedsAttentionRouteItem({ key, label, filterType }) {
+  return {
+    id: key,
+    key,
+    label,
+    filterType,
+    href: `/app/agreements?focus=needs_attention&filter=${filterType}`,
+    ctaText: "Open",
+  };
+}
 
 /* ========================================================================== */
 /* ============================ Milestone helpers ============================ */
@@ -1228,6 +1292,48 @@ export default function ContractorDashboard() {
     return sum(escrowYtd) + sum(directYtd) + sum(expYtd);
   }, [invoices, earnedExpenses]);
 
+  const dueSchedule = useMemo(() => {
+    const todayStart = startOfToday();
+    const todayEnd = endOfToday();
+    const tomorrowStart = startOfTomorrow();
+    const tomorrowEnd = endOfTomorrow();
+    const weekEnd = endOfWeek();
+
+    const milestoneItems = (milestones || [])
+      .filter((m) => !isMilestonePaid(m, invoicesById))
+      .map((m) => ({
+        type: "milestone",
+        amount: money(m?.amount),
+        date: getMilestoneDueDate(m),
+      }))
+      .filter((item) => item.date);
+
+    const invoiceItems = (invoices || [])
+      .filter((inv) => {
+        const bucket = invBucket(inv);
+        return bucket === "pending" || bucket === "approved" || bucket === "disputed";
+      })
+      .map((inv) => ({
+        type: "invoice",
+        amount: money(inv?.amount),
+        date: getInvoiceDueDate(inv),
+      }))
+      .filter((item) => item.date);
+
+    const items = [...milestoneItems, ...invoiceItems];
+    const summarize = (entries) => ({
+      count: entries.length,
+      amount: sum(entries),
+    });
+
+    return {
+      late: summarize(items.filter((item) => item.date.getTime() < todayStart.getTime())),
+      today: summarize(items.filter((item) => inRange(item.date, todayStart, todayEnd))),
+      tomorrow: summarize(items.filter((item) => inRange(item.date, tomorrowStart, tomorrowEnd))),
+      week: summarize(items.filter((item) => inRange(item.date, todayStart, weekEnd))),
+    };
+  }, [invoices, invoicesById, milestones]);
+
   /* ----- navigation handlers ----- */
   const goNewAgreement = () => navigate(`/app/agreements`);
   const goStartWithAi = () => navigate(`/app/assistant`);
@@ -1247,6 +1353,10 @@ export default function ContractorDashboard() {
   const goInvoices = () => navigate(`/app/invoices`);
   const goInvoicesDisputed = () => navigate(`/app/invoices?filter=disputed`);
   const goCalendar = () => navigate(`/app/calendar`);
+  const goAgreementScheduleLate = () => navigate(`/app/agreements?focus=schedule&range=late`);
+  const goAgreementScheduleToday = () => navigate(`/app/agreements?focus=schedule&range=today`);
+  const goAgreementScheduleTomorrow = () => navigate(`/app/agreements?focus=schedule&range=tomorrow`);
+  const goAgreementScheduleWeek = () => navigate(`/app/agreements?focus=schedule&range=week`);
   const goDisputes = () => navigate(`/app/disputes`);
   const goReworkMilestones = () => navigate(`/app/milestones?filter=rework`);
   const goExpenses = () => navigate(`/app/expenses`);
@@ -1363,12 +1473,7 @@ export default function ContractorDashboard() {
     [agreements, invoices, milestones]
   );
   const heroAction = useMemo(() => {
-    const staleOnboardingAction =
-      isOnboardingComplete
-      && (norm(nextBestAction?.title) === "finish onboarding"
-        || norm(nextBestAction?.cta_label) === "resume onboarding");
-
-    if (nextBestAction && !staleOnboardingAction) {
+    if (nextBestAction?.title) {
       return {
         title: nextBestAction.title,
         message: nextBestAction.message,
@@ -1379,37 +1484,15 @@ export default function ContractorDashboard() {
       };
     }
 
-    if (isOnboardingComplete && hasProjectsStarted) {
-      return {
-        title: "Create your next agreement",
-        message: "Use AI assistance to draft a new agreement, scope, estimate, and milestone plan faster.",
-        rationale: "",
-        ctaLabel: "Create a new agreement with AI assistance",
-        navigationTarget: "/app/assistant",
-        action: null,
-      };
-    }
-
-    if (isOnboardingComplete) {
-      return {
-        title: "Start your first project",
-        message: "Use AI to create your first agreement and project plan. It will guide you step by step.",
-        rationale: "",
-        ctaLabel: "Start with AI",
-        navigationTarget: "/app/assistant",
-        action: goStartFirstProjectWithAi,
-      };
-    }
-
     return {
-      title: "Finish onboarding",
-      message: "Complete your setup so MyHomeBro can tailor templates, pricing, and payment guidance.",
+      title: "Start your next agreement",
+      message: "Use AI to quickly create your next project agreement.",
       rationale: "",
-      ctaLabel: "Resume onboarding",
-      navigationTarget: "/app/onboarding",
-      action: null,
+      ctaLabel: "Start with AI",
+      navigationTarget: "/app/assistant",
+      action: goStartFirstProjectWithAi,
     };
-  }, [goStartFirstProjectWithAi, hasProjectsStarted, isOnboardingComplete, nextBestAction]);
+  }, [goStartFirstProjectWithAi, nextBestAction]);
   const reminderStorageKey = "mhb:dashboard-dismissed-reminders";
   useEffect(() => {
     try {
@@ -1478,7 +1561,85 @@ export default function ContractorDashboard() {
       return next;
     });
   };
-  const needsAttentionItems = useMemo(() => dashboardNextSteps.slice(0, 3), [dashboardNextSteps]);
+  const needsAttentionItems = useMemo(() => {
+    const mapped = [];
+    const seen = new Set();
+    const addItem = (item) => {
+      if (!item || seen.has(item.key)) return;
+      seen.add(item.key);
+      mapped.push(item);
+    };
+
+    (Array.isArray(dashboardNextSteps) ? dashboardNextSteps : []).forEach((item) => {
+      const label = String(item || "").trim();
+      const lower = label.toLowerCase();
+      if (!label) return;
+
+      if (lower.includes("waiting for signature")) {
+        addItem(
+          buildNeedsAttentionRouteItem({
+            key: "awaiting_signature",
+            label,
+            filterType: "awaiting_signature",
+          })
+        );
+        return;
+      }
+
+      if (lower.includes("waiting for funding")) {
+        addItem(
+          buildNeedsAttentionRouteItem({
+            key: "awaiting_funding",
+            label,
+            filterType: "awaiting_funding",
+          })
+        );
+        return;
+      }
+
+      if (lower.includes("awaiting review") || lower.includes("pending approval")) {
+        addItem(
+          buildNeedsAttentionRouteItem({
+            key: "pending_approval",
+            label,
+            filterType: "pending_approval",
+          })
+        );
+        return;
+      }
+
+      addItem({
+        id: `needs-attention-${mapped.length}`,
+        key: `needs-attention-${mapped.length}`,
+        label,
+        filterType: "",
+        href: "/app/agreements",
+        ctaText: "Open",
+      });
+    });
+
+    if (iStats.pendingCount > 0) {
+      addItem(
+        buildNeedsAttentionRouteItem({
+          key: "pending_approval",
+          label: `${pluralizeNeedsAttention(iStats.pendingCount, "invoice")} pending approval.`,
+          filterType: "pending_approval",
+        })
+      );
+    }
+
+    if (iStats.disputedCount > 0) {
+      addItem(
+        buildNeedsAttentionRouteItem({
+          key: "disputed",
+          label: `${pluralizeNeedsAttention(iStats.disputedCount, "invoice")} disputed.`,
+          filterType: "disputed",
+        })
+      );
+    }
+
+    return mapped.slice(0, 3);
+  }, [dashboardNextSteps, iStats.disputedCount, iStats.pendingCount]);
   const showActivityFeed = !isEmployee && activityFeed.length > 0;
 
   return (
@@ -1566,6 +1727,11 @@ export default function ContractorDashboard() {
                   {needsAttentionItems.map((item) => (
                     <button
                       key={item.id}
+                      data-testid={
+                        item.filterType
+                          ? `dashboard-needs-attention-item-${item.filterType}`
+                          : undefined
+                      }
                       type="button"
                       onClick={() => navigate(item.href || "/app/dashboard")}
                       className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl border border-amber-200/80 bg-white px-3.5 py-3 text-left text-sm font-medium text-slate-800 transition hover:border-amber-300 hover:bg-amber-50/60 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
@@ -1588,6 +1754,55 @@ export default function ContractorDashboard() {
             subtitle="Milestones and invoices that drive progress and payout."
           >
             <div className="space-y-3">
+              <DashboardCard
+                tone="subtle"
+                className="border-slate-200/90 bg-white/92 p-3.5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
+              >
+                <div className="mhb-kicker !mb-2">Schedule</div>
+                <div className="mhb-grid" style={{ marginBottom: 0 }}>
+                  <div data-testid="dashboard-schedule-late">
+                    <StatCard
+                      icon={AlertTriangle}
+                      title="Past Due / Late"
+                      subtitle="Overdue milestones, invoices, or agreements needing follow-up."
+                      count={dueSchedule.late.count}
+                      amount={dueSchedule.late.amount}
+                      onClick={goAgreementScheduleLate}
+                    />
+                  </div>
+                  <div data-testid="dashboard-schedule-today">
+                    <StatCard
+                      icon={CalendarDays}
+                      title="Due Today"
+                      subtitle="Immediate actions and scheduled work."
+                      count={dueSchedule.today.count}
+                      amount={dueSchedule.today.amount}
+                      onClick={goAgreementScheduleToday}
+                    />
+                  </div>
+                  <div data-testid="dashboard-schedule-tomorrow">
+                    <StatCard
+                      icon={CalendarDays}
+                      title="Due Tomorrow"
+                      subtitle="What is coming up next."
+                      count={dueSchedule.tomorrow.count}
+                      amount={dueSchedule.tomorrow.amount}
+                      onClick={goAgreementScheduleTomorrow}
+                    />
+                  </div>
+                  <div data-testid="dashboard-schedule-week">
+                    <StatCard
+                      icon={CalendarDays}
+                      title="This Week"
+                      subtitle="Upcoming work and payment activity."
+                      count={dueSchedule.week.count}
+                      amount={dueSchedule.week.amount}
+                      onClick={goAgreementScheduleWeek}
+                    />
+                  </div>
+                </div>
+              </DashboardCard>
+
               <DashboardCard
                 tone="subtle"
                 className="border-slate-200/90 bg-white/92 p-3.5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"

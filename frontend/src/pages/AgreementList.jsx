@@ -107,6 +107,177 @@ const getPaymentMode = (r) => {
   return "escrow";
 };
 
+const parseDateAny = (value) => {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const startOfToday = () => {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
+const endOfToday = () => {
+  const date = new Date();
+  date.setHours(23, 59, 59, 999);
+  return date;
+};
+
+const startOfTomorrow = () => {
+  const date = startOfToday();
+  date.setDate(date.getDate() + 1);
+  return date;
+};
+
+const endOfTomorrow = () => {
+  const date = endOfToday();
+  date.setDate(date.getDate() + 1);
+  return date;
+};
+
+const endOfWeek = () => {
+  const date = endOfToday();
+  date.setDate(date.getDate() + 6);
+  return date;
+};
+
+const inRange = (dateObj, from, to) => {
+  if (!dateObj) return false;
+  const time = dateObj.getTime();
+  if (from && time < from.getTime()) return false;
+  if (to && time > to.getTime()) return false;
+  return true;
+};
+
+const agreementDueDate = (row) =>
+  parseDateAny(
+    row?.earliest_due_date ||
+      row?.next_due_date ||
+      row?.milestone_due_date ||
+      row?.milestoneDueDate ||
+      row?.due_date ||
+      row?.dueDate ||
+      row?.end ||
+      row?.end_date ||
+      row?.start
+  );
+
+const numberish = (value) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : 0;
+};
+
+const rowIsAwaitingSignature = (row) => {
+  const status = safeLower(row?.status);
+  const signatureSatisfied =
+    typeof row?.signature_is_satisfied !== "undefined" ? !!row.signature_is_satisfied : null;
+  const fullySigned = typeof row?.is_fully_signed !== "undefined" ? !!row.is_fully_signed : null;
+
+  if (signatureSatisfied !== null || fullySigned !== null) {
+    return !signatureSatisfied && !fullySigned && status !== "signed";
+  }
+
+  const requireContractor = boolish(row?.require_contractor_signature, true);
+  const requireCustomer = boolish(row?.require_customer_signature, true);
+  const contractorSigned =
+    !!(
+      row?.signed_by_contractor ||
+      row?.contractor_signed ||
+      row?.contractor_signature_name ||
+      row?.signed_at_contractor ||
+      row?.contractor_signed_at
+    );
+  const customerSigned =
+    !!(
+      row?.signed_by_homeowner ||
+      row?.homeowner_signed ||
+      row?.homeowner_signature_name ||
+      row?.signed_at_homeowner ||
+      row?.homeowner_signed_at
+    );
+
+  return (!requireContractor || contractorSigned ? 1 : 0) + (!requireCustomer || customerSigned ? 1 : 0) < 2 && status !== "signed";
+};
+
+const rowIsAwaitingFunding = (row) => {
+  const status = safeLower(row?.status);
+  return (
+    getPaymentMode(row) !== "direct" &&
+    (row?.signature_is_satisfied || row?.is_fully_signed || status === "signed") &&
+    !row?.escrow_funded
+  );
+};
+
+const rowHasPendingApproval = (row) => {
+  const status = safeLower(row?.status);
+  const candidates = [
+    row?.pending_approval_count,
+    row?.invoices_pending_approval_count,
+    row?.pending_invoices_count,
+    row?.awaiting_approval_count,
+    row?.milestones_awaiting_review_count,
+    row?.pending_review_count,
+    row?.submitted_milestones_count,
+  ];
+
+  return (
+    ["pending_approval", "awaiting_approval", "approval_pending", "pending_review", "in_review", "review", "submitted"].includes(status) ||
+    candidates.some((value) => numberish(value) > 0)
+  );
+};
+
+const rowHasDispute = (row) => {
+  const status = safeLower(row?.status);
+  const disputeStatus = safeLower(
+    row?.dispute_status ||
+      row?.dispute_state ||
+      row?.latest_dispute_status ||
+      row?.open_dispute_status
+  );
+  const candidates = [
+    row?.disputed_invoice_count,
+    row?.invoices_disputed_count,
+    row?.dispute_count,
+    row?.open_disputes,
+    row?.disputes_open,
+  ];
+
+  return (
+    status.includes("dispute") ||
+    disputeStatus.includes("dispute") ||
+    candidates.some((value) => numberish(value) > 0)
+  );
+};
+
+const rowIsScheduleClosed = (row) => {
+  const status = safeLower(row?.status);
+
+  if (
+    [
+      "completed",
+      "complete",
+      "approved",
+      "paid",
+      "earned",
+      "released",
+      "cancelled",
+      "archived",
+    ].includes(status)
+  ) {
+    return true;
+  }
+
+  return (
+    boolish(row?.approved, false) ||
+    boolish(row?.is_complete, false) ||
+    boolish(row?.is_completed, false) ||
+    boolish(row?.completed, false) ||
+    !!(row?.completed_at || row?.completed_on || row?.completed_date)
+  );
+};
+
 function statusPillClass(status) {
   const s = safeLower(status);
   if (s === "draft") return "border border-slate-200 bg-slate-100 text-slate-800";
@@ -271,12 +442,46 @@ export default function AgreementList() {
   const navigate = useNavigate();
   const location = useLocation();
   const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
-  const statusParam = params.get("status");
-  const statusFilterLabel = useMemo(() => {
-    if (statusParam === "awaiting_signature") return "Awaiting Signature";
-    if (statusParam === "funding_needed") return "Funding Needed";
-    return "";
-  }, [statusParam]);
+  const routeFocus = params.get("focus") || "";
+  const routeFilter = params.get("filter") || "";
+  const routeRange = params.get("range") || "";
+  const statusParam = params.get("status") || "";
+  const activeRouteFilter = useMemo(() => {
+    if (routeFocus === "needs_attention") {
+      if (routeFilter === "awaiting_signature") {
+        return { kind: "needs_attention", value: routeFilter, label: "Awaiting Signature" };
+      }
+      if (routeFilter === "awaiting_funding") {
+        return { kind: "needs_attention", value: routeFilter, label: "Awaiting Funding" };
+      }
+      if (routeFilter === "pending_approval") {
+        return { kind: "needs_attention", value: routeFilter, label: "Pending Approval" };
+      }
+      if (routeFilter === "disputed") {
+        return { kind: "needs_attention", value: routeFilter, label: "Disputed" };
+      }
+    }
+
+    if (routeFocus === "schedule") {
+      if (routeRange === "late") return { kind: "schedule", value: routeRange, label: "Past Due / Late" };
+      if (routeRange === "today") return { kind: "schedule", value: routeRange, label: "Due Today" };
+      if (routeRange === "tomorrow") return { kind: "schedule", value: routeRange, label: "Due Tomorrow" };
+      if (routeRange === "week") return { kind: "schedule", value: routeRange, label: "This Week" };
+    }
+
+    if (routeFocus === "draft") {
+      return { kind: "active_workflow", value: "draft", label: "Draft Agreements" };
+    }
+
+    if (statusParam === "awaiting_signature") {
+      return { kind: "legacy_status", value: statusParam, label: "Awaiting Signature" };
+    }
+    if (statusParam === "funding_needed") {
+      return { kind: "legacy_status", value: statusParam, label: "Funding Needed" };
+    }
+
+    return null;
+  }, [routeFilter, routeFocus, routeRange, statusParam]);
 
   // ✅ Base route for contractor vs employee console
   const BASE = useMemo(() => {
@@ -325,6 +530,9 @@ export default function AgreementList() {
     showArchived,
     loading,
     statusParam,
+    routeFocus,
+    routeFilter,
+    routeRange,
   });
 
   useEffect(() => {
@@ -352,6 +560,12 @@ export default function AgreementList() {
   useEffect(() => {
     pageSizeRef.current = pageSize;
   }, [pageSize]);
+
+  useEffect(() => {
+    if (activeRouteFilter) {
+      setStatusFilter("all");
+    }
+  }, [activeRouteFilter]);
 
   useEffect(() => {
     const onDown = (e) => {
@@ -599,19 +813,40 @@ export default function AgreementList() {
 
   const filtered = useMemo(() => {
     const search = q.trim().toLowerCase();
+    const todayStart = startOfToday();
+    const todayEnd = endOfToday();
+    const tomorrowStart = startOfTomorrow();
+    const tomorrowEnd = endOfTomorrow();
+    const weekEnd = endOfWeek();
+
     return rows
       .filter((r) => {
+        if (activeRouteFilter?.kind === "needs_attention") {
+          if (activeRouteFilter.value === "awaiting_signature") return rowIsAwaitingSignature(r);
+          if (activeRouteFilter.value === "awaiting_funding") return rowIsAwaitingFunding(r);
+          if (activeRouteFilter.value === "pending_approval") return rowHasPendingApproval(r);
+          if (activeRouteFilter.value === "disputed") return rowHasDispute(r);
+        }
+
+        if (activeRouteFilter?.kind === "schedule") {
+          const dueDate = agreementDueDate(r);
+          if (activeRouteFilter.value === "late") {
+            return dueDate ? dueDate.getTime() < todayStart.getTime() && !rowIsScheduleClosed(r) : false;
+          }
+          if (activeRouteFilter.value === "today") return inRange(dueDate, todayStart, todayEnd);
+          if (activeRouteFilter.value === "tomorrow") {
+            return inRange(dueDate, tomorrowStart, tomorrowEnd);
+          }
+          if (activeRouteFilter.value === "week") return inRange(dueDate, todayStart, weekEnd);
+        }
+
+        if (activeRouteFilter?.kind === "active_workflow") {
+          return safeLower(r.status) === "draft";
+        }
+
         const status = safeLower(r.status);
-        if (statusParam === "awaiting_signature") {
-          return !r.signature_is_satisfied && !r.is_fully_signed && status !== "signed";
-        }
-        if (statusParam === "funding_needed") {
-          return (
-            (r.signature_is_satisfied || r.is_fully_signed || status === "signed")
-            && !r.escrow_funded
-            && getPaymentMode(r) !== "direct"
-          );
-        }
+        if (statusParam === "awaiting_signature") return rowIsAwaitingSignature(r);
+        if (statusParam === "funding_needed") return rowIsAwaitingFunding(r);
         return statusFilter === "all" ? true : status === statusFilter;
       })
       .filter((r) => {
@@ -640,7 +875,7 @@ export default function AgreementList() {
 
         return hay.includes(search);
       });
-  }, [rows, q, statusFilter, statusParam, homeownerDisplay]);
+  }, [activeRouteFilter, homeownerDisplay, q, rows, statusFilter, statusParam]);
 
   const page = filtered.slice(0, pageSize);
 
@@ -1333,10 +1568,13 @@ export default function AgreementList() {
         </button>
       </div>
 
-      {statusFilterLabel ? (
-        <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-800">
+      {activeRouteFilter ? (
+        <div
+          data-testid="agreement-list-filter-banner"
+          className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-800"
+        >
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span>Filtered: {statusFilterLabel}</span>
+            <span>Filtered: {activeRouteFilter.label}</span>
             <button
               type="button"
               onClick={() => navigate(`${BASE}/agreements`)}
