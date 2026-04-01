@@ -259,3 +259,40 @@ test('contractor sidebar groups navigation into core work business and settings'
   await expect(sidebar).toContainText('My Profile');
   await expect(sidebar).toContainText('Stripe Onboarding');
 });
+
+test('contractor dashboard suppresses stale onboarding hero copy after setup is complete', async ({
+  page,
+}) => {
+  await mockContractorDashboard(page, {
+    contractorMe: {
+      business_name: 'Ready Contractor Co',
+      city: 'Austin',
+      state: 'TX',
+      skills: ['Electrical'],
+      payouts_enabled: true,
+      onboarding: {
+        status: 'complete',
+        stripe_ready: true,
+        first_value_reached: false,
+      },
+    },
+    nextBestAction: {
+      action_type: 'resume_onboarding',
+      title: 'Finish onboarding',
+      message: 'Complete your setup so MyHomeBro can tailor templates, pricing, and payment guidance.',
+      cta_label: 'Resume onboarding',
+      navigation_target: '/app/onboarding',
+      rationale: 'Setup completion unlocks better guidance.',
+    },
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('dashboard-next-best-action')).toContainText('Onboarding Complete');
+  await expect(page.getByTestId('dashboard-next-best-action')).toContainText(
+    "Stripe and profile setup are ready. Start your first project and I'll walk you through it."
+  );
+  await expect(page.getByTestId('dashboard-next-best-action')).toContainText('Start your first project');
+  await expect(page.getByTestId('dashboard-next-best-action')).not.toContainText('Finish onboarding');
+  await expect(page.getByTestId('dashboard-next-best-action')).not.toContainText('Resume onboarding');
+});
