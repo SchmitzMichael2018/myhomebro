@@ -1231,6 +1231,17 @@ export default function ContractorDashboard() {
   /* ----- navigation handlers ----- */
   const goNewAgreement = () => navigate(`/app/agreements`);
   const goStartWithAi = () => navigate(`/app/assistant`);
+  const goStartFirstProjectWithAi = () =>
+    navigate(`/app/assistant`, {
+      state: {
+        assistantPrompt: "Help me create my first agreement and start my first project",
+        assistantContext: {
+          current_route: "/app/dashboard",
+          onboarding_mode: true,
+          onboarding_step: "first_job",
+        },
+      },
+    });
   const goNewIntake = () => navigate(`/app/intake/new`);
   const goNewMilestone = () => navigate(`/app/milestones?new=1`);
   const goInvoices = () => navigate(`/app/invoices`);
@@ -1314,12 +1325,20 @@ export default function ContractorDashboard() {
   const reminders = useMemo(() => {
     if (isEmployee) return [];
     const items = [];
-    if (onboarding?.status !== "complete" && !onboarding?.first_value_reached) {
+    if (onboarding?.status === "complete" && !onboarding?.first_value_reached && (agreements || []).length === 0) {
       items.push({
-        key: "finish-first-agreement",
-        title: "Complete your first agreement",
-        message: "Finish your first project setup so MyHomeBro can tailor templates, milestones, and next steps.",
-        cta: "Resume onboarding",
+        key: "start-first-project",
+        title: "Start your first project",
+        message: "Use AI to create your first agreement and project plan. It will guide you step by step.",
+        cta: "Start with AI",
+        action: goStartFirstProjectWithAi,
+      });
+    } else if (onboarding?.status !== "complete" && !onboarding?.first_value_reached) {
+      items.push({
+        key: "finish-setup",
+        title: "Finish your setup",
+        message: "Complete your business setup so MyHomeBro can tailor templates, milestones, and guided project creation.",
+        cta: "Finish setup",
         action: () => navigate("/app/onboarding"),
       });
     }
@@ -1342,7 +1361,15 @@ export default function ContractorDashboard() {
       });
     }
     return items.filter((item) => !dismissedReminderKeys.includes(item.key));
-  }, [agreements, dismissedReminderKeys, isEmployee, milestones, navigate, onboarding]);
+  }, [
+    agreements,
+    dismissedReminderKeys,
+    goStartFirstProjectWithAi,
+    isEmployee,
+    milestones,
+    navigate,
+    onboarding,
+  ]);
 
   const dismissReminder = (key) => {
     setDismissedReminderKeys((prev) => {
@@ -1438,13 +1465,18 @@ export default function ContractorDashboard() {
               </div>
               {needsAttentionItems.length ? (
                 <div className="mt-3 space-y-2.5">
-                  {needsAttentionItems.map((item, index) => (
-                    <div
-                      key={`${item}-${index}`}
-                      className="rounded-xl border border-amber-200/80 bg-white px-3.5 py-3 text-sm font-medium text-slate-800"
+                  {needsAttentionItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => navigate(item.href || "/app/dashboard")}
+                      className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl border border-amber-200/80 bg-white px-3.5 py-3 text-left text-sm font-medium text-slate-800 transition hover:border-amber-300 hover:bg-amber-50/60 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
                     >
-                      {item}
-                    </div>
+                      <span className="min-w-0 flex-1">{item.label}</span>
+                      <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-amber-900">
+                        {item.ctaText || "Open"}
+                      </span>
+                    </button>
                   ))}
                 </div>
               ) : (

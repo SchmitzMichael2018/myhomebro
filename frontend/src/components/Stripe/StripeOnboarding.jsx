@@ -125,6 +125,9 @@ export default function StripeOnboarding() {
   const stepTotal = Number(onboarding?.step_total || 4);
   const firstValueReady = Boolean(onboarding?.first_value_reached);
   const stripeReady = Boolean(onboarding?.stripe_ready || stripeStatus?.connected);
+  const setupComplete = Boolean(onboarding?.status === "complete");
+  const projectLaunchMode =
+    setupComplete || firstValueReady || currentStep === "first_job" || currentStep === "stripe";
 
   function toggleSkill(skill) {
     setForm((current) => {
@@ -200,7 +203,8 @@ export default function StripeOnboarding() {
     });
     navigate("/app/assistant", {
       state: {
-        assistantPrompt: finalPrompt || "Tell me about your job and help me create my first project",
+        assistantPrompt:
+          finalPrompt || "Help me create my first agreement and start my first project",
         assistantContext: {
           current_route: "/app/onboarding",
           onboarding_mode: true,
@@ -281,7 +285,7 @@ export default function StripeOnboarding() {
   const rightRailCards = useMemo(() => {
     return [
       {
-        title: "Activation Snapshot",
+        title: projectLaunchMode ? "Project Launch Snapshot" : "Setup Snapshot",
         body: (
           <div className="space-y-3 text-sm text-slate-700">
             <div>
@@ -307,14 +311,14 @@ export default function StripeOnboarding() {
         title: "What comes next",
         body: (
           <ul className="space-y-2 text-sm text-slate-600">
-            <li>AI can suggest a template, estimate, and milestones from one short prompt.</li>
-            <li>Most contractors complete this in under 2 minutes.</li>
-            <li>Stripe only matters when you are ready to get paid.</li>
+            <li>AI can guide your first agreement, scope, estimate, and milestones from one short prompt.</li>
+            <li>You can start the project flow first, then come back to Stripe when payouts matter.</li>
+            <li>The wizard is still available if you would rather build the agreement manually.</li>
           </ul>
         ),
       },
     ];
-  }, [currentStep, form.business_name, form.city, form.skills, form.state, meData, onboarding]);
+  }, [currentStep, form.business_name, form.city, form.skills, form.state, meData, onboarding, projectLaunchMode]);
 
   function renderCurrentStep() {
     if (currentStep === "welcome") {
@@ -436,8 +440,8 @@ export default function StripeOnboarding() {
       return (
         <PrimaryCard
           eyebrow={`Step ${stepNumber} of ${stepTotal}`}
-          title="Tell me about your job"
-          description="Most contractors complete this in under 2 minutes. A short description is enough to start a template, estimate, and milestone preview."
+          title="Start your first project"
+          description="Describe the job in a sentence or two and AI will guide you through your first agreement, estimate, and milestone plan."
           testId="contractor-onboarding-first-job"
         >
           <label className="block text-sm font-semibold text-slate-900">Quick job input</label>
@@ -468,7 +472,7 @@ export default function StripeOnboarding() {
               disabled={saving}
               className="min-h-12 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
             >
-              Build preview with AI
+              Start my first project with AI
             </button>
             <button
               type="button"
@@ -476,7 +480,7 @@ export default function StripeOnboarding() {
               onClick={handleOpenWizard}
               className="text-sm font-semibold text-slate-700 underline-offset-4 hover:underline"
             >
-              Skip to the agreement wizard
+              Open the agreement wizard myself
             </button>
           </div>
         </PrimaryCard>
@@ -530,13 +534,17 @@ export default function StripeOnboarding() {
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Contractor Onboarding
+                {projectLaunchMode ? "Start Your First Project" : "Contractor Setup"}
               </div>
               <h1 className="mt-2 text-3xl font-bold text-slate-900">
-                Reach first value before payments setup
+                {projectLaunchMode
+                  ? "Start your first project with guided help"
+                  : "Finish your setup and get ready for your first project"}
               </h1>
               <p className="mt-2 max-w-2xl text-sm text-slate-600">
-                The goal is simple: get your first project moving quickly, then connect payments when the timing makes sense.
+                {projectLaunchMode
+                  ? "AI can guide you through creating your first agreement and project plan. Stripe can wait until you are ready to send payment workflows."
+                  : "Finish a few setup details so MyHomeBro can personalize templates, milestones, and your first guided project flow."}
               </p>
             </div>
             <div className="flex flex-col items-start gap-2">
@@ -573,10 +581,10 @@ export default function StripeOnboarding() {
                     data-testid="contractor-onboarding-soft-stripe-prompt"
                   >
                     <div className="text-sm font-semibold text-amber-900">
-                      Set up payments now to get paid faster
+                      Connect Stripe before you send payment workflows
                     </div>
                     <div className="mt-2 text-sm text-amber-800">
-                      You are ready to explore the app. Payments can wait, but they will require Stripe before you send money-related workflows.
+                      You are ready to keep building projects. Payments can wait, but Stripe is required before approvals, collections, and payouts can move.
                     </div>
                   </div>
                 ) : null}
@@ -591,7 +599,9 @@ export default function StripeOnboarding() {
                 ))}
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-5" data-testid="contractor-onboarding-summary">
-                  <div className="text-sm font-semibold text-slate-900">Progress so far</div>
+                  <div className="text-sm font-semibold text-slate-900">
+                    {projectLaunchMode ? "Project readiness" : "Setup progress"}
+                  </div>
                   <div className="mt-3 grid gap-3 text-sm text-slate-700 sm:grid-cols-2">
                     <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
                       <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Trades selected</div>

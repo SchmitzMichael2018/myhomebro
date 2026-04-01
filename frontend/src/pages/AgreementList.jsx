@@ -107,6 +107,49 @@ const getPaymentMode = (r) => {
   return "escrow";
 };
 
+function contractorSignedValue(r) {
+  return (
+    (typeof r?.signed_by_contractor !== "undefined" ? r.signed_by_contractor : r?.contractor_signed) ||
+    !!r?.contractor_signature_name ||
+    !!r?.signed_at_contractor ||
+    !!r?.contractor_signed_at ||
+    false
+  );
+}
+
+function customerSignedValue(r) {
+  return (
+    (typeof r?.signed_by_homeowner !== "undefined" ? r.signed_by_homeowner : r?.homeowner_signed) ||
+    !!r?.homeowner_signature_name ||
+    !!r?.signed_at_homeowner ||
+    !!r?.homeowner_signed_at ||
+    false
+  );
+}
+
+function agreementIsFullySigned(r) {
+  if (typeof r?.signature_is_satisfied !== "undefined") return !!r.signature_is_satisfied;
+  if (typeof r?.is_fully_signed !== "undefined") return !!r.is_fully_signed;
+
+  const contractorRequired = boolish(r?.require_contractor_signature, true);
+  const customerRequired = boolish(r?.require_customer_signature, true);
+  const contractorOk = !contractorRequired || contractorSignedValue(r);
+  const customerOk = !customerRequired || customerSignedValue(r);
+  return contractorOk && customerOk;
+}
+
+function agreementNeedsFunding(r) {
+  const status = safeLower(r?.status);
+  return getPaymentMode(r) !== "direct" && agreementIsFullySigned(r) && status !== "funded" && !r?.escrow_funded;
+}
+
+function agreementMatchesStatusFilter(r, statusFilter) {
+  if (statusFilter === "all") return true;
+  if (statusFilter === "awaiting_signature") return !agreementIsFullySigned(r);
+  if (statusFilter === "funding_needed") return agreementNeedsFunding(r);
+  return safeLower(r?.status) === statusFilter;
+}
+
 function statusPillClass(status) {
   const s = safeLower(status);
   if (s === "draft") return "border border-slate-200 bg-slate-100 text-slate-800";
@@ -284,7 +327,10 @@ export default function AgreementList() {
   const [primaryId, setPrimaryId] = useState(null);
 
   const [q, setQ] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    return params.get("status") || "all";
+  });
   const [pageSize, setPageSize] = useState(10);
 
   const [busyDeleteRow, setBusyDeleteRow] = useState(null);
@@ -344,6 +390,11 @@ export default function AgreementList() {
   useEffect(() => {
     pageSizeRef.current = pageSize;
   }, [pageSize]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    setStatusFilter(params.get("status") || "all");
+  }, [location.search]);
 
   useEffect(() => {
     const onDown = (e) => {
@@ -592,7 +643,7 @@ export default function AgreementList() {
   const filtered = useMemo(() => {
     const search = q.trim().toLowerCase();
     return rows
-      .filter((r) => (statusFilter === "all" ? true : String(r.status || "").toLowerCase() === statusFilter))
+      .filter((r) => agreementMatchesStatusFilter(r, statusFilter))
       .filter((r) => {
         if (!search) return true;
         const homeownerLabel = homeownerDisplay(r);
@@ -622,6 +673,24 @@ export default function AgreementList() {
   }, [rows, q, statusFilter, homeownerDisplay]);
 
   const page = filtered.slice(0, pageSize);
+
+  const updateStatusFilter = (nextStatus) => {
+    const params = new URLSearchParams(location.search);
+    if (!nextStatus || nextStatus === "all") {
+      params.delete("status");
+    } else {
+      params.set("status", nextStatus);
+    }
+    const nextSearch = params.toString();
+    setStatusFilter(nextStatus || "all");
+    navigate(
+      {
+        pathname: location.pathname,
+        search: nextSearch ? `?${nextSearch}` : "",
+      },
+      { replace: true }
+    );
+  };
 
   const toggle = (id) =>
     setSelected((old) => {
@@ -716,28 +785,9 @@ export default function AgreementList() {
   const reqContractor = (r) => boolish(r?.require_contractor_signature, true);
   const reqCustomer = (r) => boolish(r?.require_customer_signature, true);
 
-  const contractorSigned = (r) =>
-    (typeof r.signed_by_contractor !== "undefined" ? r.signed_by_contractor : r.contractor_signed) ||
-    !!r.contractor_signature_name ||
-    !!r.signed_at_contractor ||
-    !!r.contractor_signed_at ||
-    false;
-
-  const homeownerSigned = (r) =>
-    (typeof r.signed_by_homeowner !== "undefined" ? r.signed_by_homeowner : r.homeowner_signed) ||
-    !!r.homeowner_signature_name ||
-    !!r.signed_at_homeowner ||
-    !!r.homeowner_signed_at ||
-    false;
-
-  const isFullySignedAgreement = (r) => {
-    if (typeof r.signature_is_satisfied !== "undefined") return !!r.signature_is_satisfied;
-    if (typeof r.is_fully_signed !== "undefined") return !!r.is_fully_signed;
-
-    const contrOk = !reqContractor(r) || contractorSigned(r);
-    const custOk = !reqCustomer(r) || homeownerSigned(r);
-    return contrOk && custOk;
-  };
+  const contractorSigned = (r) => contractorSignedValue(r);
+  const homeownerSigned = (r) => customerSignedValue(r);
+  const isFullySignedAgreement = (r) => agreementIsFullySigned(r);
 
   const SignatureBadge = ({ state, who }) => {
     if (state === "waived") {
@@ -1244,10 +1294,12 @@ export default function AgreementList() {
 
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
+          onChange={(e) => updateStatusFilter(e.target.value)}
           className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm"
         >
           <option value="all">All Status</option>
+          <option value="awaiting_signature">awaiting signature</option>
+          <option value="funding_needed">funding needed</option>
           <option value="draft">draft</option>
           <option value="signed">signed</option>
           <option value="funded">funded</option>
