@@ -291,6 +291,15 @@ function buildTaskSections(payload) {
 }
 
 function buildScheduleSummaries(payload) {
+  if (!payload) {
+    return {
+      past_due: { count: 0, amount: 0 },
+      today: { count: 0, amount: 0 },
+      tomorrow: { count: 0, amount: 0 },
+      this_week: { count: 0, amount: 0 },
+    };
+  }
+
   const todayStart = startOfToday();
   const todayItems = Array.isArray(payload?.today) ? payload.today : [];
   const tomorrowItems = Array.isArray(payload?.tomorrow) ? payload.tomorrow : [];
@@ -306,7 +315,10 @@ function buildScheduleSummaries(payload) {
 
   const summarize = (items) => ({
     count: items.length,
-    amount: items.reduce((sum, item) => sum + money(item?.amount), 0),
+    amount: items.reduce((sum, item) => {
+      const val = Number(item?.amount);
+      return sum + (isNaN(val) ? 0 : val);
+    }, 0),
   });
 
   return {
@@ -575,7 +587,19 @@ export default function RoleAwareWorkboard({ title = null, subtitle = null }) {
   }
 
   const taskSections = buildTaskSections(payload);
-  const scheduleSummary = useMemo(() => buildScheduleSummaries(payload), [payload]);
+  const scheduleSummary = useMemo(() => {
+    try {
+      return buildScheduleSummaries(payload);
+    } catch (err) {
+      console.error("Schedule summary crash:", err);
+      return {
+        past_due: { count: 0, amount: 0 },
+        today: { count: 0, amount: 0 },
+        tomorrow: { count: 0, amount: 0 },
+        this_week: { count: 0, amount: 0 },
+      };
+    }
+  }, [payload]);
 
   return (
     <div data-testid="role-workboard">

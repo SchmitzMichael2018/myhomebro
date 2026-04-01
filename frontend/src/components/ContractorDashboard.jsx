@@ -1,14 +1,8 @@
 // src/components/ContractorDashboard.jsx
 import React, { useEffect, useId, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../api";
-import { toast } from "react-hot-toast";
-import PageShell from "./PageShell.jsx";
-import RoleAwareWorkboard from "./RoleAwareWorkboard.jsx";
-import StatCard from "./StatCard.jsx";
 import Modal from "react-modal";
-import DashboardCard from "./dashboard/DashboardCard.jsx";
-import DashboardSection from "./dashboard/DashboardSection.jsx";
+import { toast } from "react-hot-toast";
 import {
   Target,
   ListTodo,
@@ -27,13 +21,19 @@ import {
   ChevronRight,
   Sparkles,
   ArrowRight,
+  Clock3,
+  CalendarClock,
 } from "lucide-react";
+
+import api from "../api";
+import PageShell from "./PageShell.jsx";
+import DashboardCard from "./dashboard/DashboardCard.jsx";
+import DashboardSection from "./dashboard/DashboardSection.jsx";
 import { getDashboardNextSteps } from "../lib/workflowHints.js";
 
-/* Ensure react-modal knows the root */
 Modal.setAppElement("#root");
 
-/* ---------- small helpers ---------- */
+/* ------------------------------ helpers ------------------------------ */
 const money = (n) => Number(n || 0);
 const sum = (arr, key = "amount") => arr.reduce((a, x) => a + money(x?.[key]), 0);
 const norm = (s) => (s || "").toString().toLowerCase();
@@ -43,17 +43,11 @@ function parseDateAny(v) {
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? null : d;
 }
-function startOfMonth(d) {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
-}
+
 function startOfYear(d) {
   return new Date(d.getFullYear(), 0, 1);
 }
-function daysAgo(n) {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d;
-}
+
 function inRange(dateObj, from, to) {
   if (!dateObj) return false;
   const t = dateObj.getTime();
@@ -61,13 +55,132 @@ function inRange(dateObj, from, to) {
   if (to && t > to.getTime()) return false;
   return true;
 }
+
 const currency = (n) =>
   Number(n || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
-/* ========================================================================== */
-/* ============================ Milestone helpers ============================ */
-/* ========================================================================== */
+function formatActivityTimestamp(value) {
+  const dt = parseDateAny(value);
+  if (!dt) return "";
+  return dt.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
 
+function activityAccent(severity) {
+  if (severity === "critical") {
+    return "border-rose-200 bg-rose-50 text-rose-900";
+  }
+  if (severity === "warning") {
+    return "border-amber-200 bg-amber-50 text-amber-900";
+  }
+  if (severity === "success") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-900";
+  }
+  return "border-slate-200 bg-slate-50 text-slate-900";
+}
+
+function startOfToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function endOfToday() {
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  return d;
+}
+
+function startOfTomorrow() {
+  const d = startOfToday();
+  d.setDate(d.getDate() + 1);
+  return d;
+}
+
+function endOfTomorrow() {
+  const d = endOfToday();
+  d.setDate(d.getDate() + 1);
+  return d;
+}
+
+function endOfWeek() {
+  const d = endOfToday();
+  d.setDate(d.getDate() + 6);
+  return d;
+}
+
+function getMilestoneDueDate(m) {
+  return (
+    parseDateAny(m?.due_date) ||
+    parseDateAny(m?.scheduled_date) ||
+    parseDateAny(m?.target_date) ||
+    parseDateAny(m?.date) ||
+    parseDateAny(m?.end_date) ||
+    null
+  );
+}
+
+function getInvoiceDueDate(inv) {
+  return (
+    parseDateAny(inv?.due_date) ||
+    parseDateAny(inv?.approval_due_date) ||
+    parseDateAny(inv?.scheduled_release_date) ||
+    parseDateAny(inv?.created_at) ||
+    null
+  );
+}
+
+function normalizeNeedsAttentionItem(item, index = 0) {
+  if (typeof item === "string") {
+    return {
+      id: `needs-attention-${index}`,
+      label: item,
+      ctaText: "Open",
+      href: "/app/agreements",
+      action: null,
+    };
+  }
+
+  const label =
+    item?.label ||
+    item?.title ||
+    item?.message ||
+    item?.summary ||
+    item?.text ||
+    item?.description ||
+    "";
+
+  const ctaText =
+    item?.ctaText ||
+    item?.cta_label ||
+    item?.cta ||
+    item?.actionLabel ||
+    item?.buttonLabel ||
+    item?.action?.label ||
+    "Open";
+
+  const href =
+    item?.href ||
+    item?.navigation_target ||
+    item?.target ||
+    item?.action?.target ||
+    "/app/agreements";
+
+  return {
+    ...item,
+    id: item?.id || item?.key || `needs-attention-${index}`,
+    label,
+    ctaText,
+    href,
+    action: typeof item?.action === "function" ? item.action : null,
+  };
+}
+
+/* --------------------------- milestone helpers --------------------------- */
 const getInvoiceIdFromMilestone = (m) => {
   const inv = m?.invoice;
   if (inv && typeof inv === "object") return inv?.id ?? inv?.invoice_id ?? inv?.pk ?? null;
@@ -76,20 +189,15 @@ const getInvoiceIdFromMilestone = (m) => {
 
 const milestoneStatus = (m) => norm(m?.status || m?.milestone_status || m?.state || "");
 
-// robust “completed” detection (matches your newer MilestoneList behavior)
 const isMilestoneCompleted = (m) => {
   if (!m) return false;
-
   if (m.completed === true) return true;
   if (m.is_completed === true) return true;
-
   if (!!m.completed_at || !!m.completed_on || !!m.completed_date) return true;
   if (!!m.submitted_at || !!m.submitted_on || !!m.completion_submitted_at) return true;
 
   const st = milestoneStatus(m);
-
   if (["completed", "complete", "done", "finished"].includes(st)) return true;
-
   if (
     [
       "review",
@@ -103,13 +211,11 @@ const isMilestoneCompleted = (m) => {
   ) {
     return true;
   }
-
   return false;
 };
 
 const isMilestoneIncomplete = (m) => !isMilestoneCompleted(m);
 
-// Paid milestone = invoice is paid OR escrow released (via invoices list or embedded invoice object)
 const isMilestonePaid = (m, invoicesById) => {
   if (!m) return false;
 
@@ -135,22 +241,16 @@ const isMilestonePaid = (m, invoicesById) => {
   return false;
 };
 
-// Ready to invoice = completed AND NOT invoiced AND NOT paid
 const isMilestoneReadyToInvoice = (m, invoicesById) => {
   if (!isMilestoneCompleted(m)) return false;
   if (isMilestonePaid(m, invoicesById)) return false;
 
-  const hasInv =
-    m?.is_invoiced === true ||
-    !!getInvoiceIdFromMilestone(m);
-
+  const hasInv = m?.is_invoiced === true || !!getInvoiceIdFromMilestone(m);
   return !hasInv;
 };
 
-// ✅ Rework milestone detection (best-effort)
 const isReworkMilestone = (m) => {
   if (!m) return false;
-
   if (m.is_rework === true || m.rework === true) return true;
   if (m.rework_of_dispute || m.rework_of_dispute_id) return true;
   if (m.dispute_id && norm(m.title).includes("rework")) return true;
@@ -164,7 +264,6 @@ const isReworkMilestone = (m) => {
   return false;
 };
 
-// ✅ Invoice disputed detection (best-effort, tries to ignore resolved/closed disputes)
 const isDisputedInvoice = (inv) => {
   const s = norm(inv?.status);
   const display = norm(inv?.display_status);
@@ -193,9 +292,6 @@ const isDisputedInvoice = (inv) => {
   return s.includes("dispute") || display.includes("dispute");
 };
 
-/**
- * ✅ Invoice bucketing rules (escrow-aware + disputed)
- */
 const invBucket = (inv) => {
   if (isDisputedInvoice(inv)) return "disputed";
 
@@ -210,56 +306,16 @@ const invBucket = (inv) => {
   if (escrowReleased || display === "paid") return "earned";
   if (["paid", "earned", "released"].includes(s)) return "earned";
 
-  if (["pending", "pending_approval", "sent", "awaiting_approval"].includes(s))
-    return "pending";
-
+  if (["pending", "pending_approval", "sent", "awaiting_approval"].includes(s)) return "pending";
   if (["approved", "ready_to_pay"].includes(s)) return "approved";
 
   return "pending";
 };
 
-const fmtRate = (rateDecimal) => {
-  const r = Number(rateDecimal);
-  if (!Number.isFinite(r)) return null;
-  return `${(r * 100).toFixed(2)}%`;
-};
-
-// ✅ pricing labels (keep in sync with backend/backend/payments/fees.py)
-const INTRO_RATE_LABEL = "3.00%";
-const STANDARD_START_RATE_LABEL = "4.50%";
-
-// ✅ Direct Pay pricing (LOCKED)
-const DIRECT_PAY_LABEL = "1% + $1";
-
-function planLabel() {
-  return "Included";
-}
-
-function directPayLabel() {
-  return DIRECT_PAY_LABEL;
-}
-
-function formatActivityTimestamp(value) {
-  const dt = parseDateAny(value);
-  if (!dt) return "";
-  return dt.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function activityAccent(severity) {
-  if (severity === "critical") return "border-rose-200 bg-rose-50 text-rose-900";
-  if (severity === "warning") return "border-amber-200 bg-amber-50 text-amber-900";
-  if (severity === "success") return "border-emerald-200 bg-emerald-50 text-emerald-900";
-  return "border-slate-200 bg-slate-50 text-slate-900";
-}
-
-/* ---------- quick action button ---------- */
+/* ------------------------------ UI bits ------------------------------ */
 function ActionButton({ icon: Icon, label, onClick, primary, hint }) {
   const tooltipId = useId();
+
   const button = (
     <button
       className={`mhb-btn${primary ? " primary" : ""}`}
@@ -268,16 +324,16 @@ function ActionButton({ icon: Icon, label, onClick, primary, hint }) {
       title={label}
       aria-describedby={hint ? tooltipId : undefined}
       style={{
-        padding: primary ? "13px 16px" : "12px 16px",
+        padding: primary ? "12px 14px" : "11px 14px",
         fontSize: 14,
         display: "flex",
         alignItems: "center",
-        justifyContent: "flex-start",
-        width: "100%",
+        justifyContent: "center",
+        minWidth: 0,
       }}
     >
-      {Icon ? <Icon size={18} /> : null}
-      <span style={{ marginLeft: 8, fontWeight: 900 }}>{label}</span>
+      {Icon ? <Icon size={16} /> : null}
+      <span style={{ marginLeft: 8, fontWeight: 900, whiteSpace: "nowrap" }}>{label}</span>
     </button>
   );
 
@@ -297,14 +353,106 @@ function ActionButton({ icon: Icon, label, onClick, primary, hint }) {
   );
 }
 
+function CompactStatCard({ icon: Icon, title, subtitle, count, amount, onClick }) {
+  const content = (
+    <div className="h-full min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-md transition hover:-translate-y-[1px] hover:shadow-lg">
+      <div className="flex h-full flex-col justify-between gap-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start gap-3">
+              {Icon ? (
+                <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700">
+                  <Icon className="h-4 w-4" />
+                </span>
+              ) : null}
 
-/* ========================================================================== */
-/* =================  INLINE: ExpenseRequestModal (no import)  ============== */
-/* ========================================================================== */
+              <div className="min-w-0 flex-1">
+                <div
+                  className="text-[16px] font-semibold leading-6 text-slate-950"
+                  style={{
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                  }}
+                >
+                  {title}
+                </div>
+              </div>
+            </div>
+
+            {subtitle ? (
+              <div className="mt-3 text-[14px] leading-6 text-slate-700">
+                {subtitle}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="shrink-0 text-right">
+            <div className="text-[22px] font-bold tracking-tight text-slate-950">
+              {currency(amount || 0)}
+            </div>
+          </div>
+        </div>
+
+        {count !== null && count !== undefined ? (
+          <div className="text-sm font-medium text-slate-600">
+            {count} {count === 1 ? "item" : "items"}
+          </div>
+        ) : (
+          <div />
+        )}
+      </div>
+    </div>
+  );
+
+  if (!onClick) return <div className="h-full">{content}</div>;
+
+  return (
+    <button type="button" onClick={onClick} className="block h-full min-w-0 text-left">
+      {content}
+    </button>
+  );
+}
+
+function DueStatCard({ icon: Icon, title, subtitle, count, amount, onClick }) {
+  return (
+    <button type="button" onClick={onClick} className="block h-full min-w-0 text-left">
+      <DashboardCard className="h-full border-slate-200 bg-white p-5 shadow-md transition hover:-translate-y-[1px] hover:shadow-lg">
+        <div className="flex h-full flex-col justify-between gap-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-3">
+                {Icon ? (
+                  <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-700">
+                    <Icon className="h-4 w-4" />
+                  </span>
+                ) : null}
+                <div className="truncate text-[16px] font-semibold text-slate-950">{title}</div>
+              </div>
+              <div className="mt-3 text-[14px] leading-6 text-slate-700">{subtitle}</div>
+            </div>
+
+            <div className="shrink-0 text-right">
+              <div className="text-[22px] font-bold tracking-tight text-slate-950">
+                {currency(amount || 0)}
+              </div>
+            </div>
+          </div>
+
+          <div className="text-sm font-medium text-slate-600">
+            {count} {count === 1 ? "item" : "items"}
+          </div>
+        </div>
+      </DashboardCard>
+    </button>
+  );
+}
+
+/* --------------------------- Expense modal --------------------------- */
 function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
   const [agreements, setAgreements] = useState([]);
   const [sub, setSub] = useState(false);
-
   const [form, setForm] = useState({
     agreement: defaultAgreementId || "",
     description: "",
@@ -371,25 +519,25 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
     <Modal
       isOpen={isOpen}
       onRequestClose={() => onClose(false)}
-      className="max-w-2xl w-[90vw] bg-white rounded-xl shadow-2xl p-6 mx-auto mt-24 outline-none"
+      className="mx-auto mt-24 w-[90vw] max-w-2xl rounded-xl bg-white p-6 shadow-2xl outline-none"
       overlayClassName="fixed inset-0 bg-black/50 flex items-start justify-center"
     >
-      <div className="flex items-start justify-between mb-4">
-        <h2 className="text-xl font-semibold">New Expense</h2>
-        <button onClick={() => onClose(false)} className="px-3 py-1.5 rounded-lg border" type="button">
+      <div className="mb-4 flex items-start justify-between">
+        <h2 className="text-xl font-semibold text-slate-950">New Expense</h2>
+        <button onClick={() => onClose(false)} className="rounded-lg border px-3 py-1.5" type="button">
           Close
         </button>
       </div>
 
       <form onSubmit={submit} className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Agreement (optional)</label>
+            <label className="mb-1 block text-sm font-medium text-slate-800">Agreement (optional)</label>
             <select
               name="agreement"
               value={form.agreement}
               onChange={onChange}
-              className="w-full border rounded-lg px-3 py-2"
+              className="w-full rounded-lg border px-3 py-2"
             >
               <option value="">— None —</option>
               {agreements.map((a) => (
@@ -401,65 +549,65 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Incurred Date</label>
+            <label className="mb-1 block text-sm font-medium text-slate-800">Incurred Date</label>
             <input
               type="date"
               name="incurred_date"
               value={form.incurred_date}
               onChange={onChange}
-              className="w-full border rounded-lg px-3 py-2"
+              className="w-full rounded-lg border px-3 py-2"
             />
           </div>
 
           <div className="md:col-span-2">
-            <label className="block text-sm text-gray-700 mb-1">Description</label>
+            <label className="mb-1 block text-sm font-medium text-slate-800">Description</label>
             <input
               name="description"
               value={form.description}
               onChange={onChange}
-              className="w-full border rounded-lg px-3 py-2"
+              className="w-full rounded-lg border px-3 py-2"
               placeholder="e.g. Dump fee, rental, small materials"
             />
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Amount</label>
+            <label className="mb-1 block text-sm font-medium text-slate-800">Amount</label>
             <input
               type="number"
               step="0.01"
               name="amount"
               value={form.amount}
               onChange={onChange}
-              className="w-full border rounded-lg px-3 py-2"
+              className="w-full rounded-lg border px-3 py-2"
               placeholder="0.00"
             />
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Receipt (PDF or Image)</label>
+            <label className="mb-1 block text-sm font-medium text-slate-800">Receipt (PDF or Image)</label>
             <input type="file" accept="image/*,pdf" onChange={onFile} className="w-full" />
           </div>
         </div>
 
         <div>
-          <label className="block text-sm text-gray-700 mb-1">Notes to Customer (optional)</label>
+          <label className="mb-1 block text-sm font-medium text-slate-800">Notes to Customer (optional)</label>
           <textarea
             name="notes_to_homeowner"
             value={form.notes_to_homeowner}
             onChange={onChange}
-            className="w-full border rounded-lg px-3 py-2 min-h-[90px]"
+            className="min-h-[90px] w-full rounded-lg border px-3 py-2"
             placeholder="Explain why this expense is needed."
           />
         </div>
 
         <div className="flex justify-end gap-2">
-          <button type="button" onClick={() => onClose(false)} className="px-4 py-2 rounded-lg border">
+          <button type="button" onClick={() => onClose(false)} className="rounded-lg border px-4 py-2">
             Cancel
           </button>
           <button
             type="submit"
             disabled={sub}
-            className={`px-4 py-2 rounded-lg text-white font-semibold ${
+            className={`rounded-lg px-4 py-2 font-semibold text-white ${
               sub ? "bg-gray-500" : "bg-blue-600 hover:bg-blue-700"
             }`}
           >
@@ -471,18 +619,10 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
   );
 }
 
-/* ========================================================================== */
-/* ======================= Earned Drilldown Modal =========================== */
-/* ========================================================================== */
-
+/* ----------------------- Earned breakdown modal ----------------------- */
 function agreementKeyFromItem(item, fallbackPrefix) {
   const agId =
-    item?.agreement_id ??
-    item?.agreement ??
-    item?.agreement?.id ??
-    item?.agreementId ??
-    null;
-
+    item?.agreement_id ?? item?.agreement ?? item?.agreement?.id ?? item?.agreementId ?? null;
   if (agId != null && String(agId).trim() !== "") return `ag-${agId}`;
   return `${fallbackPrefix}-no-agreement`;
 }
@@ -498,18 +638,13 @@ function agreementTitleFromItem(item, fallbackTitle = "Other (No Agreement)") {
     "";
 
   const agId =
-    item?.agreement_id ??
-    item?.agreement ??
-    item?.agreement?.id ??
-    item?.agreementId ??
-    null;
+    item?.agreement_id ?? item?.agreement ?? item?.agreement?.id ?? item?.agreementId ?? null;
 
   if (t && String(t).trim()) return String(t);
   if (agId != null && String(agId).trim() !== "") return `Agreement #${agId}`;
   return fallbackTitle;
 }
 
-// Best-effort "earned timestamp"
 function dateForInvoice(inv) {
   return (
     parseDateAny(inv?.escrow_released_at) ||
@@ -520,6 +655,7 @@ function dateForInvoice(inv) {
     null
   );
 }
+
 function dateForExpense(ex) {
   return (
     parseDateAny(ex?.paid_at) ||
@@ -530,7 +666,7 @@ function dateForExpense(ex) {
 }
 
 function EarnedBreakdownModal({ isOpen, onClose, invoices, expenses, loading }) {
-  const [range, setRange] = useState("30d"); // 30d | month | year | all
+  const [range, setRange] = useState("30d");
   const [openAgreements, setOpenAgreements] = useState({});
 
   useEffect(() => {
@@ -541,10 +677,11 @@ function EarnedBreakdownModal({ isOpen, onClose, invoices, expenses, loading }) 
 
   const { fromDate, toDate, rangeLabel } = useMemo(() => {
     const now = new Date();
-    if (range === "month") return { fromDate: startOfMonth(now), toDate: null, rangeLabel: "This Month" };
     if (range === "year") return { fromDate: startOfYear(now), toDate: null, rangeLabel: "This Year" };
     if (range === "all") return { fromDate: null, toDate: null, rangeLabel: "All Time" };
-    return { fromDate: daysAgo(30), toDate: null, rangeLabel: "Last 30 Days" };
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return { fromDate: d, toDate: null, rangeLabel: "Last 30 Days" };
   }, [range]);
 
   const filtered = useMemo(() => {
@@ -587,18 +724,15 @@ function EarnedBreakdownModal({ isOpen, onClose, invoices, expenses, loading }) 
 
     for (const inv of filtered.escrow) {
       const k = agreementKeyFromItem(inv, "inv");
-      const title = agreementTitleFromItem(inv);
-      ensureGroup(k, title).escrow.push(inv);
+      ensureGroup(k, agreementTitleFromItem(inv)).escrow.push(inv);
     }
     for (const inv of filtered.directPay) {
       const k = agreementKeyFromItem(inv, "inv");
-      const title = agreementTitleFromItem(inv);
-      ensureGroup(k, title).directPay.push(inv);
+      ensureGroup(k, agreementTitleFromItem(inv)).directPay.push(inv);
     }
     for (const ex of filtered.expenses) {
       const k = agreementKeyFromItem(ex, "exp");
-      const title = agreementTitleFromItem(ex, "Other (No Agreement)");
-      ensureGroup(k, title).expenses.push(ex);
+      ensureGroup(k, agreementTitleFromItem(ex, "Other (No Agreement)")).expenses.push(ex);
     }
 
     const arr = Array.from(map.values()).map((g) => {
@@ -646,7 +780,15 @@ function EarnedBreakdownModal({ isOpen, onClose, invoices, expenses, loading }) 
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 800, color: "#0f172a" }}>{label}</div>
           {sub ? (
-            <div style={{ color: "#64748b", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <div
+              style={{
+                color: "#475569",
+                fontSize: 12,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
               {sub}
             </div>
           ) : null}
@@ -664,7 +806,15 @@ function EarnedBreakdownModal({ isOpen, onClose, invoices, expenses, loading }) 
         <div style={{ minWidth: 0 }}>
           <div style={{ fontWeight: 800, color: "#0f172a" }}>{label}</div>
           {sub ? (
-            <div style={{ color: "#64748b", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <div
+              style={{
+                color: "#475569",
+                fontSize: 12,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
               {sub}
             </div>
           ) : null}
@@ -678,33 +828,32 @@ function EarnedBreakdownModal({ isOpen, onClose, invoices, expenses, loading }) 
     <Modal
       isOpen={isOpen}
       onRequestClose={() => onClose()}
-      className="max-w-4xl w-[94vw] bg-white rounded-xl shadow-2xl p-6 mx-auto mt-16 outline-none"
-      overlayClassName="fixed inset-0 bg-black/50 flex items-start justify-center"
+      className="mx-auto mt-16 w-[94vw] max-w-4xl rounded-xl bg-white p-6 shadow-2xl outline-none"
+      overlayClassName="fixed inset-0 flex items-start justify-center bg-black/50"
     >
-      <div className="flex items-start justify-between mb-3">
+      <div className="mb-3 flex items-start justify-between">
         <div>
-          <div className="text-xl font-semibold">Earned Breakdown</div>
-          <div className="text-sm text-slate-600">
+          <div className="text-xl font-semibold text-slate-950">Earned Breakdown</div>
+          <div className="text-sm text-slate-700">
             {rangeLabel} • Total: {currency(totals.totalAmt)}
           </div>
         </div>
 
-        <button onClick={() => onClose()} type="button" className="px-3 py-2 rounded-lg border flex items-center gap-2">
+        <button onClick={() => onClose()} type="button" className="flex items-center gap-2 rounded-lg border px-3 py-2">
           <X size={16} />
           Close
         </button>
       </div>
 
-      <div className="flex flex-wrap gap-2 items-center mb-4">
-        <div className="text-sm text-slate-700 font-semibold">Range:</div>
-        <select value={range} onChange={(e) => setRange(e.target.value)} className="border rounded-lg px-3 py-2 text-sm">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="text-sm font-semibold text-slate-800">Range:</div>
+        <select value={range} onChange={(e) => setRange(e.target.value)} className="rounded-lg border px-3 py-2 text-sm">
           <option value="30d">Last 30 Days</option>
-          <option value="month">This Month</option>
           <option value="year">This Year</option>
           <option value="all">All Time</option>
         </select>
 
-        <div className="text-xs text-slate-500" style={{ marginLeft: 8 }}>
+        <div className="ml-2 text-xs text-slate-600">
           Escrow: {totals.escrowCount} • {currency(totals.escrowAmt)} &nbsp;|&nbsp;
           Direct Pay: {totals.directCount} • {currency(totals.directAmt)} &nbsp;|&nbsp;
           Expenses: {totals.expCount} • {currency(totals.expAmt)}
@@ -712,7 +861,7 @@ function EarnedBreakdownModal({ isOpen, onClose, invoices, expenses, loading }) 
       </div>
 
       {loading ? (
-        <div className="text-sm text-slate-600">Loading earned items…</div>
+        <div className="text-sm text-slate-700">Loading earned items…</div>
       ) : grouped.length ? (
         <div style={{ maxHeight: "70vh", overflow: "auto", paddingRight: 4 }}>
           {grouped.map((g) => {
@@ -748,14 +897,19 @@ function EarnedBreakdownModal({ isOpen, onClose, invoices, expenses, loading }) 
                   <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                     {open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 900, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <div
+                        style={{
+                          fontWeight: 900,
+                          color: "#0f172a",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
                         {g.title}
                       </div>
-                      <div style={{ color: "#64748b", fontSize: 12 }}>
+                      <div style={{ color: "#475569", fontSize: 12 }}>
                         {totalCount} item{totalCount === 1 ? "" : "s"} • Total {currency(g.totalAmt)}
-                        {g.escrow?.length ? ` • Escrow ${g.escrow.length} (${currency(g.escrowAmt)})` : ""}
-                        {g.directPay?.length ? ` • Direct ${g.directPay.length} (${currency(g.directAmt)})` : ""}
-                        {g.expenses?.length ? ` • Expenses ${g.expenses.length} (${currency(g.expAmt)})` : ""}
                       </div>
                     </div>
                   </div>
@@ -767,7 +921,7 @@ function EarnedBreakdownModal({ isOpen, onClose, invoices, expenses, loading }) 
                   <div style={{ marginTop: 10 }}>
                     {g.escrow?.length ? (
                       <div style={{ marginBottom: 10 }}>
-                        <div style={{ fontWeight: 900, fontSize: 13, color: "#0f172a", marginBottom: 4 }}>
+                        <div style={{ marginBottom: 4, fontSize: 13, fontWeight: 900, color: "#0f172a" }}>
                           Escrow Releases • {g.escrow.length} • {currency(g.escrowAmt)}
                         </div>
                         <div style={{ borderTop: "1px solid #f1f5f9" }}>{g.escrow.map((inv) => renderInvoiceRow(inv))}</div>
@@ -776,16 +930,18 @@ function EarnedBreakdownModal({ isOpen, onClose, invoices, expenses, loading }) 
 
                     {g.directPay?.length ? (
                       <div style={{ marginBottom: 10 }}>
-                        <div style={{ fontWeight: 900, fontSize: 13, color: "#0f172a", marginBottom: 4 }}>
+                        <div style={{ marginBottom: 4, fontSize: 13, fontWeight: 900, color: "#0f172a" }}>
                           Direct Pay • {g.directPay.length} • {currency(g.directAmt)}
                         </div>
-                        <div style={{ borderTop: "1px solid #f1f5f9" }}>{g.directPay.map((inv) => renderInvoiceRow(inv))}</div>
+                        <div style={{ borderTop: "1px solid #f1f5f9" }}>
+                          {g.directPay.map((inv) => renderInvoiceRow(inv))}
+                        </div>
                       </div>
                     ) : null}
 
                     {g.expenses?.length ? (
                       <div style={{ marginBottom: 2 }}>
-                        <div style={{ fontWeight: 900, fontSize: 13, color: "#0f172a", marginBottom: 4 }}>
+                        <div style={{ marginBottom: 4, fontSize: 13, fontWeight: 900, color: "#0f172a" }}>
                           Expenses Paid • {g.expenses.length} • {currency(g.expAmt)}
                         </div>
                         <div style={{ borderTop: "1px solid #f1f5f9" }}>{g.expenses.map((ex) => renderExpenseRow(ex))}</div>
@@ -798,19 +954,16 @@ function EarnedBreakdownModal({ isOpen, onClose, invoices, expenses, loading }) 
           })}
         </div>
       ) : (
-        <div className="text-sm text-slate-500">No earned items in this range.</div>
+        <div className="text-sm text-slate-700">No earned items in this range.</div>
       )}
     </Modal>
   );
 }
 
-/* ========================================================================== */
-/* =============================== MAIN VIEW ================================= */
-/* ========================================================================== */
+/* ---------------------------- main component ---------------------------- */
 export default function ContractorDashboard() {
   const [who, setWho] = useState(null);
   const [contractorProfile, setContractorProfile] = useState(null);
-  const [dismissedReminderKeys, setDismissedReminderKeys] = useState([]);
   const [activityFeed, setActivityFeed] = useState([]);
   const [nextBestAction, setNextBestAction] = useState(null);
 
@@ -820,8 +973,6 @@ export default function ContractorDashboard() {
   const [invoices, setInvoices] = useState([]);
 
   const [showExpenseModal, setShowExpenseModal] = useState(false);
-
-  // Earned modal + paid expenses cache
   const [showEarnedModal, setShowEarnedModal] = useState(false);
   const [earnedLoading, setEarnedLoading] = useState(false);
   const [earnedExpenses, setEarnedExpenses] = useState([]);
@@ -829,36 +980,9 @@ export default function ContractorDashboard() {
 
   const navigate = useNavigate();
 
-  // Intro pricing countdown state (60-day intro) — contractor only
-  const [introDaysRemaining, setIntroDaysRemaining] = useState(null);
-  const [introActive, setIntroActive] = useState(false);
-
-  // Pricing card — contractor only
-  const [pricing, setPricing] = useState({
-    loading: true,
-    rate: null,
-    fixed_fee: 1,
-    is_intro: null,
-    tier_name: null,
-    error: "",
-  });
-
-  // plan/billing snapshot
-  const [planInfo, setPlanInfo] = useState({
-    loading: true,
-    planLabel: "Included",
-    directPayLabel: DIRECT_PAY_LABEL,
-  });
-
   const role = who?.role || "";
   const isEmployee = role && String(role).startsWith("employee_");
 
-  // Route bases
-  const APP_BASE = "/app";
-  const EMP_BASE = "/app/employee";
-  const BASE = isEmployee ? EMP_BASE : APP_BASE;
-
-  /* ----- whoami ----- */
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -872,10 +996,11 @@ export default function ContractorDashboard() {
         setWho(null);
       }
     })();
-    return () => (mounted = false);
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  /* ----- load dashboard data ----- */
   useEffect(() => {
     let mounted = true;
 
@@ -918,9 +1043,7 @@ export default function ContractorDashboard() {
         }
 
         if (aRes.status === "fulfilled") {
-          const list = Array.isArray(aRes.value.data)
-            ? aRes.value.data
-            : aRes.value.data?.results || [];
+          const list = Array.isArray(aRes.value.data) ? aRes.value.data : aRes.value.data?.results || [];
           setAgreements(list);
         } else {
           console.error(aRes.reason);
@@ -928,9 +1051,7 @@ export default function ContractorDashboard() {
         }
 
         if (lRes.status === "fulfilled") {
-          const list = Array.isArray(lRes.value.data)
-            ? lRes.value.data
-            : lRes.value.data?.results || [];
+          const list = Array.isArray(lRes.value.data) ? lRes.value.data : lRes.value.data?.results || [];
           setPublicLeads(list);
         } else {
           console.error(lRes.reason);
@@ -942,10 +1063,11 @@ export default function ContractorDashboard() {
       }
     })();
 
-    return () => (mounted = false);
+    return () => {
+      mounted = false;
+    };
   }, [who, isEmployee]);
 
-  // ✅ Load PAID expenses in background so Earned card can show YTD total
   useEffect(() => {
     let mounted = true;
 
@@ -954,7 +1076,6 @@ export default function ContractorDashboard() {
 
       setEarnedExpensesLoading(true);
       try {
-        // Preferred endpoint
         const res = await api.get("/projects/expense-requests/", { params: { include_archived: 1 } });
         const list = Array.isArray(res.data) ? res.data : res.data?.results || [];
         const paidOnly = (list || []).filter((x) => norm(x?.status) === "paid" || !!x?.paid_at);
@@ -964,7 +1085,6 @@ export default function ContractorDashboard() {
       } catch (e) {
         console.error(e);
         try {
-          // Fallback endpoint
           const res2 = await api.get("/projects/expenses/", { params: { include_archived: 1 } });
           const list2 = Array.isArray(res2.data) ? res2.data : res2.data?.results || [];
           const paidOnly2 = (list2 || []).filter((x) => norm(x?.status) === "paid" || !!x?.paid_at);
@@ -987,68 +1107,12 @@ export default function ContractorDashboard() {
     };
   }, [who, isEmployee]);
 
-  // Intro pricing + plan
-  useEffect(() => {
-    const fetchIntroCountdown = async () => {
-      if (isEmployee) return;
-
-      try {
-        const { data } = await api.get("/projects/contractors/me/");
-        setContractorProfile(data || null);
-
-        setPlanInfo({
-          loading: false,
-          planLabel: planLabel(data),
-          directPayLabel: directPayLabel(data),
-        });
-
-        const createdRaw =
-          data.created_at ||
-          data.contractor_created_at ||
-          data.contractor?.created_at ||
-          data.user_created_at ||
-          data.user?.date_joined;
-
-        if (!createdRaw) {
-          setIntroActive(false);
-          setIntroDaysRemaining(null);
-          return;
-        }
-
-        const createdDate = new Date(createdRaw);
-        if (Number.isNaN(createdDate.getTime())) {
-          setIntroActive(false);
-          setIntroDaysRemaining(null);
-          return;
-        }
-
-        const INTRO_DAYS = 60;
-        const nowDt = new Date();
-        const msPerDay = 1000 * 60 * 60 * 24;
-        const daysActive = Math.floor((nowDt.getTime() - createdDate.getTime()) / msPerDay);
-        const remainingDays = INTRO_DAYS - daysActive;
-
-        setIntroActive(remainingDays > 0);
-        setIntroDaysRemaining(Math.max(0, remainingDays));
-      } catch (err) {
-        console.error("Failed to load contractor profile for intro countdown", err);
-        setIntroActive(false);
-        setIntroDaysRemaining(null);
-        setPlanInfo((p) => ({ ...p, loading: false }));
-      }
-    };
-
-    fetchIntroCountdown();
-  }, [isEmployee]);
-
   useEffect(() => {
     let mounted = true;
     const loadActivityFeed = async () => {
       if (!who || isEmployee) return;
       try {
-        const { data } = await api.get("/projects/activity-feed/", {
-          params: { limit: 8 },
-        });
+        const { data } = await api.get("/projects/activity-feed/", { params: { limit: 8 } });
         if (!mounted) return;
         setActivityFeed(Array.isArray(data?.results) ? data.results : []);
         setNextBestAction(data?.next_best_action || null);
@@ -1065,62 +1129,19 @@ export default function ContractorDashboard() {
     };
   }, [who, isEmployee]);
 
-  // Pricing via funding_preview (contractor-only)
   useEffect(() => {
-    let mounted = true;
-
-    const loadPricing = async () => {
-      if (isEmployee) {
-        setPricing({ loading: false, rate: null, fixed_fee: 1, is_intro: null, tier_name: null, error: "" });
-        return;
-      }
-
+    const fetchContractorProfile = async () => {
+      if (isEmployee) return;
       try {
-        setPricing((p) => ({ ...p, loading: true, error: "" }));
-
-        const { data } = await api.get("/projects/agreements/");
-        const list = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];
-
-        if (!list.length) {
-          if (!mounted) return;
-          setPricing({ loading: false, rate: null, fixed_fee: 1, is_intro: null, tier_name: null, error: "" });
-          return;
-        }
-
-        const latest = [...list].sort((a, b) => (b?.id || 0) - (a?.id || 0))[0];
-        const agreementId = latest?.id;
-
-        if (!agreementId) {
-          if (!mounted) return;
-          setPricing({ loading: false, rate: null, fixed_fee: 1, is_intro: null, tier_name: null, error: "" });
-          return;
-        }
-
-        const { data: fp } = await api.get(`/projects/agreements/${agreementId}/funding_preview/`);
-        if (!mounted) return;
-
-        setPricing({
-          loading: false,
-          rate: fp?.rate ?? null,
-          fixed_fee: fp?.fixed_fee ?? 1,
-          is_intro: fp?.is_intro ?? null,
-          tier_name: fp?.tier_name ?? (fp?.is_intro ? "INTRO" : null),
-          error: "",
-        });
+        const { data } = await api.get("/projects/contractors/me/");
+        setContractorProfile(data || null);
       } catch (err) {
-        console.error("Failed to load pricing (funding_preview)", err);
-        if (!mounted) return;
-        setPricing({ loading: false, rate: null, fixed_fee: 1, is_intro: null, tier_name: null, error: "" });
+        console.error("Failed to load contractor profile", err);
       }
     };
-
-    loadPricing();
-    return () => {
-      mounted = false;
-    };
+    fetchContractorProfile();
   }, [isEmployee]);
 
-  // Build invoice lookup map (so milestones can compute Paid)
   const invoicesById = useMemo(() => {
     const map = {};
     for (const inv of Array.isArray(invoices) ? invoices : []) {
@@ -1130,7 +1151,6 @@ export default function ContractorDashboard() {
     return map;
   }, [invoices]);
 
-  /* ----- milestone stats (aligned with MilestoneList filters) ----- */
   const mStats = useMemo(() => {
     const all = Array.isArray(milestones) ? milestones : [];
     const allAmt = sum(all);
@@ -1152,22 +1172,17 @@ export default function ContractorDashboard() {
     return {
       totalCount: all.length,
       totalAmount: allAmt,
-
       incompleteCount: incomp.length,
       incompleteAmount: incompAmt,
-
       readyCount: ready.length,
       readyAmount: readyAmt,
-
       paidCount: paid.length,
       paidAmount: paidAmt,
-
       reworkCount: rework.length,
       reworkAmount: reworkAmt,
     };
   }, [milestones, invoicesById]);
 
-  /* ----- invoice stats ----- */
   const iStats = useMemo(() => {
     const buckets = { pending: [], approved: [], earned: [], disputed: [] };
     for (const inv of invoices) {
@@ -1186,6 +1201,7 @@ export default function ContractorDashboard() {
       earnedAmount: sum(buckets.earned),
     };
   }, [invoices]);
+
   const dashboardNextSteps = useMemo(
     () =>
       getDashboardNextSteps({
@@ -1196,7 +1212,6 @@ export default function ContractorDashboard() {
     [agreements, milestones, publicLeads]
   );
 
-  // ✅ Earned YTD (Jan 1 -> today) for the stat card
   const earnedYtdAmount = useMemo(() => {
     const from = startOfYear(new Date());
     const to = new Date();
@@ -1204,12 +1219,10 @@ export default function ContractorDashboard() {
     const invList = Array.isArray(invoices) ? invoices : [];
     const expList = Array.isArray(earnedExpenses) ? earnedExpenses : [];
 
-    // escrow released invoices
     const escrowInv = invList.filter(
       (inv) => inv?.escrow_released === true || inv?.escrow_released === 1 || inv?.escrow_released === "true"
     );
 
-    // direct pay invoices
     const directInv = invList.filter((inv) => {
       const st = norm(inv?.status);
       const hasDirectPayStamp =
@@ -1228,307 +1241,278 @@ export default function ContractorDashboard() {
     return sum(escrowYtd) + sum(directYtd) + sum(expYtd);
   }, [invoices, earnedExpenses]);
 
-  /* ----- navigation handlers ----- */
-  const goNewAgreement = () => navigate(`/app/agreements`);
-  const goStartWithAi = () => navigate(`/app/assistant`);
-  const goStartFirstProjectWithAi = () =>
-    navigate(`/app/assistant`, {
-      state: {
-        assistantPrompt: "Help me create my first agreement and start my first project",
-        assistantContext: {
-          current_route: "/app/dashboard",
-          onboarding_mode: true,
-          onboarding_step: "first_job",
-        },
-      },
-    });
-  const goNewIntake = () => navigate(`/app/intake/new`);
-  const goNewMilestone = () => navigate(`/app/milestones?new=1`);
-  const goInvoices = () => navigate(`/app/invoices`);
-  const goInvoicesDisputed = () => navigate(`/app/invoices?filter=disputed`);
-  const goCalendar = () => navigate(`/app/calendar`);
-  const goDisputes = () => navigate(`/app/disputes`);
-  const goReworkMilestones = () => navigate(`/app/milestones?filter=rework`);
-  const goExpenses = () => navigate(`/app/expenses`);
+  const dueSchedule = useMemo(() => {
+    const todayStart = startOfToday();
+    const todayEnd = endOfToday();
+    const tomorrowStart = startOfTomorrow();
+    const tomorrowEnd = endOfTomorrow();
+    const weekEnd = endOfWeek();
+
+    const milestoneItems = (milestones || [])
+      .filter((m) => !isMilestonePaid(m, invoicesById))
+      .map((m) => ({
+        type: "milestone",
+        amount: money(m?.amount),
+        date: getMilestoneDueDate(m),
+      }))
+      .filter((item) => item.date);
+
+    const invoiceItems = (invoices || [])
+      .filter((inv) => {
+        const bucket = invBucket(inv);
+        return bucket === "pending" || bucket === "approved" || bucket === "disputed";
+      })
+      .map((inv) => ({
+        type: "invoice",
+        amount: money(inv?.amount),
+        date: getInvoiceDueDate(inv),
+      }))
+      .filter((item) => item.date);
+
+    const items = [...milestoneItems, ...invoiceItems];
+
+    const today = items.filter((item) => inRange(item.date, todayStart, todayEnd));
+    const tomorrow = items.filter((item) => inRange(item.date, tomorrowStart, tomorrowEnd));
+    const week = items.filter((item) => inRange(item.date, tomorrowStart, weekEnd));
+
+    return {
+      todayCount: today.length,
+      todayAmount: sum(today),
+      tomorrowCount: tomorrow.length,
+      tomorrowAmount: sum(tomorrow),
+      weekCount: week.length,
+      weekAmount: sum(week),
+    };
+  }, [milestones, invoices, invoicesById]);
+
+  const goNewAgreement = () => navigate("/app/agreements");
+  const goStartWithAi = () => navigate("/app/assistant");
+  const goNewIntake = () => navigate("/app/intake/new");
+  const goNewMilestone = () => navigate("/app/milestones?new=1");
+  const goInvoices = () => navigate("/app/invoices");
+  const goInvoicesDisputed = () => navigate("/app/invoices?filter=disputed");
+  const goCalendar = () => navigate("/app/calendar");
+  const goDisputes = () => navigate("/app/disputes");
+  const goReworkMilestones = () => navigate("/app/milestones?filter=rework");
+  const goExpenses = () => navigate("/app/expenses");
 
   const openNewExpense = () => setShowExpenseModal(true);
   const onExpenseModalClose = () => setShowExpenseModal(false);
 
   const openEarnedModal = async () => {
     setShowEarnedModal(true);
-    // We already loaded paid expenses in background; keep UX snappy.
     setEarnedLoading(earnedExpensesLoading);
   };
-
   const closeEarnedModal = () => setShowEarnedModal(false);
-
-  /* =======================================================================
-   * Pricing Card
-   * ======================================================================= */
-  const fixedFeeLabel = `+ $${Number(pricing.fixed_fee || 1).toFixed(0)}`;
-  const ratePercentFromBackend = pricing.rate != null ? fmtRate(pricing.rate) : null;
-  const isIntroTierBackend = pricing.is_intro === true || String(pricing.tier_name || "").toUpperCase() === "INTRO";
-
-  const currentRatePercent = ratePercentFromBackend
-    ? ratePercentFromBackend
-    : introActive
-    ? INTRO_RATE_LABEL
-    : STANDARD_START_RATE_LABEL;
-
-  const currentRateTitle = pricing.loading ? "Checking your rate…" : `Current Rate: ${currentRatePercent} ${fixedFeeLabel}`;
-
-  const daysLeftText =
-    introDaysRemaining !== null
-      ? `${introDaysRemaining} day${introDaysRemaining === 1 ? "" : "s"} remaining`
-      : null;
-
-  const subtitleParts = [];
-  if (!planInfo.loading) {
-    subtitleParts.push(`AI: ${planInfo.planLabel}. Direct Pay: ${planInfo.directPayLabel}.`);
-    subtitleParts.push("AI tools are included with your account.");
-  }
-
-  if (pricing.loading) {
-    subtitleParts.push("Loading pricing…");
-  } else {
-    if (introActive) {
-      subtitleParts.push(`Intro pricing is active (${daysLeftText || "days remaining"}).`);
-      subtitleParts.push("Intro (first 60 days): 3.00% + $1.");
-    } else {
-      subtitleParts.push("Intro pricing window has ended.");
-      subtitleParts.push("Standard escrow pricing is tiered by monthly volume.");
-    }
-
-    if (ratePercentFromBackend) {
-      subtitleParts.push(isIntroTierBackend ? "This rate is based on your current intro tier." : "This rate is based on your current tier.");
-    } else {
-      subtitleParts.push("Create your first agreement to lock in tier calculations and previews.");
-    }
-  }
-
-  const pricingSubtitle = subtitleParts.join(" ");
 
   const headerSubtitle = isEmployee
     ? "Here are the milestones currently assigned to you."
     : "Track milestones, invoices, leads, and next actions in one place.";
-  const onboarding = contractorProfile?.onboarding || {};
-  const reminderStorageKey = "mhb:dashboard-dismissed-reminders";
-  useEffect(() => {
-    try {
-      const stored = JSON.parse(window.localStorage.getItem(reminderStorageKey) || "[]");
-      setDismissedReminderKeys(Array.isArray(stored) ? stored : []);
-    } catch {
-      setDismissedReminderKeys([]);
-    }
-  }, []);
 
-  const reminders = useMemo(() => {
-    if (isEmployee) return [];
-    const items = [];
-    if (onboarding?.status === "complete" && !onboarding?.first_value_reached && (agreements || []).length === 0) {
-      items.push({
-        key: "start-first-project",
-        title: "Start your first project",
-        message: "Use AI to create your first agreement and project plan. It will guide you step by step.",
-        cta: "Start with AI",
-        action: goStartFirstProjectWithAi,
-      });
-    } else if (onboarding?.status !== "complete" && !onboarding?.first_value_reached) {
-      items.push({
-        key: "finish-setup",
-        title: "Finish your setup",
-        message: "Complete your business setup so MyHomeBro can tailor templates, milestones, and guided project creation.",
-        cta: "Finish setup",
-        action: () => navigate("/app/onboarding"),
-      });
-    }
-    if (onboarding?.show_soft_stripe_prompt) {
-      items.push({
-        key: "connect-stripe",
-        title: "Connect Stripe to get paid",
-        message: "You can keep exploring, but payment collection and payouts require a connected Stripe account.",
-        cta: "Resume Stripe setup",
-        action: () => navigate("/app/onboarding"),
-      });
-    }
-    if ((agreements || []).length > 0 && (milestones || []).length === 0) {
-      items.push({
-        key: "add-first-milestone",
-        title: "Add your first milestone",
-        message: "Milestones are the fastest way to turn a draft agreement into real project progress.",
-        cta: "Open milestones",
-        action: () => navigate("/app/milestones?new=1"),
-      });
-    }
-    return items.filter((item) => !dismissedReminderKeys.includes(item.key));
-  }, [
-    agreements,
-    dismissedReminderKeys,
-    goStartFirstProjectWithAi,
-    isEmployee,
-    milestones,
-    navigate,
-    onboarding,
-  ]);
-
-  const dismissReminder = (key) => {
-    setDismissedReminderKeys((prev) => {
-      const next = Array.from(new Set([...prev, key]));
-      try {
-        window.localStorage.setItem(reminderStorageKey, JSON.stringify(next));
-      } catch {}
-      return next;
-    });
-  };
-  const needsAttentionItems = useMemo(() => dashboardNextSteps.slice(0, 3), [dashboardNextSteps]);
+  const needsAttentionItems = useMemo(
+    () =>
+      (Array.isArray(dashboardNextSteps) ? dashboardNextSteps : [])
+        .slice(0, 3)
+        .map((item, index) => normalizeNeedsAttentionItem(item, index))
+        .filter((item) => item.label),
+    [dashboardNextSteps]
+  );
   const showActivityFeed = !isEmployee && activityFeed.length > 0;
+
+  const heroTitle =
+    nextBestAction?.title ||
+    (contractorProfile?.onboarding?.status !== "complete" ? "Finish onboarding" : "Create your next agreement");
+
+  const heroMessage =
+    nextBestAction?.message ||
+    (contractorProfile?.onboarding?.status !== "complete"
+      ? "Complete your setup so MyHomeBro can tailor templates, pricing, and payment guidance."
+      : "Keep momentum by creating the next agreement or opening the AI assistant.");
+
+  const heroButtonLabel =
+    nextBestAction?.cta_label ||
+    (contractorProfile?.onboarding?.status !== "complete" ? "Resume onboarding" : "Open agreements");
+
+  const heroTarget =
+    nextBestAction?.navigation_target ||
+    (contractorProfile?.onboarding?.status !== "complete" ? "/app/onboarding" : "/app/agreements");
 
   return (
     <PageShell title="Dashboard" subtitle={headerSubtitle} showLogo>
-      <div className="space-y-3.5 rounded-[30px] bg-white/[0.03] px-1 py-0.5 lg:-mx-1 xl:-mx-2 2xl:-mx-3 backdrop-blur-[1px]">
-        {reminders.length ? (
-          <div className="mb-4 space-y-3" data-testid="dashboard-onboarding-reminder">
-            {reminders.map((item) => (
-              <div key={item.key} className="rounded-2xl border border-amber-200/75 bg-amber-50/80 px-4 py-2.5 shadow-sm">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <div className="text-sm font-semibold text-amber-900">{item.title}</div>
-                    <div className="mt-1 text-sm text-amber-900/90">{item.message}</div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => dismissReminder(item.key)}
-                      className="text-sm font-semibold text-amber-900 underline-offset-4 hover:underline"
-                    >
-                      Dismiss
-                    </button>
-                    <button
-                      type="button"
-                      onClick={item.action}
-                      className="rounded-xl bg-amber-900 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-950"
-                    >
-                      {item.cta}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-      {!isEmployee ? (
-        <div className="mb-2 grid items-start gap-3 xl:grid-cols-[minmax(0,0.94fr)_minmax(0,1.08fr)_272px] 2xl:grid-cols-[minmax(0,0.98fr)_minmax(0,1.14fr)_280px]">
-          <DashboardSection
-            title="Focus"
-            subtitle="What needs your attention right now and the single highest-value next move."
-          >
-            <DashboardCard
-              testId="dashboard-next-best-action"
-              className="border-slate-200/90 p-4 shadow-[0_16px_38px_rgba(15,23,42,0.08)]"
+      <div className="space-y-5">
+        {!isEmployee ? (
+          <>
+            <DashboardSection
+              title="Focus"
+              subtitle="What needs your attention right now and the single highest-value next move."
             >
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-600">
-                Next Best Action
-              </div>
-              {nextBestAction ? (
-                <div className="mt-3 flex flex-col gap-4">
-                  <div>
-                    <div className="text-xl font-semibold text-slate-950">{nextBestAction.title}</div>
-                    <div className="mt-1.5 text-sm text-slate-700">{nextBestAction.message}</div>
-                    {nextBestAction.rationale ? (
-                      <div className="mt-2 text-xs text-slate-600">{nextBestAction.rationale}</div>
-                    ) : null}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => navigate(nextBestAction.navigation_target || "/app/dashboard")}
-                    className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-900"
-                  >
-                    {nextBestAction.cta_label || "Open"}
-                    <ArrowRight className="h-4 w-4" />
-                  </button>
-                </div>
-              ) : (
-                <div className="mt-3 text-sm text-slate-700">
-                  Start by creating your first agreement or opening the AI assistant.
-                </div>
-              )}
-            </DashboardCard>
-
-            <DashboardCard
-              testId="dashboard-needs-attention"
-              tone="subtle"
-              className="border-amber-200/80 bg-amber-50/90 p-4 shadow-[0_12px_30px_rgba(245,158,11,0.08)]"
-            >
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
-                Needs Attention
-              </div>
-              {needsAttentionItems.length ? (
-                <div className="mt-3 space-y-2.5">
-                  {needsAttentionItems.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => navigate(item.href || "/app/dashboard")}
-                      className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl border border-amber-200/80 bg-white px-3.5 py-3 text-left text-sm font-medium text-slate-800 transition hover:border-amber-300 hover:bg-amber-50/60 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
+              <DashboardCard className="border-slate-200 bg-white/85 p-4 shadow-md">
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                  <div className="xl:col-span-2">
+                    <DashboardCard
+                      testId="dashboard-next-best-action"
+                      className="h-full border-slate-200 bg-white p-6 shadow-md"
                     >
-                      <span className="min-w-0 flex-1">{item.label}</span>
-                      <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-amber-900">
-                        {item.ctaText || "Open"}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-3 text-sm text-slate-700">No urgent items right now.</div>
-              )}
-            </DashboardCard>
-          </DashboardSection>
+                      <div className="text-[12px] font-semibold uppercase tracking-[0.2em] text-slate-600">
+                        Next Big Action
+                      </div>
 
-          <DashboardSection
-            title="Work Overview"
-            subtitle="Milestones and invoices that drive progress and payout."
-          >
-            <div className="space-y-3">
-              <DashboardCard
-                tone="subtle"
-                className="border-slate-200/90 bg-white/92 p-3.5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
-              >
-                <div className="mhb-kicker !mb-2">Milestones</div>
-                <div className="mhb-grid" style={{ marginBottom: 0 }}>
-                  <StatCard
+                      <div className="mt-3 text-[30px] font-bold leading-tight text-slate-950">
+                        {heroTitle}
+                      </div>
+
+                      <div className="mt-3 text-[16px] leading-7 text-slate-800">{heroMessage}</div>
+
+                      {nextBestAction?.rationale ? (
+                        <div className="mt-3 text-sm leading-6 text-slate-700">
+                          {nextBestAction.rationale}
+                        </div>
+                      ) : null}
+
+                      <button
+                        type="button"
+                        onClick={() => navigate(heroTarget)}
+                        className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-600"
+                      >
+                        {heroButtonLabel}
+                        <ArrowRight className="h-4 w-4" />
+                      </button>
+                    </DashboardCard>
+                  </div>
+
+                  <div>
+                    <DashboardCard
+                      testId="dashboard-needs-attention"
+                      tone="subtle"
+                      className="h-full border-amber-300 bg-amber-100/90 p-4 shadow-md"
+                    >
+                      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-900">
+                        Needs Attention
+                      </div>
+
+                      {needsAttentionItems.length ? (
+                        <div className="mt-3 space-y-2.5">
+                          {needsAttentionItems.map((item) => {
+                            const handleClick = () => {
+                              if (typeof item.action === "function") {
+                                item.action();
+                                return;
+                              }
+                              if (item.href) {
+                                navigate(item.href);
+                              }
+                            };
+
+                            return (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={handleClick}
+                                className="w-full rounded-xl border border-amber-300 bg-white px-4 py-3.5 text-left transition hover:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                              >
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <div className="text-[15px] font-medium leading-6 text-slate-950">
+                                      {item.label}
+                                    </div>
+                                    <div className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-900">
+                                      {item.ctaText}
+                                    </div>
+                                  </div>
+
+                                  <ArrowRight className="h-4 w-4 shrink-0 text-amber-900" />
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="mt-3 text-[15px] font-medium leading-6 text-slate-900">
+                          No urgent items right now.
+                        </div>
+                      )}
+                    </DashboardCard>
+                  </div>
+                </div>
+              </DashboardCard>
+            </DashboardSection>
+
+            <DashboardSection
+              title="Due Today, Tomorrow, This Week"
+              subtitle="Time-based work that should stay visible without crowding the alert area."
+            >
+              <DashboardCard className="border-slate-200 bg-white/85 p-4 shadow-md">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3 items-stretch">
+                  <DueStatCard
+                    icon={Clock3}
+                    title="Due Today"
+                    subtitle="Immediate actions and scheduled work."
+                    count={dueSchedule.todayCount}
+                    amount={dueSchedule.todayAmount}
+                    onClick={() => navigate("/app/calendar?range=today")}
+                  />
+
+                  <DueStatCard
+                    icon={CalendarClock}
+                    title="Due Tomorrow"
+                    subtitle="What is coming up next."
+                    count={dueSchedule.tomorrowCount}
+                    amount={dueSchedule.tomorrowAmount}
+                    onClick={() => navigate("/app/calendar?range=tomorrow")}
+                  />
+
+                  <DueStatCard
+                    icon={CalendarDays}
+                    title="This Week"
+                    subtitle="Upcoming work and payment activity."
+                    count={dueSchedule.weekCount}
+                    amount={dueSchedule.weekAmount}
+                    onClick={() => navigate("/app/calendar?range=week")}
+                  />
+                </div>
+              </DashboardCard>
+            </DashboardSection>
+
+            <DashboardSection
+              title="Milestones"
+              subtitle="Current work status across your active agreements."
+              className="!space-y-3"
+            >
+              <DashboardCard className="border-slate-200 bg-white/85 p-4 shadow-md">
+                <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5 items-stretch">
+                  <CompactStatCard
                     icon={Target}
                     title="All Milestones"
                     subtitle="Across your active agreements."
                     count={mStats.totalCount}
                     amount={mStats.totalAmount}
-                    onClick={() => navigate(`/app/milestones`)}
+                    onClick={() => navigate("/app/milestones")}
                   />
-                  <StatCard
+                  <CompactStatCard
                     icon={ListTodo}
                     title="Incomplete"
                     subtitle="Not yet completed."
                     count={mStats.incompleteCount}
                     amount={mStats.incompleteAmount}
-                    onClick={() => navigate(`/app/milestones?filter=incomplete`)}
+                    onClick={() => navigate("/app/milestones?filter=incomplete")}
                   />
-                  <StatCard
+                  <CompactStatCard
                     icon={CheckCircle2}
                     title="Ready to Invoice"
-                    subtitle="Completed (Not Invoiced)."
+                    subtitle="Completed (not invoiced)."
                     count={mStats.readyCount}
                     amount={mStats.readyAmount}
-                    onClick={() => navigate(`/app/milestones?filter=complete_not_invoiced`)}
+                    onClick={() => navigate("/app/milestones?filter=complete_not_invoiced")}
                   />
-                  <StatCard
+                  <CompactStatCard
                     icon={BadgeDollarSign}
                     title="Paid"
                     subtitle="Escrow released / paid."
                     count={mStats.paidCount}
                     amount={mStats.paidAmount}
-                    onClick={() => navigate(`/app/milestones?filter=paid`)}
+                    onClick={() => navigate("/app/milestones?filter=paid")}
                   />
-                  <StatCard
+                  <CompactStatCard
                     icon={Wrench}
                     title="Rework Work Orders"
                     subtitle="Milestones created from disputes."
@@ -1538,30 +1522,32 @@ export default function ContractorDashboard() {
                   />
                 </div>
               </DashboardCard>
+            </DashboardSection>
 
-              <DashboardCard
-                tone="subtle"
-                className="border-slate-200/90 bg-white/92 p-3.5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
-              >
-                <div className="mhb-kicker !mb-2">Invoices</div>
-                <div className="mhb-grid" style={{ marginBottom: 0 }}>
-                  <StatCard
+            <DashboardSection
+              title="Invoices"
+              subtitle="Approval, payout, dispute, and earned status."
+              className="!space-y-3"
+            >
+              <DashboardCard className="border-slate-200 bg-white/85 p-4 shadow-md">
+                <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 items-stretch">
+                  <CompactStatCard
                     icon={BadgeDollarSign}
                     title="Pending Approval"
-                    subtitle="Sent to homeowner â€” awaiting approval."
+                    subtitle="Sent to homeowner — awaiting approval."
                     count={iStats.pendingCount}
                     amount={iStats.pendingAmount}
                     onClick={goInvoices}
                   />
-                  <StatCard
+                  <CompactStatCard
                     icon={BadgeCheck}
                     title="Approved"
-                    subtitle="Approved â€” ready for payout."
+                    subtitle="Approved — ready for payout."
                     count={iStats.approvedCount}
                     amount={iStats.approvedAmount}
                     onClick={goInvoices}
                   />
-                  <StatCard
+                  <CompactStatCard
                     icon={AlertTriangle}
                     title="Disputed"
                     subtitle="Frozen until resolved."
@@ -1569,304 +1555,171 @@ export default function ContractorDashboard() {
                     amount={iStats.disputedAmount}
                     onClick={goInvoicesDisputed}
                   />
-                  <StatCard
+                  <CompactStatCard
                     icon={WalletMinimal}
                     title="Earned (YTD)"
-                    subtitle="Jan 1 â†’ today. Click for breakdown."
+                    subtitle="Jan 1 → today. Click for breakdown."
                     count={null}
                     amount={earnedYtdAmount}
                     onClick={openEarnedModal}
                   />
                 </div>
               </DashboardCard>
-            </div>
-          </DashboardSection>
+            </DashboardSection>
 
-          <DashboardSection
-            title="Quick Actions"
-            subtitle="Jump straight into the next contractor task."
-            className="xl:sticky xl:top-4"
-          >
-            <DashboardCard
-              testId="dashboard-quick-actions-rail"
-              tone="subtle"
-              className="border-slate-200/90 bg-white/90 p-3.5 shadow-[0_14px_32px_rgba(15,23,42,0.06)]"
+            <DashboardSection
+              title="Quick Actions"
+              subtitle="Jump straight into the next contractor task."
+              className="!space-y-3"
             >
-              <div className="grid gap-2.5">
-                <ActionButton
-                  icon={Sparkles}
-                  label="Start with AI"
-                  primary
-                  onClick={goStartWithAi}
-                  hint="Use AI to plan the next job, agreement, or milestone."
+              <DashboardCard className="border-slate-200 bg-white/90 p-4 shadow-md">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  <ActionButton
+                    icon={Sparkles}
+                    label="Start with AI"
+                    primary
+                    onClick={goStartWithAi}
+                    hint="Use AI to plan the next job, agreement, or milestone."
+                  />
+                  <ActionButton
+                    icon={FilePlus2}
+                    label="New Agreement"
+                    primary
+                    onClick={goNewAgreement}
+                    hint="Start a new agreement and move it toward signature."
+                  />
+                  <ActionButton
+                    icon={ListPlus}
+                    label="New Intake"
+                    onClick={goNewIntake}
+                    hint="Capture a new project lead before turning it into work."
+                  />
+                  <ActionButton
+                    icon={ListPlus}
+                    label="New Milestone"
+                    onClick={goNewMilestone}
+                    hint="Add a milestone so work, approval, and payment can move forward."
+                  />
+                  <ActionButton
+                    icon={Receipt}
+                    label="New Expense"
+                    onClick={openNewExpense}
+                    hint="Log an expense and send it to the customer when needed."
+                  />
+                  <ActionButton
+                    icon={Receipt}
+                    label="Expenses"
+                    onClick={goExpenses}
+                    hint="Review expense requests, receipts, and customer-facing charges."
+                  />
+                  <ActionButton
+                    icon={Receipt}
+                    label="Invoices"
+                    onClick={goInvoices}
+                    hint="Review invoices, approvals, payouts, and payment status."
+                  />
+                  <ActionButton
+                    icon={AlertTriangle}
+                    label="Disputes"
+                    onClick={goDisputes}
+                    hint="Open disputes that need a response or resolution."
+                  />
+                  <ActionButton
+                    icon={CalendarDays}
+                    label="Calendar"
+                    onClick={goCalendar}
+                    hint="See scheduled work and upcoming project dates."
+                  />
+                </div>
+              </DashboardCard>
+            </DashboardSection>
+
+            {showActivityFeed ? (
+              <DashboardSection
+                title="Recent Activity"
+                subtitle="Recent project signals and workflow updates."
+              >
+                <DashboardCard className="border-slate-200 bg-white/85 p-4 shadow-md">
+                  <div className="space-y-3" data-testid="dashboard-activity-feed">
+                    {activityFeed.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => navigate(item.navigation_target || "/app/dashboard")}
+                        className={`w-full rounded-2xl border px-4 py-4 text-left shadow-sm ${activityAccent(item.severity)}`}
+                        data-testid={`dashboard-activity-item-${item.id}`}
+                      >
+                        <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                          <div>
+                            <div className="text-[16px] font-semibold leading-6">{item.title}</div>
+                            <div className="mt-2 text-[15px] leading-6 text-current/95">{item.summary}</div>
+                            {item.related_label ? (
+                              <div className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] opacity-75">
+                                {item.related_label}
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="text-xs font-semibold opacity-75">
+                            {formatActivityTimestamp(item.created_at)}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </DashboardCard>
+              </DashboardSection>
+            ) : null}
+          </>
+        ) : (
+          <DashboardSection
+            title="Milestones"
+            subtitle="Only milestones assigned to you."
+          >
+            <DashboardCard className="border-slate-200 bg-white/85 p-4 shadow-md">
+              <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 items-stretch">
+                <CompactStatCard
+                  icon={Target}
+                  title="My Assigned Milestones"
+                  subtitle="Only milestones assigned to you."
+                  count={mStats.totalCount}
+                  amount={mStats.totalAmount}
+                  onClick={() => navigate("/app/milestones")}
                 />
-                <ActionButton
-                  icon={FilePlus2}
-                  label="New Agreement"
-                  primary
-                  onClick={goNewAgreement}
-                  hint="Start a new agreement and move it toward signature."
+                <CompactStatCard
+                  icon={ListTodo}
+                  title="Incomplete"
+                  subtitle="Not yet completed."
+                  count={mStats.incompleteCount}
+                  amount={mStats.incompleteAmount}
+                  onClick={() => navigate("/app/milestones?filter=incomplete")}
                 />
-                <ActionButton
-                  icon={ListPlus}
-                  label="New Intake"
-                  onClick={goNewIntake}
-                  hint="Capture a new project lead before turning it into work."
-                />
-                <ActionButton
-                  icon={ListPlus}
-                  label="New Milestone"
-                  onClick={goNewMilestone}
-                  hint="Add a milestone so work, approval, and payment can move forward."
-                />
-                <ActionButton
-                  icon={Receipt}
-                  label="New Expense"
-                  onClick={openNewExpense}
-                  hint="Log an expense and send it to the customer when needed."
-                />
-                <ActionButton
-                  icon={Receipt}
-                  label="Expenses"
-                  onClick={goExpenses}
-                  hint="Review expense requests, receipts, and customer-facing charges."
-                />
-                <ActionButton
-                  icon={Receipt}
-                  label="Invoices"
-                  onClick={goInvoices}
-                  hint="Review invoices, approvals, payouts, and payment status."
-                />
-                <ActionButton
-                  icon={AlertTriangle}
-                  label="Disputes"
-                  onClick={goDisputes}
-                  hint="Open disputes that need a response or resolution."
-                />
-                <ActionButton
-                  icon={CalendarDays}
-                  label="Calendar"
-                  onClick={goCalendar}
-                  hint="See scheduled work and upcoming project dates."
+                <CompactStatCard
+                  icon={Wrench}
+                  title="Rework Work Orders"
+                  subtitle="Milestones created from disputes."
+                  count={mStats.reworkCount}
+                  amount={mStats.reworkAmount}
+                  onClick={goReworkMilestones}
                 />
               </div>
             </DashboardCard>
-
           </DashboardSection>
-        </div>
-      ) : null}
+        )}
 
+        {!isEmployee ? (
+          <ExpenseRequestModal isOpen={showExpenseModal} onClose={onExpenseModalClose} />
+        ) : null}
 
-      {false ? (
-        <div
-          className="mb-4 rounded-2xl border border-white/28 bg-white/58 p-4 shadow-[0_8px_22px_rgba(15,23,42,0.05)] backdrop-blur-sm"
-          data-testid="dashboard-sms-automation"
-        >
-          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-            SMS Automation
-          </div>
-          <div className="mt-3 grid gap-2 md:grid-cols-4">
-            <div className="rounded-xl bg-slate-50/90 px-3 py-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                Status
-              </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
-                {contractorProfile?.sms_automation_enabled ? "Enabled" : "Off"}
-              </div>
-            </div>
-            <div className="rounded-xl bg-slate-50/90 px-3 py-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                Sent 7d
-              </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
-                {contractorProfile?.sent_sms_count_7d || 0}
-              </div>
-            </div>
-            <div className="rounded-xl bg-slate-50/90 px-3 py-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                Suppressed 7d
-              </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
-                {contractorProfile?.suppressed_sms_count_7d || 0}
-              </div>
-            </div>
-            <div className="rounded-xl bg-slate-50/90 px-3 py-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                Deferred 7d
-              </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
-                {contractorProfile?.deferred_sms_count_7d || 0}
-              </div>
-            </div>
-          </div>
-          {contractorProfile?.last_sms_automation_decision ? (
-            <div className="mt-3 text-xs text-slate-500">
-              Last decision:{" "}
-              <span className="font-semibold text-slate-700">
-                {contractorProfile.last_sms_automation_decision.reason_code}
-              </span>
-              {" · "}
-              {contractorProfile.last_sms_automation_decision.message_preview || "No preview available."}
-            </div>
-          ) : (
-            <div className="mt-3 text-xs text-slate-500">
-              No automation decisions yet.
-            </div>
-          )}
-        </div>
-      ) : null}
-
-      {false ? (
-        <div className="mb-4 rounded-2xl border border-white/26 bg-white/56 p-3.5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] backdrop-blur-sm">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-            MyHomeBro Pricing
-          </div>
-          <div className="mhb-grid" style={{ marginBottom: 0 }}>
-            <StatCard icon={BadgeDollarSign} title={currentRateTitle} subtitle={pricingSubtitle} count={null} amount={null} onClick={null} />
-          </div>
-        </div>
-      ) : null}
-
-      {isEmployee ? (
-        <>
-          <div className="mhb-kicker">Milestones</div>
-          <div className="mhb-grid" style={{ marginBottom: 6 }}>
-            <StatCard
-              icon={Target}
-              title="My Assigned Milestones"
-              subtitle="Only milestones assigned to you."
-              count={mStats.totalCount}
-              amount={mStats.totalAmount}
-              onClick={() => navigate(`/app/milestones`)}
-            />
-
-            <StatCard
-              icon={ListTodo}
-              title="Incomplete"
-              subtitle="Not yet completed."
-              count={mStats.incompleteCount}
-              amount={mStats.incompleteAmount}
-              onClick={() => navigate(`/app/milestones?filter=incomplete`)}
-            />
-
-            <StatCard
-              icon={CheckCircle2}
-              title="Completed"
-              subtitle="Completed by you."
-              count={0}
-              amount={0}
-              onClick={() => navigate(`/app/milestones`)}
-            />
-
-            <StatCard
-              icon={Wrench}
-              title="Rework Work Orders"
-              subtitle="Milestones created from disputes."
-              count={mStats.reworkCount}
-              amount={mStats.reworkAmount}
-              onClick={goReworkMilestones}
-            />
-          </div>
-        </>
-      ) : null}
-
-      {false ? (
-        <>
-          <div className="mhb-kicker" style={{ marginTop: 14 }}>
-            Invoices
-          </div>
-          <div className="mhb-grid">
-            <StatCard
-              icon={BadgeDollarSign}
-              title="Pending Approval"
-              subtitle="Sent to homeowner — awaiting approval."
-              count={iStats.pendingCount}
-              amount={iStats.pendingAmount}
-              onClick={goInvoices}
-            />
-            <StatCard
-              icon={BadgeCheck}
-              title="Approved"
-              subtitle="Approved — ready for payout."
-              count={iStats.approvedCount}
-              amount={iStats.approvedAmount}
-              onClick={goInvoices}
-            />
-            <StatCard
-              icon={AlertTriangle}
-              title="Disputed"
-              subtitle="Frozen until resolved."
-              count={iStats.disputedCount}
-              amount={iStats.disputedAmount}
-              onClick={goInvoicesDisputed}
-            />
-            <StatCard
-              icon={WalletMinimal}
-              title="Earned (YTD)"
-              subtitle="Jan 1 → today. Click for breakdown."
-              count={null}
-              amount={earnedYtdAmount}
-              onClick={openEarnedModal}
-            />
-          </div>
-        </>
-      ) : null}
-
-      {!isEmployee ? <RoleAwareWorkboard /> : null}
-
-      {!isEmployee ? (
-        <>
-          {showActivityFeed ? (
-            <DashboardSection
-              title="Recent Activity"
-              subtitle="Recent project signals and workflow updates."
-              className="mt-6"
-            >
-              <div className="space-y-3" data-testid="dashboard-activity-feed">
-                {activityFeed.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => navigate(item.navigation_target || "/app/dashboard")}
-                    className={`w-full rounded-2xl border px-4 py-4 text-left shadow-sm ${activityAccent(item.severity)}`}
-                    data-testid={`dashboard-activity-item-${item.id}`}
-                  >
-                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                      <div>
-                        <div className="text-sm font-semibold">{item.title}</div>
-                        <div className="mt-1 text-sm text-current/95">{item.summary}</div>
-                        {item.related_label ? (
-                          <div className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] opacity-75">
-                            {item.related_label}
-                          </div>
-                        ) : null}
-                      </div>
-                      <div className="text-xs font-semibold opacity-75">
-                        {formatActivityTimestamp(item.created_at)}
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </DashboardSection>
-          ) : null}
-
-        </>
-      ) : null}
-
+        {!isEmployee ? (
+          <EarnedBreakdownModal
+            isOpen={showEarnedModal}
+            onClose={closeEarnedModal}
+            invoices={invoices}
+            expenses={earnedExpenses}
+            loading={earnedLoading}
+          />
+        ) : null}
       </div>
-
-      {!isEmployee ? <ExpenseRequestModal isOpen={showExpenseModal} onClose={onExpenseModalClose} /> : null}
-
-      {!isEmployee ? (
-        <EarnedBreakdownModal
-          isOpen={showEarnedModal}
-          onClose={closeEarnedModal}
-          invoices={invoices}
-          expenses={earnedExpenses}
-          loading={earnedLoading}
-        />
-      ) : null}
     </PageShell>
   );
 }
