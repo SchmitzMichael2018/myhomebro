@@ -40,19 +40,26 @@ export default function AuthenticatedLayout() {
   return (
     <MobileSidebarShell sidebar={<Sidebar variant="plain" />}>
       <AssistantDockProvider>
-        <div style={{ display: "flex", minHeight: isDashboardRoute ? "auto" : "100vh" }}>
+        <div
+          style={
+            isDashboardRoute
+              ? { display: "flex", height: "100vh", overflow: "hidden" }
+              : { display: "flex", minHeight: "100vh" }
+          }
+        >
           <Sidebar />
           <main
             className="mhb-gradient-bg"
             style={{
               flex: 1,
-              minHeight: isDashboardRoute ? "auto" : "100vh",
+              minHeight: "100vh",
+              ...(isDashboardRoute ? { height: "100vh" } : null),
               display: "flex",
               flexDirection: "column",
               minWidth: 0,
             }}
           >
-            <div style={{ flex: 1, overflow: isDashboardRoute ? "visible" : "auto", minHeight: 0 }}>
+            <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
               <div className="mhb-content-pad">
                 <ErrorBoundary>
                   <Outlet />
