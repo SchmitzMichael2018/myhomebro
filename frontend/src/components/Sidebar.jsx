@@ -148,7 +148,7 @@ export default function Sidebar({ variant = "desktop" }) {
           <div
             id={tooltipId}
             role="tooltip"
-            className="pointer-events-none absolute left-full top-1/2 z-20 ml-3 hidden w-56 -translate-y-1/2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 shadow-lg opacity-0 transition duration-150 group-hover:opacity-100 group-focus-within:opacity-100 xl:block"
+            className="pointer-events-none absolute inset-x-2 top-full z-20 mt-1 hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 shadow-lg group-hover:block group-focus-within:block xl:block"
           >
             {resolvedHint}
           </div>
@@ -448,7 +448,7 @@ export default function Sidebar({ variant = "desktop" }) {
         </div>
       </div>
 
-      <nav className="flex-1 overflow-auto px-3 py-4 space-y-6">
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 space-y-6">
         {showRefundContext && !isEmployee && (
           <RefundEscrowModal
             open={refundOpen}
