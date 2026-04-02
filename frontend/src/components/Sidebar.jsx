@@ -448,7 +448,7 @@ export default function Sidebar({ variant = "desktop" }) {
         </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 space-y-6">
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 space-y-6 no-scrollbar">
         {showRefundContext && !isEmployee && (
           <RefundEscrowModal
             open={refundOpen}
