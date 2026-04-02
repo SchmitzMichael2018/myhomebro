@@ -20,7 +20,7 @@ export default function DashboardSection({
               </div>
             ) : null}
             {title ? <div className="text-xl font-bold text-slate-950">{title}</div> : null}
-            {subtitle ? <div className="mt-1 text-sm text-slate-700">{subtitle}</div> : null}
+            {subtitle ? <div className="mt-1 text-sm text-white/90">{subtitle}</div> : null}
           </div>
           {actions ? <div>{actions}</div> : null}
         </div>
