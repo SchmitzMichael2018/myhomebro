@@ -95,10 +95,15 @@ urlpatterns = [
     path("healthz", health),
 
     # Auth (JWT) — legacy aliases kept
+    path("api/auth/login",    TokenObtainPairView.as_view(), name="auth-login-noslash"),
     path("api/auth/login/",   TokenObtainPairView.as_view(), name="auth-login"),
+    path("api/auth/refresh",  TokenRefreshView.as_view(),    name="auth-refresh-noslash"),
     path("api/auth/refresh/", TokenRefreshView.as_view(),    name="auth-refresh"),
+    path("api/auth/verify",   TokenVerifyView.as_view(),     name="auth-verify-noslash"),
     path("api/auth/verify/",  TokenVerifyView.as_view(),     name="auth-verify"),
+    path("api/token",         TokenObtainPairView.as_view(), name="auth-login-alias-noslash"),
     path("api/token/",         TokenObtainPairView.as_view(), name="auth-login-alias"),
+    path("api/token/refresh", TokenRefreshView.as_view(),    name="auth-refresh-alias-noslash"),
     path("api/token/refresh/", TokenRefreshView.as_view(),    name="auth-refresh-alias"),
 
     # Primary APIs

@@ -26,6 +26,7 @@ BASE_DIR = Path(__file__).resolve().parent  # -> .../backend
 
 # Try explicit path first (backend/.env), then fall back to auto-discovery
 explicit_env = BASE_DIR / ".env"
+local_override_env = BASE_DIR / ".env.local"
 loaded = False
 if explicit_env.exists():
     load_dotenv(dotenv_path=explicit_env, override=True)
@@ -35,6 +36,10 @@ else:
     if discovered:
         load_dotenv(discovered, override=True)
         loaded = True
+
+if local_override_env.exists():
+    load_dotenv(dotenv_path=local_override_env, override=True)
+    loaded = True
 
 # Only be chatty about .env when DEBUG=True (after we read env below)
 def _maybe_log_env_status():

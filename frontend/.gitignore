@@ -88,6 +88,7 @@ backend/.env.prod
 # Keep sample templates if you add them:
 !.env.example
 !backend/.env.example
+!.env.local.example
 
 # =========================
 # Optional sensitive files

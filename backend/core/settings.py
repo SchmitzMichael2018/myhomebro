@@ -61,22 +61,31 @@ def _derive_redis_db(url: str, db_index: int) -> str:
 # ──────────────────────────────────────────────────────────────────────────────
 # Paths & .env
 # ──────────────────────────────────────────────────────────────────────────────
-# This file lives at: ~/backend/backend/core/settings.py
+# This file lives at: ~/repo/backend/core/settings.py
 # So:
-#   BASE_DIR = ~/backend/backend
-#   REPO_DIR = ~/backend
+#   BASE_DIR = ~/repo/backend
+#   REPO_DIR = ~/repo
 BASE_DIR = Path(__file__).resolve().parent.parent
 REPO_DIR = BASE_DIR.parent
 FRONTEND_DIR = REPO_DIR / "frontend"
 FRONTEND_DIST_DIR = FRONTEND_DIR / "dist"
 
-explicit_env = REPO_DIR / ".env"
-if explicit_env.exists():
-    load_dotenv(dotenv_path=explicit_env, override=True)
+explicit_env_candidates = [
+    BASE_DIR / ".env",
+    REPO_DIR / ".env",
+]
+for env_path in explicit_env_candidates:
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path, override=True)
+        break
 else:
     discovered = find_dotenv(filename=".env", usecwd=True)
     if discovered:
         load_dotenv(discovered, override=True)
+
+for env_path in (BASE_DIR / ".env.local", REPO_DIR / ".env.local"):
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path, override=True)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -407,13 +416,14 @@ POSTMARK_SIGNED_AGREEMENT_TEMPLATE = get_env_var(
 # ──────────────────────────────────────────────────────────────────────────────
 # Production Security
 # ──────────────────────────────────────────────────────────────────────────────
+SECURE_SSL_REDIRECT = get_bool("SECURE_SSL_REDIRECT", default=not DEBUG)
+SESSION_COOKIE_SECURE = get_bool("SESSION_COOKIE_SECURE", default=not DEBUG)
+CSRF_COOKIE_SECURE = get_bool("CSRF_COOKIE_SECURE", default=not DEBUG)
+SESSION_COOKIE_SAMESITE = get_env_var("SESSION_COOKIE_SAMESITE", "Lax")
+CSRF_COOKIE_SAMESITE = get_env_var("CSRF_COOKIE_SAMESITE", "Lax")
+
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-    SECURE_SSL_REDIRECT = True
-    SESSION_COOKIE_SECURE = True
-    CSRF_COOKIE_SECURE = True
-    SESSION_COOKIE_SAMESITE = "Lax"
-    CSRF_COOKIE_SAMESITE = "Lax"
     # SECURE_HSTS_SECONDS = 31536000
     # SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     # SECURE_HSTS_PRELOAD = True

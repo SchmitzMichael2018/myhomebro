@@ -16,6 +16,7 @@ export default function AuthenticatedLayout() {
   const instanceIdRef = useRef(++authenticatedLayoutInstanceSeq);
   const instanceId = instanceIdRef.current;
   const location = useLocation();
+  const isDashboardRoute = /\/dashboard\/?$/.test(location.pathname || "");
 
   console.log(`${AUTH_LAYOUT_DEBUG_PREFIX} render`, {
     instanceId,
@@ -39,19 +40,19 @@ export default function AuthenticatedLayout() {
   return (
     <MobileSidebarShell sidebar={<Sidebar variant="plain" />}>
       <AssistantDockProvider>
-        <div style={{ display: "flex", minHeight: "100vh" }}>
+        <div style={{ display: "flex", minHeight: isDashboardRoute ? "auto" : "100vh" }}>
           <Sidebar />
           <main
             className="mhb-gradient-bg"
             style={{
               flex: 1,
-              minHeight: "100vh",
+              minHeight: isDashboardRoute ? "auto" : "100vh",
               display: "flex",
               flexDirection: "column",
               minWidth: 0,
             }}
           >
-            <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
+            <div style={{ flex: 1, overflow: isDashboardRoute ? "visible" : "auto", minHeight: 0 }}>
               <div className="mhb-content-pad">
                 <ErrorBoundary>
                   <Outlet />

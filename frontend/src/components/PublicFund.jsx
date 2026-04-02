@@ -16,10 +16,10 @@ import {
   useStripe,
   useElements,
 } from "@stripe/react-stripe-js";
+import { getStripePublishableKey } from "../lib/runtimeConfig";
 
-const stripePromise = loadStripe(
-  import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || ""
-);
+const STRIPE_PUBLISHABLE_KEY = getStripePublishableKey();
+const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
 
 function FundingPaymentForm({ clientSecret, amountLabel }) {
   const stripe = useStripe();
@@ -232,6 +232,16 @@ export default function PublicFund() {
           <div className="mt-2 text-sm text-accent">
             ✅ No additional payment is required.
           </div>
+        </div>
+      </Shell>
+    );
+  }
+
+  if (!stripePromise) {
+    return (
+      <Shell>
+        <div className="rounded-2xl border bg-white p-6 shadow-sm">
+          Stripe is not configured for this environment. Set <b>VITE_STRIPE_PUBLISHABLE_KEY</b> to accept payments locally.
         </div>
       </Shell>
     );

@@ -16,12 +16,13 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../api";
+import { getStripePublishableKey } from "../lib/runtimeConfig";
 
 // ✅ Stripe (used ONLY for escrow/card payment path)
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, CardElement, useStripe, useElements } from "@stripe/react-stripe-js";
 
-const STRIPE_PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || "";
+const STRIPE_PUBLISHABLE_KEY = getStripePublishableKey();
 const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
 
 const money = (amount) =>

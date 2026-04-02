@@ -1588,7 +1588,7 @@ export default function AgreementList() {
 
       {/* Table */}
       <div className="min-h-[420px] overflow-x-auto rounded-[22px] border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
-        <table className="min-w-full text-sm">
+        <table className="min-w-full text-[15px] leading-5">
           <thead className="bg-slate-50/90">
             <tr>
               <th className="px-3 py-3 text-center">
@@ -1739,7 +1739,7 @@ export default function AgreementList() {
 
                     <td className="max-w-[320px] px-3 py-4 align-top" title={renderProject(r)}>
                       <div className="min-w-0">
-                        <div className="truncate font-semibold text-slate-900">{renderProject(r)}</div>
+                        <div className="truncate text-base font-semibold text-slate-900">{renderProject(r)}</div>
                         <div className="mt-1 text-xs font-medium uppercase tracking-[0.14em] text-slate-400">Next Step</div>
                         <div className="mt-1 text-sm text-slate-700">{nextStepLabel}</div>
                       </div>

@@ -9,6 +9,7 @@
 console.log("api.js v2026-02-18-refresh-queue-fix");
 
 import axios from "axios";
+import { getApiBaseUrl } from "./lib/runtimeConfig";
 
 // Canonical keys
 const TOK = {
@@ -20,7 +21,7 @@ const TOK = {
   legacyAccessTokenCamel: "accessToken",
 };
 
-const BASE_URL = "/api";
+const BASE_URL = getApiBaseUrl();
 
 let MEM_ACCESS = null;
 let MEM_REFRESH = null;
@@ -295,7 +296,6 @@ function installInterceptors(instance) {
     if (config.url) config.url = remapAny(config.url);
 
     if (
-      instance.defaults.baseURL === "/api" &&
       typeof config.url === "string" &&
       config.url.startsWith("/api/")
     ) {

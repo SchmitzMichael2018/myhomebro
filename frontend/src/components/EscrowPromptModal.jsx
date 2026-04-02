@@ -6,9 +6,10 @@ import {
   useElements,
   PaymentElement,
 } from "@stripe/react-stripe-js";
+import { getStripePublishableKey } from "../lib/runtimeConfig";
 
 const STRIPE_PK =
-  import.meta?.env?.VITE_STRIPE_PUBLISHABLE_KEY ||
+  getStripePublishableKey() ||
   (typeof window !== "undefined" && window.STRIPE_PK) ||
   "";
 

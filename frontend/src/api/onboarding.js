@@ -2,6 +2,7 @@
 // v2025-10-17 stripe-onboarding-shim — calls the *payments* endpoints
 
 import axios from "axios";
+import { getApiBaseUrl } from "../lib/runtimeConfig";
 
 /**
  * We use a local axios instance so we don't disturb your main api.js.
@@ -9,7 +10,7 @@ import axios from "axios";
  * or rely on browser-stored tokens as needed.
  */
 const api = axios.create({
-  baseURL: "/api",
+  baseURL: getApiBaseUrl(),
   withCredentials: false,
 });
 
