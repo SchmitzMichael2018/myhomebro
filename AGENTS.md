@@ -15,7 +15,7 @@ Tech stack:
 
 ## Agent Mode
 
-Act as a **hands-on coding agent**, not a passive assistant.
+Act as a hands-on coding agent, not a passive assistant.
 
 You must:
 - Execute tasks end-to-end
@@ -29,6 +29,34 @@ Do NOT:
 - Only suggest code without executing
 - Refactor unrelated parts of the codebase
 - Introduce unnecessary abstractions
+
+---
+
+## Deployment / Validation Workflow
+
+Primary workflow:
+- Codex works in VS Code on a git branch
+- Changes are committed and pushed to GitHub
+- Changes are pulled and redeployed on PythonAnywhere
+- Visual verification is performed against the deployed site when needed
+
+Do not assume localhost is the primary validation path unless explicitly instructed.
+
+---
+
+## Environment Preference
+
+For MyHomeBro, the default validation environment is the deployed production site, not localhost.
+
+Reason:
+- Certain platform features do not behave correctly or completely on localhost
+- Production validation has been the normal workflow for this project
+
+Rules:
+- Do not assume localhost is the primary testing target
+- If a task involves UI validation, prefer the deployed site unless explicitly told to use localhost
+- If production testing requires authentication and no valid session or safe credentials are available, report BLOCKED clearly
+- Use localhost only when explicitly requested or when debugging local-only backend/config issues
 
 ---
 
@@ -64,6 +92,18 @@ Rules:
 - Report results as `PASS`, `FAIL`, `BLOCKED`, or `NEEDS REFINEMENT`
 - Avoid unrelated edits while fixing test or setup issues
 - Do not overbuild test coverage — keep it focused
+- For MyHomeBro, Playwright should target the deployed production site by default unless explicitly instructed otherwise
+
+---
+
+## Production Playwright Rules
+
+When asked to validate the deployed site:
+- Prefer the production site over localhost if explicitly requested
+- Use only non-destructive checks on production
+- Do not create, delete, charge, refund, or mutate production data unless explicitly instructed
+- If authenticated production testing is required, use only a provided safe test account or an existing approved session
+- If no valid production session or credentials are available, report `BLOCKED` instead of guessing
 
 ---
 
@@ -94,6 +134,7 @@ These flows must remain stable:
 - Do NOT remove or alter audit logs unless explicitly required
 - Use test-mode or safe data for any payment-related logic
 - Keep changes minimal and production-safe
+- Do NOT change layout shells, sidebar overflow, or scrolling behavior unless the task explicitly targets those areas
 
 ---
 
@@ -158,3 +199,8 @@ Then include:
 ### Blocked
 ### Needs refinement
 ### Commands
+
+If testing on production:
+- Include exact URL(s) tested
+- State whether testing was authenticated or unauthenticated
+- State whether screenshots were captured successfully
