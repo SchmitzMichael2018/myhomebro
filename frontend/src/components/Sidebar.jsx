@@ -89,6 +89,7 @@ export default function Sidebar({ variant = "desktop" }) {
     const role = data?.role || data?.type || "";
     return isContractor && String(role).toLowerCase() === "contractor_owner";
   }, [data, isContractor]);
+
   const canAccessReviewerQueue = useMemo(() => {
     if (isContractorOwner) return true;
     if (!isEmployee) return false;
@@ -124,15 +125,40 @@ export default function Sidebar({ variant = "desktop" }) {
   }, []);
 
   const showNavHint = useCallback((event, hintText, tooltipId) => {
-    if (!hintText) return;
+    if (!hintText || typeof window === "undefined") return;
+
     const rect = event.currentTarget.getBoundingClientRect();
+    const estimatedWidth = 288; // ~w-72
+    const gutter = 12;
+    const fallbackLeft = 16;
+    const maxLeft = Math.max(fallbackLeft, window.innerWidth - estimatedWidth - 16);
+    const left = Math.min(rect.right + gutter, maxLeft);
+
     setNavHint({
       id: tooltipId,
       text: hintText,
       top: rect.top + rect.height / 2,
-      left: rect.right + 12,
+      left,
     });
   }, []);
+
+  useEffect(() => {
+    setNavHint(null);
+  }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    if (!navHint) return undefined;
+
+    const handleViewportChange = () => setNavHint(null);
+
+    window.addEventListener("scroll", handleViewportChange, true);
+    window.addEventListener("resize", handleViewportChange);
+
+    return () => {
+      window.removeEventListener("scroll", handleViewportChange, true);
+      window.removeEventListener("resize", handleViewportChange);
+    };
+  }, [navHint]);
 
   // Primary item (MAIN section)
   const Item = ({ to, label, emoji, title, hint }) => {
@@ -140,7 +166,7 @@ export default function Sidebar({ variant = "desktop" }) {
     const resolvedHint = hint || NAV_HINTS[to];
 
     return (
-      <div className="group relative z-40">
+      <div className="relative">
         <NavLink
           to={to}
           data-close-sidebar="1"
@@ -158,6 +184,7 @@ export default function Sidebar({ variant = "desktop" }) {
           onFocus={(event) => showNavHint(event, resolvedHint, tooltipId)}
           onMouseLeave={hideNavHint}
           onBlur={hideNavHint}
+          onClick={hideNavHint}
           title={title || undefined}
         >
           <span className="text-base" aria-hidden="true">
@@ -165,12 +192,13 @@ export default function Sidebar({ variant = "desktop" }) {
           </span>
           <span className="flex items-center">{label}</span>
         </NavLink>
+
         {navHint?.id === tooltipId && typeof document !== "undefined"
           ? createPortal(
               <div
                 id={tooltipId}
                 role="tooltip"
-                className="pointer-events-none fixed z-[1000] whitespace-normal rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 shadow-lg"
+                className="pointer-events-none fixed z-[1000] w-72 max-w-[min(18rem,calc(100vw-2rem))] whitespace-normal rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 shadow-lg"
                 style={{
                   top: `${navHint.top}px`,
                   left: `${navHint.left}px`,
@@ -477,7 +505,7 @@ export default function Sidebar({ variant = "desktop" }) {
         </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto overflow-x-visible px-3 py-4 space-y-6 no-scrollbar">
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 space-y-6 no-scrollbar">
         {showRefundContext && !isEmployee && (
           <RefundEscrowModal
             open={refundOpen}
@@ -488,7 +516,7 @@ export default function Sidebar({ variant = "desktop" }) {
         )}
 
         <div>
-          <div className="px-2 text-xs font-extrabold uppercase tracking-wide text-slate-600 mb-2">
+          <div className="mb-2 px-2 text-xs font-extrabold uppercase tracking-wide text-slate-600">
             Main
           </div>
           {isContractorOwner ? (
@@ -511,7 +539,7 @@ export default function Sidebar({ variant = "desktop" }) {
         </div>
 
         <div>
-          <div className="px-2 text-xs font-extrabold uppercase tracking-wide text-slate-600 mb-2">
+          <div className="mb-2 px-2 text-xs font-extrabold uppercase tracking-wide text-slate-600">
             Account
           </div>
           <div className="space-y-2">{accountNav}</div>
@@ -526,7 +554,7 @@ export default function Sidebar({ variant = "desktop" }) {
         >
           Logout
         </button>
-        <div className="mt-2 text-[11px] text-slate-600 text-center">
+        <div className="mt-2 text-center text-[11px] text-slate-600">
           © {new Date().getFullYear()} MyHomeBro
         </div>
       </div>
@@ -534,12 +562,12 @@ export default function Sidebar({ variant = "desktop" }) {
   );
 
   if (variant === "plain") {
-    return <div className="flex flex-col min-h-screen">{inner}</div>;
+    return <div className="flex min-h-screen flex-col">{inner}</div>;
   }
 
   return (
     <aside
-      className="hidden md:flex md:flex-col md:w-60 lg:w-64 border-r border-black/10"
+      className="hidden border-r border-black/10 md:flex md:w-60 md:flex-col lg:w-64"
       style={{
         minHeight: "100vh",
         background: "rgba(255,255,255,0.72)",
