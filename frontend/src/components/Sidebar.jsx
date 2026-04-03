@@ -4,6 +4,7 @@
 // - Add `variant="plain"` to render sidebar CONTENT only (for mobile overlay shell)
 
 import React, { useCallback, useMemo, useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import api, { getAgreementClosureStatus, closeAndArchiveAgreement } from "../api";
 import toast from "react-hot-toast";
@@ -59,6 +60,7 @@ export default function Sidebar({ variant = "desktop" }) {
   const [closeoutStatus, setCloseoutStatus] = useState(null);
   const [closingOut, setClosingOut] = useState(false);
   const [stripeRequirement, setStripeRequirement] = useState(null);
+  const [navHint, setNavHint] = useState(null);
 
   const APP_BASE = "/app";
   const EMP_BASE = "/app/employee";
@@ -117,6 +119,21 @@ export default function Sidebar({ variant = "desktop" }) {
     return "Contractor Console";
   }, [isAdmin, isEmployee, isSubcontractor]);
 
+  const hideNavHint = useCallback(() => {
+    setNavHint(null);
+  }, []);
+
+  const showNavHint = useCallback((event, hintText, tooltipId) => {
+    if (!hintText) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    setNavHint({
+      id: tooltipId,
+      text: hintText,
+      top: rect.top + rect.height / 2,
+      left: rect.right + 12,
+    });
+  }, []);
+
   // Primary item (MAIN section)
   const Item = ({ to, label, emoji, title, hint }) => {
     const tooltipId = React.useId();
@@ -127,7 +144,7 @@ export default function Sidebar({ variant = "desktop" }) {
         <NavLink
           to={to}
           data-close-sidebar="1"
-          aria-describedby={resolvedHint ? tooltipId : undefined}
+          aria-describedby={navHint?.id === tooltipId ? tooltipId : undefined}
           className={({ isActive }) =>
             [
               "flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition",
@@ -137,6 +154,10 @@ export default function Sidebar({ variant = "desktop" }) {
                 : "bg-white/60 text-slate-800 border-black/10 hover:bg-white hover:text-slate-900",
             ].join(" ")
           }
+          onMouseEnter={(event) => showNavHint(event, resolvedHint, tooltipId)}
+          onFocus={(event) => showNavHint(event, resolvedHint, tooltipId)}
+          onMouseLeave={hideNavHint}
+          onBlur={hideNavHint}
           title={title || undefined}
         >
           <span className="text-base" aria-hidden="true">
@@ -144,16 +165,23 @@ export default function Sidebar({ variant = "desktop" }) {
           </span>
           <span className="flex items-center">{label}</span>
         </NavLink>
-
-        {resolvedHint ? (
-          <div
-            id={tooltipId}
-            role="tooltip"
-            className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 whitespace-normal rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 shadow-lg invisible opacity-0 transition-opacity duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
-          >
-            {resolvedHint}
-          </div>
-        ) : null}
+        {navHint?.id === tooltipId && typeof document !== "undefined"
+          ? createPortal(
+              <div
+                id={tooltipId}
+                role="tooltip"
+                className="pointer-events-none fixed z-[1000] whitespace-normal rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 shadow-lg"
+                style={{
+                  top: `${navHint.top}px`,
+                  left: `${navHint.left}px`,
+                  transform: "translateY(-50%)",
+                }}
+              >
+                {navHint.text}
+              </div>,
+              document.body
+            )
+          : null}
       </div>
     );
   };
