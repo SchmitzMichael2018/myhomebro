@@ -429,11 +429,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
         if getattr(invoice, "escrow_released", False) or str(invoice.status or "").lower() == "paid":
             return Response({"detail": "This invoice is already paid/released and cannot be re-submitted."}, status=400)
 
-        if invoice.status != InvoiceStatus.PENDING:
-            invoice.status = InvoiceStatus.PENDING
-
-        invoice.last_email_error = ""
-        invoice.save(update_fields=["status", "last_email_error"])
+        prior_status = invoice.status
 
         try:
             result = _send_invoice_email_postmark(invoice)
@@ -441,17 +437,26 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             if isinstance(result, dict):
                 message_id = result.get("MessageID") or result.get("MessageId")
 
+            update_fields = []
+            if invoice.status != InvoiceStatus.PENDING:
+                invoice.status = InvoiceStatus.PENDING
+                update_fields.append("status")
             invoice.email_sent_at = timezone.now()
             invoice.email_message_id = message_id or ""
-            invoice.last_email_error = ""
-            invoice.save(update_fields=["email_sent_at", "email_message_id", "last_email_error"])
+            update_fields.extend(["email_sent_at", "email_message_id"])
+            if hasattr(invoice, "last_email_error"):
+                invoice.last_email_error = ""
+                update_fields.append("last_email_error")
+            invoice.save(update_fields=update_fields)
 
             return Response(self.get_serializer(invoice, context={"request": request}).data, status=status.HTTP_200_OK)
 
         except Exception as e:
             logger.exception("Invoice submit email failed for invoice %s", invoice.id)
-            invoice.last_email_error = str(e)
-            invoice.save(update_fields=["last_email_error"])
+            invoice.status = prior_status
+            if hasattr(invoice, "last_email_error"):
+                invoice.last_email_error = str(e)
+                invoice.save(update_fields=["last_email_error"])
             return Response(
                 {"detail": "Invoice saved but email failed to send.", "error": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

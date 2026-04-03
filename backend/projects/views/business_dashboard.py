@@ -23,6 +23,7 @@ from projects.models import (
     ExternalPaymentRecord,
     ExternalPaymentStatus,
     Invoice,
+    InvoiceStatus,
     Milestone,
     MilestonePayoutStatus,
     ProjectStatus,
@@ -76,8 +77,6 @@ def _effective_invoice_paid_at(invoice):
     return (
         getattr(invoice, "escrow_released_at", None)
         or getattr(invoice, "direct_pay_paid_at", None)
-        or getattr(invoice, "approved_at", None)
-        or getattr(invoice, "created_at", None)
     )
 
 
@@ -389,7 +388,7 @@ def _chart_detail_payload(chart_type, bucket_kind, bucket_start, records):
 def _paid_invoice_queryset(contractor, start_dt, end_dt):
     paid_qs = Invoice.objects.select_related("agreement").filter(
         agreement__contractor=contractor,
-        status="paid",
+        status=InvoiceStatus.PAID,
     )
 
     invoice_ids = []
@@ -547,7 +546,7 @@ class BusinessDashboardSummaryAPIView(APIView):
         )
 
         paid_invoices = invoices.filter(
-            status="paid",
+            status=InvoiceStatus.PAID,
             escrow_released=True,
             escrow_released_at__gte=start_dt,
             escrow_released_at__lte=end_dt,
@@ -566,7 +565,7 @@ class BusinessDashboardSummaryAPIView(APIView):
         )
 
         escrow_pending = (
-            invoices.filter(status="approved", escrow_released=False)
+            invoices.filter(status=InvoiceStatus.APPROVED, escrow_released=False)
             .aggregate(total=Coalesce(Sum("amount"), Decimal("0.00")))["total"]
         ).quantize(Decimal("0.01"))
 
@@ -599,7 +598,7 @@ class BusinessDashboardSummaryAPIView(APIView):
             rev = (
                 Invoice.objects.filter(
                     agreement__in=cat_agreements,
-                    status="paid",
+                    status=InvoiceStatus.PAID,
                     escrow_released=True,
                 ).aggregate(total=Coalesce(Sum("amount"), Decimal("0.00")))["total"]
             ).quantize(Decimal("0.01"))

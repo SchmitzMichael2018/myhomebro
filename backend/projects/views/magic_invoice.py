@@ -297,11 +297,23 @@ class MagicInvoiceApproveView(APIView):
                     status=200,
                 )
 
+            if getattr(invoice, "stripe_transfer_id", None):
+                return Response(
+                    {
+                        "invoice": InvoiceSerializer(invoice, context={"request": request}).data,
+                        "mode": "escrow_release",
+                        "stripe_transfer_id": invoice.stripe_transfer_id,
+                        "detail": "Already released (idempotent).",
+                    },
+                    status=200,
+                )
+
             try:
                 transfer = stripe.Transfer.create(
                     amount=int(payout_cents),
                     currency="usd",
                     destination=str(destination_acct),
+                    idempotency_key=f"escrow-release-invoice:{invoice.id}",
                     metadata={
                         "kind": "milestone_escrow_release",
                         "invoice_id": str(invoice.id),
@@ -317,15 +329,17 @@ class MagicInvoiceApproveView(APIView):
                 logger.exception("Stripe Transfer failed for invoice %s: %s", invoice.id, exc)
                 return Response({"detail": "Unable to release escrow. Please try again."}, status=500)
 
+            released_at = timezone.now()
+
             with transaction.atomic():
                 invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
 
                 invoice.stripe_transfer_id = transfer.id
                 invoice.escrow_released = True
-                invoice.escrow_released_at = timezone.now()
+                invoice.escrow_released_at = released_at
 
                 invoice.status = InvoiceStatus.PAID
-                invoice.approved_at = invoice.approved_at or timezone.now()
+                invoice.approved_at = invoice.approved_at or released_at
 
                 update_fields = [
                     "status",
