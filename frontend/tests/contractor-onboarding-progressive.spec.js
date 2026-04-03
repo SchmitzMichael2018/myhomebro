@@ -40,7 +40,7 @@ test('contractor onboarding supports activation-first progression and soft Strip
       trade_count: 0,
       service_region_label: '',
       step_number: 1,
-      step_total: 4,
+      step_total: 3,
       activation: {
         last_step_reached: 'welcome',
         time_spent_per_step: {},
@@ -56,7 +56,7 @@ test('contractor onboarding supports activation-first progression and soft Strip
     trade_count: 0,
     service_region_label: '',
     step_number: 1,
-    step_total: 4,
+    step_total: 3,
     activation: {
       last_step_reached: 'welcome',
       time_spent_per_step: {},
@@ -92,10 +92,8 @@ test('contractor onboarding supports activation-first progression and soft Strip
       };
       onboardingPayload = {
         ...onboardingPayload,
-        status: payload.mark_first_project_started ? 'in_progress' : 'not_started',
-        step:
-          payload.contractor_onboarding_step ||
-          (payload.mark_first_project_started ? 'stripe' : onboardingPayload.step),
+        status: payload.contractor_onboarding_step === 'stripe' ? 'in_progress' : 'not_started',
+        step: payload.contractor_onboarding_step || onboardingPayload.step,
         first_value_reached: Boolean(payload.mark_first_project_started),
         show_soft_stripe_prompt: Boolean(payload.mark_first_project_started),
         trade_count: Array.isArray(mePayload.skills) ? mePayload.skills.length : 0,
@@ -103,16 +101,13 @@ test('contractor onboarding supports activation-first progression and soft Strip
         step_number:
           payload.contractor_onboarding_step === 'region'
             ? 2
-            : payload.contractor_onboarding_step === 'first_job'
+            : payload.contractor_onboarding_step === 'stripe'
             ? 3
-            : payload.mark_first_project_started
-            ? 4
             : onboardingPayload.step_number,
-        step_total: 4,
+        step_total: 3,
         activation: {
           last_step_reached:
-            payload.contractor_onboarding_step ||
-            (payload.mark_first_project_started ? 'stripe' : onboardingPayload.activation?.last_step_reached || ''),
+            payload.contractor_onboarding_step || onboardingPayload.activation?.last_step_reached || '',
           time_spent_per_step: {},
         },
       };
@@ -203,27 +198,25 @@ test('contractor onboarding supports activation-first progression and soft Strip
 
   await expect(page.getByTestId('contractor-onboarding-page')).toBeVisible();
   await expect(page.getByTestId('contractor-onboarding-trades')).toContainText('Pick your trades');
-  await expect(page.getByTestId('contractor-onboarding-trades')).toContainText('Step 1 of 4');
+  await expect(page.getByTestId('contractor-onboarding-trades')).toContainText('Step 1 of 3');
 
   await page.getByRole('button', { name: 'HVAC' }).click();
   await page.getByTestId('contractor-onboarding-save-basics').click();
   await expect(page.getByTestId('contractor-onboarding-region')).toContainText('Set your service area');
+  await expect(page.getByRole('button', { name: 'Back' })).toBeVisible();
 
   await page.getByTestId('contractor-onboarding-state').selectOption('TX');
   await page.getByTestId('contractor-onboarding-city').fill('San Antonio');
   await page.getByTestId('contractor-onboarding-zip').fill('78205');
   await page.getByRole('button', { name: 'Continue' }).click();
 
-  await expect(page.getByTestId('contractor-onboarding-first-job')).toContainText(
-    'Tell me about your job'
+  await expect(page.getByTestId('contractor-onboarding-stripe')).toContainText(
+    'Step 3 of 3'
   );
-  await expect(page.getByTestId('contractor-onboarding-first-job')).toContainText(
-    'Most contractors complete this in under 2 minutes.'
-  );
-  await page.getByTestId('contractor-onboarding-job-input').fill('Bathroom remodel for Mike');
-  await page.getByTestId('contractor-onboarding-start-ai').click();
-  await page.waitForURL('**/app/assistant');
-  expect(activationEvents.some((item) => item.event_type === 'ai_used_for_project')).toBeTruthy();
+  await expect(page.getByRole('button', { name: 'Back' })).toBeVisible();
+  await expect(page.getByTestId('contractor-onboarding-connect-stripe')).toBeVisible();
+  await expect(page.getByTestId('contractor-onboarding-skip-stripe')).toBeVisible();
+  expect(activationEvents.some((item) => item.event_type === 'ai_used_for_project')).toBeFalsy();
 
   onboardingPayload = {
     ...onboardingPayload,
@@ -233,8 +226,8 @@ test('contractor onboarding supports activation-first progression and soft Strip
     show_soft_stripe_prompt: true,
     trade_count: 1,
     service_region_label: 'San Antonio, TX',
-    step_number: 4,
-    step_total: 4,
+    step_number: 3,
+    step_total: 3,
     activation: {
       last_step_reached: 'stripe',
       time_spent_per_step: {},

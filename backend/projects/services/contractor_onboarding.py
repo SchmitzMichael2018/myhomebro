@@ -10,7 +10,6 @@ from projects.services.contractor_activation_analytics import build_activation_s
 
 ONBOARDING_STEP_WELCOME = "welcome"
 ONBOARDING_STEP_REGION = "region"
-ONBOARDING_STEP_FIRST_JOB = "first_job"
 ONBOARDING_STEP_STRIPE = "stripe"
 ONBOARDING_STEP_COMPLETE = "complete"
 SERVICE_RADIUS_OPTIONS = {10, 25, 50, 100}
@@ -61,8 +60,6 @@ def determine_onboarding_step(contractor: Contractor | None) -> str:
         return ONBOARDING_STEP_WELCOME
     if not str(getattr(contractor, "state", "") or "").strip():
         return ONBOARDING_STEP_REGION
-    if not contractor_first_value_reached(contractor):
-        return ONBOARDING_STEP_FIRST_JOB
     if not contractor_stripe_ready(contractor):
         return ONBOARDING_STEP_STRIPE
     return ONBOARDING_STEP_COMPLETE
@@ -72,7 +69,7 @@ def determine_onboarding_status(contractor: Contractor | None) -> str:
     step = determine_onboarding_step(contractor)
     if step == ONBOARDING_STEP_COMPLETE:
         return "complete"
-    if step in {ONBOARDING_STEP_FIRST_JOB, ONBOARDING_STEP_STRIPE}:
+    if step == ONBOARDING_STEP_STRIPE:
         return "in_progress"
     return "not_started"
 
@@ -142,7 +139,7 @@ def build_onboarding_snapshot(contractor: Contractor | None) -> dict[str, Any]:
             "stripe_prompt_dismissed_at": None,
             "stripe_connected_at": None,
             "step_number": 1,
-            "step_total": 4,
+            "step_total": 3,
             "activation": build_activation_summary(contractor),
         }
 
@@ -153,9 +150,8 @@ def build_onboarding_snapshot(contractor: Contractor | None) -> dict[str, Any]:
     step_number_map = {
         ONBOARDING_STEP_WELCOME: 1,
         ONBOARDING_STEP_REGION: 2,
-        ONBOARDING_STEP_FIRST_JOB: 3,
-        ONBOARDING_STEP_STRIPE: 4,
-        ONBOARDING_STEP_COMPLETE: 4,
+        ONBOARDING_STEP_STRIPE: 3,
+        ONBOARDING_STEP_COMPLETE: 3,
     }
     stripe_prompt_dismissed = bool(contractor.stripe_prompt_dismissed_at)
     return {
@@ -170,7 +166,7 @@ def build_onboarding_snapshot(contractor: Contractor | None) -> dict[str, Any]:
         "stripe_prompt_dismissed_at": contractor.stripe_prompt_dismissed_at.isoformat() if contractor.stripe_prompt_dismissed_at else None,
         "stripe_connected_at": contractor.stripe_connected_at.isoformat() if contractor.stripe_connected_at else None,
         "step_number": step_number_map.get(step_value, 1),
-        "step_total": 4,
+        "step_total": 3,
         "service_region_label": ", ".join(
             [part for part in [str(getattr(contractor, "city", "") or "").strip(), str(getattr(contractor, "state", "") or "").strip()] if part]
         ),

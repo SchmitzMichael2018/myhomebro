@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import api from "../../api";
 import { trackOnboardingEvent } from "../../lib/onboardingAnalytics.js";
 
@@ -23,10 +22,6 @@ const STATE_OPTIONS = [
   "VA","WA","WV","WI","WY","DC","PR",
 ];
 
-const QUICK_JOB_EXAMPLES = [
-  "Bathroom remodel for Mike",
-  "Lawn care monthly service",
-];
 const SERVICE_RADIUS_OPTIONS = [10, 25, 50, 100];
 
 function StripeStatusBadge({ stripeStatus }) {
@@ -60,7 +55,6 @@ function PrimaryCard({ eyebrow, title, description, children, testId = "" }) {
 }
 
 export default function StripeOnboarding() {
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -68,7 +62,6 @@ export default function StripeOnboarding() {
   const [onboarding, setOnboarding] = useState(null);
   const [meData, setMeData] = useState(null);
   const [stripeStatus, setStripeStatus] = useState(null);
-  const [jobInput, setJobInput] = useState("");
   const [form, setForm] = useState({
     business_name: "",
     city: "",
@@ -125,8 +118,7 @@ export default function StripeOnboarding() {
 
   const currentStep = onboarding?.step || "welcome";
   const stepNumber = Number(onboarding?.step_number || 1);
-  const stepTotal = Number(onboarding?.step_total || 4);
-  const firstValueReady = Boolean(onboarding?.first_value_reached);
+  const stepTotal = Number(onboarding?.step_total || 3);
   const stripeReady = Boolean(onboarding?.stripe_ready || stripeStatus?.connected);
 
   function toggleSkill(skill) {
@@ -178,12 +170,11 @@ export default function StripeOnboarding() {
       zip: form.zip,
       service_radius_miles: form.service_radius_miles,
       skills: form.skills,
-      contractor_onboarding_step: "first_job",
+      contractor_onboarding_step: "stripe",
     });
   }
 
-  async function handleStartWithAI(example = "") {
-    const finalPrompt = String(example || jobInput || "").trim();
+  async function handleBack(targetStep) {
     await patchOnboarding({
       business_name: form.business_name,
       city: form.city,
@@ -191,54 +182,7 @@ export default function StripeOnboarding() {
       zip: form.zip,
       service_radius_miles: form.service_radius_miles,
       skills: form.skills,
-      contractor_onboarding_step: "stripe",
-      mark_first_project_started: true,
-    });
-    await trackOnboardingEvent({
-      eventType: "ai_used_for_project",
-      step: "first_job",
-      context: {
-        prompt_preview: finalPrompt.slice(0, 120),
-        has_prompt: Boolean(finalPrompt),
-      },
-      once: false,
-    });
-    navigate("/app/assistant", {
-      state: {
-        assistantPrompt: finalPrompt || "Tell me about your job and help me create my first project",
-        assistantContext: {
-          current_route: "/app/onboarding",
-          onboarding_mode: true,
-          region_state: form.state,
-          region_city: form.city,
-          project_type_hint: form.skills[0] || "",
-          onboarding_step: "first_job",
-        },
-      },
-    });
-  }
-
-  async function handleOpenWizard() {
-    await patchOnboarding({
-      business_name: form.business_name,
-      city: form.city,
-      state: form.state,
-      zip: form.zip,
-      service_radius_miles: form.service_radius_miles,
-      skills: form.skills,
-      contractor_onboarding_step: "stripe",
-      mark_first_project_started: true,
-    });
-    navigate("/app/agreements/new/wizard?step=1", {
-      state: {
-        activationJourney: true,
-        assistantContext: {
-          onboarding_mode: true,
-          region_state: form.state,
-          region_city: form.city,
-          project_type_hint: form.skills[0] || "",
-        },
-      },
+      contractor_onboarding_step: targetStep,
     });
   }
 
@@ -313,14 +257,51 @@ export default function StripeOnboarding() {
         title: "What comes next",
         body: (
           <ul className="space-y-2 text-sm text-slate-600">
-            <li>AI can suggest a template, estimate, and milestones from one short prompt.</li>
-            <li>Most contractors complete this in under 2 minutes.</li>
-            <li>Stripe only matters when you are ready to get paid.</li>
+            <li>Pick trades so templates, pricing, and compliance guidance stay relevant.</li>
+            <li>Set your home service area so recommendations stay local and accurate.</li>
+            <li>Connect Stripe when you are ready to receive payments and payouts.</li>
           </ul>
         ),
       },
     ];
   }, [currentStep, form.business_name, form.city, form.skills, form.state, meData, onboarding]);
+
+  function renderStepActions({
+    backLabel = "Back",
+    onBack,
+    continueLabel = "Continue",
+    onContinue,
+    continueDisabled = false,
+    continueTestId,
+    children = null,
+  }) {
+    return (
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        {onBack ? (
+          <button
+            type="button"
+            onClick={onBack}
+            disabled={saving}
+            className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            {backLabel}
+          </button>
+        ) : null}
+        {onContinue ? (
+          <button
+            type="button"
+            data-testid={continueTestId}
+            onClick={onContinue}
+            disabled={saving || continueDisabled}
+            className="min-h-12 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+          >
+            {saving ? "Saving..." : continueLabel}
+          </button>
+        ) : null}
+        {children}
+      </div>
+    );
+  }
 
   function renderCurrentStep() {
     if (currentStep === "welcome") {
@@ -361,17 +342,11 @@ export default function StripeOnboarding() {
               placeholder="MyHomeBro Services"
             />
           </div>
-          <div className="mt-5">
-            <button
-              type="button"
-              data-testid="contractor-onboarding-save-basics"
-              onClick={handleContinueTrades}
-              disabled={saving || !form.skills.length}
-              className="min-h-12 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
-            >
-              {saving ? "Saving..." : "Continue"}
-            </button>
-          </div>
+          {renderStepActions({
+            onContinue: handleContinueTrades,
+            continueDisabled: !form.skills.length,
+            continueTestId: "contractor-onboarding-save-basics",
+          })}
         </PrimaryCard>
       );
     }
@@ -447,67 +422,11 @@ export default function StripeOnboarding() {
           <div className="mt-3 text-sm text-slate-600">
             Your ZIP is used as the center of your service area.
           </div>
-          <div className="mt-5">
-            <button
-              type="button"
-              onClick={handleContinueRegion}
-              disabled={saving || !form.state}
-              className="min-h-12 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
-            >
-              {saving ? "Saving..." : "Continue"}
-            </button>
-          </div>
-        </PrimaryCard>
-      );
-    }
-
-    if (currentStep === "first_job") {
-      return (
-        <PrimaryCard
-          eyebrow={`Step ${stepNumber} of ${stepTotal}`}
-          title="Tell me about your job"
-          description="Most contractors complete this in under 2 minutes. A short description is enough to start a template, estimate, and milestone preview."
-          testId="contractor-onboarding-first-job"
-        >
-          <label className="block text-sm font-semibold text-slate-900">Quick job input</label>
-          <textarea
-            value={jobInput}
-            onChange={(e) => setJobInput(e.target.value)}
-            className="mt-1 min-h-[120px] w-full rounded-2xl border border-slate-200 px-3 py-3 text-sm"
-            placeholder="Tell me about your job"
-            data-testid="contractor-onboarding-job-input"
-          />
-          <div className="mt-3 flex flex-wrap gap-2">
-            {QUICK_JOB_EXAMPLES.map((example) => (
-              <button
-                key={example}
-                type="button"
-                onClick={() => setJobInput(example)}
-                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-              >
-                {example}
-              </button>
-            ))}
-          </div>
-          <div className="mt-5 flex flex-wrap items-center gap-4">
-            <button
-              type="button"
-              data-testid="contractor-onboarding-start-ai"
-              onClick={() => handleStartWithAI()}
-              disabled={saving}
-              className="min-h-12 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
-            >
-              Build preview with AI
-            </button>
-            <button
-              type="button"
-              data-testid="contractor-onboarding-open-wizard"
-              onClick={handleOpenWizard}
-              className="text-sm font-semibold text-slate-700 underline-offset-4 hover:underline"
-            >
-              Skip to the agreement wizard
-            </button>
-          </div>
+          {renderStepActions({
+            onBack: () => handleBack("welcome"),
+            onContinue: handleContinueRegion,
+            continueDisabled: !form.state,
+          })}
         </PrimaryCard>
       );
     }
@@ -528,26 +447,31 @@ export default function StripeOnboarding() {
             {statusError}
           </div>
         ) : null}
-        <div className="flex flex-wrap gap-3">
-          <button
-            type="button"
-            data-testid="contractor-onboarding-connect-stripe"
-            onClick={stripeStatus?.connected ? resumeStripeOnboarding : startStripeOnboarding}
-            className="min-h-12 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800"
-          >
-            {stripeStatus?.connected ? "Resume setup" : "Connect Stripe"}
-          </button>
-          {!stripeReady ? (
-            <button
-              type="button"
-              data-testid="contractor-onboarding-skip-stripe"
-              onClick={dismissStripePrompt}
-              className="text-sm font-semibold text-slate-700 underline-offset-4 hover:underline"
-            >
-              Skip for now
-            </button>
-          ) : null}
-        </div>
+        {renderStepActions({
+          onBack: () => handleBack("region"),
+          children: (
+            <>
+              <button
+                type="button"
+                data-testid="contractor-onboarding-connect-stripe"
+                onClick={stripeStatus?.connected ? resumeStripeOnboarding : startStripeOnboarding}
+                className="min-h-12 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                {stripeStatus?.connected ? "Resume setup" : "Connect Stripe"}
+              </button>
+              {!stripeReady ? (
+                <button
+                  type="button"
+                  data-testid="contractor-onboarding-skip-stripe"
+                  onClick={dismissStripePrompt}
+                  className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Skip for now
+                </button>
+              ) : null}
+            </>
+          ),
+        })}
       </PrimaryCard>
     );
   }
@@ -627,8 +551,8 @@ export default function StripeOnboarding() {
                       <div className="mt-1 font-semibold text-slate-900">{Number(onboarding?.trade_count || 0)}</div>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">First project</div>
-                      <div className="mt-1 font-semibold text-slate-900">{firstValueReady ? "Started" : "Not started"}</div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current step</div>
+                      <div className="mt-1 font-semibold text-slate-900">Step {stepNumber} of {stepTotal}</div>
                     </div>
                   </div>
                 </div>

@@ -7459,7 +7459,7 @@ class ContractorActivationOnboardingTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["status"], "in_progress")
-        self.assertEqual(payload["step"], "first_job")
+        self.assertEqual(payload["step"], "stripe")
         self.assertEqual(payload["trade_count"], 2)
         self.assertEqual(payload["service_radius_miles"], 50)
         self.assertFalse(payload["show_soft_stripe_prompt"])
@@ -7475,7 +7475,7 @@ class ContractorActivationOnboardingTests(TestCase):
         self.assertEqual(marked_payload["step"], "stripe")
         self.assertTrue(marked_payload["first_value_reached"])
         self.assertTrue(marked_payload["show_soft_stripe_prompt"])
-        self.assertEqual(marked_payload["activation"]["last_step_reached"], "first_job")
+        self.assertEqual(marked_payload["activation"]["last_step_reached"], "stripe")
         self.assertTrue(
             ContractorActivationEvent.objects.filter(
                 contractor=self.contractor,
