@@ -186,6 +186,13 @@ class Skill(models.Model):
 
 
 class Contractor(models.Model):
+    SERVICE_RADIUS_CHOICES = [
+        (10, "10"),
+        (25, "25"),
+        (50, "50"),
+        (100, "100"),
+    ]
+
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -198,6 +205,7 @@ class Contractor(models.Model):
     city = models.CharField(max_length=100, blank=True)
     state = models.CharField(max_length=50, blank=True)
     zip = models.CharField(max_length=20, blank=True, default="")
+    service_radius_miles = models.PositiveIntegerField(choices=SERVICE_RADIUS_CHOICES, default=25)
 
     skills = models.ManyToManyField(Skill, blank=True)
     license_number = models.CharField(max_length=50, blank=True)

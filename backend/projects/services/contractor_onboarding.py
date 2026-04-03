@@ -13,6 +13,7 @@ ONBOARDING_STEP_REGION = "region"
 ONBOARDING_STEP_FIRST_JOB = "first_job"
 ONBOARDING_STEP_STRIPE = "stripe"
 ONBOARDING_STEP_COMPLETE = "complete"
+SERVICE_RADIUS_OPTIONS = {10, 25, 50, 100}
 
 
 def _coerce_bool(value: Any) -> bool:
@@ -23,6 +24,14 @@ def _coerce_bool(value: Any) -> bool:
     if isinstance(value, str) and value.strip().lower() in {"true", "yes", "on"}:
         return True
     return False
+
+
+def _coerce_service_radius_miles(value: Any) -> int:
+    try:
+        miles = int(value)
+    except (TypeError, ValueError):
+        return 25
+    return miles if miles in SERVICE_RADIUS_OPTIONS else 25
 
 
 def contractor_profile_basics_complete(contractor: Contractor | None) -> bool:
@@ -165,6 +174,7 @@ def build_onboarding_snapshot(contractor: Contractor | None) -> dict[str, Any]:
         "service_region_label": ", ".join(
             [part for part in [str(getattr(contractor, "city", "") or "").strip(), str(getattr(contractor, "state", "") or "").strip()] if part]
         ),
+        "service_radius_miles": int(getattr(contractor, "service_radius_miles", 25) or 25),
         "trade_count": contractor.skills.count(),
         "activation": build_activation_summary(contractor),
     }
@@ -216,6 +226,12 @@ def apply_onboarding_patch(contractor: Contractor, payload: dict[str, Any]) -> C
             if getattr(contractor, field) != next_value:
                 setattr(contractor, field, next_value)
                 update_fields.append(field)
+
+    if "service_radius_miles" in payload:
+        next_radius = _coerce_service_radius_miles(payload.get("service_radius_miles"))
+        if getattr(contractor, "service_radius_miles", 25) != next_radius:
+            contractor.service_radius_miles = next_radius
+            update_fields.append("service_radius_miles")
 
     if "contractor_onboarding_step" in payload:
         next_step = str(payload.get("contractor_onboarding_step") or "").strip() or determine_onboarding_step(contractor)

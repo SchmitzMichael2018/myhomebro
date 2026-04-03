@@ -29,6 +29,7 @@ class ContractorSerializer(serializers.ModelSerializer):
             "city",
             "state",
             "zip",
+            "service_radius_miles",
 
             # License
             "license_number",

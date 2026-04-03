@@ -18,6 +18,7 @@ const SKILL_OPTIONS = [
   "Masonry","Roofing","Windows","Drywall","Tile","Plumbing","Electrical",
   "Painting","Landscaping","Flooring","HVAC","Carpentry","Concrete","Siding","Insulation",
 ];
+const SERVICE_RADIUS_OPTIONS = [10, 25, 50, 100];
 
 function isAiProActive() {
   return true;
@@ -131,6 +132,7 @@ export default function ContractorProfile() {
     city: "",
     state: "",
     zip: "",
+    service_radius_miles: 25,
     license_number: "",
     license_expiration_date: "",
     skills: [],
@@ -269,6 +271,7 @@ export default function ContractorProfile() {
           city: data.city || "",
           state: data.state || "",
           zip: data.zip || "",
+          service_radius_miles: Number(data.service_radius_miles || 25),
           license_number: data.license_number || "",
           license_expiration_date:
             (data.license_expiration_date || data.license_expiration || "").slice(0, 10),
@@ -404,6 +407,7 @@ export default function ContractorProfile() {
 
       // ✅ ZIP: backend field is literally "zip"
       fd.append("zip", (form.zip || "").trim());
+      fd.append("service_radius_miles", String(form.service_radius_miles || 25));
 
       fd.append("license_number", form.license_number || "");
       if (form.license_expiration_date) {
@@ -770,7 +774,27 @@ export default function ContractorProfile() {
             />
           </div>
 
-          <div className="md:col-span-3">
+          <div>
+            <label className="block text-sm font-semibold mb-1">Service Range (miles)</label>
+            <select
+              className="w-full h-10 rounded border border-slate-300 px-3 bg-white"
+              value={String(form.service_radius_miles || 25)}
+              onChange={(e) =>
+                setForm((current) => ({
+                  ...current,
+                  service_radius_miles: Number(e.target.value || 25),
+                }))
+              }
+            >
+              {SERVICE_RADIUS_OPTIONS.map((miles) => (
+                <option key={miles} value={miles}>
+                  {miles}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="md:col-span-2">
             <label className="block text-sm font-semibold mb-1">Company Logo</label>
             <input type="file" accept="image/*" onChange={onLogo} />
             {logoPreview ? (
@@ -781,6 +805,9 @@ export default function ContractorProfile() {
               />
             ) : null}
           </div>
+        </div>
+        <div className="mt-2 text-xs text-slate-600">
+          Your ZIP is used as the center of your service area.
         </div>
 
         {/* Skills */}

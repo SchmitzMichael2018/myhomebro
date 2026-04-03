@@ -7450,6 +7450,7 @@ class ContractorActivationOnboardingTests(TestCase):
                 "city": "San Antonio",
                 "state": "TX",
                 "zip": "78205",
+                "service_radius_miles": 50,
                 "skills": ["HVAC", "Inspection"],
             },
             format="json",
@@ -7460,6 +7461,7 @@ class ContractorActivationOnboardingTests(TestCase):
         self.assertEqual(payload["status"], "in_progress")
         self.assertEqual(payload["step"], "first_job")
         self.assertEqual(payload["trade_count"], 2)
+        self.assertEqual(payload["service_radius_miles"], 50)
         self.assertFalse(payload["show_soft_stripe_prompt"])
 
         mark_response = self.client.patch(
@@ -7495,7 +7497,8 @@ class ContractorActivationOnboardingTests(TestCase):
     def test_contractor_me_exposes_onboarding_snapshot(self):
         self.contractor.city = "San Antonio"
         self.contractor.state = "TX"
-        self.contractor.save(update_fields=["city", "state"])
+        self.contractor.service_radius_miles = 100
+        self.contractor.save(update_fields=["city", "state", "service_radius_miles"])
 
         response = self.client.get("/api/projects/contractors/me/")
 
@@ -7503,6 +7506,8 @@ class ContractorActivationOnboardingTests(TestCase):
         payload = response.json()
         self.assertIn("onboarding", payload)
         self.assertIn("contractor_onboarding_status", payload)
+        self.assertEqual(payload["service_radius_miles"], 100)
+        self.assertEqual(payload["onboarding"]["service_radius_miles"], 100)
         self.assertEqual(payload["onboarding"]["step"], "welcome")
 
     def test_onboarding_event_endpoint_tracks_activation_event(self):

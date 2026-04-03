@@ -11,7 +11,11 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from projects.models import Contractor, Skill
 from projects.services.compliance import get_profile_compliance_snapshot, sync_legacy_contractor_compliance_records
-from projects.services.contractor_onboarding import build_onboarding_snapshot, update_onboarding_progress
+from projects.services.contractor_onboarding import (
+    build_onboarding_snapshot,
+    update_onboarding_progress,
+    _coerce_service_radius_miles,
+)
 from projects.services.sms_automation import build_sms_automation_summary
 from projects.services.sms_service import get_sms_status_payload
 
@@ -123,6 +127,7 @@ class ContractorMeView(APIView):
             "city": getattr(c, "city", ""),
             "state": getattr(c, "state", ""),
             "zip": getattr(c, "zip", ""),  # ✅ FIX: include zip in /me payload
+            "service_radius_miles": int(getattr(c, "service_radius_miles", 25) or 25),
 
             "license_number": c.license_number,
             "license_expiration": _safe_dt(c.license_expiration),
@@ -223,6 +228,9 @@ class ContractorMeView(APIView):
             ]:
                 if f in data:
                     setattr(c, f, data.get(f))
+
+            if "service_radius_miles" in data:
+                c.service_radius_miles = _coerce_service_radius_miles(data.get("service_radius_miles"))
 
             if "auto_subcontractor_payouts_enabled" in data:
                 raw = data.get("auto_subcontractor_payouts_enabled")

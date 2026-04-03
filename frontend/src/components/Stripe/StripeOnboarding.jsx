@@ -27,6 +27,7 @@ const QUICK_JOB_EXAMPLES = [
   "Bathroom remodel for Mike",
   "Lawn care monthly service",
 ];
+const SERVICE_RADIUS_OPTIONS = [10, 25, 50, 100];
 
 function StripeStatusBadge({ stripeStatus }) {
   const connected = Boolean(stripeStatus?.connected);
@@ -73,6 +74,7 @@ export default function StripeOnboarding() {
     city: "",
     state: "",
     zip: "",
+    service_radius_miles: 25,
     skills: [],
   });
 
@@ -97,6 +99,7 @@ export default function StripeOnboarding() {
         city: me.city || "",
         state: me.state || "",
         zip: me.zip || "",
+        service_radius_miles: Number(me.service_radius_miles || onboardingData.service_radius_miles || 25),
         skills: Array.isArray(me.skills) ? me.skills : [],
       });
 
@@ -173,6 +176,7 @@ export default function StripeOnboarding() {
       city: form.city,
       state: form.state,
       zip: form.zip,
+      service_radius_miles: form.service_radius_miles,
       skills: form.skills,
       contractor_onboarding_step: "first_job",
     });
@@ -185,6 +189,7 @@ export default function StripeOnboarding() {
       city: form.city,
       state: form.state,
       zip: form.zip,
+      service_radius_miles: form.service_radius_miles,
       skills: form.skills,
       contractor_onboarding_step: "stripe",
       mark_first_project_started: true,
@@ -219,6 +224,7 @@ export default function StripeOnboarding() {
       city: form.city,
       state: form.state,
       zip: form.zip,
+      service_radius_miles: form.service_radius_miles,
       skills: form.skills,
       contractor_onboarding_step: "stripe",
       mark_first_project_started: true,
@@ -378,7 +384,7 @@ export default function StripeOnboarding() {
           description="This keeps template and pricing suggestions relevant without asking for a full profile up front."
           testId="contractor-onboarding-region"
         >
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-4">
             <div>
               <label className="block text-sm font-semibold text-slate-900">City</label>
               <input
@@ -417,6 +423,29 @@ export default function StripeOnboarding() {
                 placeholder="78205"
               />
             </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-900">Service Range (miles)</label>
+              <select
+                value={String(form.service_radius_miles || 25)}
+                onChange={(e) =>
+                  setForm((current) => ({
+                    ...current,
+                    service_radius_miles: Number(e.target.value || 25),
+                  }))
+                }
+                data-testid="contractor-onboarding-service-radius"
+                className="mt-1 h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm"
+              >
+                {SERVICE_RADIUS_OPTIONS.map((miles) => (
+                  <option key={miles} value={miles}>
+                    {miles}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="mt-3 text-sm text-slate-600">
+            Your ZIP is used as the center of your service area.
           </div>
           <div className="mt-5">
             <button
