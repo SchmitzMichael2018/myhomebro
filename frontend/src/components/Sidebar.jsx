@@ -137,7 +137,7 @@ export default function Sidebar({ variant = "desktop" }) {
                 : "bg-white/60 text-slate-800 border-black/10 hover:bg-white hover:text-slate-900",
             ].join(" ")
           }
-          title={title || (typeof label === "string" ? label : undefined)}
+          title={title || undefined}
         >
           <span className="text-base" aria-hidden="true">
             {emoji}
@@ -148,7 +148,7 @@ export default function Sidebar({ variant = "desktop" }) {
           <div
             id={tooltipId}
             role="tooltip"
-            className="pointer-events-none absolute inset-x-2 top-full z-20 mt-1 hidden rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 shadow-lg group-hover:block group-focus-within:block xl:block"
+            className="pointer-events-none absolute inset-x-2 top-full z-20 mt-1 invisible rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 shadow-lg opacity-0 transition-opacity duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
           >
             {resolvedHint}
           </div>
