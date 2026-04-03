@@ -123,7 +123,7 @@ export default function Sidebar({ variant = "desktop" }) {
     const resolvedHint = hint || NAV_HINTS[to];
 
     return (
-      <div className="group relative">
+      <div className="group relative z-40">
         <NavLink
           to={to}
           data-close-sidebar="1"
@@ -144,11 +144,12 @@ export default function Sidebar({ variant = "desktop" }) {
           </span>
           <span className="flex items-center">{label}</span>
         </NavLink>
+
         {resolvedHint ? (
           <div
             id={tooltipId}
             role="tooltip"
-            className="pointer-events-none absolute left-full top-1/2 z-30 ml-3 -translate-y-1/2 invisible rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 shadow-lg opacity-0 transition-opacity duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+            className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 whitespace-normal rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 shadow-lg invisible opacity-0 transition-opacity duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
           >
             {resolvedHint}
           </div>
