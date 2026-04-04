@@ -4,7 +4,11 @@
 import React, { useState } from "react";
 import api from "../api";
 
-export default function StripeOnboardingButton({ children = "Open Stripe Onboarding", className = "" }) {
+export default function StripeOnboardingButton({
+  children = "Open Stripe Onboarding",
+  className = "",
+  dataTestId,
+}) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
@@ -31,6 +35,7 @@ export default function StripeOnboardingButton({ children = "Open Stripe Onboard
     <div>
       <button
         type="button"
+        data-testid={dataTestId}
         onClick={handleClick}
         disabled={loading}
         className={`rounded bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-60 ${className}`}

@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../../api";
 import { trackOnboardingEvent } from "../../lib/onboardingAnalytics.js";
+import StripeOnboardingButton from "../StripeOnboardingButton.jsx";
 
 const TRADE_OPTIONS = [
   "HVAC",
@@ -54,7 +56,64 @@ function PrimaryCard({ eyebrow, title, description, children, testId = "" }) {
   );
 }
 
+function OnboardingStripeStep({
+  stepNumber,
+  stepTotal,
+  stripeReady,
+  statusError,
+  onBack,
+  onSkip,
+  saving,
+}) {
+  return (
+    <PrimaryCard
+      eyebrow={`Step ${Math.min(stepNumber, stepTotal)} of ${stepTotal}`}
+      title={stripeReady ? "You're ready to get paid" : "Set up payments to get paid faster"}
+      description={
+        stripeReady
+          ? "Stripe is connected. You can return here any time to manage payout settings."
+          : "You can keep exploring, but payment collection and payouts require a connected Stripe account."
+      }
+      testId="contractor-onboarding-stripe"
+    >
+      {statusError ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {statusError}
+        </div>
+      ) : null}
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <button
+          type="button"
+          onClick={onBack}
+          disabled={saving}
+          className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+        >
+          Back
+        </button>
+        <StripeOnboardingButton
+          dataTestId="contractor-onboarding-connect-stripe"
+          className="min-h-12 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+        >
+          Connect Stripe
+        </StripeOnboardingButton>
+        {!stripeReady ? (
+          <button
+            type="button"
+            data-testid="contractor-onboarding-skip-stripe"
+            onClick={onSkip}
+            disabled={saving}
+            className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            Skip for now
+          </button>
+        ) : null}
+      </div>
+    </PrimaryCard>
+  );
+}
+
 export default function StripeOnboarding() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -196,36 +255,9 @@ export default function StripeOnboarding() {
     }
   }
 
-  async function startStripeOnboarding() {
-    setStatusError("");
-    try {
-      const { data } = await api.post("/payments/onboarding/start/");
-      const url = data?.onboarding_overview_url || data?.onboarding_url || data?.url;
-      if (!url) {
-        setStatusError("Stripe onboarding link was not returned.");
-        return;
-      }
-      window.location.href = url;
-    } catch (err) {
-      console.error(err);
-      setStatusError("Unable to start Stripe onboarding.");
-    }
-  }
-
-  async function resumeStripeOnboarding() {
-    setStatusError("");
-    try {
-      const { data } = await api.post("/payments/onboarding/manage/");
-      const url = data?.manage_url || data?.url;
-      if (!url) {
-        setStatusError("Stripe resume link was not returned.");
-        return;
-      }
-      window.location.href = url;
-    } catch (err) {
-      console.error(err);
-      setStatusError("Unable to resume Stripe onboarding.");
-    }
+  async function handleSkipStripe() {
+    await dismissStripePrompt();
+    navigate("/app/dashboard");
   }
 
   const rightRailCards = useMemo(() => {
@@ -432,47 +464,15 @@ export default function StripeOnboarding() {
     }
 
     return (
-      <PrimaryCard
-        eyebrow={`Step ${Math.min(stepNumber, stepTotal)} of ${stepTotal}`}
-        title={stripeReady ? "You're ready to get paid" : "Set up payments to get paid faster"}
-        description={
-          stripeReady
-            ? "Stripe is connected. You can return here any time to manage payout settings."
-            : "You can keep exploring, but payment collection and payouts require a connected Stripe account."
-        }
-        testId="contractor-onboarding-stripe"
-      >
-        {statusError ? (
-          <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-            {statusError}
-          </div>
-        ) : null}
-        {renderStepActions({
-          onBack: () => handleBack("region"),
-          children: (
-            <>
-              <button
-                type="button"
-                data-testid="contractor-onboarding-connect-stripe"
-                onClick={stripeStatus?.connected ? resumeStripeOnboarding : startStripeOnboarding}
-                className="min-h-12 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800"
-              >
-                {stripeStatus?.connected ? "Resume setup" : "Connect Stripe"}
-              </button>
-              {!stripeReady ? (
-                <button
-                  type="button"
-                  data-testid="contractor-onboarding-skip-stripe"
-                  onClick={dismissStripePrompt}
-                  className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Skip for now
-                </button>
-              ) : null}
-            </>
-          ),
-        })}
-      </PrimaryCard>
+      <OnboardingStripeStep
+        stepNumber={stepNumber}
+        stepTotal={stepTotal}
+        stripeReady={stripeReady}
+        statusError={statusError}
+        onBack={() => handleBack("region")}
+        onSkip={handleSkipStripe}
+        saving={saving}
+      />
     );
   }
 
