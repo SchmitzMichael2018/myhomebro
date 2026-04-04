@@ -203,6 +203,7 @@ test('contractor onboarding supports activation-first progression and soft Strip
   await page.getByRole('button', { name: 'HVAC' }).click();
   await page.getByTestId('contractor-onboarding-save-basics').click();
   await expect(page.getByTestId('contractor-onboarding-region')).toContainText('Set your service area');
+  await expect(page.getByTestId('contractor-onboarding-region')).toContainText('Step 2 of 3');
   await expect(page.getByRole('button', { name: 'Back' })).toBeVisible();
 
   await page.getByTestId('contractor-onboarding-state').selectOption('TX');

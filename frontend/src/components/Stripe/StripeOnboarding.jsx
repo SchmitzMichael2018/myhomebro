@@ -121,7 +121,7 @@ export default function StripeOnboarding() {
   const [onboarding, setOnboarding] = useState(null);
   const [meData, setMeData] = useState(null);
   const [stripeStatus, setStripeStatus] = useState(null);
-  const [localStep, setLocalStep] = useState("");
+  const [localStep, setLocalStep] = useState(null);
   const [form, setForm] = useState({
     business_name: "",
     city: "",
@@ -147,6 +147,7 @@ export default function StripeOnboarding() {
       setMeData(me);
       setOnboarding(onboardingData);
       setStripeStatus(stripe);
+      setLocalStep((current) => current || onboardingData?.step || "welcome");
       setForm({
         business_name: me.business_name || "",
         city: me.city || "",
@@ -221,7 +222,7 @@ export default function StripeOnboarding() {
   }
 
   async function handleContinueTrades() {
-    setLocalStep("");
+    setLocalStep("region");
     await patchOnboarding({
       business_name: form.business_name,
       skills: form.skills,
@@ -230,7 +231,7 @@ export default function StripeOnboarding() {
   }
 
   async function handleContinueRegion() {
-    setLocalStep("");
+    setLocalStep("stripe");
     await patchOnboarding({
       business_name: form.business_name,
       city: form.city,
