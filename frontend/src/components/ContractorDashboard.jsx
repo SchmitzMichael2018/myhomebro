@@ -1588,7 +1588,7 @@ export default function ContractorDashboard() {
   const showActivityFeed = !isEmployee && activityFeed.length > 0;
 
   return (
-    <PageShell title="Dashboard" subtitle={headerSubtitle} showLogo>
+    <PageShell title="Dashboard" subtitle={headerSubtitle} showLogo titleClassName="text-yellow-300">
       <div className="space-y-3.5 rounded-[30px] bg-white/[0.03] px-1 py-0.5 lg:-mx-1 xl:-mx-2 2xl:-mx-3 backdrop-blur-[1px]">
 
       {!isEmployee ? (

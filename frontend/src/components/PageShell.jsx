@@ -8,7 +8,13 @@ import { useMobileSidebar } from "./MobileSidebarShell.jsx";
  * - Title and subtitle with increased sizes
  * - Mobile: header hamburger opens the sidebar overlay
  */
-export default function PageShell({ title, subtitle, children, showLogo = true }) {
+export default function PageShell({
+  title,
+  subtitle,
+  children,
+  showLogo = true,
+  titleClassName = "",
+}) {
   const { openSidebar, registerHeaderHamburger, unregisterHeaderHamburger } =
     useMobileSidebar();
 
@@ -44,7 +50,7 @@ export default function PageShell({ title, subtitle, children, showLogo = true }
             ) : null}
 
             <div style={{ minWidth: 0 }}>
-              {title ? <h1 className="mhb-page-title">{title}</h1> : null}
+              {title ? <h1 className={`mhb-page-title ${titleClassName}`.trim()}>{title}</h1> : null}
               {subtitle ? <div className="mhb-page-subtitle">{subtitle}</div> : null}
             </div>
           </div>
