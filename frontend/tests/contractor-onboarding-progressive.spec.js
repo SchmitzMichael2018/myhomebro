@@ -216,6 +216,11 @@ test('contractor onboarding supports activation-first progression and soft Strip
   await expect(page.getByRole('button', { name: 'Back' })).toBeVisible();
   await expect(page.getByTestId('contractor-onboarding-connect-stripe')).toBeVisible();
   await expect(page.getByTestId('contractor-onboarding-skip-stripe')).toBeVisible();
+  await page.getByRole('button', { name: 'Back' }).click();
+  await expect(page.getByTestId('contractor-onboarding-region')).toContainText(
+    'Step 2 of 3'
+  );
+  await expect(page.getByTestId('contractor-onboarding-state')).toHaveValue('TX');
   expect(activationEvents.some((item) => item.event_type === 'ai_used_for_project')).toBeFalsy();
 
   onboardingPayload = {

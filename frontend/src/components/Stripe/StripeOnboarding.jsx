@@ -121,6 +121,7 @@ export default function StripeOnboarding() {
   const [onboarding, setOnboarding] = useState(null);
   const [meData, setMeData] = useState(null);
   const [stripeStatus, setStripeStatus] = useState(null);
+  const [localStep, setLocalStep] = useState("");
   const [form, setForm] = useState({
     business_name: "",
     city: "",
@@ -175,9 +176,15 @@ export default function StripeOnboarding() {
     loadAll();
   }, []);
 
-  const currentStep = onboarding?.step || "welcome";
-  const stepNumber = Number(onboarding?.step_number || 1);
-  const stepTotal = Number(onboarding?.step_total || 3);
+  const currentStep = localStep || onboarding?.step || "welcome";
+  const stepNumberMap = {
+    welcome: 1,
+    region: 2,
+    stripe: 3,
+    complete: 3,
+  };
+  const stepNumber = stepNumberMap[currentStep] || Number(onboarding?.step_number || 1);
+  const stepTotal = 3;
   const stripeReady = Boolean(onboarding?.stripe_ready || stripeStatus?.connected);
 
   function toggleSkill(skill) {
@@ -214,6 +221,7 @@ export default function StripeOnboarding() {
   }
 
   async function handleContinueTrades() {
+    setLocalStep("");
     await patchOnboarding({
       business_name: form.business_name,
       skills: form.skills,
@@ -222,6 +230,7 @@ export default function StripeOnboarding() {
   }
 
   async function handleContinueRegion() {
+    setLocalStep("");
     await patchOnboarding({
       business_name: form.business_name,
       city: form.city,
@@ -233,16 +242,9 @@ export default function StripeOnboarding() {
     });
   }
 
-  async function handleBack(targetStep) {
-    await patchOnboarding({
-      business_name: form.business_name,
-      city: form.city,
-      state: form.state,
-      zip: form.zip,
-      service_radius_miles: form.service_radius_miles,
-      skills: form.skills,
-      contractor_onboarding_step: targetStep,
-    });
+  function handleBack(targetStep) {
+    setStatusError("");
+    setLocalStep(targetStep);
   }
 
   async function dismissStripePrompt() {
@@ -256,6 +258,7 @@ export default function StripeOnboarding() {
   }
 
   async function handleSkipStripe() {
+    setLocalStep("");
     await dismissStripePrompt();
     navigate("/app/dashboard");
   }
