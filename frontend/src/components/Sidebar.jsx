@@ -3,7 +3,7 @@
 // - Default export remains DESKTOP sidebar (hidden on mobile) to avoid desktop breakage
 // - Add `variant="plain"` to render sidebar CONTENT only (for mobile overlay shell)
 
-import React, { useCallback, useMemo, useState, useEffect } from "react";
+import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import api, { getAgreementClosureStatus, closeAndArchiveAgreement } from "../api";
@@ -26,7 +26,6 @@ import {
   Link as LinkIcon,
   MessageSquareWarning,
   SearchCheck,
-  Settings,
   ShieldCheck,
   SquareKanban,
   Users,
@@ -35,25 +34,26 @@ import {
 } from "lucide-react";
 
 const NAV_HINTS = {
-  "/app/dashboard": "See urgent work, next actions, and current project status.",
-  "/app/assistant": "Use AI to start work faster and get guided next steps.",
-  "/app/business": "Review revenue, alerts, payouts, and business performance.",
-  "/app/reviewer/queue": "Open items that still need approval or review.",
-  "/app/agreements": "Manage drafts, signatures, and active agreements.",
-  "/app/templates": "Reuse proven agreement structures and estimate starting points.",
-  "/app/milestones": "Track work progress, approvals, and invoice readiness.",
-  "/app/subcontractors": "Manage subcontractor relationships and assignment readiness.",
-  "/app/public-presence": "Control how your business appears to customers online.",
-  "/app/assignments": "Review who owns each job, task, or handoff.",
-  "/app/team-schedule": "See team availability and upcoming field work.",
-  "/app/team": "Manage team members, roles, and internal access.",
-  "/app/invoices": "Review invoices, payouts, and payment status.",
-  "/app/customers": "Keep track of customer relationships and recent additions.",
-  "/app/calendar": "See upcoming dates, work windows, and due items.",
-  "/app/expenses": "Log expenses, receipts, and billable charges.",
-  "/app/disputes": "Respond to disputes and track resolution status.",
-  "/app/profile": "Update your business profile, preferences, and account settings.",
-  "/app/onboarding": "Resume setup steps like Stripe and activation tasks.",
+  "/app/dashboard": "See what needs attention and what to do next",
+  "/app/assistant": "Capture new leads and start projects quickly",
+  "/app/business": "View revenue, activity, and business performance",
+  "/app/reviewer/queue": "Review items waiting on your action or approval",
+  "/app/agreements": "Create and manage project agreements, signatures, and funding",
+  "/app/templates": "Create and manage project agreements, signatures, and funding",
+  "/app/milestones": "Track active work and what's ready to invoice",
+  "/app/subcontractors": "Manage your team, subcontractors, and assignments",
+  "/app/public-presence": "Showcase your work and build trust with customers",
+  "/app/assignments": "Track work assigned to you and your team",
+  "/app/team-schedule": "View upcoming work, deadlines, and project timelines",
+  "/app/team": "Manage your team, subcontractors, and assignments",
+  "/app/invoices": "Send payment requests and track approvals, disputes, and payouts",
+  "/app/customers": "View and manage your clients and project history",
+  "/app/calendar": "View upcoming work, deadlines, and project timelines",
+  "/app/expenses": "Track project expenses and job costs",
+  "/app/disputes": "Manage issues, disagreements, and resolutions",
+  "/app/profile": "Manage your account, preferences, and payment setup",
+  "/app/onboarding": "Manage your account, preferences, and payment setup",
+  "/app/intake/new": "Capture new leads and start projects quickly",
 };
 
 /**
@@ -82,6 +82,8 @@ export default function Sidebar({ variant = "desktop" }) {
   const [closingOut, setClosingOut] = useState(false);
   const [stripeRequirement, setStripeRequirement] = useState(null);
   const [navHint, setNavHint] = useState(null);
+  const showTooltipTimeoutRef = useRef(null);
+  const hideTooltipTimeoutRef = useRef(null);
 
   const APP_BASE = "/app";
   const EMP_BASE = "/app/employee";
@@ -141,27 +143,51 @@ export default function Sidebar({ variant = "desktop" }) {
     return "Contractor Console";
   }, [isAdmin, isEmployee, isSubcontractor]);
 
-  const hideNavHint = useCallback(() => {
-    setNavHint(null);
+  const clearTooltipTimers = useCallback(() => {
+    if (showTooltipTimeoutRef.current) {
+      window.clearTimeout(showTooltipTimeoutRef.current);
+      showTooltipTimeoutRef.current = null;
+    }
+    if (hideTooltipTimeoutRef.current) {
+      window.clearTimeout(hideTooltipTimeoutRef.current);
+      hideTooltipTimeoutRef.current = null;
+    }
   }, []);
 
-  const showNavHint = useCallback((event, hintText, tooltipId) => {
+  const hideNavHint = useCallback((delay = 70) => {
+    clearTooltipTimers();
+    hideTooltipTimeoutRef.current = window.setTimeout(() => {
+      setNavHint(null);
+      hideTooltipTimeoutRef.current = null;
+    }, delay);
+  }, [clearTooltipTimers]);
+
+  const showNavHint = useCallback((event, hintText, tooltipId, delay = 120) => {
     if (!hintText || typeof window === "undefined") return;
+
+    clearTooltipTimers();
 
     const rect = event.currentTarget.getBoundingClientRect();
     const estimatedWidth = 288; // ~w-72
+    const estimatedHeight = 72;
     const gutter = 12;
     const fallbackLeft = 16;
     const maxLeft = Math.max(fallbackLeft, window.innerWidth - estimatedWidth - 16);
     const left = Math.min(rect.right + gutter, maxLeft);
+    const minTop = 16 + estimatedHeight / 2;
+    const maxTop = Math.max(minTop, window.innerHeight - 16 - estimatedHeight / 2);
+    const top = Math.min(Math.max(rect.top + rect.height / 2, minTop), maxTop);
 
-    setNavHint({
-      id: tooltipId,
-      text: hintText,
-      top: rect.top + rect.height / 2,
-      left,
-    });
-  }, []);
+    showTooltipTimeoutRef.current = window.setTimeout(() => {
+      setNavHint({
+        id: tooltipId,
+        text: hintText,
+        top,
+        left,
+      });
+      showTooltipTimeoutRef.current = null;
+    }, delay);
+  }, [clearTooltipTimers]);
 
   useEffect(() => {
     setNavHint(null);
@@ -180,6 +206,8 @@ export default function Sidebar({ variant = "desktop" }) {
       window.removeEventListener("resize", handleViewportChange);
     };
   }, [navHint]);
+
+  useEffect(() => () => clearTooltipTimers(), [clearTooltipTimers]);
 
   // Primary item (MAIN section)
   const Item = ({ to, label, icon: Icon, emoji, title, hint }) => {
@@ -203,10 +231,10 @@ export default function Sidebar({ variant = "desktop" }) {
             ].join(" ")
           }
           onMouseEnter={(event) => showNavHint(event, resolvedHint, tooltipId)}
-          onFocus={(event) => showNavHint(event, resolvedHint, tooltipId)}
-          onMouseLeave={hideNavHint}
-          onBlur={hideNavHint}
-          onClick={hideNavHint}
+          onFocus={(event) => showNavHint(event, resolvedHint, tooltipId, 0)}
+          onMouseLeave={() => hideNavHint()}
+          onBlur={() => hideNavHint(0)}
+          onClick={() => hideNavHint(0)}
           title={title || undefined}
         >
           <span aria-hidden="true">
@@ -223,23 +251,6 @@ export default function Sidebar({ variant = "desktop" }) {
           <span className="min-w-0 truncate">{label}</span>
         </NavLink>
 
-        {navHint?.id === tooltipId && typeof document !== "undefined"
-          ? createPortal(
-              <div
-                id={tooltipId}
-                role="tooltip"
-                className="pointer-events-none fixed z-[1000] w-72 max-w-[min(18rem,calc(100vw-2rem))] whitespace-normal rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 shadow-lg"
-                style={{
-                  top: `${navHint.top}px`,
-                  left: `${navHint.left}px`,
-                  transform: "translateY(-50%)",
-                }}
-              >
-                {navHint.text}
-              </div>,
-              document.body
-            )
-          : null}
       </div>
     );
   };
@@ -414,6 +425,24 @@ export default function Sidebar({ variant = "desktop" }) {
   // --- Inner content (reused by both desktop and mobile overlay) ---
   const inner = (
     <>
+      {navHint && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              id={navHint.id}
+              role="tooltip"
+              className="pointer-events-none fixed z-[1400] w-72 max-w-[min(18rem,calc(100vw-2rem))] whitespace-normal rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium leading-5 text-slate-700 shadow-[0_18px_44px_rgba(15,23,42,0.22)] ring-1 ring-black/5"
+              style={{
+                top: `${navHint.top}px`,
+                left: `${navHint.left}px`,
+                transform: "translateY(-50%)",
+              }}
+            >
+              {navHint.text}
+            </div>,
+            document.body
+          )
+        : null}
+
       {showCloseoutModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
