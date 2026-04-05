@@ -12,6 +12,27 @@ import { useWhoAmI } from "../hooks/useWhoAmI.js";
 import RefundEscrowModal from "./RefundEscrowModal";
 import StripeOnboardingStatus from "./StripeOnboardingStatus";
 import { useAssistantDock } from "./AssistantDock.jsx";
+import {
+  Bot,
+  BriefcaseBusiness,
+  CalendarDays,
+  ClipboardList,
+  CreditCard,
+  FileSignature,
+  Globe,
+  Gauge,
+  HandCoins,
+  LayoutDashboard,
+  Link as LinkIcon,
+  MessageSquareWarning,
+  SearchCheck,
+  Settings,
+  ShieldCheck,
+  SquareKanban,
+  Users,
+  UserRound,
+  Wrench,
+} from "lucide-react";
 
 const NAV_HINTS = {
   "/app/dashboard": "See urgent work, next actions, and current project status.",
@@ -161,9 +182,10 @@ export default function Sidebar({ variant = "desktop" }) {
   }, [navHint]);
 
   // Primary item (MAIN section)
-  const Item = ({ to, label, emoji, title, hint }) => {
+  const Item = ({ to, label, icon: Icon, emoji, title, hint }) => {
     const tooltipId = React.useId();
     const resolvedHint = hint || NAV_HINTS[to];
+    const isCurrent = location.pathname === to || location.pathname.startsWith(`${to}/`);
 
     return (
       <div className="relative">
@@ -173,7 +195,7 @@ export default function Sidebar({ variant = "desktop" }) {
           aria-describedby={navHint?.id === tooltipId ? tooltipId : undefined}
           className={({ isActive }) =>
             [
-              "flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition",
+              "flex min-w-0 overflow-hidden items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition",
               "border",
               isActive
                 ? "bg-slate-900 text-white border-black/10 shadow-sm"
@@ -187,10 +209,18 @@ export default function Sidebar({ variant = "desktop" }) {
           onClick={hideNavHint}
           title={title || undefined}
         >
-          <span className="text-base" aria-hidden="true">
-            {emoji}
+          <span aria-hidden="true">
+            <span
+              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
+                isCurrent
+                  ? "border-white/15 bg-white/10 text-white"
+                  : "border-slate-200 bg-slate-50 text-slate-500"
+              }`}
+            >
+              {Icon ? <Icon size={16} strokeWidth={2} /> : <span className="text-base leading-none">{emoji}</span>}
+            </span>
           </span>
-          <span className="flex items-center">{label}</span>
+          <span className="min-w-0 truncate">{label}</span>
         </NavLink>
 
         {navHint?.id === tooltipId && typeof document !== "undefined"
@@ -238,7 +268,7 @@ export default function Sidebar({ variant = "desktop" }) {
     if (isAdmin) {
       return (
         <>
-          <Item to={`${APP_BASE}/admin`} label="Admin" emoji="🛠️" />
+          <Item to={`${APP_BASE}/admin`} label="Admin" icon={ShieldCheck} />
           {isOnAdminRoute && (
             <div className="mt-2 space-y-1">
               <SubItem to="/app/admin" label="Overview" />
@@ -259,13 +289,13 @@ export default function Sidebar({ variant = "desktop" }) {
     if (isEmployee) {
       return (
         <>
-          <Item to={`${EMP_BASE}/dashboard`} label="Dashboard" emoji="🏠" />
+          <Item to={`${EMP_BASE}/dashboard`} label="Dashboard" icon={LayoutDashboard} />
           {canAccessReviewerQueue ? (
-            <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" emoji="🔍" />
+            <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} />
           ) : null}
-          <Item to={`${EMP_BASE}/agreements`} label="My Agreements" emoji="📄" />
-          <Item to={`${EMP_BASE}/milestones`} label="Milestones" emoji="🧩" />
-          <Item to={`${EMP_BASE}/calendar`} label="Calendar" emoji="🗓️" />
+          <Item to={`${EMP_BASE}/agreements`} label="My Agreements" icon={FileSignature} />
+          <Item to={`${EMP_BASE}/milestones`} label="Milestones" icon={SquareKanban} />
+          <Item to={`${EMP_BASE}/calendar`} label="Calendar" icon={CalendarDays} />
         </>
       );
     }
@@ -273,41 +303,41 @@ export default function Sidebar({ variant = "desktop" }) {
     if (isSubcontractor) {
       return (
         <>
-          <Item to={`${APP_BASE}/subcontractor/assigned-work`} label="My Assigned Work" emoji="🧰" />
+          <Item to={`${APP_BASE}/subcontractor/assigned-work`} label="My Assigned Work" icon={Wrench} />
         </>
       );
     }
 
     return (
       <>
-        <Item to={`${APP_BASE}/dashboard`} label="Dashboard" emoji="🏠" />
-        <Item to={`${APP_BASE}/assistant`} label="Start with AI" emoji="✨" />
-        <Item to={`${APP_BASE}/business`} label="Business Dashboard" emoji="📈" />
-        <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" emoji="🔍" />
-        <Item to={`${APP_BASE}/agreements`} label="Agreements" emoji="📄" />
-        <Item to={`${APP_BASE}/templates`} label="Templates" emoji="🧱" />
-        <Item to={`${APP_BASE}/milestones`} label="Milestones" emoji="🧩" />
-        <Item to={`${APP_BASE}/subcontractors`} label="Subcontractors" emoji="🧰" />
-        <Item to={`${APP_BASE}/public-presence`} label="Public Presence" emoji="🌐" />
-        <Item to={`${APP_BASE}/assignments`} label="Assignments" emoji="🧭" />
-        <Item to={`${APP_BASE}/team-schedule`} label="Team Schedule" emoji="🧑‍🏭" />
-        <Item to={`${APP_BASE}/team`} label="Team" emoji="🧑‍🤝‍🧑" />
-        <Item to={`${APP_BASE}/invoices`} label="Invoices" emoji="💳" />
-        <Item to={`${APP_BASE}/customers`} label="Customers" emoji="👥" />
-        <Item to={`${APP_BASE}/calendar`} label="Calendar" emoji="🗓️" />
-        <Item to={`${APP_BASE}/expenses`} label="Expenses" emoji="📊" />
-        <Item to={`${APP_BASE}/disputes`} label="Disputes" emoji="⚖️" />
+        <Item to={`${APP_BASE}/dashboard`} label="Dashboard" icon={LayoutDashboard} />
+        <Item to={`${APP_BASE}/assistant`} label="Start with AI" icon={Bot} />
+        <Item to={`${APP_BASE}/business`} label="Business Dashboard" icon={Gauge} />
+        <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} />
+        <Item to={`${APP_BASE}/agreements`} label="Agreements" icon={FileSignature} />
+        <Item to={`${APP_BASE}/templates`} label="Templates" icon={ClipboardList} />
+        <Item to={`${APP_BASE}/milestones`} label="Milestones" icon={SquareKanban} />
+        <Item to={`${APP_BASE}/subcontractors`} label="Subcontractors" icon={Wrench} />
+        <Item to={`${APP_BASE}/public-presence`} label="Public Presence" icon={Globe} />
+        <Item to={`${APP_BASE}/assignments`} label="Assignments" icon={BriefcaseBusiness} />
+        <Item to={`${APP_BASE}/team-schedule`} label="Team Schedule" icon={CalendarDays} />
+        <Item to={`${APP_BASE}/team`} label="Team" icon={Users} />
+        <Item to={`${APP_BASE}/invoices`} label="Invoices" icon={CreditCard} />
+        <Item to={`${APP_BASE}/customers`} label="Customers" icon={Users} />
+        <Item to={`${APP_BASE}/calendar`} label="Calendar" icon={CalendarDays} />
+        <Item to={`${APP_BASE}/expenses`} label="Expenses" icon={HandCoins} />
+        <Item to={`${APP_BASE}/disputes`} label="Disputes" icon={MessageSquareWarning} />
       </>
     );
   }, [canAccessReviewerQueue, isEmployee, isAdmin, isOnAdminRoute, isSubcontractor]);
 
   const accountNav = useMemo(() => {
     if (isAdmin) {
-      return <Item to={`${APP_BASE}/admin`} label="Admin Home" emoji="🛠️" />;
+      return <Item to={`${APP_BASE}/admin`} label="Admin Home" icon={ShieldCheck} />;
     }
 
     if (isEmployee) {
-      return <Item to={`${EMP_BASE}/profile`} label="My Profile" emoji="👤" />;
+      return <Item to={`${EMP_BASE}/profile`} label="My Profile" icon={UserRound} />;
     }
 
     if (isSubcontractor) {
@@ -316,10 +346,10 @@ export default function Sidebar({ variant = "desktop" }) {
 
     return (
       <>
-        <Item to={`${APP_BASE}/profile`} label="My Profile" emoji="👤" />
+        <Item to={`${APP_BASE}/profile`} label="My Profile" icon={UserRound} />
         <Item
           to={`${APP_BASE}/onboarding`}
-          emoji="🔗"
+          icon={LinkIcon}
           label={
             <>
               <span>Stripe Onboarding</span>
@@ -562,12 +592,12 @@ export default function Sidebar({ variant = "desktop" }) {
   );
 
   if (variant === "plain") {
-    return <div className="flex min-h-screen flex-col">{inner}</div>;
+    return <div className="flex min-h-screen max-w-full overflow-x-hidden flex-col">{inner}</div>;
   }
 
   return (
     <aside
-      className="hidden border-r border-black/10 md:flex md:w-60 md:flex-col lg:w-64"
+      className="hidden max-w-full overflow-x-hidden border-r border-black/10 md:flex md:w-60 md:flex-col lg:w-64"
       style={{
         minHeight: "100vh",
         background: "rgba(255,255,255,0.72)",

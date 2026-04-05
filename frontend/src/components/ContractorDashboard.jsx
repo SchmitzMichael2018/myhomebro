@@ -360,6 +360,63 @@ function ActionButton({ icon: Icon, label, onClick, primary, hint }) {
   );
 }
 
+function FlowMetricButton({
+  icon: Icon,
+  label,
+  description,
+  count,
+  amount,
+  onClick,
+  emphasized = false,
+  testId,
+}) {
+  const countText =
+    typeof count === "number" && Number.isFinite(count) ? `${count} ${count === 1 ? "item" : "items"}` : null;
+  const amountText =
+    typeof amount === "number" && Number.isFinite(amount) ? currency(amount) : null;
+
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      onClick={onClick}
+      className={`flex w-full items-start gap-3 rounded-2xl border px-4 py-3 text-left transition focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 ${
+        emphasized
+          ? "border-slate-900 bg-slate-950 text-white shadow-[0_14px_34px_rgba(15,23,42,0.18)] hover:bg-slate-900"
+          : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 hover:bg-slate-50"
+      }`}
+    >
+      <div
+        className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${
+          emphasized
+            ? "border-white/15 bg-white/10 text-white"
+            : "border-slate-200 bg-slate-50 text-slate-700"
+        }`}
+      >
+        {Icon ? <Icon size={18} /> : null}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div className={`text-sm font-semibold ${emphasized ? "text-white" : "text-slate-950"}`}>
+            {label}
+          </div>
+          <div className={`text-xs font-semibold ${emphasized ? "text-slate-200" : "text-slate-500"}`}>
+            {[countText, amountText].filter(Boolean).join(" • ")}
+          </div>
+        </div>
+        {description ? (
+          <div className={`mt-1 text-sm ${emphasized ? "text-slate-100" : "text-slate-600"}`}>
+            {description}
+          </div>
+        ) : null}
+      </div>
+      <div className={`shrink-0 pt-0.5 text-xs font-semibold uppercase tracking-[0.16em] ${emphasized ? "text-slate-200" : "text-slate-500"}`}>
+        Open
+      </div>
+    </button>
+  );
+}
+
 
 /* ========================================================================== */
 /* =================  INLINE: ExpenseRequestModal (no import)  ============== */
@@ -1585,145 +1642,382 @@ export default function ContractorDashboard() {
 
     return mapped.slice(0, 3);
   }, [dashboardNextSteps, iStats.disputedCount, iStats.pendingCount]);
+  const greetingName = useMemo(() => {
+    const raw =
+      who?.first_name ||
+      contractorProfile?.first_name ||
+      contractorProfile?.display_name ||
+      contractorProfile?.business_name ||
+      who?.name ||
+      "";
+    return String(raw).trim().split(" ")[0] || "";
+  }, [contractorProfile, who]);
+  const hasUrgentSchedule = dueSchedule.late.count > 0 || dueSchedule.today.count > 0;
+  const scheduleHasItems =
+    dueSchedule.late.count > 0 ||
+    dueSchedule.today.count > 0 ||
+    dueSchedule.tomorrow.count > 0 ||
+    dueSchedule.week.count > 0;
+  const workMoneyConnectorLabel =
+    mStats.readyCount > 0
+      ? `${mStats.readyCount} ${mStats.readyCount === 1 ? "milestone" : "milestones"} ready to invoice`
+      : iStats.pendingCount > 0
+      ? `${iStats.pendingCount} ${iStats.pendingCount === 1 ? "invoice" : "invoices"} awaiting customer`
+      : "Completed work flows into invoices and payout";
+  const heroBand = useMemo(() => {
+    const hasOperationalPressure =
+      needsAttentionItems.length > 0 ||
+      dueSchedule.late.count > 0 ||
+      dueSchedule.today.count > 0 ||
+      mStats.readyCount > 0 ||
+      iStats.pendingCount > 0 ||
+      iStats.approvedCount > 0;
+
+    const looksLikeSetup =
+      !hasProjectsStarted ||
+      !isOnboardingComplete ||
+      /onboard|setup|stripe|profile|first agreement/i.test(
+        `${heroAction.title || ""} ${heroAction.message || ""}`
+      );
+
+    if (!nextBestAction?.title && hasProjectsStarted && !hasOperationalPressure) {
+      return {
+        label: "ALL CAUGHT UP",
+        title: "Nothing urgent is blocking work or payment right now.",
+        message: "Your active work and invoices look clear. Check recent activity if you want a quick status sweep.",
+        ctaLabel: "",
+        quiet: true,
+        setup: false,
+      };
+    }
+
+    return {
+      label: "NEXT ACTION",
+      title: heroAction.title,
+      message: heroAction.message,
+      rationale: heroAction.rationale,
+      ctaLabel: heroAction.ctaLabel,
+      navigationTarget: heroAction.navigationTarget,
+      action: heroAction.action,
+      quiet: false,
+      setup: looksLikeSetup,
+    };
+  }, [
+    dueSchedule.late.count,
+    dueSchedule.today.count,
+    hasProjectsStarted,
+    heroAction,
+    iStats.approvedCount,
+    iStats.pendingCount,
+    isOnboardingComplete,
+    mStats.readyCount,
+    needsAttentionItems.length,
+    nextBestAction?.title,
+  ]);
   const showActivityFeed = !isEmployee && activityFeed.length > 0;
 
   return (
-    <PageShell title="Dashboard" subtitle={headerSubtitle} showLogo titleClassName="text-yellow-300">
-      <div className="space-y-3.5 rounded-[30px] bg-white/[0.03] px-1 py-0.5 lg:-mx-1 xl:-mx-2 2xl:-mx-3 backdrop-blur-[1px]">
+    <PageShell
+      title="Dashboard"
+      subtitle={greetingName ? `Good to see you, ${greetingName}.` : null}
+      showLogo={false}
+      compact
+    >
+      <div className="space-y-5">
 
       {!isEmployee ? (
-        <div className="space-y-6">
-          <div className="grid items-start gap-4 xl:grid-cols-2">
-            <DashboardSection
-              title="Next Big Action"
-              subtitle="What needs your attention right now and the single highest-value next move."
-            >
-              <DashboardCard
-                testId="dashboard-next-best-action"
-                className="border-slate-200/90 p-4 shadow-[0_16px_38px_rgba(15,23,42,0.08)]"
-              >
-                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-600">
-                  Next Best Action
+        <div className="space-y-5">
+          <DashboardCard
+            testId="dashboard-next-best-action"
+            className={`overflow-hidden border p-0 shadow-[0_20px_48px_rgba(15,23,42,0.12)] ${
+              heroBand.quiet
+                ? "border-slate-200 bg-white"
+                : heroBand.setup
+                ? "border-sky-200 bg-gradient-to-r from-sky-50 via-white to-slate-50"
+                : "border-slate-900 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-800"
+            }`}
+          >
+            <div className="flex flex-col gap-5 px-5 py-5 md:px-7 md:py-6 lg:flex-row lg:items-end lg:justify-between">
+              <div className="max-w-3xl">
+                <div
+                  className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${
+                    heroBand.quiet
+                      ? "text-slate-500"
+                      : heroBand.setup
+                      ? "text-sky-700"
+                      : "text-slate-300"
+                  }`}
+                >
+                  {heroBand.label}
                 </div>
-                <div className="mt-3 flex flex-col gap-4">
-                  <div>
-                    <div className="text-xl font-semibold text-slate-950">{heroAction.title}</div>
-                    <div className="mt-1.5 text-sm text-slate-700">{heroAction.message}</div>
-                    {heroAction.rationale ? (
-                      <div className="mt-2 text-xs text-slate-600">{heroAction.rationale}</div>
-                    ) : null}
+                <div
+                  className={`mt-3 text-2xl font-semibold tracking-tight md:text-[2rem] ${
+                    heroBand.quiet ? "text-slate-950" : heroBand.setup ? "text-slate-950" : "text-white"
+                  }`}
+                >
+                  {heroBand.title}
+                </div>
+                <div
+                  className={`mt-2 text-sm md:text-[15px] ${
+                    heroBand.quiet ? "text-slate-600" : heroBand.setup ? "text-slate-700" : "text-slate-200"
+                  }`}
+                >
+                  {heroBand.message}
+                </div>
+                {heroBand.rationale ? (
+                  <div className={`mt-3 text-xs ${heroBand.setup ? "text-slate-600" : "text-slate-300"}`}>
+                    {heroBand.rationale}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (typeof heroAction.action === "function") {
-                        heroAction.action();
-                        return;
-                      }
-                      navigate(heroAction.navigationTarget || "/app/dashboard");
-                    }}
-                    className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-900"
-                  >
-                    {heroAction.ctaLabel}
-                    <ArrowRight className="h-4 w-4" />
-                  </button>
-                </div>
-              </DashboardCard>
-            </DashboardSection>
+                ) : null}
+              </div>
+              {!heroBand.quiet && heroBand.ctaLabel ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof heroBand.action === "function") {
+                      heroBand.action();
+                      return;
+                    }
+                    navigate(heroBand.navigationTarget || "/app/dashboard");
+                  }}
+                  className={`inline-flex items-center justify-center gap-2 self-start rounded-xl px-4 py-2.5 text-sm font-semibold ${
+                    heroBand.setup
+                      ? "bg-slate-950 text-white hover:bg-slate-900"
+                      : "bg-white text-slate-950 hover:bg-slate-100"
+                  }`}
+                >
+                  {heroBand.ctaLabel}
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              ) : null}
+            </div>
+          </DashboardCard>
 
+          {needsAttentionItems.length ? (
             <DashboardSection
               title="Needs Attention"
-              subtitle="Important items that need review, signature, funding, or approval."
+              subtitle="Urgent approvals, signatures, disputes, or funding issues."
             >
               <DashboardCard
                 testId="dashboard-needs-attention"
                 tone="subtle"
-                className="border-amber-200/80 bg-amber-50/90 p-4 shadow-[0_12px_30px_rgba(245,158,11,0.08)]"
+                className="border-amber-200/90 bg-amber-50/75 p-4 shadow-[0_10px_26px_rgba(245,158,11,0.08)]"
               >
-                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-800">
-                  Needs Attention
+                <div className="space-y-2">
+                  {needsAttentionItems.map((item) => (
+                    <button
+                      key={item.id}
+                      data-testid={item.filterType ? `dashboard-needs-attention-item-${item.filterType}` : undefined}
+                      type="button"
+                      onClick={() => navigate(item.href || "/app/dashboard")}
+                      className="flex w-full items-center gap-3 rounded-xl border border-amber-200/80 bg-white px-3.5 py-3 text-left transition hover:border-amber-300 hover:bg-amber-50/60 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
+                    >
+                      <AlertTriangle className="h-4 w-4 shrink-0 text-amber-700" />
+                      <span className="min-w-0 flex-1 text-sm font-medium text-slate-800">{item.label}</span>
+                      <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-amber-900">
+                        {item.ctaText || "Open"}
+                      </span>
+                    </button>
+                  ))}
                 </div>
-                {needsAttentionItems.length ? (
-                  <div className="mt-3 space-y-2.5">
-                    {needsAttentionItems.map((item) => (
-                      <button
-                        key={item.id}
-                        data-testid={
-                          item.filterType
-                            ? `dashboard-needs-attention-item-${item.filterType}`
-                            : undefined
-                        }
-                        type="button"
-                        onClick={() => navigate(item.href || "/app/dashboard")}
-                        className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-xl border border-amber-200/80 bg-white px-3.5 py-3 text-left text-sm font-medium text-slate-800 transition hover:border-amber-300 hover:bg-amber-50/60 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
-                      >
-                        <span className="min-w-0 flex-1">{item.label}</span>
-                        <span className="shrink-0 text-xs font-semibold uppercase tracking-[0.14em] text-amber-900">
-                          {item.ctaText || "Open"}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mt-3 text-sm text-slate-700">No urgent items right now.</div>
-                )}
               </DashboardCard>
             </DashboardSection>
-          </div>
+          ) : null}
 
           <DashboardSection
             title="Schedule"
-            subtitle="Upcoming and overdue work that needs action."
+            subtitle="Keep an eye on what needs attention first."
           >
             <DashboardCard
               tone="subtle"
-              className="border-slate-200/90 bg-white/92 p-3.5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
+              className={`border-slate-200/90 bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)] ${
+                scheduleHasItems ? "p-4" : "p-3.5"
+              }`}
             >
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <div data-testid="dashboard-schedule-late">
-                  <StatCard
-                    icon={AlertTriangle}
-                    title="Past Due / Late"
-                    subtitle="Overdue milestones, invoices, or agreements needing follow-up."
-                    count={dueSchedule.late.count}
-                    amount={dueSchedule.late.amount}
-                    onClick={goAgreementScheduleLate}
-                  />
+              {scheduleHasItems ? (
+                <div className="space-y-4">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div data-testid="dashboard-schedule-late">
+                      <StatCard
+                        icon={AlertTriangle}
+                        title="Past Due / Late"
+                        subtitle="Overdue milestones, invoices, or agreements needing follow-up."
+                        count={dueSchedule.late.count}
+                        amount={dueSchedule.late.amount}
+                        onClick={goAgreementScheduleLate}
+                      />
+                    </div>
+                    <div data-testid="dashboard-schedule-today">
+                      <StatCard
+                        icon={CalendarDays}
+                        title="Due Today"
+                        subtitle="Immediate actions and scheduled work."
+                        count={dueSchedule.today.count}
+                        amount={dueSchedule.today.amount}
+                        onClick={goAgreementScheduleToday}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid gap-2.5 md:grid-cols-2">
+                    <button
+                      type="button"
+                      data-testid="dashboard-schedule-tomorrow"
+                      onClick={goAgreementScheduleTomorrow}
+                      className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left hover:border-slate-300 hover:bg-slate-100"
+                    >
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900">Due Tomorrow</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {dueSchedule.tomorrow.count} items | {currency(dueSchedule.tomorrow.amount)}
+                        </div>
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-slate-500" />
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="dashboard-schedule-week"
+                      onClick={goAgreementScheduleWeek}
+                      className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left hover:border-slate-300 hover:bg-slate-100"
+                    >
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900">This Week</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {dueSchedule.week.count} items | {currency(dueSchedule.week.amount)}
+                        </div>
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-slate-500" />
+                    </button>
+                  </div>
                 </div>
-                <div data-testid="dashboard-schedule-today">
-                  <StatCard
-                    icon={CalendarDays}
-                    title="Due Today"
-                    subtitle="Immediate actions and scheduled work."
-                    count={dueSchedule.today.count}
-                    amount={dueSchedule.today.amount}
-                    onClick={goAgreementScheduleToday}
+              ) : (
+                <button
+                  type="button"
+                  onClick={goCalendar}
+                  className="flex w-full items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3 text-left"
+                >
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">Schedule is clear</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      No overdue or upcoming due items are surfaced right now.
+                    </div>
+                  </div>
+                  <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" />
+                </button>
+              )}
+            </DashboardCard>
+          </DashboardSection>
+
+          <DashboardSection
+            title="Work and Money"
+            subtitle="Follow the handoff from completed work to invoice approval and payout."
+          >
+            <DashboardCard
+              tone="subtle"
+              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)] md:p-5"
+            >
+              <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] xl:items-start">
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                      Active Work
+                    </div>
+                    <div className="mt-1 text-lg font-semibold text-slate-950">What is moving toward invoice</div>
+                  </div>
+                  <FlowMetricButton
+                    icon={ListTodo}
+                    label="In Progress"
+                    description="Milestones that still need work or completion."
+                    count={mStats.incompleteCount}
+                    amount={mStats.incompleteAmount}
+                    onClick={() => navigate(`/app/milestones?filter=incomplete`)}
+                    testId="dashboard-work-in-progress"
                   />
-                </div>
-                <div data-testid="dashboard-schedule-tomorrow">
-                  <StatCard
-                    icon={CalendarDays}
-                    title="Due Tomorrow"
-                    subtitle="What is coming up next."
-                    count={dueSchedule.tomorrow.count}
-                    amount={dueSchedule.tomorrow.amount}
-                    onClick={goAgreementScheduleTomorrow}
+                  <FlowMetricButton
+                    icon={CheckCircle2}
+                    label="Ready to Invoice"
+                    description="Completed work ready for the payment handoff."
+                    count={mStats.readyCount}
+                    amount={mStats.readyAmount}
+                    onClick={() => navigate(`/app/milestones?filter=complete_not_invoiced`)}
+                    emphasized
+                    testId="dashboard-work-ready-to-invoice"
                   />
+                  <FlowMetricButton
+                    icon={BadgeDollarSign}
+                    label="Paid Work"
+                    description="Milestones already tied to paid or released funds."
+                    count={mStats.paidCount}
+                    amount={mStats.paidAmount}
+                    onClick={() => navigate(`/app/milestones?filter=paid`)}
+                    testId="dashboard-work-paid"
+                  />
+                  {mStats.reworkCount > 0 ? (
+                    <FlowMetricButton
+                      icon={Wrench}
+                      label="Rework Orders"
+                      description="Dispute-driven work orders that still need attention."
+                      count={mStats.reworkCount}
+                      amount={mStats.reworkAmount}
+                      onClick={goReworkMilestones}
+                      testId="dashboard-work-rework"
+                    />
+                  ) : null}
                 </div>
-                <div data-testid="dashboard-schedule-week">
-                  <StatCard
-                    icon={CalendarDays}
-                    title="This Week"
-                    subtitle="Upcoming work and payment activity."
-                    count={dueSchedule.week.count}
-                    amount={dueSchedule.week.amount}
-                    onClick={goAgreementScheduleWeek}
+
+                <div className="flex items-center justify-center">
+                  <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                    <span>Work</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                    <span>Invoice</span>
+                    <span className="hidden text-slate-400 xl:inline">|</span>
+                    <span className="hidden normal-case tracking-normal text-slate-500 xl:inline">
+                      {workMoneyConnectorLabel}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                      Money Status
+                    </div>
+                    <div className="mt-1 text-lg font-semibold text-slate-950">Where the money is now</div>
+                  </div>
+                  <FlowMetricButton
+                    icon={BadgeDollarSign}
+                    label="Awaiting Customer"
+                    description="Invoices sent and waiting on customer approval."
+                    count={iStats.pendingCount}
+                    amount={iStats.pendingAmount}
+                    onClick={goInvoices}
+                    emphasized={iStats.pendingCount > 0}
+                    testId="dashboard-money-awaiting-customer"
+                  />
+                  <FlowMetricButton
+                    icon={BadgeCheck}
+                    label="Approved / Unpaid"
+                    description="Approved invoices that are lined up for payout."
+                    count={iStats.approvedCount}
+                    amount={iStats.approvedAmount}
+                    onClick={goInvoices}
+                    testId="dashboard-money-approved"
+                  />
+                  <FlowMetricButton
+                    icon={WalletMinimal}
+                    label="Paid Out"
+                    description="Money paid out this year across invoices and paid expenses."
+                    count={iStats.earnedCount}
+                    amount={earnedYtdAmount}
+                    onClick={openEarnedModal}
+                    testId="dashboard-money-paid-out"
                   />
                 </div>
               </div>
             </DashboardCard>
           </DashboardSection>
 
+          {false ? (
+          <>
           <DashboardSection
             title="Milestones"
             subtitle="Current work status across your active agreements."
@@ -1821,24 +2115,19 @@ export default function ContractorDashboard() {
               </div>
             </DashboardCard>
           </DashboardSection>
+          </>
+          ) : null}
 
           <DashboardSection
             title="Quick Actions"
-            subtitle="Jump straight into the next contractor task."
+            subtitle="Only the actions that move work and money forward."
           >
             <DashboardCard
               testId="dashboard-quick-actions-row"
               tone="subtle"
-              className="border-slate-200/90 bg-white/90 p-3.5 shadow-[0_14px_32px_rgba(15,23,42,0.06)]"
+              className="border-slate-200/90 bg-white p-3.5 shadow-[0_14px_32px_rgba(15,23,42,0.06)]"
             >
-              <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-3">
-                <ActionButton
-                  icon={Sparkles}
-                  label="Start with AI"
-                  primary
-                  onClick={goStartWithAi}
-                  hint="Use AI to plan the next job, agreement, or milestone."
-                />
+              <div className="grid gap-2.5 md:grid-cols-2">
                 <ActionButton
                   icon={FilePlus2}
                   label="New Agreement"
@@ -1848,45 +2137,21 @@ export default function ContractorDashboard() {
                 />
                 <ActionButton
                   icon={ListPlus}
-                  label="New Intake"
-                  onClick={goNewIntake}
-                  hint="Capture a new project lead before turning it into work."
-                />
-                <ActionButton
-                  icon={ListPlus}
                   label="New Milestone"
                   onClick={goNewMilestone}
                   hint="Add a milestone so work, approval, and payment can move forward."
                 />
                 <ActionButton
                   icon={Receipt}
-                  label="New Expense"
+                  label="Send Invoice"
+                  onClick={goInvoices}
+                  hint="Open invoices so you can create or send the next one."
+                />
+                <ActionButton
+                  icon={Receipt}
+                  label="Log Expense"
                   onClick={openNewExpense}
                   hint="Log an expense and send it to the customer when needed."
-                />
-                <ActionButton
-                  icon={Receipt}
-                  label="Expenses"
-                  onClick={goExpenses}
-                  hint="Review expense requests, receipts, and customer-facing charges."
-                />
-                <ActionButton
-                  icon={Receipt}
-                  label="Invoices"
-                  onClick={goInvoices}
-                  hint="Review invoices, approvals, payouts, and payment status."
-                />
-                <ActionButton
-                  icon={AlertTriangle}
-                  label="Disputes"
-                  onClick={goDisputes}
-                  hint="Open disputes that need a response or resolution."
-                />
-                <ActionButton
-                  icon={CalendarDays}
-                  label="Calendar"
-                  onClick={goCalendar}
-                  hint="See scheduled work and upcoming project dates."
                 />
               </div>
             </DashboardCard>
@@ -1895,28 +2160,23 @@ export default function ContractorDashboard() {
           {showActivityFeed ? (
             <DashboardSection
               title="Recent Activity"
-              subtitle="Recent project signals and workflow updates."
+              subtitle="A quieter view of recent workflow changes."
             >
-              <div className="space-y-3" data-testid="dashboard-activity-feed">
-                {activityFeed.map((item) => (
+              <div className="space-y-2.5" data-testid="dashboard-activity-feed">
+                {activityFeed.slice(0, 5).map((item) => (
                   <button
                     key={item.id}
                     type="button"
                     onClick={() => navigate(item.navigation_target || "/app/dashboard")}
-                    className={`w-full rounded-2xl border px-4 py-4 text-left shadow-sm ${activityAccent(item.severity)}`}
+                    className={`w-full rounded-2xl border px-4 py-3 text-left shadow-sm ${activityAccent(item.severity)}`}
                     data-testid={`dashboard-activity-item-${item.id}`}
                   >
                     <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                      <div>
+                      <div className="min-w-0">
                         <div className="text-sm font-semibold">{item.title}</div>
-                        <div className="mt-1 text-sm text-current/95">{item.summary}</div>
-                        {item.related_label ? (
-                          <div className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] opacity-75">
-                            {item.related_label}
-                          </div>
-                        ) : null}
+                        <div className="mt-1 line-clamp-2 text-sm text-current/90">{item.summary}</div>
                       </div>
-                      <div className="text-xs font-semibold opacity-75">
+                      <div className="shrink-0 text-xs font-semibold opacity-70">
                         {formatActivityTimestamp(item.created_at)}
                       </div>
                     </div>

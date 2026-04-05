@@ -14,6 +14,7 @@ export default function PageShell({
   children,
   showLogo = true,
   titleClassName = "",
+  compact = false,
 }) {
   const { openSidebar, registerHeaderHamburger, unregisterHeaderHamburger } =
     useMobileSidebar();
@@ -28,7 +29,7 @@ export default function PageShell({
     <div className="mhb-container">
       {(title || showLogo) && (
         <header>
-          <div className="mhb-topbar">
+          <div className={`mhb-topbar${compact ? " mb-3 gap-3" : ""}`}>
             {/* ✅ Mobile header hamburger */}
             <button
               type="button"
@@ -50,8 +51,22 @@ export default function PageShell({
             ) : null}
 
             <div style={{ minWidth: 0 }}>
-              {title ? <h1 className={`mhb-page-title ${titleClassName}`.trim()}>{title}</h1> : null}
-              {subtitle ? <div className="mhb-page-subtitle">{subtitle}</div> : null}
+              {title ? (
+                <h1
+                  className={`${
+                    compact
+                      ? "text-base font-semibold tracking-[0.01em] text-slate-950"
+                      : `mhb-page-title ${titleClassName}`
+                  }`.trim()}
+                >
+                  {title}
+                </h1>
+              ) : null}
+              {subtitle ? (
+                <div className={compact ? "mt-0.5 text-sm text-slate-600" : "mhb-page-subtitle"}>
+                  {subtitle}
+                </div>
+              ) : null}
             </div>
           </div>
         </header>
