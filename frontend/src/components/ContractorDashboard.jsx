@@ -382,35 +382,35 @@ function FlowMetricButton({
       onClick={onClick}
       className={`flex w-full items-start gap-3 rounded-2xl border px-4 py-3 text-left transition focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 ${
         emphasized
-          ? "border-slate-900 bg-slate-950 text-white shadow-[0_14px_34px_rgba(15,23,42,0.18)] hover:bg-slate-900"
+          ? "border-[#1f5fa8] bg-[#1d4f8f] text-white shadow-[0_14px_34px_rgba(29,78,141,0.2)] hover:bg-[#19457d]"
           : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 hover:bg-slate-50"
       }`}
     >
       <div
         className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${
           emphasized
-            ? "border-white/15 bg-white/10 text-white"
-            : "border-slate-200 bg-slate-50 text-slate-700"
+            ? "border-white/20 bg-white/12 text-white"
+            : "border-slate-200 bg-slate-50 text-[#355d8c]"
         }`}
       >
         {Icon ? <Icon size={18} /> : null}
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <div className={`text-sm font-semibold ${emphasized ? "text-white" : "text-slate-950"}`}>
+          <div className={`text-sm font-semibold ${emphasized ? "text-white" : "text-[#18395f]"}`}>
             {label}
           </div>
-          <div className={`text-xs font-semibold ${emphasized ? "text-slate-200" : "text-slate-500"}`}>
+          <div className={`text-xs font-semibold ${emphasized ? "text-sky-100" : "text-slate-600"}`}>
             {[countText, amountText].filter(Boolean).join(" • ")}
           </div>
         </div>
         {description ? (
-          <div className={`mt-1 text-sm ${emphasized ? "text-slate-100" : "text-slate-600"}`}>
+          <div className={`mt-1 text-sm ${emphasized ? "text-sky-50" : "text-slate-700"}`}>
             {description}
           </div>
         ) : null}
       </div>
-      <div className={`shrink-0 pt-0.5 text-xs font-semibold uppercase tracking-[0.16em] ${emphasized ? "text-slate-200" : "text-slate-500"}`}>
+      <div className={`shrink-0 pt-0.5 text-xs font-semibold uppercase tracking-[0.16em] ${emphasized ? "text-sky-100" : "text-[#5a7290]"}`}>
         Open
       </div>
     </button>
@@ -1722,6 +1722,7 @@ export default function ContractorDashboard() {
       subtitle={greetingName ? `Good to see you, ${greetingName}.` : null}
       showLogo={false}
       compact
+      titleClassName="drop-shadow-none"
     >
       <div className="space-y-5">
 
@@ -1731,10 +1732,10 @@ export default function ContractorDashboard() {
             testId="dashboard-next-best-action"
             className={`overflow-hidden border p-0 shadow-[0_20px_48px_rgba(15,23,42,0.12)] ${
               heroBand.quiet
-                ? "border-slate-200 bg-white"
+                ? "border-[#d6e1ee] bg-white"
                 : heroBand.setup
-                ? "border-sky-200 bg-gradient-to-r from-sky-50 via-white to-slate-50"
-                : "border-slate-900 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-800"
+                ? "border-[#b8d1eb] bg-gradient-to-r from-[#eef5fc] via-white to-[#f7fbff]"
+                : "border-[#1e558f] bg-gradient-to-r from-[#18395f] via-[#1b4d85] to-[#245b96]"
             }`}
           >
             <div className="flex flex-col gap-5 px-5 py-5 md:px-7 md:py-6 lg:flex-row lg:items-end lg:justify-between">
@@ -1742,30 +1743,30 @@ export default function ContractorDashboard() {
                 <div
                   className={`text-[11px] font-semibold uppercase tracking-[0.22em] ${
                     heroBand.quiet
-                      ? "text-slate-500"
+                      ? "text-[#4f6f95]"
                       : heroBand.setup
-                      ? "text-sky-700"
-                      : "text-slate-300"
+                      ? "text-[#2b5d95]"
+                      : "text-sky-100"
                   }`}
                 >
                   {heroBand.label}
                 </div>
                 <div
                   className={`mt-3 text-2xl font-semibold tracking-tight md:text-[2rem] ${
-                    heroBand.quiet ? "text-slate-950" : heroBand.setup ? "text-slate-950" : "text-white"
+                    heroBand.quiet ? "text-[#19395f]" : heroBand.setup ? "text-[#18395f]" : "text-white"
                   }`}
                 >
                   {heroBand.title}
                 </div>
                 <div
                   className={`mt-2 text-sm md:text-[15px] ${
-                    heroBand.quiet ? "text-slate-600" : heroBand.setup ? "text-slate-700" : "text-slate-200"
+                    heroBand.quiet ? "text-slate-700" : heroBand.setup ? "text-slate-700" : "text-sky-50"
                   }`}
                 >
                   {heroBand.message}
                 </div>
                 {heroBand.rationale ? (
-                  <div className={`mt-3 text-xs ${heroBand.setup ? "text-slate-600" : "text-slate-300"}`}>
+                  <div className={`mt-3 text-xs font-medium ${heroBand.setup ? "text-[#526d8a]" : "text-sky-100/90"}`}>
                     {heroBand.rationale}
                   </div>
                 ) : null}
@@ -1782,8 +1783,8 @@ export default function ContractorDashboard() {
                   }}
                   className={`inline-flex items-center justify-center gap-2 self-start rounded-xl px-4 py-2.5 text-sm font-semibold ${
                     heroBand.setup
-                      ? "bg-slate-950 text-white hover:bg-slate-900"
-                      : "bg-white text-slate-950 hover:bg-slate-100"
+                      ? "bg-[#18395f] text-white hover:bg-[#15314f]"
+                      : "bg-white text-[#18395f] hover:bg-sky-50"
                   }`}
                 >
                   {heroBand.ctaLabel}
@@ -1867,7 +1868,7 @@ export default function ContractorDashboard() {
                     >
                       <div>
                         <div className="text-sm font-semibold text-slate-900">Due Tomorrow</div>
-                        <div className="mt-1 text-xs text-slate-500">
+                        <div className="mt-1 text-xs font-medium text-slate-600">
                           {dueSchedule.tomorrow.count} items | {currency(dueSchedule.tomorrow.amount)}
                         </div>
                       </div>
@@ -1881,7 +1882,7 @@ export default function ContractorDashboard() {
                     >
                       <div>
                         <div className="text-sm font-semibold text-slate-900">This Week</div>
-                        <div className="mt-1 text-xs text-slate-500">
+                        <div className="mt-1 text-xs font-medium text-slate-600">
                           {dueSchedule.week.count} items | {currency(dueSchedule.week.amount)}
                         </div>
                       </div>
@@ -1897,7 +1898,7 @@ export default function ContractorDashboard() {
                 >
                   <div>
                     <div className="text-sm font-semibold text-slate-900">Schedule is clear</div>
-                    <div className="mt-1 text-xs text-slate-500">
+                    <div className="mt-1 text-xs font-medium text-slate-600">
                       No overdue or upcoming due items are surfaced right now.
                     </div>
                   </div>
@@ -1918,10 +1919,10 @@ export default function ContractorDashboard() {
               <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] xl:items-start">
                 <div className="space-y-3">
                   <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#52749a]">
                       Active Work
                     </div>
-                    <div className="mt-1 text-lg font-semibold text-slate-950">What is moving toward invoice</div>
+                    <div className="mt-1 text-lg font-semibold text-[#18395f]">What is moving toward invoice</div>
                   </div>
                   <FlowMetricButton
                     icon={ListTodo}
@@ -1965,12 +1966,12 @@ export default function ContractorDashboard() {
                 </div>
 
                 <div className="flex items-center justify-center">
-                  <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  <div className="flex items-center gap-2 rounded-full border border-[#c9d8e8] bg-[#f2f7fc] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#355d8c] shadow-sm">
                     <span>Work</span>
-                    <ArrowRight className="h-3.5 w-3.5" />
+                    <ArrowRight className="h-3.5 w-3.5 text-[#2d5a8f]" />
                     <span>Invoice</span>
-                    <span className="hidden text-slate-400 xl:inline">|</span>
-                    <span className="hidden normal-case tracking-normal text-slate-500 xl:inline">
+                    <span className="hidden text-[#89a6c6] xl:inline">|</span>
+                    <span className="hidden normal-case tracking-normal font-medium text-[#58779b] xl:inline">
                       {workMoneyConnectorLabel}
                     </span>
                   </div>
@@ -1978,10 +1979,10 @@ export default function ContractorDashboard() {
 
                 <div className="space-y-3">
                   <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#52749a]">
                       Money Status
                     </div>
-                    <div className="mt-1 text-lg font-semibold text-slate-950">Where the money is now</div>
+                    <div className="mt-1 text-lg font-semibold text-[#18395f]">Where the money is now</div>
                   </div>
                   <FlowMetricButton
                     icon={BadgeDollarSign}
@@ -2176,7 +2177,7 @@ export default function ContractorDashboard() {
                         <div className="text-sm font-semibold">{item.title}</div>
                         <div className="mt-1 line-clamp-2 text-sm text-current/90">{item.summary}</div>
                       </div>
-                      <div className="shrink-0 text-xs font-semibold opacity-70">
+                      <div className="shrink-0 text-xs font-semibold opacity-80">
                         {formatActivityTimestamp(item.created_at)}
                       </div>
                     </div>

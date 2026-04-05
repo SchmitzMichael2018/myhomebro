@@ -15,12 +15,12 @@ export default function DashboardSection({
         <div className="flex flex-col gap-2.5 md:flex-row md:items-end md:justify-between">
           <div>
             {eyebrow ? (
-              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#40618e]">
                 {eyebrow}
               </div>
             ) : null}
-            {title ? <div className="text-xl font-bold text-slate-950">{title}</div> : null}
-            {subtitle ? <div className="mt-1 text-sm text-slate-600">{subtitle}</div> : null}
+            {title ? <div className="text-[1.4rem] font-bold tracking-[-0.01em] text-[#19395f] md:text-[1.55rem]">{title}</div> : null}
+            {subtitle ? <div className="mt-1.5 text-sm font-medium leading-6 text-slate-700">{subtitle}</div> : null}
           </div>
           {actions ? <div>{actions}</div> : null}
         </div>

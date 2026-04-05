@@ -55,7 +55,7 @@ export default function PageShell({
                 <h1
                   className={`${
                     compact
-                      ? "text-base font-semibold tracking-[0.01em] text-slate-950"
+                      ? `text-[1.9rem] font-extrabold tracking-[-0.02em] text-[#163B70] md:text-[2.25rem] ${titleClassName}`
                       : `mhb-page-title ${titleClassName}`
                   }`.trim()}
                 >
@@ -63,7 +63,7 @@ export default function PageShell({
                 </h1>
               ) : null}
               {subtitle ? (
-                <div className={compact ? "mt-0.5 text-sm text-slate-600" : "mhb-page-subtitle"}>
+                <div className={compact ? "mt-1 text-sm font-medium text-slate-700 md:text-[15px]" : "mhb-page-subtitle"}>
                   {subtitle}
                 </div>
               ) : null}
