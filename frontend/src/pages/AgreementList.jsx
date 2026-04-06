@@ -42,6 +42,7 @@ import {
   FileText,
   Download,
   ExternalLink,
+  MoreHorizontal,
 } from "lucide-react";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 
@@ -511,12 +512,14 @@ export default function AgreementList() {
   // ✅ action busy flags
   const [busyCompleteRow, setBusyCompleteRow] = useState(null);
   const [busyArchiveRow, setBusyArchiveRow] = useState(null);
+  const [actionMenuOpenForId, setActionMenuOpenForId] = useState(null);
 
   // ✅ PDF History dropdown state + cache
   const [pdfOpenForId, setPdfOpenForId] = useState(null);
   const [pdfLoadingForId, setPdfLoadingForId] = useState(null);
   const [pdfCache, setPdfCache] = useState({});
   const pdfPopoverRef = useRef(null);
+  const actionMenuRef = useRef(null);
   const loadSeqRef = useRef(0);
   const msStatsRef = useRef({});
   const rowsRef = useRef(rows);
@@ -569,13 +572,21 @@ export default function AgreementList() {
 
   useEffect(() => {
     const onDown = (e) => {
-      if (!pdfOpenForId) return;
       const el = pdfPopoverRef.current;
-      if (el && el.contains(e.target)) return;
-      setPdfOpenForId(null);
+      if (pdfOpenForId && (!el || !el.contains(e.target))) {
+        setPdfOpenForId(null);
+      }
+
+      const menuEl = actionMenuRef.current;
+      if (actionMenuOpenForId && (!menuEl || !menuEl.contains(e.target))) {
+        setActionMenuOpenForId(null);
+      }
     };
     const onKey = (e) => {
-      if (e.key === "Escape") setPdfOpenForId(null);
+      if (e.key === "Escape") {
+        setPdfOpenForId(null);
+        setActionMenuOpenForId(null);
+      }
     };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
@@ -583,7 +594,7 @@ export default function AgreementList() {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
     };
-  }, [pdfOpenForId]);
+  }, [actionMenuOpenForId, pdfOpenForId]);
 
   const isMsComplete = (m) => {
     const sv = (x) => String(x || "").trim().toLowerCase();
@@ -1017,6 +1028,25 @@ export default function AgreementList() {
     );
   };
 
+  const signatureSummary = (r) => {
+    const required = [reqContractor(r), reqCustomer(r)].filter(Boolean).length;
+    const signed = [
+      reqContractor(r) ? contractorSigned(r) : true,
+      reqCustomer(r) ? homeownerSigned(r) : true,
+    ].filter(Boolean).length;
+
+    if (required === 0) {
+      return { label: "Waived", detail: "No signatures required", tone: "text-slate-600" };
+    }
+
+    const waived = 2 - required;
+    return {
+      label: `${Math.min(signed, required)} / ${required} signed`,
+      detail: waived > 0 ? `${waived} waived` : signed === required ? "Fully signed" : "Waiting on signatures",
+      tone: signed === required ? "text-emerald-700" : "text-slate-600",
+    };
+  };
+
   const renderProject = (r) => {
     const raw = (r.project_title || r.title || "").trim();
     if (/^agreement\s*#\d+$/i.test(raw)) return "—";
@@ -1025,10 +1055,22 @@ export default function AgreementList() {
   const renderType = (r) => r.project_type || "—";
   const renderSubtype = (r) => r.project_subtype || "—";
 
+  const renderDateRange = (r) => {
+    const start = fmtDate(r.start);
+    const end = fmtDate(r.end);
+    if ((start === "—" || start === "â€”") && (end === "—" || end === "â€”")) return "Dates not set";
+    if (start === "—" || start === "â€”") return `Ends ${end}`;
+    if (end === "—" || end === "â€”") return `Starts ${start}`;
+    return `${start} - ${end}`;
+  };
+
   const Progress = ({ percent }) => (
     <div className="w-24">
-      <div className="h-2 bg-gray-200 rounded">
-        <div className="h-2 bg-blue-600 rounded" style={{ width: `${Math.max(0, Math.min(100, percent))}%` }} />
+      <div className="h-2 rounded-full bg-slate-200">
+        <div
+          className="h-2 rounded-full bg-blue-600"
+          style={{ width: `${Math.max(0, Math.min(100, percent))}%` }}
+        />
       </div>
     </div>
   );
@@ -1487,20 +1529,23 @@ export default function AgreementList() {
       eyebrow="Core"
       title="Agreements"
       subtitle="Manage signatures, funding, progress, and amendments from a cleaner shared workspace."
+      className="max-w-[1680px]"
+      surfaceClassName="rounded-none border-0 bg-transparent p-0 shadow-none backdrop-blur-none"
+      contentClassName="space-y-4"
     >
       {/* Header */}
-      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/90 p-3 shadow-sm">
+      <div className="flex flex-wrap items-center gap-2.5 border-b border-slate-200 pb-4">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search by project, customer, type, subtype, email, ID…"
-          className="w-80 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-slate-400"
+          className="min-w-[260px] flex-1 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-700 shadow-sm outline-none transition focus:border-slate-400"
         />
 
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm"
+          className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 shadow-sm"
         >
           <option value="all">All Status</option>
           <option value="draft">draft</option>
@@ -1511,7 +1556,7 @@ export default function AgreementList() {
           <option value="cancelled">cancelled</option>
         </select>
 
-        <label className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm">
+        <label className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 shadow-sm">
           <input
             type="checkbox"
             checked={showArchived}
@@ -1527,7 +1572,7 @@ export default function AgreementList() {
         <select
           value={pageSize}
           onChange={(e) => setPageSize(Number(e.target.value))}
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm"
+          className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 shadow-sm"
         >
           {[10, 20, 50, 100, 250].map((n) => (
             <option key={n} value={n}>
@@ -1538,10 +1583,10 @@ export default function AgreementList() {
 
         <button
           onClick={() => load({ force: true, source: "refresh-button" })}
-          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50"
           title="Refresh"
         >
-          <RefreshCw size={16} /> Refresh
+          <RefreshCw size={16} />
         </button>
 
         <div className="flex-1" />
@@ -1557,8 +1602,8 @@ export default function AgreementList() {
         <button
           className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-semibold shadow-sm ${
             selected.size >= 2
-              ? "bg-indigo-600 text-white hover:bg-indigo-700"
-              : "bg-slate-200 text-slate-500 cursor-not-allowed"
+              ? "border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
+              : "cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400"
           }`}
           disabled={selected.size < 2}
           onClick={mergeSelected}
@@ -1587,9 +1632,9 @@ export default function AgreementList() {
       ) : null}
 
       {/* Table */}
-      <div className="min-h-[420px] overflow-x-auto rounded-[22px] border border-slate-200 bg-white shadow-[0_18px_40px_rgba(15,23,42,0.06)]">
-        <table className="min-w-full text-[15px] leading-5">
-          <thead className="bg-slate-50/90">
+      <div className="min-h-[420px] overflow-x-auto border-y border-slate-200 bg-white">
+        <table className="min-w-full text-[14px] leading-5">
+          <thead className="bg-slate-50/85">
             <tr>
               <th className="px-3 py-3 text-center">
                 <input
@@ -1599,35 +1644,27 @@ export default function AgreementList() {
                 />
               </th>
               <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Primary</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Agreement ID</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Agreement</th>
               <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Status</th>
               <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Escrow</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">PDF</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Project</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Type</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Subtype</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Customer</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Start</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">End</th>
-              <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Milestones</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">% Complete</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Progress</th>
               <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Signatures</th>
               <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Total</th>
               <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Invoices</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Actions</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Actions</th>
             </tr>
           </thead>
 
           <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr>
-                <td className="px-6 py-14 text-center text-sm text-slate-500" colSpan={18}>
+                <td className="px-6 py-14 text-center text-sm text-slate-500" colSpan={10}>
                   Loading…
                 </td>
               </tr>
             ) : page.length === 0 ? (
               <tr>
-                <td className="px-8 py-16 text-center" colSpan={18}>
+                <td className="px-8 py-16 text-center" colSpan={10}>
                   <div className="mx-auto max-w-md rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-sm text-slate-500">
                     No agreements found.
                   </div>
@@ -1644,6 +1681,7 @@ export default function AgreementList() {
                 const statusLower = safeLower(r.status);
                 const isCompleted = statusLower === "completed";
                 const isArchived = !!r.is_archived;
+                const isDraft = statusLower === "draft";
 
                 const canMarkComplete =
                   stat.total > 0 &&
@@ -1671,20 +1709,64 @@ export default function AgreementList() {
                   ? "Archive when ready"
                   : "Review agreement details";
 
-                const contrReq = reqContractor(r);
-                const custReq = reqCustomer(r);
-
-                const contrState = contrReq ? (contractorSigned(r) ? "signed" : "unsigned") : "waived";
-                const custState = custReq ? (homeownerSigned(r) ? "signed" : "unsigned") : "waived";
+                const signatures = signatureSummary(r);
+                const identityMeta = [renderType(r), renderSubtype(r), homeowner, renderDateRange(r)].filter(
+                  (value) => value && value !== "—" && value !== "â€”"
+                );
+                const menuOpen = actionMenuOpenForId === r.id;
+                const primaryAction = canUnarchive
+                  ? {
+                      key: "restore",
+                      label: busyArchiveRow === r.id ? "Restoring..." : "Restore",
+                      icon: busyArchiveRow === r.id ? RefreshCw : Undo2,
+                      onClick: () => unarchiveAgreement(r),
+                      disabled: busyArchiveRow === r.id,
+                      className: "border border-slate-300 bg-white text-slate-800 hover:bg-slate-50",
+                    }
+                  : canMarkComplete
+                  ? {
+                      key: "complete",
+                      label: busyCompleteRow === r.id ? "Completing..." : "Complete",
+                      icon: busyCompleteRow === r.id ? RefreshCw : Check,
+                      onClick: () => markComplete(r, stat),
+                      disabled: busyCompleteRow === r.id,
+                      className: "border border-green-300 bg-green-50 text-green-800 hover:bg-green-100",
+                    }
+                  : fullySigned
+                  ? {
+                      key: "amend",
+                      label: busyAmendRow === r.id ? "Amending..." : "Amend",
+                      icon: busyAmendRow === r.id ? RefreshCw : Layers,
+                      onClick: () => createAmendment(r),
+                      disabled: busyAmendRow === r.id,
+                      className: "border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100",
+                    }
+                  : isDraft
+                  ? {
+                      key: "continue",
+                      label: "Continue",
+                      icon: Pencil,
+                      onClick: () => goEdit(r.id),
+                      disabled: false,
+                      className: "bg-slate-900 text-white hover:bg-slate-800",
+                    }
+                  : {
+                      key: "view",
+                      label: "View",
+                      icon: Eye,
+                      onClick: () => goView(r.id),
+                      disabled: false,
+                      className: "bg-slate-900 text-white hover:bg-slate-800",
+                    };
 
                 return (
                   <tr
                     key={r.id}
-                    className="cursor-pointer bg-white transition-colors hover:bg-sky-50/70"
+                    className="cursor-pointer bg-white transition-colors hover:bg-sky-50/60"
                     onClick={() => goView(r.id)}
                     title="Click to view agreement"
                   >
-                    <td className="px-3 py-4 align-top">
+                    <td className="px-3 py-3.5 align-top">
                       <input
                         type="checkbox"
                         checked={isChecked}
@@ -1696,7 +1778,7 @@ export default function AgreementList() {
                       />
                     </td>
 
-                    <td className="px-3 py-4 align-top">
+                    <td className="px-3 py-3.5 align-top">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -1706,9 +1788,9 @@ export default function AgreementList() {
                         className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${
                           isChecked
                             ? isPrimary
-                              ? "bg-yellow-100 border-yellow-300 text-amber-800"
-                              : "border-slate-200 bg-white text-slate-700 hover:bg-gray-50"
-                            : "text-gray-400 cursor-not-allowed border-slate-200"
+                              ? "border-yellow-300 bg-yellow-100 text-amber-800"
+                              : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                            : "cursor-not-allowed border-slate-200 text-slate-400"
                         }`}
                         title={isChecked ? (isPrimary ? "Primary" : "Set as Primary") : "Select row first"}
                       >
@@ -1717,9 +1799,42 @@ export default function AgreementList() {
                       </button>
                     </td>
 
-                    <td className="px-3 py-4 align-top font-medium text-slate-700">#{r.id}</td>
+                    <td className="min-w-[340px] max-w-[520px] px-3 py-3.5 align-top" title={renderProject(r)}>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="truncate text-[15px] font-semibold text-slate-950">{renderProject(r)}</div>
+                          <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                            #{r.id}
+                          </span>
+                          {isArchived ? (
+                            <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-700">
+                              Archived
+                            </span>
+                          ) : null}
+                        </div>
 
-                    <td className="px-3 py-4 align-top">
+                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-600">
+                          {identityMeta.map((item) => (
+                            <span key={`${r.id}-${item}`} className="truncate">
+                              {item}
+                            </span>
+                          ))}
+                        </div>
+
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                            Next Step
+                          </span>
+                          <span className="text-sm text-slate-700">{nextStepLabel}</span>
+                        </div>
+
+                        <div className="mt-1.5">
+                          <PdfBadge r={r} />
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="px-3 py-3.5 align-top">
                       <span
                         className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusPillClass(r.status)}`}
                         title={isArchived ? "Archived" : ""}
@@ -1729,72 +1844,51 @@ export default function AgreementList() {
                       </span>
                     </td>
 
-                    <td className="px-3 py-4 align-top">
+                    <td className="px-3 py-3.5 align-top">
                       <EscrowBadge r={r} />
                     </td>
 
-                    <td className="px-3 py-4 align-top">
-                      <PdfBadge r={r} />
-                    </td>
-
-                    <td className="max-w-[320px] px-3 py-4 align-top" title={renderProject(r)}>
-                      <div className="min-w-0">
-                        <div className="truncate text-base font-semibold text-slate-900">{renderProject(r)}</div>
-                        <div className="mt-1 text-xs font-medium uppercase tracking-[0.14em] text-slate-400">Next Step</div>
-                        <div className="mt-1 text-sm text-slate-700">{nextStepLabel}</div>
+                    <td className="px-3 py-3.5 align-top">
+                      <div className="min-w-[150px]">
+                        <div className="flex items-center gap-2">
+                          <Progress percent={stat.percent} />
+                          <span className="w-10 text-xs font-medium text-slate-600">{stat.percent}%</span>
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {stat.total ? `${stat.complete} / ${stat.total} milestones` : "No milestones"}
+                        </div>
                       </div>
                     </td>
 
-                    <td className="whitespace-nowrap px-3 py-4 align-top text-slate-700" title={renderType(r)}>
-                      {renderType(r)}
-                    </td>
-
-                    <td className="whitespace-nowrap px-3 py-4 align-top text-slate-700" title={renderSubtype(r)}>
-                      {renderSubtype(r)}
-                    </td>
-
-                    <td className="max-w-[320px] px-3 py-4 align-top" title={homeowner}>
-                      <div className="truncate text-slate-700">{homeowner}</div>
-                    </td>
-
-                    <td className="px-3 py-4 align-top text-slate-700">{fmtDate(r.start)}</td>
-                    <td className="px-3 py-4 align-top text-slate-700">{fmtDate(r.end)}</td>
-
-                    <td className="px-3 py-4 align-top text-right text-slate-700">
-                      {stat.total ? `${stat.complete} / ${stat.total}` : "—"}
-                    </td>
-
-                    <td className="px-3 py-4 align-top">
-                      <div className="flex items-center gap-2">
-                        <Progress percent={stat.percent} />
-                        <span className="w-10 text-xs font-medium text-slate-600">{stat.percent}%</span>
+                    <td className="px-3 py-3.5 align-top">
+                      <div className="min-w-[110px]">
+                        <div className={`text-sm font-semibold ${signatures.tone}`}>{signatures.label}</div>
+                        <div className="mt-1 text-xs text-slate-500">{signatures.detail}</div>
                       </div>
                     </td>
 
-                    <td className="px-3 py-4 align-top">
-                      <div className="flex items-center gap-2">
-                        <SignatureBadge state={contrState} who="Contractor" />
-                        <SignatureBadge state={custState} who="Customer" />
-                      </div>
-                    </td>
-
-                    <td className="px-3 py-4 align-top text-right font-semibold text-slate-900">
+                    <td className="px-3 py-3.5 align-top text-right font-semibold text-slate-900">
                       {fmtMoney(r.display_total ?? r.total_cost)}
                     </td>
 
-                    <td className="px-3 py-4 align-top text-right font-medium text-slate-700">{Number(r.invoices_count || 0)}</td>
+                    <td className="px-3 py-3.5 align-top text-right font-medium text-slate-700">{Number(r.invoices_count || 0)}</td>
 
-                    <td className="px-3 py-4 align-top">
-                      <div className="flex flex-wrap items-center gap-2.5">
+                    <td className="relative px-3 py-3.5 align-top text-right">
+                      <div className="flex items-start justify-end gap-2">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            goView(r.id);
+                            primaryAction.onClick();
                           }}
-                          className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
-                          title="View agreement"
+                          disabled={primaryAction.disabled}
+                          className={`inline-flex min-w-[96px] items-center justify-center gap-1 rounded-lg px-3 py-2 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60 ${primaryAction.className}`}
+                          title={primaryAction.label}
                         >
-                          <Eye size={14} /> View
+                          <primaryAction.icon
+                            size={14}
+                            className={primaryAction.icon === RefreshCw ? "animate-spin" : undefined}
+                          />
+                          {primaryAction.label}
                         </button>
 
                         <button
@@ -1803,124 +1897,91 @@ export default function AgreementList() {
                             goEdit(r.id);
                           }}
                           disabled={fullySigned}
-                          className={`inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm font-semibold ${
+                          className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border text-slate-700 shadow-sm transition ${
                             fullySigned
-                              ? "border-gray-300 text-gray-400 cursor-not-allowed"
-                              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                              ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                              : "border-slate-300 bg-white hover:bg-slate-50"
                           }`}
                           title={fullySigned ? "Fully signed. Use Amend to modify." : "Continue Editing"}
                         >
-                          <Pencil size={14} /> Edit
+                          <Pencil size={14} />
                         </button>
-
-                        {fullySigned && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              createAmendment(r);
-                            }}
-                            disabled={busyAmendRow === r.id}
-                            className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
-                            title="Create amendment"
-                          >
-                            {busyAmendRow === r.id ? (
-                              <>
-                                <RefreshCw size={14} className="animate-spin" /> Amending…
-                              </>
-                            ) : (
-                              <>
-                                <Layers size={14} /> Amend
-                              </>
-                            )}
-                          </button>
-                        )}
 
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            markComplete(r, stat);
+                            setActionMenuOpenForId((current) => (current === r.id ? null : r.id));
                           }}
-                          disabled={!canMarkComplete || busyCompleteRow === r.id}
-                           className={`inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm font-semibold ${
-                             canMarkComplete
-                               ? "border-green-300 bg-green-50 text-green-800 hover:bg-green-100"
-                               : "border-gray-300 text-gray-400 cursor-not-allowed"
-                           }`}
-                          title={canMarkComplete ? "Mark agreement completed" : "Requires 100% milestones + funded/in_progress/signed"}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm transition hover:bg-slate-50"
+                          title="More actions"
                         >
-                          {busyCompleteRow === r.id ? (
-                            <>
-                              <RefreshCw size={14} className="animate-spin" /> Completing…
-                            </>
-                          ) : (
-                            <>
-                              <Check size={14} /> Complete
-                            </>
-                          )}
-                        </button>
-
-                        {canUnarchive ? (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              unarchiveAgreement(r);
-                            }}
-                            disabled={busyArchiveRow === r.id}
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-60"
-                            title="Unarchive agreement"
-                          >
-                            {busyArchiveRow === r.id ? (
-                              <>
-                                <RefreshCw size={14} className="animate-spin" /> Restoring…
-                              </>
-                            ) : (
-                              <>
-                                <Undo2 size={14} /> Unarchive
-                              </>
-                            )}
-                          </button>
-                        ) : (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              archiveAgreement(r);
-                            }}
-                            disabled={!canArchive || busyArchiveRow === r.id}
-                            className={`inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm font-semibold ${
-                              canArchive
-                                ? "border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
-                                : "border-gray-300 text-gray-400 cursor-not-allowed"
-                            }`}
-                            title={canArchive ? "Archive agreement" : "Archive enabled only for completed/cancelled"}
-                          >
-                            {busyArchiveRow === r.id ? (
-                              <>
-                                <RefreshCw size={14} className="animate-spin" /> Archiving…
-                              </>
-                            ) : (
-                              <>
-                                <Archive size={14} /> Archive
-                              </>
-                            )}
-                          </button>
-                        )}
-
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteDraft(r);
-                          }}
-                          disabled={busyDeleteRow === r.id}
-                          className={`inline-flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-semibold ${
-                            String(r.status).toLowerCase() === "draft"
-                              ? "border border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
-                              : "border border-gray-300 text-gray-400 cursor-not-allowed"
-                          }`}
-                          title="Delete Draft"
-                        >
-                          <Trash2 size={14} /> {busyDeleteRow === r.id ? "Deleting…" : "Delete"}
+                          <MoreHorizontal size={16} />
                         </button>
                       </div>
+
+                      {menuOpen ? (
+                        <div
+                          ref={actionMenuRef}
+                          className="absolute right-3 top-14 z-20 min-w-[180px] rounded-xl border border-slate-200 bg-white p-1.5 text-left shadow-[0_16px_40px_rgba(15,23,42,0.16)]"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {primaryAction.key !== "view" ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActionMenuOpenForId(null);
+                                goView(r.id);
+                              }}
+                              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                              <Eye size={14} /> View agreement
+                            </button>
+                          ) : null}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActionMenuOpenForId(null);
+                              if (canMarkComplete && primaryAction.key !== "complete") {
+                                markComplete(r, stat);
+                              }
+                            }}
+                            disabled={!canMarkComplete || primaryAction.key === "complete" || busyCompleteRow === r.id}
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+                          >
+                            <Check size={14} /> Mark complete
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActionMenuOpenForId(null);
+                              if (canUnarchive && primaryAction.key !== "restore") {
+                                unarchiveAgreement(r);
+                              } else if (!canUnarchive) {
+                                archiveAgreement(r);
+                              }
+                            }}
+                            disabled={(canUnarchive && primaryAction.key === "restore") || (!canUnarchive && !canArchive) || busyArchiveRow === r.id}
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+                          >
+                            {canUnarchive ? <Undo2 size={14} /> : <Archive size={14} />}
+                            {canUnarchive ? "Restore agreement" : "Archive agreement"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActionMenuOpenForId(null);
+                              if (isDraft) deleteDraft(r);
+                            }}
+                            disabled={!isDraft || busyDeleteRow === r.id}
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-transparent"
+                          >
+                            <Trash2 size={14} /> Delete draft
+                          </button>
+                        </div>
+                      ) : null}
                     </td>
                   </tr>
                 );
