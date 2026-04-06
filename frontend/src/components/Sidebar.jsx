@@ -3,7 +3,7 @@
 // - Default export remains DESKTOP sidebar (hidden on mobile) to avoid desktop breakage
 // - Add `variant="plain"` to render sidebar CONTENT only (for mobile overlay shell)
 
-import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
+import React, { createContext, useCallback, useContext, useMemo, useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import api, { getAgreementClosureStatus, closeAndArchiveAgreement } from "../api";
@@ -56,6 +56,90 @@ const NAV_HINTS = {
   "/app/onboarding": "Manage your account, preferences, and payment setup",
   "/app/intake/new": "Capture new leads and start projects quickly",
 };
+
+const SidebarNavCtx = createContext({
+  navHint: null,
+  showNavHint: () => {},
+  hideNavHint: () => {},
+});
+
+function NavGroup({ label, children, className = "" }) {
+  return (
+    <div className={`space-y-2.5 ${className}`.trim()}>
+      <div className="px-2 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500/95">
+        {label}
+      </div>
+      <div className="space-y-2">{children}</div>
+    </div>
+  );
+}
+
+function Item({ to, label, icon: Icon, emoji, title, hint }) {
+  const location = useLocation();
+  const { navHint, showNavHint, hideNavHint } = useContext(SidebarNavCtx);
+  const tooltipId = React.useId();
+  const resolvedHint = hint || NAV_HINTS[to];
+  const isCurrent = location.pathname === to || location.pathname.startsWith(`${to}/`);
+
+  return (
+    <div className="relative">
+      <NavLink
+        to={to}
+        data-close-sidebar="1"
+        aria-describedby={navHint?.id === tooltipId ? tooltipId : undefined}
+        className={({ isActive }) =>
+          [
+            "group flex min-w-0 overflow-hidden items-center gap-3 rounded-xl px-3.5 py-3 text-[15px] font-semibold transition duration-200",
+            "border",
+            isActive
+              ? "bg-slate-900 text-white border-slate-950/20 shadow-[0_12px_28px_rgba(15,23,42,0.18)]"
+              : "bg-[#f7f8fa] text-slate-700 border-slate-200/95 shadow-[0_2px_6px_rgba(15,23,42,0.04)] hover:bg-white hover:text-[#18395f] hover:border-amber-200 hover:shadow-[0_10px_22px_rgba(15,23,42,0.08),0_0_0_1px_rgba(245,158,11,0.08)]",
+          ].join(" ")
+        }
+        onMouseEnter={(event) => showNavHint(event, resolvedHint, tooltipId)}
+        onFocus={(event) => showNavHint(event, resolvedHint, tooltipId, 0)}
+        onMouseLeave={() => hideNavHint()}
+        onBlur={() => hideNavHint(0)}
+        onClick={() => hideNavHint(0)}
+        title={title || undefined}
+      >
+        <span aria-hidden="true">
+          <span
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
+              isCurrent
+                ? "border-white/15 bg-white/10 text-white"
+                : "border-slate-200 bg-white text-slate-500 group-hover:border-amber-100 group-hover:bg-amber-50/70 group-hover:text-[#214d7f]"
+            }`}
+          >
+            {Icon ? <Icon size={16} strokeWidth={2} /> : <span className="text-base leading-none">{emoji}</span>}
+          </span>
+        </span>
+        <span className="min-w-0 truncate leading-5">{label}</span>
+      </NavLink>
+    </div>
+  );
+}
+
+function SubItem({ to, label }) {
+  return (
+    <NavLink
+      to={to}
+      data-close-sidebar="1"
+      className={({ isActive }) =>
+        [
+          "ml-6 flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+          "border",
+          isActive
+            ? "bg-slate-900 text-white border-black/10 shadow-sm"
+            : "bg-white/40 text-slate-700 border-black/10 hover:bg-white hover:text-slate-900",
+        ].join(" ")
+      }
+    >
+      <span className="text-[10px] opacity-70">â€¢</span>
+      <span>{label}</span>
+    </NavLink>
+  );
+}
 
 /**
  * Sidebar
@@ -210,81 +294,6 @@ export default function Sidebar({ variant = "desktop" }) {
 
   useEffect(() => () => clearTooltipTimers(), [clearTooltipTimers]);
 
-  const NavGroup = ({ label, children, className = "" }) => (
-    <div className={`space-y-2.5 ${className}`.trim()}>
-      <div className="px-2 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500/95">
-        {label}
-      </div>
-      <div className="space-y-2">{children}</div>
-    </div>
-  );
-
-  // Primary item (MAIN section)
-  const Item = ({ to, label, icon: Icon, emoji, title, hint }) => {
-    const tooltipId = React.useId();
-    const resolvedHint = hint || NAV_HINTS[to];
-    const isCurrent = location.pathname === to || location.pathname.startsWith(`${to}/`);
-
-    return (
-      <div className="relative">
-        <NavLink
-          to={to}
-          data-close-sidebar="1"
-          aria-describedby={navHint?.id === tooltipId ? tooltipId : undefined}
-          className={({ isActive }) =>
-            [
-              "group flex min-w-0 overflow-hidden items-center gap-3 rounded-xl px-3.5 py-3 text-[15px] font-semibold transition duration-200",
-              "border",
-              isActive
-                ? "bg-slate-900 text-white border-slate-950/20 shadow-[0_12px_28px_rgba(15,23,42,0.18)]"
-                : "bg-[#f7f8fa] text-slate-700 border-slate-200/95 shadow-[0_2px_6px_rgba(15,23,42,0.04)] hover:bg-white hover:text-[#18395f] hover:border-amber-200 hover:shadow-[0_10px_22px_rgba(15,23,42,0.08),0_0_0_1px_rgba(245,158,11,0.08)]",
-            ].join(" ")
-          }
-          onMouseEnter={(event) => showNavHint(event, resolvedHint, tooltipId)}
-          onFocus={(event) => showNavHint(event, resolvedHint, tooltipId, 0)}
-          onMouseLeave={() => hideNavHint()}
-          onBlur={() => hideNavHint(0)}
-          onClick={() => hideNavHint(0)}
-          title={title || undefined}
-        >
-          <span aria-hidden="true">
-            <span
-              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
-                isCurrent
-                  ? "border-white/15 bg-white/10 text-white"
-                  : "border-slate-200 bg-white text-slate-500 group-hover:border-amber-100 group-hover:bg-amber-50/70 group-hover:text-[#214d7f]"
-              }`}
-            >
-              {Icon ? <Icon size={16} strokeWidth={2} /> : <span className="text-base leading-none">{emoji}</span>}
-            </span>
-          </span>
-          <span className="min-w-0 truncate leading-5">{label}</span>
-        </NavLink>
-
-      </div>
-    );
-  };
-
-  // Admin nested item
-  const SubItem = ({ to, label }) => (
-    <NavLink
-      to={to}
-      data-close-sidebar="1"
-      className={({ isActive }) =>
-        [
-          "ml-6 flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition",
-          "border",
-          isActive
-            ? "bg-slate-900 text-white border-black/10 shadow-sm"
-            : "bg-white/40 text-slate-700 border-black/10 hover:bg-white hover:text-slate-900",
-        ].join(" ")
-      }
-    >
-      <span className="text-[10px] opacity-70">•</span>
-      <span>{label}</span>
-    </NavLink>
-  );
-
   const mainNav = useMemo(() => {
     if (isAdmin) {
       return (
@@ -434,7 +443,8 @@ export default function Sidebar({ variant = "desktop" }) {
 
   // --- Inner content (reused by both desktop and mobile overlay) ---
   const inner = (
-    <>
+    <SidebarNavCtx.Provider value={{ navHint, showNavHint, hideNavHint }}>
+      <>
       {navHint && typeof document !== "undefined"
         ? createPortal(
             <div
@@ -695,7 +705,8 @@ export default function Sidebar({ variant = "desktop" }) {
           © {new Date().getFullYear()} MyHomeBro
         </div>
       </div>
-    </>
+      </>
+    </SidebarNavCtx.Provider>
   );
 
   if (variant === "plain") {

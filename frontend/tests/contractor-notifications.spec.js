@@ -331,7 +331,7 @@ test('contractor sidebar groups navigation into core work business and settings'
   await expect(sidebar).toContainText('Stripe Onboarding');
 });
 
-test('desktop contractor sidebar links hit the correct nav target and navigate between pages', async ({
+test('desktop contractor sidebar hover and click navigation stays stable', async ({
   page,
 }) => {
   const pageErrors = [];
@@ -388,6 +388,13 @@ test('desktop contractor sidebar links hit the correct nav target and navigate b
   await expect(milestonesLink).toBeVisible();
   await expect(agreementsLink).toHaveAttribute('href', '/app/agreements');
   await expect(milestonesLink).toHaveAttribute('href', '/app/milestones');
+
+  await agreementsLink.hover();
+  await expect(
+    page.locator('body > [role="tooltip"]').filter({
+      hasText: 'Create and manage project agreements, signatures, and funding',
+    })
+  ).toBeVisible();
 
   await agreementsLink.click();
   await expect(page).toHaveURL(/\/app\/agreements\/?(?:\?.*)?$/);
