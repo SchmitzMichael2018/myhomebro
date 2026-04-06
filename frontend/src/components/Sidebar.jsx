@@ -27,6 +27,7 @@ import {
   MessageSquareWarning,
   SearchCheck,
   ShieldCheck,
+  Sparkles,
   SquareKanban,
   Users,
   UserRound,
@@ -211,7 +212,7 @@ export default function Sidebar({ variant = "desktop" }) {
 
   const NavGroup = ({ label, children, className = "" }) => (
     <div className={`space-y-2.5 ${className}`.trim()}>
-      <div className="px-2 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
+      <div className="px-2 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500/95">
         {label}
       </div>
       <div className="space-y-2">{children}</div>
@@ -232,11 +233,11 @@ export default function Sidebar({ variant = "desktop" }) {
           aria-describedby={navHint?.id === tooltipId ? tooltipId : undefined}
           className={({ isActive }) =>
             [
-              "flex min-w-0 overflow-hidden items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold transition duration-150",
+              "group flex min-w-0 overflow-hidden items-center gap-3 rounded-xl px-3.5 py-3 text-[15px] font-semibold transition duration-200",
               "border",
               isActive
-                ? "bg-slate-900 text-white border-slate-950/20 shadow-[0_10px_24px_rgba(15,23,42,0.16)]"
-                : "bg-white/55 text-slate-700 border-black/5 hover:bg-white hover:text-slate-900",
+                ? "bg-slate-900 text-white border-slate-950/20 shadow-[0_12px_28px_rgba(15,23,42,0.18)]"
+                : "bg-[#f7f8fa] text-slate-700 border-slate-200/95 shadow-[0_2px_6px_rgba(15,23,42,0.04)] hover:bg-white hover:text-[#18395f] hover:border-amber-200 hover:shadow-[0_10px_22px_rgba(15,23,42,0.08),0_0_0_1px_rgba(245,158,11,0.08)]",
             ].join(" ")
           }
           onMouseEnter={(event) => showNavHint(event, resolvedHint, tooltipId)}
@@ -251,13 +252,13 @@ export default function Sidebar({ variant = "desktop" }) {
               className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
                 isCurrent
                   ? "border-white/15 bg-white/10 text-white"
-                  : "border-slate-200 bg-slate-50 text-slate-400"
+                  : "border-slate-200 bg-white text-slate-500 group-hover:border-amber-100 group-hover:bg-amber-50/70 group-hover:text-[#214d7f]"
               }`}
             >
               {Icon ? <Icon size={16} strokeWidth={2} /> : <span className="text-base leading-none">{emoji}</span>}
             </span>
           </span>
-          <span className="min-w-0 truncate">{label}</span>
+          <span className="min-w-0 truncate leading-5">{label}</span>
         </NavLink>
 
       </div>
@@ -595,10 +596,11 @@ export default function Sidebar({ variant = "desktop" }) {
                     context: { current_route: `${location.pathname}${location.search || ""}` },
                   })
                 }
-                className="mb-5 hidden w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 xl:flex"
+                className="mb-5 hidden w-full items-center justify-center gap-3 rounded-xl border border-slate-200 bg-[#f7f8fa] px-3.5 py-3 text-[15px] font-bold text-slate-700 shadow-[0_2px_6px_rgba(15,23,42,0.04)] transition duration-200 hover:border-amber-200 hover:bg-white hover:text-[#18395f] hover:shadow-[0_10px_22px_rgba(15,23,42,0.08),0_0_0_1px_rgba(245,158,11,0.08)] [&>span:first-child]:hidden xl:flex"
               >
                 <span aria-hidden="true">âœ¨</span>
-                Open AI Panel
+                <Sparkles size={16} strokeWidth={2} className="shrink-0 text-[#214d7f]" />
+                <span>Open AI Panel</span>
               </button>
             </div>
 
@@ -685,7 +687,7 @@ export default function Sidebar({ variant = "desktop" }) {
         <button
           onClick={handleLogout}
           data-close-sidebar="1"
-          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-slate-900"
+          className="w-full rounded-xl border border-slate-200 bg-[#f7f8fa] px-3.5 py-3 text-[15px] font-semibold text-slate-700 shadow-[0_2px_6px_rgba(15,23,42,0.04)] transition duration-200 hover:bg-white hover:text-[#18395f]"
         >
           Logout
         </button>
@@ -702,11 +704,11 @@ export default function Sidebar({ variant = "desktop" }) {
 
   return (
     <aside
-      className="hidden max-w-full overflow-x-hidden border-r border-black/10 md:flex md:w-60 md:flex-col lg:w-64"
+      className="hidden max-w-full overflow-x-hidden border-r border-slate-200/90 md:flex md:w-60 md:flex-col lg:w-64"
       style={{
         minHeight: "100vh",
-        background: "rgba(255,255,255,0.72)",
-        backdropFilter: "blur(10px)",
+        background: "linear-gradient(180deg, rgba(252,253,255,0.94) 0%, rgba(246,248,251,0.92) 100%)",
+        backdropFilter: "blur(12px)",
       }}
     >
       {inner}
