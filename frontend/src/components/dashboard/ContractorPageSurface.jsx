@@ -7,10 +7,14 @@ export default function ContractorPageSurface({
   actions = null,
   children,
   className = "",
+  surfaceClassName = "",
+  contentClassName = "",
 }) {
   return (
     <div className={`mx-auto w-full max-w-[1440px] px-3 pb-7 pt-3 md:px-5 lg:px-7 xl:px-8 ${className}`.trim()}>
-      <div className="rounded-[30px] border border-slate-200/85 bg-white/90 p-4 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur-sm md:p-6 lg:p-7">
+      <div
+        className={`rounded-[30px] border border-slate-200/85 bg-white/90 p-4 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur-sm md:p-6 lg:p-7 ${surfaceClassName}`.trim()}
+      >
         {(title || subtitle || eyebrow || actions) ? (
           <div className="mb-5 flex flex-col gap-3.5 border-b border-slate-200/80 pb-4 md:flex-row md:items-end md:justify-between">
             <div className="min-w-0">
@@ -29,7 +33,7 @@ export default function ContractorPageSurface({
             {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
           </div>
         ) : null}
-        <div className="space-y-5">{children}</div>
+        <div className={`space-y-5 ${contentClassName}`.trim()}>{children}</div>
       </div>
     </div>
   );
