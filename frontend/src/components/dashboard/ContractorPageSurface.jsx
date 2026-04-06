@@ -11,7 +11,7 @@ export default function ContractorPageSurface({
   contentClassName = "",
 }) {
   return (
-    <div className={`mx-auto w-full max-w-[1440px] px-3 pb-7 pt-3 md:px-5 lg:px-7 xl:px-8 ${className}`.trim()}>
+    <div className={`min-w-0 w-full max-w-[1440px] px-3 pb-7 pt-3 md:px-5 lg:px-7 xl:px-8 ${className}`.trim()}>
       <div
         className={`rounded-[30px] border border-slate-200/85 bg-white/90 p-4 shadow-[0_24px_60px_rgba(15,23,42,0.08)] backdrop-blur-sm md:p-6 lg:p-7 ${surfaceClassName}`.trim()}
       >
