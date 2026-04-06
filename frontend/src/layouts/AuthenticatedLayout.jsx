@@ -59,7 +59,7 @@ export default function AuthenticatedLayout() {
               minWidth: 0,
             }}
           >
-            <div style={{ flex: 1, overflow: "auto", minHeight: 0, position: "relative" }}>
+            <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
               <div className="mhb-content-pad">
                 <ErrorBoundary>
                   <Outlet />

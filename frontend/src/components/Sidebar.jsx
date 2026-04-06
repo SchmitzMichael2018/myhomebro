@@ -704,7 +704,7 @@ export default function Sidebar({ variant = "desktop" }) {
 
   return (
     <aside
-      className="relative z-30 hidden max-w-full shrink-0 overflow-x-hidden border-r border-slate-200/90 md:flex md:w-60 md:flex-col lg:w-64"
+      className="hidden max-w-full overflow-x-hidden border-r border-slate-200/90 md:flex md:w-60 md:flex-col lg:w-64"
       style={{
         minHeight: "100vh",
         background: "linear-gradient(180deg, rgba(252,253,255,0.94) 0%, rgba(246,248,251,0.92) 100%)",
