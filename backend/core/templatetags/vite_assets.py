@@ -10,7 +10,13 @@ register = template.Library()
 
 
 def _load_manifest() -> dict:
-    manifest_path = Path(settings.BASE_DIR) / "frontend" / "dist" / ".vite" / "manifest.json"
+    # settings.FRONTEND_DIST_DIR is REPO_DIR / "frontend" / "dist"
+    # (BASE_DIR is backend/, REPO_DIR is the repo root where frontend/ lives)
+    dist_dir = getattr(settings, "FRONTEND_DIST_DIR", None)
+    if dist_dir is None:
+        # Fallback: derive from BASE_DIR's parent (repo root)
+        dist_dir = Path(settings.BASE_DIR).parent / "frontend" / "dist"
+    manifest_path = Path(dist_dir) / ".vite" / "manifest.json"
     with manifest_path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
 

@@ -1,22 +1,19 @@
 # backend/core/views_frontend.py
-from pathlib import Path
-from django.conf import settings
-from django.http import HttpResponse, HttpResponseNotFound, HttpResponseServerError
+from django.shortcuts import render
+from django.http import HttpResponseServerError
+
 
 def spa(request, *args, **kwargs):
     """
-    Serve the built React index.html directly from disk (no Django templates).
-    This avoids {% static %} lookups and manifest errors for PWA assets like masked-icon.svg.
+    Serve the SPA shell via the Django template system.
+
+    The template (templates/index.html at the repo root, or
+    backend/templates/index.html) uses the {% vite_entry_js %} and
+    {% vite_entry_css %} template tags which read frontend/dist/.vite/manifest.json
+    to inject the correct content-hashed asset URLs.  This means every
+    `npm run build` automatically picks up new filenames — no manual edits needed.
     """
     try:
-        # Adjust if your project layout differs:
-        index_file = Path(settings.BASE_DIR) / "frontend" / "dist" / "index.html"
-        if not index_file.exists():
-            return HttpResponseNotFound(
-                "index.html not found. Build the frontend and run collectstatic."
-            )
-        content = index_file.read_text(encoding="utf-8")
-        return HttpResponse(content, content_type="text/html; charset=utf-8")
+        return render(request, "index.html")
     except Exception as exc:
-        # Safe guard to surface any unexpected errors
         return HttpResponseServerError(f"SPA render error: {exc}")
