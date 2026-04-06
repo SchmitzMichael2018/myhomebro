@@ -1,3 +1,4 @@
+{% load vite_assets %}
 <!doctype html>
 <html lang="en-US">
   <head>
@@ -22,11 +23,14 @@
       base-uri 'self';
       form-action 'self';
     " />
-    <script type="module" crossorigin src="/static/assets/index-C3DsT9fu.js"></script>
-    <link rel="stylesheet" crossorigin href="/static/assets/index-BxmbuRV2.css">
+    <script type="module" crossorigin src="{% vite_entry_js %}"></script>
+    {% vite_entry_css as vite_css_href %}
+    {% if vite_css_href %}
+    <link rel="stylesheet" crossorigin href="{{ vite_css_href }}">
+    {% endif %}
   </head>
   <body>
     <div id="root" aria-live="polite"></div>
-    <!-- Dev uses this; Prod will be replaced by Vite with /static/assets/index-*.js -->
+    <!-- Legacy template kept in sync via Vite manifest resolution. -->
   </body>
 </html>

@@ -18,6 +18,7 @@ from payments.webhooks import stripe_webhook  # noqa: F401  (imported elsewhere 
 from projects.views.sms_webhook import sms_webhook
 
 from .views_legal import TermsOfServiceView, PrivacyPolicyView
+from .views_frontend import spa as spa_index
 
 try:
     from payments.return_views import stripe_return, ok as stripe_ok  # type: ignore
@@ -52,26 +53,6 @@ except Exception:
 
 def health(_request):
     return HttpResponse("ok", content_type="text/plain")
-
-
-def spa_index(_request):
-    html = """<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1"/>
-    <title>MyHomeBro</title>
-    <link rel="icon" href="/static/favicon.ico"/>
-    <link rel="stylesheet" href="/static/assets/index.css"/>
-  </head>
-  <body class="bg-slate-50">
-    <div id="root"></div>
-    <script type="module" src="/static/assets/index.js"></script>
-  </body>
-</html>"""
-    return HttpResponse(html, content_type="text/html; charset=utf-8")
-
-
 
 def favicon(_request):
     try:

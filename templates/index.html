@@ -1,4 +1,4 @@
-{% load static %}
+{% load static vite_assets %}
 <!doctype html>
 <html lang="en-US">
   <head>
@@ -24,12 +24,14 @@
       form-action 'self';
     " />
 
-    <!-- Stable filenames (we keep these fresh after each build) -->
-    <link rel="stylesheet" href="{% static 'assets/index.css' %}">
+    {% vite_entry_css as vite_css_href %}
+    {% if vite_css_href %}
+    <link rel="stylesheet" href="{{ vite_css_href }}">
+    {% endif %}
   </head>
   <body style="margin:0;background:#0b53ff0d;">
     <div id="root" aria-live="polite"></div>
 
-    <script type="module" src="{% static 'assets/index.js' %}"></script>
+    <script type="module" src="{% vite_entry_js %}"></script>
   </body>
 </html>

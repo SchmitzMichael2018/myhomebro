@@ -103,7 +103,7 @@ async function mockContractorDashboard(page, options = {}) {
     });
   });
 
-  await page.route(/\/api\/projects\/milestones\/?$/, async (route) => {
+  await page.route(/\/api\/projects\/milestones\/?(?:\?.*)?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -111,7 +111,7 @@ async function mockContractorDashboard(page, options = {}) {
     });
   });
 
-  await page.route(/\/api\/projects\/invoices\/?$/, async (route) => {
+  await page.route(/\/api\/projects\/invoices\/?(?:\?.*)?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -329,6 +329,78 @@ test('contractor sidebar groups navigation into core work business and settings'
   await expect(sidebar).toContainText('Disputes');
   await expect(sidebar).toContainText('My Profile');
   await expect(sidebar).toContainText('Stripe Onboarding');
+});
+
+test('desktop contractor sidebar links hit the correct nav target and navigate between pages', async ({
+  page,
+}) => {
+  const pageErrors = [];
+  const consoleErrors = [];
+  const failedRequests = [];
+
+  page.on('pageerror', (error) => {
+    pageErrors.push(error.message);
+  });
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') {
+      consoleErrors.push(msg.text());
+    }
+  });
+  page.on('requestfailed', (request) => {
+    failedRequests.push(`${request.method()} ${request.url()} :: ${request.failure()?.errorText || 'failed'}`);
+  });
+
+  await mockContractorDashboard(page, {
+    agreements: [
+      {
+        id: 321,
+        title: 'Kitchen Remodel Agreement',
+        project_title: 'Kitchen Remodel',
+        status: 'draft',
+        total_amount: 8400,
+      },
+    ],
+    milestones: [
+      {
+        id: 98,
+        title: 'Paint Prep',
+        agreement: 321,
+        agreement_title: 'Kitchen Remodel Agreement',
+        status: 'submitted',
+      },
+    ],
+    invoices: [
+      {
+        id: 1,
+        amount: 1200,
+        status: 'pending_approval',
+      },
+    ],
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  const sidebar = page.locator('aside');
+  const agreementsLink = sidebar.locator('a[href="/app/agreements"]').first();
+  const milestonesLink = sidebar.locator('a[href="/app/milestones"]').first();
+
+  await expect(agreementsLink).toBeVisible();
+  await expect(milestonesLink).toBeVisible();
+  await expect(agreementsLink).toHaveAttribute('href', '/app/agreements');
+  await expect(milestonesLink).toHaveAttribute('href', '/app/milestones');
+
+  await agreementsLink.click();
+  await expect(page).toHaveURL(/\/app\/agreements\/?(?:\?.*)?$/);
+  await expect(page.getByRole('heading', { name: 'Agreements' })).toBeVisible();
+
+  await milestonesLink.click();
+  await expect(page).toHaveURL(/\/app\/milestones\/?(?:\?.*)?$/);
+  await expect(page.getByText('Agreement #')).toBeVisible();
+  await expect(page.getByText('Kitchen Remodel')).toBeVisible();
+
+  expect(pageErrors, `Unexpected page errors: ${pageErrors.join(' | ')}`).toEqual([]);
+  expect(consoleErrors, `Unexpected console errors: ${consoleErrors.join(' | ')}`).toEqual([]);
+  expect(failedRequests, `Unexpected failed requests: ${failedRequests.join(' | ')}`).toEqual([]);
 });
 
 test('contractor dashboard suppresses stale onboarding hero copy after setup is complete', async ({
