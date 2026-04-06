@@ -209,6 +209,15 @@ export default function Sidebar({ variant = "desktop" }) {
 
   useEffect(() => () => clearTooltipTimers(), [clearTooltipTimers]);
 
+  const NavGroup = ({ label, children, className = "" }) => (
+    <div className={`space-y-2.5 ${className}`.trim()}>
+      <div className="px-2 text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">
+        {label}
+      </div>
+      <div className="space-y-2">{children}</div>
+    </div>
+  );
+
   // Primary item (MAIN section)
   const Item = ({ to, label, icon: Icon, emoji, title, hint }) => {
     const tooltipId = React.useId();
@@ -223,11 +232,11 @@ export default function Sidebar({ variant = "desktop" }) {
           aria-describedby={navHint?.id === tooltipId ? tooltipId : undefined}
           className={({ isActive }) =>
             [
-              "flex min-w-0 overflow-hidden items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition",
+              "flex min-w-0 overflow-hidden items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-semibold transition duration-150",
               "border",
               isActive
-                ? "bg-slate-900 text-white border-black/10 shadow-sm"
-                : "bg-white/60 text-slate-800 border-black/10 hover:bg-white hover:text-slate-900",
+                ? "bg-slate-900 text-white border-slate-950/20 shadow-[0_10px_24px_rgba(15,23,42,0.16)]"
+                : "bg-white/55 text-slate-700 border-black/5 hover:bg-white hover:text-slate-900",
             ].join(" ")
           }
           onMouseEnter={(event) => showNavHint(event, resolvedHint, tooltipId)}
@@ -242,7 +251,7 @@ export default function Sidebar({ variant = "desktop" }) {
               className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
                 isCurrent
                   ? "border-white/15 bg-white/10 text-white"
-                  : "border-slate-200 bg-slate-50 text-slate-500"
+                  : "border-slate-200 bg-slate-50 text-slate-400"
               }`}
             >
               {Icon ? <Icon size={16} strokeWidth={2} /> : <span className="text-base leading-none">{emoji}</span>}
@@ -548,23 +557,23 @@ export default function Sidebar({ variant = "desktop" }) {
         </div>
       ) : null}
 
-      <div className="px-4 pt-4 pb-3 border-b border-black/10">
-        <div className="flex items-center gap-2">
+      <div className="border-b border-slate-200/90 px-4 pb-4 pt-5">
+        <div className="flex items-center gap-3">
           <img
             src={new URL("../assets/myhomebro_logo.png", import.meta.url).href}
             alt="MyHomeBro"
-            className="h-8 w-8 rounded-md object-contain"
+            className="h-9 w-9 rounded-lg object-contain"
           />
           <div>
             <div className="text-base font-extrabold tracking-tight text-slate-900">
               MyHomeBro
             </div>
-            <div className="text-xs text-slate-600">{consoleLabel}</div>
+            <div className="mt-0.5 text-xs font-medium text-slate-600">{consoleLabel}</div>
           </div>
         </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-4 space-y-6 no-scrollbar">
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 space-y-7 no-scrollbar">
         {showRefundContext && !isEmployee && (
           <RefundEscrowModal
             open={refundOpen}
@@ -574,6 +583,71 @@ export default function Sidebar({ variant = "desktop" }) {
           />
         )}
 
+        {isContractorOwner ? (
+          <>
+            <div>
+              <button
+                type="button"
+                data-testid="assistant-dock-open-button"
+                onClick={() =>
+                  openAssistant({
+                    title: "Start with AI",
+                    context: { current_route: `${location.pathname}${location.search || ""}` },
+                  })
+                }
+                className="mb-5 hidden w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 xl:flex"
+              >
+                <span aria-hidden="true">âœ¨</span>
+                Open AI Panel
+              </button>
+            </div>
+
+            <NavGroup label="Main">
+              <Item to={`${APP_BASE}/dashboard`} label="Dashboard" icon={LayoutDashboard} />
+              <Item to={`${APP_BASE}/assistant`} label="Start with AI" icon={Bot} />
+            </NavGroup>
+
+            <NavGroup label="Work" className="pt-1">
+              <Item to={`${APP_BASE}/agreements`} label="Agreements" icon={FileSignature} />
+              <Item to={`${APP_BASE}/milestones`} label="Milestones" icon={SquareKanban} />
+              <Item to={`${APP_BASE}/invoices`} label="Invoices" icon={CreditCard} />
+              <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} />
+            </NavGroup>
+
+            <NavGroup label="Team" className="pt-1">
+              <Item to={`${APP_BASE}/subcontractors`} label="Subcontractors" icon={Wrench} />
+              <Item to={`${APP_BASE}/assignments`} label="Assignments" icon={BriefcaseBusiness} />
+              <Item to={`${APP_BASE}/team-schedule`} label="Team Schedule" icon={CalendarDays} />
+              <Item to={`${APP_BASE}/team`} label="Team" icon={Users} />
+            </NavGroup>
+
+            <NavGroup label="Business" className="pt-1">
+              <Item to={`${APP_BASE}/business`} label="Business Dashboard" icon={Gauge} />
+              <Item to={`${APP_BASE}/customers`} label="Customers" icon={Users} />
+              <Item to={`${APP_BASE}/calendar`} label="Calendar" icon={CalendarDays} />
+              <Item to={`${APP_BASE}/expenses`} label="Expenses" icon={HandCoins} />
+              <Item to={`${APP_BASE}/disputes`} label="Disputes" icon={MessageSquareWarning} />
+              <Item to={`${APP_BASE}/public-presence`} label="Public Presence" icon={Globe} />
+            </NavGroup>
+
+            <NavGroup label="Account" className="pt-1">
+              <Item to={`${APP_BASE}/profile`} label="My Profile" icon={UserRound} />
+              <Item
+                to={`${APP_BASE}/onboarding`}
+                icon={LinkIcon}
+                label={
+                  <>
+                    <span>Stripe Onboarding</span>
+                    <StripeOnboardingStatus className="ml-2" />
+                  </>
+                }
+              />
+            </NavGroup>
+          </>
+        ) : null}
+
+        {!isContractorOwner ? (
+        <>
         <div>
           <div className="mb-2 px-2 text-xs font-extrabold uppercase tracking-wide text-slate-600">
             Main
@@ -603,13 +677,15 @@ export default function Sidebar({ variant = "desktop" }) {
           </div>
           <div className="space-y-2">{accountNav}</div>
         </div>
+        </>
+        ) : null}
       </nav>
 
-      <div className="px-4 py-3 border-t border-black/10">
+      <div className="border-t border-slate-200/90 px-4 py-4">
         <button
           onClick={handleLogout}
           data-close-sidebar="1"
-          className="w-full rounded-xl bg-rose-600 px-3 py-2 text-sm font-extrabold text-white hover:bg-rose-700"
+          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-slate-900"
         >
           Logout
         </button>
