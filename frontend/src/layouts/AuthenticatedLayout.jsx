@@ -57,6 +57,8 @@ export default function AuthenticatedLayout() {
               display: "flex",
               flexDirection: "column",
               minWidth: 0,
+              position: "relative",
+              zIndex: 0,
             }}
           >
             <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
