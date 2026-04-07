@@ -1368,7 +1368,7 @@ export default function Step1Details({
           </div>
         ) : null}
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="min-h-[180px] rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           {startModeCommitted ? (
             <div
               data-testid="step1-start-mode-summary"

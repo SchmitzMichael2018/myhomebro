@@ -308,10 +308,13 @@ export default function TemplateSearchSection({
   const hasDescription = !!safeTrim(dLocal?.description);
   const isAiMode = entryMode === "ai";
   const isTemplateMode = entryMode === "template";
-  const shouldExpandManualFields = !isAiMode || hasTitle || hasDescription || !!safeTrim(aiPreview);
+  const hasAiPreview = !!safeTrim(aiPreview);
   const hasTemplateSearch = !!safeTrim(templateSearch);
   const hasTemplateMatches =
     Array.isArray(filteredTemplates) && filteredTemplates.length > 0;
+  const [manualDetailsExpanded, setManualDetailsExpanded] = useState(
+    () => !isAiMode || hasTitle || hasDescription || hasAiPreview
+  );
 
   void aiCredits;
   const aiCreditText = "AI Included";
@@ -335,6 +338,18 @@ export default function TemplateSearchSection({
   useEffect(() => {
     setTemplateHighlightedIndex(0);
   }, [templateSearch, filteredTemplates.length]);
+
+  useEffect(() => {
+    if (!isAiMode && !manualDetailsExpanded) {
+      setManualDetailsExpanded(true);
+    }
+  }, [isAiMode, manualDetailsExpanded]);
+
+  useEffect(() => {
+    if ((hasTitle || hasDescription || hasAiPreview) && !manualDetailsExpanded) {
+      setManualDetailsExpanded(true);
+    }
+  }, [hasAiPreview, hasDescription, hasTitle, manualDetailsExpanded]);
 
   useEffect(() => {
     function handleOutsideClick(e) {
@@ -1388,7 +1403,8 @@ export default function TemplateSearchSection({
         </div>
 
         <details
-          open={shouldExpandManualFields}
+          open={manualDetailsExpanded}
+          onToggle={(event) => setManualDetailsExpanded(event.currentTarget.open)}
           className={`mt-4 rounded-xl border ${
             isAiMode
               ? "border-slate-200 bg-slate-50/70"
@@ -1413,7 +1429,7 @@ export default function TemplateSearchSection({
                 </div>
               </div>
               <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                {shouldExpandManualFields ? "Editable" : "Collapsed"}
+                {manualDetailsExpanded ? "Editable" : "Collapsed"}
               </span>
             </div>
           </summary>
