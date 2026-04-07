@@ -1265,17 +1265,10 @@ export default function Step2Milestones({
     hasStagedSuggestedAmountChanges ||
     hasStagedSuggestedTimelineChanges ||
     Boolean(estimatePreview);
-  const planningModeTitle = isAiPlanningMode
-    ? "Using AI-generated plan (editable)"
-    : "Custom milestone plan";
-  const planningModeDescription = isAiPlanningMode
-    ? "AI guidance is active here. Review milestone structure, pricing, and timing before you save."
-    : "You are working from a contractor-edited plan. Use AI only when you want suggestions or a second look.";
   const hasPlanningDetails =
     Boolean(assistantGuidedFlow?.guided_question) ||
     assistantProactiveRecommendations.length > 0 ||
-    assistantPredictiveInsights.length > 0 ||
-    assistantClarificationRows.length > 0;
+    assistantPredictiveInsights.length > 0;
 
   const minStart = useMemo(() => {
     const s = effectiveMilestones
@@ -2172,51 +2165,65 @@ export default function Step2Milestones({
       ) : null}
 
       {projectContextSummary.hasAny ? (
-        <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-            Project Context
-          </div>
-          <div className="mt-2 flex flex-wrap gap-2 text-xs">
-            {projectContextSummary.projectType ? (
-              <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700">
-                Type: {projectContextSummary.projectType}
-              </span>
-            ) : null}
-            {projectContextSummary.projectSubtype ? (
-              <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700">
-                Subtype: {projectContextSummary.projectSubtype}
-              </span>
-            ) : null}
-            {projectContextSummary.templateName ? (
-              <span className="rounded-full bg-indigo-50 px-2 py-1 font-medium text-indigo-700">
-                Template: {projectContextSummary.templateName}
-              </span>
-            ) : null}
-            {projectContextSummary.materialsResponsibility ? (
-              <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700">
-                Materials: {projectContextSummary.materialsResponsibility}
-              </span>
-            ) : null}
-            {projectContextSummary.quantitySignals.map((signal) => (
-              <span
-                key={`${signal.label}:${signal.value}`}
-                className="rounded-full bg-white px-2 py-1 font-medium text-slate-700"
-              >
-                {signal.label}: {signal.value}
-              </span>
-            ))}
-          </div>
-          {projectContextSummary.scopeSummary ? (
-            <div className="mt-2 text-xs text-slate-600">
-              Scope: {projectContextSummary.scopeSummary}
+        <details className="mb-3 rounded-xl border border-slate-200 bg-slate-50/80 shadow-sm">
+          <summary className="cursor-pointer list-none px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Project context</div>
+                <div className="mt-1 text-xs text-slate-600">
+                  Grounding details that shape milestone planning and pricing.
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {isAiPlanningMode ? (
+                  <span className="rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+                    AI-guided
+                  </span>
+                ) : null}
+                <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                  View details
+                </span>
+              </div>
             </div>
-          ) : null}
-          {projectContextSummary.templateName ? (
-            <div className="mt-2 text-xs text-indigo-700">
-              Template structure is active. AI milestone regeneration is disabled here.
+          </summary>
+          <div className="border-t border-slate-200 px-4 py-4 text-sm text-slate-800">
+            <div className="flex flex-wrap gap-2 text-xs">
+              {projectContextSummary.projectType ? (
+                <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700">
+                  Type: {projectContextSummary.projectType}
+                </span>
+              ) : null}
+              {projectContextSummary.projectSubtype ? (
+                <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700">
+                  Subtype: {projectContextSummary.projectSubtype}
+                </span>
+              ) : null}
+              {projectContextSummary.templateName ? (
+                <span className="rounded-full bg-indigo-50 px-2 py-1 font-medium text-indigo-700">
+                  Using {projectContextSummary.templateName}
+                </span>
+              ) : null}
+              {projectContextSummary.materialsResponsibility ? (
+                <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700">
+                  Materials: {projectContextSummary.materialsResponsibility}
+                </span>
+              ) : null}
+              {projectContextSummary.quantitySignals.map((signal) => (
+                <span
+                  key={`${signal.label}:${signal.value}`}
+                  className="rounded-full bg-white px-2 py-1 font-medium text-slate-700"
+                >
+                  {signal.label}: {signal.value}
+                </span>
+              ))}
             </div>
-          ) : null}
-        </div>
+            {projectContextSummary.scopeSummary ? (
+              <div className="mt-2 text-xs text-slate-600">
+                Scope: {projectContextSummary.scopeSummary}
+              </div>
+            ) : null}
+          </div>
+        </details>
       ) : null}
 
       {recurringSummary ? (
@@ -2259,34 +2266,10 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
-      <div
-        className={`mb-3 rounded-2xl border px-4 py-4 shadow-sm ${
-          isAiPlanningMode
-            ? "border-indigo-200 bg-indigo-50/70"
-            : "border-slate-200 bg-slate-50/80"
-        }`}
-      >
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <div className="text-sm font-semibold text-slate-900">{planningModeTitle}</div>
-            <div className="mt-1 text-sm text-slate-600">{planningModeDescription}</div>
-          </div>
-          <span
-            className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${
-              isAiPlanningMode
-                ? "border border-indigo-200 bg-white text-indigo-700"
-                : "bg-white text-slate-600"
-            }`}
-          >
-            {isAiPlanningMode ? "AI-guided" : "Manual"}
-          </span>
-        </div>
-      </div>
-
       <StartWithAIEntry
         className=""
         testId="milestones-ai-entry"
-        title={isAiPlanningMode ? "Refine the plan with AI" : "Bring AI into milestone planning"}
+        title={isAiPlanningMode ? "Refine milestone plan with AI" : "Plan milestones with AI"}
         description="Use current pricing, template, and clarification context to keep milestone work moving."
         context={assistantContext}
         onAction={handleAssistantAction}
@@ -2358,36 +2341,6 @@ export default function Step2Milestones({
               </div>
             ) : null}
 
-            {assistantClarificationRows.length ? (
-              <div
-                data-testid="assistant-clarification-banner"
-                className="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3"
-              >
-                <div className="text-sm font-semibold text-indigo-900">Assistant clarifications ready</div>
-                <div className="mt-1 text-xs text-indigo-800">
-                  AI preloaded clarification questions into the existing review flow. Review them before
-                  finalizing pricing.
-                </div>
-                <ul className="mt-3 space-y-2 text-sm text-indigo-950">
-                  {assistantClarificationRows.slice(0, 3).map((question) => (
-                    <li
-                      key={question.key}
-                      data-testid={`assistant-clarification-${question.key}`}
-                      className="rounded border border-indigo-100 bg-white px-3 py-2"
-                    >
-                      {question.label}
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  type="button"
-                  onClick={() => setClarOpen(true)}
-                  className="mt-3 rounded border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-900 hover:bg-indigo-100"
-                >
-                  Review Clarifications
-                </button>
-              </div>
-            ) : null}
           </div>
         </details>
       ) : null}
@@ -2462,29 +2415,13 @@ export default function Step2Milestones({
 
       <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
         <div className="mb-3">
-          <h4 className="text-sm font-semibold text-slate-900">Actions</h4>
+          <h4 className="text-sm font-semibold text-slate-900">Planning controls</h4>
           <p className="mt-1 text-xs text-slate-600">
-            Review clarifications, refresh estimate guidance, and stage milestone suggestions before you save.
+            Keep the focus on milestone pricing, schedule, and the edits you want to save next.
           </p>
         </div>
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={handleRunAiSuggest}
-              disabled={aiLoading || milestonesLocked || templateApplied}
-              className="rounded border px-3 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-60"
-              title={
-                milestonesLocked
-                  ? "Locked"
-                  : templateApplied
-                  ? "Disabled when a template is already applied"
-                  : ""
-              }
-            >
-              {aiLoading ? "Thinking…" : "✨ AI Suggest Milestones"}
-            </button>
-
             <button
               type="button"
               onClick={() => setClarOpen(true)}
@@ -2509,16 +2446,6 @@ export default function Step2Milestones({
               ) : null}
             </button>
 
-            <button
-              type="button"
-              onClick={handleOpenSaveTemplate}
-              disabled={milestonesLocked}
-              className="rounded border px-3 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-60"
-              title={milestonesLocked ? "Locked" : "Save current agreement milestones as a reusable template"}
-            >
-              Save as Template
-            </button>
-
             {effectiveMilestones.length && pricingEstimateStale ? (
               <button
                 type="button"
@@ -2532,18 +2459,6 @@ export default function Step2Milestones({
                 title="Refresh estimate-assist guidance from current clarification answers without changing milestone amounts."
               >
                 {pricingRefreshing ? "Refreshing Pricing…" : "Refresh Pricing Estimate"}
-              </button>
-            ) : null}
-
-            {effectiveMilestones.length ? (
-              <button
-                type="button"
-                onClick={applySuggestedPricesToAll}
-                disabled={milestonesLocked}
-                className="rounded border px-3 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-60"
-                title="Apply suggested prices to all eligible milestone amounts locally for review."
-              >
-                Apply Suggested Price to All
               </button>
             ) : null}
 
@@ -2561,14 +2476,25 @@ export default function Step2Milestones({
               </span>
             ) : null}
 
-            {templateApplied && !milestonesLocked ? (
-              <span className="text-xs text-indigo-700">
-                Template structure is active. Review pricing and clarifications here instead of regenerating milestones.
-              </span>
-            ) : null}
-
             {aiError ? <span className="text-sm text-red-600">{aiError}</span> : null}
           </div>
+
+          <details className="relative">
+            <summary className="cursor-pointer list-none rounded border px-3 py-2 text-sm font-medium text-slate-700 hover:bg-white">
+              More
+            </summary>
+            <div className="absolute right-0 z-10 mt-2 min-w-[200px] rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+              <button
+                type="button"
+                onClick={handleOpenSaveTemplate}
+                disabled={milestonesLocked}
+                className="w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                title={milestonesLocked ? "Locked" : "Save current agreement milestones as a reusable template"}
+              >
+                Save as Template
+              </button>
+            </div>
+          </details>
         </div>
       </section>
 
@@ -2616,183 +2542,120 @@ export default function Step2Milestones({
       ) : null}
 
       {estimatePreview ? (
-        <section
-          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+        <details
+          className="rounded-2xl border border-slate-200 bg-slate-50/80"
           data-testid="step2-estimate-panel"
         >
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <div className="text-sm font-semibold text-slate-900">Estimate Summary</div>
-              <div className="mt-1 text-xs text-slate-600">
-                Suggested estimate based on project details, templates, seeded benchmarks, and similar jobs when available.
-              </div>
-              {estimateBanner ? (
-                <div
-                  className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800"
-                  data-testid="step2-estimate-banner"
-                >
-                  {estimateBanner}
+          <summary className="cursor-pointer list-none px-4 py-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Estimate summary</div>
+                <div className="mt-1 text-xs text-slate-600">
+                  Pricing and timeline guidance based on current project details.
                 </div>
-              ) : null}
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() =>
-                  handleRefreshProjectEstimate({
-                    successMessage: "Estimate refreshed from current project details.",
-                  }).catch((e) =>
-                    toast.error(e?.response?.data?.detail || e?.message || "Estimate refresh failed.")
-                  )
-                }
-                disabled={estimateRefreshing}
-                className="rounded border px-3 py-2 text-sm font-medium hover:bg-white disabled:opacity-60"
-                data-testid="step2-refresh-estimate"
-              >
-                {estimateRefreshing ? "Refreshing Estimate…" : "Refresh Estimate"}
-              </button>
-              <button
-                type="button"
-                onClick={applyEstimateSuggestedAmounts}
-                disabled={milestonesLocked}
-                className="rounded border px-3 py-2 text-sm font-medium hover:bg-white disabled:opacity-60"
-                data-testid="step2-apply-estimate-amounts"
-              >
-                Apply Suggested Amounts
-              </button>
-              <button
-                type="button"
-                onClick={applyEstimateSuggestedTimeline}
-                disabled={milestonesLocked}
-                className="rounded border px-3 py-2 text-sm font-medium hover:bg-white disabled:opacity-60"
-                data-testid="step2-apply-estimate-timeline"
-              >
-                Apply Suggested Timeline
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
-            <div className="rounded-md border bg-white px-3 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Suggested Total</div>
-              <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-estimate-total">
-                {formatCurrency(estimatePreview.suggested_total_price)}
-              </div>
-              <div className="text-xs text-slate-600">
-                Range {formatCurrency(estimatePreview.suggested_price_low)} – {formatCurrency(estimatePreview.suggested_price_high)}
-              </div>
-            </div>
-            <div className="rounded-md border bg-white px-3 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Timeline</div>
-              <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-estimate-duration">
-                {formatDurationDays(estimatePreview.suggested_duration_days)}
-              </div>
-              <div className="text-xs text-slate-600">
-                Range {formatDurationDays(estimatePreview.suggested_duration_low)} – {formatDurationDays(estimatePreview.suggested_duration_high)}
-              </div>
-            </div>
-            <div className="rounded-md border bg-white px-3 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Confidence</div>
-              <div className="mt-1 text-sm font-semibold text-slate-900" data-testid="step2-estimate-confidence">
-                {formatEstimateConfidence(estimatePreview.confidence_level) || "Estimate available"}
-              </div>
-              <div className="mt-1 text-xs text-slate-600">{estimatePreview.confidence_reasoning}</div>
-            </div>
-            <div className="rounded-md border bg-white px-3 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Source</div>
-              <div className="mt-1 text-sm font-semibold text-slate-900" data-testid="step2-estimate-source">
-                {safeStr(estimatePreview.template_used) || "Project benchmark"}
-              </div>
-              <div className="mt-1 text-xs text-slate-600">
-                {safeStr(estimatePreview.benchmark_source).replace(/_/g, " ")}
-                {estimatePreview.source_metadata?.seeded_region_scope
-                  ? ` • ${estimatePreview.source_metadata.seeded_region_scope}`
-                  : ""}
-              </div>
-            </div>
-          </div>
-
-          {Array.isArray(estimatePreview.explanation_lines) && estimatePreview.explanation_lines.length ? (
-            <div className="mt-4 rounded-md border bg-white px-3 py-3" data-testid="step2-estimate-explanations">
-              <div className="text-sm font-semibold text-slate-900">Why this changed</div>
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
-                {estimatePreview.explanation_lines.map((line, idx) => (
-                  <li key={`estimate-line-${idx}`}>{line}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <div className="rounded-md border bg-white px-3 py-3">
-              <div className="text-sm font-semibold text-slate-900">Adjustments</div>
-              {(
-                (Array.isArray(estimatePreview.price_adjustments)
-                  ? estimatePreview.price_adjustments.length
-                  : 0) ||
-                (Array.isArray(estimatePreview.timeline_adjustments)
-                  ? estimatePreview.timeline_adjustments.length
-                  : 0)
-              ) ? (
-                <div className="mt-2 space-y-2 text-sm">
-                  {(Array.isArray(estimatePreview.price_adjustments)
-                    ? estimatePreview.price_adjustments
-                    : []
-                  ).map((row, idx) => (
-                    <div key={`price-adjustment-${idx}`} className="rounded border border-slate-100 px-2 py-2">
-                      <div className="font-medium text-slate-900">{row.label}</div>
-                      <div className="text-slate-700">{formatCurrency(row.amount)}</div>
-                      <div className="text-xs text-slate-500">{row.reason}</div>
-                    </div>
-                  ))}
-                  {(Array.isArray(estimatePreview.timeline_adjustments)
-                    ? estimatePreview.timeline_adjustments
-                    : []
-                  ).map((row, idx) => (
-                    <div key={`timeline-adjustment-${idx}`} className="rounded border border-slate-100 px-2 py-2">
-                      <div className="font-medium text-slate-900">{row.label}</div>
-                      <div className="text-slate-700">
-                        {Number(row.days) > 0 ? "+" : ""}
-                        {row.days} day{Math.abs(Number(row.days)) === 1 ? "" : "s"}
-                      </div>
-                      <div className="text-xs text-slate-500">{row.reason}</div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-2 text-sm text-slate-500">No explicit clarification adjustments were needed for the current estimate.</div>
-              )}
-            </div>
-
-            <div className="rounded-md border bg-white px-3 py-3" data-testid="step2-estimate-milestones">
-              <div className="text-sm font-semibold text-slate-900">Suggested Milestones</div>
-              <div className="mt-1 text-xs text-slate-600">
-                Suggestions are editable. Review before saving any milestone changes.
-              </div>
-              <div className="mt-2 space-y-2">
-                {(estimatePreview.milestone_suggestions || []).map((row, idx) => (
-                  <div key={`estimate-milestone-${idx}`} className="rounded border border-slate-100 px-3 py-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="font-medium text-slate-900">
-                        {row.suggested_order || idx + 1}. {row.title}
-                      </div>
-                      <div className="text-sm text-slate-700">
-                        {formatCurrency(row.suggested_amount)} • {formatDurationDays(row.suggested_duration_days)}
-                      </div>
-                    </div>
-                    {safeStr(row.description) ? (
-                      <div className="mt-1 text-xs text-slate-600">{row.description}</div>
-                    ) : null}
-                    {safeStr(row.source_note) ? (
-                      <div className="mt-1 text-[11px] text-slate-500">{row.source_note}</div>
-                    ) : null}
+                {estimateBanner ? (
+                  <div
+                    className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800"
+                    data-testid="step2-estimate-banner"
+                  >
+                    {estimateBanner}
                   </div>
-                ))}
+                ) : null}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                  View estimate details
+                </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleRefreshProjectEstimate({
+                      successMessage: "Estimate refreshed from current project details.",
+                    }).catch((err) =>
+                      toast.error(err?.response?.data?.detail || err?.message || "Estimate refresh failed.")
+                    );
+                  }}
+                  disabled={estimateRefreshing}
+                  className="rounded border px-3 py-2 text-sm font-medium hover:bg-white disabled:opacity-60"
+                  data-testid="step2-refresh-estimate"
+                >
+                  {estimateRefreshing ? "Refreshing Estimate…" : "Refresh Estimate"}
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    applyEstimateSuggestedAmounts();
+                  }}
+                  disabled={milestonesLocked}
+                  className="rounded border px-3 py-2 text-sm font-medium hover:bg-white disabled:opacity-60"
+                  data-testid="step2-apply-estimate-amounts"
+                >
+                  Apply Suggested Amounts
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    applyEstimateSuggestedTimeline();
+                  }}
+                  disabled={milestonesLocked}
+                  className="rounded border px-3 py-2 text-sm font-medium hover:bg-white disabled:opacity-60"
+                  data-testid="step2-apply-estimate-timeline"
+                >
+                  Apply Suggested Timeline
+                </button>
+              </div>
+            </div>
+          </summary>
+
+          <div className="border-t border-slate-200 px-4 py-4">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              <div className="rounded-md border bg-white px-3 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Suggested Total</div>
+                <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-estimate-total">
+                  {formatCurrency(estimatePreview.suggested_total_price)}
+                </div>
+                <div className="text-xs text-slate-600">
+                  Range {formatCurrency(estimatePreview.suggested_price_low)} – {formatCurrency(estimatePreview.suggested_price_high)}
+                </div>
+              </div>
+              <div className="rounded-md border bg-white px-3 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Timeline</div>
+                <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-estimate-duration">
+                  {formatDurationDays(estimatePreview.suggested_duration_days)}
+                </div>
+                <div className="text-xs text-slate-600">
+                  Range {formatDurationDays(estimatePreview.suggested_duration_low)} – {formatDurationDays(estimatePreview.suggested_duration_high)}
+                </div>
+              </div>
+              <div className="rounded-md border bg-white px-3 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Confidence</div>
+                <div className="mt-1 text-sm font-semibold text-slate-900" data-testid="step2-estimate-confidence">
+                  {formatEstimateConfidence(estimatePreview.confidence_level) || "Estimate available"}
+                </div>
+                <div className="mt-1 text-xs text-slate-600">{estimatePreview.confidence_reasoning}</div>
+              </div>
+              <div className="rounded-md border bg-white px-3 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Source</div>
+                <div className="mt-1 text-sm font-semibold text-slate-900" data-testid="step2-estimate-source">
+                  {safeStr(estimatePreview.template_used) || "Project benchmark"}
+                </div>
+                <div className="mt-1 text-xs text-slate-600">
+                  {safeStr(estimatePreview.benchmark_source).replace(/_/g, " ")}
+                  {estimatePreview.source_metadata?.seeded_region_scope
+                    ? ` • ${estimatePreview.source_metadata.seeded_region_scope}`
+                    : ""}
+                </div>
               </div>
             </div>
           </div>
-        </section>
+        </details>
       ) : null}
 
       <ClarificationsModal

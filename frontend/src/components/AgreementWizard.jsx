@@ -1451,14 +1451,16 @@ export default function AgreementWizard() {
         </div>
       ) : null}
 
-      <StartWithAIEntry
-        className="mt-4"
-        testId="agreement-wizard-ai-entry"
-        title={aiPanelConfig.entryTitle}
-        description={aiPanelConfig.entryDescription}
-        context={assistantContext}
-        onAction={handleAssistantAction}
-      />
+      {step !== 2 ? (
+        <StartWithAIEntry
+          className="mt-4"
+          testId="agreement-wizard-ai-entry"
+          title={aiPanelConfig.entryTitle}
+          description={aiPanelConfig.entryDescription}
+          context={assistantContext}
+          onAction={handleAssistantAction}
+        />
+      ) : null}
 
       {assistantAppliedSummary ? (
         <div
