@@ -742,15 +742,20 @@ test('agreement wizard assistant uses agreement context to resume at the blocked
   });
 
   await page.getByTestId('agreement-wizard-ai-entry-toggle').click();
-  await expect(page.getByTestId('start-with-ai-context-summary')).toContainText('Agreement #123');
+  await expect(page.getByTestId('start-with-ai-status')).toContainText('Ready to set up this agreement');
 
   await page.getByTestId('start-with-ai-input').fill('Help me finish this agreement');
-  await page.getByRole('button', { name: 'Plan Next Step' }).click();
+  await page.getByRole('button', { name: 'Ask AI' }).click();
 
-  await expect(page.getByTestId('start-with-ai-detected-intent')).toContainText('Resume agreement');
   await expect(page.getByTestId('start-with-ai-next-action-label')).toContainText(
-    'Open Milestone Builder'
+    'Next: Open Milestone Builder.'
   );
+  await expect(page.getByTestId('start-with-ai-navigate')).toContainText('Open Milestone Builder');
+  await page
+    .getByTestId('start-with-ai-assistant')
+    .getByText('Assistant diagnostics')
+    .click();
+  await expect(page.getByTestId('start-with-ai-detected-intent')).toContainText('Resume agreement');
   await page.getByTestId('start-with-ai-structured-toggle').click();
   await expect(page.getByTestId('start-with-ai-structured-json')).toContainText(
     '"wizard_step_target": 2'

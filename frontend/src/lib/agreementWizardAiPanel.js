@@ -14,6 +14,10 @@ function formatMoney(value) {
   })}`;
 }
 
+function pluralize(count, singular, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 function getCustomerEmail(agreement = {}) {
   return (
     safeText(agreement?.homeowner_email) ||
@@ -175,12 +179,13 @@ export function getAiPanelConfigForStep(step, context = {}) {
   if (Number(step) === 1) {
     return {
       ...sharedConfig,
-      entryTitle: "Describe the job and I’ll help set it up",
+      entryTitle: "Describe the job and I'll help set it up",
       entryDescription:
         "Use AI to shape the first draft faster with scope, template, type, and setup guidance.",
-      headline: "Describe the job and I’ll help set it up",
+      statusText: "Ready to set up this agreement",
+      headline: "Describe the job and I'll help set it up",
       helperText:
-        "I’m focused on getting the agreement started quickly with the right project context and setup fields.",
+        "Use AI to get the agreement started faster with the right scope, setup details, and template fit.",
       quickActions: [
         { label: "Generate Scope", prompt: "Generate a clear project scope from this job description." },
         { label: "Suggest Template", intent: "apply_template" },
@@ -189,6 +194,8 @@ export function getAiPanelConfigForStep(step, context = {}) {
       ],
       promptPlaceholder:
         'Example: "Set this up for a roof replacement with permit coordination and cleanup."',
+      nextActionText:
+        "Next: Confirm the project details you want in the first draft.",
     };
   }
 
@@ -198,32 +205,37 @@ export function getAiPanelConfigForStep(step, context = {}) {
       entryTitle:
         milestoneCount > 0
           ? "I can refine milestones, pricing, and timing from here"
-          : "I’ve prepared milestone suggestions for this project",
+          : "I've prepared milestone suggestions for this project",
       entryDescription:
         "Use AI to shape milestone structure, pricing guidance, and timeline decisions without leaving the wizard.",
-      headline: "I’ve prepared milestone suggestions for this project",
+      statusText:
+        milestoneCount > 0 ? "Milestone plan ready to refine" : "Ready to build the milestone plan",
+      headline: "I've prepared milestone suggestions for this project",
       helperText:
-        "I’m focused on planning the work clearly, pricing it confidently, and showing what changed when I update milestone data.",
+        "Use AI to shape milestones, pricing, and timing without leaving the wizard.",
       quickActions: [
         { label: "Suggest Milestones", intent: "suggest_milestones" },
         { label: "Suggest Pricing", prompt: "Review this project and suggest milestone pricing." },
-        { label: "Suggest Timeline", prompt: "Suggest a milestone timeline for this agreement." },
-        { label: "Refine Structure", prompt: "Refine the milestone structure to make it easier to invoice and manage." },
+        { label: "Adjust Timeline", prompt: "Suggest a milestone timeline for this agreement." },
+        { label: "Refine Scope", prompt: "Refine the milestone structure to make it easier to invoice and manage." },
       ],
       promptPlaceholder:
         'Example: "Split this project into milestone phases with realistic pricing and dates."',
+      nextActionText:
+        "Next: Review the milestones below and click Save & Next when the plan looks right.",
     };
   }
 
   if (Number(step) === 3) {
     return {
       ...sharedConfig,
-      entryTitle: "Here’s what you may want to document",
+      entryTitle: "Here's what you may want to document",
       entryDescription:
         "Use AI to pressure-test warranty, attachments, and clarification details before you finalize the agreement.",
-      headline: "Here’s what you may want to document",
+      statusText: "Protection details are ready to review",
+      headline: "Here's what you may want to document",
       helperText:
-        "I’m focused on reducing disputes by strengthening warranty language, documentation, and project clarifications.",
+        "Use AI to strengthen warranty language, documentation, and clarifications before you finalize the agreement.",
       quickActions: [
         { label: "Suggest Warranty", prompt: "Suggest warranty language for this project." },
         { label: "Suggest Attachments", prompt: "What attachments or photos should be included for this agreement?" },
@@ -231,6 +243,8 @@ export function getAiPanelConfigForStep(step, context = {}) {
       ],
       promptPlaceholder:
         'Example: "Review this agreement and suggest documentation that protects both sides."',
+      nextActionText:
+        "Next: Add any warranty details or supporting documents you want included.",
     };
   }
 
@@ -239,9 +253,10 @@ export function getAiPanelConfigForStep(step, context = {}) {
     entryTitle: "Let me check everything before you send",
     entryDescription:
       "Use AI as a final reviewer before contractor signing, customer signing, and funding.",
+    statusText: "Agreement ready to review",
     headline: "Let me check everything before you send",
     helperText:
-      "I’m focused on readiness, missing details, and the final steps needed before the agreement goes out for signature.",
+      "Use AI to catch missing details and confirm the agreement is ready before it goes out for signature.",
     quickActions: [
       { label: "Run Checklist", prompt: "Run a final pre-send checklist for this agreement." },
       { label: "Review Risks", prompt: "Flag anything risky or missing before I send this agreement." },
@@ -251,8 +266,134 @@ export function getAiPanelConfigForStep(step, context = {}) {
     promptPlaceholder:
       'Example: "Check this agreement for anything missing before I send it to the customer."',
     checklistItems,
+    nextActionText:
+      "Next: Review the PDF, then sign and send when everything looks right.",
     nextGuidanceTitle: "What happens next",
     nextGuidance:
-      "After you sign, the customer gets a review and signature link. Once both sides sign, funding can move forward and you’ll be notified when the customer completes their step.",
+      "After you sign, the customer gets a review and signature link. Once both sides sign, funding can move forward and you'll be notified when the customer completes their step.",
+  };
+}
+
+function readWizardStep(context = {}) {
+  const route = safeText(context?.current_route);
+  const match = route.match(/[?&]step=(\d+)/);
+  return match ? Number(match[1]) : null;
+}
+
+function deriveSummaryLine(context = {}, plan = {}) {
+  const agreementSummary = context?.agreement_summary || {};
+  const milestoneSummary = context?.milestone_summary || {};
+  const title = safeText(
+    agreementSummary?.project_title || agreementSummary?.title || agreementSummary?.project_summary
+  );
+  const customer = safeText(agreementSummary?.customer_name);
+  const subtype = safeText(agreementSummary?.project_subtype || agreementSummary?.project_type);
+  const milestoneCount = Number(
+    agreementSummary?.milestone_count ?? milestoneSummary?.count ?? 0
+  );
+  const estimateTotal =
+    plan?.applyable_preview?.estimate_preview?.suggested_total_price ??
+    plan?.preview_payload?.estimate_preview?.suggested_total_price ??
+    null;
+
+  const parts = [];
+  if (milestoneCount > 0) parts.push(pluralize(milestoneCount, "milestone"));
+  if (Number.isFinite(Number(estimateTotal)) && Number(estimateTotal) > 0) {
+    parts.push(formatMoney(estimateTotal));
+  }
+  if (subtype) {
+    parts.push(subtype);
+  } else if (title) {
+    parts.push(title);
+  }
+  if (!parts.length && customer) parts.push(customer);
+  return parts.slice(0, 3).join(" · ");
+}
+
+function fallbackStatusForStep(step, panelConfig = {}) {
+  if (safeText(panelConfig.statusText)) return safeText(panelConfig.statusText);
+  if (step === 1) return "Ready to set up this agreement";
+  if (step === 2) return "Milestone plan ready";
+  if (step === 3) return "Protection details are ready to review";
+  if (step === 4) return "Agreement ready to review";
+  return "How can I help?";
+}
+
+function sanitizeActionLabel(label) {
+  const clean = safeText(label);
+  if (!clean) return "";
+  if (clean === "Open Requested Workflow") return "Open the next step";
+  return clean;
+}
+
+export function buildUserFacingAiPanel({
+  context = {},
+  panelConfig = {},
+  plan = {},
+  isPlanning = false,
+  history = [],
+} = {}) {
+  const step = readWizardStep(context);
+  const status = isPlanning
+    ? "Working on your request"
+    : fallbackStatusForStep(step, panelConfig);
+  const summaryLine = deriveSummaryLine(context, plan);
+  const statusDetail =
+    summaryLine || safeText(plan?.summary) || safeText(panelConfig.helperText);
+  const navigationTarget = safeText(plan?.navigation_target);
+  const currentRoute = safeText(context?.current_route);
+  const primaryActionLabel = sanitizeActionLabel(plan?.next_action?.label);
+  const showPrimaryAction =
+    !!navigationTarget &&
+    navigationTarget !== currentRoute &&
+    plan?.next_action?.type !== "collect_missing_fields";
+  const nextActionText = showPrimaryAction
+    ? `Next: ${primaryActionLabel || "Open the next step"}.`
+    : safeText(panelConfig.nextActionText) ||
+      safeText(plan?.follow_up_prompt) ||
+      "Next: Review the suggested update and continue when you're ready.";
+
+  return {
+    headline: safeText(panelConfig.headline) || "Tell me what you want to do",
+    helperText: safeText(panelConfig.helperText),
+    status,
+    statusDetail,
+    quickActions: Array.isArray(panelConfig.quickActions) ? panelConfig.quickActions : [],
+    promptPlaceholder:
+      safeText(panelConfig.promptPlaceholder) || "Ask AI what you want to improve.",
+    feedback: safeText(panelConfig.feedback),
+    checklistItems: Array.isArray(panelConfig.checklistItems) ? panelConfig.checklistItems : [],
+    nextActionText,
+    nextGuidanceTitle:
+      safeText(panelConfig.nextGuidanceTitle) || "What happens next",
+    nextGuidance: safeText(panelConfig.nextGuidance),
+    showPrimaryAction,
+    primaryActionLabel: primaryActionLabel || "Open the next step",
+    diagnostics: {
+      step,
+      intentLabel: safeText(plan?.intent_label),
+      summary: safeText(plan?.summary),
+      collectedData:
+        plan?.collected_data && typeof plan.collected_data === "object" ? plan.collected_data : {},
+      missingFields: Array.isArray(plan?.missing_fields) ? plan.missing_fields : [],
+      suggestions: Array.isArray(plan?.suggestions) ? plan.suggestions : [],
+      history: Array.isArray(history) ? history : [],
+      raw: {
+        intent: plan?.intent,
+        primary_intent: plan?.primary_intent,
+        next_action: plan?.next_action,
+        navigation_target: plan?.navigation_target,
+        wizard_step_target: plan?.wizard_step_target,
+        prefill_fields: plan?.prefill_fields,
+        draft_payload: plan?.draft_payload,
+        automation_plan: plan?.automation_plan,
+        proactive_recommendations: plan?.proactive_recommendations,
+        predictive_insights: plan?.predictive_insights,
+        planning_confidence: plan?.planning_confidence,
+        reasoning_source: plan?.reasoning_source,
+        selected_routines: plan?.selected_routines,
+        confirmation_required: plan?.confirmation_required,
+      },
+    },
   };
 }
