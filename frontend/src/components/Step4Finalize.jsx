@@ -1280,6 +1280,33 @@ export default function Step4Finalize({
         ]
       : []),
   ];
+  const readinessItems = [
+    {
+      key: "project",
+      ok: Boolean(safeMilestoneStr(agreement?.project_title || agreement?.title) && safeMilestoneStr(customerNameDisplay)),
+      goodLabel: `${safeMilestoneStr(agreement?.project_title || agreement?.title) || "Project"} ready for ${customerNameDisplay || "customer review"}`,
+      warnLabel: "Add a project title and customer before sending",
+    },
+    {
+      key: "milestones",
+      ok: displayMilestones.length > 0 && projectAmount > 0,
+      goodLabel: `${displayMilestones.length} milestone${displayMilestones.length === 1 ? "" : "s"} configured · ${formatMoney(projectAmount)} total`,
+      warnLabel: "Milestones and pricing still need review",
+    },
+    {
+      key: "payment",
+      ok: Boolean(paymentMode),
+      goodLabel: `${isProgressPayments ? "Progress payments" : isDirectPay ? "Direct pay" : "Escrow"} selected`,
+      warnLabel: "Choose the payment workflow before sending",
+    },
+    {
+      key: "preview",
+      ok: Boolean(localHasPreviewed),
+      goodLabel: "Agreement PDF reviewed",
+      warnLabel: "Preview the agreement PDF before sending",
+    },
+  ];
+  const readinessWarningCount = readinessItems.filter((item) => !item.ok).length;
 
   const handleToggleRequirement = async (key, value) => {
     if (!agreementId) return;
@@ -1578,12 +1605,59 @@ export default function Step4Finalize({
 
       </div>
 
-      {postSendGuidance ? (
-        <section className="rounded-2xl border border-sky-200 bg-sky-50 px-5 py-4 text-sm text-sky-900 shadow-sm">
-          <div className="font-semibold">What happens next</div>
-          <div className="mt-1 text-sm text-sky-800">{postSendGuidance}</div>
-        </section>
-      ) : null}
+      <section
+        className={`rounded-2xl border px-5 py-5 shadow-sm ${
+          readinessWarningCount === 0
+            ? "border-emerald-200 bg-emerald-50/70"
+            : "border-amber-200 bg-amber-50/60"
+        }`}
+      >
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">
+              {readinessWarningCount === 0 ? "Ready to send" : "Ready for review"}
+            </h3>
+            <p className="mt-1 text-sm text-slate-700">
+              {readinessWarningCount === 0
+                ? "Everything important is in place for a confident final review."
+                : "A few final checks will help this agreement go out cleanly."}
+            </p>
+          </div>
+          <span
+            className={`rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+              readinessWarningCount === 0
+                ? "border border-emerald-200 bg-white text-emerald-700"
+                : "border border-amber-200 bg-white text-amber-800"
+            }`}
+          >
+            {readinessWarningCount === 0
+              ? "Send-ready"
+              : `${readinessWarningCount} final check${readinessWarningCount === 1 ? "" : "s"}`}
+          </span>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {readinessItems.map((item) => (
+            <div
+              key={item.key}
+              className={`rounded-xl border px-4 py-3 text-sm ${
+                item.ok
+                  ? "border-emerald-200 bg-white text-emerald-900"
+                  : "border-amber-200 bg-white text-amber-900"
+              }`}
+            >
+              <div className="font-medium">{item.ok ? "✓" : "⚠"} {item.ok ? item.goodLabel : item.warnLabel}</div>
+            </div>
+          ))}
+        </div>
+
+        {postSendGuidance ? (
+          <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+            <div className="font-semibold">What happens next</div>
+            <div className="mt-1 text-sm text-sky-800">{postSendGuidance}</div>
+          </div>
+        ) : null}
+      </section>
 
       {projectContextSummary.hasAny ? (
         <details className="rounded-2xl border border-slate-200 bg-white shadow-sm" open={false}>
@@ -2045,7 +2119,7 @@ export default function Step4Finalize({
                   disabled={signing || hasInvalidMilestoneAmounts}
                   className="mt-3 rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
                 >
-                  {signing ? "Signing…" : "Sign as Contractor"}
+                  {signing ? "Signing…" : "Sign & Continue"}
                 </button>
               </>
             ) : (
@@ -2082,7 +2156,7 @@ export default function Step4Finalize({
                   disabled={sendingLink || hasInvalidMilestoneAmounts}
                   className="mt-2 rounded bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
                 >
-                  {sendingLink ? "Sending link…" : "Send Customer Signing Link"}
+                  {sendingLink ? "Sending link…" : "Send to Customer"}
                 </button>
                 {sendError ? <div className="mt-1 text-[11px] text-red-600">{sendError}</div> : null}
               </>

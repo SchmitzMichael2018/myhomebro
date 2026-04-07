@@ -88,6 +88,24 @@ function StepSection({
   );
 }
 
+function inferStartMode({
+  agreement,
+  assistantGuidedFlow,
+  assistantTemplateRecommendations,
+  assistantTopTemplatePreview,
+}) {
+  if (
+    agreement?.selected_template?.id ||
+    agreement?.selected_template_id ||
+    assistantTopTemplatePreview?.id ||
+    (Array.isArray(assistantTemplateRecommendations) && assistantTemplateRecommendations.length)
+  ) {
+    return "template";
+  }
+  if (assistantGuidedFlow?.guided_question) return "ai";
+  return "manual";
+}
+
 export default function Step1Details({
   agreement,
   isEdit,
@@ -209,6 +227,21 @@ export default function Step1Details({
     const id = agreementId ? String(agreementId) : "new";
     return `mhb_step1_cache_${id}`;
   }, [agreementId]);
+  const startModeStorageKey = `${cacheKey}_start_mode`;
+  const [startMode, setStartMode] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem(startModeStorageKey);
+      if (saved === "ai" || saved === "template" || saved === "manual") return saved;
+    } catch {
+      // ignore
+    }
+    return inferStartMode({
+      agreement,
+      assistantGuidedFlow,
+      assistantTemplateRecommendations,
+      assistantTopTemplatePreview,
+    });
+  });
 
   function writeCache(nextPatch = {}) {
     try {
@@ -310,6 +343,14 @@ export default function Step1Details({
       setAddrSearch(dLocal.address_line1);
     }
   }, [agreementId, dLocal?.address_line1, addrSearch]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(startModeStorageKey, startMode);
+    } catch {
+      // ignore
+    }
+  }, [startMode, startModeStorageKey]);
 
   useEffect(() => {
     if (isNewAgreement) return;
@@ -425,6 +466,36 @@ export default function Step1Details({
       !!safeTrim(dLocal.project_subtype)
     );
   }, [dLocal.project_title, dLocal.project_type, dLocal.project_subtype]);
+  const startModeCards = useMemo(
+    () => [
+      {
+        key: "ai",
+        title: "Use AI",
+        description: "Describe the job and let the wizard help prefill setup details.",
+      },
+      {
+        key: "template",
+        title: "Use Template",
+        description: "Start from a saved agreement pattern and adjust it for this project.",
+      },
+      {
+        key: "manual",
+        title: "Start from scratch",
+        description: "Build the agreement manually with full control over the setup fields.",
+      },
+    ],
+    []
+  );
+  const hasTemplateApplied =
+    Boolean(agreement?.selected_template?.id || agreement?.selected_template_id) ||
+    Boolean(assistantTopTemplatePreview?.id);
+  const shouldOpenTemplateDetails = startMode === "template" || hasTemplateApplied;
+
+  useEffect(() => {
+    if (hasTemplateApplied && startMode !== "template") {
+      setStartMode("template");
+    }
+  }, [hasTemplateApplied, startMode]);
 
   async function runAiDescription(mode) {
     if (locked) return;
@@ -1243,8 +1314,96 @@ export default function Step1Details({
           </div>
         ) : null}
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.95fr)] xl:items-start">
-          <div className="space-y-6">
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-slate-900">
+                How do you want to start this agreement?
+              </h3>
+              <p className="mt-1 text-sm text-slate-600">
+                Choose the fastest starting path for this job. You can still switch approaches as
+                you work.
+              </p>
+            </div>
+            <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
+              Step 1 setup
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            {startModeCards.map((option) => {
+              const active = startMode === option.key;
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  onClick={() => setStartMode(option.key)}
+                  className={`rounded-2xl border px-4 py-4 text-left transition ${
+                    active
+                      ? "border-indigo-300 bg-indigo-50 shadow-sm"
+                      : "border-slate-200 bg-slate-50/70 hover:border-slate-300 hover:bg-white"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-sm font-semibold text-slate-900">{option.title}</div>
+                    {active ? (
+                      <span className="rounded-full border border-indigo-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">
+                        Selected
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="mt-2 text-sm text-slate-600">{option.description}</div>
+                </button>
+              );
+            })}
+          </div>
+
+          {startMode === "ai" ? (
+            <div className="mt-4 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
+              <div className="font-semibold">AI-guided setup is active</div>
+              <div className="mt-1 text-xs text-indigo-800">
+                Describe the job in the AI panel, then review the customer, address, and payment
+                sections it prepares for you.
+              </div>
+            </div>
+          ) : null}
+
+          {startMode === "manual" ? (
+            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              <div className="font-semibold text-slate-900">Manual setup is active</div>
+              <div className="mt-1 text-xs text-slate-600">
+                Fill in the agreement details directly. AI and templates stay available if you want
+                help later.
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <section
+          className={`rounded-2xl border shadow-sm ${
+            shouldOpenTemplateDetails
+              ? "border-indigo-200 bg-indigo-50/40"
+              : "border-slate-200 bg-white"
+          }`}
+        >
+          <div className="flex items-center justify-between gap-3 px-5 py-4">
+            <div>
+              <div className="text-base font-semibold text-slate-900">Templates</div>
+              <div className="mt-1 text-sm text-slate-600">
+                Reuse a saved agreement structure if this project follows a familiar pattern.
+              </div>
+            </div>
+            <span
+              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+                shouldOpenTemplateDetails
+                  ? "border border-indigo-200 bg-white text-indigo-700"
+                  : "bg-slate-100 text-slate-600"
+              }`}
+            >
+              {startMode === "template" ? "Template mode" : "Available"}
+            </span>
+          </div>
+          <div className="border-t border-slate-200 px-5 py-5">
             <TemplateSearchSection
               locked={locked}
               agreementId={agreementId}
@@ -1304,7 +1463,11 @@ export default function Step1Details({
               onDeselectAppliedTemplate={handleDeselectAppliedTemplate}
               onTemplateApplied={handleTemplateApplied}
             />
+          </div>
+        </section>
 
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.95fr)] xl:items-start">
+          <div className="space-y-6">
             <StepSection
               title="Customer"
               description="Select the customer for this agreement, or add one quickly if you need to keep moving."

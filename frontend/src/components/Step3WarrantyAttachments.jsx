@@ -31,6 +31,7 @@ export default function Step3WarrantyAttachments({
   saveWarranty,
   attachments,
   refreshAttachments,
+  refreshAgreement,
   onBack,
   onNext,
 }) {
@@ -41,8 +42,19 @@ export default function Step3WarrantyAttachments({
   const [category, setCategory] = useState("WARRANTY");
   const [visible, setVisible] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [clarificationNotes, setClarificationNotes] = useState("");
+  const [savingClarifications, setSavingClarifications] = useState(false);
   const inputRef = useRef(null);
   const dropRef = useRef(null);
+
+  useEffect(() => {
+    const answers = agreement?.ai_scope?.answers || {};
+    const nextValue =
+      answers?.documented_scope_clarifications ??
+      answers?.scope_clarification_notes ??
+      "";
+    setClarificationNotes(String(nextValue || ""));
+  }, [agreement?.ai_scope]);
 
   useEffect(() => {
     const el = dropRef.current;
@@ -184,6 +196,57 @@ export default function Step3WarrantyAttachments({
     await saveWarranty?.();
   };
 
+  const saveClarificationNotes = async ({ silent = false } = {}) => {
+    if (locked || !agreementId) return;
+
+    const nextValue = String(clarificationNotes || "").trim();
+    const answers = { ...(agreement?.ai_scope?.answers || {}) };
+
+    if (nextValue) answers.documented_scope_clarifications = nextValue;
+    else delete answers.documented_scope_clarifications;
+
+    const patchPayload = {
+      ai_scope: {
+        ...(agreement?.ai_scope || {}),
+        answers,
+      },
+      scope_clarifications: {
+        ...(agreement?.scope_clarifications || {}),
+        documented_scope_clarifications: nextValue,
+      },
+    };
+
+    if (!nextValue) {
+      delete patchPayload.scope_clarifications.documented_scope_clarifications;
+    }
+
+    try {
+      setSavingClarifications(true);
+      await api.patch(`/projects/agreements/${agreementId}/`, patchPayload);
+      await refreshAgreement?.();
+      if (!silent) toast.success("Clarifications saved.");
+    } catch (e) {
+      if (!silent) {
+        toast.error(
+          e?.response?.data?.detail ||
+            e?.response?.statusText ||
+            e?.message ||
+            "Could not save clarifications."
+        );
+      }
+      throw e;
+    } finally {
+      setSavingClarifications(false);
+    }
+  };
+
+  const handleNextClick = async () => {
+    if (!locked && agreementId) {
+      await saveClarificationNotes({ silent: true }).catch(() => {});
+    }
+    onNext?.();
+  };
+
   return (
     <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       {locked ? (
@@ -194,6 +257,14 @@ export default function Step3WarrantyAttachments({
           </div>
         </div>
       ) : null}
+
+      <section className="rounded-2xl border border-sky-200 bg-sky-50 px-5 py-4 shadow-sm">
+        <div className="text-sm font-semibold text-sky-950">Protection &amp; documents</div>
+        <div className="mt-1 text-sm text-sky-900">
+          Capture the warranty, supporting files, and any final clarifications that help protect
+          both sides and reduce disputes later.
+        </div>
+      </section>
 
       <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -243,6 +314,39 @@ export default function Step3WarrantyAttachments({
             </div>
           )}
         </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h3 className="text-base font-semibold text-slate-900">
+              Scope clarifications <span className="font-medium text-slate-500">(optional)</span>
+            </h3>
+            <p className="mt-1 text-sm text-slate-600">
+              Note anything you verbally confirmed or want preserved in writing before the agreement
+              is reviewed and signed.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => saveClarificationNotes()}
+            disabled={locked || savingClarifications}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            {savingClarifications ? "Saving..." : "Save Note"}
+          </button>
+        </div>
+
+        <textarea
+          className="mt-4 min-h-[112px] w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900"
+          placeholder="Example: Customer confirmed dumpster access through side gate and understands change orders are documented separately."
+          value={clarificationNotes}
+          onChange={(e) => !locked && setClarificationNotes(e.target.value)}
+          onBlur={() => {
+            if (!locked && agreementId) saveClarificationNotes({ silent: true }).catch(() => {});
+          }}
+          disabled={locked}
+        />
       </section>
 
       {/* Attachments */}
@@ -417,7 +521,7 @@ export default function Step3WarrantyAttachments({
           </button>
           <button
             type="button"
-            onClick={onNext}
+            onClick={handleNextClick}
             className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700"
             title={locked ? "Next" : "Save & Next"}
           >

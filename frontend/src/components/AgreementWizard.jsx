@@ -310,6 +310,40 @@ export default function AgreementWizard() {
         : sum(milestones, "amount"),
     };
   }, [agreement, milestones]);
+  const wizardSummary = useMemo(() => {
+    const selectedCustomer = (people || []).find(
+      (person) => String(person?.id || "") === String(dLocal.homeowner || "")
+    );
+    const customerLabel = selectedCustomer
+      ? safeStr(selectedCustomer.company_name) && safeStr(selectedCustomer.full_name || selectedCustomer.name)
+        ? `${safeStr(selectedCustomer.company_name)} (${safeStr(selectedCustomer.full_name || selectedCustomer.name)})`
+        : safeStr(selectedCustomer.company_name) ||
+          safeStr(selectedCustomer.full_name || selectedCustomer.name) ||
+          safeStr(selectedCustomer.email)
+      : "";
+    const paymentModeLabel =
+      dLocal.payment_structure === "progress"
+        ? "Progress payments"
+        : dLocal.payment_mode === "direct"
+        ? "Direct pay"
+        : dLocal.payment_mode === "escrow"
+        ? "Escrow"
+        : "";
+
+    return {
+      projectTitle: dLocal.project_title || agreement?.project_title || agreement?.title || "",
+      customerLabel,
+      milestoneCount: milestones.length,
+      totalLabel:
+        Number.isFinite(Number(totals.totalAmt)) && Number(totals.totalAmt) > 0
+          ? Number(totals.totalAmt).toLocaleString(undefined, {
+              style: "currency",
+              currency: "USD",
+            })
+          : "",
+      paymentModeLabel,
+    };
+  }, [agreement, dLocal.homeowner, dLocal.payment_mode, dLocal.payment_structure, dLocal.project_title, milestones.length, people, totals.totalAmt]);
 
   const setAgreement = useCallback(
     (nextPayload) => {
@@ -1383,6 +1417,40 @@ export default function AgreementWizard() {
         className="mt-4"
       />
 
+      {(wizardSummary.projectTitle ||
+        wizardSummary.customerLabel ||
+        wizardSummary.milestoneCount > 0 ||
+        wizardSummary.totalLabel ||
+        wizardSummary.paymentModeLabel) ? (
+        <div className="mt-4 flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          {wizardSummary.projectTitle ? (
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-800">
+              {wizardSummary.projectTitle}
+            </span>
+          ) : null}
+          {wizardSummary.customerLabel ? (
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
+              Customer: {wizardSummary.customerLabel}
+            </span>
+          ) : null}
+          {wizardSummary.milestoneCount > 0 ? (
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
+              {wizardSummary.milestoneCount} milestone{wizardSummary.milestoneCount === 1 ? "" : "s"}
+            </span>
+          ) : null}
+          {wizardSummary.totalLabel ? (
+            <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-800">
+              {wizardSummary.totalLabel}
+            </span>
+          ) : null}
+          {wizardSummary.paymentModeLabel ? (
+            <span className="rounded-full bg-sky-50 px-3 py-1 text-sm font-medium text-sky-800">
+              {wizardSummary.paymentModeLabel}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
       <StartWithAIEntry
         className="mt-4"
         testId="agreement-wizard-ai-entry"
@@ -1505,6 +1573,7 @@ export default function AgreementWizard() {
             saveWarranty={saveWarranty}
             attachments={attachments}
             refreshAttachments={refreshAttachments}
+            refreshAgreement={refreshAgreement}
             onBack={() => goStep(2)}
             onNext={() => goStep(4)}
           />
