@@ -2399,12 +2399,20 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-slate-900">Milestone Editor</h3>
+      <div className="mt-6 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-indigo-700">
+            Primary workspace
+          </div>
+          <h3 className="mt-1 text-xl font-semibold text-slate-950">Milestone Editor</h3>
+          <div className="mt-1 text-sm text-slate-600">
+            Add milestones, confirm pricing, and refine the current plan before you continue.
+          </div>
+        </div>
         <div className="text-sm text-gray-600">
           Schedule:{" "}
           {minStart && maxEnd ? (
-            <span className="font-medium">
+            <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
               {friendly(minStart)} → {friendly(maxEnd)} (est.)
             </span>
           ) : (
@@ -2413,10 +2421,10 @@ export default function Step2Milestones({
         </div>
       </div>
 
-      <section className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+      <section className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5">
         <div className="mb-3">
           <h4 className="text-sm font-semibold text-slate-900">Planning controls</h4>
-          <p className="mt-1 text-xs text-slate-600">
+          <p className="mt-1 text-[12px] text-slate-600">
             Keep the focus on milestone pricing, schedule, and the edits you want to save next.
           </p>
         </div>
@@ -2426,7 +2434,7 @@ export default function Step2Milestones({
               type="button"
               onClick={() => setClarOpen(true)}
               disabled={milestonesLocked}
-              className="rounded border px-3 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-60"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
               title={clarButtonTitle}
             >
               Clarifications
@@ -2455,7 +2463,7 @@ export default function Step2Milestones({
                   )
                 }
                 disabled={pricingRefreshing}
-                className="rounded border px-3 py-2 text-sm font-medium hover:bg-gray-50 disabled:opacity-60"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium hover:bg-slate-50 disabled:opacity-60"
                 title="Refresh estimate-assist guidance from current clarification answers without changing milestone amounts."
               >
                 {pricingRefreshing ? "Refreshing Pricing…" : "Refresh Pricing Estimate"}
@@ -2480,7 +2488,7 @@ export default function Step2Milestones({
           </div>
 
           <details className="relative">
-            <summary className="cursor-pointer list-none rounded border px-3 py-2 text-sm font-medium text-slate-700 hover:bg-white">
+            <summary className="cursor-pointer list-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
               More
             </summary>
             <div className="absolute right-0 z-10 mt-2 min-w-[200px] rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
@@ -2499,11 +2507,11 @@ export default function Step2Milestones({
       </section>
 
       {showPricingReviewPrompt ? (
-        <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3">
+        <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50/85 px-4 py-3 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <div className="text-sm font-semibold text-indigo-900">Pricing suggestions updated</div>
-              <div className="text-xs text-indigo-800">
+              <div className="text-sm font-semibold text-indigo-950">Pricing suggestions are ready to review</div>
+              <div className="mt-1 text-xs text-indigo-800">
                 {pricingReviewState.count} milestone{pricingReviewState.count === 1 ? "" : "s"} have new suggested amount{pricingReviewState.count === 1 ? "" : "s"}.
                 {pricingReviewState.count > 0 ? (
                   <>
@@ -2517,7 +2525,7 @@ export default function Step2Milestones({
               <button
                 type="button"
                 onClick={handleReviewSuggestedPricing}
-                className="rounded border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-900 hover:bg-indigo-100"
+                className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-900 hover:bg-indigo-100"
               >
                 Review Changes
               </button>
@@ -2525,14 +2533,14 @@ export default function Step2Milestones({
                 type="button"
                 onClick={applySuggestedPricesToAll}
                 disabled={milestonesLocked}
-                className="rounded bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+                className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
               >
                 Apply Suggested Price to All
               </button>
               <button
                 type="button"
                 onClick={() => setDismissedPricingReviewSignature(pricingReviewState.signature)}
-                className="rounded border px-3 py-2 text-sm font-medium hover:bg-white"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 Dismiss
               </button>
@@ -2543,7 +2551,7 @@ export default function Step2Milestones({
 
       {estimatePreview ? (
         <details
-          className="rounded-2xl border border-slate-200 bg-slate-50/80"
+          className="rounded-xl border border-slate-200 bg-slate-50/60"
           data-testid="step2-estimate-panel"
         >
           <summary className="cursor-pointer list-none px-4 py-4">
@@ -2869,17 +2877,17 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-3">
-        <h4 className="text-sm font-semibold text-slate-900">Add or edit milestones</h4>
-        <p className="mt-1 text-xs text-slate-600">
+      <section className="rounded-3xl border border-slate-300 bg-white p-5 shadow-md ring-1 ring-slate-100">
+      <div className="mb-4">
+        <h4 className="text-base font-semibold text-slate-950">Add or edit milestones</h4>
+        <p className="mt-1 text-sm text-slate-600">
           Keep milestone editing as the primary task here. Save staged changes only after you review pricing and dates.
         </p>
       </div>
 
       <div className="mb-2 grid grid-cols-1 gap-3 md:grid-cols-12">
         <input
-          className="rounded border px-3 py-2 text-sm md:col-span-4"
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-4"
           placeholder="Title"
           name="title"
           value={mLocal.title}
@@ -2888,7 +2896,7 @@ export default function Step2Milestones({
         />
         <input
           type="date"
-          className="rounded border px-3 py-2 text-sm md:col-span-3"
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-3"
           name="start"
           value={mLocal.start || ""}
           onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
@@ -2896,7 +2904,7 @@ export default function Step2Milestones({
         />
         <input
           type="date"
-          className="rounded border px-3 py-2 text-sm md:col-span-3"
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-3"
           name="end"
           value={mLocal.end || ""}
           onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
@@ -2906,7 +2914,7 @@ export default function Step2Milestones({
           type="number"
           min="0.01"
           step="0.01"
-          className="rounded border px-3 py-2 text-sm md:col-span-2"
+          className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
           placeholder={isProgressPayments ? "Scheduled Value" : "Amount"}
           name="amount"
           value={mLocal.amount}
@@ -2915,7 +2923,7 @@ export default function Step2Milestones({
         />
         <div className="md:col-span-12">
           <textarea
-            className="w-full resize-y rounded border px-3 py-2 text-sm"
+            className="w-full resize-y rounded-xl border border-slate-300 px-3 py-2 text-sm"
             rows={3}
             placeholder="Description (details, materials, notes)…"
             name="description"
@@ -2934,7 +2942,7 @@ export default function Step2Milestones({
               toast.error(e?.response?.data?.detail || e?.message || "Save failed.")
             )
           }
-          className="rounded bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-60"
+          className="rounded-xl bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-60"
           disabled={milestonesLocked}
         >
           + Add Milestone
@@ -2942,7 +2950,7 @@ export default function Step2Milestones({
       </div>
 
       {isProgressPayments ? (
-        <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-900">
+        <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 text-sm text-indigo-900">
           <div className="font-semibold">Progress Payments</div>
           <div className="mt-1">
             Milestones stay as your schedule of values. Percent complete, earned amount, and remaining balance are
@@ -2951,9 +2959,9 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
-      <div className="overflow-x-auto rounded-2xl border">
+      <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-sm">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50">
+          <thead className="bg-slate-50">
             <tr className="text-left [&>*]:px-3 [&>*]:py-2">
               <th>#</th>
               <th>Title</th>
@@ -3142,7 +3150,7 @@ export default function Step2Milestones({
             ) : null}
           </tbody>
           <tfoot>
-            <tr className="bg-gray-50 font-semibold">
+            <tr className="bg-slate-50 font-semibold">
               <td className="px-3 py-2" colSpan={5}>
                 Total
               </td>
