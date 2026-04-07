@@ -37,6 +37,7 @@ import {
   Archive,
   Check,
   Undo2,
+  Landmark,
   Zap,
   MinusCircle,
   FileText,
@@ -1040,10 +1041,16 @@ export default function AgreementList() {
     }
 
     const waived = 2 - required;
+    const complete = signed >= required;
     return {
-      label: `${Math.min(signed, required)} / ${required} signed`,
-      detail: waived > 0 ? `${waived} waived` : signed === required ? "Fully signed" : "Waiting on signatures",
-      tone: signed === required ? "text-emerald-700" : "text-slate-600",
+      label: complete ? "Fully signed" : `${Math.min(signed, required)} of ${required} signed`,
+      detail:
+        waived > 0
+          ? `${waived} waived`
+          : complete
+          ? "Ready for funding or active work"
+          : "Waiting on signatures",
+      tone: complete ? "text-emerald-700" : "text-slate-700",
     };
   };
 
@@ -1064,11 +1071,11 @@ export default function AgreementList() {
     return `${start} - ${end}`;
   };
 
-  const Progress = ({ percent }) => (
-    <div className="w-24">
-      <div className="h-2 rounded-full bg-slate-200">
+  const Progress = ({ percent, tone = "bg-blue-600" }) => (
+    <div className="w-28">
+      <div className="h-4 rounded-full bg-slate-300/90 p-[3px]">
         <div
-          className="h-2 rounded-full bg-blue-600"
+          className={`h-full rounded-full transition-all ${tone}`}
           style={{ width: `${Math.max(0, Math.min(100, percent))}%` }}
         />
       </div>
@@ -1206,7 +1213,7 @@ export default function AgreementList() {
     if (funded === null || total === null || total <= 0) {
       if (fundedFlag) {
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
             <CheckCircle2 size={14} /> Funded
           </span>
         );
@@ -1220,7 +1227,7 @@ export default function AgreementList() {
     if (isFullyFunded) {
       return (
         <span
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-800"
+          className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800"
           title={`${fmtMoney(funded)} / ${fmtMoney(total)}`}
         >
           <CheckCircle2 size={14} /> Funded
@@ -1231,7 +1238,7 @@ export default function AgreementList() {
     if (isPartial) {
       return (
         <span
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800"
+          className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800"
           title={`${fmtMoney(funded)} / ${fmtMoney(total)}`}
         >
           <RefreshCw size={14} /> Partial
@@ -1241,10 +1248,10 @@ export default function AgreementList() {
 
     return (
       <span
-        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-800"
-        title={`${fmtMoney(funded)} / ${fmtMoney(total)}`}
+        className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800"
+          title={`${fmtMoney(funded)} / ${fmtMoney(total)}`}
       >
-        <XCircle size={14} /> Not Funded
+        <XCircle size={14} /> Funding needed
       </span>
     );
   };
@@ -1309,7 +1316,7 @@ export default function AgreementList() {
       <div className="relative inline-flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
         <button
           type="button"
-          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-800 hover:bg-slate-200"
+          className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
           title="Open current PDF"
           onClick={(e) => {
             e.preventDefault();
@@ -1323,10 +1330,10 @@ export default function AgreementList() {
 
         <button
           type="button"
-          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold border ${
+          className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold border transition ${
             hasHistory
-              ? "border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100"
-              : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+              ? "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900"
+              : "border-slate-200 bg-slate-50 text-slate-500 hover:border-slate-300 hover:bg-slate-100"
           }`}
           title="Show PDF history"
           onClick={async (e) => {
@@ -1343,41 +1350,7 @@ export default function AgreementList() {
             if (!pdfCache[id]) await ensurePdfDetail(id);
           }}
         >
-          {pdfLoadingForId === id ? "Loading…" : "History"}
-        </button>
-
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-md border hover:bg-gray-50"
-          title="Open current PDF"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (!currentUrl) return toast("No current PDF URL available.");
-            openInNewTab(currentUrl);
-          }}
-        >
-          <ExternalLink size={14} />
-        </button>
-
-        <button
-          type="button"
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-md border hover:bg-gray-50"
-          title="Download current PDF"
-          onClick={async (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (!currentUrl) return toast("No current PDF URL available.");
-            try {
-              await downloadWithCredentials(currentUrl, `agreement_${id}_v${ver || "x"}.pdf`);
-              toast.success("Downloaded.");
-            } catch (err) {
-              console.error(err);
-              toast.error("Download failed.");
-            }
-          }}
-        >
-          <Download size={14} />
+          {pdfLoadingForId === id ? "Loading…" : hasHistory ? `History ${count != null ? `(${count})` : ""}` : "History"}
         </button>
 
         {open && (
@@ -1526,9 +1499,7 @@ export default function AgreementList() {
 
   return (
     <ContractorPageSurface
-      eyebrow="Core"
       title="Agreements"
-      subtitle="Manage signatures, funding, progress, and amendments from a cleaner shared workspace."
       className="max-w-[1680px]"
       surfaceClassName="rounded-none border-0 bg-transparent p-0 shadow-none backdrop-blur-none"
       contentClassName="space-y-4"
@@ -1538,14 +1509,14 @@ export default function AgreementList() {
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search by project, customer, type, subtype, email, ID…"
-          className="min-w-[260px] flex-1 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-700 shadow-sm outline-none transition focus:border-slate-400"
+          placeholder="Search by project, customer, type, subtype, email, or ID"
+          className="min-w-[280px] flex-1 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-slate-400"
         />
 
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 shadow-sm"
+          className="rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-700 shadow-sm"
         >
           <option value="all">All Status</option>
           <option value="draft">draft</option>
@@ -1556,7 +1527,7 @@ export default function AgreementList() {
           <option value="cancelled">cancelled</option>
         </select>
 
-        <label className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 shadow-sm">
+        <label className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-700 shadow-sm">
           <input
             type="checkbox"
             checked={showArchived}
@@ -1572,7 +1543,7 @@ export default function AgreementList() {
         <select
           value={pageSize}
           onChange={(e) => setPageSize(Number(e.target.value))}
-          className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-700 shadow-sm"
+          className="rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-700 shadow-sm"
         >
           {[10, 20, 50, 100, 250].map((n) => (
             <option key={n} value={n}>
@@ -1599,18 +1570,20 @@ export default function AgreementList() {
           <Plus size={16} /> New Agreement
         </button>
 
-        <button
-          className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-semibold shadow-sm ${
-            selected.size >= 2
-              ? "border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100"
-              : "cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400"
-          }`}
-          disabled={selected.size < 2}
-          onClick={mergeSelected}
-          title="Merge Selected"
-        >
-          <Layers size={16} /> Merge Selected
-        </button>
+        {selected.size > 0 ? (
+          <button
+            className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-semibold shadow-sm transition ${
+              selected.size >= 2
+                ? "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                : "cursor-not-allowed border border-slate-200 bg-slate-100 text-slate-400"
+            }`}
+            disabled={selected.size < 2}
+            onClick={mergeSelected}
+            title="Merge Selected"
+          >
+            <Layers size={16} /> Merge Selected
+          </button>
+        ) : null}
       </div>
 
       {activeRouteFilter ? (
@@ -1677,11 +1650,18 @@ export default function AgreementList() {
                 const stat = msStats[r.id] || { total: 0, complete: 0, percent: 0 };
                 const homeowner = homeownerDisplay(r);
                 const fullySigned = isFullySignedAgreement(r);
+                const signatures = signatureSummary(r);
 
                 const statusLower = safeLower(r.status);
                 const isCompleted = statusLower === "completed";
                 const isArchived = !!r.is_archived;
                 const isDraft = statusLower === "draft";
+                const isDirectPay = getPaymentMode(r) === "direct";
+                const needsFundingAttention = !isArchived && !isDirectPay && fullySigned && !r.escrow_funded;
+                const canAmend = fullySigned && !isArchived;
+                const amountValue = fmtMoney(r.display_total ?? r.total_cost);
+                const progressTone =
+                  stat.percent >= 100 ? "bg-emerald-600" : needsFundingAttention ? "bg-amber-500" : "bg-blue-600";
 
                 const canMarkComplete =
                   stat.total > 0 &&
@@ -1693,6 +1673,8 @@ export default function AgreementList() {
                 const canUnarchive = isArchived;
                 const nextStepLabel = isArchived
                   ? "Restore if work should stay visible"
+                  : needsFundingAttention
+                  ? "Signatures are complete. Request funding before work starts."
                   : fullySigned
                   ? canMarkComplete
                     ? "Mark complete and close out"
@@ -1700,7 +1682,7 @@ export default function AgreementList() {
                   : statusLower === "draft"
                   ? "Finish editing and send"
                   : statusLower === "signed"
-                  ? "Collect funding or begin work"
+                  ? "Review signature status and keep this moving"
                   : statusLower === "funded"
                   ? "Track milestones and invoicing"
                   : statusLower === "in_progress"
@@ -1709,11 +1691,13 @@ export default function AgreementList() {
                   ? "Archive when ready"
                   : "Review agreement details";
 
-                const signatures = signatureSummary(r);
                 const identityMeta = [renderType(r), renderSubtype(r), homeowner, renderDateRange(r)].filter(
                   (value) => value && value !== "—" && value !== "â€”"
                 );
                 const menuOpen = actionMenuOpenForId === r.id;
+                const statusTone = needsFundingAttention
+                  ? "border border-amber-200 bg-amber-50 text-amber-800"
+                  : statusPillClass(r.status);
                 const primaryAction = canUnarchive
                   ? {
                       key: "restore",
@@ -1732,27 +1716,36 @@ export default function AgreementList() {
                       disabled: busyCompleteRow === r.id,
                       className: "border border-green-300 bg-green-50 text-green-800 hover:bg-green-100",
                     }
+                  : needsFundingAttention
+                  ? {
+                      key: "funding",
+                      label: "Request Funding",
+                      icon: Landmark,
+                      onClick: () => goView(r.id),
+                      disabled: false,
+                      className: "border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100",
+                    }
                   : fullySigned
                   ? {
-                      key: "amend",
-                      label: busyAmendRow === r.id ? "Amending..." : "Amend",
-                      icon: busyAmendRow === r.id ? RefreshCw : Layers,
-                      onClick: () => createAmendment(r),
-                      disabled: busyAmendRow === r.id,
-                      className: "border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100",
+                      key: "manage",
+                      label: "Manage",
+                      icon: Layers,
+                      onClick: () => goView(r.id),
+                      disabled: false,
+                      className: "bg-slate-900 text-white hover:bg-slate-800",
                     }
                   : isDraft
                   ? {
-                      key: "continue",
-                      label: "Continue",
+                      key: "finish-send",
+                      label: "Finish & Send",
                       icon: Pencil,
                       onClick: () => goEdit(r.id),
                       disabled: false,
                       className: "bg-slate-900 text-white hover:bg-slate-800",
                     }
                   : {
-                      key: "view",
-                      label: "View",
+                      key: "status",
+                      label: "View Status",
                       icon: Eye,
                       onClick: () => goView(r.id),
                       disabled: false,
@@ -1762,11 +1755,13 @@ export default function AgreementList() {
                 return (
                   <tr
                     key={r.id}
-                    className="cursor-pointer bg-white transition-colors hover:bg-sky-50/60"
+                    className={`cursor-pointer transition-colors ${
+                      needsFundingAttention ? "bg-amber-50/40 hover:bg-amber-50/70" : "bg-white hover:bg-sky-50/60"
+                    }`}
                     onClick={() => goView(r.id)}
                     title="Click to view agreement"
                   >
-                    <td className="px-3 py-3.5 align-top">
+                    <td className="px-3 py-4 align-top">
                       <input
                         type="checkbox"
                         checked={isChecked}
@@ -1778,7 +1773,7 @@ export default function AgreementList() {
                       />
                     </td>
 
-                    <td className="px-3 py-3.5 align-top">
+                    <td className="px-3 py-4 align-top">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -1799,44 +1794,57 @@ export default function AgreementList() {
                       </button>
                     </td>
 
-                    <td className="min-w-[340px] max-w-[520px] px-3 py-3.5 align-top" title={renderProject(r)}>
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="truncate text-[15px] font-semibold text-slate-950">{renderProject(r)}</div>
-                          <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
-                            #{r.id}
-                          </span>
-                          {isArchived ? (
-                            <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-700">
-                              Archived
+                    <td className="min-w-[360px] max-w-[560px] px-3 py-4 align-top" title={renderProject(r)}>
+                      <div
+                        className={`min-w-0 rounded-2xl border px-4 py-3 shadow-sm ${
+                          needsFundingAttention
+                            ? "border-amber-200 bg-amber-50/70"
+                            : "border-slate-200 bg-slate-50/70"
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="truncate text-[15px] font-semibold text-slate-950">{renderProject(r)}</div>
+                            <span className="inline-flex items-center rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200">
+                              #{r.id}
                             </span>
-                          ) : null}
+                            {needsFundingAttention ? (
+                              <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-100/80 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
+                                Funding gap
+                              </span>
+                            ) : null}
+                            {isArchived ? (
+                              <span className="inline-flex items-center rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-700">
+                                Archived
+                              </span>
+                            ) : null}
+                          </div>
+
+                          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-700">
+                            {identityMeta.map((item) => (
+                              <span key={`${r.id}-${item}`} className="truncate">
+                                {item}
+                              </span>
+                            ))}
+                          </div>
                         </div>
 
-                        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-600">
-                          {identityMeta.map((item) => (
-                            <span key={`${r.id}-${item}`} className="truncate">
-                              {item}
-                            </span>
-                          ))}
-                        </div>
-
-                        <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                            Next Step
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Next</span>
+                          <span className={`text-sm ${needsFundingAttention ? "font-medium text-amber-900" : "text-slate-700"}`}>
+                            {nextStepLabel}
                           </span>
-                          <span className="text-sm text-slate-700">{nextStepLabel}</span>
                         </div>
 
-                        <div className="mt-1.5">
+                        <div className="mt-3">
                           <PdfBadge r={r} />
                         </div>
                       </div>
                     </td>
 
-                    <td className="px-3 py-3.5 align-top">
+                    <td className="px-3 py-4 align-top">
                       <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusPillClass(r.status)}`}
+                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusTone}`}
                         title={isArchived ? "Archived" : ""}
                       >
                         {prettyStatus(r.status)}
@@ -1844,36 +1852,46 @@ export default function AgreementList() {
                       </span>
                     </td>
 
-                    <td className="px-3 py-3.5 align-top">
+                    <td className="px-3 py-4 align-top">
                       <EscrowBadge r={r} />
                     </td>
 
-                    <td className="px-3 py-3.5 align-top">
+                    <td className="px-3 py-4 align-top">
                       <div className="min-w-[150px]">
                         <div className="flex items-center gap-2">
-                          <Progress percent={stat.percent} />
+                          <Progress percent={stat.percent} tone={progressTone} />
                           <span className="w-10 text-xs font-medium text-slate-600">{stat.percent}%</span>
                         </div>
                         <div className="mt-1 text-xs text-slate-500">
-                          {stat.total ? `${stat.complete} / ${stat.total} milestones` : "No milestones"}
+                          {stat.total ? `${stat.complete} of ${stat.total} milestones complete` : "No milestones yet"}
                         </div>
                       </div>
                     </td>
 
-                    <td className="px-3 py-3.5 align-top">
+                    <td className="px-3 py-4 align-top">
                       <div className="min-w-[110px]">
                         <div className={`text-sm font-semibold ${signatures.tone}`}>{signatures.label}</div>
                         <div className="mt-1 text-xs text-slate-500">{signatures.detail}</div>
                       </div>
                     </td>
 
-                    <td className="px-3 py-3.5 align-top text-right font-semibold text-slate-900">
-                      {fmtMoney(r.display_total ?? r.total_cost)}
+                    <td className="px-3 py-4 align-top text-right">
+                      <div
+                        className={`text-base ${Number((r.display_total ?? r.total_cost) || 0) > 0 ? "font-semibold text-slate-950" : "font-medium text-slate-500"}`}
+                      >
+                        {amountValue}
+                      </div>
+                      <div className={`mt-1 text-xs ${needsFundingAttention ? "font-medium text-amber-700" : "text-slate-500"}`}>
+                        {needsFundingAttention ? "Protected funding pending" : isDirectPay ? "Direct pay" : "Contract total"}
+                      </div>
                     </td>
 
-                    <td className="px-3 py-3.5 align-top text-right font-medium text-slate-700">{Number(r.invoices_count || 0)}</td>
+                    <td className="px-3 py-4 align-top text-right">
+                      <div className="text-sm font-medium text-slate-700">{Number(r.invoices_count || 0)}</div>
+                      <div className="mt-1 text-[11px] text-slate-400">Invoices</div>
+                    </td>
 
-                    <td className="relative px-3 py-3.5 align-top text-right">
+                    <td className="relative px-3 py-4 align-top text-right">
                       <div className="flex items-start justify-end gap-2">
                         <button
                           onClick={(e) => {
@@ -1881,7 +1899,7 @@ export default function AgreementList() {
                             primaryAction.onClick();
                           }}
                           disabled={primaryAction.disabled}
-                          className={`inline-flex min-w-[96px] items-center justify-center gap-1 rounded-lg px-3 py-2 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60 ${primaryAction.className}`}
+                          className={`inline-flex min-w-[128px] items-center justify-center gap-1.5 rounded-xl px-3.5 py-2.5 text-sm font-semibold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60 ${primaryAction.className}`}
                           title={primaryAction.label}
                         >
                           <primaryAction.icon
@@ -1896,13 +1914,13 @@ export default function AgreementList() {
                             e.stopPropagation();
                             goEdit(r.id);
                           }}
-                          disabled={fullySigned}
+                          disabled={canAmend}
                           className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border text-slate-700 shadow-sm transition ${
-                            fullySigned
+                            canAmend
                               ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
                               : "border-slate-300 bg-white hover:bg-slate-50"
                           }`}
-                          title={fullySigned ? "Fully signed. Use Amend to modify." : "Continue Editing"}
+                          title={canAmend ? "Fully signed. Use Amend to modify." : "Edit agreement"}
                         >
                           <Pencil size={14} />
                         </button>
@@ -1925,7 +1943,7 @@ export default function AgreementList() {
                           className="absolute right-3 top-14 z-20 min-w-[180px] rounded-xl border border-slate-200 bg-white p-1.5 text-left shadow-[0_16px_40px_rgba(15,23,42,0.16)]"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {primaryAction.key !== "view" ? (
+                          {!["manage", "status"].includes(primaryAction.key) ? (
                             <button
                               type="button"
                               onClick={() => {
