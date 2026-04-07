@@ -75,6 +75,47 @@ function displayAssistantItem(item) {
   return item.title || item.label || item.question || item.key || "";
 }
 
+function normalizePanelConfig(context = {}) {
+  const config =
+    context && typeof context === "object" && context.ai_panel && typeof context.ai_panel === "object"
+      ? context.ai_panel
+      : {};
+
+  return {
+    headline:
+      typeof config.headline === "string" && config.headline.trim()
+        ? config.headline.trim()
+        : "Tell me what you want to do",
+    helperText:
+      typeof config.helperText === "string" && config.helperText.trim()
+        ? config.helperText.trim()
+        : "I route you into existing MyHomeBro workflows, ask only for missing details, and return a structured next step.",
+    promptPlaceholder:
+      typeof config.promptPlaceholder === "string" && config.promptPlaceholder.trim()
+        ? config.promptPlaceholder.trim()
+        : 'Examples: "Start agreement for Casey Prospect kitchen remodel" or "Help me finish this agreement".',
+    quickActions: Array.isArray(config.quickActions) ? config.quickActions : [],
+    feedback:
+      typeof config.feedback === "string" && config.feedback.trim() ? config.feedback.trim() : "",
+    checklistItems: Array.isArray(config.checklistItems) ? config.checklistItems : [],
+    nextGuidanceTitle:
+      typeof config.nextGuidanceTitle === "string" && config.nextGuidanceTitle.trim()
+        ? config.nextGuidanceTitle.trim()
+        : "",
+    nextGuidance:
+      typeof config.nextGuidance === "string" && config.nextGuidance.trim()
+        ? config.nextGuidance.trim()
+        : "",
+  };
+}
+
+function ChecklistTone({ tone = "success" }) {
+  if (tone === "warning") {
+    return <span className="text-sm font-semibold text-amber-700">!</span>;
+  }
+  return <span className="text-sm font-semibold text-emerald-700">✓</span>;
+}
+
 export function StartWithAIEntry({
   title = "Start with AI",
   description = "Get a guided next step for the workflow you are already in.",
@@ -86,6 +127,7 @@ export function StartWithAIEntry({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const { openAssistant } = useAssistantDock();
+  const entryContext = useMemo(() => ({ ...(context || {}) }), [context]);
 
   return (
     <div className={className} data-testid={testId}>
@@ -110,7 +152,7 @@ export function StartWithAIEntry({
           <button
             type="button"
             data-testid={`${testId}-dock`}
-            onClick={() => openAssistant({ title, context })}
+            onClick={() => openAssistant({ title, context: entryContext })}
             className="hidden items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 xl:inline-flex"
           >
             <PanelRightOpen className="h-4 w-4" />
@@ -145,6 +187,10 @@ export default function StartWithAIAssistant({
   const testId = (base) => (mode === "dock" ? `${base}-dock` : base);
   const contextSignature = useMemo(() => JSON.stringify(context || {}), [context]);
   const normalizedContext = useMemo(() => context || {}, [contextSignature, context]);
+  const panelConfig = useMemo(
+    () => normalizePanelConfig(normalizedContext),
+    [normalizedContext]
+  );
   const [prompt, setPrompt] = useState("");
   const [history, setHistory] = useState([]);
   const [showStructuredPayload, setShowStructuredPayload] = useState(false);
@@ -176,7 +222,10 @@ export default function StartWithAIAssistant({
     };
   }, []);
 
-  const quickActions = useMemo(() => getAssistantQuickActions(), []);
+  const quickActions = useMemo(
+    () => (panelConfig.quickActions.length ? panelConfig.quickActions : getAssistantQuickActions()),
+    [panelConfig.quickActions]
+  );
 
   function applyPlan(nextPlan, submittedPrompt = "", options = {}) {
     setPlan(nextPlan);
@@ -225,13 +274,32 @@ export default function StartWithAIAssistant({
     applyPlan(nextPlan, cleanPrompt);
   }
 
-  async function useQuickAction(intent) {
+  async function useQuickAction(action) {
+    if (action?.prompt) {
+      const quickPrompt = String(action.prompt || "").trim();
+      if (!quickPrompt) return;
+      setPrompt(quickPrompt);
+      const nextPlan = await requestOrchestratedPlan(quickPrompt, { previousPlan: null });
+      applyPlan(nextPlan, quickPrompt, { keepPrompt: true });
+      setTimeout(() => inputRef.current?.focus(), 0);
+      return;
+    }
+
+    const intent = typeof action === "string" ? action : action?.intent;
+    if (!intent) return;
     const nextPlan = await requestOrchestratedPlan("", {
       preferredIntent: intent,
       previousPlan: null,
     });
     setPlan(nextPlan);
     setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  function handleChecklistAction(item) {
+    if (item?.targetStep == null) return;
+    if (typeof onAction === "function") {
+      onAction({ wizard_step_target: item.targetStep });
+    }
   }
 
   function handleVoiceInput() {
@@ -337,11 +405,10 @@ export default function StartWithAIAssistant({
                 data-testid={testId("start-with-ai-title")}
                 className="mt-1 text-2xl font-bold tracking-tight text-slate-900"
               >
-                Tell me what you want to do
+                {panelConfig.headline}
               </h2>
               <p className="mt-2 max-w-2xl text-sm text-slate-600">
-                I route you into existing MyHomeBro workflows, ask only for missing details,
-                and return a structured next step.
+                {panelConfig.helperText}
               </p>
               <div
                 data-testid={testId("assistant-reasoning-badges")}
@@ -382,9 +449,9 @@ export default function StartWithAIAssistant({
         <div className="flex flex-wrap gap-2">
           {quickActions.map((action) => (
             <button
-              key={action.intent}
+              key={action.intent || action.label}
               type="button"
-              onClick={() => useQuickAction(action.intent)}
+              onClick={() => useQuickAction(action)}
               className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-900 hover:text-slate-900"
             >
               {action.label}
@@ -401,7 +468,7 @@ export default function StartWithAIAssistant({
               onChange={(e) => setPrompt(e.target.value)}
               rows={4}
               className="w-full resize-none bg-transparent px-2 py-2 text-base text-slate-900 outline-none"
-              placeholder='Examples: "Start agreement for Casey Prospect kitchen remodel" or "Help me finish this agreement".'
+              placeholder={panelConfig.promptPlaceholder}
             />
             <div className="mt-2 flex items-center justify-between gap-3 border-t border-slate-200 pt-3">
               <div className="text-xs text-slate-500">
@@ -452,6 +519,47 @@ export default function StartWithAIAssistant({
 
         <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
           <div className="space-y-4">
+            {panelConfig.feedback ? (
+              <ResultBlock title="AI Updated" testId={testId("start-with-ai-updated")}>
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  {panelConfig.feedback}
+                </div>
+              </ResultBlock>
+            ) : null}
+
+            {panelConfig.checklistItems.length ? (
+              <ResultBlock title="Pre-send Checklist" testId={testId("start-with-ai-checklist")}>
+                <div className="space-y-2">
+                  {panelConfig.checklistItems.map((item) => {
+                    const interactive = item?.targetStep != null;
+                    const content = (
+                      <>
+                        <ChecklistTone tone={item?.tone} />
+                        <span className="flex-1">{item?.label}</span>
+                      </>
+                    );
+                    return interactive ? (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => handleChecklistAction(item)}
+                        className="flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                      >
+                        {content}
+                      </button>
+                    ) : (
+                      <div
+                        key={item.key}
+                        className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                      >
+                        {content}
+                      </div>
+                    );
+                  })}
+                </div>
+              </ResultBlock>
+            ) : null}
+
             <ResultBlock title="Detected Intent">
               <div className="flex flex-wrap items-center gap-2">
                 <div data-testid={testId("start-with-ai-detected-intent")}>
@@ -528,6 +636,12 @@ export default function StartWithAIAssistant({
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                   This recommendation leads into a workflow that still requires an explicit confirmation before any higher-impact action is saved.
                 </div>
+              </ResultBlock>
+            ) : null}
+
+            {panelConfig.nextGuidance ? (
+              <ResultBlock title={panelConfig.nextGuidanceTitle || "What happens next"} testId={testId("start-with-ai-next-guidance")}>
+                <div>{panelConfig.nextGuidance}</div>
               </ResultBlock>
             ) : null}
 

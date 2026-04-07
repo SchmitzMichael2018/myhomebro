@@ -14,6 +14,7 @@ import api from "../api";
 import ClarificationsModal from "./ClarificationsModal.jsx";
 import { StartWithAIEntry } from "./StartWithAIAssistant.jsx";
 import useAgreementMilestoneAI from "./ai/useAgreementMilestoneAI.jsx";
+import useAiFieldHighlights from "../hooks/useAiFieldHighlights.js";
 import {
   normalizeAssistantMilestoneSuggestion,
   normalizeAssistantQuestion,
@@ -584,6 +585,7 @@ export default function Step2Milestones({
   assistantProactiveRecommendations = [],
   assistantPredictiveInsights = [],
   assistantGuidedFlow = {},
+  onAiUpdateFeedback = () => {},
 }) {
   const [overlapConfirm, setOverlapConfirm] = useState(null);
 
@@ -669,6 +671,10 @@ export default function Step2Milestones({
   const [estimatePreview, setEstimatePreview] = useState(null);
   const [estimateBanner, setEstimateBanner] = useState("");
   const [assistantApplyingMilestones, setAssistantApplyingMilestones] = useState(false);
+  const [aiChangeSummary, setAiChangeSummary] = useState("");
+  const { highlights: aiHighlights, markUpdated: markAiUpdated } = useAiFieldHighlights({
+    durationMs: 5000,
+  });
   const [dismissedAssistantSuggestionSignature, setDismissedAssistantSuggestionSignature] =
     useState("");
   const pricingFreshSignatureRef = useRef("");
@@ -1458,6 +1464,12 @@ export default function Step2Milestones({
     setFallbackMilestones(sortFallbackMilestones(nextRows));
     setStagedSuggestedMilestoneIds((prev) => [...new Set([...(prev || []), ...stagedIds.filter(Boolean)])]);
     setEstimateBanner("Estimate suggestions are staged locally. Review and save when ready.");
+    markAiUpdated(stagedIds.filter(Boolean).map((id) => `milestone:${id}`));
+    {
+      const feedback = "Updated milestone pricing based on project context.";
+      setAiChangeSummary(feedback);
+      onAiUpdateFeedback(feedback);
+    }
     toast.success(
       `Applied estimate amounts to ${appliedCount} milestone${appliedCount === 1 ? "" : "s"} for review.`
     );
@@ -1508,6 +1520,15 @@ export default function Step2Milestones({
     setFallbackMilestones(sortFallbackMilestones(nextRows));
     setStagedSuggestedTimelineIds((prev) => [...new Set([...(prev || []), ...stagedIds.filter(Boolean)])]);
     setEstimateBanner("Estimate timeline suggestions are staged locally. Review and save when ready.");
+    markAiUpdated(stagedIds.filter(Boolean).map((id) => `milestone:${id}`));
+    {
+      const changedCount = stagedIds.filter(Boolean).length || nextRows.length;
+      const feedback = `Adjusted timeline suggestions for ${changedCount} milestone${
+        changedCount === 1 ? "" : "s"
+      }.`;
+      setAiChangeSummary(feedback);
+      onAiUpdateFeedback(feedback);
+    }
     toast.success("Applied suggested milestone timeline for review.");
   }
 
@@ -1548,6 +1569,14 @@ export default function Step2Milestones({
 
     setFallbackMilestones(sortFallbackMilestones(nextRows));
     setStagedSuggestedMilestoneIds(stagedIds);
+    markAiUpdated(stagedIds.filter(Boolean).map((id) => `milestone:${id}`));
+    {
+      const feedback = `Updated suggested pricing for ${appliedCount} milestone${
+        appliedCount === 1 ? "" : "s"
+      }.`;
+      setAiChangeSummary(feedback);
+      onAiUpdateFeedback(feedback);
+    }
 
     if (editOpen && editForm?.id) {
       const editedRow = nextRows.find((row) => row?.id === editForm.id);
@@ -2071,16 +2100,30 @@ export default function Step2Milestones({
 
     try {
       setAssistantApplyingMilestones(true);
+      const createdIds = [];
       for (const row of assistantSuggestionRows) {
-        await saveMilestone({
+        const result = await saveMilestone({
           title: row.title || "",
           description: row.description || "",
           amount: row.amount || "",
           start_date: row.start_date || "",
           completion_date: row.completion_date || "",
         });
+        if (result?.milestone?.id != null) {
+          createdIds.push(`milestone:${result.milestone.id}`);
+        }
       }
       setDismissedAssistantSuggestionSignature(assistantSuggestionSignature);
+      if (createdIds.length) {
+        markAiUpdated(createdIds);
+      }
+      {
+        const feedback = `Added ${assistantSuggestionRows.length} milestone suggestion${
+          assistantSuggestionRows.length === 1 ? "" : "s"
+        } from AI guidance.`;
+        setAiChangeSummary(feedback);
+        onAiUpdateFeedback(feedback);
+      }
       toast.success(
         `Added ${assistantSuggestionRows.length} suggested milestone${
           assistantSuggestionRows.length === 1 ? "" : "s"
@@ -2203,6 +2246,13 @@ export default function Step2Milestones({
         context={assistantContext}
         onAction={handleAssistantAction}
       />
+
+      {aiChangeSummary ? (
+        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="font-semibold">AI updated milestone work</div>
+          <div className="mt-1 text-xs text-amber-800">{aiChangeSummary}</div>
+        </div>
+      ) : null}
 
       {assistantGuidedFlow?.guided_question ? (
         <div
@@ -3000,10 +3050,11 @@ export default function Step2Milestones({
           <tbody>
             {effectiveMilestones.map((m, idx) => {
               const estimate = getEstimateAssistMeta(m);
+              const aiHighlight = m?.id != null ? aiHighlights[`milestone:${m.id}`] : null;
               return (
                 <tr
                   key={m.id || `${m.title}-${idx}`}
-                  className="border-t align-top"
+                  className={`border-t align-top transition-colors ${aiHighlight ? "bg-amber-50/60" : ""}`}
                   data-testid={`step2-milestone-row-${m.id || idx + 1}`}
                 >
                   <td className="px-3 py-2">{m?.order ?? idx + 1}</td>

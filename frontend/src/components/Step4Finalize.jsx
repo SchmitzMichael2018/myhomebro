@@ -711,6 +711,8 @@ export default function Step4Finalize({
   unsignContractor,
   onAgreementUpdated,
   refreshAgreement: refreshAgreementProp,
+  onPreviewViewed = () => {},
+  postSendGuidance = "",
 }) {
   const [agreement, setAgreement] = useState(agreementProp || null);
   const [showAllClarifications, setShowAllClarifications] = useState(false);
@@ -1060,6 +1062,7 @@ export default function Step4Finalize({
         } catch {}
       }
       setLocalHasPreviewed(true);
+      onPreviewViewed();
     } catch (err) {
       const statusCode = err?.response?.status;
       const detail = err?.response?.data?.detail || err?.response?.data?.error;
@@ -1574,6 +1577,13 @@ export default function Step4Finalize({
         </div>
 
       </div>
+
+      {postSendGuidance ? (
+        <section className="rounded-2xl border border-sky-200 bg-sky-50 px-5 py-4 text-sm text-sky-900 shadow-sm">
+          <div className="font-semibold">What happens next</div>
+          <div className="mt-1 text-sm text-sky-800">{postSendGuidance}</div>
+        </section>
+      ) : null}
 
       {projectContextSummary.hasAny ? (
         <details className="rounded-2xl border border-slate-200 bg-white shadow-sm" open={false}>

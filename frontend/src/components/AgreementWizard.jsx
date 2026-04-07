@@ -20,6 +20,7 @@ import Step2Milestones from "./Step2Milestones.jsx";
 import Step3WarrantyAttachments from "./Step3WarrantyAttachments.jsx";
 import Step4Finalize from "./Step4Finalize.jsx";
 import { StartWithAIEntry } from "./StartWithAIAssistant.jsx";
+import { useAssistantDock } from "./AssistantDock.jsx";
 import { WorkflowHint } from "./WorkflowHint.jsx";
 import {
   buildAssistantHandoffSignature,
@@ -27,8 +28,10 @@ import {
   isBlankAssistantValue,
   mergeAssistantFields,
 } from "../lib/assistantHandoff.js";
+import { getAiPanelConfigForStep } from "../lib/agreementWizardAiPanel.js";
 import { trackOnboardingEvent } from "../lib/onboardingAnalytics.js";
 import { getAgreementWizardHint } from "../lib/workflowHints.js";
+import useAiFieldHighlights from "../hooks/useAiFieldHighlights.js";
 import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 
 /* ---------------- helpers ---------------- */
@@ -235,6 +238,7 @@ export default function AgreementWizard() {
 
   const agreementIdParamRaw = params?.id;
   const agreementIdParam = agreementIdParamRaw ? Number(agreementIdParamRaw) : null;
+  const { isOpen: isAssistantDockOpen, openAssistant } = useAssistantDock();
 
   const step = clampStep(searchParams.get("step") || 1);
   const assistantHandoff = useMemo(() => getAssistantHandoff(location.state), [location.state]);
@@ -276,6 +280,13 @@ export default function AgreementWizard() {
   const [qaEmail, setQaEmail] = useState("");
   const [qaBusy, setQaBusy] = useState(false);
   const [assistantAppliedSummary, setAssistantAppliedSummary] = useState("");
+  const [wizardSessionState, setWizardSessionState] = useState({
+    hasPreviewedPdf: false,
+  });
+  const [aiFeedbackByStep, setAiFeedbackByStep] = useState({});
+  const { highlights: step1AiHighlights, markUpdated: markStep1AiUpdated } = useAiFieldHighlights({
+    durationMs: 5000,
+  });
 
   const didInitialFetchRef = useRef(false);
   const appliedAssistantSignatureRef = useRef("");
@@ -337,6 +348,8 @@ export default function AgreementWizard() {
     setQaName("");
     setQaEmail("");
     setQaBusy(false);
+    setWizardSessionState({ hasPreviewedPdf: false });
+    setAiFeedbackByStep({});
 
     didInitialFetchRef.current = false;
     lastStepFetchRef.current = { step: null, at: 0 };
@@ -693,6 +706,16 @@ export default function AgreementWizard() {
         ? `AI prefilled some ${appliedLabels.join(" and ")} based on your request.`
         : ""
     );
+    setAiFeedbackByStep((prev) => ({
+      ...prev,
+      1: appliedLabels.length
+        ? `Updated ${appliedLabels.join(" and ")} from your AI request.`
+        : prev[1] || "",
+    }));
+    markStep1AiUpdated([
+      ...appliedDraftKeys,
+      ...(hasCustomerPrefill ? ["homeowner", "customer_contact"] : []),
+    ]);
 
     if (assistantHandoff.templateRecommendations?.length) {
       trackOnboardingEvent({
@@ -723,6 +746,7 @@ export default function AgreementWizard() {
     assistantHandoffSignature,
     dLocal?.homeowner,
     goStep,
+    markStep1AiUpdated,
   ]);
 
   const homeownerOptions = useMemo(() => {
@@ -1204,6 +1228,27 @@ export default function AgreementWizard() {
     () => getAgreementWizardHint({ step, agreement }),
     [agreement, step]
   );
+  const aiPanelConfig = useMemo(
+    () =>
+      getAiPanelConfigForStep(step, {
+        agreement,
+        dLocal,
+        milestones,
+        sessionState: wizardSessionState,
+        aiUpdateFeedback:
+          aiFeedbackByStep[step] ||
+          (step === 1 ? assistantAppliedSummary : ""),
+      }),
+    [
+      agreement,
+      assistantAppliedSummary,
+      aiFeedbackByStep,
+      dLocal,
+      milestones,
+      step,
+      wizardSessionState,
+    ]
+  );
   const assistantContext = useMemo(
     () => ({
       current_route: `/app/agreements/${agreementId || "new"}/wizard?step=${step}`,
@@ -1240,10 +1285,12 @@ export default function AgreementWizard() {
         count: milestones.length,
         suggested_titles: milestones.map((item) => item?.title).filter(Boolean),
       },
+      ai_panel: aiPanelConfig,
     }),
     [
       agreement,
       agreementId,
+      aiPanelConfig,
       dLocal.description,
       dLocal.homeowner,
       dLocal.project_subtype,
@@ -1268,6 +1315,14 @@ export default function AgreementWizard() {
     },
     [step]
   );
+
+  useEffect(() => {
+    if (!isAssistantDockOpen) return;
+    openAssistant({
+      title: aiPanelConfig.entryTitle,
+      context: assistantContext,
+    });
+  }, [aiPanelConfig.entryTitle, assistantContext, isAssistantDockOpen, openAssistant]);
 
   return (
     <ContractorPageSurface
@@ -1331,8 +1386,8 @@ export default function AgreementWizard() {
       <StartWithAIEntry
         className="mt-4"
         testId="agreement-wizard-ai-entry"
-        title="Start with AI inside this agreement"
-        description="Use the current agreement context to resume the right step, review clarifications, or move into milestone work."
+        title={aiPanelConfig.entryTitle}
+        description={aiPanelConfig.entryDescription}
         context={assistantContext}
         onAction={handleAssistantAction}
       />
@@ -1402,6 +1457,7 @@ export default function AgreementWizard() {
             assistantPredictiveInsights={assistantHandoff.predictiveInsights}
             assistantProposedActions={assistantHandoff.proposedActions}
             assistantConfirmationRequiredActions={assistantHandoff.confirmationRequiredActions}
+            aiHighlightKeys={step1AiHighlights}
           />
         </div>
       ) : null}
@@ -1429,6 +1485,9 @@ export default function AgreementWizard() {
             assistantProactiveRecommendations={assistantHandoff.proactiveRecommendations}
             assistantPredictiveInsights={assistantHandoff.predictiveInsights}
             assistantGuidedFlow={assistantHandoff.guidedFlow}
+            onAiUpdateFeedback={(message) =>
+              setAiFeedbackByStep((prev) => ({ ...prev, 2: message || "" }))
+            }
           />
         </div>
       ) : null}
@@ -1482,6 +1541,10 @@ export default function AgreementWizard() {
             unsignContractor={unsignContractor}
             onAgreementUpdated={(updated) => setAgreement(updated)}
             refreshAgreement={refreshAgreement}
+            onPreviewViewed={() =>
+              setWizardSessionState((prev) => ({ ...prev, hasPreviewedPdf: true }))
+            }
+            postSendGuidance={aiPanelConfig.nextGuidance}
           />
         </div>
       ) : null}

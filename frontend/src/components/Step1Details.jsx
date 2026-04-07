@@ -56,12 +56,32 @@ function formatRecurrenceSummary(pattern, interval) {
   return `Recurring every ${safeInterval} ${labelMap[safePattern] || safePattern}`;
 }
 
-function StepSection({ title, description = "", children, className = "" }) {
+function StepSection({
+  title,
+  description = "",
+  children,
+  className = "",
+  highlighted = false,
+  highlightLabel = "AI updated",
+}) {
   return (
-    <section className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-sm ${className}`}>
-      <div className="mb-4">
-        <h3 className="text-base font-semibold text-slate-900">{title}</h3>
-        {description ? <p className="mt-1 text-sm text-slate-600">{description}</p> : null}
+    <section
+      className={`rounded-2xl border bg-white p-5 shadow-sm transition-all ${
+        highlighted
+          ? "border-amber-200 bg-amber-50/40 ring-2 ring-amber-100"
+          : "border-slate-200"
+      } ${className}`}
+    >
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-base font-semibold text-slate-900">{title}</h3>
+          {description ? <p className="mt-1 text-sm text-slate-600">{description}</p> : null}
+        </div>
+        {highlighted ? (
+          <span className="inline-flex shrink-0 rounded-full border border-amber-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-800">
+            {highlightLabel}
+          </span>
+        ) : null}
       </div>
       {children}
     </section>
@@ -101,6 +121,7 @@ export default function Step1Details({
   assistantPredictiveInsights = [],
   assistantProposedActions = [],
   assistantConfirmationRequiredActions = [],
+  aiHighlightKeys = {},
 }) {
   void setQaBusy;
 
@@ -124,6 +145,9 @@ export default function Step1Details({
       null
     );
   }, [projectTypeOptions, dLocal?.project_type]);
+
+  const hasAiSectionHighlight = (...keys) =>
+    keys.some((key) => Boolean(aiHighlightKeys?.[key]));
 
   const [addrSearch, setAddrSearch] = useState("");
   const patchTimerRef = useRef(null);
@@ -1284,6 +1308,7 @@ export default function Step1Details({
             <StepSection
               title="Customer"
               description="Select the customer for this agreement, or add one quickly if you need to keep moving."
+              highlighted={hasAiSectionHighlight("homeowner", "customer_contact")}
             >
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <CustomerSection
@@ -1312,6 +1337,13 @@ export default function Step1Details({
             <StepSection
               title="Project Address"
               description="Confirm where the work is happening so documents, compliance, and scheduling stay aligned."
+              highlighted={hasAiSectionHighlight(
+                "address_line1",
+                "address_line2",
+                "address_city",
+                "address_state",
+                "address_postal_code"
+              )}
             >
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <AddressSection
@@ -1336,6 +1368,15 @@ export default function Step1Details({
             <StepSection
               title="Project Basics"
               description="Choose how this agreement should behave before you move into milestone planning."
+              highlighted={hasAiSectionHighlight(
+                "project_title",
+                "project_type",
+                "project_subtype",
+                "description",
+                "agreement_mode",
+                "recurrence_pattern",
+                "recurrence_interval"
+              )}
             >
               <div
                 data-testid="maintenance-settings-card"
@@ -1555,6 +1596,7 @@ export default function Step1Details({
             <StepSection
               title="Payment Setup"
               description="Set the payment structure now so milestone planning and final review stay aligned."
+              highlighted={hasAiSectionHighlight("payment_mode", "payment_structure", "retainage_percent")}
             >
               <div className="space-y-4">
                 <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
