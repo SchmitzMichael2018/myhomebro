@@ -230,6 +230,7 @@ export default function Step1Details({
   }, [agreementId]);
   const startModeStorageKey = `${cacheKey}_start_mode`;
   const startModeCommittedStorageKey = `${cacheKey}_start_mode_committed`;
+  const startModeSourceStorageKey = `${cacheKey}_start_mode_source`;
   const [startMode, setStartMode] = useState(() => {
     try {
       const saved = sessionStorage.getItem(startModeStorageKey);
@@ -254,6 +255,27 @@ export default function Step1Details({
     }
     return false;
   });
+  const [startModeSource, setStartModeSource] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem(startModeSourceStorageKey);
+      if (
+        saved === "derived" ||
+        saved === "session" ||
+        saved === "user" ||
+        saved === "assistant" ||
+        saved === "template_apply"
+      ) {
+        return saved;
+      }
+      const savedMode = sessionStorage.getItem(startModeStorageKey);
+      if (savedMode === "ai" || savedMode === "template" || savedMode === "manual") {
+        return "session";
+      }
+    } catch {
+      // ignore
+    }
+    return "derived";
+  });
 
   function writeCache(nextPatch = {}) {
     try {
@@ -266,9 +288,15 @@ export default function Step1Details({
     }
   }
 
-  function activateStartMode(mode, { committed = true } = {}) {
+  function activateStartMode(mode, { committed = true, source = "user" } = {}) {
     setStartMode(mode);
     setStartModeCommitted(committed);
+    setStartModeSource(source);
+  }
+
+  function reopenStartModeChooser() {
+    setStartModeCommitted(false);
+    setStartModeSource((prev) => (prev === "derived" ? "session" : prev));
   }
 
   useEffect(() => {
@@ -376,6 +404,14 @@ export default function Step1Details({
       // ignore
     }
   }, [startModeCommitted, startModeCommittedStorageKey]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(startModeSourceStorageKey, startModeSource);
+    } catch {
+      // ignore
+    }
+  }, [startModeSource, startModeSourceStorageKey]);
 
   useEffect(() => {
     if (isNewAgreement) return;
@@ -514,17 +550,27 @@ export default function Step1Details({
   const hasTemplateApplied =
     Boolean(agreement?.selected_template?.id || agreement?.selected_template_id) ||
     Boolean(assistantTopTemplatePreview?.id);
+  const derivedStartMode = inferStartMode({
+    agreement,
+    assistantGuidedFlow,
+    assistantTemplateRecommendations,
+    assistantTopTemplatePreview,
+  });
   const shouldOpenTemplateDetails = startMode === "template" || hasTemplateApplied;
 
   useEffect(() => {
-    if (hasTemplateApplied && startMode !== "template") {
-      activateStartMode("template");
+    if (startModeSource !== "derived") return;
+    if (startMode !== derivedStartMode) {
+      setStartMode(derivedStartMode);
     }
-  }, [hasTemplateApplied, startMode]);
+    if (derivedStartMode === "template" && !startModeCommitted) {
+      setStartModeCommitted(true);
+    }
+  }, [derivedStartMode, startMode, startModeCommitted, startModeSource]);
 
   useEffect(() => {
     if (isAiAssistantActive && startMode !== "ai") {
-      activateStartMode("ai");
+      activateStartMode("ai", { source: "assistant" });
     }
   }, [isAiAssistantActive, startMode]);
 
@@ -1008,6 +1054,7 @@ export default function Step1Details({
   }
 
   async function handleTemplateApplied(nextAgreement, payload = null) {
+    activateStartMode("template", { source: "template_apply" });
     syncLocalFromAgreementPayload(nextAgreement);
 
     if (typeof onTemplateApplied === "function") {
@@ -1393,7 +1440,7 @@ export default function Step1Details({
                 <button
                   type="button"
                   data-testid="step1-change-start-mode"
-                  onClick={() => setStartModeCommitted(false)}
+                  onClick={reopenStartModeChooser}
                   className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                 >
                   Change start mode
