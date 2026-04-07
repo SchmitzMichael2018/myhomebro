@@ -221,6 +221,7 @@ export default function TemplateSearchSection({
   agreementId,
   dLocal,
   onLocalChange,
+  entryMode = "manual",
   projectTypeOptions,
   projectSubtypeOptions,
 
@@ -305,6 +306,9 @@ export default function TemplateSearchSection({
   const hasSubtype = !!safeTrim(dLocal?.project_subtype);
   const hasTitle = !!safeTrim(dLocal?.project_title);
   const hasDescription = !!safeTrim(dLocal?.description);
+  const isAiMode = entryMode === "ai";
+  const isTemplateMode = entryMode === "template";
+  const shouldExpandManualFields = !isAiMode || hasTitle || hasDescription || !!safeTrim(aiPreview);
   const hasTemplateSearch = !!safeTrim(templateSearch);
   const hasTemplateMatches =
     Array.isArray(filteredTemplates) && filteredTemplates.length > 0;
@@ -1383,23 +1387,67 @@ export default function TemplateSearchSection({
           </div>
         </div>
 
-        <div className="mt-4">
-          <label className="mb-1 block text-sm font-medium">Project Title</label>
-          <input
-            data-testid="agreement-project-title-input"
-            className="w-full rounded border px-3 py-2 text-sm"
-            name="project_title"
-            value={dLocal.project_title}
-            onChange={locked ? undefined : onLocalChange}
-            placeholder="e.g., Master Bedroom Addition"
-            disabled={locked}
-          />
-          <div className="mt-1 text-[11px] text-gray-500">
-            A few words here help MyHomeBro suggest the best template.
-          </div>
-        </div>
+        <details
+          open={shouldExpandManualFields}
+          className={`mt-4 rounded-xl border ${
+            isAiMode
+              ? "border-slate-200 bg-slate-50/70"
+              : isTemplateMode
+              ? "border-sky-200 bg-sky-50/40"
+              : "border-slate-200 bg-white"
+          }`}
+          data-testid="step1-manual-details"
+        >
+          <summary className="cursor-pointer list-none px-4 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">
+                  {isAiMode ? "Review project title and scope" : "Project title and scope"}
+                </div>
+                <div className="mt-1 text-xs text-slate-600">
+                  {isAiMode
+                    ? "AI can prefill these details first. Open this section anytime to review or edit them."
+                    : isTemplateMode
+                    ? "Template details can be reviewed and adjusted here before you continue."
+                    : "Add the core project title and scope details for this agreement."}
+                </div>
+              </div>
+              <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                {shouldExpandManualFields ? "Editable" : "Collapsed"}
+              </span>
+            </div>
+          </summary>
 
-        <div className="mt-5 border-t border-slate-200 pt-5">
+          <div className="border-t border-slate-200 px-4 pb-4 pt-4">
+            {isAiMode ? (
+              <div
+                data-testid="step1-ai-prefill-note"
+                className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50/70 px-3 py-3 text-sm text-indigo-900"
+              >
+                <div className="font-semibold">AI will help prefill these details</div>
+                <div className="mt-1 text-xs text-indigo-800">
+                  Start with the AI assistant first, then review and edit the title and scope here.
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-1">
+              <label className="mb-1 block text-sm font-medium">Project Title</label>
+              <input
+                data-testid="agreement-project-title-input"
+                className="w-full rounded border px-3 py-2 text-sm"
+                name="project_title"
+                value={dLocal.project_title}
+                onChange={locked ? undefined : onLocalChange}
+                placeholder="e.g., Master Bedroom Addition"
+                disabled={locked}
+              />
+              <div className="mt-1 text-[11px] text-gray-500">
+                A few words here help MyHomeBro suggest the best template.
+              </div>
+            </div>
+
+            <div className="mt-5 border-t border-slate-200 pt-5">
           <div className="mb-3">
             <div className="text-sm font-semibold text-gray-900">
               Scope of Work
@@ -1492,58 +1540,60 @@ export default function TemplateSearchSection({
             </button>
           </div>
 
-          <div className="mt-2 text-[11px] text-gray-500">
-            {blockScopeGeneration
-              ? "A template is applied. Use the template-driven scope, milestones, and clarification flow instead of generating a new AI structure here."
-              : "Use AI as a starting point. Review and edit the final scope so it accurately reflects the work you are agreeing to perform."}
-          </div>
-
-          {aiErr ? <div className="mt-2 text-xs text-red-600">{aiErr}</div> : null}
-
-          {aiPreview ? (
-            <div className="mt-3 rounded-md border bg-indigo-50 p-3">
-              <div className="mb-2 text-xs font-semibold text-indigo-900">
-                AI Suggested Scope Draft
+              <div className="mt-2 text-[11px] text-gray-500">
+                {blockScopeGeneration
+                  ? "A template is applied. Use the template-driven scope, milestones, and clarification flow instead of generating a new AI structure here."
+                  : "Use AI as a starting point. Review and edit the final scope so it accurately reflects the work you are agreeing to perform."}
               </div>
 
-              <div className="whitespace-pre-wrap text-sm text-indigo-900">
-                {aiPreview}
-              </div>
+              {aiErr ? <div className="mt-2 text-xs text-red-600">{aiErr}</div> : null}
 
-              <div className="mt-2 text-[11px] text-indigo-900/80">
-                Review this draft before using it.
-              </div>
+              {aiPreview ? (
+                <div className="mt-3 rounded-md border bg-indigo-50 p-3">
+                  <div className="mb-2 text-xs font-semibold text-indigo-900">
+                    AI Suggested Scope Draft
+                  </div>
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => applyAiDescription("replace")}
-                  disabled={locked}
-                  className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-700 disabled:opacity-60"
-                >
-                  Replace Description
-                </button>
+                  <div className="whitespace-pre-wrap text-sm text-indigo-900">
+                    {aiPreview}
+                  </div>
 
-                <button
-                  type="button"
-                  onClick={() => applyAiDescription("append")}
-                  disabled={locked}
-                  className="rounded border px-3 py-1.5 text-xs disabled:opacity-60"
-                >
-                  Append to Description
-                </button>
+                  <div className="mt-2 text-[11px] text-indigo-900/80">
+                    Review this draft before using it.
+                  </div>
 
-                <button
-                  type="button"
-                  onClick={() => setAiPreview("")}
-                  className="rounded border px-3 py-1.5 text-xs"
-                >
-                  Cancel
-                </button>
-              </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => applyAiDescription("replace")}
+                      disabled={locked}
+                      className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-700 disabled:opacity-60"
+                    >
+                      Replace Description
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => applyAiDescription("append")}
+                      disabled={locked}
+                      className="rounded border px-3 py-1.5 text-xs disabled:opacity-60"
+                    >
+                      Append to Description
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAiPreview("")}
+                      className="rounded border px-3 py-1.5 text-xs"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
-          ) : null}
-        </div>
+          </div>
+        </details>
       </div>
     </div>
   );

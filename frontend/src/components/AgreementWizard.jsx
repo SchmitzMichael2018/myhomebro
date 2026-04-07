@@ -280,6 +280,7 @@ export default function AgreementWizard() {
   const [qaEmail, setQaEmail] = useState("");
   const [qaBusy, setQaBusy] = useState(false);
   const [assistantAppliedSummary, setAssistantAppliedSummary] = useState("");
+  const [step1AiEntryOpen, setStep1AiEntryOpen] = useState(false);
   const [wizardSessionState, setWizardSessionState] = useState({
     hasPreviewedPdf: false,
   });
@@ -1459,6 +1460,7 @@ export default function AgreementWizard() {
           description={aiPanelConfig.entryDescription}
           context={assistantContext}
           onAction={handleAssistantAction}
+          onOpenChange={step === 1 ? setStep1AiEntryOpen : undefined}
         />
       ) : null}
 
@@ -1528,6 +1530,7 @@ export default function AgreementWizard() {
             assistantProposedActions={assistantHandoff.proposedActions}
             assistantConfirmationRequiredActions={assistantHandoff.confirmationRequiredActions}
             aiHighlightKeys={step1AiHighlights}
+            isAiAssistantActive={step1AiEntryOpen || isAssistantDockOpen}
           />
         </div>
       ) : null}

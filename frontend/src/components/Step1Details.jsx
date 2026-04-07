@@ -140,6 +140,7 @@ export default function Step1Details({
   assistantProposedActions = [],
   assistantConfirmationRequiredActions = [],
   aiHighlightKeys = {},
+  isAiAssistantActive = false,
 }) {
   void setQaBusy;
 
@@ -228,6 +229,7 @@ export default function Step1Details({
     return `mhb_step1_cache_${id}`;
   }, [agreementId]);
   const startModeStorageKey = `${cacheKey}_start_mode`;
+  const startModeCommittedStorageKey = `${cacheKey}_start_mode_committed`;
   const [startMode, setStartMode] = useState(() => {
     try {
       const saved = sessionStorage.getItem(startModeStorageKey);
@@ -242,6 +244,16 @@ export default function Step1Details({
       assistantTopTemplatePreview,
     });
   });
+  const [startModeCommitted, setStartModeCommitted] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem(startModeCommittedStorageKey);
+      if (saved === "1") return true;
+      if (saved === "0") return false;
+    } catch {
+      // ignore
+    }
+    return false;
+  });
 
   function writeCache(nextPatch = {}) {
     try {
@@ -252,6 +264,11 @@ export default function Step1Details({
     } catch {
       // ignore
     }
+  }
+
+  function activateStartMode(mode, { committed = true } = {}) {
+    setStartMode(mode);
+    setStartModeCommitted(committed);
   }
 
   useEffect(() => {
@@ -351,6 +368,14 @@ export default function Step1Details({
       // ignore
     }
   }, [startMode, startModeStorageKey]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(startModeCommittedStorageKey, startModeCommitted ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, [startModeCommitted, startModeCommittedStorageKey]);
 
   useEffect(() => {
     if (isNewAgreement) return;
@@ -493,9 +518,15 @@ export default function Step1Details({
 
   useEffect(() => {
     if (hasTemplateApplied && startMode !== "template") {
-      setStartMode("template");
+      activateStartMode("template");
     }
   }, [hasTemplateApplied, startMode]);
+
+  useEffect(() => {
+    if (isAiAssistantActive && startMode !== "ai") {
+      activateStartMode("ai");
+    }
+  }, [isAiAssistantActive, startMode]);
 
   async function runAiDescription(mode) {
     if (locked) return;
@@ -1180,6 +1211,29 @@ export default function Step1Details({
     }
   };
 
+  const activeStartModeLabel =
+    startMode === "ai"
+      ? "AI-assisted"
+      : startMode === "template"
+      ? "Template-based"
+      : "Start from scratch";
+  const activeStartModeSummary =
+    startMode === "ai"
+      ? "Describe the job in the AI panel first, then review the setup details it prepares below."
+      : startMode === "template"
+      ? "Use a template as the starting point, then review and edit the agreement details below."
+      : "Fill in the setup details directly, with AI and templates still available if you want help later.";
+  const shouldDeemphasizeManualReview = startModeCommitted && startMode !== "manual";
+  const reviewGuidanceText =
+    startMode === "ai"
+      ? "AI will help prefill these details. Review and edit them below after the first suggestion."
+      : startMode === "template"
+      ? "Your template choice can prefill these details. Review and adjust them below as needed."
+      : "";
+  const supportSectionClass = shouldDeemphasizeManualReview
+    ? "border-slate-200 bg-slate-50/40 shadow-none"
+    : "";
+
   return (
     <>
       <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -1315,74 +1369,91 @@ export default function Step1Details({
         ) : null}
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-            <div>
-              <h3 className="text-base font-semibold text-slate-900">
-                How do you want to start this agreement?
-              </h3>
-              <p className="mt-1 text-sm text-slate-600">
-                Choose the fastest starting path for this job. You can still switch approaches as
-                you work.
-              </p>
-            </div>
-            <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
-              Step 1 setup
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            {startModeCards.map((option) => {
-              const active = startMode === option.key;
-              return (
-                <button
-                  key={option.key}
-                  type="button"
-                  onClick={() => setStartMode(option.key)}
-                  className={`rounded-2xl border px-4 py-4 text-left transition ${
-                    active
-                      ? "border-indigo-300 bg-indigo-50 shadow-sm"
-                      : "border-slate-200 bg-slate-50/70 hover:border-slate-300 hover:bg-white"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-semibold text-slate-900">{option.title}</div>
-                    {active ? (
-                      <span className="rounded-full border border-indigo-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">
-                        Selected
-                      </span>
-                    ) : null}
+          {startModeCommitted ? (
+            <div
+              data-testid="step1-start-mode-summary"
+              className={`rounded-2xl border px-4 py-4 ${
+                startMode === "ai"
+                  ? "border-indigo-200 bg-indigo-50/70"
+                  : startMode === "template"
+                  ? "border-sky-200 bg-sky-50/70"
+                  : "border-slate-200 bg-slate-50"
+              }`}
+            >
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                    Mode
                   </div>
-                  <div className="mt-2 text-sm text-slate-600">{option.description}</div>
+                  <div className="mt-1 text-base font-semibold text-slate-900">
+                    {activeStartModeLabel}
+                  </div>
+                  <div className="mt-1 text-sm text-slate-600">{activeStartModeSummary}</div>
+                </div>
+                <button
+                  type="button"
+                  data-testid="step1-change-start-mode"
+                  onClick={() => setStartModeCommitted(false)}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Change start mode
                 </button>
-              );
-            })}
-          </div>
-
-          {startMode === "ai" ? (
-            <div className="mt-4 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
-              <div className="font-semibold">AI-guided setup is active</div>
-              <div className="mt-1 text-xs text-indigo-800">
-                Describe the job in the AI panel, then review the customer, address, and payment
-                sections it prepares for you.
               </div>
             </div>
-          ) : null}
+          ) : (
+            <div data-testid="step1-start-mode-chooser">
+              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">
+                    How do you want to start this agreement?
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Choose the fastest starting path for this job. You can still switch approaches as
+                    you work.
+                  </p>
+                </div>
+                <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  Step 1 setup
+                </div>
+              </div>
 
-          {startMode === "manual" ? (
-            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-              <div className="font-semibold text-slate-900">Manual setup is active</div>
-              <div className="mt-1 text-xs text-slate-600">
-                Fill in the agreement details directly. AI and templates stay available if you want
-                help later.
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                {startModeCards.map((option) => {
+                  const active = startMode === option.key;
+                  return (
+                    <button
+                      key={option.key}
+                      type="button"
+                      onClick={() => activateStartMode(option.key)}
+                      className={`rounded-2xl border px-4 py-4 text-left transition ${
+                        active
+                          ? "border-indigo-300 bg-indigo-50 shadow-sm"
+                          : "border-slate-200 bg-slate-50/70 hover:border-slate-300 hover:bg-white"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-semibold text-slate-900">{option.title}</div>
+                        {active ? (
+                          <span className="rounded-full border border-indigo-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">
+                            Selected
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-2 text-sm text-slate-600">{option.description}</div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
-          ) : null}
+          )}
         </section>
 
         <section
           className={`rounded-2xl border shadow-sm ${
-            shouldOpenTemplateDetails
+            startMode === "template"
               ? "border-indigo-200 bg-indigo-50/40"
+              : shouldDeemphasizeManualReview
+              ? "border-slate-200 bg-slate-50/50"
               : "border-slate-200 bg-white"
           }`}
         >
@@ -1395,7 +1466,7 @@ export default function Step1Details({
             </div>
             <span
               className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
-                shouldOpenTemplateDetails
+                startMode === "template"
                   ? "border border-indigo-200 bg-white text-indigo-700"
                   : "bg-slate-100 text-slate-600"
               }`}
@@ -1409,6 +1480,7 @@ export default function Step1Details({
               agreementId={agreementId}
               dLocal={dLocal}
               onLocalChange={handleStep1LocalChange}
+              entryMode={startMode}
               projectTypeOptions={projectTypeOptions}
               projectSubtypeOptions={projectSubtypeOptions}
               templatesLoading={templatesLoading}
@@ -1466,11 +1538,28 @@ export default function Step1Details({
           </div>
         </section>
 
+        {reviewGuidanceText ? (
+          <div
+            data-testid="step1-review-guidance"
+            className={`rounded-xl border px-4 py-3 text-sm ${
+              startMode === "ai"
+                ? "border-indigo-200 bg-indigo-50/70 text-indigo-900"
+                : "border-sky-200 bg-sky-50/70 text-sky-900"
+            }`}
+          >
+            <div className="font-semibold">
+              {startMode === "ai" ? "AI setup comes first" : "Template setup comes first"}
+            </div>
+            <div className="mt-1 text-xs opacity-90">{reviewGuidanceText}</div>
+          </div>
+        ) : null}
+
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.95fr)] xl:items-start">
           <div className="space-y-6">
             <StepSection
               title="Customer"
               description="Select the customer for this agreement, or add one quickly if you need to keep moving."
+              className={supportSectionClass}
               highlighted={hasAiSectionHighlight("homeowner", "customer_contact")}
             >
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -1500,6 +1589,7 @@ export default function Step1Details({
             <StepSection
               title="Project Address"
               description="Confirm where the work is happening so documents, compliance, and scheduling stay aligned."
+              className={supportSectionClass}
               highlighted={hasAiSectionHighlight(
                 "address_line1",
                 "address_line2",
@@ -1531,6 +1621,7 @@ export default function Step1Details({
             <StepSection
               title="Project Basics"
               description="Choose how this agreement should behave before you move into milestone planning."
+              className={supportSectionClass}
               highlighted={hasAiSectionHighlight(
                 "project_title",
                 "project_type",
@@ -1759,6 +1850,7 @@ export default function Step1Details({
             <StepSection
               title="Payment Setup"
               description="Set the payment structure now so milestone planning and final review stay aligned."
+              className={supportSectionClass}
               highlighted={hasAiSectionHighlight("payment_mode", "payment_structure", "retainage_percent")}
             >
               <div className="space-y-4">

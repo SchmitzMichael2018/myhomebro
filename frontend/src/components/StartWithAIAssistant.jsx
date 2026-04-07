@@ -117,6 +117,7 @@ export function StartWithAIEntry({
   description = "Get a guided next step for the workflow you are already in.",
   context = {},
   onAction,
+  onOpenChange = null,
   defaultOpen = false,
   className = "",
   testId = "start-with-ai-entry",
@@ -139,7 +140,13 @@ export function StartWithAIEntry({
           <button
             type="button"
             data-testid={`${testId}-toggle`}
-            onClick={() => setOpen((value) => !value)}
+            onClick={() =>
+              setOpen((value) => {
+                const next = !value;
+                onOpenChange?.(next);
+                return next;
+              })
+            }
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
           >
             <Wand2 className="h-4 w-4" />
@@ -148,7 +155,10 @@ export function StartWithAIEntry({
           <button
             type="button"
             data-testid={`${testId}-dock`}
-            onClick={() => openAssistant({ title, context: entryContext })}
+            onClick={() => {
+              onOpenChange?.(true);
+              openAssistant({ title, context: entryContext });
+            }}
             className="hidden items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 xl:inline-flex"
           >
             <PanelRightOpen className="h-4 w-4" />

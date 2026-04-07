@@ -185,6 +185,105 @@ test('agreement wizard step 1 renders and draft creation route is reachable', as
   );
 });
 
+test('agreement wizard step 1 switches into guided ai mode instead of leaving all start modes active', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        onboarding_status: 'not_started',
+        connected: false,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, value: 'Remodel', label: 'Remodel', owner_type: 'system' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route('**/api/projects/homeowners**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, company_name: 'Demo Customer', full_name: 'Jordan Demo' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractors/me/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 77,
+        ai: {
+          access: 'included',
+          enabled: true,
+          unlimited: true,
+        },
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.goto('/app/agreements/new/wizard?step=1', {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
+
+  await page.getByTestId('agreement-wizard-ai-entry-toggle').click();
+
+  await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
+  await expect(page.getByTestId('step1-review-guidance')).toContainText('AI setup comes first');
+  await expect(page.getByTestId('step1-start-mode-chooser')).toBeHidden();
+  await expect(page.getByTestId('agreement-project-title-input')).toBeHidden();
+
+  await page.getByTestId('step1-change-start-mode').click();
+  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
+});
+
 test('maintenance agreement fields render in step 1 and recurring summary appears in step 2', async ({
   page,
 }) => {
