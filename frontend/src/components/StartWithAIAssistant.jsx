@@ -90,6 +90,10 @@ function normalizePanelConfig(context = {}) {
     feedback:
       typeof config.feedback === "string" && config.feedback.trim() ? config.feedback.trim() : "",
     checklistItems: Array.isArray(config.checklistItems) ? config.checklistItems : [],
+    templateRecommendation:
+      config.templateRecommendation && typeof config.templateRecommendation === "object"
+        ? config.templateRecommendation
+        : null,
     nextActionText:
       typeof config.nextActionText === "string" && config.nextActionText.trim()
         ? config.nextActionText.trim()
@@ -295,6 +299,16 @@ export default function StartWithAIAssistant({
   }
 
   async function useQuickAction(action) {
+    const actionKey = safeActionKey(action?.actionKey || action?.action_key);
+    if (actionKey && typeof onAction === "function") {
+      const handled = await onAction({
+        assistant_action_key: actionKey,
+        action_key: actionKey,
+        source: "quick_action",
+      });
+      if (handled === true) return;
+    }
+
     if (action?.prompt) {
       const quickPrompt = String(action.prompt || "").trim();
       if (!quickPrompt) return;
@@ -313,6 +327,10 @@ export default function StartWithAIAssistant({
     });
     setPlan(nextPlan);
     setTimeout(() => inputRef.current?.focus(), 0);
+  }
+
+  function safeActionKey(value) {
+    return value == null ? "" : String(value).trim();
   }
 
   function handleChecklistAction(item) {
@@ -400,6 +418,20 @@ export default function StartWithAIAssistant({
         assistantContext: normalizedContext,
       },
     });
+  }
+
+  async function handleTemplateRecommendationAction() {
+    const actionKey = safeActionKey(
+      userFacingPanel?.templateRecommendation?.actionKey || "save_as_template"
+    );
+    if (typeof onAction === "function") {
+      const handled = await onAction({
+        assistant_action_key: actionKey,
+        action_key: actionKey,
+        source: "template_recommendation",
+      });
+      if (handled === true) return;
+    }
   }
 
   const containerClass =
@@ -542,6 +574,33 @@ export default function StartWithAIAssistant({
           <ResultBlock title="AI Updated" testId={testId("start-with-ai-updated")}>
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               {userFacingPanel.feedback}
+            </div>
+          </ResultBlock>
+        ) : null}
+
+        {userFacingPanel.templateRecommendation?.title ? (
+          <ResultBlock
+            title="AI Recommendation"
+            testId={testId("start-with-ai-template-recommendation")}
+          >
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-3 text-sm text-indigo-950">
+              <div className="font-semibold">
+                {userFacingPanel.templateRecommendation.title}
+              </div>
+              {userFacingPanel.templateRecommendation.body ? (
+                <div className="mt-1 text-sm text-indigo-900/90">
+                  {userFacingPanel.templateRecommendation.body}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                data-testid={testId("start-with-ai-template-action")}
+                onClick={handleTemplateRecommendationAction}
+                className="mt-3 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+              >
+                {userFacingPanel.templateRecommendation.actionLabel || "Save as Template"}
+                <Compass className="h-4 w-4" />
+              </button>
             </div>
           </ResultBlock>
         ) : null}

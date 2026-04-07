@@ -56,6 +56,83 @@ function getSignatureState(agreement = {}) {
   };
 }
 
+function getAgreementTitle(agreement = {}, dLocal = {}) {
+  return (
+    safeText(dLocal?.project_title) ||
+    safeText(agreement?.project_title) ||
+    safeText(agreement?.title)
+  );
+}
+
+function getAgreementScope(agreement = {}, dLocal = {}) {
+  return (
+    safeText(dLocal?.description) ||
+    safeText(agreement?.description) ||
+    safeText(agreement?.project_summary)
+  );
+}
+
+function getAgreementTotal(agreement = {}, milestones = []) {
+  const list = Array.isArray(milestones) ? milestones : [];
+  return (
+    money(
+      agreement?.display_total ??
+        agreement?.total ??
+        agreement?.amount ??
+        agreement?.total_cost
+    ) || list.reduce((sum, item) => sum + money(item?.amount), 0)
+  );
+}
+
+function hasSelectedTemplate(agreement = {}, context = {}) {
+  return Boolean(
+    agreement?.selected_template?.id ||
+      agreement?.selected_template_id ||
+      context?.template_id
+  );
+}
+
+export function isTemplateCandidate({
+  agreement = {},
+  dLocal = {},
+  milestones = [],
+  context = {},
+} = {}) {
+  const list = Array.isArray(milestones) ? milestones : [];
+  const title = getAgreementTitle(agreement, dLocal);
+  const scope = getAgreementScope(agreement, dLocal);
+  const total = getAgreementTotal(agreement, list);
+  const hasReusableMilestones =
+    list.length >= 3 && list.every((row) => safeText(row?.title));
+
+  if (hasSelectedTemplate(agreement, context)) return false;
+
+  return Boolean(hasReusableMilestones && total > 0 && title && scope);
+}
+
+function buildTemplateRecommendation({
+  agreement = {},
+  dLocal = {},
+  milestones = [],
+  context = {},
+} = {}) {
+  if (!isTemplateCandidate({ agreement, dLocal, milestones, context })) return null;
+
+  const list = Array.isArray(milestones) ? milestones : [];
+  const title = getAgreementTitle(agreement, dLocal);
+  const total = getAgreementTotal(agreement, list);
+
+  return {
+    title: "This agreement looks reusable",
+    body: `${title || "This project"} has ${pluralize(
+      list.length,
+      "milestone"
+    )} and ${formatMoney(total)} in structured work. Save it as a template if you expect to reuse this setup.`,
+    actionLabel: "Save as Template",
+    actionKey: "save_as_template",
+  };
+}
+
 export function buildStep4Checklist({
   agreement = {},
   dLocal = {},
@@ -171,9 +248,14 @@ export function getAiPanelConfigForStep(step, context = {}) {
     Number(step) === 4
       ? buildStep4Checklist({ agreement, dLocal, milestones, sessionState })
       : [];
+  const templateRecommendation =
+    Number(step) === 2 || Number(step) === 4
+      ? buildTemplateRecommendation({ agreement, dLocal, milestones, context })
+      : null;
 
   const sharedConfig = {
     feedback: safeText(aiUpdateFeedback),
+    templateRecommendation,
   };
 
   if (Number(step) === 1) {
@@ -363,6 +445,18 @@ export function buildUserFacingAiPanel({
       safeText(panelConfig.promptPlaceholder) || "Ask AI what you want to improve.",
     feedback: safeText(panelConfig.feedback),
     checklistItems: Array.isArray(panelConfig.checklistItems) ? panelConfig.checklistItems : [],
+    templateRecommendation:
+      panelConfig?.templateRecommendation &&
+      typeof panelConfig.templateRecommendation === "object"
+        ? {
+            title: safeText(panelConfig.templateRecommendation.title),
+            body: safeText(panelConfig.templateRecommendation.body),
+            actionLabel:
+              safeText(panelConfig.templateRecommendation.actionLabel) ||
+              "Save as Template",
+            actionKey: safeText(panelConfig.templateRecommendation.actionKey),
+          }
+        : null,
     nextActionText,
     nextGuidanceTitle:
       safeText(panelConfig.nextGuidanceTitle) || "What happens next",

@@ -15,6 +15,7 @@ import ClarificationsModal from "./ClarificationsModal.jsx";
 import { StartWithAIEntry } from "./StartWithAIAssistant.jsx";
 import useAgreementMilestoneAI from "./ai/useAgreementMilestoneAI.jsx";
 import useAiFieldHighlights from "../hooks/useAiFieldHighlights.js";
+import { getAiPanelConfigForStep } from "../lib/agreementWizardAiPanel.js";
 import {
   normalizeAssistantMilestoneSuggestion,
   normalizeAssistantQuestion,
@@ -2093,11 +2094,30 @@ export default function Step2Milestones({
         count: effectiveMilestones.length,
         suggested_titles: effectiveMilestones.map((item) => item?.title).filter(Boolean),
       },
+      ai_panel: getAiPanelConfigForStep(2, {
+        agreement: agreementMeta,
+        dLocal: {
+          project_title: agreementMeta?.project_title || agreementMeta?.title || "",
+          description: agreementMeta?.description || agreementMeta?.project_description || "",
+          payment_mode: agreementMeta?.payment_mode || "",
+        },
+        milestones: effectiveMilestones,
+        aiUpdateFeedback: aiChangeSummary,
+        template_id:
+          agreementMeta?.selected_template?.id ||
+          agreementMeta?.selected_template_id ||
+          null,
+      }),
     }),
-    [agreementId, agreementMeta, effectiveMilestones, mergedClarificationQuestions]
+    [agreementId, agreementMeta, effectiveMilestones, mergedClarificationQuestions, aiChangeSummary]
   );
 
-  function handleAssistantAction(plan) {
+  async function handleAssistantAction(plan) {
+    const actionKey = safeStr(plan?.assistant_action_key || plan?.action_key);
+    if (actionKey === "save_as_template") {
+      await handleOpenSaveTemplate();
+      return true;
+    }
     if (plan?.next_action?.action_key === "review_clarifications") {
       setClarOpen(true);
       return true;
