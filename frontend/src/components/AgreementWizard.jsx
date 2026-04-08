@@ -325,10 +325,12 @@ export default function AgreementWizard() {
     const paymentModeLabel =
       dLocal.payment_structure === "progress"
         ? "Progress payments"
-        : dLocal.payment_mode === "direct"
-        ? "Direct pay"
-        : dLocal.payment_mode === "escrow"
-        ? "Escrow"
+        : step >= 4
+        ? dLocal.payment_mode === "direct"
+          ? "Direct pay"
+          : dLocal.payment_mode === "escrow"
+          ? "Escrow"
+          : ""
         : "";
 
     return {
@@ -344,7 +346,7 @@ export default function AgreementWizard() {
           : "",
       paymentModeLabel,
     };
-  }, [agreement, dLocal.homeowner, dLocal.payment_mode, dLocal.payment_structure, dLocal.project_title, milestones.length, people, totals.totalAmt]);
+  }, [agreement, dLocal.homeowner, dLocal.payment_mode, dLocal.payment_structure, dLocal.project_title, milestones.length, people, step, totals.totalAmt]);
 
   const setAgreement = useCallback(
     (nextPayload) => {

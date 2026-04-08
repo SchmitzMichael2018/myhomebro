@@ -277,11 +277,8 @@ test('agreement wizard step 1 switches into guided ai mode instead of leaving al
   await page.getByTestId('agreement-wizard-ai-entry-toggle').click();
 
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
-  await expect(page.getByTestId('step1-review-guidance')).toContainText('AI setup comes first');
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeHidden();
-  await expect(page.getByTestId('step1-ai-prefill-note')).toContainText(
-    'AI will help prefill these details'
-  );
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
   const scrollAfter = await page.evaluate(() => window.scrollY);
   expect(Math.abs(scrollAfter - scrollBefore)).toBeLessThan(8);
@@ -464,7 +461,7 @@ test('agreement wizard step 1 respects explicit mode switching when a template i
 
   await page.getByTestId('agreement-wizard-ai-entry-toggle').click();
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
-  await expect(page.getByTestId('step1-review-guidance')).toContainText('AI setup comes first');
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await page.waitForTimeout(150);
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
 

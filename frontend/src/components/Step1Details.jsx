@@ -13,7 +13,6 @@ import { useNavigate, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 
 import SaveTemplateModal from "./step1/SaveTemplateModal.jsx";
-import PaymentModeSection from "./step1/PaymentModeSection.jsx";
 import TemplateSearchSection from "./step1/TemplateSearchSection.jsx";
 import CustomerSection from "./step1/CustomerSection.jsx";
 import AddressSection from "./step1/AddressSection.jsx";
@@ -164,6 +163,14 @@ export default function Step1Details({
       null
     );
   }, [projectTypeOptions, dLocal?.project_type]);
+  const selectedProjectSubtype = useMemo(() => {
+    const current = safeTrim(dLocal?.project_subtype);
+    if (!current) return null;
+    return (
+      (projectSubtypeOptions || []).find((opt) => safeTrim(opt?.value) === current) ||
+      null
+    );
+  }, [projectSubtypeOptions, dLocal?.project_subtype]);
 
   const hasAiSectionHighlight = (...keys) =>
     keys.some((key) => Boolean(aiHighlightKeys?.[key]));
@@ -637,7 +644,6 @@ export default function Step1Details({
     setAiPreview("");
   }
 
-  const paymentMode = normalizePaymentMode(dLocal?.payment_mode);
   const paymentStructure = normalizePaymentStructure(dLocal?.payment_structure);
   const retainagePercent = safeTrim(dLocal?.retainage_percent) || "0.00";
   const agreementMode = safeTrim(dLocal?.agreement_mode) || "standard";
@@ -654,19 +660,6 @@ export default function Step1Details({
   );
   const recurringSummaryText =
     recurringSummaryLabel || formatRecurrenceSummary(recurrencePattern, recurrenceInterval);
-
-  async function handlePaymentModeChange(mode) {
-    if (locked) return;
-
-    const normalized = normalizePaymentMode(mode);
-
-    setDLocal((s) => ({ ...s, payment_mode: normalized }));
-    if (!isNewAgreement) {
-      writeCache({ payment_mode: normalized });
-    }
-
-    await patchAgreement({ payment_mode: normalized }, { silent: true });
-  }
 
   async function handlePaymentStructureChange(nextMode) {
     if (locked) return;
@@ -1271,15 +1264,15 @@ export default function Step1Details({
       ? "Use a template as the starting point, then review and edit the agreement details below."
       : "Fill in the setup details directly, with AI and templates still available if you want help later.";
   const shouldDeemphasizeManualReview = startModeCommitted && startMode !== "manual";
-  const reviewGuidanceText =
-    startMode === "ai"
-      ? "AI will help prefill these details. Review and edit them below after the first suggestion."
-      : startMode === "template"
-      ? "Your template choice can prefill these details. Review and adjust them below as needed."
-      : "";
   const supportSectionClass = shouldDeemphasizeManualReview
     ? "border-slate-200 bg-slate-50/40 shadow-none"
     : "";
+  const projectDetailsDescription =
+    startMode === "ai"
+      ? "Describe the job with AI first, then review and edit the project details here."
+      : startMode === "template"
+      ? "Confirm the template-driven details here so the agreement matches this specific project."
+      : "Define the project type, title, scope, and agreement behavior for this job.";
 
   return (
     <>
@@ -1578,6 +1571,7 @@ export default function Step1Details({
               setSpreadTotal={setSpreadTotal}
               autoSchedule={autoSchedule}
               setAutoSchedule={setAutoSchedule}
+              showProjectFields={false}
               appliedTemplateId={appliedTemplateId}
               onDeselectAppliedTemplate={handleDeselectAppliedTemplate}
               onTemplateApplied={handleTemplateApplied}
@@ -1585,24 +1579,453 @@ export default function Step1Details({
           </div>
         </section>
 
-        {reviewGuidanceText ? (
-          <div
-            data-testid="step1-review-guidance"
-            className={`rounded-xl border px-4 py-3 text-sm ${
-              startMode === "ai"
-                ? "border-indigo-200 bg-indigo-50/70 text-indigo-900"
-                : "border-sky-200 bg-sky-50/70 text-sky-900"
-            }`}
+        <div className="space-y-6">
+          <StepSection
+            title="Project Details"
+            description={projectDetailsDescription}
+            highlighted={hasAiSectionHighlight(
+              "project_title",
+              "project_type",
+              "project_subtype",
+              "description",
+              "agreement_mode",
+              "recurrence_pattern",
+              "recurrence_interval"
+            )}
           >
-            <div className="font-semibold">
-              {startMode === "ai" ? "AI setup comes first" : "Template setup comes first"}
-            </div>
-            <div className="mt-1 text-xs opacity-90">{reviewGuidanceText}</div>
-          </div>
-        ) : null}
+            <div className="space-y-5">
+              <div
+                data-testid="maintenance-settings-card"
+                className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+              >
+                <div className="text-sm font-semibold text-slate-900">How this agreement works</div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Choose whether this is a standard one-time agreement or a recurring service agreement.
+                </div>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.95fr)] xl:items-start">
-          <div className="space-y-6">
+                <div className="mt-4 grid gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleMaintenanceModeChange("standard")}
+                    disabled={locked}
+                    className={`rounded-xl border px-4 py-3 text-left transition ${
+                      !isMaintenanceMode
+                        ? "border-indigo-300 bg-indigo-50"
+                        : "border-slate-200 bg-white hover:bg-slate-50"
+                    } disabled:opacity-60`}
+                  >
+                    <div className="font-semibold text-slate-900">Standard Agreement</div>
+                    <div className="mt-1 text-sm text-slate-600">
+                      One-time project with normal milestone planning.
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleMaintenanceModeChange("maintenance")}
+                    disabled={locked}
+                    className={`rounded-xl border px-4 py-3 text-left transition ${
+                      isMaintenanceMode
+                        ? "border-emerald-300 bg-emerald-50"
+                        : "border-slate-200 bg-white hover:bg-slate-50"
+                    } disabled:opacity-60`}
+                  >
+                    <div className="font-semibold text-slate-900">Maintenance / Recurring Service</div>
+                    <div className="mt-1 text-sm text-slate-600">
+                      Generate repeat service occurrences while keeping the same approval, invoice, and payment flow.
+                    </div>
+                  </button>
+                </div>
+
+                {isMaintenanceMode ? (
+                  <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
+                    <div
+                      data-testid="maintenance-summary"
+                      className="rounded-md border border-emerald-200 bg-white px-3 py-3 text-sm text-slate-700"
+                    >
+                      <div className="font-semibold text-slate-900">{recurringSummaryText}</div>
+                      <div className="mt-1 text-xs text-slate-600">
+                        {recurrenceStartDate
+                          ? `Starts ${recurrenceStartDate}`
+                          : "Pick a start date to generate the first service occurrence."}
+                        {nextOccurrenceDate ? ` • Next service: ${nextOccurrenceDate}` : ""}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Frequency
+                        </label>
+                        <select
+                          data-testid="maintenance-frequency-select"
+                          value={recurrencePattern}
+                          disabled={locked}
+                          onChange={(e) =>
+                            handleMaintenanceFieldPatch("recurrence_pattern", e.target.value)
+                          }
+                          className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                        >
+                          <option value="weekly">Weekly</option>
+                          <option value="monthly">Monthly</option>
+                          <option value="quarterly">Quarterly</option>
+                          <option value="yearly">Yearly</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Interval
+                        </label>
+                        <input
+                          data-testid="maintenance-interval-input"
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={recurrenceInterval}
+                          disabled={locked}
+                          onChange={(e) =>
+                            setDLocal((s) => ({ ...s, recurrence_interval: e.target.value }))
+                          }
+                          onBlur={(e) =>
+                            handleMaintenanceFieldPatch(
+                              "recurrence_interval",
+                              Math.max(1, Number(e.target.value || 1) || 1)
+                            )
+                          }
+                          className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Start Date
+                        </label>
+                        <input
+                          data-testid="maintenance-start-date-input"
+                          type="date"
+                          value={recurrenceStartDate}
+                          disabled={locked}
+                          onChange={(e) =>
+                            handleMaintenanceFieldPatch("recurrence_start_date", e.target.value)
+                          }
+                          className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          End Date
+                        </label>
+                        <input
+                          type="date"
+                          value={recurrenceEndDate}
+                          disabled={locked}
+                          onChange={(e) =>
+                            handleMaintenanceFieldPatch("recurrence_end_date", e.target.value || null)
+                          }
+                          className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Maintenance Status
+                        </label>
+                        <select
+                          value={maintenanceStatus}
+                          disabled={locked}
+                          onChange={(e) =>
+                            handleMaintenanceFieldPatch("maintenance_status", e.target.value)
+                          }
+                          className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                        >
+                          <option value="active">Active</option>
+                          <option value="paused">Paused</option>
+                          <option value="completed">Completed</option>
+                          <option value="cancelled">Cancelled</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                          Summary Label
+                        </label>
+                        <input
+                          type="text"
+                          value={recurringSummaryLabel}
+                          disabled={locked}
+                          onChange={(e) =>
+                            setDLocal((s) => ({ ...s, recurring_summary_label: e.target.value }))
+                          }
+                          onBlur={(e) =>
+                            handleMaintenanceFieldPatch("recurring_summary_label", e.target.value)
+                          }
+                          placeholder="Monthly HVAC Maintenance"
+                          className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-3">
+                      <label className="flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={autoGenerateNextOccurrence}
+                          disabled={locked}
+                          onChange={(e) =>
+                            handleMaintenanceFieldPatch(
+                              "auto_generate_next_occurrence",
+                              e.target.checked
+                            )
+                          }
+                        />
+                        Auto-generate the next service occurrence
+                      </label>
+                    </div>
+
+                    <div className="mt-3">
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        Service Window Notes
+                      </label>
+                      <textarea
+                        value={dLocal?.service_window_notes || ""}
+                        disabled={locked}
+                        onChange={(e) =>
+                          setDLocal((s) => ({ ...s, service_window_notes: e.target.value }))
+                        }
+                        onBlur={(e) =>
+                          handleMaintenanceFieldPatch("service_window_notes", e.target.value)
+                        }
+                        rows={3}
+                        placeholder="Example: Second Tuesday of each month, 8am-12pm."
+                        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="block text-sm font-medium text-slate-900">Project Type</label>
+                    {!locked && handleCreateNewType ? (
+                      <button
+                        type="button"
+                        onClick={handleCreateNewType}
+                        className="text-[11px] font-medium text-indigo-700 hover:underline"
+                      >
+                        Add Type
+                      </button>
+                    ) : null}
+                  </div>
+                  <select
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                    name="project_type"
+                    value={dLocal.project_type || ""}
+                    onChange={locked ? undefined : handleStep1LocalChange}
+                    disabled={locked}
+                  >
+                    <option value="">— Select Type —</option>
+                    {(projectTypeOptions || []).map((t) => (
+                      <option key={String(t.id ?? t.value)} value={String(t.value)}>
+                        {String(t.label)}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    {selectedProjectType?.owner_type
+                      ? `Source: ${
+                          selectedProjectType.owner_type === "system"
+                            ? "Built-in taxonomy"
+                            : "Custom taxonomy"
+                        }`
+                      : "Choose the main category for this job."}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <label className="block text-sm font-medium text-slate-900">Subtype</label>
+                    {!locked && handleCreateNewSubtype ? (
+                      <button
+                        type="button"
+                        onClick={handleCreateNewSubtype}
+                        className="text-[11px] font-medium text-indigo-700 hover:underline"
+                      >
+                        Add Subtype
+                      </button>
+                    ) : null}
+                  </div>
+                  <select
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 disabled:bg-slate-100 disabled:text-slate-500"
+                    name="project_subtype"
+                    value={dLocal.project_subtype || ""}
+                    onChange={locked ? undefined : handleStep1LocalChange}
+                    disabled={locked || !safeTrim(dLocal.project_type)}
+                  >
+                    <option value="">
+                      {safeTrim(dLocal.project_type) ? "— Select Subtype —" : "Select Type first"}
+                    </option>
+                    {(projectSubtypeOptions || []).map((st) => (
+                      <option key={String(st.id ?? st.value)} value={String(st.value)}>
+                        {String(st.label)}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    {selectedProjectSubtype?.owner_type
+                      ? `Source: ${
+                          selectedProjectSubtype.owner_type === "system"
+                            ? "Built-in taxonomy"
+                            : "Custom taxonomy"
+                        }`
+                      : safeTrim(dLocal.project_type)
+                      ? "Subtype helps tailor templates, scope guidance, and milestones."
+                      : "Choose a type first to unlock subtype options."}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-900">Project Title</label>
+                <input
+                  data-testid="agreement-project-title-input"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  name="project_title"
+                  value={dLocal.project_title}
+                  onChange={locked ? undefined : handleStep1LocalChange}
+                  placeholder="e.g., Master Bedroom Addition"
+                  disabled={locked}
+                />
+                <div className="mt-1 text-[11px] text-slate-500">
+                  Keep it short and recognizable so the customer can identify the job quickly.
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-900">
+                  Scope of Work / Description
+                </label>
+                <div className="mb-2 text-xs leading-5 text-slate-600">
+                  Describe what is included so the customer understands the job clearly and milestone planning stays accurate.
+                </div>
+
+                <textarea
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                  rows={6}
+                  name="description"
+                  value={dLocal.description || ""}
+                  onChange={locked ? undefined : handleStep1LocalChange}
+                  placeholder="Example: Remove existing materials, prepare surfaces, install new materials, complete finish work, and clean the job site..."
+                  disabled={locked}
+                />
+
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-xs text-slate-600">
+                    {startMode === "ai"
+                      ? "Use AI to draft the first version, then refine the scope here."
+                      : "AI can turn a rough idea into a clearer, stronger scope when you want help."}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                        aiCredits?.loading
+                          ? "bg-slate-100 text-slate-700"
+                          : "bg-emerald-100 text-emerald-800"
+                      }`}
+                      title="AI tools are included with your account"
+                    >
+                      AI Included
+                    </span>
+
+                    <button
+                      type="button"
+                      onClick={refreshAiCredits}
+                      className="rounded border border-slate-200 px-2 py-1 text-[11px] hover:bg-slate-50 disabled:opacity-60"
+                      disabled={locked}
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex w-full flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => runAiDescription("improve")}
+                    disabled={locked || aiBusy || !safeTrim(dLocal.description) || Boolean(appliedTemplateId)}
+                    className="rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-50"
+                    data-testid="agreement-ai-improve-scope-button"
+                  >
+                    {aiBusy ? "Working…" : "Improve Existing Scope"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => runAiDescription("generate")}
+                    disabled={locked || aiBusy || !hasSomeContext || Boolean(appliedTemplateId)}
+                    className="rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-50"
+                    data-testid="agreement-ai-generate-scope-button"
+                  >
+                    {aiBusy ? "Working…" : "Generate Scope Draft"}
+                  </button>
+                </div>
+
+                <div className="mt-2 text-[11px] text-slate-500">
+                  {appliedTemplateId
+                    ? "A template is applied. Use the template-driven scope, milestones, and clarification flow instead of generating a new AI structure here."
+                    : "Review and edit the final scope so it accurately reflects the work you are agreeing to perform."}
+                </div>
+
+                {aiErr ? <div className="mt-2 text-xs text-red-600">{aiErr}</div> : null}
+
+                {aiPreview ? (
+                  <div className="mt-3 rounded-md border bg-indigo-50 p-3">
+                    <div className="mb-2 text-xs font-semibold text-indigo-900">
+                      AI Suggested Scope Draft
+                    </div>
+
+                    <div className="whitespace-pre-wrap text-sm text-indigo-900">{aiPreview}</div>
+
+                    <div className="mt-2 text-[11px] text-indigo-900/80">
+                      Review this draft before using it.
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => applyAiDescription("replace")}
+                        disabled={locked}
+                        className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-700 disabled:opacity-60"
+                      >
+                        Replace Description
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => applyAiDescription("append")}
+                        disabled={locked}
+                        className="rounded border border-slate-200 px-3 py-1.5 text-xs disabled:opacity-60"
+                      >
+                        Append to Description
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAiPreview("")}
+                        className="rounded border border-slate-200 px-3 py-1.5 text-xs"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </StepSection>
             <StepSection
               title="Customer"
               description="Select the customer for this agreement, or add one quickly if you need to keep moving."
@@ -1634,7 +2057,7 @@ export default function Step1Details({
             </StepSection>
 
             <StepSection
-              title="Project Address"
+              title="Location"
               description="Confirm where the work is happening so documents, compliance, and scheduling stay aligned."
               className={supportSectionClass}
               highlighted={hasAiSectionHighlight(
@@ -1662,319 +2085,80 @@ export default function Step1Details({
                 />
               </div>
             </StepSection>
-          </div>
 
-          <div className="space-y-6">
             <StepSection
-              title="Project Basics"
-              description="Choose how this agreement should behave before you move into milestone planning."
+              title="Payment Timing"
+              description="Choose when payments happen. You can confirm escrow versus direct pay during final review once pricing is complete."
               className={supportSectionClass}
-              highlighted={hasAiSectionHighlight(
-                "project_title",
-                "project_type",
-                "project_subtype",
-                "description",
-                "agreement_mode",
-                "recurrence_pattern",
-                "recurrence_interval"
-              )}
+              highlighted={hasAiSectionHighlight("payment_structure", "retainage_percent")}
             >
-              <div
-                data-testid="maintenance-settings-card"
-                className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-              >
-              <div className="text-sm font-semibold text-slate-900">Agreement Mode</div>
-              <div className="mt-1 text-sm text-slate-600">
-                Use maintenance mode for recurring service agreements that generate repeat visits over time.
-              </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="text-sm font-semibold text-slate-900">Payment Structure</div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Pick the timing model that fits how this project will be billed.
+                </div>
 
-              <div className="mt-4 grid gap-3">
-                <button
-                  type="button"
-                  onClick={() => handleMaintenanceModeChange("standard")}
-                  disabled={locked}
-                  className={`rounded-xl border px-4 py-3 text-left transition ${
-                    !isMaintenanceMode
-                      ? "border-indigo-300 bg-indigo-50"
-                      : "border-slate-200 bg-white hover:bg-slate-50"
-                  } disabled:opacity-60`}
-                >
-                  <div className="font-semibold text-slate-900">Standard Agreement</div>
-                  <div className="mt-1 text-sm text-slate-600">
-                    One-time project with normal milestone planning.
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleMaintenanceModeChange("maintenance")}
-                  disabled={locked}
-                  className={`rounded-xl border px-4 py-3 text-left transition ${
-                    isMaintenanceMode
-                      ? "border-emerald-300 bg-emerald-50"
-                      : "border-slate-200 bg-white hover:bg-slate-50"
-                  } disabled:opacity-60`}
-                >
-                  <div className="font-semibold text-slate-900">Maintenance / Recurring Service</div>
-                  <div className="mt-1 text-sm text-slate-600">
-                    Generate repeat service occurrences while keeping the same approval, invoice, and payment flow.
-                  </div>
-                </button>
-              </div>
-
-              {isMaintenanceMode ? (
-                <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
-                  <div
-                    data-testid="maintenance-summary"
-                    className="rounded-md border border-emerald-200 bg-white px-3 py-3 text-sm text-slate-700"
+                <div className="mt-4 grid gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handlePaymentStructureChange("simple")}
+                    disabled={locked}
+                    className={`rounded-xl border px-4 py-3 text-left transition ${
+                      paymentStructure === "simple"
+                        ? "border-indigo-300 bg-indigo-50"
+                        : "border-slate-200 bg-white hover:bg-slate-50"
+                    } disabled:opacity-60`}
                   >
-                    <div className="font-semibold text-slate-900">
-                      {recurringSummaryText}
+                    <div className="font-semibold text-slate-900">Simple Payments</div>
+                    <div className="mt-1 text-sm text-slate-600">
+                      Get paid when milestones are completed.
                     </div>
-                    <div className="mt-1 text-xs text-slate-600">
-                      {recurrenceStartDate
-                        ? `Starts ${recurrenceStartDate}`
-                        : "Pick a start date to generate the first service occurrence."}
-                      {nextOccurrenceDate ? ` • Next service: ${nextOccurrenceDate}` : ""}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handlePaymentStructureChange("progress")}
+                    disabled={locked}
+                    className={`rounded-xl border px-4 py-3 text-left transition ${
+                      paymentStructure === "progress"
+                        ? "border-indigo-300 bg-indigo-50"
+                        : "border-slate-200 bg-white hover:bg-slate-50"
+                    } disabled:opacity-60`}
+                  >
+                    <div className="font-semibold text-slate-900">Progress Payments</div>
+                    <div className="mt-1 text-sm text-slate-600">
+                      Use draw requests and retainage once the agreement is signed.
                     </div>
-                  </div>
+                  </button>
+                </div>
 
-                  <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <div>
-                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                        Frequency
-                      </label>
-                      <select
-                        data-testid="maintenance-frequency-select"
-                        value={recurrencePattern}
-                        disabled={locked}
-                        onChange={(e) =>
-                          handleMaintenanceFieldPatch("recurrence_pattern", e.target.value)
-                        }
-                        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                      >
-                        <option value="weekly">Weekly</option>
-                        <option value="monthly">Monthly</option>
-                        <option value="quarterly">Quarterly</option>
-                        <option value="yearly">Yearly</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                        Interval
-                      </label>
-                      <input
-                        data-testid="maintenance-interval-input"
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={recurrenceInterval}
-                        disabled={locked}
-                        onChange={(e) =>
-                          setDLocal((s) => ({ ...s, recurrence_interval: e.target.value }))
-                        }
-                        onBlur={(e) =>
-                          handleMaintenanceFieldPatch(
-                            "recurrence_interval",
-                            Math.max(1, Number(e.target.value || 1) || 1)
-                          )
-                        }
-                        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                        Start Date
-                      </label>
-                      <input
-                        data-testid="maintenance-start-date-input"
-                        type="date"
-                        value={recurrenceStartDate}
-                        disabled={locked}
-                        onChange={(e) =>
-                          handleMaintenanceFieldPatch("recurrence_start_date", e.target.value)
-                        }
-                        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                        End Date
-                      </label>
-                      <input
-                        type="date"
-                        value={recurrenceEndDate}
-                        disabled={locked}
-                        onChange={(e) =>
-                          handleMaintenanceFieldPatch("recurrence_end_date", e.target.value || null)
-                        }
-                        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                        Maintenance Status
-                      </label>
-                      <select
-                        value={maintenanceStatus}
-                        disabled={locked}
-                        onChange={(e) =>
-                          handleMaintenanceFieldPatch("maintenance_status", e.target.value)
-                        }
-                        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                      >
-                        <option value="active">Active</option>
-                        <option value="paused">Paused</option>
-                        <option value="completed">Completed</option>
-                        <option value="cancelled">Cancelled</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                        Summary Label
-                      </label>
-                      <input
-                        type="text"
-                        value={recurringSummaryLabel}
-                        disabled={locked}
-                        onChange={(e) =>
-                          setDLocal((s) => ({ ...s, recurring_summary_label: e.target.value }))
-                        }
-                        onBlur={(e) =>
-                          handleMaintenanceFieldPatch("recurring_summary_label", e.target.value)
-                        }
-                        placeholder="Monthly HVAC Maintenance"
-                        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="mt-3">
-                    <label className="flex items-center gap-2 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={autoGenerateNextOccurrence}
-                        disabled={locked}
-                        onChange={(e) =>
-                          handleMaintenanceFieldPatch(
-                            "auto_generate_next_occurrence",
-                            e.target.checked
-                          )
-                        }
-                      />
-                      Auto-generate the next service occurrence
-                    </label>
-                  </div>
-
-                  <div className="mt-3">
+                {paymentStructure === "progress" ? (
+                  <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
                     <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                      Service Window Notes
+                      Retainage %
                     </label>
-                    <textarea
-                      value={dLocal?.service_window_notes || ""}
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value={retainagePercent}
                       disabled={locked}
                       onChange={(e) =>
-                        setDLocal((s) => ({ ...s, service_window_notes: e.target.value }))
+                        setDLocal((s) => ({ ...s, retainage_percent: e.target.value }))
                       }
-                      onBlur={(e) =>
-                        handleMaintenanceFieldPatch("service_window_notes", e.target.value)
-                      }
-                      rows={3}
-                      placeholder="Example: Second Tuesday of each month, 8am–12pm."
+                      onBlur={(e) => handleRetainageChange(e.target.value)}
                       className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
                     />
-                  </div>
-                </div>
-              ) : null}
-              </div>
-            </StepSection>
-
-            <StepSection
-              title="Payment Setup"
-              description="Set the payment structure now so milestone planning and final review stay aligned."
-              className={supportSectionClass}
-              highlighted={hasAiSectionHighlight("payment_mode", "payment_structure", "retainage_percent")}
-            >
-              <div className="space-y-4">
-                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="text-sm font-semibold text-slate-900">Payment Structure</div>
-                  <div className="mt-1 text-sm text-slate-600">
-                    How will you get paid for this project?
-                  </div>
-
-                  <div className="mt-4 grid gap-3">
-                    <button
-                      type="button"
-                      onClick={() => handlePaymentStructureChange("simple")}
-                      disabled={locked}
-                      className={`rounded-xl border px-4 py-3 text-left transition ${
-                        paymentStructure === "simple"
-                          ? "border-indigo-300 bg-indigo-50"
-                          : "border-slate-200 bg-white hover:bg-slate-50"
-                      } disabled:opacity-60`}
-                    >
-                      <div className="font-semibold text-slate-900">Simple Payments</div>
-                      <div className="mt-1 text-sm text-slate-600">
-                        Get paid when milestones are completed
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handlePaymentStructureChange("progress")}
-                      disabled={locked}
-                      className={`rounded-xl border px-4 py-3 text-left transition ${
-                        paymentStructure === "progress"
-                          ? "border-indigo-300 bg-indigo-50"
-                          : "border-slate-200 bg-white hover:bg-slate-50"
-                      } disabled:opacity-60`}
-                    >
-                      <div className="font-semibold text-slate-900">Progress Payments</div>
-                      <div className="mt-1 text-sm text-slate-600">
-                        Get paid based on progress, with approvals and retainage
-                      </div>
-                    </button>
-                  </div>
-
-                  {paymentStructure === "progress" ? (
-                    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
-                        Retainage %
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="100"
-                        step="0.01"
-                        value={retainagePercent}
-                        disabled={locked}
-                        onChange={(e) =>
-                          setDLocal((s) => ({ ...s, retainage_percent: e.target.value }))
-                        }
-                        onBlur={(e) => handleRetainageChange(e.target.value)}
-                        className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                      />
-                      <div className="mt-2 text-xs text-slate-500">
-                        This retainage is used when draw requests are created after signing.
-                      </div>
+                    <div className="mt-2 text-xs text-slate-500">
+                      Retainage is applied later when draw requests are created after signing.
                     </div>
-                  ) : null}
-                </div>
-
-                <PaymentModeSection
-                  locked={locked}
-                  paymentMode={paymentMode}
-                  onChangeMode={handlePaymentModeChange}
-                />
+                  </div>
+                ) : null}
               </div>
             </StepSection>
           </div>
-        </div>
+
 
         <div className="flex justify-end gap-2 border-t border-slate-200 pt-5">
           <button

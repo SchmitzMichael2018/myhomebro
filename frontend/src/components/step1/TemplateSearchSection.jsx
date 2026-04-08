@@ -222,6 +222,7 @@ export default function TemplateSearchSection({
   dLocal,
   onLocalChange,
   entryMode = "manual",
+  showProjectFields = true,
   projectTypeOptions,
   projectSubtypeOptions,
 
@@ -547,7 +548,7 @@ export default function TemplateSearchSection({
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="mb-4">
-        <div className="text-base font-semibold text-gray-900">Project Basics</div>
+        <div className="text-base font-semibold text-gray-900">Templates</div>
         <div className="mt-1 text-sm text-gray-600">
           Start with a template if one already exists for this kind of job.
         </div>
@@ -1247,6 +1248,7 @@ export default function TemplateSearchSection({
         ) : null}
       </div>
 
+      {showProjectFields ? (
       <div className="mt-5 border-t border-slate-200 pt-5">
         <div className="mb-3">
           <div className="text-sm font-semibold text-gray-900">
@@ -1611,6 +1613,7 @@ export default function TemplateSearchSection({
           </div>
         </details>
       </div>
+      ) : null}
     </div>
   );
 }

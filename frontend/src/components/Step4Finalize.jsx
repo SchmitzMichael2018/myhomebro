@@ -827,6 +827,7 @@ export default function Step4Finalize({
   const [fundingLoading, setFundingLoading] = useState(false);
   const [fundingError, setFundingError] = useState("");
   const [unsigning, setUnsigning] = useState(false);
+  const [paymentModeSaving, setPaymentModeSaving] = useState(false);
 
   const paymentMode = useMemo(() => {
     const rawAgreementMode = agreement?.payment_mode || agreement?.paymentMode || "";
@@ -1308,6 +1309,26 @@ export default function Step4Finalize({
   ];
   const readinessWarningCount = readinessItems.filter((item) => !item.ok).length;
 
+  const handlePaymentModeSelect = async (nextMode) => {
+    const normalized = normalizePaymentMode(nextMode) || "escrow";
+    if (!agreementId || normalized === paymentMode || paymentModeSaving) return;
+
+    setPaymentModeSaving(true);
+    try {
+      const { ok } = await patchAgreement({ payment_mode: normalized });
+      if (ok) {
+        toast.success(
+          normalized === "direct"
+            ? "Payment mode updated to Direct Pay."
+            : "Payment mode updated to Escrow."
+        );
+        await refreshAgreement?.();
+      }
+    } finally {
+      setPaymentModeSaving(false);
+    }
+  };
+
   const handleToggleRequirement = async (key, value) => {
     if (!agreementId) return;
     if (requirementsLocked) {
@@ -1601,6 +1622,54 @@ export default function Step4Finalize({
           <SummaryCard label="Customer Email" value={homeownerEmail} />
           <SummaryCard label="Customer Phone" value={formatPhone(homeownerPhone)} />
           <SummaryCard label="Dispute Status" value={formatDisputeSummary(agreement, displayMilestones)} />
+        </div>
+
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Payment Mode</div>
+              <div className="mt-1 text-sm text-slate-600">
+                Confirm whether this agreement should use protected escrow or direct invoice payments now that pricing and milestones are set.
+              </div>
+            </div>
+            <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+              Final review
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => handlePaymentModeSelect("escrow")}
+              disabled={paymentModeSaving}
+              className={`rounded-xl border px-4 py-3 text-left transition ${
+                !isDirectPay
+                  ? "border-indigo-300 bg-indigo-50"
+                  : "border-slate-200 bg-white hover:bg-slate-50"
+              } disabled:opacity-60`}
+            >
+              <div className="font-semibold text-slate-900">Escrow (Protected)</div>
+              <div className="mt-1 text-sm text-slate-600">
+                Funds are held until milestones are approved, with dispute protection built in.
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handlePaymentModeSelect("direct")}
+              disabled={paymentModeSaving}
+              className={`rounded-xl border px-4 py-3 text-left transition ${
+                isDirectPay
+                  ? "border-indigo-300 bg-indigo-50"
+                  : "border-slate-200 bg-white hover:bg-slate-50"
+              } disabled:opacity-60`}
+            >
+              <div className="font-semibold text-slate-900">Direct Pay</div>
+              <div className="mt-1 text-sm text-slate-600">
+                Customers pay invoices directly through Stripe payment links as the job progresses.
+              </div>
+            </button>
+          </div>
         </div>
 
       </div>
