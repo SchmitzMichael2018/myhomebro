@@ -492,21 +492,18 @@ export function getAiPanelConfigForStep(step, context = {}) {
       ...sharedConfig,
       entryTitle: "Describe the job and I'll help set it up",
       entryDescription:
-        "Use AI to shape the first draft faster with scope, template, type, and setup guidance.",
+        "Describe the job once. AI will refine the scope first and recommend a template only if one clearly fits.",
       statusText: "Ready to set up this agreement",
       headline: "Describe the job and I'll help set it up",
       helperText:
-        "Use AI to get the agreement started faster with the right scope, setup details, and template fit.",
-      quickActions: [
-        { label: "Generate Scope", prompt: "Generate a clear project scope from this job description." },
-        { label: "Suggest Template", intent: "apply_template" },
-        { label: "Prefill Setup", prompt: "Help me prefill the project title, customer, and address details." },
-        { label: "Suggest Type", prompt: "Suggest the best project type and subtype for this job." },
-      ],
+        "Enter a rough job description, then click Refine & Set Up. I'll refine it first and recommend a template only if one clearly fits.",
+      quickActions: [{ label: "Refine & Set Up", actionKey: "refine_and_setup" }],
       promptPlaceholder:
-        'Example: "Set this up for a roof replacement with permit coordination and cleanup."',
+        'Example: "Roof replacement with permit coordination, flashing repair, and full cleanup."',
+      submitButtonLabel: "Refine & Set Up",
+      submitActionKey: "refine_and_setup",
       nextActionText:
-        "Next: Confirm the project details you want in the first draft.",
+        "Next: Milestones",
     };
   }
 
@@ -654,12 +651,19 @@ export function buildUserFacingAiPanel({
   const navigationTarget = safeText(plan?.navigation_target);
   const currentRoute = safeText(context?.current_route);
   const primaryActionLabel = sanitizeActionLabel(plan?.next_action?.label);
+  const defaultPrimaryActionLabel =
+    step === 1 ? "Continue to Milestones" : "Open the next step";
   const showPrimaryAction =
     !!navigationTarget &&
     navigationTarget !== currentRoute &&
     plan?.next_action?.type !== "collect_missing_fields";
+  const resolvedPrimaryActionLabel = primaryActionLabel || defaultPrimaryActionLabel;
+  const nextActionTitle =
+    showPrimaryAction && step === 1 ? "Next: Milestones" : "Next Action";
   const nextActionText = showPrimaryAction
-    ? `Next: ${primaryActionLabel || "Open the next step"}.`
+    ? step === 1
+      ? "Next: Milestones"
+      : `Next: ${resolvedPrimaryActionLabel}.`
     : safeText(panelConfig.nextActionText) ||
       safeText(plan?.follow_up_prompt) ||
       "Next: Review the suggested update and continue when you're ready.";
@@ -698,12 +702,13 @@ export function buildUserFacingAiPanel({
             actionKey: safeText(panelConfig.templateRecommendation.actionKey),
           }
         : null,
+    nextActionTitle,
     nextActionText,
     nextGuidanceTitle:
       safeText(panelConfig.nextGuidanceTitle) || "What happens next",
     nextGuidance: safeText(panelConfig.nextGuidance),
     showPrimaryAction,
-    primaryActionLabel: primaryActionLabel || "Open the next step",
+    primaryActionLabel: resolvedPrimaryActionLabel,
     diagnostics: {
       step,
       intentLabel: safeText(plan?.intent_label),

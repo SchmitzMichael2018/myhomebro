@@ -131,6 +131,14 @@ function normalizePanelConfig(context = {}) {
       typeof config.nextGuidance === "string" && config.nextGuidance.trim()
         ? config.nextGuidance.trim()
         : "",
+    submitButtonLabel:
+      typeof config.submitButtonLabel === "string" && config.submitButtonLabel.trim()
+        ? config.submitButtonLabel.trim()
+        : "",
+    submitActionKey:
+      typeof config.submitActionKey === "string" && config.submitActionKey.trim()
+        ? config.submitActionKey.trim()
+        : "",
   };
 }
 
@@ -148,12 +156,21 @@ export function StartWithAIEntry({
   onAction,
   onOpenChange = null,
   defaultOpen = false,
+  open: controlledOpen = undefined,
   className = "",
   testId = "start-with-ai-entry",
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const { openAssistant } = useAssistantDock();
   const entryContext = useMemo(() => ({ ...(context || {}) }), [context]);
+  const isControlled = typeof controlledOpen === "boolean";
+  const resolvedOpen = isControlled ? controlledOpen : open;
+
+  useEffect(() => {
+    if (isControlled) {
+      setOpen(controlledOpen);
+    }
+  }, [controlledOpen, isControlled]);
 
   return (
     <div className={className} data-testid={testId}>
@@ -171,7 +188,8 @@ export function StartWithAIEntry({
             data-testid={`${testId}-toggle`}
             onClick={() =>
               setOpen((value) => {
-                const next = !value;
+                const current = isControlled ? resolvedOpen : value;
+                const next = !current;
                 onOpenChange?.(next);
                 return next;
               })
@@ -179,7 +197,7 @@ export function StartWithAIEntry({
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
           >
             <Wand2 className="h-4 w-4" />
-            {open ? "Hide Assistant" : "Start with AI"}
+            {resolvedOpen ? "Hide Assistant" : "Start with AI"}
           </button>
           <button
             type="button"
@@ -196,7 +214,7 @@ export function StartWithAIEntry({
         </div>
       </div>
 
-      {open ? (
+      {resolvedOpen ? (
         <div className="mt-4">
           <StartWithAIAssistant
             mode="panel"
@@ -250,6 +268,13 @@ export default function StartWithAIAssistant({
   }, [contextSignature, normalizedContext]);
 
   useEffect(() => {
+    const handle = window.setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0);
+    return () => window.clearTimeout(handle);
+  }, [mode, contextSignature]);
+
+  useEffect(() => {
     return () => {
       try {
         recognitionRef.current?.stop?.();
@@ -257,10 +282,24 @@ export default function StartWithAIAssistant({
     };
   }, []);
 
-  const quickActions = useMemo(
-    () => (panelConfig.quickActions.length ? panelConfig.quickActions : getAssistantQuickActions()),
-    [panelConfig.quickActions]
-  );
+  const quickActions = useMemo(() => {
+    const sourceActions = panelConfig.quickActions.length
+      ? panelConfig.quickActions
+      : getAssistantQuickActions();
+    if (!panelConfig.submitActionKey) {
+      return sourceActions;
+    }
+    return sourceActions.filter((action) => {
+      const actionKey = safeActionKey(action?.actionKey || action?.action_key);
+      const actionLabel = String(action?.label || "").trim();
+      const submitLabel = String(panelConfig.submitButtonLabel || "").trim();
+      const duplicatesSubmitAction =
+        actionKey && actionKey === panelConfig.submitActionKey;
+      const duplicatesSubmitLabel =
+        submitLabel && actionLabel && actionLabel === submitLabel;
+      return !duplicatesSubmitAction && !duplicatesSubmitLabel;
+    });
+  }, [panelConfig.quickActions, panelConfig.submitActionKey, panelConfig.submitButtonLabel]);
   const userFacingPanel = useMemo(
     () =>
       buildUserFacingAiPanel({
@@ -319,6 +358,19 @@ export default function StartWithAIAssistant({
     event?.preventDefault();
     const cleanPrompt = String(prompt || "").trim();
     if (!cleanPrompt) return;
+    if (panelConfig.submitActionKey && typeof onAction === "function") {
+      const handled = await onAction({
+        assistant_action_key: panelConfig.submitActionKey,
+        action_key: panelConfig.submitActionKey,
+        prompt: cleanPrompt,
+        source: "prompt_submit",
+      });
+      if (handled === true) {
+        setHistory((prev) => [...prev, { prompt: cleanPrompt, plan }]);
+        setPrompt("");
+        return;
+      }
+    }
     const nextPlan = await requestOrchestratedPlan(cleanPrompt);
     applyPlan(nextPlan, cleanPrompt);
   }
@@ -623,10 +675,13 @@ export default function StartWithAIAssistant({
                 </button>
                 <button
                   type="submit"
+                  data-testid={testId("start-with-ai-submit")}
                   disabled={isPlanning}
                   className="inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800"
                 >
-                  {isPlanning ? "Working..." : "Ask AI"}
+                  {isPlanning
+                    ? "Working..."
+                    : panelConfig.submitButtonLabel || "Ask AI"}
                   {isPlanning ? (
                     <LoaderCircle className="h-4 w-4 animate-spin" />
                   ) : (
@@ -718,7 +773,7 @@ export default function StartWithAIAssistant({
           </ResultBlock>
         ) : null}
 
-        <ResultBlock title="Next Action">
+        <ResultBlock title={userFacingPanel.nextActionTitle || "Next Action"}>
           <div
             className="text-sm font-medium text-slate-800"
             data-testid={testId("start-with-ai-next-action-label")}

@@ -281,6 +281,7 @@ export default function AgreementWizard() {
   const [qaBusy, setQaBusy] = useState(false);
   const [assistantAppliedSummary, setAssistantAppliedSummary] = useState("");
   const [step1AiEntryOpen, setStep1AiEntryOpen] = useState(false);
+  const [step1AiSetupRequest, setStep1AiSetupRequest] = useState(null);
   const [wizardSessionState, setWizardSessionState] = useState({
     hasPreviewedPdf: false,
   });
@@ -1344,6 +1345,20 @@ export default function AgreementWizard() {
         goStep(plan.wizard_step_target);
         return true;
       }
+      const actionKey =
+        String(
+          plan?.assistant_action_key ||
+            plan?.action_key ||
+            plan?.next_action?.action_key ||
+            ""
+        ).trim();
+      if (step === 1 && actionKey === "refine_and_setup") {
+        const prompt = String(plan?.prompt || "").trim();
+        if (!prompt) return true;
+        setStep1AiEntryOpen(true);
+        setStep1AiSetupRequest({ prompt, nonce: Date.now() });
+        return true;
+      }
       if (plan?.next_action?.action_key === "review_clarifications") {
         goStep(2);
         return true;
@@ -1463,6 +1478,7 @@ export default function AgreementWizard() {
           context={assistantContext}
           onAction={handleAssistantAction}
           onOpenChange={step === 1 ? setStep1AiEntryOpen : undefined}
+          open={step === 1 ? step1AiEntryOpen : undefined}
         />
       ) : null}
 
@@ -1533,6 +1549,8 @@ export default function AgreementWizard() {
             assistantConfirmationRequiredActions={assistantHandoff.confirmationRequiredActions}
             aiHighlightKeys={step1AiHighlights}
             isAiAssistantActive={step1AiEntryOpen || isAssistantDockOpen}
+            aiSetupRequest={step1AiSetupRequest}
+            onAiModeActiveChange={setStep1AiEntryOpen}
           />
         </div>
       ) : null}

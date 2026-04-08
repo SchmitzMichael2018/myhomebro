@@ -142,6 +142,8 @@ export default function Step1Details({
   assistantConfirmationRequiredActions = [],
   aiHighlightKeys = {},
   isAiAssistantActive = false,
+  aiSetupRequest = null,
+  onAiModeActiveChange = null,
 }) {
   void setQaBusy;
 
@@ -608,6 +610,10 @@ export default function Step1Details({
     }
   }, [isAiAssistantActive, startMode]);
 
+  useEffect(() => {
+    onAiModeActiveChange?.(startModeCommitted && startMode === "ai");
+  }, [onAiModeActiveChange, startMode, startModeCommitted]);
+
   async function runAiDescription(mode) {
     if (locked) return;
 
@@ -858,11 +864,19 @@ export default function Step1Details({
     setDismissedAiTemplateRecommendation(false);
   }, [startMode, recommendedTemplateId, assistantTemplateRecommendations.length]);
 
+  useEffect(() => {
+    if (!aiSetupRequest?.nonce || startMode !== "ai") return;
+    runAiRefineAndSetup(aiSetupRequest.prompt);
+  }, [aiSetupRequest?.nonce]);
+
   const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [showResetStep1Confirm, setShowResetStep1Confirm] = useState(false);
   const [dismissedAiTemplateRecommendation, setDismissedAiTemplateRecommendation] =
     useState(false);
+  const [aiSetupBusy, setAiSetupBusy] = useState(false);
+  const [aiSetupError, setAiSetupError] = useState("");
+  const [aiSetupResult, setAiSetupResult] = useState(null);
 
   async function onSubmitSaveAsTemplate(payload) {
     setSavingTemplate(true);
@@ -1162,6 +1176,7 @@ export default function Step1Details({
     startMode === "ai" &&
     !appliedTemplateId &&
     !dismissedAiTemplateRecommendation &&
+    !aiSetupResult &&
     Boolean(aiRecommendedTemplate?.id);
   const shouldShowAppliedTemplateSummary =
     startMode !== "template" && Boolean(appliedTemplateId);
@@ -1169,6 +1184,125 @@ export default function Step1Details({
   async function handleUseAiRecommendedTemplate() {
     if (!aiRecommendedTemplate) return;
     await handleTemplateApplyWithOptions(aiRecommendedTemplate);
+  }
+
+  function applyRefinedDescription(refinedDescription) {
+    const nextDescription = safeTrim(refinedDescription);
+    if (!nextDescription) return;
+
+    setDLocal((prev) => ({ ...prev, description: nextDescription }));
+    if (!isNewAgreement) {
+      writeCache({ description: nextDescription });
+    }
+    if (agreementId) {
+      patchAgreement({ description: nextDescription }, { silent: true });
+    }
+  }
+
+  async function runAiRefineAndSetup(promptText) {
+    const roughDescription = safeTrim(promptText);
+    if (!roughDescription) return;
+
+    setAiSetupBusy(true);
+    setAiSetupError("");
+    setAiSetupResult(null);
+    setDismissedAiTemplateRecommendation(false);
+
+    try {
+      const refinePayload = {
+        mode: "generate",
+        agreement_id: agreementId || null,
+        project_title: dLocal.project_title || "",
+        project_type: dLocal.project_type || "",
+        project_subtype: dLocal.project_subtype || "",
+        current_description: roughDescription,
+      };
+
+      const refineRes = await api.post(`/projects/agreements/ai/description/`, refinePayload);
+      const refinedDescription = safeTrim(refineRes?.data?.description || "");
+
+      if (!refinedDescription) {
+        throw new Error("AI returned an empty description.");
+      }
+
+      applyRefinedDescription(refinedDescription);
+
+      const recommendRes = await api.post("/projects/templates/recommend/", {
+        project_title: dLocal.project_title || "",
+        project_type: dLocal.project_type || "",
+        project_subtype: dLocal.project_subtype || "",
+        description: refinedDescription,
+      });
+
+      const recommendationData = recommendRes?.data || {};
+      const recommendationCandidates = Array.isArray(recommendationData?.candidates)
+        ? recommendationData.candidates
+        : Array.isArray(recommendationData?.results)
+        ? recommendationData.results
+        : [];
+      const recommendedTemplate =
+        recommendationData?.recommended_template ||
+        recommendationData?.possible_match ||
+        recommendationCandidates[0] ||
+        null;
+      const confidence = String(recommendationData?.confidence || "none").toLowerCase();
+      const score = Number(
+        recommendationData?.score ??
+          recommendedTemplate?.score ??
+          recommendedTemplate?.rank_score ??
+          0
+      );
+      const exactTypeMatch =
+        safeTrim(recommendedTemplate?.project_type).toLowerCase() ===
+          safeTrim(dLocal.project_type).toLowerCase() && safeTrim(dLocal.project_type);
+      const exactSubtypeMatch =
+        safeTrim(recommendedTemplate?.project_subtype).toLowerCase() ===
+          safeTrim(dLocal.project_subtype).toLowerCase() && safeTrim(dLocal.project_subtype);
+      const strongMatch =
+        Boolean(recommendedTemplate?.id) &&
+        (confidence === "recommended" || score >= 70 || (exactTypeMatch && exactSubtypeMatch));
+      const recommendationReason =
+        safeTrim(recommendationData?.reason) ||
+        (exactTypeMatch && exactSubtypeMatch
+          ? "Matches the project type and subtype you selected."
+          : exactTypeMatch
+          ? "Matches the project type you selected."
+          : "This template closely matches the job details you provided.");
+
+      if (strongMatch) {
+        setAiSetupResult({
+          kind: "template_match",
+          refinedDescription,
+          recommendedTemplate,
+          reason: recommendationReason,
+        });
+      } else {
+        setAiSetupResult({
+          kind: "description_only",
+          refinedDescription,
+          message:
+            "No matching template found. We added the refined description and you can continue.",
+        });
+      }
+    } catch (e) {
+      setAiSetupError(
+        e?.response?.data?.detail || e?.message || "Could not refine and set up this agreement."
+      );
+    } finally {
+      setAiSetupBusy(false);
+    }
+  }
+
+  async function handleUseAiDescriptionOnly() {
+    if (!aiSetupResult?.refinedDescription) return;
+    applyRefinedDescription(aiSetupResult.refinedDescription);
+    setAiSetupResult({
+      kind: "description_only",
+      refinedDescription: aiSetupResult.refinedDescription,
+      message:
+        "No matching template found. We added the refined description and you can continue.",
+    });
+    setDismissedAiTemplateRecommendation(true);
   }
 
   async function handleResetStep1Setup() {
@@ -1678,6 +1812,108 @@ export default function Step1Details({
               </button>
             </div>
           </div>
+        ) : null}
+
+        {startMode === "ai" && aiSetupBusy ? (
+          <div
+            data-testid="step1-ai-setup-status"
+            className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-4 text-sm text-indigo-900"
+          >
+            <div className="font-semibold">Refining the description and checking for a template match…</div>
+          </div>
+        ) : null}
+
+        {startMode === "ai" && aiSetupError ? (
+          <div
+            data-testid="step1-ai-setup-error"
+            className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-900"
+          >
+            {aiSetupError}
+          </div>
+        ) : null}
+
+        {startMode === "ai" && aiSetupResult?.kind === "template_match" ? (
+          <section
+            data-testid="step1-ai-setup-result"
+            className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-5 shadow-sm"
+          >
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700">
+              Template recommendation
+            </div>
+            <div className="mt-2 text-base font-semibold text-slate-900">
+              {aiSetupResult.recommendedTemplate?.name || "Recommended template"}
+            </div>
+            <div className="mt-1 text-sm text-slate-700">
+              We refined the description first and found a strong template match for this setup.
+            </div>
+            <div className="mt-2 rounded-xl border border-white/80 bg-white/80 px-4 py-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Refined description
+              </div>
+              <div className="mt-2 whitespace-pre-wrap text-sm text-slate-800">
+                {aiSetupResult.refinedDescription}
+              </div>
+            </div>
+            <div className="mt-3 text-sm text-slate-700">
+              {aiSetupResult.reason}
+            </div>
+            <div className="mt-2 text-xs text-slate-600">
+              The Project Details section below stays editable after you choose how to continue.
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                data-testid="step1-ai-setup-apply-template"
+                onClick={() => handleTemplateApplyWithOptions(aiSetupResult.recommendedTemplate)}
+                disabled={
+                  locked ||
+                  !agreementId ||
+                  applyingTemplateId === aiSetupResult.recommendedTemplate?.id
+                }
+                className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+              >
+                {applyingTemplateId === aiSetupResult.recommendedTemplate?.id
+                  ? "Applying..."
+                  : "Apply Template"}
+              </button>
+              <button
+                type="button"
+                data-testid="step1-ai-setup-description-only"
+                onClick={handleUseAiDescriptionOnly}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Use Description Only
+              </button>
+            </div>
+          </section>
+        ) : null}
+
+        {startMode === "ai" && aiSetupResult?.kind === "description_only" ? (
+          <section
+            data-testid="step1-ai-setup-result"
+            className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm"
+          >
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+              Description ready
+            </div>
+            <div className="mt-2 text-base font-semibold text-slate-900">
+              Refined description added
+            </div>
+            <div className="mt-2 rounded-xl border border-white/80 bg-white/80 px-4 py-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Refined description
+              </div>
+              <div className="mt-2 whitespace-pre-wrap text-sm text-slate-800">
+                {aiSetupResult.refinedDescription}
+              </div>
+            </div>
+            <div className="mt-3 text-sm text-slate-700">
+              {aiSetupResult.message}
+            </div>
+            <div className="mt-2 text-xs text-slate-600">
+              Review the Project Details section below and keep editing before you continue.
+            </div>
+          </section>
         ) : null}
 
         {startMode === "template" ? (

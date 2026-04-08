@@ -284,6 +284,10 @@ test('agreement wizard step 1 switches into guided ai mode instead of leaving al
   });
 
   await page.route('**/api/projects/templates/**', async (route) => {
+    if (route.request().url().includes('/templates/recommend/')) {
+      await route.fallback();
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -296,21 +300,20 @@ test('agreement wizard step 1 switches into guided ai mode instead of leaving al
   });
 
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
-  const scrollBefore = await page.evaluate(() => window.scrollY);
-
   await page.getByTestId('agreement-wizard-ai-entry-toggle').click();
 
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeHidden();
   await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
+  await expect(page.getByTestId('start-with-ai-assistant')).toBeVisible();
+  await expect(page.getByTestId('start-with-ai-submit')).toBeVisible();
   await expect(page.getByTestId('start-with-ai-coaching')).toBeVisible();
   await expect(page.getByTestId('start-with-ai-coaching-next-step')).toContainText(
     'Complete the project details first'
   );
+  await expect(page.getByTestId('start-with-ai-input')).toBeFocused();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
-  const scrollAfter = await page.evaluate(() => window.scrollY);
-  expect(Math.abs(scrollAfter - scrollBefore)).toBeLessThan(8);
 
   await page.getByTestId('step1-change-start-mode').click();
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
@@ -704,7 +707,7 @@ test('agreement wizard step 1 reset form clears draft setup and reopens the choo
   await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('');
 });
 
-test('agreement wizard step 1 keeps template browsing hidden in ai mode and can apply an AI-recommended template', async ({
+test('agreement wizard step 1 refines a rough description and recommends a template without leaving ai mode', async ({
   page,
 }) => {
   let agreement = {
@@ -727,29 +730,6 @@ test('agreement wizard step 1 keeps template browsing hidden in ai mode and can 
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
   });
-
-  await installRouteState(
-    page,
-    { pathname: `/app/agreements/${AGREEMENT_ID}/wizard`, search: '?step=1' },
-    {
-      assistantGuidedFlow: {
-        guided_question: 'What kind of roofing work is this?',
-        why_this_matters: 'The job type helps AI decide whether a template is a strong fit.',
-      },
-      assistantTemplateRecommendations: [
-        {
-          id: 88,
-          name: 'Roof Replacement Template',
-          rank_reasons: ['Exact type + subtype match'],
-        },
-      ],
-      assistantTopTemplatePreview: {
-        id: 88,
-        milestone_count: 4,
-      },
-      assistantIntent: 'start_agreement',
-    }
-  );
 
   await page.route('**/api/projects/whoami/', async (route) => {
     await route.fulfill({
@@ -852,6 +832,20 @@ test('agreement wizard step 1 keeps template browsing hidden in ai mode and can 
     });
   });
 
+  await page.route('**/api/projects/agreements/ai/description/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        description:
+          'Remove existing shingles, repair flashing around penetrations, install the new roofing system, and complete site cleanup.',
+        ai_access: 'included',
+        ai_enabled: true,
+        ai_unlimited: true,
+      }),
+    });
+  });
+
   await page.route('**/api/projects/templates/**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -934,10 +928,25 @@ test('agreement wizard step 1 keeps template browsing hidden in ai mode and can 
     waitUntil: 'domcontentloaded',
   });
 
+  await page.getByTestId('agreement-wizard-ai-entry-toggle').click();
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
   await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
-  await expect(page.getByTestId('step1-ai-template-recommendation')).toBeVisible();
-  await page.getByTestId('step1-ai-template-apply').click();
+  await expect(page.getByTestId('start-with-ai-input')).toBeFocused();
+  await page
+    .getByTestId('start-with-ai-input')
+    .fill('Roof replacement with flashing repair and cleanup');
+  await page.getByTestId('start-with-ai-submit').click();
+  await expect(page.getByTestId('step1-ai-setup-result')).toBeVisible();
+  await expect(page.getByTestId('step1-ai-setup-result')).toContainText(
+    'Remove existing shingles, repair flashing around penetrations'
+  );
+  await expect(page.getByTestId('step1-ai-setup-result')).toContainText(
+    'Roof Replacement Template'
+  );
+  await expect(page.getByTestId('step1-ai-setup-result')).toContainText(
+    'Matches the project type and subtype you selected.'
+  );
+  await page.getByTestId('step1-ai-setup-apply-template').click();
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
   await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
   await expect(page.getByTestId('step1-template-applied-summary')).toContainText(
