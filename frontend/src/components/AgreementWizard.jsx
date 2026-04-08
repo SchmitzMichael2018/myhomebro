@@ -19,7 +19,6 @@ import Step1Details from "./Step1Details.jsx";
 import Step2Milestones from "./Step2Milestones.jsx";
 import Step3WarrantyAttachments from "./Step3WarrantyAttachments.jsx";
 import Step4Finalize from "./Step4Finalize.jsx";
-import { StartWithAIEntry } from "./StartWithAIAssistant.jsx";
 import { useAssistantDock } from "./AssistantDock.jsx";
 import { WorkflowHint } from "./WorkflowHint.jsx";
 import {
@@ -1369,12 +1368,36 @@ export default function AgreementWizard() {
   );
 
   useEffect(() => {
+    if (!step1AiEntryOpen || step !== 1) return;
+    openAssistant({
+      title: aiPanelConfig.entryTitle,
+      context: assistantContext,
+      onAction: handleAssistantAction,
+    });
+    setStep1AiEntryOpen(false);
+  }, [
+    aiPanelConfig.entryTitle,
+    assistantContext,
+    handleAssistantAction,
+    openAssistant,
+    step,
+    step1AiEntryOpen,
+  ]);
+
+  useEffect(() => {
     if (!isAssistantDockOpen) return;
     openAssistant({
       title: aiPanelConfig.entryTitle,
       context: assistantContext,
+      onAction: handleAssistantAction,
     });
-  }, [aiPanelConfig.entryTitle, assistantContext, isAssistantDockOpen, openAssistant]);
+  }, [
+    aiPanelConfig.entryTitle,
+    assistantContext,
+    handleAssistantAction,
+    isAssistantDockOpen,
+    openAssistant,
+  ]);
 
   return (
     <ContractorPageSurface
@@ -1382,15 +1405,31 @@ export default function AgreementWizard() {
       title="Agreement Wizard"
       subtitle={`${agreementId ? `Agreement #${agreementId}` : "Draft agreement"} · Step ${step} of 4`}
       actions={
-        agreementId ? (
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => navigate(`/app/agreements/${agreementId}`)}
+            data-testid="agreement-wizard-ask-ai-button"
+            onClick={() =>
+              openAssistant({
+                title: aiPanelConfig.entryTitle,
+                context: assistantContext,
+                onAction: handleAssistantAction,
+              })
+            }
             className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
           >
-            View Agreement
+            Ask AI
           </button>
-        ) : null
+          {agreementId ? (
+            <button
+              type="button"
+              onClick={() => navigate(`/app/agreements/${agreementId}`)}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+              View Agreement
+            </button>
+          ) : null}
+        </div>
       }
     >
       <div className="flex items-start justify-between gap-4">
@@ -1469,19 +1508,6 @@ export default function AgreementWizard() {
         </div>
       ) : null}
 
-      {step !== 2 ? (
-        <StartWithAIEntry
-          className="mt-4"
-          testId="agreement-wizard-ai-entry"
-          title={aiPanelConfig.entryTitle}
-          description={aiPanelConfig.entryDescription}
-          context={assistantContext}
-          onAction={handleAssistantAction}
-          onOpenChange={step === 1 ? setStep1AiEntryOpen : undefined}
-          open={step === 1 ? step1AiEntryOpen : undefined}
-        />
-      ) : null}
-
       {assistantAppliedSummary ? (
         <div
           data-testid="agreement-assistant-prefill-banner"
@@ -1548,7 +1574,7 @@ export default function AgreementWizard() {
             assistantProposedActions={assistantHandoff.proposedActions}
             assistantConfirmationRequiredActions={assistantHandoff.confirmationRequiredActions}
             aiHighlightKeys={step1AiHighlights}
-            isAiAssistantActive={step1AiEntryOpen || isAssistantDockOpen}
+            isAiAssistantActive={isAssistantDockOpen}
             aiSetupRequest={step1AiSetupRequest}
             onAiModeActiveChange={setStep1AiEntryOpen}
           />

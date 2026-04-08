@@ -605,12 +605,6 @@ export default function Step1Details({
   ]);
 
   useEffect(() => {
-    if (isAiAssistantActive && startMode !== "ai") {
-      activateStartMode("ai", { source: "assistant" });
-    }
-  }, [isAiAssistantActive, startMode]);
-
-  useEffect(() => {
     onAiModeActiveChange?.(startModeCommitted && startMode === "ai");
   }, [onAiModeActiveChange, startMode, startModeCommitted]);
 

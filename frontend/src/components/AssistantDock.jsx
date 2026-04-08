@@ -28,6 +28,7 @@ function DesktopAssistantDock({
   minimized,
   title,
   context,
+  onAction,
   onClose,
   onMinimize,
 }) {
@@ -82,7 +83,12 @@ function DesktopAssistantDock({
             </div>
           ) : (
             <div className="min-h-0 flex-1 overflow-auto p-4">
-              <StartWithAIAssistant mode="dock" context={context} onClose={onClose} />
+              <StartWithAIAssistant
+                mode="dock"
+                context={context}
+                onAction={onAction}
+                onClose={onClose}
+              />
             </div>
           )}
         </div>
@@ -97,6 +103,7 @@ export function AssistantDockProvider({ children }) {
   const [minimized, setMinimized] = useState(false);
   const [dockTitle, setDockTitle] = useState("Start with AI");
   const [dockContext, setDockContext] = useState(null);
+  const [dockOnAction, setDockOnAction] = useState(null);
 
   const openAssistant = useCallback(
     (options = {}) => {
@@ -104,6 +111,9 @@ export function AssistantDockProvider({ children }) {
       setMinimized(false);
       setDockTitle(options.title || "Start with AI");
       setDockContext(options.context || buildRouteContext(location));
+      setDockOnAction(() =>
+        typeof options.onAction === "function" ? options.onAction : null
+      );
     },
     [location]
   );
@@ -145,6 +155,7 @@ export function AssistantDockProvider({ children }) {
         minimized={minimized}
         title={dockTitle}
         context={dockContext || buildRouteContext(location)}
+        onAction={dockOnAction}
         onClose={closeAssistant}
         onMinimize={minimizeAssistant}
       />

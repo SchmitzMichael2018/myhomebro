@@ -300,21 +300,23 @@ test('agreement wizard step 1 switches into guided ai mode instead of leaving al
   });
 
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
-  await page.getByTestId('agreement-wizard-ai-entry-toggle').click();
+  await expect(page.getByTestId('agreement-wizard-ask-ai-button')).toBeVisible();
+  await page.getByRole('button', { name: 'Use AI' }).click();
 
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeHidden();
   await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
-  await expect(page.getByTestId('start-with-ai-assistant')).toBeVisible();
-  await expect(page.getByTestId('start-with-ai-submit')).toBeVisible();
-  await expect(page.getByTestId('start-with-ai-coaching')).toBeVisible();
-  await expect(page.getByTestId('start-with-ai-coaching-next-step')).toContainText(
+  await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
+  await expect(page.getByTestId('start-with-ai-submit-dock')).toBeVisible();
+  await expect(page.getByTestId('start-with-ai-coaching-dock')).toBeVisible();
+  await expect(page.getByTestId('start-with-ai-coaching-next-step-dock')).toContainText(
     'Complete the project details first'
   );
-  await expect(page.getByTestId('start-with-ai-input')).toBeFocused();
+  await expect(page.getByTestId('start-with-ai-input-dock')).toBeFocused();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
 
+  await page.getByTestId('assistant-desktop-dock-close').click();
   await page.getByTestId('step1-change-start-mode').click();
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
 });
@@ -494,7 +496,14 @@ test('agreement wizard step 1 respects explicit mode switching when a template i
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText('Start from scratch');
 
-  await page.getByTestId('agreement-wizard-ai-entry-toggle').click();
+  await page.getByTestId('agreement-wizard-ask-ai-button').click();
+  await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
+  await expect(page.getByTestId('step1-start-mode-summary')).toContainText('Start from scratch');
+  await page.getByTestId('assistant-desktop-dock-close').click();
+
+  await page.getByTestId('step1-change-start-mode').click();
+  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
+  await page.getByRole('button', { name: 'Use AI' }).click();
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
   await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
   await expect(page.getByTestId('step1-template-applied-summary')).toBeVisible();
@@ -928,14 +937,14 @@ test('agreement wizard step 1 refines a rough description and recommends a templ
     waitUntil: 'domcontentloaded',
   });
 
-  await page.getByTestId('agreement-wizard-ai-entry-toggle').click();
+  await page.getByRole('button', { name: 'Use AI' }).click();
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
   await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
-  await expect(page.getByTestId('start-with-ai-input')).toBeFocused();
+  await expect(page.getByTestId('start-with-ai-input-dock')).toBeFocused();
   await page
-    .getByTestId('start-with-ai-input')
+    .getByTestId('start-with-ai-input-dock')
     .fill('Roof replacement with flashing repair and cleanup');
-  await page.getByTestId('start-with-ai-submit').click();
+  await page.getByTestId('start-with-ai-submit-dock').click();
   await expect(page.getByTestId('step1-ai-setup-result')).toBeVisible();
   await expect(page.getByTestId('step1-ai-setup-result')).toContainText(
     'Remove existing shingles, repair flashing around penetrations'
