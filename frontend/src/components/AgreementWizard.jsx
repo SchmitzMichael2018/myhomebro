@@ -1322,6 +1322,7 @@ export default function AgreementWizard() {
         count: milestones.length,
         suggested_titles: milestones.map((item) => item?.title).filter(Boolean),
       },
+      session_state: wizardSessionState,
       ai_panel: aiPanelConfig,
     }),
     [
@@ -1336,6 +1337,7 @@ export default function AgreementWizard() {
       homeownerOptions,
       milestones,
       step,
+      wizardSessionState,
     ]
   );
   const handleAssistantAction = useCallback(
@@ -1354,6 +1356,12 @@ export default function AgreementWizard() {
       if (step === 1 && actionKey === "refine_and_setup") {
         const prompt = String(plan?.prompt || "").trim();
         if (!prompt) return true;
+        setWizardSessionState((prev) => ({
+          ...prev,
+          step1AiSetupReady: false,
+          step1AiReviewTargets: [],
+        }));
+        setAiFeedbackByStep((prev) => ({ ...prev, 1: "" }));
         setStep1AiEntryOpen(true);
         setStep1AiSetupRequest({ prompt, nonce: Date.now() });
         return true;
@@ -1577,6 +1585,31 @@ export default function AgreementWizard() {
             isAiAssistantActive={isAssistantDockOpen}
             aiSetupRequest={step1AiSetupRequest}
             onAiModeActiveChange={setStep1AiEntryOpen}
+            onAiSetupReviewReady={({ message = "", changedKeys = [] } = {}) => {
+              if (changedKeys.length) {
+                markStep1AiUpdated(changedKeys, { label: "AI suggested" });
+              }
+              const reviewTargets = changedKeys
+                .map((key) =>
+                  key === "project_type"
+                    ? "Project Type"
+                    : key === "project_subtype"
+                    ? "Project Subtype"
+                    : key === "project_title"
+                    ? "Project Title"
+                    : null
+                )
+                .filter(Boolean);
+              setWizardSessionState((prev) => ({
+                ...prev,
+                step1AiSetupReady: true,
+                step1AiReviewTargets: reviewTargets,
+              }));
+              setAiFeedbackByStep((prev) => ({
+                ...prev,
+                1: message || "Setup is ready to review in Project Details.",
+              }));
+            }}
           />
         </div>
       ) : null}

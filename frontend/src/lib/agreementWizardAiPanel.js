@@ -189,6 +189,10 @@ function buildCoachingState({
     dLocal?.payment_structure || agreement?.payment_structure
   );
   const paymentMode = safeText(dLocal?.payment_mode || agreement?.payment_mode);
+  const step1AiSetupReady = Boolean(context?.session_state?.step1AiSetupReady);
+  const step1ReviewTargets = Array.isArray(context?.session_state?.step1AiReviewTargets)
+    ? context.session_state.step1AiReviewTargets.filter(Boolean)
+    : [];
   const attachmentCount = getAttachmentCount(context);
   const clarificationText = getClarificationText(context);
   const warrantyText = getWarrantyText(context);
@@ -209,6 +213,19 @@ function buildCoachingState({
   }
 
   if (step === 1) {
+    if (step1AiSetupReady) {
+      return {
+        tone: "positive",
+        title: "Initial setup is ready",
+        message:
+          "AI filled the first pass of the project details so you can review and tighten anything that needs your touch.",
+        nextStepMessage:
+          step1ReviewTargets.length
+            ? `Review ${step1ReviewTargets.join(", ")}, then continue when the setup looks right.`
+            : "Review the project details next, then continue to milestones.",
+      };
+    }
+
     if (selectedTemplateName) {
       return {
         tone: "positive",
@@ -488,15 +505,38 @@ export function getAiPanelConfigForStep(step, context = {}) {
   };
 
   if (Number(step) === 1) {
+    const step1AiSetupReady = Boolean(sessionState?.step1AiSetupReady);
+    const reviewTargets = Array.isArray(sessionState?.step1AiReviewTargets)
+      ? sessionState.step1AiReviewTargets.filter(Boolean)
+      : [];
     return {
       ...sharedConfig,
-      entryTitle: "Describe the job and I'll help set it up",
+      entryTitle: step1AiSetupReady
+        ? "Description refined. AI completed initial setup."
+        : "Describe the job and I'll help set it up",
       entryDescription:
-        "Describe the job once. AI will refine the scope first and recommend a template only if one clearly fits.",
-      statusText: "Ready to set up this agreement",
-      headline: "Describe the job and I'll help set it up",
-      helperText:
-        "Enter a rough job description, then click Refine & Set Up. I'll refine it first and recommend a template only if one clearly fits.",
+        step1AiSetupReady
+          ? "AI filled the first pass of the project details. Review the setup below and adjust anything you want."
+          : "Describe the job once. AI will refine the scope first and recommend a template only if one clearly fits.",
+      statusText: step1AiSetupReady
+        ? "Description refined. AI completed initial setup."
+        : "Ready to set up this agreement",
+      headline: step1AiSetupReady
+        ? "Description refined. AI completed initial setup."
+        : "Describe the job and I'll help set it up",
+      helperText: step1AiSetupReady
+        ? [
+            "Review Project Type",
+            "Review Subtype",
+            "Review Project Title",
+            ...reviewTargets.filter(
+              (item) =>
+                item !== "Project Type" &&
+                item !== "Project Subtype" &&
+                item !== "Project Title"
+            ),
+          ].join(" · ")
+        : "Enter a rough job description, then click Refine & Set Up. I'll refine it first and recommend a template only if one clearly fits.",
       quickActions: [{ label: "Refine & Set Up", actionKey: "refine_and_setup" }],
       promptPlaceholder:
         'Example: "Roof replacement with permit coordination, flashing repair, and full cleanup."',

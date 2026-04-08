@@ -432,6 +432,10 @@ test('agreement wizard step 1 respects explicit mode switching when a template i
   });
 
   await page.route('**/api/projects/templates/**', async (route) => {
+    if (route.request().url().includes('/templates/recommend/')) {
+      await route.fallback();
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -722,10 +726,10 @@ test('agreement wizard step 1 refines a rough description and recommends a templ
   let agreement = {
     id: AGREEMENT_ID,
     agreement_id: AGREEMENT_ID,
-    project_title: 'Roof Replacement Draft',
-    title: 'Roof Replacement Draft',
-    project_type: 'Roofing',
-    project_subtype: 'Roof Replacement',
+    project_title: '',
+    title: '',
+    project_type: '',
+    project_subtype: '',
     payment_mode: 'escrow',
     payment_structure: 'simple',
     description: 'Replace shingles and repair flashing around roof penetrations.',
@@ -846,6 +850,9 @@ test('agreement wizard step 1 refines a rough description and recommends a templ
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
+        project_title: 'Roof Replacement',
+        project_type: 'Roofing',
+        project_subtype: 'Roof Replacement',
         description:
           'Remove existing shingles, repair flashing around penetrations, install the new roofing system, and complete site cleanup.',
         ai_access: 'included',
@@ -946,6 +953,28 @@ test('agreement wizard step 1 refines a rough description and recommends a templ
     .fill('Roof replacement with flashing repair and cleanup');
   await page.getByTestId('start-with-ai-submit-dock').click();
   await expect(page.getByTestId('step1-ai-setup-result')).toBeVisible();
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(
+    'Roof Replacement'
+  );
+  await expect(page.locator('select[name="project_type"]')).toHaveValue('Roofing');
+  await expect(page.locator('select[name="project_subtype"]')).toHaveValue(
+    'Roof Replacement'
+  );
+  await expect(page.getByTestId('agreement-project-title-ai-indicator')).toContainText(
+    'AI suggested'
+  );
+  await expect(page.getByTestId('agreement-project-type-ai-indicator')).toContainText(
+    'AI suggested'
+  );
+  await expect(page.getByTestId('agreement-project-subtype-ai-indicator')).toContainText(
+    'AI suggested'
+  );
+  await expect(page.getByTestId('start-with-ai-title-dock')).toContainText(
+    'Description refined. AI completed initial setup.'
+  );
+  await expect(page.getByTestId('start-with-ai-coaching-next-step-dock')).toContainText(
+    'Review Project Title, Project Type, Project Subtype'
+  );
   await expect(page.getByTestId('step1-ai-setup-result')).toContainText(
     'Remove existing shingles, repair flashing around penetrations'
   );

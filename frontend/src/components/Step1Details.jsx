@@ -55,6 +55,88 @@ function formatRecurrenceSummary(pattern, interval) {
   return `Recurring every ${safeInterval} ${labelMap[safePattern] || safePattern}`;
 }
 
+const MATCH_STOP_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "for",
+  "the",
+  "with",
+  "from",
+  "into",
+  "this",
+  "that",
+  "job",
+  "project",
+  "work",
+  "service",
+  "repair",
+  "replace",
+  "replacement",
+  "install",
+  "installation",
+]);
+
+function normalizeAiText(value) {
+  return safeTrim(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s/&-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenizeAiText(value) {
+  return normalizeAiText(value)
+    .split(" ")
+    .map((token) => token.trim())
+    .filter((token) => token && !MATCH_STOP_WORDS.has(token));
+}
+
+function titleCaseWords(value) {
+  return safeTrim(value)
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function buildGeneratedProjectTitle(text = "") {
+  const raw = safeTrim(text);
+  if (!raw) return "";
+  const firstClause = raw.split(/[,.]/)[0] || raw;
+  const trimmedClause = firstClause
+    .replace(/\b(with|including|plus|for)\b.*$/i, "")
+    .trim();
+  const candidate = safeTrim(trimmedClause || firstClause);
+  if (!candidate) return "";
+  const words = candidate.split(/\s+/).slice(0, 5).join(" ");
+  return titleCaseWords(words);
+}
+
+function scoreOptionAgainstText(option, sourceText) {
+  const optionLabel = safeTrim(option?.label || option?.value);
+  if (!optionLabel) return 0;
+
+  const haystack = normalizeAiText(sourceText);
+  if (!haystack) return 0;
+
+  const labelNorm = normalizeAiText(optionLabel);
+  const tokens = tokenizeAiText(optionLabel);
+
+  let score = 0;
+  if (labelNorm && haystack.includes(labelNorm)) score += 80;
+  score += tokens.filter((token) => haystack.includes(token)).length * 14;
+  return score;
+}
+
+function findBestMatchingOption(sourceText, options = [], minimumScore = 24) {
+  const ranked = (Array.isArray(options) ? options : [])
+    .map((option) => ({ option, score: scoreOptionAgainstText(option, sourceText) }))
+    .sort((a, b) => b.score - a.score);
+  if (!ranked.length || ranked[0].score < minimumScore) return null;
+  return ranked[0].option;
+}
+
 function StepSection({
   title,
   description = "",
@@ -62,10 +144,15 @@ function StepSection({
   className = "",
   highlighted = false,
   highlightLabel = "AI updated",
+  emphasis = false,
+  sectionRef = null,
 }) {
   return (
     <section
-      className={`rounded-2xl border bg-white p-5 shadow-sm transition-all ${
+      ref={sectionRef}
+      className={`rounded-2xl border bg-white p-5 shadow-sm transition-all duration-500 ${
+        emphasis ? "border-sky-300 bg-sky-50/70 ring-2 ring-sky-100" : ""
+      } ${
         highlighted
           ? "border-amber-200 bg-amber-50/40 ring-2 ring-amber-100"
           : "border-slate-200"
@@ -144,6 +231,7 @@ export default function Step1Details({
   isAiAssistantActive = false,
   aiSetupRequest = null,
   onAiModeActiveChange = null,
+  onAiSetupReviewReady = null,
 }) {
   void setQaBusy;
 
@@ -175,9 +263,45 @@ export default function Step1Details({
       null
     );
   }, [projectSubtypeOptions, dLocal?.project_subtype]);
+  const augmentedProjectTypeOptions = useMemo(() => {
+    const current = safeTrim(dLocal?.project_type);
+    if (!current || (projectTypeOptions || []).some((opt) => safeTrim(opt?.value) === current)) {
+      return projectTypeOptions || [];
+    }
+    return [
+      ...(projectTypeOptions || []),
+      {
+        id: `ai-new-type-${current}`,
+        value: current,
+        label: `${current} (New)`,
+        owner_type: "ai",
+      },
+    ];
+  }, [dLocal?.project_type, projectTypeOptions]);
+  const augmentedProjectSubtypeOptions = useMemo(() => {
+    const current = safeTrim(dLocal?.project_subtype);
+    if (
+      !current ||
+      (projectSubtypeOptions || []).some((opt) => safeTrim(opt?.value) === current)
+    ) {
+      return projectSubtypeOptions || [];
+    }
+    return [
+      ...(projectSubtypeOptions || []),
+      {
+        id: `ai-new-subtype-${current}`,
+        value: current,
+        label: `${current} (New)`,
+        owner_type: "ai",
+        project_type: safeTrim(dLocal?.project_type),
+      },
+    ];
+  }, [dLocal?.project_subtype, dLocal?.project_type, projectSubtypeOptions]);
 
   const hasAiSectionHighlight = (...keys) =>
     keys.some((key) => Boolean(aiHighlightKeys?.[key]));
+  const projectDetailsSectionRef = useRef(null);
+  const projectDetailsPulseTimerRef = useRef(null);
 
   const [addrSearch, setAddrSearch] = useState("");
   const patchTimerRef = useRef(null);
@@ -287,6 +411,17 @@ export default function Step1Details({
     }
     return "derived";
   });
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [showResetStep1Confirm, setShowResetStep1Confirm] = useState(false);
+  const [dismissedAiTemplateRecommendation, setDismissedAiTemplateRecommendation] =
+    useState(false);
+  const [aiSetupBusy, setAiSetupBusy] = useState(false);
+  const [aiSetupError, setAiSetupError] = useState("");
+  const [aiSetupResult, setAiSetupResult] = useState(null);
+  const [aiSuggestedFieldMeta, setAiSuggestedFieldMeta] = useState({});
+  const [projectDetailsReviewPulse, setProjectDetailsReviewPulse] = useState(false);
+  const [pendingProjectDetailsReview, setPendingProjectDetailsReview] = useState(null);
 
   function writeCache(nextPatch = {}) {
     try {
@@ -608,6 +743,78 @@ export default function Step1Details({
     onAiModeActiveChange?.(startModeCommitted && startMode === "ai");
   }, [onAiModeActiveChange, startMode, startModeCommitted]);
 
+  useEffect(() => {
+    return () => {
+      if (projectDetailsPulseTimerRef.current) {
+        clearTimeout(projectDetailsPulseTimerRef.current);
+      }
+    };
+  }, []);
+
+  function queueProjectDetailsReview(changedKeys = []) {
+    if (typeof window === "undefined") return;
+    setPendingProjectDetailsReview({
+      nonce: Date.now(),
+      baselineScrollY: window.scrollY,
+      changedKeys: Array.isArray(changedKeys) ? changedKeys.filter(Boolean) : [],
+    });
+  }
+
+  function getAiSuggestedIndicator(fieldKey) {
+    const fieldHighlight = aiHighlightKeys?.[fieldKey];
+    if (!fieldHighlight) return null;
+    const meta = aiSuggestedFieldMeta?.[fieldKey] || {};
+    return meta.isNew ? "AI suggested (New)" : "AI suggested";
+  }
+
+  useEffect(() => {
+    if (!pendingProjectDetailsReview?.nonce) return;
+
+    const hasReviewFields =
+      Boolean(safeTrim(dLocal?.project_title)) ||
+      Boolean(safeTrim(dLocal?.project_type)) ||
+      Boolean(safeTrim(dLocal?.project_subtype));
+
+    if (!hasReviewFields || typeof window === "undefined") {
+      setPendingProjectDetailsReview(null);
+      return;
+    }
+
+    onAiSetupReviewReady?.({
+      message: "Setup is ready to review in Project Details.",
+      changedKeys: pendingProjectDetailsReview.changedKeys,
+    });
+
+    if (
+      Math.abs(window.scrollY - Number(pendingProjectDetailsReview.baselineScrollY || 0)) > 180
+    ) {
+      setPendingProjectDetailsReview(null);
+      return;
+    }
+
+    const target = projectDetailsSectionRef.current;
+    if (!target) {
+      setPendingProjectDetailsReview(null);
+      return;
+    }
+
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    setProjectDetailsReviewPulse(true);
+    if (projectDetailsPulseTimerRef.current) {
+      clearTimeout(projectDetailsPulseTimerRef.current);
+    }
+    projectDetailsPulseTimerRef.current = setTimeout(() => {
+      setProjectDetailsReviewPulse(false);
+    }, 2200);
+    setPendingProjectDetailsReview(null);
+  }, [
+    dLocal?.project_subtype,
+    dLocal?.project_title,
+    dLocal?.project_type,
+    onAiSetupReviewReady,
+    pendingProjectDetailsReview,
+  ]);
+
   async function runAiDescription(mode) {
     if (locked) return;
 
@@ -862,15 +1069,6 @@ export default function Step1Details({
     if (!aiSetupRequest?.nonce || startMode !== "ai") return;
     runAiRefineAndSetup(aiSetupRequest.prompt);
   }, [aiSetupRequest?.nonce]);
-
-  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
-  const [savingTemplate, setSavingTemplate] = useState(false);
-  const [showResetStep1Confirm, setShowResetStep1Confirm] = useState(false);
-  const [dismissedAiTemplateRecommendation, setDismissedAiTemplateRecommendation] =
-    useState(false);
-  const [aiSetupBusy, setAiSetupBusy] = useState(false);
-  const [aiSetupError, setAiSetupError] = useState("");
-  const [aiSetupResult, setAiSetupResult] = useState(null);
 
   async function onSubmitSaveAsTemplate(payload) {
     setSavingTemplate(true);
@@ -1193,6 +1391,92 @@ export default function Step1Details({
     }
   }
 
+  function applyAiSetupFields(aiData = {}) {
+    const refinedDescription = safeTrim(aiData?.description || aiData?.normalized_description || "");
+    const sourceText = [
+      safeTrim(aiData?.project_title ?? aiData?.title ?? aiData?.projectTitle ?? ""),
+      safeTrim(aiData?.project_type ?? aiData?.projectType ?? ""),
+      safeTrim(aiData?.project_subtype ?? aiData?.projectSubtype ?? ""),
+      refinedDescription,
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    const matchedSubtype = findBestMatchingOption(sourceText, projectSubtypeOptions, 26);
+    const matchedType = matchedSubtype?.project_type
+      ? (projectTypeOptions || []).find(
+          (opt) => safeTrim(opt?.value) === safeTrim(matchedSubtype.project_type)
+        ) || null
+      : findBestMatchingOption(sourceText, projectTypeOptions, 18);
+
+    const generatedTitle =
+      safeTrim(aiData?.project_title ?? aiData?.title ?? aiData?.projectTitle) ||
+      safeTrim(matchedSubtype?.label || matchedSubtype?.value) ||
+      buildGeneratedProjectTitle(sourceText) ||
+      safeTrim(matchedType?.label || matchedType?.value) ||
+      "Custom Project";
+
+    const generatedType =
+      safeTrim(aiData?.project_type ?? aiData?.projectType) ||
+      safeTrim(matchedType?.value || matchedType?.label) ||
+      safeTrim(matchedSubtype?.project_type) ||
+      buildGeneratedProjectTitle(sourceText).split(/\s+/).slice(0, 2).join(" ") ||
+      "Custom Project";
+
+    const generatedSubtype =
+      safeTrim(aiData?.project_subtype ?? aiData?.projectSubtype) ||
+      safeTrim(matchedSubtype?.value || matchedSubtype?.label) ||
+      generatedTitle;
+
+    const nextValues = {
+      project_title: generatedTitle,
+      project_type: generatedType,
+      project_subtype: generatedSubtype,
+    };
+
+    const changedKeys = Object.entries(nextValues)
+      .filter(([key, value]) => safeTrim(value) && safeTrim(dLocal?.[key]) !== safeTrim(value))
+      .map(([key]) => key);
+
+    if (!changedKeys.length) {
+      return { changedKeys, nextValues };
+    }
+
+    const projectTypeRef = matchedType?.id || null;
+    const projectSubtypeRef = matchedSubtype?.id || null;
+
+    setAiSuggestedFieldMeta({
+      project_title: { isNew: false },
+      project_type: { isNew: Boolean(generatedType && !matchedType) },
+      project_subtype: { isNew: Boolean(generatedSubtype && !matchedSubtype) },
+    });
+
+    setDLocal((prev) => ({
+      ...prev,
+      ...nextValues,
+    }));
+
+    if (!isNewAgreement) {
+      writeCache(nextValues);
+    }
+
+    if (agreementId) {
+      patchAgreement(
+        {
+          project_title: generatedTitle,
+          title: generatedTitle,
+          project_type: generatedType,
+          project_type_ref: projectTypeRef,
+          project_subtype: generatedSubtype,
+          project_subtype_ref: projectSubtypeRef,
+        },
+        { silent: true }
+      );
+    }
+
+    return { changedKeys, nextValues };
+  }
+
   async function runAiRefineAndSetup(promptText) {
     const roughDescription = safeTrim(promptText);
     if (!roughDescription) return;
@@ -1220,15 +1504,26 @@ export default function Step1Details({
       }
 
       applyRefinedDescription(refinedDescription);
+      const {
+        changedKeys: setupFieldKeys,
+        nextValues: suggestedSetupValues,
+      } = applyAiSetupFields(refineRes?.data || {});
 
       const recommendRes = await api.post("/projects/templates/recommend/", {
-        project_title: dLocal.project_title || "",
-        project_type: dLocal.project_type || "",
-        project_subtype: dLocal.project_subtype || "",
+        project_title: suggestedSetupValues?.project_title || dLocal.project_title || "",
+        project_type: suggestedSetupValues?.project_type || dLocal.project_type || "",
+        project_subtype:
+          suggestedSetupValues?.project_subtype || dLocal.project_subtype || "",
         description: refinedDescription,
       });
 
       const recommendationData = recommendRes?.data || {};
+      const resolvedProjectType = safeTrim(
+        suggestedSetupValues?.project_type || dLocal.project_type || ""
+      );
+      const resolvedProjectSubtype = safeTrim(
+        suggestedSetupValues?.project_subtype || dLocal.project_subtype || ""
+      );
       const recommendationCandidates = Array.isArray(recommendationData?.candidates)
         ? recommendationData.candidates
         : Array.isArray(recommendationData?.results)
@@ -1248,10 +1543,10 @@ export default function Step1Details({
       );
       const exactTypeMatch =
         safeTrim(recommendedTemplate?.project_type).toLowerCase() ===
-          safeTrim(dLocal.project_type).toLowerCase() && safeTrim(dLocal.project_type);
+          resolvedProjectType.toLowerCase() && resolvedProjectType;
       const exactSubtypeMatch =
         safeTrim(recommendedTemplate?.project_subtype).toLowerCase() ===
-          safeTrim(dLocal.project_subtype).toLowerCase() && safeTrim(dLocal.project_subtype);
+          resolvedProjectSubtype.toLowerCase() && resolvedProjectSubtype;
       const strongMatch =
         Boolean(recommendedTemplate?.id) &&
         (confidence === "recommended" || score >= 70 || (exactTypeMatch && exactSubtypeMatch));
@@ -1269,14 +1564,18 @@ export default function Step1Details({
           refinedDescription,
           recommendedTemplate,
           reason: recommendationReason,
+          setupFieldKeys,
         });
+        queueProjectDetailsReview(["description", ...setupFieldKeys]);
       } else {
         setAiSetupResult({
           kind: "description_only",
           refinedDescription,
           message:
             "No matching template found. We added the refined description and you can continue.",
+          setupFieldKeys,
         });
+        queueProjectDetailsReview(["description", ...setupFieldKeys]);
       }
     } catch (e) {
       setAiSetupError(
@@ -1295,6 +1594,9 @@ export default function Step1Details({
       refinedDescription: aiSetupResult.refinedDescription,
       message:
         "No matching template found. We added the refined description and you can continue.",
+      setupFieldKeys: Array.isArray(aiSetupResult?.setupFieldKeys)
+        ? aiSetupResult.setupFieldKeys
+        : [],
     });
     setDismissedAiTemplateRecommendation(true);
   }
@@ -1444,6 +1746,15 @@ export default function Step1Details({
 
     const name = e?.target?.name;
     const value = e?.target?.value;
+
+    if (name === "project_title" || name === "project_type" || name === "project_subtype") {
+      setAiSuggestedFieldMeta((prev) => {
+        if (!prev?.[name]) return prev;
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
+    }
 
     onLocalChange?.(e);
 
@@ -2087,6 +2398,7 @@ export default function Step1Details({
           <StepSection
             title="Project Details"
             description={projectDetailsDescription}
+            sectionRef={projectDetailsSectionRef}
             highlighted={hasAiSectionHighlight(
               "project_title",
               "project_type",
@@ -2096,6 +2408,7 @@ export default function Step1Details({
               "recurrence_pattern",
               "recurrence_interval"
             )}
+            emphasis={projectDetailsReviewPulse}
           >
             <div className="space-y-5">
               <div
@@ -2313,7 +2626,17 @@ export default function Step1Details({
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
                   <div className="mb-1 flex items-center justify-between gap-2">
-                    <label className="block text-sm font-medium text-slate-900">Project Type</label>
+                    <div className="flex items-center gap-2">
+                      <label className="block text-sm font-medium text-slate-900">Project Type</label>
+                      {getAiSuggestedIndicator("project_type") ? (
+                        <span
+                          data-testid="agreement-project-type-ai-indicator"
+                          className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800"
+                        >
+                          {getAiSuggestedIndicator("project_type")}
+                        </span>
+                      ) : null}
+                    </div>
                     {!locked && handleCreateNewType ? (
                       <button
                         type="button"
@@ -2332,7 +2655,7 @@ export default function Step1Details({
                     disabled={locked}
                   >
                     <option value="">— Select Type —</option>
-                    {(projectTypeOptions || []).map((t) => (
+                    {augmentedProjectTypeOptions.map((t) => (
                       <option key={String(t.id ?? t.value)} value={String(t.value)}>
                         {String(t.label)}
                       </option>
@@ -2351,7 +2674,17 @@ export default function Step1Details({
 
                 <div>
                   <div className="mb-1 flex items-center justify-between gap-2">
-                    <label className="block text-sm font-medium text-slate-900">Subtype</label>
+                    <div className="flex items-center gap-2">
+                      <label className="block text-sm font-medium text-slate-900">Subtype</label>
+                      {getAiSuggestedIndicator("project_subtype") ? (
+                        <span
+                          data-testid="agreement-project-subtype-ai-indicator"
+                          className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800"
+                        >
+                          {getAiSuggestedIndicator("project_subtype")}
+                        </span>
+                      ) : null}
+                    </div>
                     {!locked && handleCreateNewSubtype ? (
                       <button
                         type="button"
@@ -2372,7 +2705,7 @@ export default function Step1Details({
                     <option value="">
                       {safeTrim(dLocal.project_type) ? "— Select Subtype —" : "Select Type first"}
                     </option>
-                    {(projectSubtypeOptions || []).map((st) => (
+                    {augmentedProjectSubtypeOptions.map((st) => (
                       <option key={String(st.id ?? st.value)} value={String(st.value)}>
                         {String(st.label)}
                       </option>
@@ -2393,7 +2726,17 @@ export default function Step1Details({
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-900">Project Title</label>
+                <div className="mb-1 flex items-center gap-2">
+                  <label className="block text-sm font-medium text-slate-900">Project Title</label>
+                  {getAiSuggestedIndicator("project_title") ? (
+                    <span
+                      data-testid="agreement-project-title-ai-indicator"
+                      className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800"
+                    >
+                      {getAiSuggestedIndicator("project_title")}
+                    </span>
+                  ) : null}
+                </div>
                 <input
                   data-testid="agreement-project-title-input"
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
