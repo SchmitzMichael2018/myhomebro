@@ -1169,6 +1169,12 @@ test('agreement wizard step 1 prefers remodel taxonomy over supporting electrica
     );
   await page.getByTestId('start-with-ai-submit-dock').click();
 
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(
+    'Bathroom Remodel'
+  );
+  await expect(page.getByTestId('agreement-project-title-input')).not.toHaveValue(
+    /Scope Of Work Includes/i
+  );
   await expect(page.locator('select[name="project_type"]')).toHaveValue('Remodel');
   await expect(page.locator('select[name="project_subtype"]')).toHaveValue(
     'Bathroom Remodel'

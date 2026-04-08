@@ -113,6 +113,87 @@ function buildGeneratedProjectTitle(text = "") {
   return titleCaseWords(words);
 }
 
+const TITLE_BOILERPLATE_PATTERNS = [
+  /^\s*scope of work includes\b[:\s-]*/i,
+  /^\s*this project includes\b[:\s-]*/i,
+  /^\s*removal of\b[:\s-]*/i,
+  /^\s*installation of\b[:\s-]*/i,
+];
+
+const TITLE_QUALIFIER_RULES = [
+  { pattern: /\bvanity\b/i, label: "Vanity" },
+  { pattern: /\btub\b/i, label: "Tub" },
+  { pattern: /\bshower\b/i, label: "Shower" },
+  { pattern: /\btile\b/i, label: "Tile" },
+  { pattern: /\bcabinet(s)?\b/i, label: "Cabinet" },
+  { pattern: /\bcountertop(s)?\b/i, label: "Countertop" },
+  { pattern: /\bfloor(ing)?\b/i, label: "Flooring" },
+];
+
+function stripTitleBoilerplate(value = "") {
+  let text = safeTrim(value);
+  for (const pattern of TITLE_BOILERPLATE_PATTERNS) {
+    text = text.replace(pattern, "");
+  }
+  return safeTrim(text);
+}
+
+function truncateProjectTitle(value = "", maxLength = 60) {
+  const text = safeTrim(value);
+  if (!text || text.length <= maxLength) return text;
+  const shortened = text.slice(0, maxLength - 1);
+  return `${shortened.replace(/\s+\S*$/, "").trim()}…`;
+}
+
+function extractTitleQualifier(text = "", subtype = "") {
+  const haystack = `${safeTrim(text)} ${safeTrim(subtype)}`.trim();
+  if (!haystack) return "";
+
+  const matches = TITLE_QUALIFIER_RULES.filter((rule) => rule.pattern.test(haystack)).map(
+    (rule) => rule.label
+  );
+  const uniqueMatches = Array.from(new Set(matches)).filter(
+    (label) => !normalizeTaxonomyText(subtype).includes(normalizeTaxonomyText(label))
+  );
+  if (!uniqueMatches.length) return "";
+  return uniqueMatches.slice(0, 3).join(", ").replace(/, ([^,]+)$/, " & $1");
+}
+
+function buildProjectFriendlyTitle({
+  subtype = "",
+  category = "",
+  rawTitle = "",
+  sourceText = "",
+}) {
+  const cleanSubtype = stripTitleBoilerplate(subtype);
+  const cleanCategory = stripTitleBoilerplate(category);
+  const qualifier = extractTitleQualifier(sourceText, cleanSubtype);
+
+  if (cleanSubtype) {
+    const isStrongSubtype =
+      /\b(remodel|addition|replacement|install|installation)\b/i.test(cleanSubtype) ||
+      cleanSubtype.split(/\s+/).length >= 2;
+    if (isStrongSubtype) {
+      return truncateProjectTitle(cleanSubtype);
+    }
+    if (qualifier) {
+      return truncateProjectTitle(`${cleanSubtype} - ${qualifier}`);
+    }
+    return truncateProjectTitle(cleanSubtype);
+  }
+
+  if (cleanCategory) {
+    return truncateProjectTitle(cleanCategory);
+  }
+
+  const cleanRawTitle = stripTitleBoilerplate(rawTitle);
+  if (cleanRawTitle && cleanRawTitle.split(/\s+/).length <= 6) {
+    return truncateProjectTitle(titleCaseWords(cleanRawTitle));
+  }
+
+  return "Custom Project";
+}
+
 function scoreOptionAgainstText(option, sourceText) {
   const optionLabel = safeTrim(option?.label || option?.value);
   if (!optionLabel) return 0;
@@ -1621,13 +1702,6 @@ export default function Step1Details({
         : null;
     const resolvedType = matchedType || matchedSubtypeParentType || null;
 
-    const generatedTitle =
-      rawProjectTitle ||
-      optionDisplayLabel(matchedSubtype) ||
-      buildGeneratedProjectTitle(sourceText) ||
-      optionDisplayLabel(resolvedType) ||
-      "Custom Project";
-
     const generatedType =
       optionCanonicalValue(resolvedType) ||
       dominantCategory.category ||
@@ -1638,7 +1712,15 @@ export default function Step1Details({
       optionCanonicalValue(matchedSubtype) ||
       dominantCategory.subtype ||
       (rawProjectSubtype && !extractNumericIdCandidate(rawProjectSubtype) ? rawProjectSubtype : "") ||
-      generatedTitle;
+      buildGeneratedProjectTitle(sourceText);
+
+    const generatedTitle =
+      buildProjectFriendlyTitle({
+        subtype: generatedSubtype,
+        category: generatedType,
+        rawTitle: rawProjectTitle,
+        sourceText,
+      }) || "Custom Project";
 
     const nextValues = {
       project_title: generatedTitle,
