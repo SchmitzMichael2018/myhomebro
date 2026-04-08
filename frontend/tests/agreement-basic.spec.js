@@ -2,6 +2,30 @@ import { expect, test } from '@playwright/test';
 
 const AGREEMENT_ID = 123;
 
+function installRouteState(page, matcher, userState) {
+  return page.addInitScript(
+    ({ pathname, search, state }) => {
+      if (window.location.pathname !== pathname) return;
+      if (typeof search === 'string' && search !== window.location.search) return;
+      const currentHistoryState = window.history.state || {};
+      window.history.replaceState(
+        {
+          ...currentHistoryState,
+          usr: state,
+          key: currentHistoryState.key || 'default',
+        },
+        '',
+        window.location.href
+      );
+    },
+    {
+      pathname: matcher.pathname,
+      search: matcher.search ?? null,
+      state: userState,
+    }
+  );
+}
+
 test('agreement wizard step 1 renders and draft creation route is reachable', async ({
   page,
 }) => {
@@ -278,6 +302,7 @@ test('agreement wizard step 1 switches into guided ai mode instead of leaving al
 
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeHidden();
+  await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
   await expect(page.getByTestId('start-with-ai-coaching')).toBeVisible();
   await expect(page.getByTestId('start-with-ai-coaching-next-step')).toContainText(
     'Complete the project details first'
@@ -452,11 +477,14 @@ test('agreement wizard step 1 respects explicit mode switching when a template i
   });
 
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText('Template-based');
+  await expect(page.getByTestId('step1-template-browser')).toBeVisible();
 
   await page.getByTestId('step1-change-start-mode').click();
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
   await page.getByRole('button', { name: 'Start from scratch' }).click();
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText('Start from scratch');
+  await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
+  await expect(page.getByTestId('step1-template-applied-summary')).toBeVisible();
   await page.waitForTimeout(150);
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText('Start from scratch');
 
@@ -465,6 +493,8 @@ test('agreement wizard step 1 respects explicit mode switching when a template i
 
   await page.getByTestId('agreement-wizard-ai-entry-toggle').click();
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
+  await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
+  await expect(page.getByTestId('step1-template-applied-summary')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await page.waitForTimeout(150);
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
@@ -672,6 +702,247 @@ test('agreement wizard step 1 reset form clears draft setup and reopens the choo
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('');
+});
+
+test('agreement wizard step 1 keeps template browsing hidden in ai mode and can apply an AI-recommended template', async ({
+  page,
+}) => {
+  let agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Roof Replacement Draft',
+    title: 'Roof Replacement Draft',
+    project_type: 'Roofing',
+    project_subtype: 'Roof Replacement',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description: 'Replace shingles and repair flashing around roof penetrations.',
+    homeowner: null,
+    status: 'draft',
+    selected_template_id: null,
+    selected_template: null,
+    selected_template_name_snapshot: '',
+  };
+
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  await installRouteState(
+    page,
+    { pathname: `/app/agreements/${AGREEMENT_ID}/wizard`, search: '?step=1' },
+    {
+      assistantGuidedFlow: {
+        guided_question: 'What kind of roofing work is this?',
+        why_this_matters: 'The job type helps AI decide whether a template is a strong fit.',
+      },
+      assistantTemplateRecommendations: [
+        {
+          id: 88,
+          name: 'Roof Replacement Template',
+          rank_reasons: ['Exact type + subtype match'],
+        },
+      ],
+      assistantTopTemplatePreview: {
+        id: 88,
+        milestone_count: 4,
+      },
+      assistantIntent: 'start_agreement',
+    }
+  );
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        onboarding_status: 'not_started',
+        connected: false,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, value: 'Roofing', label: 'Roofing', owner_type: 'system' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 11,
+            value: 'Roof Replacement',
+            label: 'Roof Replacement',
+            owner_type: 'system',
+            project_type: 'Roofing',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/homeowners**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, company_name: 'Demo Customer', full_name: 'Jordan Demo' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractors/me/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 77,
+        ai: { access: 'included', enabled: true, unlimited: true },
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/recommend/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        confidence: 'recommended',
+        recommended_template: {
+          id: 88,
+          name: 'Roof Replacement Template',
+          project_type: 'Roofing',
+          project_subtype: 'Roof Replacement',
+          milestone_count: 4,
+        },
+        score: 97,
+        reason: 'Exact type and subtype match.',
+        candidates: [
+          {
+            id: 88,
+            name: 'Roof Replacement Template',
+            project_type: 'Roofing',
+            project_subtype: 'Roof Replacement',
+            milestone_count: 4,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 88,
+            name: 'Roof Replacement Template',
+            project_type: 'Roofing',
+            project_subtype: 'Roof Replacement',
+            milestone_count: 4,
+            description: 'Standard roofing replacement workflow.',
+            owner_type: 'system',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/templates\/88\/?(\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 88,
+        name: 'Roof Replacement Template',
+        project_type: 'Roofing',
+        project_subtype: 'Roof Replacement',
+        milestone_count: 4,
+        estimated_days: 5,
+        description: 'Standard roofing replacement workflow.',
+        milestones: [
+          { id: 1, title: 'Materials', description: 'Order and deliver materials.' },
+        ],
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/123\/apply-template\/$/, async (route) => {
+    agreement = {
+      ...agreement,
+      selected_template_id: 88,
+      selected_template: {
+        id: 88,
+        name: 'Roof Replacement Template',
+        project_type: 'Roofing',
+        project_subtype: 'Roof Replacement',
+      },
+      selected_template_name_snapshot: 'Roof Replacement Template',
+    };
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        agreement,
+      }),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`),
+    async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET' || request.method() === 'PATCH') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+
+      await route.fallback();
+    }
+  );
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
+  await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
+  await expect(page.getByTestId('step1-ai-template-recommendation')).toBeVisible();
+  await page.getByTestId('step1-ai-template-apply').click();
+  await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
+  await expect(page.getByTestId('step1-template-browser')).toHaveCount(0);
+  await expect(page.getByTestId('step1-template-applied-summary')).toContainText(
+    'Roof Replacement Template'
+  );
 });
 
 test('agreement wizard step 2 AI can recommend saving a reusable template and open the save flow', async ({

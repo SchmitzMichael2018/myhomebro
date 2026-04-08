@@ -93,15 +93,17 @@ function inferStartMode({
   assistantTemplateRecommendations,
   assistantTopTemplatePreview,
 }) {
-  if (
-    agreement?.selected_template?.id ||
-    agreement?.selected_template_id ||
-    assistantTopTemplatePreview?.id ||
-    (Array.isArray(assistantTemplateRecommendations) && assistantTemplateRecommendations.length)
-  ) {
+  if (agreement?.selected_template?.id || agreement?.selected_template_id) {
     return "template";
   }
-  if (assistantGuidedFlow?.guided_question) return "ai";
+  if (
+    assistantGuidedFlow?.guided_question ||
+    assistantTopTemplatePreview?.id ||
+    assistantTopTemplatePreview?.milestone_count ||
+    (Array.isArray(assistantTemplateRecommendations) && assistantTemplateRecommendations.length)
+  ) {
+    return "ai";
+  }
   return "manual";
 }
 
@@ -574,17 +576,31 @@ export default function Step1Details({
     assistantTemplateRecommendations,
     assistantTopTemplatePreview,
   });
-  const shouldOpenTemplateDetails = startMode === "template" || hasTemplateApplied;
-
   useEffect(() => {
     if (startModeSource !== "derived") return;
     if (startMode !== derivedStartMode) {
       setStartMode(derivedStartMode);
     }
-    if (derivedStartMode === "template" && !startModeCommitted) {
+    if (
+      (derivedStartMode === "template" ||
+        (derivedStartMode === "ai" &&
+          (assistantGuidedFlow?.guided_question ||
+            assistantTopTemplatePreview?.id ||
+            assistantTopTemplatePreview?.milestone_count ||
+            assistantTemplateRecommendations.length))) &&
+      !startModeCommitted
+    ) {
       setStartModeCommitted(true);
     }
-  }, [derivedStartMode, startMode, startModeCommitted, startModeSource]);
+  }, [
+    assistantGuidedFlow,
+    assistantTemplateRecommendations.length,
+    assistantTopTemplatePreview,
+    derivedStartMode,
+    startMode,
+    startModeCommitted,
+    startModeSource,
+  ]);
 
   useEffect(() => {
     if (isAiAssistantActive && startMode !== "ai") {
@@ -838,9 +854,15 @@ export default function Step1Details({
     refreshAgreement,
   });
 
+  useEffect(() => {
+    setDismissedAiTemplateRecommendation(false);
+  }, [startMode, recommendedTemplateId, assistantTemplateRecommendations.length]);
+
   const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [showResetStep1Confirm, setShowResetStep1Confirm] = useState(false);
+  const [dismissedAiTemplateRecommendation, setDismissedAiTemplateRecommendation] =
+    useState(false);
 
   async function onSubmitSaveAsTemplate(payload) {
     setSavingTemplate(true);
@@ -1059,7 +1081,10 @@ export default function Step1Details({
   }
 
   async function handleTemplateApplied(nextAgreement, payload = null) {
-    activateStartMode("template", { source: "template_apply" });
+    activateStartMode(startMode === "ai" ? "ai" : "template", {
+      source: startMode === "ai" ? "assistant" : "template_apply",
+    });
+    setDismissedAiTemplateRecommendation(false);
     syncLocalFromAgreementPayload(nextAgreement);
 
     if (typeof onTemplateApplied === "function") {
@@ -1104,6 +1129,47 @@ export default function Step1Details({
   ]);
 
   const complianceWarning = agreement?.compliance_warning || null;
+  const appliedTemplateName = safeTrim(
+    agreement?.selected_template?.name ||
+      agreement?.selected_template_name_snapshot ||
+      dLocal?.selected_template_name_snapshot ||
+      selectedTemplate?.name
+  );
+  const aiRecommendedTemplate = useMemo(() => {
+    const assistantTop = Array.isArray(assistantTemplateRecommendations)
+      ? assistantTemplateRecommendations[0]
+      : null;
+    if (assistantTop?.id) return assistantTop;
+    if (
+      recommendedTemplateId &&
+      selectedTemplate &&
+      String(selectedTemplate.id) === String(recommendedTemplateId)
+    ) {
+      return selectedTemplate;
+    }
+    return (
+      (filteredTemplates || []).find(
+        (tpl) => String(tpl?.id || "") === String(recommendedTemplateId || "")
+      ) || null
+    );
+  }, [
+    assistantTemplateRecommendations,
+    filteredTemplates,
+    recommendedTemplateId,
+    selectedTemplate,
+  ]);
+  const shouldShowCompactTemplateRecommendation =
+    startMode === "ai" &&
+    !appliedTemplateId &&
+    !dismissedAiTemplateRecommendation &&
+    Boolean(aiRecommendedTemplate?.id);
+  const shouldShowAppliedTemplateSummary =
+    startMode !== "template" && Boolean(appliedTemplateId);
+
+  async function handleUseAiRecommendedTemplate() {
+    if (!aiRecommendedTemplate) return;
+    await handleTemplateApplyWithOptions(aiRecommendedTemplate);
+  }
 
   async function handleResetStep1Setup() {
     if (locked || !agreementId) return;
@@ -1416,7 +1482,9 @@ export default function Step1Details({
           </div>
         ) : null}
 
-        {assistantTemplateRecommendations.length ? (
+        {startMode === "ai" &&
+        assistantTemplateRecommendations.length &&
+        !shouldShowCompactTemplateRecommendation ? (
           <div
             data-testid="assistant-template-preview-step1"
             className="mb-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900"
@@ -1612,95 +1680,178 @@ export default function Step1Details({
           </div>
         ) : null}
 
-        <section
-          className={`rounded-2xl border shadow-sm ${
-            startMode === "template"
-              ? "border-indigo-200 bg-indigo-50/40"
-              : shouldDeemphasizeManualReview
-              ? "border-slate-200 bg-slate-50/50"
-              : "border-slate-200 bg-white"
-          }`}
-        >
-          <div className="flex items-center justify-between gap-3 px-5 py-4">
-            <div>
-              <div className="text-base font-semibold text-slate-900">Templates</div>
-              <div className="mt-1 text-sm text-slate-600">
-                Reuse a saved agreement structure if this project follows a familiar pattern.
+        {startMode === "template" ? (
+          <section
+            data-testid="step1-template-browser"
+            className="rounded-2xl border border-indigo-200 bg-indigo-50/40 shadow-sm"
+          >
+            <div className="flex items-center justify-between gap-3 px-5 py-4">
+              <div>
+                <div className="text-base font-semibold text-slate-900">Templates</div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Reuse a saved agreement structure if this project follows a familiar pattern.
+                </div>
+              </div>
+              <span className="rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+                Template mode
+              </span>
+            </div>
+            <div className="border-t border-slate-200 px-5 py-5">
+              <TemplateSearchSection
+                locked={locked}
+                agreementId={agreementId}
+                dLocal={dLocal}
+                onLocalChange={handleStep1LocalChange}
+                entryMode={startMode}
+                projectTypeOptions={projectTypeOptions}
+                projectSubtypeOptions={projectSubtypeOptions}
+                templatesLoading={templatesLoading}
+                templatesErr={templatesErr}
+                filteredTemplates={filteredTemplates}
+                templateSearch={templateSearch}
+                setTemplateSearch={setTemplateSearch}
+                selectedTemplateId={selectedTemplateId}
+                recommendedTemplateId={recommendedTemplateId}
+                recommendationConfidence={recommendationConfidence}
+                recommendationLoading={recommendationLoading}
+                templateRecommendationReason={templateRecommendationReason}
+                templateRecommendationScore={templateRecommendationScore}
+                selectedTemplate={selectedTemplate}
+                applyingTemplateId={applyingTemplateId}
+                handleTemplatePick={handleTemplatePick}
+                handleApplyTemplate={handleTemplateApplyWithOptions}
+                handleDeleteTemplate={handleDeleteTemplate}
+                handleUpdateTemplateDays={handleUpdateTemplateDays}
+                setSelectedTemplateId={setSelectedTemplateId}
+                setShowSaveTemplateModal={setShowSaveTemplateModal}
+                noTemplateMatch={noTemplateMatch}
+                noTemplateReason={noTemplateReason}
+                templateDetail={templateDetail}
+                templateDetailLoading={templateDetailLoading}
+                templateDetailErr={templateDetailErr}
+                aiCredits={aiCredits}
+                aiBusy={aiBusy}
+                aiErr={aiErr}
+                aiPreview={aiPreview}
+                setAiPreview={setAiPreview}
+                refreshAiCredits={refreshAiCredits}
+                runAiDescription={runAiDescription}
+                applyAiDescription={applyAiDescription}
+                hasSomeContext={hasSomeContext}
+                onAddProjectType={handleCreateNewType}
+                onAddProjectSubtype={handleCreateNewSubtype}
+                aiMilestoneBusy={aiMilestoneBusy}
+                aiMilestoneApplying={aiMilestoneApplying}
+                aiMilestoneErr={aiMilestoneErr}
+                aiMilestonePreview={aiMilestonePreview}
+                setAiMilestonePreview={setAiMilestonePreview}
+                runAiMilestonesFromScope={runAiMilestonesFromScope}
+                applyAiMilestonesFromScope={applyAiMilestonesFromScope}
+                spreadEnabled={spreadEnabled}
+                setSpreadEnabled={setSpreadEnabled}
+                spreadTotal={spreadTotal}
+                setSpreadTotal={setSpreadTotal}
+                autoSchedule={autoSchedule}
+                setAutoSchedule={setAutoSchedule}
+                showProjectFields={false}
+                appliedTemplateId={appliedTemplateId}
+                onTemplateApplied={handleTemplateApplied}
+              />
+            </div>
+          </section>
+        ) : null}
+
+        {shouldShowCompactTemplateRecommendation ? (
+          <section
+            data-testid="step1-ai-template-recommendation"
+            className="rounded-2xl border border-sky-200 bg-sky-50/70 p-5 shadow-sm"
+          >
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
+                  AI Recommendation
+                </div>
+                <div className="mt-1 text-base font-semibold text-slate-900">
+                  {aiRecommendedTemplate?.name || "I found a strong template fit"}
+                </div>
+                <div className="mt-1 text-sm text-slate-700">
+                  {templateRecommendationReason ||
+                    "This looks like a strong starting structure for the job you described."}
+                </div>
+                {assistantTopTemplatePreview?.milestone_count ? (
+                  <div className="mt-2 text-xs text-sky-800/90">
+                    Includes {assistantTopTemplatePreview.milestone_count} default milestone
+                    {assistantTopTemplatePreview.milestone_count === 1 ? "" : "s"}.
+                  </div>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="step1-ai-template-apply"
+                  onClick={handleUseAiRecommendedTemplate}
+                  disabled={locked || !agreementId || applyingTemplateId === aiRecommendedTemplate?.id}
+                  className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                >
+                  {applyingTemplateId === aiRecommendedTemplate?.id
+                    ? "Applying..."
+                    : "Use this template"}
+                </button>
+                <button
+                  type="button"
+                  data-testid="step1-ai-template-browse"
+                  onClick={() => activateStartMode("template")}
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  View template options
+                </button>
+                <button
+                  type="button"
+                  data-testid="step1-ai-template-dismiss"
+                  onClick={() => setDismissedAiTemplateRecommendation(true)}
+                  className="rounded-xl border border-transparent px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-white/70"
+                >
+                  Keep building with AI
+                </button>
               </div>
             </div>
-            <span
-              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
-                startMode === "template"
-                  ? "border border-indigo-200 bg-white text-indigo-700"
-                  : "bg-slate-100 text-slate-600"
-              }`}
-            >
-              {startMode === "template" ? "Template mode" : "Available"}
-            </span>
-          </div>
-          <div className="border-t border-slate-200 px-5 py-5">
-            <TemplateSearchSection
-              locked={locked}
-              agreementId={agreementId}
-              dLocal={dLocal}
-              onLocalChange={handleStep1LocalChange}
-              entryMode={startMode}
-              projectTypeOptions={projectTypeOptions}
-              projectSubtypeOptions={projectSubtypeOptions}
-              templatesLoading={templatesLoading}
-              templatesErr={templatesErr}
-              filteredTemplates={filteredTemplates}
-              templateSearch={templateSearch}
-              setTemplateSearch={setTemplateSearch}
-              selectedTemplateId={selectedTemplateId}
-              recommendedTemplateId={recommendedTemplateId}
-              recommendationConfidence={recommendationConfidence}
-              recommendationLoading={recommendationLoading}
-              templateRecommendationReason={templateRecommendationReason}
-              templateRecommendationScore={templateRecommendationScore}
-              selectedTemplate={selectedTemplate}
-              applyingTemplateId={applyingTemplateId}
-              handleTemplatePick={handleTemplatePick}
-              handleApplyTemplate={handleTemplateApplyWithOptions}
-              handleDeleteTemplate={handleDeleteTemplate}
-              handleUpdateTemplateDays={handleUpdateTemplateDays}
-              setSelectedTemplateId={setSelectedTemplateId}
-              setShowSaveTemplateModal={setShowSaveTemplateModal}
-              noTemplateMatch={noTemplateMatch}
-              noTemplateReason={noTemplateReason}
-              templateDetail={templateDetail}
-              templateDetailLoading={templateDetailLoading}
-              templateDetailErr={templateDetailErr}
-              aiCredits={aiCredits}
-              aiBusy={aiBusy}
-              aiErr={aiErr}
-              aiPreview={aiPreview}
-              setAiPreview={setAiPreview}
-              refreshAiCredits={refreshAiCredits}
-              runAiDescription={runAiDescription}
-              applyAiDescription={applyAiDescription}
-              hasSomeContext={hasSomeContext}
-              onAddProjectType={handleCreateNewType}
-              onAddProjectSubtype={handleCreateNewSubtype}
-              aiMilestoneBusy={aiMilestoneBusy}
-              aiMilestoneApplying={aiMilestoneApplying}
-              aiMilestoneErr={aiMilestoneErr}
-              aiMilestonePreview={aiMilestonePreview}
-              setAiMilestonePreview={setAiMilestonePreview}
-              runAiMilestonesFromScope={runAiMilestonesFromScope}
-              applyAiMilestonesFromScope={applyAiMilestonesFromScope}
-              spreadEnabled={spreadEnabled}
-              setSpreadEnabled={setSpreadEnabled}
-              spreadTotal={spreadTotal}
-              setSpreadTotal={setSpreadTotal}
-              autoSchedule={autoSchedule}
-              setAutoSchedule={setAutoSchedule}
-              showProjectFields={false}
-              appliedTemplateId={appliedTemplateId}
-              onTemplateApplied={handleTemplateApplied}
-            />
-          </div>
-        </section>
+          </section>
+        ) : null}
+
+        {shouldShowAppliedTemplateSummary ? (
+          <section
+            data-testid="step1-template-applied-summary"
+            className={`rounded-2xl border p-5 shadow-sm ${
+              startMode === "ai"
+                ? "border-indigo-200 bg-indigo-50/60"
+                : "border-slate-200 bg-slate-50/70"
+            }`}
+          >
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  Template in use
+                </div>
+                <div className="mt-1 text-base font-semibold text-slate-900">
+                  {appliedTemplateName || "Template applied"}
+                </div>
+                <div className="mt-1 text-sm text-slate-600">
+                  {startMode === "ai"
+                    ? "AI is still guiding this setup. Review the template-shaped details below and keep refining the agreement."
+                    : "This draft already has a template applied. Review the setup details below or switch modes if you want a different starting path."}
+                </div>
+              </div>
+              <button
+                type="button"
+                data-testid="step1-template-applied-browse"
+                onClick={() => activateStartMode("template")}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                View template options
+              </button>
+            </div>
+          </section>
+        ) : null}
 
         <div className="space-y-6">
           <StepSection
