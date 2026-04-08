@@ -321,7 +321,7 @@ const PRIMARY_CATEGORY_RULES = [
     patterns: [
       /\bkitchen\s+(remodel|renovation|refresh|upgrade)\b/i,
       /\b(remodel|renovation)\s+(the\s+)?kitchen\b/i,
-      /\bkitchen\b.*\b(cabinets?|countertops?|backsplash|island)\b/i,
+      /\bkitchen\b.*\b(layout|demo|demolition|tile|plumbing|electrical|backsplash|island)\b/i,
     ],
   },
   {
@@ -353,6 +353,46 @@ const PRIMARY_CATEGORY_RULES = [
   },
 ];
 
+const LIMITED_SCOPE_SUBTYPE_RULES = [
+  {
+    subtype: "Cabinet Installation",
+    patterns: [
+      /\bcabinet(s)?\s+(install|installation|replace|replacement)\b/i,
+      /\binstall\s+(new\s+)?(?:[a-z]+\s+)?cabinet(s)?\b/i,
+    ],
+  },
+  {
+    subtype: "Countertop Installation",
+    patterns: [
+      /\bcountertop(s)?\s+(install|installation|replace|replacement)\b/i,
+      /\binstall\s+(new\s+)?(?:[a-z]+\s+)?countertop(s)?\b/i,
+    ],
+  },
+  {
+    subtype: "Appliance Installation",
+    patterns: [
+      /\bappliance(s)?\s+(install|installation|replace|replacement)\b/i,
+      /\binstall\s+(new\s+)?(?:[a-z]+\s+)?(dishwasher|range|oven|cooktop|refrigerator|hood)\b/i,
+    ],
+  },
+  {
+    subtype: "Fixture Replacement",
+    patterns: [
+      /\bfixture(s)?\s+(install|installation|replace|replacement)\b/i,
+      /\breplace\s+(old\s+)?fixture(s)?\b/i,
+    ],
+  },
+];
+
+function inferSpecificLimitedScopeSubtype(text = "", projectSubtypeOptions = []) {
+  const cleaned = stripNegativeScopeClaims(text);
+  const matchedRule = LIMITED_SCOPE_SUBTYPE_RULES.find((rule) =>
+    rule.patterns.some((pattern) => pattern.test(cleaned))
+  );
+  if (!matchedRule) return null;
+  return resolveOptionFromRawValue(matchedRule.subtype, projectSubtypeOptions);
+}
+
 const SUPPORTING_TRADE_PATTERNS = [
   /\belectrical\b/i,
   /\bplumb(ing|er)?\b/i,
@@ -364,6 +404,29 @@ const SUPPORTING_TRADE_PATTERNS = [
   /\bsconces?\b/i,
 ];
 
+const FULL_REMODEL_SIGNAL_PATTERNS = [
+  /\bdemo(lition)?\b/i,
+  /\btear[- ]?out\b/i,
+  /\blayout\s+change(s)?\b/i,
+  /\brelocat(e|ing|ion)\b/i,
+  /\bplumb(ing|er)?\b/i,
+  /\belectrical\b/i,
+  /\btile\b/i,
+  /\bfixtures?\b/i,
+  /\bvanity\b/i,
+  /\bcountertop(s)?\b/i,
+  /\bcabinet(s)?\b/i,
+  /\bbacksplash\b/i,
+];
+
+function countMajorRemodelSignals(text) {
+  return FULL_REMODEL_SIGNAL_PATTERNS.filter((pattern) => pattern.test(text)).length;
+}
+
+function stripNegativeScopeClaims(text = "") {
+  return safeTrim(text).replace(/\bno\b[^.,;]*/gi, " ");
+}
+
 function inferDominantProjectCategory(sourceText) {
   const text = safeTrim(sourceText);
   if (!text) {
@@ -373,19 +436,46 @@ function inferDominantProjectCategory(sourceText) {
       reasoning: [],
     };
   }
+  const positiveText = stripNegativeScopeClaims(text);
 
   const reasoning = [];
   let bestRule = null;
   let bestScore = 0;
+  const majorRemodelSignals = countMajorRemodelSignals(positiveText);
+  const explicitRemodelIntent = /\b(remodel|renovation|gut|full update|full refresh)\b/i.test(
+    positiveText
+  );
+  const limitedScopeRule = LIMITED_SCOPE_SUBTYPE_RULES.find((rule) =>
+    rule.patterns.some((pattern) => pattern.test(positiveText))
+  );
+
+  if (limitedScopeRule && !explicitRemodelIntent && majorRemodelSignals < 3) {
+    reasoning.push(
+      `limited-scope override: ${limitedScopeRule.subtype} (major signals: ${majorRemodelSignals})`
+    );
+    return {
+      category: "",
+      subtype: limitedScopeRule.subtype,
+      reasoning,
+    };
+  }
 
   for (const rule of PRIMARY_CATEGORY_RULES) {
-    const matchCount = rule.patterns.filter((pattern) => pattern.test(text)).length;
+    const matchCount = rule.patterns.filter((pattern) => pattern.test(positiveText)).length;
     if (!matchCount) continue;
     const tradePenalty =
       rule.category === "Remodel"
         ? 0
         : SUPPORTING_TRADE_PATTERNS.filter((pattern) => pattern.test(text)).length;
-    const score = matchCount * 10 - tradePenalty;
+    const remodelBoost =
+      rule.subtype === "Kitchen Remodel" || rule.subtype === "Bathroom Remodel"
+        ? explicitRemodelIntent
+          ? 8
+          : majorRemodelSignals >= 3
+          ? 6
+          : -6
+        : 0;
+    const score = matchCount * 10 - tradePenalty + remodelBoost;
     reasoning.push(
       `${rule.category}${rule.subtype ? ` / ${rule.subtype}` : ""}: ${score}`
     );
@@ -395,7 +485,9 @@ function inferDominantProjectCategory(sourceText) {
     }
   }
 
-  const supportTradeHits = SUPPORTING_TRADE_PATTERNS.filter((pattern) => pattern.test(text)).length;
+  const supportTradeHits = SUPPORTING_TRADE_PATTERNS.filter((pattern) =>
+    pattern.test(positiveText)
+  ).length;
   if (!bestRule && supportTradeHits) {
     reasoning.push(`supporting-trade mentions detected: ${supportTradeHits}`);
   }
@@ -1678,29 +1770,49 @@ export default function Step1Details({
     ]
       .filter(Boolean)
       .join(" ");
-    const dominantCategory = inferDominantProjectCategory(sourceText);
+    const classificationText = [rawProjectTitle, refinedDescription].filter(Boolean).join(" ");
+    const dominantCategory = inferDominantProjectCategory(classificationText);
+    const specificLimitedScopeSubtype = inferSpecificLimitedScopeSubtype(
+      classificationText,
+      projectSubtypeOptions
+    );
+    const preferredTypeHint = dominantCategory.category || rawProjectType;
+    const preferredSubtypeHint = dominantCategory.subtype || rawProjectSubtype;
     const dominantTypeOption = dominantCategory.category
       ? resolveOptionFromRawValue(dominantCategory.category, projectTypeOptions)
       : null;
+    const dominantSubtypeOption = dominantCategory.subtype
+      ? resolveOptionFromRawValue(dominantCategory.subtype, projectSubtypeOptions)
+      : null;
+    const dominantSubtypeParentType = dominantSubtypeOption?.project_type
+      ? resolveOptionFromRawValue(dominantSubtypeOption.project_type, projectTypeOptions)
+      : null;
 
-    const matchedType = resolveBestTypeOption({
-      rawType: rawProjectType || dominantCategory.category,
-      rawSubtype: rawProjectSubtype || dominantCategory.subtype,
-      sourceText,
-      projectTypeOptions,
-    }) || dominantTypeOption;
-    const matchedSubtype = resolveBestSubtypeOption({
-      rawSubtype: rawProjectSubtype || dominantCategory.subtype,
-      rawType: rawProjectType || dominantCategory.category,
-      sourceText,
-      matchedType,
-      projectSubtypeOptions,
-    });
-    const matchedSubtypeParentType =
-      matchedSubtype?.project_type && !matchedType
-        ? resolveOptionFromRawValue(matchedSubtype.project_type, projectTypeOptions)
-        : null;
-    const resolvedType = matchedType || matchedSubtypeParentType || null;
+    const matchedType =
+      dominantSubtypeParentType ||
+      resolveBestTypeOption({
+        rawType: preferredTypeHint,
+        rawSubtype: preferredSubtypeHint,
+        sourceText,
+        projectTypeOptions,
+      }) ||
+      dominantTypeOption;
+    const subtypeTypeConstraint =
+      dominantCategory.subtype && !dominantCategory.category ? null : matchedType;
+    const matchedSubtype =
+      specificLimitedScopeSubtype ||
+      dominantSubtypeOption ||
+      resolveBestSubtypeOption({
+        rawSubtype: preferredSubtypeHint,
+        rawType: preferredTypeHint,
+        sourceText,
+        matchedType: subtypeTypeConstraint,
+        projectSubtypeOptions,
+      });
+    const matchedSubtypeParentType = matchedSubtype?.project_type
+      ? resolveOptionFromRawValue(matchedSubtype.project_type, projectTypeOptions)
+      : null;
+    const resolvedType = matchedSubtypeParentType || matchedType || null;
 
     const generatedType =
       optionCanonicalValue(resolvedType) ||

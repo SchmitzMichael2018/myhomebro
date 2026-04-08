@@ -1190,6 +1190,199 @@ test('agreement wizard step 1 prefers remodel taxonomy over supporting electrica
   );
 });
 
+test('agreement wizard step 1 keeps cabinet installation as a limited-scope job instead of a kitchen remodel', async ({
+  page,
+}) => {
+  const agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: '',
+    title: '',
+    project_type: '',
+    project_subtype: '',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description: '',
+    homeowner: null,
+    status: 'draft',
+    compliance_warning: {
+      warning_level: 'none',
+      message: '',
+    },
+  };
+
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        onboarding_status: 'not_started',
+        connected: false,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          { id: 7, value: 'Remodel', label: 'Remodel', owner_type: 'system' },
+          { id: 9, value: 'Cabinetry', label: 'Cabinetry', owner_type: 'system' },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 18,
+            value: 'Kitchen Remodel',
+            label: 'Kitchen Remodel',
+            owner_type: 'system',
+            project_type: 'Remodel',
+          },
+          {
+            id: 19,
+            value: 'Cabinet Installation',
+            label: 'Cabinet Installation',
+            owner_type: 'system',
+            project_type: 'Cabinetry',
+          },
+          {
+            id: 20,
+            value: 'Countertop Installation',
+            label: 'Countertop Installation',
+            owner_type: 'system',
+            project_type: 'Remodel',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/homeowners**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, company_name: 'Demo Customer', full_name: 'Jordan Demo' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractors/me/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 77,
+        ai: { access: 'included', enabled: true, unlimited: true },
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/recommend/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        confidence: 'none',
+        candidates: [],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/ai/description/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        project_title: 'Kitchen Cabinet Update',
+        project_type: 'Remodel',
+        project_subtype: 'Kitchen Remodel',
+        description:
+          'Install new kitchen cabinets and hardware with minor trim adjustments. No layout changes, demolition, plumbing, or electrical work.',
+        ai_access: 'included',
+        ai_enabled: true,
+        ai_unlimited: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/**', async (route) => {
+    if (route.request().url().includes('/templates/recommend/')) {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`),
+    async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET' || request.method() === 'PATCH') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+
+      await route.fallback();
+    }
+  );
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await page.getByRole('button', { name: 'Use AI' }).click();
+  await page
+    .getByTestId('start-with-ai-input-dock')
+    .fill('Install new kitchen cabinets and hardware only with minor trim touchups');
+  await page.getByTestId('start-with-ai-submit-dock').click();
+
+  await expect(page.locator('select[name="project_subtype"]')).toHaveValue(
+    'Cabinet Installation'
+  );
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue(
+    'Cabinet Installation'
+  );
+  await expect(page.locator('select[name="project_subtype"]')).not.toHaveValue(
+    'Kitchen Remodel'
+  );
+});
+
 test('agreement wizard step 2 AI can recommend saving a reusable template and open the save flow', async ({
   page,
 }) => {
