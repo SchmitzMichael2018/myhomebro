@@ -992,6 +992,194 @@ test('agreement wizard step 1 refines a rough description and recommends a templ
   );
 });
 
+test('agreement wizard step 1 reuses canonical taxonomy before creating new AI type or subtype', async ({
+  page,
+}) => {
+  const agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: '',
+    title: '',
+    project_type: '',
+    project_subtype: '',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description: '',
+    homeowner: null,
+    status: 'draft',
+    compliance_warning: {
+      warning_level: 'none',
+      message: '',
+    },
+  };
+
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        onboarding_status: 'not_started',
+        connected: false,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          { id: 7, value: 'Remodel', label: 'Remodel', owner_type: 'system' },
+          { id: 8, value: 'Roofing', label: 'Roofing', owner_type: 'system' },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 17,
+            value: 'Bathroom Remodel',
+            label: 'Bathroom Remodel',
+            owner_type: 'system',
+            project_type: 'Remodel',
+          },
+          {
+            id: 18,
+            value: 'Kitchen Remodel',
+            label: 'Kitchen Remodel',
+            owner_type: 'system',
+            project_type: 'Remodel',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/homeowners**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, company_name: 'Demo Customer', full_name: 'Jordan Demo' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractors/me/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 77,
+        ai: { access: 'included', enabled: true, unlimited: true },
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/recommend/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        confidence: 'none',
+        candidates: [],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/ai/description/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        project_title: 'Guest Bathroom Refresh',
+        project_type: 'Type 7',
+        project_subtype: 'Bathroom Remodel',
+        description:
+          'Update the guest bathroom with new tile, vanity, fixtures, and finish work.',
+        ai_access: 'included',
+        ai_enabled: true,
+        ai_unlimited: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/**', async (route) => {
+    if (route.request().url().includes('/templates/recommend/')) {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`),
+    async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET' || request.method() === 'PATCH') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+
+      await route.fallback();
+    }
+  );
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await page.getByRole('button', { name: 'Use AI' }).click();
+  await page.getByTestId('start-with-ai-input-dock').fill('Bathroom remodel with tile and vanity replacement');
+  await page.getByTestId('start-with-ai-submit-dock').click();
+
+  await expect(page.locator('select[name="project_type"]')).toHaveValue('Remodel');
+  await expect(page.locator('select[name="project_subtype"]')).toHaveValue(
+    'Bathroom Remodel'
+  );
+  await expect(page.getByTestId('agreement-project-type-ai-indicator')).toContainText(
+    'AI suggested'
+  );
+  await expect(page.getByTestId('agreement-project-type-ai-indicator')).not.toContainText(
+    '(New)'
+  );
+  await expect(page.getByTestId('agreement-project-subtype-ai-indicator')).not.toContainText(
+    '(New)'
+  );
+});
+
 test('agreement wizard step 2 AI can recommend saving a reusable template and open the save flow', async ({
   page,
 }) => {

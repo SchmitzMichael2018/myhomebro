@@ -137,6 +137,89 @@ function findBestMatchingOption(sourceText, options = [], minimumScore = 24) {
   return ranked[0].option;
 }
 
+function optionDisplayLabel(option) {
+  return safeTrim(option?.label || option?.value || option?.name || "");
+}
+
+function optionCanonicalValue(option) {
+  return safeTrim(option?.value || option?.label || option?.name || "");
+}
+
+function normalizeTaxonomyText(value) {
+  return safeTrim(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s/&-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractNumericIdCandidate(value) {
+  const raw = safeTrim(value);
+  if (!raw) return "";
+  const directNumeric = raw.match(/^\d+$/);
+  if (directNumeric) return directNumeric[0];
+  const placeholderNumeric = raw.match(/\b(?:type|subtype)\s+(\d+)\b/i);
+  if (placeholderNumeric) return placeholderNumeric[1];
+  return "";
+}
+
+function resolveOptionFromRawValue(rawValue, options = []) {
+  const raw = safeTrim(rawValue);
+  if (!raw) return null;
+
+  const normalizedRaw = normalizeTaxonomyText(raw);
+  const rawId = extractNumericIdCandidate(raw);
+
+  return (
+    (Array.isArray(options) ? options : []).find((option) => {
+      const optionId = safeTrim(option?.id);
+      const optionValue = optionCanonicalValue(option);
+      const optionLabel = optionDisplayLabel(option);
+      return (
+        (rawId && optionId && rawId === optionId) ||
+        normalizeTaxonomyText(optionValue) === normalizedRaw ||
+        normalizeTaxonomyText(optionLabel) === normalizedRaw
+      );
+    }) || null
+  );
+}
+
+function resolveBestTypeOption({
+  rawType,
+  rawSubtype,
+  sourceText,
+  projectTypeOptions = [],
+}) {
+  const directMatch =
+    resolveOptionFromRawValue(rawType, projectTypeOptions) ||
+    findBestMatchingOption([rawType, rawSubtype, sourceText].filter(Boolean).join(" "), projectTypeOptions, 18);
+  return directMatch;
+}
+
+function resolveBestSubtypeOption({
+  rawSubtype,
+  rawType,
+  sourceText,
+  matchedType,
+  projectSubtypeOptions = [],
+}) {
+  const filteredSubtypeOptions = (Array.isArray(projectSubtypeOptions) ? projectSubtypeOptions : []).filter(
+    (option) =>
+      !matchedType ||
+      normalizeTaxonomyText(option?.project_type) ===
+        normalizeTaxonomyText(optionCanonicalValue(matchedType))
+  );
+
+  return (
+    resolveOptionFromRawValue(rawSubtype, filteredSubtypeOptions) ||
+    findBestMatchingOption(
+      [rawSubtype, rawType, sourceText].filter(Boolean).join(" "),
+      filteredSubtypeOptions,
+      22
+    )
+  );
+}
+
 function StepSection({
   title,
   description = "",
@@ -1393,39 +1476,56 @@ export default function Step1Details({
 
   function applyAiSetupFields(aiData = {}) {
     const refinedDescription = safeTrim(aiData?.description || aiData?.normalized_description || "");
+    const rawProjectTitle = safeTrim(
+      aiData?.project_title ?? aiData?.title ?? aiData?.projectTitle ?? ""
+    );
+    const rawProjectType = safeTrim(aiData?.project_type ?? aiData?.projectType ?? "");
+    const rawProjectSubtype = safeTrim(
+      aiData?.project_subtype ?? aiData?.projectSubtype ?? ""
+    );
     const sourceText = [
-      safeTrim(aiData?.project_title ?? aiData?.title ?? aiData?.projectTitle ?? ""),
-      safeTrim(aiData?.project_type ?? aiData?.projectType ?? ""),
-      safeTrim(aiData?.project_subtype ?? aiData?.projectSubtype ?? ""),
+      rawProjectTitle,
+      rawProjectType,
+      rawProjectSubtype,
       refinedDescription,
     ]
       .filter(Boolean)
       .join(" ");
 
-    const matchedSubtype = findBestMatchingOption(sourceText, projectSubtypeOptions, 26);
-    const matchedType = matchedSubtype?.project_type
-      ? (projectTypeOptions || []).find(
-          (opt) => safeTrim(opt?.value) === safeTrim(matchedSubtype.project_type)
-        ) || null
-      : findBestMatchingOption(sourceText, projectTypeOptions, 18);
+    const matchedType = resolveBestTypeOption({
+      rawType: rawProjectType,
+      rawSubtype: rawProjectSubtype,
+      sourceText,
+      projectTypeOptions,
+    });
+    const matchedSubtype = resolveBestSubtypeOption({
+      rawSubtype: rawProjectSubtype,
+      rawType: rawProjectType,
+      sourceText,
+      matchedType,
+      projectSubtypeOptions,
+    });
+    const matchedSubtypeParentType =
+      matchedSubtype?.project_type && !matchedType
+        ? resolveOptionFromRawValue(matchedSubtype.project_type, projectTypeOptions)
+        : null;
+    const resolvedType = matchedType || matchedSubtypeParentType || null;
 
     const generatedTitle =
-      safeTrim(aiData?.project_title ?? aiData?.title ?? aiData?.projectTitle) ||
-      safeTrim(matchedSubtype?.label || matchedSubtype?.value) ||
+      rawProjectTitle ||
+      optionDisplayLabel(matchedSubtype) ||
       buildGeneratedProjectTitle(sourceText) ||
-      safeTrim(matchedType?.label || matchedType?.value) ||
+      optionDisplayLabel(resolvedType) ||
       "Custom Project";
 
     const generatedType =
-      safeTrim(aiData?.project_type ?? aiData?.projectType) ||
-      safeTrim(matchedType?.value || matchedType?.label) ||
-      safeTrim(matchedSubtype?.project_type) ||
+      optionCanonicalValue(resolvedType) ||
       buildGeneratedProjectTitle(sourceText).split(/\s+/).slice(0, 2).join(" ") ||
       "Custom Project";
 
     const generatedSubtype =
-      safeTrim(aiData?.project_subtype ?? aiData?.projectSubtype) ||
-      safeTrim(matchedSubtype?.value || matchedSubtype?.label) ||
+      optionCanonicalValue(matchedSubtype) ||
+      (rawProjectSubtype && !extractNumericIdCandidate(rawProjectSubtype) ? rawProjectSubtype : "") ||
       generatedTitle;
 
     const nextValues = {
@@ -1442,12 +1542,23 @@ export default function Step1Details({
       return { changedKeys, nextValues };
     }
 
-    const projectTypeRef = matchedType?.id || null;
+    const projectTypeRef = resolvedType?.id || null;
     const projectSubtypeRef = matchedSubtype?.id || null;
+    const usedFallbackCreation = Boolean(
+      (generatedType && !resolvedType) || (generatedSubtype && !matchedSubtype)
+    );
+
+    console.info("[Step1 AI setup taxonomy]", {
+      rawProjectType,
+      matchedProjectType: optionCanonicalValue(resolvedType),
+      rawProjectSubtype,
+      matchedProjectSubtype: optionCanonicalValue(matchedSubtype),
+      usedFallbackCreation,
+    });
 
     setAiSuggestedFieldMeta({
       project_title: { isNew: false },
-      project_type: { isNew: Boolean(generatedType && !matchedType) },
+      project_type: { isNew: Boolean(generatedType && !resolvedType) },
       project_subtype: { isNew: Boolean(generatedSubtype && !matchedSubtype) },
     });
 
