@@ -992,7 +992,7 @@ test('agreement wizard step 1 refines a rough description and recommends a templ
   );
 });
 
-test('agreement wizard step 1 reuses canonical taxonomy before creating new AI type or subtype', async ({
+test('agreement wizard step 1 prefers remodel taxonomy over supporting electrical or plumbing scope', async ({
   page,
 }) => {
   const agreement = {
@@ -1117,10 +1117,10 @@ test('agreement wizard step 1 reuses canonical taxonomy before creating new AI t
       contentType: 'application/json',
       body: JSON.stringify({
         project_title: 'Guest Bathroom Refresh',
-        project_type: 'Type 7',
-        project_subtype: 'Bathroom Remodel',
+        project_type: 'Electrical',
+        project_subtype: 'Removal Of Existing Bathroom Fixtures',
         description:
-          'Update the guest bathroom with new tile, vanity, fixtures, and finish work.',
+          'Bathroom remodel with tub and shower replacement, tile work, vanity install, updated lighting, electrical outlet relocation, minor plumbing adjustments, waterproofing, and finish work.',
         ai_access: 'included',
         ai_enabled: true,
         ai_unlimited: true,
@@ -1162,7 +1162,11 @@ test('agreement wizard step 1 reuses canonical taxonomy before creating new AI t
   });
 
   await page.getByRole('button', { name: 'Use AI' }).click();
-  await page.getByTestId('start-with-ai-input-dock').fill('Bathroom remodel with tile and vanity replacement');
+  await page
+    .getByTestId('start-with-ai-input-dock')
+    .fill(
+      'Bathroom remodel with tub and shower replacement, tile work, vanity install, plumbing updates, outlet relocation, and lighting changes'
+    );
   await page.getByTestId('start-with-ai-submit-dock').click();
 
   await expect(page.locator('select[name="project_type"]')).toHaveValue('Remodel');

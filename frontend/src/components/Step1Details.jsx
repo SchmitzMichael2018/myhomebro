@@ -220,6 +220,112 @@ function resolveBestSubtypeOption({
   );
 }
 
+const PRIMARY_CATEGORY_RULES = [
+  {
+    category: "Remodel",
+    subtype: "Bathroom Remodel",
+    reasons: ["bathroom remodel intent"],
+    patterns: [
+      /\bbath(room)?\s+(remodel|renovation|refresh|upgrade)\b/i,
+      /\b(remodel|renovation)\s+(the\s+)?bath(room)?\b/i,
+      /\btub(?:\/| and )?shower\s+(replacement|remodel|upgrade)\b/i,
+      /\bvanity\b.*\btile\b/i,
+      /\bbath(room)?\b.*\b(tile|vanity|fixtures?)\b/i,
+    ],
+  },
+  {
+    category: "Remodel",
+    subtype: "Kitchen Remodel",
+    reasons: ["kitchen remodel intent"],
+    patterns: [
+      /\bkitchen\s+(remodel|renovation|refresh|upgrade)\b/i,
+      /\b(remodel|renovation)\s+(the\s+)?kitchen\b/i,
+      /\bkitchen\b.*\b(cabinets?|countertops?|backsplash|island)\b/i,
+    ],
+  },
+  {
+    category: "Addition",
+    subtype: "",
+    reasons: ["addition intent"],
+    patterns: [
+      /\b(room|home|bedroom|garage|second story|story)\s+addition\b/i,
+      /\b(addition|expand|extension)\b/i,
+    ],
+  },
+  {
+    category: "Flooring",
+    subtype: "",
+    reasons: ["flooring intent"],
+    patterns: [
+      /\bfloor(ing)?\s+(install|installation|replacement|refinish|repair)\b/i,
+      /\b(hardwood|laminate|vinyl|tile)\s+floor(ing)?\b/i,
+    ],
+  },
+  {
+    category: "Roofing",
+    subtype: "Roof Replacement",
+    reasons: ["roofing intent"],
+    patterns: [
+      /\broof\s+(replacement|replace|tear[- ]off|reroof|re-roof)\b/i,
+      /\bshingles?\b.*\b(replace|replacement|install)\b/i,
+    ],
+  },
+];
+
+const SUPPORTING_TRADE_PATTERNS = [
+  /\belectrical\b/i,
+  /\bplumb(ing|er)?\b/i,
+  /\blighting\b/i,
+  /\bfixtures?\b/i,
+  /\boutlets?\b/i,
+  /\bwaterproof(ing)?\b/i,
+  /\bwiring\b/i,
+  /\bsconces?\b/i,
+];
+
+function inferDominantProjectCategory(sourceText) {
+  const text = safeTrim(sourceText);
+  if (!text) {
+    return {
+      category: "",
+      subtype: "",
+      reasoning: [],
+    };
+  }
+
+  const reasoning = [];
+  let bestRule = null;
+  let bestScore = 0;
+
+  for (const rule of PRIMARY_CATEGORY_RULES) {
+    const matchCount = rule.patterns.filter((pattern) => pattern.test(text)).length;
+    if (!matchCount) continue;
+    const tradePenalty =
+      rule.category === "Remodel"
+        ? 0
+        : SUPPORTING_TRADE_PATTERNS.filter((pattern) => pattern.test(text)).length;
+    const score = matchCount * 10 - tradePenalty;
+    reasoning.push(
+      `${rule.category}${rule.subtype ? ` / ${rule.subtype}` : ""}: ${score}`
+    );
+    if (score > bestScore) {
+      bestScore = score;
+      bestRule = rule;
+    }
+  }
+
+  const supportTradeHits = SUPPORTING_TRADE_PATTERNS.filter((pattern) => pattern.test(text)).length;
+  if (!bestRule && supportTradeHits) {
+    reasoning.push(`supporting-trade mentions detected: ${supportTradeHits}`);
+  }
+
+  return {
+    category: bestRule?.category || "",
+    subtype: bestRule?.subtype || "",
+    reasoning,
+  };
+}
+
 function StepSection({
   title,
   description = "",
@@ -1491,16 +1597,20 @@ export default function Step1Details({
     ]
       .filter(Boolean)
       .join(" ");
+    const dominantCategory = inferDominantProjectCategory(sourceText);
+    const dominantTypeOption = dominantCategory.category
+      ? resolveOptionFromRawValue(dominantCategory.category, projectTypeOptions)
+      : null;
 
     const matchedType = resolveBestTypeOption({
-      rawType: rawProjectType,
-      rawSubtype: rawProjectSubtype,
+      rawType: rawProjectType || dominantCategory.category,
+      rawSubtype: rawProjectSubtype || dominantCategory.subtype,
       sourceText,
       projectTypeOptions,
-    });
+    }) || dominantTypeOption;
     const matchedSubtype = resolveBestSubtypeOption({
-      rawSubtype: rawProjectSubtype,
-      rawType: rawProjectType,
+      rawSubtype: rawProjectSubtype || dominantCategory.subtype,
+      rawType: rawProjectType || dominantCategory.category,
       sourceText,
       matchedType,
       projectSubtypeOptions,
@@ -1520,11 +1630,13 @@ export default function Step1Details({
 
     const generatedType =
       optionCanonicalValue(resolvedType) ||
+      dominantCategory.category ||
       buildGeneratedProjectTitle(sourceText).split(/\s+/).slice(0, 2).join(" ") ||
       "Custom Project";
 
     const generatedSubtype =
       optionCanonicalValue(matchedSubtype) ||
+      dominantCategory.subtype ||
       (rawProjectSubtype && !extractNumericIdCandidate(rawProjectSubtype) ? rawProjectSubtype : "") ||
       generatedTitle;
 
@@ -1549,6 +1661,9 @@ export default function Step1Details({
     );
 
     console.info("[Step1 AI setup taxonomy]", {
+      classificationReasoning: dominantCategory.reasoning,
+      dominantCategory: dominantCategory.category,
+      dominantSubtype: dominantCategory.subtype,
       rawProjectType,
       matchedProjectType: optionCanonicalValue(resolvedType),
       rawProjectSubtype,
