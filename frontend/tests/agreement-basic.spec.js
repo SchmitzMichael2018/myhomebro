@@ -278,6 +278,10 @@ test('agreement wizard step 1 switches into guided ai mode instead of leaving al
 
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeHidden();
+  await expect(page.getByTestId('start-with-ai-coaching')).toBeVisible();
+  await expect(page.getByTestId('start-with-ai-coaching-next-step')).toContainText(
+    'Complete the project details first'
+  );
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('agreement-project-title-input')).toBeVisible();
   const scrollAfter = await page.evaluate(() => window.scrollY);
@@ -840,6 +844,13 @@ test('agreement wizard step 2 AI can recommend saving a reusable template and op
 
   await expect(page.getByText('Deposit and materials')).toBeVisible();
   await page.getByTestId('milestones-ai-entry-toggle').click();
+  await expect(page.getByTestId('start-with-ai-coaching')).toBeVisible();
+  await expect(page.getByTestId('start-with-ai-coaching-message')).toContainText(
+    'milestone'
+  );
+  await expect(page.getByTestId('start-with-ai-coaching-next-step')).toContainText(
+    'save'
+  );
   await expect(
     page.getByTestId('start-with-ai-template-recommendation')
   ).toContainText('This agreement looks reusable');

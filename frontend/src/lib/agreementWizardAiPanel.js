@@ -84,6 +84,39 @@ function getAgreementTotal(agreement = {}, milestones = []) {
   );
 }
 
+function getAttachmentCount(context = {}) {
+  const attachments = Array.isArray(context?.attachments)
+    ? context.attachments
+    : Array.isArray(context?.agreement?.attachments)
+    ? context.agreement.attachments
+    : [];
+  return attachments.length;
+}
+
+function getClarificationText(context = {}) {
+  return safeText(
+    context?.agreement?.scope_clarifications?.documented_scope_clarifications ||
+      context?.agreement?.scope_clarifications?.documented_clarifications ||
+      context?.agreement?.scope_clarifications?.notes
+  );
+}
+
+function getWarrantyText(context = {}) {
+  return safeText(
+    context?.agreement?.warranty_text_snapshot ||
+      context?.agreement?.custom_warranty_text ||
+      context?.customWarranty
+  );
+}
+
+function getSelectedTemplateName(agreement = {}, context = {}) {
+  return (
+    safeText(agreement?.selected_template?.name) ||
+    safeText(agreement?.selected_template_name_snapshot) ||
+    safeText(context?.template_summary?.name)
+  );
+}
+
 function hasSelectedTemplate(agreement = {}, context = {}) {
   return Boolean(
     agreement?.selected_template?.id ||
@@ -130,6 +163,202 @@ function buildTemplateRecommendation({
     )} and ${formatMoney(total)} in structured work. Save it as a template if you expect to reuse this setup.`,
     actionLabel: "Save as Template",
     actionKey: "save_as_template",
+  };
+}
+
+function buildCoachingState({
+  step,
+  context = {},
+  panelConfig = {},
+  plan = {},
+  isPlanning = false,
+} = {}) {
+  const agreement = context?.agreement || {};
+  const dLocal = context?.dLocal || {};
+  const milestones = Array.isArray(context?.milestones) ? context.milestones : [];
+  const total = getAgreementTotal(agreement, milestones);
+  const title = getAgreementTitle(agreement, dLocal);
+  const scope = getAgreementScope(agreement, dLocal);
+  const customerEmail = getCustomerEmail(agreement);
+  const selectedTemplateName = getSelectedTemplateName(agreement, context);
+  const hasProjectType = Boolean(safeText(dLocal?.project_type || agreement?.project_type));
+  const hasProjectSubtype = Boolean(
+    safeText(dLocal?.project_subtype || agreement?.project_subtype)
+  );
+  const paymentStructure = safeText(
+    dLocal?.payment_structure || agreement?.payment_structure
+  );
+  const paymentMode = safeText(dLocal?.payment_mode || agreement?.payment_mode);
+  const attachmentCount = getAttachmentCount(context);
+  const clarificationText = getClarificationText(context);
+  const warrantyText = getWarrantyText(context);
+  const checklistItems = Array.isArray(panelConfig?.checklistItems)
+    ? panelConfig.checklistItems
+    : [];
+  const warningCount = checklistItems.filter((item) => item?.tone === "warning").length;
+
+  if (isPlanning) {
+    return {
+      tone: "neutral",
+      title: "Working on it",
+      message: "I'm reviewing this step and preparing the most useful next move.",
+      nextStepMessage:
+        safeText(panelConfig.nextActionText) ||
+        "Stay on this step while I prepare the next recommendation.",
+    };
+  }
+
+  if (step === 1) {
+    if (selectedTemplateName) {
+      return {
+        tone: "positive",
+        title: "Great starting point",
+        message: `${selectedTemplateName} gives you a strong structure to review and tailor for this project.`,
+        nextStepMessage:
+          "Finish the project details here, then move to milestones and pricing in Step 2.",
+      };
+    }
+
+    if (title && scope && (hasProjectType || hasProjectSubtype)) {
+      return {
+        tone: "positive",
+        title: "Project setup is taking shape",
+        message:
+          "You already have the core job details in place, so this draft should be quick to finish.",
+        nextStepMessage:
+          "Confirm the customer and location next so the agreement is ready for milestone planning.",
+      };
+    }
+
+    if (!title && !scope) {
+      return {
+        tone: "neutral",
+        title: "Start with the job basics",
+        message:
+          "A short project title and scope are enough to give AI or templates a useful starting point.",
+        nextStepMessage:
+          "Complete the project details first, then we'll organize pricing and milestones in Step 2.",
+      };
+    }
+
+    return {
+      tone: "attention",
+      title: "A few setup details still need attention",
+      message:
+        "The agreement will be easier to price and review once the job description, customer, and location are filled in.",
+      nextStepMessage:
+        "Finish Section 1 before moving on so milestone suggestions have the right project context.",
+    };
+  }
+
+  if (step === 2) {
+    if (milestones.length >= 3 && total > 0) {
+      return {
+        tone: "positive",
+        title: "Milestone plan looks strong",
+        message: `You have ${pluralize(
+          milestones.length,
+          "milestone"
+        )} covering ${formatMoney(total)} of work, which is a solid base to review and fine-tune.`,
+        nextStepMessage:
+          "Tighten pricing or timing if needed, then click Save & Next when the plan feels right.",
+      };
+    }
+
+    if (milestones.length > 0 && total <= 0) {
+      return {
+        tone: "attention",
+        title: "The structure is there, but pricing is still thin",
+        message:
+          "Your milestones are outlined, but adding pricing will make the agreement easier to approve and fund.",
+        nextStepMessage:
+          "Review amounts here before moving forward so the final agreement has a clear value.",
+      };
+    }
+
+    if (!milestones.length) {
+      return {
+        tone: "neutral",
+        title: "This is the planning step",
+        message:
+          "Use AI or manual editing to build a milestone plan the customer can understand and approve.",
+        nextStepMessage:
+          "Create the first milestone set here, then save once the pricing and sequence look right.",
+      };
+    }
+
+    return {
+      tone: "attention",
+      title: "Milestones need one more review",
+      message:
+        "The plan is moving in the right direction, but a quick pass on pricing and dates will reduce friction later.",
+      nextStepMessage:
+        "Review the milestone list below before you continue to protection and documents.",
+    };
+  }
+
+  if (step === 3) {
+    if (attachmentCount > 0 || clarificationText || warrantyText) {
+      return {
+        tone: "positive",
+        title: "Protection details are coming together",
+        message:
+          "Documenting warranty terms, files, and clarifications now helps prevent confusion once the agreement is signed.",
+        nextStepMessage:
+          "Add any final warranty or document details you want saved with this agreement, then move to final review.",
+      };
+    }
+
+    return {
+      tone: "attention",
+      title: "This step protects both sides",
+      message:
+        "A quick pass on warranty language and supporting documents can reduce disputes and make expectations clearer.",
+      nextStepMessage:
+        "Add any attachments or clarifications you want preserved before you head to review and send.",
+    };
+  }
+
+  if (warningCount === 0 && checklistItems.length) {
+    return {
+      tone: "positive",
+      title: "You're close to ready",
+      message:
+        "The agreement looks complete enough to review confidently before you sign and send it.",
+      nextStepMessage:
+        "Preview the PDF one last time, confirm the payment setup, and send when you're satisfied.",
+    };
+  }
+
+  if (!customerEmail || !paymentMode) {
+    return {
+      tone: "attention",
+      title: "A few final details still matter",
+      message:
+        "The agreement is nearly ready, but missing contact or payment details can slow signatures and funding.",
+      nextStepMessage:
+        "Use the checklist to close the remaining gaps, then review the PDF before sending.",
+    };
+  }
+
+  if (!checklistItems.length) {
+    return {
+      tone: "neutral",
+      title: "Final review is the last checkpoint",
+      message:
+        "This is where you confirm the agreement reads clearly, routes correctly, and is ready for signatures.",
+      nextStepMessage:
+        "Review the summary, preview the PDF, and sign when the agreement looks complete.",
+    };
+  }
+
+  return {
+    tone: "attention",
+    title: "Almost ready to send",
+    message:
+      "The agreement is close, but one more review pass now will help avoid customer delays or funding issues.",
+    nextStepMessage:
+      "Work through the checklist items below, then sign and send once everything looks right.",
   };
 }
 
@@ -434,6 +663,13 @@ export function buildUserFacingAiPanel({
     : safeText(panelConfig.nextActionText) ||
       safeText(plan?.follow_up_prompt) ||
       "Next: Review the suggested update and continue when you're ready.";
+  const coaching = buildCoachingState({
+    step,
+    context,
+    panelConfig,
+    plan,
+    isPlanning,
+  });
 
   return {
     headline: safeText(panelConfig.headline) || "Tell me what you want to do",
@@ -444,6 +680,11 @@ export function buildUserFacingAiPanel({
     promptPlaceholder:
       safeText(panelConfig.promptPlaceholder) || "Ask AI what you want to improve.",
     feedback: safeText(panelConfig.feedback),
+    coachingTone: safeText(coaching?.tone) || "neutral",
+    coachingTitle: safeText(coaching?.title),
+    coachingMessage: safeText(coaching?.message),
+    nextStepMessage:
+      safeText(coaching?.nextStepMessage) || nextActionText,
     checklistItems: Array.isArray(panelConfig.checklistItems) ? panelConfig.checklistItems : [],
     templateRecommendation:
       panelConfig?.templateRecommendation &&

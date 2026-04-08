@@ -63,6 +63,31 @@ function CompactBadge({ children }) {
   );
 }
 
+function coachingToneClasses(tone = "neutral") {
+  if (tone === "positive") {
+    return {
+      wrapper: "border-emerald-200 bg-emerald-50",
+      badge: "bg-emerald-100 text-emerald-800",
+      title: "text-emerald-950",
+      body: "text-emerald-900/90",
+    };
+  }
+  if (tone === "attention") {
+    return {
+      wrapper: "border-amber-200 bg-amber-50",
+      badge: "bg-amber-100 text-amber-800",
+      title: "text-amber-950",
+      body: "text-amber-900/90",
+    };
+  }
+  return {
+    wrapper: "border-sky-200 bg-sky-50",
+    badge: "bg-sky-100 text-sky-800",
+    title: "text-sky-950",
+    body: "text-sky-900/90",
+  };
+}
+
 function normalizePanelConfig(context = {}) {
   const config =
     context && typeof context === "object" && context.ai_panel && typeof context.ai_panel === "object"
@@ -496,6 +521,61 @@ export default function StartWithAIAssistant({
             {isPlanning ? <CompactBadge>Working...</CompactBadge> : null}
           </div>
         </div>
+
+        {userFacingPanel.coachingTitle || userFacingPanel.coachingMessage ? (
+          <div
+            className={`rounded-2xl border px-4 py-4 ${coachingToneClasses(
+              userFacingPanel.coachingTone
+            ).wrapper}`}
+            data-testid={testId("start-with-ai-coaching")}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${
+                      coachingToneClasses(userFacingPanel.coachingTone).badge
+                    }`}
+                  >
+                    {userFacingPanel.coachingTone === "positive"
+                      ? "On track"
+                      : userFacingPanel.coachingTone === "attention"
+                      ? "Needs attention"
+                      : "Guidance"}
+                  </span>
+                </div>
+                {userFacingPanel.coachingTitle ? (
+                  <div
+                    className={`mt-3 text-sm font-semibold ${
+                      coachingToneClasses(userFacingPanel.coachingTone).title
+                    }`}
+                    data-testid={testId("start-with-ai-coaching-title")}
+                  >
+                    {userFacingPanel.coachingTitle}
+                  </div>
+                ) : null}
+                {userFacingPanel.coachingMessage ? (
+                  <div
+                    className={`mt-1 text-sm ${
+                      coachingToneClasses(userFacingPanel.coachingTone).body
+                    }`}
+                    data-testid={testId("start-with-ai-coaching-message")}
+                  >
+                    {userFacingPanel.coachingMessage}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            {userFacingPanel.nextStepMessage ? (
+              <div
+                className="mt-3 rounded-xl border border-white/70 bg-white/70 px-3 py-2 text-sm font-medium text-slate-800"
+                data-testid={testId("start-with-ai-coaching-next-step")}
+              >
+                {userFacingPanel.nextStepMessage}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {userFacingPanel.quickActions.length ? (
           <div className="flex flex-wrap gap-2">
