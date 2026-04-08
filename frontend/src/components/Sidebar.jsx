@@ -621,6 +621,7 @@ export default function Sidebar({ variant = "desktop" }) {
 
             <NavGroup label="Work" className="pt-1">
               <Item to={`${APP_BASE}/agreements`} label="Agreements" icon={FileSignature} />
+              <Item to={`${APP_BASE}/templates`} label="Templates" icon={ClipboardList} />
               <Item to={`${APP_BASE}/milestones`} label="Milestones" icon={SquareKanban} />
               <Item to={`${APP_BASE}/invoices`} label="Invoices" icon={CreditCard} />
               <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} />
