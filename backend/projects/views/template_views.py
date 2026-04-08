@@ -237,6 +237,157 @@ class ApplyTemplateToAgreementView(APIView):
         )
 
 
+class ResetAgreementStep1View(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, agreement_id: int):
+        contractor = get_request_contractor(request.user)
+        if contractor is None:
+            raise PermissionDenied("Only contractors can reset draft agreements.")
+
+        try:
+            agreement = (
+                Agreement.objects.select_related("project", "selected_template")
+                .prefetch_related("milestones")
+                .get(pk=agreement_id)
+            )
+        except Agreement.DoesNotExist:
+            raise ValidationError("Agreement not found.")
+
+        if not agreement_belongs_to_contractor(agreement, contractor):
+            raise PermissionDenied("You do not have access to this agreement.")
+
+        status_value = str(getattr(agreement, "status", "") or "").strip().lower()
+        if (
+            status_value != "draft"
+            or bool(getattr(agreement, "is_archived", False))
+            or bool(getattr(agreement, "signed_by_contractor", False))
+            or bool(getattr(agreement, "signed_by_homeowner", False))
+            or bool(getattr(agreement, "is_fully_signed", False))
+        ):
+            raise ValidationError("Only editable draft agreements can be reset here.")
+
+        project = getattr(agreement, "project", None)
+
+        with transaction.atomic():
+            agreement.selected_template = None
+            agreement.selected_template_name_snapshot = ""
+            agreement.homeowner = None
+            agreement.project_type_ref = None
+            agreement.project_subtype_ref = None
+            agreement.project_type = ""
+            agreement.project_subtype = ""
+            agreement.description = ""
+            agreement.payment_structure = "simple"
+            agreement.retainage_percent = Decimal("0.00")
+            agreement.agreement_mode = "standard"
+            agreement.recurring_service_enabled = False
+            agreement.recurrence_pattern = ""
+            agreement.recurrence_interval = 1
+            agreement.recurrence_start_date = None
+            agreement.recurrence_end_date = None
+            agreement.next_occurrence_date = None
+            agreement.auto_generate_next_occurrence = False
+            agreement.maintenance_status = "active"
+            agreement.service_window_notes = ""
+            agreement.recurring_summary_label = ""
+            agreement.project_address_line1 = ""
+            agreement.project_address_line2 = ""
+            agreement.project_address_city = ""
+            agreement.project_address_state = ""
+            agreement.project_postal_code = ""
+            agreement.start = None
+            agreement.end = None
+            agreement.total_cost = Decimal("0.00")
+            agreement.milestone_count = 0
+            agreement.save(
+                update_fields=[
+                    "selected_template",
+                    "selected_template_name_snapshot",
+                    "homeowner",
+                    "project_type_ref",
+                    "project_subtype_ref",
+                    "project_type",
+                    "project_subtype",
+                    "description",
+                    "payment_structure",
+                    "retainage_percent",
+                    "agreement_mode",
+                    "recurring_service_enabled",
+                    "recurrence_pattern",
+                    "recurrence_interval",
+                    "recurrence_start_date",
+                    "recurrence_end_date",
+                    "next_occurrence_date",
+                    "auto_generate_next_occurrence",
+                    "maintenance_status",
+                    "service_window_notes",
+                    "recurring_summary_label",
+                    "project_address_line1",
+                    "project_address_line2",
+                    "project_address_city",
+                    "project_address_state",
+                    "project_postal_code",
+                    "start",
+                    "end",
+                    "total_cost",
+                    "milestone_count",
+                ],
+            )
+
+            agreement.milestones.all().delete()
+
+            if hasattr(agreement, "ai_scope") and agreement.ai_scope is not None:
+                agreement.ai_scope.delete()
+
+            if project is not None:
+                project.homeowner = None
+                project.title = ""
+                project.description = ""
+                project.project_street_address = ""
+                project.project_address_line_2 = ""
+                project.project_city = ""
+                project.project_state = ""
+                project.project_zip_code = ""
+                project.save(
+                    update_fields=[
+                        "homeowner",
+                        "title",
+                        "description",
+                        "project_street_address",
+                        "project_address_line_2",
+                        "project_city",
+                        "project_state",
+                        "project_zip_code",
+                    ]
+                )
+
+        agreement.refresh_from_db()
+        agreement = (
+            Agreement.objects.select_related(
+                "project",
+                "homeowner",
+                "contractor",
+                "selected_template",
+                "project_type_ref",
+                "project_subtype_ref",
+            )
+            .prefetch_related("milestones")
+            .get(pk=agreement.id)
+        )
+
+        return Response(
+            {
+                "detail": "Agreement setup reset.",
+                "agreement": AgreementSerializer(
+                    agreement,
+                    context={"request": request},
+                ).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class SaveAgreementAsTemplateView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 

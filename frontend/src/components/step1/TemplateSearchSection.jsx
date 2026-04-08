@@ -281,7 +281,6 @@ export default function TemplateSearchSection({
   setAutoSchedule,
 
   appliedTemplateId = null,
-  onDeselectAppliedTemplate = null,
   onTemplateApplied = null,
 }) {
   const dropdownRef = useRef(null);
@@ -515,16 +514,6 @@ export default function TemplateSearchSection({
     setSelectedPreviewOpen(false);
   }
 
-  async function handleDeselectClick() {
-    if (locked) return;
-    if (!onDeselectAppliedTemplate) {
-      setSelectedTemplateId?.(null);
-      setTemplateSearch("");
-      return;
-    }
-    await onDeselectAppliedTemplate();
-  }
-
   function handleTemplateResultPick(picked) {
     handleTemplatePick?.(picked);
     setTemplateDropdownOpen(false);
@@ -539,10 +528,10 @@ export default function TemplateSearchSection({
   }
 
   const selectionHeaderTitle = isTemplateApplied
-    ? "Template Selected"
+    ? "Template in use"
     : "Selected Template";
   const selectionHeaderText = isTemplateApplied
-    ? "This template is already applied to the agreement. You can preview it below. Until the agreement is signed, you may still deselect it."
+    ? "This template shaped the current draft. Review it below, or use Reset form if you want to start over."
     : "Search for a matching template first. If a good match exists, use it as the fastest path into milestones, clarifications, and pricing.";
 
   return (
@@ -1201,16 +1190,7 @@ export default function TemplateSearchSection({
                 </button>
               ) : null}
 
-              {isTemplateApplied ? (
-                <button
-                  type="button"
-                  onClick={handleDeselectClick}
-                  disabled={locked}
-                  className="rounded border px-3 py-1.5 text-xs disabled:opacity-60"
-                >
-                  Deselect Template
-                </button>
-              ) : (
+              {!isTemplateApplied ? (
                 <button
                   type="button"
                   onClick={clearTemplateSearchOnly}
@@ -1219,7 +1199,7 @@ export default function TemplateSearchSection({
                 >
                   Clear
                 </button>
-              )}
+              ) : null}
 
               {!selectedTemplate?.is_system && !isTemplateApplied ? (
                 <button

@@ -469,6 +469,207 @@ test('agreement wizard step 1 respects explicit mode switching when a template i
   await expect(page.getByTestId('step1-start-mode-summary')).toContainText('AI-assisted');
 });
 
+test('agreement wizard step 1 reset form clears draft setup and reopens the chooser', async ({
+  page,
+}) => {
+  let agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Template Draft',
+    title: 'Template Draft',
+    project_type: 'Roofing',
+    project_subtype: 'Roof Replacement',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description: 'Template-backed draft agreement.',
+    homeowner: null,
+    status: 'draft',
+    selected_template_id: 88,
+    selected_template: {
+      id: 88,
+      name: 'Roof Replacement Template',
+      project_type: 'Roofing',
+      project_subtype: 'Roof Replacement',
+    },
+    selected_template_name_snapshot: 'Roof Replacement Template',
+    compliance_warning: {
+      warning_level: 'none',
+      message: '',
+    },
+  };
+
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        onboarding_status: 'not_started',
+        connected: false,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, value: 'Roofing', label: 'Roofing', owner_type: 'system' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 11,
+            value: 'Roof Replacement',
+            label: 'Roof Replacement',
+            owner_type: 'system',
+            project_type: 'Roofing',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/homeowners**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, company_name: 'Demo Customer', full_name: 'Jordan Demo' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractors/me/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 77,
+        ai: {
+          access: 'included',
+          enabled: true,
+          unlimited: true,
+        },
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 88,
+            name: 'Roof Replacement Template',
+            project_type: 'Roofing',
+            project_subtype: 'Roof Replacement',
+            owner_type: 'system',
+            milestone_count: 4,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/reset-step1/?$`),
+    async (route) => {
+      agreement = {
+        ...agreement,
+        project_title: '',
+        title: '',
+        project_type: '',
+        project_subtype: '',
+        description: '',
+        homeowner: null,
+        selected_template_id: null,
+        selected_template: null,
+        selected_template_name_snapshot: '',
+        payment_structure: 'simple',
+        retainage_percent: '0.00',
+        agreement_mode: 'standard',
+        address_line1: '',
+        address_line2: '',
+        address_city: '',
+        address_state: '',
+        address_postal_code: '',
+      };
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          detail: 'Agreement setup reset.',
+          agreement,
+        }),
+      });
+    }
+  );
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`),
+    async (route) => {
+      const request = route.request();
+
+      if (request.method() === 'GET' || request.method() === 'PATCH') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+
+      await route.fallback();
+    }
+  );
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step1-start-mode-summary')).toContainText('Template-based');
+  await expect(page.getByTestId('step1-reset-form-button')).toBeVisible();
+
+  await page.getByTestId('step1-reset-form-button').click();
+  await expect(page.getByTestId('step1-reset-form-confirm')).toBeVisible();
+  await page.getByTestId('step1-reset-form-confirm-button').click();
+
+  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('');
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
+  await expect(page.getByTestId('agreement-project-title-input')).toHaveValue('');
+});
+
 test('agreement wizard step 2 AI can recommend saving a reusable template and open the save flow', async ({
   page,
 }) => {

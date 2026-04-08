@@ -306,6 +306,17 @@ export default function Step1Details({
     setStartModeSource((prev) => (prev === "derived" ? "session" : prev));
   }
 
+  function clearStep1SessionState() {
+    try {
+      sessionStorage.removeItem(cacheKey);
+      sessionStorage.removeItem(startModeStorageKey);
+      sessionStorage.removeItem(startModeCommittedStorageKey);
+      sessionStorage.removeItem(startModeSourceStorageKey);
+    } catch {
+      // ignore
+    }
+  }
+
   useEffect(() => {
     if (!isNewAgreement) return;
     try {
@@ -829,6 +840,7 @@ export default function Step1Details({
 
   const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState(false);
+  const [showResetStep1Confirm, setShowResetStep1Confirm] = useState(false);
 
   async function onSubmitSaveAsTemplate(payload) {
     setSavingTemplate(true);
@@ -1093,20 +1105,75 @@ export default function Step1Details({
 
   const complianceWarning = agreement?.compliance_warning || null;
 
-  async function handleDeselectAppliedTemplate() {
-    if (locked) return;
-    if (!agreementId) return;
+  async function handleResetStep1Setup() {
+    if (locked || !agreementId) return;
 
-    const templateName =
-      safeTrim(agreement?.selected_template?.name) ||
-      safeTrim(agreement?.selected_template_name_snapshot) ||
-      safeTrim(dLocal?.selected_template?.name) ||
-      safeTrim(dLocal?.selected_template_name_snapshot) ||
-      "this template";
+    try {
+      const { data } = await api.post(`/projects/agreements/${agreementId}/reset-step1/`);
+      const nextAgreement = data?.agreement || null;
 
-    toast.error(
-      `Cannot deselect ${templateName} here because its scope, milestones, or clarifications may already be applied. Leaving the template attached prevents the agreement from silently remaining template-shaped with no template metadata.`
-    );
+      setDLocal((prev) => ({
+        ...prev,
+        project_title: safeTrim(nextAgreement?.project_title ?? nextAgreement?.title ?? ""),
+        project_type: nextAgreement?.project_type ?? "",
+        project_subtype: nextAgreement?.project_subtype ?? "",
+        description: nextAgreement?.description ?? "",
+        homeowner:
+          nextAgreement?.homeowner != null && nextAgreement?.homeowner !== ""
+            ? String(nextAgreement.homeowner)
+            : "",
+        selected_template: null,
+        selected_template_id: null,
+        selected_template_name_snapshot: "",
+        project_template_id: null,
+        template_id: null,
+        agreement_mode: nextAgreement?.agreement_mode ?? "standard",
+        recurring_service_enabled: false,
+        recurrence_pattern: "",
+        recurrence_interval: "1",
+        recurrence_start_date: "",
+        recurrence_end_date: "",
+        next_occurrence_date: "",
+        maintenance_status: "active",
+        auto_generate_next_occurrence: false,
+        service_window_notes: "",
+        recurring_summary_label: "",
+        payment_structure:
+          normalizePaymentStructure(nextAgreement?.payment_structure) || "simple",
+        retainage_percent:
+          nextAgreement?.retainage_percent != null
+            ? String(nextAgreement.retainage_percent)
+            : "0.00",
+        address_line1: "",
+        address_line2: "",
+        address_city: "",
+        address_state: "",
+        address_postal_code: "",
+      }));
+
+      setSelectedTemplateId(null);
+      setTemplateSearch("");
+      setAiPreview("");
+      setAiErr("");
+      setAiMilestonePreview("");
+      setAddrSearch("");
+      setSelectedCustomer(null);
+      setCustomerAddrMissing(null);
+      setShowQuickAdd(false);
+      setShowResetStep1Confirm(false);
+      clearStep1SessionState();
+      setStartMode("manual");
+      setStartModeCommitted(false);
+      setStartModeSource("session");
+
+      toast.success("Form reset. Choose how you want to start again.");
+
+      if (typeof refreshAgreement === "function") {
+        await refreshAgreement();
+      }
+    } catch (e) {
+      toast.error(formatApiError(e, "Could not reset this draft."));
+    }
   }
 
   async function handleUpdateTemplateDays(templateId, payload = {}) {
@@ -1263,6 +1330,21 @@ export default function Step1Details({
       : startMode === "template"
       ? "Use a template as the starting point, then review and edit the agreement details below."
       : "Fill in the setup details directly, with AI and templates still available if you want help later.";
+  const canResetStep1 =
+    Boolean(agreementId) &&
+    !locked &&
+    String(agreement?.status || "").toLowerCase() === "draft";
+  const hasResettableStep1State =
+    Boolean(appliedTemplateId) ||
+    Boolean(safeTrim(dLocal?.project_title)) ||
+    Boolean(safeTrim(dLocal?.project_type)) ||
+    Boolean(safeTrim(dLocal?.project_subtype)) ||
+    Boolean(safeTrim(dLocal?.description)) ||
+    Boolean(dLocal?.homeowner) ||
+    Boolean(safeTrim(dLocal?.address_line1)) ||
+    Boolean(safeTrim(dLocal?.address_city)) ||
+    paymentStructure !== "simple" ||
+    safeTrim(dLocal?.agreement_mode) === "maintenance";
   const shouldDeemphasizeManualReview = startModeCommitted && startMode !== "manual";
   const supportSectionClass = shouldDeemphasizeManualReview
     ? "border-slate-200 bg-slate-50/40 shadow-none"
@@ -1430,14 +1512,26 @@ export default function Step1Details({
                   </div>
                   <div className="mt-1 text-sm text-slate-600">{activeStartModeSummary}</div>
                 </div>
-                <button
-                  type="button"
-                  data-testid="step1-change-start-mode"
-                  onClick={reopenStartModeChooser}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Change start mode
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  {canResetStep1 && hasResettableStep1State ? (
+                    <button
+                      type="button"
+                      data-testid="step1-reset-form-button"
+                      onClick={() => setShowResetStep1Confirm(true)}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Reset form
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    data-testid="step1-change-start-mode"
+                    onClick={reopenStartModeChooser}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Change start mode
+                  </button>
+                </div>
               </div>
             </div>
           ) : (
@@ -1487,6 +1581,36 @@ export default function Step1Details({
             </div>
           )}
         </section>
+
+        {showResetStep1Confirm && canResetStep1 ? (
+          <div
+            data-testid="step1-reset-form-confirm"
+            className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-900"
+          >
+            <div className="font-semibold">Start over?</div>
+            <div className="mt-1 text-sm text-rose-900/90">
+              This will clear your current setup so you can begin again.
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                data-testid="step1-reset-form-confirm-button"
+                onClick={handleResetStep1Setup}
+                className="rounded-xl bg-rose-600 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-700"
+              >
+                Reset
+              </button>
+              <button
+                type="button"
+                data-testid="step1-reset-form-cancel-button"
+                onClick={() => setShowResetStep1Confirm(false)}
+                className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-800 hover:bg-rose-100"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <section
           className={`rounded-2xl border shadow-sm ${
@@ -1573,7 +1697,6 @@ export default function Step1Details({
               setAutoSchedule={setAutoSchedule}
               showProjectFields={false}
               appliedTemplateId={appliedTemplateId}
-              onDeselectAppliedTemplate={handleDeselectAppliedTemplate}
               onTemplateApplied={handleTemplateApplied}
             />
           </div>
