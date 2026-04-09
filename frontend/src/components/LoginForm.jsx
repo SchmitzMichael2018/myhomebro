@@ -127,6 +127,7 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
         ref={emailRef}
         type="email"
         name="email"
+        data-testid="login-email-input"
         value={form.email}
         onChange={onChange}
         placeholder="Email"
@@ -138,6 +139,7 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
         <input
           type={showPw ? "text" : "password"}
           name="password"
+          data-testid="login-password-input"
           value={form.password}
           onChange={onChange}
           placeholder="Password"
@@ -177,6 +179,7 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
 
       <button
         type="submit"
+        data-testid="login-submit-button"
         disabled={loading}
         className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition"
       >

@@ -14,7 +14,9 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --project=chromium --headed",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:report": "playwright show-report playwright-report"
+    "test:e2e:report": "playwright show-report playwright-report",
+    "test:e2e:local-integrated": "playwright test -c playwright.local-auth.config.js",
+    "test:e2e:local-integrated:headed": "playwright test -c playwright.local-auth.config.js --project=chromium-live --headed"
   },
   "dependencies": {
     "@fullcalendar/core": "6.1.19",

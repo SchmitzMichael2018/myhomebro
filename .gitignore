@@ -15,6 +15,7 @@ backend/.env.local
 frontend/node_modules/
 node_modules/
 frontend/dist/
+frontend/playwright/.auth/
 
 # Django static output
 staticfiles/

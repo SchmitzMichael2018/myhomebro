@@ -3067,12 +3067,13 @@ export default function Step1Details({
                       </button>
                     ) : null}
                   </div>
-                  <select
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                    name="project_type"
-                    value={dLocal.project_type || ""}
-                    onChange={locked ? undefined : handleStep1LocalChange}
-                    disabled={locked}
+                    <select
+                      data-testid="agreement-project-type-select"
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+                      name="project_type"
+                      value={dLocal.project_type || ""}
+                      onChange={locked ? undefined : handleStep1LocalChange}
+                      disabled={locked}
                   >
                     <option value="">— Select Type —</option>
                     {augmentedProjectTypeOptions.map((t) => (
@@ -3115,12 +3116,13 @@ export default function Step1Details({
                       </button>
                     ) : null}
                   </div>
-                  <select
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 disabled:bg-slate-100 disabled:text-slate-500"
-                    name="project_subtype"
-                    value={dLocal.project_subtype || ""}
-                    onChange={locked ? undefined : handleStep1LocalChange}
-                    disabled={locked || !safeTrim(dLocal.project_type)}
+                    <select
+                      data-testid="agreement-project-subtype-select"
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 disabled:bg-slate-100 disabled:text-slate-500"
+                      name="project_subtype"
+                      value={dLocal.project_subtype || ""}
+                      onChange={locked ? undefined : handleStep1LocalChange}
+                      disabled={locked || !safeTrim(dLocal.project_type)}
                   >
                     <option value="">
                       {safeTrim(dLocal.project_type) ? "— Select Subtype —" : "Select Type first"}
