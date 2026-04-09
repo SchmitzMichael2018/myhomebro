@@ -565,6 +565,117 @@ function buildMilestonePricingSignature(rows = []) {
   );
 }
 
+function normalizeMilestoneDraftKey(value) {
+  return safeStr(value).toLowerCase();
+}
+
+function buildDefaultMilestoneAmounts(count, totalBudget) {
+  const safeCount = Math.max(1, Number(count || 0));
+  const normalizedTotal = Number(totalBudget);
+  const fallbackTotal = normalizedTotal > 0 ? normalizedTotal : safeCount <= 4 ? 4000 : 6000;
+  const weightSets = {
+    4: [0.2, 0.35, 0.3, 0.15],
+    5: [0.12, 0.18, 0.28, 0.26, 0.16],
+    6: [0.1, 0.15, 0.2, 0.2, 0.2, 0.15],
+    7: [0.08, 0.12, 0.16, 0.18, 0.18, 0.16, 0.12],
+  };
+  const weights = weightSets[safeCount] || Array.from({ length: safeCount }, () => 1 / safeCount);
+  let allocated = 0;
+  return weights.map((weight, idx) => {
+    if (idx === weights.length - 1) {
+      return Number((fallbackTotal - allocated).toFixed(2));
+    }
+    const next = Number((fallbackTotal * weight).toFixed(2));
+    allocated += next;
+    return next;
+  });
+}
+
+function buildStep2AutoMilestoneDraft({ projectType = "", projectSubtype = "", description = "", totalBudget = 0 }) {
+  const typeKey = normalizeMilestoneDraftKey(projectType);
+  const subtypeKey = normalizeMilestoneDraftKey(projectSubtype);
+  const text = `${subtypeKey} ${normalizeMilestoneDraftKey(description)}`;
+
+  let rows = [];
+
+  if (subtypeKey.includes("kitchen remodel")) {
+    rows = [
+      { title: "Planning & protection", description: "Confirm selections, protect adjacent areas, and stage materials." },
+      { title: "Demolition & rough-in", description: "Remove existing finishes and complete rough adjustments for the new layout." },
+      { title: "Cabinets & surfaces", description: "Install cabinetry, countertops, and major kitchen surfaces." },
+      { title: "Fixtures & appliances", description: "Set fixtures, connect appliances, and complete trim details." },
+      { title: "Punch list & walkthrough", description: "Finish punch items, final cleanup, and customer walkthrough." },
+    ];
+  } else if (subtypeKey.includes("bathroom remodel")) {
+    rows = [
+      { title: "Protection & demolition", description: "Protect nearby finishes and remove existing bathroom components." },
+      { title: "Rough plumbing & electrical", description: "Complete rough adjustments needed for the updated bathroom layout." },
+      { title: "Walls, waterproofing & tile", description: "Prep surfaces, waterproof wet areas, and install tile finishes." },
+      { title: "Vanity, fixtures & trim", description: "Install vanity, fixtures, accessories, and finish details." },
+      { title: "Final cleanup & walkthrough", description: "Complete punch work, cleanup, and final customer review." },
+    ];
+  } else if (subtypeKey.includes("cabinet installation")) {
+    rows = [
+      { title: "Measurements & prep", description: "Confirm cabinet layout, site readiness, and delivery staging." },
+      { title: "Cabinet installation", description: "Install and secure new cabinets in the planned configuration." },
+      { title: "Hardware & adjustments", description: "Align doors and drawers, install hardware, and complete trim adjustments." },
+      { title: "Final walkthrough", description: "Review fit and finish, cleanup, and confirm punch items with the customer." },
+    ];
+  } else if (subtypeKey.includes("countertop installation")) {
+    rows = [
+      { title: "Template & prep", description: "Confirm measurements, protect work areas, and prep cabinet surfaces." },
+      { title: "Countertop installation", description: "Install countertops, seams, and edge details." },
+      { title: "Sink & fixture reconnect", description: "Reconnect sink and finish related countertop details." },
+      { title: "Cleanup & walkthrough", description: "Complete cleanup, seal where needed, and review the finished install." },
+    ];
+  } else if (subtypeKey.includes("appliance installation")) {
+    rows = [
+      { title: "Delivery & staging", description: "Stage appliances, verify openings, and prep the install area." },
+      { title: "Installation", description: "Set appliances in place and complete all required connections." },
+      { title: "Testing & adjustments", description: "Test operation, fine tune fit, and complete any adjustments." },
+      { title: "Cleanup & customer review", description: "Clean the area and review operation and handoff details with the customer." },
+    ];
+  } else if (subtypeKey.includes("roof replacement") || typeKey.includes("roof")) {
+    rows = [
+      { title: "Protection & tear-off", description: "Protect the site and remove existing roofing materials." },
+      { title: "Decking & prep", description: "Inspect decking, complete repairs, and prep the roof system." },
+      { title: "Roof system installation", description: "Install underlayment, roofing materials, and required flashings." },
+      { title: "Cleanup & final review", description: "Complete cleanup, magnetic sweep, and final walkthrough." },
+    ];
+  } else if (typeKey.includes("floor")) {
+    rows = [
+      { title: "Prep & materials", description: "Confirm material staging and prepare the work areas." },
+      { title: "Surface preparation", description: "Demo or prep the substrate for the new flooring system." },
+      { title: "Flooring installation", description: "Install flooring materials and transitions." },
+      { title: "Trim & cleanup", description: "Complete trim details, cleanup, and final walkthrough." },
+    ];
+  } else {
+    const limitedScope =
+      /\binstall(ation)?\b/.test(text) &&
+      !/\b(remodel|renovation|addition)\b/.test(text);
+    rows = limitedScope
+      ? [
+          { title: "Prep & materials", description: "Confirm scope, stage materials, and prep the work area." },
+          { title: "Primary installation", description: "Complete the core installation or replacement work." },
+          { title: "Adjustments & finish", description: "Make adjustments, complete finish details, and test where needed." },
+          { title: "Cleanup & walkthrough", description: "Clean the site and review the finished work with the customer." },
+        ]
+      : [
+          { title: "Planning & prep", description: "Confirm scope, materials, and site readiness for the project." },
+          { title: "Core work phase 1", description: "Begin the main work and complete the first major phase." },
+          { title: "Core work phase 2", description: "Continue the main work and complete the next major phase." },
+          { title: "Finish work", description: "Complete finish details, punch items, and final quality checks." },
+          { title: "Cleanup & handoff", description: "Complete cleanup and customer walkthrough before closeout." },
+        ];
+  }
+
+  const amounts = buildDefaultMilestoneAmounts(rows.length, totalBudget);
+  return rows.map((row, idx) => ({
+    ...row,
+    amount: amounts[idx],
+  }));
+}
+
 export default function Step2Milestones({
   agreementId,
   milestones,
@@ -673,6 +784,9 @@ export default function Step2Milestones({
   const [estimateBanner, setEstimateBanner] = useState("");
   const [assistantApplyingMilestones, setAssistantApplyingMilestones] = useState(false);
   const [aiChangeSummary, setAiChangeSummary] = useState("");
+  const [autoDraftBusy, setAutoDraftBusy] = useState(false);
+  const [autoDraftBanner, setAutoDraftBanner] = useState("");
+  const [aiSuggestedMilestoneIds, setAiSuggestedMilestoneIds] = useState([]);
   const { highlights: aiHighlights, markUpdated: markAiUpdated } = useAiFieldHighlights({
     durationMs: 5000,
   });
@@ -681,10 +795,16 @@ export default function Step2Milestones({
   const pricingFreshSignatureRef = useRef("");
   const didInitPricingSignatureRef = useRef(false);
   const estimateAutoLoadSignatureRef = useRef("");
+  const autoDraftAttemptedRef = useRef(false);
+  const milestoneUserModifiedRef = useRef(false);
 
   const effectiveMilestones = useMemo(() => {
     return Array.isArray(fallbackMilestones) ? fallbackMilestones : Array.isArray(milestones) ? milestones : [];
   }, [fallbackMilestones, milestones]);
+  const milestoneUserModifiedKey = useMemo(
+    () => `mhb_step2_user_modified_${agreementId || "new"}`,
+    [agreementId]
+  );
   const pricingReviewState = useMemo(() => {
     const changed = effectiveMilestones
       .map((row, idx) => {
@@ -828,6 +948,14 @@ export default function Step2Milestones({
   }, [milestones]);
 
   useEffect(() => {
+    try {
+      milestoneUserModifiedRef.current = sessionStorage.getItem(milestoneUserModifiedKey) === "1";
+    } catch {
+      milestoneUserModifiedRef.current = false;
+    }
+  }, [milestoneUserModifiedKey]);
+
+  useEffect(() => {
     if (!Array.isArray(stagedSuggestedMilestoneIds) || !stagedSuggestedMilestoneIds.length) return;
     if (hasStagedSuggestedAmountChanges) return;
     setStagedSuggestedMilestoneIds([]);
@@ -913,6 +1041,15 @@ export default function Step2Milestones({
 
       return base;
     });
+  }
+
+  function markMilestonesUserModified() {
+    milestoneUserModifiedRef.current = true;
+    try {
+      sessionStorage.setItem(milestoneUserModifiedKey, "1");
+    } catch {
+      // ignore
+    }
   }
 
   const refreshAgreementMeta = useCallback(async () => {
@@ -1682,6 +1819,7 @@ export default function Step2Milestones({
 
     try {
       const result = await saveMilestone(mLocal);
+      markMilestonesUserModified();
       if (result?.refreshed === false) {
         applyLocalMilestoneFallback("create", result?.milestone);
       }
@@ -1715,6 +1853,7 @@ export default function Step2Milestones({
 
       try {
         const result = await saveMilestone({ ...overlapConfirm.data, allow_overlap: true });
+        markMilestonesUserModified();
         if (result?.refreshed === false) {
           applyLocalMilestoneFallback("create", result?.milestone);
         }
@@ -1749,6 +1888,7 @@ export default function Step2Milestones({
           amount: Number(d.amount),
           allow_overlap: true,
         });
+        markMilestonesUserModified();
         if (result?.refreshed === false) {
           applyLocalMilestoneFallback("update", result?.milestone);
         }
@@ -1777,6 +1917,7 @@ export default function Step2Milestones({
     }
     try {
       const result = await deleteMilestone(id);
+      markMilestonesUserModified();
       if (result?.refreshed === false) {
         applyLocalMilestoneFallback("delete", result?.milestoneId ?? id);
       }
@@ -1870,6 +2011,7 @@ export default function Step2Milestones({
         completion_date: editForm.completion_date || null,
         amount: Number(editForm.amount),
       });
+      markMilestonesUserModified();
       if (result?.refreshed === false) {
         applyLocalMilestoneFallback("update", result?.milestone);
       }
@@ -2044,6 +2186,79 @@ export default function Step2Milestones({
     }
     if (typeof onBack === "function") onBack();
   }
+
+  useEffect(() => {
+    if (!agreementId) return;
+    if (autoDraftAttemptedRef.current) return;
+    if (autoDraftBusy) return;
+    if (milestonesLocked || templateApplied) return;
+    if (!agreementMeta) return;
+    if (effectiveMilestones.length > 0) return;
+    if (milestoneUserModifiedRef.current || isCreateDraftDirty) return;
+
+    const projectSubtype = safeStr(agreementMeta?.project_subtype);
+    const projectType = safeStr(agreementMeta?.project_type);
+    const description = safeStr(agreementMeta?.description || agreementMeta?.project_description);
+    if (!projectSubtype && !projectType && !description) return;
+
+    autoDraftAttemptedRef.current = true;
+
+    (async () => {
+      setAutoDraftBusy(true);
+      try {
+        const draftRows = buildStep2AutoMilestoneDraft({
+          projectSubtype,
+          projectType,
+          description,
+          totalBudget:
+            agreementMeta?.display_total ??
+            agreementMeta?.total ??
+            agreementMeta?.amount ??
+            agreementMeta?.total_cost ??
+            0,
+        });
+        const createdIds = [];
+        for (const row of draftRows) {
+          const result = await saveMilestone({
+            title: row.title,
+            description: row.description,
+            amount: row.amount,
+            start_date: "",
+            completion_date: "",
+          });
+          const createdId = result?.milestone?.id ?? null;
+          if (createdId != null) createdIds.push(createdId);
+          if (result?.refreshed === false) {
+            applyLocalMilestoneFallback("create", result?.milestone);
+          }
+        }
+        if (createdIds.length) {
+          setAiSuggestedMilestoneIds(createdIds);
+          markAiUpdated(createdIds.map((id) => `milestone:${id}`));
+        }
+        const feedback = "AI drafted your milestones — review and adjust as needed.";
+        setAutoDraftBanner(feedback);
+        setAiChangeSummary(feedback);
+        onAiUpdateFeedback(feedback);
+        await refreshMilestonesSafe();
+      } catch (err) {
+        console.warn("Step2 auto milestone draft failed:", err);
+      } finally {
+        setAutoDraftBusy(false);
+      }
+    })();
+  }, [
+    agreementId,
+    agreementMeta,
+    autoDraftBusy,
+    effectiveMilestones.length,
+    isCreateDraftDirty,
+    markAiUpdated,
+    milestonesLocked,
+    onAiUpdateFeedback,
+    saveMilestone,
+    templateApplied,
+  ]);
 
   const assistantContext = useMemo(
     () => ({
@@ -2299,6 +2514,16 @@ export default function Step2Milestones({
         <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <div className="font-semibold">AI updated milestone work</div>
           <div className="mt-1 text-xs text-amber-800">{aiChangeSummary}</div>
+        </div>
+      ) : null}
+
+      {autoDraftBanner ? (
+        <div
+          data-testid="step2-ai-autodraft-banner"
+          className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900"
+        >
+          <div className="font-semibold">AI drafted your milestones</div>
+          <div className="mt-1 text-xs text-sky-800">Review and adjust as needed.</div>
         </div>
       ) : null}
 
@@ -3006,6 +3231,7 @@ export default function Step2Milestones({
             {effectiveMilestones.map((m, idx) => {
               const estimate = getEstimateAssistMeta(m);
               const aiHighlight = m?.id != null ? aiHighlights[`milestone:${m.id}`] : null;
+              const isAiSuggested = m?.id != null && aiSuggestedMilestoneIds.includes(m.id);
               return (
                 <tr
                   key={m.id || `${m.title}-${idx}`}
@@ -3016,6 +3242,16 @@ export default function Step2Milestones({
 
                   <td className="px-3 py-2">
                     <div>{m.title || "—"}</div>
+                    {isAiSuggested ? (
+                      <div className="mt-1">
+                        <span
+                          data-testid={`step2-milestone-ai-indicator-${m.id || idx + 1}`}
+                          className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800"
+                        >
+                          AI suggested
+                        </span>
+                      </div>
+                    ) : null}
                     {estimate.type ? (
                       <div className="mt-1">
                         <span className="rounded bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700">

@@ -26,6 +26,175 @@ function installRouteState(page, matcher, userState) {
   );
 }
 
+async function installWizardAuthRoutes(page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        onboarding_status: 'not_started',
+        connected: false,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/homeowners**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, company_name: 'Demo Customer', full_name: 'Jordan Demo' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractors/me/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 77,
+        ai: { access: 'included', enabled: true, unlimited: true },
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+}
+
+async function installStep2AutoDraftRoutes(
+  page,
+  { agreement, projectTypes, projectSubtypes, milestoneState }
+) {
+  await installWizardAuthRoutes(page);
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: projectTypes }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: projectSubtypes }),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${agreement.id}/?(\\?.*)?$`),
+    async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET' || request.method() === 'PATCH') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+
+      await route.fallback();
+    }
+  );
+
+  await page.route(/\/api\/projects\/milestones\/?(\?.*)?$/, async (route) => {
+    const request = route.request();
+
+    if (request.method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ results: milestoneState.items }),
+      });
+      return;
+    }
+
+    if (request.method() === 'POST') {
+      const payload = request.postDataJSON();
+      milestoneState.createCount += 1;
+      const created = {
+        id: milestoneState.nextId++,
+        agreement: agreement.id,
+        order: milestoneState.items.length + 1,
+        title: payload.title,
+        description: payload.description || '',
+        amount: payload.amount,
+        start_date: payload.start_date || null,
+        completion_date: payload.completion_date || null,
+      };
+      milestoneState.items = [...milestoneState.items, created];
+
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify(created),
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+
+  await page.route(/\/api\/projects\/milestones\/\d+\/?(\?.*)?$/, async (route) => {
+    const request = route.request();
+    const match = request.url().match(/\/api\/projects\/milestones\/(\d+)\/?(\?.*)?$/);
+    const milestoneId = Number(match?.[1]);
+    const index = milestoneState.items.findIndex((item) => item.id === milestoneId);
+
+    if (request.method() === 'PATCH' && index >= 0) {
+      const payload = request.postDataJSON();
+      milestoneState.items[index] = {
+        ...milestoneState.items[index],
+        ...payload,
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(milestoneState.items[index]),
+      });
+      return;
+    }
+
+    if (request.method() === 'DELETE') {
+      milestoneState.items = milestoneState.items.filter((item) => item.id !== milestoneId);
+      await route.fulfill({
+        status: 204,
+        body: '',
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+}
+
 test('agreement wizard step 1 renders and draft creation route is reachable', async ({
   page,
 }) => {
@@ -1567,6 +1736,184 @@ test('agreement wizard step 2 AI can recommend saving a reusable template and op
   await expect(
     page.getByPlaceholder('e.g., My Standard Roofing Template')
   ).toBeVisible();
+});
+
+test('agreement wizard step 2 auto-drafts multi-phase milestones for kitchen remodel projects', async ({
+  page,
+}) => {
+  const agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Kitchen Remodel',
+    title: 'Kitchen Remodel',
+    project_type: 'Remodel',
+    project_subtype: 'Kitchen Remodel',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description:
+      'Full kitchen remodel with demolition, cabinet replacement, countertop installation, appliance reconnects, plumbing, electrical, and finish work.',
+    homeowner: null,
+    status: 'draft',
+    compliance_warning: {
+      warning_level: 'none',
+      message: '',
+    },
+  };
+
+  const milestoneState = {
+    items: [],
+    nextId: 900,
+    createCount: 0,
+  };
+
+  await installStep2AutoDraftRoutes(page, {
+    agreement,
+    projectTypes: [{ id: 7, value: 'Remodel', label: 'Remodel', owner_type: 'system' }],
+    projectSubtypes: [
+      {
+        id: 18,
+        value: 'Kitchen Remodel',
+        label: 'Kitchen Remodel',
+        owner_type: 'system',
+        project_type: 'Remodel',
+      },
+    ],
+    milestoneState,
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step2-ai-autodraft-banner')).toBeVisible();
+  await expect(page.getByText('Planning & protection')).toBeVisible();
+  await expect(page.getByText('Demolition & rough-in')).toBeVisible();
+  await expect(page.getByText('Cabinets & surfaces')).toBeVisible();
+  await expect(page.getByText('Punch list & walkthrough')).toBeVisible();
+  await expect(page.locator('[data-testid^="step2-milestone-ai-indicator-"]')).toHaveCount(5);
+  await expect.poll(() => milestoneState.createCount).toBe(5);
+});
+
+test('agreement wizard step 2 auto-drafts focused install milestones for cabinet installation projects', async ({
+  page,
+}) => {
+  const agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Cabinet Installation',
+    title: 'Cabinet Installation',
+    project_type: 'Cabinetry',
+    project_subtype: 'Cabinet Installation',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description:
+      'Install new kitchen cabinets and hardware with minor trim adjustments and final fit checks.',
+    homeowner: null,
+    status: 'draft',
+    compliance_warning: {
+      warning_level: 'none',
+      message: '',
+    },
+  };
+
+  const milestoneState = {
+    items: [],
+    nextId: 950,
+    createCount: 0,
+  };
+
+  await installStep2AutoDraftRoutes(page, {
+    agreement,
+    projectTypes: [{ id: 9, value: 'Cabinetry', label: 'Cabinetry', owner_type: 'system' }],
+    projectSubtypes: [
+      {
+        id: 19,
+        value: 'Cabinet Installation',
+        label: 'Cabinet Installation',
+        owner_type: 'system',
+        project_type: 'Cabinetry',
+      },
+    ],
+    milestoneState,
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step2-ai-autodraft-banner')).toBeVisible();
+  await expect(page.getByText('Measurements & prep')).toBeVisible();
+  await expect(page.locator('tbody').getByText('Cabinet installation', { exact: true })).toBeVisible();
+  await expect(page.getByText('Hardware & adjustments')).toBeVisible();
+  await expect(page.getByText('Final walkthrough')).toBeVisible();
+  await expect(page.getByText('Demolition & rough-in')).toHaveCount(0);
+  await expect(page.locator('[data-testid^="step2-milestone-ai-indicator-"]')).toHaveCount(4);
+  await expect.poll(() => milestoneState.createCount).toBe(4);
+});
+
+test('agreement wizard step 2 does not overwrite milestones after the user edits them', async ({
+  page,
+}) => {
+  const agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Kitchen Remodel',
+    title: 'Kitchen Remodel',
+    project_type: 'Remodel',
+    project_subtype: 'Kitchen Remodel',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description:
+      'Full kitchen remodel with demolition, cabinet replacement, countertop installation, appliance reconnects, plumbing, electrical, and finish work.',
+    homeowner: null,
+    status: 'draft',
+    compliance_warning: {
+      warning_level: 'none',
+      message: '',
+    },
+  };
+
+  const milestoneState = {
+    items: [],
+    nextId: 980,
+    createCount: 0,
+  };
+
+  await installStep2AutoDraftRoutes(page, {
+    agreement,
+    projectTypes: [{ id: 7, value: 'Remodel', label: 'Remodel', owner_type: 'system' }],
+    projectSubtypes: [
+      {
+        id: 18,
+        value: 'Kitchen Remodel',
+        label: 'Kitchen Remodel',
+        owner_type: 'system',
+        project_type: 'Remodel',
+      },
+    ],
+    milestoneState,
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByText('Planning & protection')).toBeVisible();
+  await expect.poll(() => milestoneState.createCount).toBe(5);
+
+  await page.getByRole('button', { name: 'Edit' }).first().click();
+  const editModal = page.locator('div.fixed.inset-0').last();
+  await expect(editModal.getByText('Edit Milestone')).toBeVisible();
+  await editModal.locator('input').first().fill('Custom planning milestone');
+  await editModal.getByRole('button', { name: 'Save Changes' }).click();
+
+  await expect(page.getByText('Custom planning milestone')).toBeVisible();
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByText('Custom planning milestone')).toBeVisible();
+  await expect(page.getByTestId('step2-ai-autodraft-banner')).toHaveCount(0);
+  await expect.poll(() => milestoneState.createCount).toBe(5);
 });
 
 test('maintenance agreement fields render in step 1 and recurring summary appears in step 2', async ({
