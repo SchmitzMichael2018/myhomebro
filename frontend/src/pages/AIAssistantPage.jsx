@@ -422,7 +422,10 @@ export default function AIAssistantPage() {
     >
       <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 pb-10 pt-6 sm:px-6 lg:px-8">
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">
-          <div className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm md:p-8">
+          <div
+            className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm md:p-8"
+            data-testid="ai-workspace-hero"
+          >
             <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#52749a]">
               AI Workspace
             </div>
@@ -489,7 +492,10 @@ export default function AIAssistantPage() {
             </form>
           </div>
 
-          <div className="rounded-[32px] border border-slate-900/10 bg-[linear-gradient(160deg,#0f172a_0%,#163B70_60%,#1f5fa8_100%)] p-6 text-white shadow-sm md:p-8">
+          <div
+            className="rounded-[32px] border border-slate-900/10 bg-[linear-gradient(160deg,#0f172a_0%,#163B70_60%,#1f5fa8_100%)] p-6 text-white shadow-sm md:p-8"
+            data-testid="ai-workspace-summary"
+          >
             <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-100">
               <Sparkles className="h-3.5 w-3.5" />
               What This Does
@@ -515,7 +521,7 @@ export default function AIAssistantPage() {
           </div>
         </section>
 
-        <section>
+        <section data-testid="ai-workspace-quick-actions">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
               Quick Actions
@@ -540,7 +546,7 @@ export default function AIAssistantPage() {
           </div>
         </section>
 
-        <section>
+        <section data-testid="ai-workspace-suggested">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
               Suggested For You
@@ -579,7 +585,7 @@ export default function AIAssistantPage() {
           </div>
         </section>
 
-        <section>
+        <section data-testid="ai-workspace-recent-work">
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
@@ -653,7 +659,7 @@ export default function AIAssistantPage() {
           </div>
         </section>
 
-        <section>
+        <section data-testid="ai-workspace-popular-templates">
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
@@ -694,7 +700,10 @@ export default function AIAssistantPage() {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-slate-200 bg-[#f8fafc] px-6 py-5 shadow-sm">
+        <section
+          className="rounded-3xl border border-slate-200 bg-[#f8fafc] px-6 py-5 shadow-sm"
+          data-testid="ai-workspace-footer"
+        >
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="text-lg font-semibold text-slate-900">
