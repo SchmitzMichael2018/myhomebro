@@ -490,6 +490,152 @@ test('agreement wizard step 1 switches into guided ai mode instead of leaving al
   await expect(page.getByTestId('step1-start-mode-chooser')).toBeVisible();
 });
 
+test('agreement wizard step 1 shows subtype clarifications, saves answers, and allows skipping', async ({
+  page,
+}) => {
+  let agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Kitchen Refresh',
+    title: 'Kitchen Refresh',
+    project_type: 'Remodel',
+    project_subtype: 'Kitchen Remodel',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description: 'Refresh the kitchen with updated finishes and fixtures.',
+    homeowner: null,
+    status: 'draft',
+    ai_scope: {
+      answers: {},
+    },
+    compliance_warning: {
+      warning_level: 'none',
+      message: '',
+    },
+  };
+  const patchPayloads = [];
+
+  await installWizardAuthRoutes(page);
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, value: 'Remodel', label: 'Remodel', owner_type: 'system' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 11,
+            value: 'Kitchen Remodel',
+            label: 'Kitchen Remodel',
+            owner_type: 'system',
+            project_type: 'Remodel',
+          },
+          {
+            id: 12,
+            value: 'Bathroom Remodel',
+            label: 'Bathroom Remodel',
+            owner_type: 'system',
+            project_type: 'Remodel',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`),
+    async (route) => {
+      const request = route.request();
+
+      if (request.method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+
+      if (request.method() === 'PATCH') {
+        const payload = request.postDataJSON();
+        patchPayloads.push(payload);
+        agreement = {
+          ...agreement,
+          ...payload,
+          ai_scope: {
+            ...(agreement.ai_scope || {}),
+            answers: {
+              ...((agreement.ai_scope && agreement.ai_scope.answers) || {}),
+              ...(payload.scope_clarifications || {}),
+            },
+          },
+        };
+
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+
+      await route.fallback();
+    }
+  );
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('agreement-clarification-section')).toBeVisible();
+  await expect(page.getByTestId('agreement-clarification-question-layout_changes')).toContainText(
+    'Does the kitchen layout or appliance placement change?'
+  );
+  await expect(page.getByTestId('agreement-clarification-question-cabinet_scope')).toContainText(
+    'Are cabinets included in the project scope?'
+  );
+
+  await page.getByTestId('agreement-clarification-layout_changes-yes').click();
+  await page
+    .getByTestId('agreement-clarification-input-finish_scope_notes')
+    .fill('Cabinets, quartz countertops, backsplash, and pendant lighting');
+
+  await expect(page.getByTestId('agreement-clarification-summary')).toContainText(
+    'Does the kitchen layout or appliance placement change? Yes.'
+  );
+  await expect(page.getByTestId('agreement-clarification-summary')).toContainText(
+    'Cabinets, quartz countertops, backsplash, and pendant lighting'
+  );
+
+  await expect.poll(() =>
+    patchPayloads.some(
+      (payload) =>
+        payload.scope_clarifications?.layout_changes === 'yes' &&
+        payload.scope_clarifications?.finish_scope_notes ===
+          'Cabinets, quartz countertops, backsplash, and pendant lighting'
+    )
+  ).toBeTruthy();
+
+  await page.getByTestId('agreement-clarification-skip').click();
+  await expect(page.getByTestId('agreement-clarification-skipped')).toContainText(
+    'You can skip these for now and still keep moving'
+  );
+  await expect(page.getByTestId('agreement-save-draft-button')).toBeEnabled();
+
+  await page.getByTestId('agreement-clarification-skip').click();
+  await expect(page.getByTestId('agreement-clarification-question-layout_changes')).toBeVisible();
+});
+
 test('agreement wizard step 1 respects explicit mode switching when a template is already applied', async ({
   page,
 }) => {
