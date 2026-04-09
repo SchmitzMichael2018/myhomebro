@@ -1369,7 +1369,7 @@ export default function TemplatesPage() {
               <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-lg font-bold text-slate-900">
+                    <h2 data-testid="templates-detail-name" className="text-lg font-bold text-slate-900">
                       {safeTrim(currentHeader?.name) || "Untitled Template"}
                     </h2>
                     {!creatingNew ? (
@@ -1386,12 +1386,12 @@ export default function TemplatesPage() {
 
                   <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-600">
                     {safeTrim(currentHeader?.project_type) ? (
-                      <span className="rounded bg-slate-100 px-2 py-1">
+                      <span data-testid="templates-detail-type" className="rounded bg-slate-100 px-2 py-1">
                         {currentHeader.project_type}
                       </span>
                     ) : null}
                     {safeTrim(currentHeader?.project_subtype) ? (
-                      <span className="rounded bg-slate-100 px-2 py-1">
+                      <span data-testid="templates-detail-subtype" className="rounded bg-slate-100 px-2 py-1">
                         {currentHeader.project_subtype}
                       </span>
                     ) : null}
@@ -1720,7 +1720,11 @@ export default function TemplatesPage() {
                   ) : (
                     <div className="space-y-3">
                       {currentMilestones.map((m, idx) => (
-                        <div key={m?.id || `pm-${idx}`} className="rounded-lg border border-slate-200 bg-white p-3">
+                        <div
+                          key={m?.id || `pm-${idx}`}
+                          data-testid={`templates-preview-milestone-${idx + 1}`}
+                          className="rounded-lg border border-slate-200 bg-white p-3"
+                        >
                           <div className="text-sm font-semibold text-slate-900">
                             {idx + 1}. {m?.title || "Untitled milestone"}
                           </div>

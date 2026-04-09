@@ -556,6 +556,13 @@ function inferStartMode({
   return "manual";
 }
 
+function normalizeTemplateConfidenceLevel(value) {
+  const normalized = safeTrim(value).toLowerCase();
+  if (normalized === "high" || normalized === "recommended") return "high";
+  if (normalized === "medium" || normalized === "possible") return "medium";
+  return "low";
+}
+
 export default function Step1Details({
   agreement,
   isEdit,
@@ -1726,12 +1733,16 @@ export default function Step1Details({
     recommendedTemplateId,
     selectedTemplate,
   ]);
+  const aiCompactRecommendationConfidence = normalizeTemplateConfidenceLevel(
+    recommendationConfidence || "low"
+  );
   const shouldShowCompactTemplateRecommendation =
     startMode === "ai" &&
     !appliedTemplateId &&
     !dismissedAiTemplateRecommendation &&
     !aiSetupResult &&
-    Boolean(aiRecommendedTemplate?.id);
+    Boolean(aiRecommendedTemplate?.id) &&
+    aiCompactRecommendationConfidence !== "low";
   const shouldShowAppliedTemplateSummary =
     startMode !== "template" && Boolean(appliedTemplateId);
 
@@ -1954,7 +1965,9 @@ export default function Step1Details({
         recommendationData?.possible_match ||
         recommendationCandidates[0] ||
         null;
-      const confidence = String(recommendationData?.confidence || "none").toLowerCase();
+      const confidenceLevel = normalizeTemplateConfidenceLevel(
+        recommendationData?.confidence_level || recommendationData?.confidence || "low"
+      );
       const score = Number(
         recommendationData?.score ??
           recommendedTemplate?.score ??
@@ -1969,7 +1982,11 @@ export default function Step1Details({
           resolvedProjectSubtype.toLowerCase() && resolvedProjectSubtype;
       const strongMatch =
         Boolean(recommendedTemplate?.id) &&
-        (confidence === "recommended" || score >= 70 || (exactTypeMatch && exactSubtypeMatch));
+        (confidenceLevel === "high" || score >= 70 || (exactTypeMatch && exactSubtypeMatch));
+      const optionalMatch =
+        Boolean(recommendedTemplate?.id) &&
+        !strongMatch &&
+        (confidenceLevel === "medium" || score >= 50 || exactTypeMatch);
       const recommendationReason =
         safeTrim(recommendationData?.reason) ||
         (exactTypeMatch && exactSubtypeMatch
@@ -1981,6 +1998,17 @@ export default function Step1Details({
       if (strongMatch) {
         setAiSetupResult({
           kind: "template_match",
+          confidenceLevel: "high",
+          refinedDescription,
+          recommendedTemplate,
+          reason: recommendationReason,
+          setupFieldKeys,
+        });
+        queueProjectDetailsReview(["description", ...setupFieldKeys]);
+      } else if (optionalMatch) {
+        setAiSetupResult({
+          kind: "template_match",
+          confidenceLevel: "medium",
           refinedDescription,
           recommendedTemplate,
           reason: recommendationReason,
@@ -2346,17 +2374,25 @@ export default function Step1Details({
         !shouldShowCompactTemplateRecommendation ? (
           <div
             data-testid="assistant-template-preview-step1"
-            className="mb-3 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900"
+            className={`mb-3 rounded-md border px-4 py-3 text-sm ${
+              aiCompactRecommendationConfidence === "medium"
+                ? "border-amber-200 bg-amber-50 text-amber-900"
+                : "border-sky-200 bg-sky-50 text-sky-900"
+            }`}
           >
-            <div className="font-semibold">Recommended template</div>
+            <div className="font-semibold">
+              {aiCompactRecommendationConfidence === "medium"
+                ? "Optional template match"
+                : "Recommended template"}
+            </div>
             <div className="mt-1">{assistantTemplateRecommendations[0]?.name}</div>
             {assistantTemplateRecommendations[0]?.rank_reasons?.length ? (
-              <div className="mt-1 text-xs text-sky-800/90">
+              <div className={`mt-1 text-xs ${aiCompactRecommendationConfidence === "medium" ? "text-amber-800/90" : "text-sky-800/90"}`}>
                 {assistantTemplateRecommendations[0].rank_reasons.slice(0, 2).join(" • ")}
               </div>
             ) : null}
             {assistantTopTemplatePreview?.milestone_count ? (
-              <div className="mt-1 text-xs text-sky-800/90">
+              <div className={`mt-1 text-xs ${aiCompactRecommendationConfidence === "medium" ? "text-amber-800/90" : "text-sky-800/90"}`}>
                 Includes {assistantTopTemplatePreview.milestone_count} default milestone
                 {assistantTopTemplatePreview.milestone_count === 1 ? "" : "s"}.
               </div>
@@ -2560,16 +2596,33 @@ export default function Step1Details({
         {startMode === "ai" && aiSetupResult?.kind === "template_match" ? (
           <section
             data-testid="step1-ai-setup-result"
-            className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-5 shadow-sm"
+            className={`rounded-2xl border p-5 shadow-sm ${
+              aiSetupResult?.confidenceLevel === "medium"
+                ? "border-amber-200 bg-amber-50/80"
+                : "border-indigo-200 bg-indigo-50/70"
+            }`}
           >
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700">
-              Template recommendation
+            <div
+              className={`text-[11px] font-semibold uppercase tracking-[0.18em] ${
+                aiSetupResult?.confidenceLevel === "medium"
+                  ? "text-amber-700"
+                  : "text-indigo-700"
+              }`}
+            >
+              {aiSetupResult?.confidenceLevel === "medium"
+                ? "Optional template match"
+                : "Template recommendation"}
             </div>
             <div className="mt-2 text-base font-semibold text-slate-900">
-              {aiSetupResult.recommendedTemplate?.name || "Recommended template"}
+              {aiSetupResult.recommendedTemplate?.name ||
+                (aiSetupResult?.confidenceLevel === "medium"
+                  ? "Optional template match"
+                  : "Recommended template")}
             </div>
             <div className="mt-1 text-sm text-slate-700">
-              We refined the description first and found a strong template match for this setup.
+              {aiSetupResult?.confidenceLevel === "medium"
+                ? "We refined the description and found a template that could fit this project. Review it before you decide."
+                : "We refined the description first and found a strong template match for this setup."}
             </div>
             <div className="mt-2 rounded-xl border border-white/80 bg-white/80 px-4 py-3">
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -2583,7 +2636,9 @@ export default function Step1Details({
               {aiSetupResult.reason}
             </div>
             <div className="mt-2 text-xs text-slate-600">
-              The Project Details section below stays editable after you choose how to continue.
+              {aiSetupResult?.confidenceLevel === "medium"
+                ? "You can use this template if it fits, or continue with the refined description only. The Project Details section below stays editable either way."
+                : "The Project Details section below stays editable after you choose how to continue."}
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button

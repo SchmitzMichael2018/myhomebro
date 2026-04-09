@@ -41,15 +41,7 @@ function MatchBadge({ template, recommended, possible }) {
   if (possible || level === "medium") {
     return (
       <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
-        Possible
-      </span>
-    );
-  }
-
-  if (level === "weak") {
-    return (
-      <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
-        No strong match
+        Optional match
       </span>
     );
   }
@@ -589,7 +581,7 @@ export default function TemplateSearchSection({
                   const isPossible =
                     !isRecommended &&
                     (tpl?._matchLevel === "medium" ||
-                      recommendationConfidence === "possible");
+                      recommendationConfidence === "medium");
                   const isApplied =
                     String(effectiveAppliedTemplateId || "") ===
                     String(tpl.id || "");
@@ -603,9 +595,7 @@ export default function TemplateSearchSection({
                         template={tpl}
                         selected={String(selectedTemplateId || "") === String(tpl.id)}
                         applied={isApplied}
-                        recommended={
-                          isRecommended && recommendationConfidence !== "possible"
-                        }
+                        recommended={isRecommended && recommendationConfidence !== "medium"}
                         possible={isPossible}
                         onPick={handleTemplateResultPick}
                         locked={locked}
@@ -675,14 +665,14 @@ export default function TemplateSearchSection({
           templateRecommendationReason ? (
           <div
             className={`mt-3 rounded border px-3 py-2 text-xs ${
-              recommendationConfidence === "possible"
+              recommendationConfidence === "medium"
                 ? "border-amber-200 bg-amber-50 text-amber-800"
                 : "border-emerald-200 bg-emerald-50 text-emerald-800"
             }`}
           >
             <span className="font-semibold">
-              {recommendationConfidence === "possible"
-                ? "Possible"
+              {recommendationConfidence === "medium"
+                ? "Optional match"
                 : "Recommended"}
             </span>
             {templateRecommendationScore != null
@@ -690,8 +680,8 @@ export default function TemplateSearchSection({
               : ""}
             : {templateRecommendationReason}
             <div className="mt-2 text-[11px]">
-              {recommendationConfidence === "possible"
-                ? "Review this option first, then compare it with the alternatives below before applying."
+              {recommendationConfidence === "medium"
+                ? "This could help, but compare it with the other templates below before you apply it."
                 : "Use this template to carry the project into milestones, clarifications, and pricing faster."}
             </div>
           </div>
@@ -1000,7 +990,7 @@ export default function TemplateSearchSection({
                       Applied to Agreement
                     </span>
                   ) : selectedTemplateIsRecommended &&
-                    recommendationConfidence !== "possible" ? (
+                    recommendationConfidence !== "medium" ? (
                     <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
                       Recommended
                     </span>
@@ -1008,9 +998,9 @@ export default function TemplateSearchSection({
 
                   {!isTemplateApplied &&
                   (selectedTemplate?._matchLevel === "medium" ||
-                    recommendationConfidence === "possible") ? (
+                    recommendationConfidence === "medium") ? (
                     <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-                      Possible
+                      Optional match
                     </span>
                   ) : null}
                 </div>

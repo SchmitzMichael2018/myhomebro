@@ -28,7 +28,29 @@ def _tokens(text: str) -> set[str]:
 
 def _contains_phrase(text: str, phrases: list[str]) -> bool:
     base = _norm(text)
-    return any(_norm(p) and _norm(p) in base for p in phrases)
+    for phrase in phrases:
+        normalized = _norm(phrase)
+        if not normalized:
+            continue
+        pattern = r"(?<![a-z0-9])" + re.escape(normalized).replace(r"\ ", r"\s+") + r"(?![a-z0-9])"
+        if re.search(pattern, base):
+            return True
+    return False
+
+
+def _count_project_trade_groups(text: str) -> int:
+    groups = [
+        ["plumbing", "plumber", "water line", "drain"],
+        ["electrical", "electric", "lighting", "outlet", "switch"],
+        ["tile", "backsplash", "shower tile"],
+        ["cabinet", "cabinetry"],
+        ["countertop", "counter top", "stone top"],
+        ["fixture", "fixtures", "vanity", "toilet", "tub", "shower"],
+        ["flooring", "floor", "lvp", "laminate", "hardwood"],
+        ["paint", "painting", "primer"],
+        ["appliance", "dishwasher", "range", "microwave", "oven", "washer", "dryer"],
+    ]
+    return sum(1 for phrases in groups if _contains_phrase(text, phrases))
 
 
 def _meaningful_overlap(corpus_tokens: set[str], template_tokens: set[str]) -> set[str]:
@@ -65,6 +87,9 @@ def _meaningful_overlap(corpus_tokens: set[str], template_tokens: set[str]) -> s
         "general",
         "standard",
         "service",
+        "decking",
+        "utilities",
+        "utility",
     }
     return {
         t
@@ -75,6 +100,23 @@ def _meaningful_overlap(corpus_tokens: set[str], template_tokens: set[str]) -> s
 
 def _project_signals(text: str) -> dict[str, bool]:
     t = _norm(text)
+    trade_group_count = _count_project_trade_groups(t)
+    has_demo = _contains_phrase(t, ["demo", "demolition", "gut", "tear out", "tear-out"])
+    has_layout_change = _contains_phrase(
+        t,
+        ["layout change", "move wall", "wall removal", "reconfigure", "relocate"],
+    )
+    remodel_signal = _contains_phrase(
+        t,
+        [
+            "remodel",
+            "renovation",
+            "gut remodel",
+            "update bathroom",
+            "update kitchen",
+            "full remodel",
+        ],
+    )
 
     return {
         "addition": _contains_phrase(
@@ -94,17 +136,7 @@ def _project_signals(text: str) -> dict[str, bool]:
                 "new room",
             ],
         ),
-        "remodel": _contains_phrase(
-            t,
-            [
-                "remodel",
-                "renovation",
-                "gut remodel",
-                "update bathroom",
-                "update kitchen",
-                "full remodel",
-            ],
-        ),
+        "remodel": remodel_signal,
         "flooring": _contains_phrase(
             t,
             [
@@ -134,6 +166,12 @@ def _project_signals(text: str) -> dict[str, bool]:
             t,
             [
                 "deck",
+                "deck build",
+                "build deck",
+                "deck replacement",
+                "replace deck",
+                "new deck",
+                "composite deck",
                 "railing",
                 "joist",
                 "ledger board",
@@ -146,11 +184,18 @@ def _project_signals(text: str) -> dict[str, bool]:
             t,
             [
                 "roof",
+                "roof replacement",
                 "roofing",
                 "shingle",
                 "flashing",
                 "underlayment",
+                "tear off",
+                "tear-off",
+                "tearoff",
+                "asphalt shingle",
+                "architectural shingle",
                 "leak in roof",
+                "decking",
             ],
         ),
         "bathroom": _contains_phrase(
@@ -172,6 +217,51 @@ def _project_signals(text: str) -> dict[str, bool]:
                 "countertop",
                 "backsplash",
                 "island",
+            ],
+        ),
+        "cabinet": _contains_phrase(
+            t,
+            [
+                "cabinet installation",
+                "cabinet install",
+                "install cabinets",
+                "new cabinets",
+                "kitchen cabinets",
+                "bathroom vanity cabinets",
+                "cabinet replacement",
+                "replace cabinets",
+                "base cabinets",
+                "wall cabinets",
+                "cabinet doors",
+                "vanity install",
+            ],
+        ),
+        "countertop": _contains_phrase(
+            t,
+            [
+                "countertop installation",
+                "countertop install",
+                "new countertop",
+                "replace countertop",
+                "quartz countertop",
+                "granite countertop",
+                "counter top",
+            ],
+        ),
+        "appliance": _contains_phrase(
+            t,
+            [
+                "appliance installation",
+                "appliance install",
+                "install appliance",
+                "dishwasher",
+                "microwave",
+                "range",
+                "oven",
+                "cooktop",
+                "refrigerator",
+                "washer",
+                "dryer",
             ],
         ),
         "structural": _contains_phrase(
@@ -200,6 +290,8 @@ def _project_signals(text: str) -> dict[str, bool]:
                 "contractor assist",
             ],
         ),
+        "multi_trade": trade_group_count >= 3,
+        "full_scope": remodel_signal and (trade_group_count >= 3 or has_demo or has_layout_change),
     }
 
 
@@ -288,18 +380,70 @@ def _signal_bonus(template: ProjectTemplate, project_title: str, project_type: s
     for key, pts, label in [
         ("addition", 36, "addition context"),
         ("structural", 18, "structural context"),
-        ("bathroom", 20, "bathroom context"),
-        ("kitchen", 20, "kitchen context"),
-        ("deck", 20, "deck context"),
-        ("roofing", 20, "roofing context"),
-        ("flooring", 16, "flooring context"),
-        ("painting", 16, "painting context"),
+        ("bathroom", 12, "bathroom context"),
+        ("kitchen", 12, "kitchen context"),
+        ("deck", 12, "deck context"),
+        ("roofing", 12, "roofing context"),
+        ("flooring", 12, "flooring context"),
+        ("painting", 12, "painting context"),
+        ("cabinet", 16, "cabinet-install context"),
+        ("countertop", 16, "countertop-install context"),
+        ("appliance", 16, "appliance-install context"),
         ("diy", 14, "DIY-assist context"),
         ("remodel", 12, "remodel context"),
     ]:
         if project_sig.get(key) and template_sig.get(key):
             score += pts
             reasons.append(label)
+
+    # Strong whole-job or task-specific intent matches
+    if (
+        project_sig["bathroom"]
+        and project_sig["remodel"]
+        and project_sig["full_scope"]
+        and template_sig["bathroom"]
+        and template_sig["remodel"]
+    ):
+        score += 34
+        reasons.append("bathroom remodel intent")
+
+    if (
+        project_sig["kitchen"]
+        and project_sig["remodel"]
+        and project_sig["full_scope"]
+        and template_sig["kitchen"]
+        and template_sig["remodel"]
+    ):
+        score += 42
+        reasons.append("kitchen remodel intent")
+
+    if project_sig["cabinet"] and template_sig["cabinet"]:
+        score += 52
+        reasons.append("cabinet installation intent")
+
+    if project_sig["countertop"] and template_sig["countertop"]:
+        score += 36
+        reasons.append("countertop installation intent")
+
+    if project_sig["appliance"] and template_sig["appliance"]:
+        score += 54
+        reasons.append("appliance installation intent")
+
+    if project_sig["roofing"] and template_sig["roofing"]:
+        score += 54
+        reasons.append("roof replacement intent")
+
+    if project_sig["flooring"] and template_sig["flooring"]:
+        score += 38
+        reasons.append("flooring installation intent")
+
+    if project_sig["painting"] and template_sig["painting"]:
+        score += 28
+        reasons.append("painting scope intent")
+
+    if project_sig["deck"] and template_sig["deck"]:
+        score += 32
+        reasons.append("deck build intent")
 
     # Explicit mismatch penalties
     penalties: list[str] = []
@@ -327,6 +471,52 @@ def _signal_bonus(template: ProjectTemplate, project_title: str, project_type: s
     if project_sig["kitchen"] and template_sig["bathroom"]:
         score -= 10
         penalties.append("penalized bathroom mismatch for kitchen project")
+
+    if (
+        (project_sig["cabinet"] or project_sig["countertop"] or project_sig["appliance"])
+        and not project_sig["full_scope"]
+        and template_sig["remodel"]
+    ):
+        score -= 28
+        penalties.append("penalized full remodel mismatch for task-specific project")
+
+    if project_sig["kitchen"] and project_sig["full_scope"] and (
+        template_sig["cabinet"] or template_sig["countertop"] or template_sig["appliance"]
+    ):
+        score -= 26
+        penalties.append("penalized task-specific mismatch for kitchen remodel")
+
+    if project_sig["bathroom"] and project_sig["full_scope"] and template_sig["cabinet"]:
+        score -= 18
+        penalties.append("penalized cabinet mismatch for bathroom remodel")
+
+    if project_sig["roofing"] and template_sig["deck"]:
+        score -= 30
+        penalties.append("penalized deck mismatch for roofing project")
+
+    if project_sig["deck"] and template_sig["roofing"]:
+        score -= 18
+        penalties.append("penalized roofing mismatch for deck project")
+
+    if project_sig["appliance"] and template_sig["countertop"]:
+        score -= 16
+        penalties.append("penalized countertop mismatch for appliance project")
+
+    if project_sig["countertop"] and template_sig["appliance"]:
+        score -= 16
+        penalties.append("penalized appliance mismatch for countertop project")
+
+    if project_sig["cabinet"] and template_sig.get("structural"):
+        score -= 24
+        penalties.append("penalized structural mismatch for cabinet installation")
+
+    if project_sig["cabinet"] and _contains_phrase(description or "", ["no electrical", "no plumbing"]) and (
+        _contains_phrase(template.project_type or "", ["Electrical", "Plumbing"])
+        or _contains_phrase(template.project_subtype or "", ["Electrical", "Plumbing"])
+        or _contains_phrase(template.description or "", ["electrical", "plumbing"])
+    ):
+        score -= 28
+        penalties.append("penalized trade mismatch for no-utility cabinet scope")
 
     if penalties:
         reasons.extend(penalties)

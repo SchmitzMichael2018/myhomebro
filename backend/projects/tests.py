@@ -6936,7 +6936,80 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         self.assertEqual(response.status_code, 200)
         body = response.json()
         self.assertEqual(body["confidence"], "recommended")
+        self.assertEqual(body["confidence_level"], "high")
         self.assertEqual(body["recommended_template"]["name"], "Bathroom Remodel")
+
+    def test_recommend_endpoint_handles_natural_kitchen_remodel_description(self):
+        response = self.client.post(
+            "/api/projects/templates/recommend/",
+            {
+                "description": "Kitchen renovation with demo, cabinet replacement, countertops, backsplash, plumbing and electrical updates.",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["confidence"], "recommended")
+        self.assertEqual(body["confidence_level"], "high")
+        self.assertEqual(body["recommended_template"]["project_subtype"], "Kitchen Remodel")
+
+    def test_recommend_endpoint_prefers_cabinet_installation_for_task_specific_scope(self):
+        response = self.client.post(
+            "/api/projects/templates/recommend/",
+            {
+                "description": "Install new kitchen cabinets on one wall, align doors, add hardware, no plumbing or electrical changes.",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["confidence"], "recommended")
+        self.assertEqual(body["confidence_level"], "high")
+        self.assertEqual(body["recommended_template"]["name"], "Cabinet Installation")
+
+    def test_recommend_endpoint_prefers_roof_replacement_for_roof_scope(self):
+        response = self.client.post(
+            "/api/projects/templates/recommend/",
+            {
+                "description": "Tear off existing asphalt shingles, inspect decking, install underlayment, flashing, and new architectural shingles.",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["confidence"], "recommended")
+        self.assertEqual(body["confidence_level"], "high")
+        self.assertEqual(body["recommended_template"]["name"], "Roof Replacement")
+
+    def test_recommend_endpoint_returns_optional_match_for_medium_confidence(self):
+        response = self.client.post(
+            "/api/projects/templates/recommend/",
+            {
+                "description": "Looking at replacing worn shingles and checking flashing around vents.",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["confidence"], "possible")
+        self.assertEqual(body["confidence_level"], "medium")
+        self.assertIsNone(body["recommended_template"])
+        self.assertEqual(body["possible_match"]["name"], "Roof Replacement")
+
+    def test_recommend_endpoint_stays_silent_for_low_confidence(self):
+        response = self.client.post(
+            "/api/projects/templates/recommend/",
+            {
+                "description": "Need help with a home project and want an agreement template.",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["confidence"], "none")
+        self.assertEqual(body["confidence_level"], "low")
+        self.assertIsNone(body["recommended_template"])
+        self.assertIsNone(body["possible_match"])
 
     def test_regional_templates_rank_above_national_when_region_matches(self):
         result = discover_templates(

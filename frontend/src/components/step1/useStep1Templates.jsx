@@ -22,6 +22,13 @@ function sameText(a, b) {
   return safeTrim(a).toLowerCase() === safeTrim(b).toLowerCase();
 }
 
+function normalizeRecommendationLevel(value) {
+  const normalized = safeTrim(value).toLowerCase();
+  if (normalized === "high" || normalized === "recommended") return "high";
+  if (normalized === "medium" || normalized === "possible") return "medium";
+  return "low";
+}
+
 function classifyTemplateMatch(template, projectType, projectSubtype) {
   const tplType = safeTrim(template?.project_type);
   const tplSubtype = safeTrim(template?.project_subtype);
@@ -436,8 +443,15 @@ export default function useStep1Templates({
 
         if (cancelled) return;
 
-        const backendConfidence = String(data?.confidence || "none");
-        const backendRec = data?.recommended_template || data?.possible_match || null;
+        const backendConfidence = normalizeRecommendationLevel(
+          data?.confidence_level || data?.confidence || "low"
+        );
+        const backendRec =
+          backendConfidence === "high"
+            ? data?.recommended_template || null
+            : backendConfidence === "medium"
+            ? data?.possible_match || null
+            : null;
         const backendScore = data?.score ?? null;
 
         const candidates = Array.isArray(data?.candidates) ? data.candidates : [];
@@ -460,37 +474,36 @@ export default function useStep1Templates({
 
         const strongCandidates = classifiedCandidates.filter((t) => t?._matchLevel === "strong");
         const mediumCandidates = classifiedCandidates.filter((t) => t?._matchLevel === "medium");
-
-        const chosen = strongCandidates[0] || mediumCandidates[0] || null;
+        const backendChosen =
+          backendRec?.id != null
+            ? classifiedCandidates.find((t) => String(t?.id) === String(backendRec.id)) || null
+            : null;
+        const chosen =
+          backendConfidence === "high"
+            ? backendChosen || strongCandidates[0] || null
+            : backendConfidence === "medium"
+            ? backendChosen || mediumCandidates[0] || null
+            : null;
         const chosenId = chosen?.id != null ? String(chosen.id) : null;
 
         if (chosenId) {
           setRecommendedTemplateId(chosenId);
           setTemplateRecommendationScore(backendScore);
-
-          const chosenLevel = chosen?._matchLevel || "none";
-          const uiConfidence =
-            chosenLevel === "strong"
-              ? "recommended"
-              : chosenLevel === "medium"
-              ? "possible"
-              : "none";
-
-          setRecommendationConfidence(uiConfidence);
+          setRecommendationConfidence(backendConfidence);
           setNoTemplateMatch(false);
           setNoTemplateReason("");
 
-          if (chosenLevel === "strong") {
+          if (backendConfidence === "high") {
             setTemplateRecommendationReason(
-              backendConfidence === "recommended" && data?.reason
+              data?.reason
                 ? data.reason
                 : chosen?._matchReason || "Exact type and subtype match."
             );
 
             setSelectedTemplateId((prev) => prev || chosenId);
-          } else if (chosenLevel === "medium") {
+          } else if (backendConfidence === "medium") {
             setTemplateRecommendationReason(
-              chosen?._matchReason || "Type matches, but subtype differs."
+              data?.reason || chosen?._matchReason || "This template could fit, but review it before applying."
             );
 
             setSelectedTemplateId((prev) => prev || null);
@@ -500,7 +513,7 @@ export default function useStep1Templates({
         } else {
           setRecommendedTemplateId(null);
           setTemplateRecommendationScore(backendScore);
-          setRecommendationConfidence("none");
+          setRecommendationConfidence("low");
           setTemplateRecommendationReason("");
           setSelectedTemplateId((prev) => {
             const current = classifiedCandidates.find((t) => String(t.id) === String(prev || ""));
