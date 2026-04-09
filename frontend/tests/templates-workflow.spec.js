@@ -824,6 +824,43 @@ test('template milestone types use the canonical select vocabulary during manual
   expect(optionValues).not.toContain('final_walkthrough');
 });
 
+test('template milestone preview shows human-friendly type labels while saved values remain canonical', async ({
+  page,
+}) => {
+  const { store } = await installWorkflowMocks(page);
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('templates-new-draft-button').click();
+  await page.getByTestId('templates-name-input').fill('Friendly Type Preview Template');
+  await page.getByTestId('templates-project-type-input').fill('Remodel');
+  await page.getByTestId('templates-project-subtype-input').fill('Kitchen Remodel');
+  await page.getByTestId('templates-description-input').fill(
+    'Reusable kitchen template with planning and finish milestones.'
+  );
+  await page.getByTestId('templates-tab-milestones').click();
+  await page.getByTestId('templates-milestone-title-1').fill('Project setup');
+  await page.getByTestId('templates-milestone-description-1').fill(
+    'Prepare the site and confirm the work sequence.'
+  );
+  await page.getByTestId('templates-milestone-type-1').selectOption('site_prep');
+
+  await page.getByTestId('templates-save-button').click();
+
+  await expect(page.getByText('Template created.')).toBeVisible();
+  await expect(page.getByTestId('templates-preview-milestone-type-1')).toContainText(
+    'Type: Site Prep'
+  );
+  await expect(page.getByTestId('templates-preview-milestone-type-1')).not.toContainText(
+    'site_prep'
+  );
+  await expect
+    .poll(() => store.templates.find((row) => row.name === 'Friendly Type Preview Template'))
+    .toMatchObject({
+      milestones: [{ normalized_milestone_type: 'site_prep' }],
+    });
+});
+
 test('wizard save as template stores the current setup and supports reuse in a later wizard visit', async ({
   page,
 }) => {

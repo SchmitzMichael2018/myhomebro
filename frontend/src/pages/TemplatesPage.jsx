@@ -11,6 +11,7 @@ import {
 } from "../lib/assistantHandoff.js";
 import {
   canonicalizeTemplateMilestoneType,
+  labelForTemplateMilestoneType,
   TEMPLATE_MILESTONE_TYPE_OPTIONS,
 } from "../lib/milestoneTypes.js";
 
@@ -1836,8 +1837,13 @@ export default function TemplatesPage() {
                           ) : null}
                           <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-600">
                             {safeTrim(m?.normalized_milestone_type) ? (
-                              <span className="rounded bg-slate-100 px-2 py-1">
-                                Type: {m.normalized_milestone_type}
+                              <span
+                                className="rounded bg-slate-100 px-2 py-1"
+                                data-testid={`templates-preview-milestone-type-${idx + 1}`}
+                              >
+                                Type:{" "}
+                                {labelForTemplateMilestoneType(m.normalized_milestone_type) ||
+                                  m.normalized_milestone_type}
                               </span>
                             ) : null}
                             {m?.is_optional ? (
