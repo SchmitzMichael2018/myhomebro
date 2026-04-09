@@ -408,6 +408,7 @@ async function installWizardRoutes(page, store, agreement, milestoneState) {
         title: row.title,
         description: row.description,
         amount: row.suggested_amount_fixed || '0.00',
+        normalized_milestone_type: row.normalized_milestone_type || '',
       }));
 
       await route.fulfill({
@@ -615,6 +616,78 @@ test('saved templates can be applied in the wizard without conflicting with temp
   await expect(page.getByText('Demo & protection')).toBeVisible();
   await expect(page.getByText('Cabinets & surfaces')).toBeVisible();
   await expect(page.getByText('Fixtures & closeout')).toBeVisible();
+});
+
+test('agreement milestone surfaces show human-friendly milestone type labels outside Templates', async ({
+  page,
+}) => {
+  const initialAgreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Kitchen Remodel Starter',
+    title: 'Kitchen Remodel Starter',
+    project_type: 'Remodel',
+    project_subtype: 'Kitchen Remodel',
+    payment_mode: 'escrow',
+    payment_structure: 'progress',
+    description: 'Kitchen remodel agreement with staged milestone guidance.',
+    homeowner: null,
+    status: 'draft',
+    compliance_warning: { warning_level: 'none', message: '' },
+    selected_template_id: 88,
+    selected_template: { id: 88, name: 'Kitchen Remodel Starter' },
+    selected_template_name_snapshot: 'Kitchen Remodel Starter',
+  };
+
+  const { milestoneState } = await installWorkflowMocks(page, {
+    agreement: initialAgreement,
+  });
+  milestoneState.items = [
+    {
+      id: 881,
+      agreement: AGREEMENT_ID,
+      order: 1,
+      title: 'Demo & protection',
+      description: 'Protect the home and prep the work area.',
+      amount: '1200.00',
+      normalized_milestone_type: 'site_prep',
+    },
+    {
+      id: 882,
+      agreement: AGREEMENT_ID,
+      order: 2,
+      title: 'Cabinets & surfaces',
+      description: 'Install cabinet and surface scope.',
+      amount: '3400.00',
+      normalized_milestone_type: 'cabinetry',
+    },
+    {
+      id: 883,
+      agreement: AGREEMENT_ID,
+      order: 3,
+      title: 'Fixtures & closeout',
+      description: 'Complete final fixtures and walkthrough.',
+      amount: '1800.00',
+      normalized_milestone_type: 'inspection',
+    },
+  ];
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  const firstMilestoneRow = page.getByRole('row').filter({ hasText: 'Demo & protection' });
+  const secondMilestoneRow = page.getByRole('row').filter({ hasText: 'Cabinets & surfaces' });
+  const thirdMilestoneRow = page.getByRole('row').filter({ hasText: 'Fixtures & closeout' });
+
+  await expect(firstMilestoneRow).toContainText('Site Prep');
+  await expect(firstMilestoneRow).not.toContainText('site_prep');
+  await expect(secondMilestoneRow).toContainText('Cabinetry');
+  await expect(thirdMilestoneRow).toContainText('Inspection');
+
+  await firstMilestoneRow.getByRole('button', { name: 'Edit' }).click();
+  await expect(page.getByTestId('step2-edit-estimate-type-label')).toContainText('Site Prep');
+  await expect(page.getByTestId('step2-edit-estimate-type-label')).not.toContainText('site_prep');
 });
 
 test('AI can recommend and apply a matching template in step 1 while keeping the flow coherent', async ({

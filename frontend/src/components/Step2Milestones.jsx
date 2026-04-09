@@ -17,6 +17,7 @@ import SaveTemplateModal from "./step1/SaveTemplateModal.jsx";
 import useAgreementMilestoneAI from "./ai/useAgreementMilestoneAI.jsx";
 import useAiFieldHighlights from "../hooks/useAiFieldHighlights.js";
 import { getAiPanelConfigForStep } from "../lib/agreementWizardAiPanel.js";
+import { labelForTemplateMilestoneType } from "../lib/milestoneTypes.js";
 import {
   normalizeAssistantMilestoneSuggestion,
   normalizeAssistantQuestion,
@@ -447,6 +448,7 @@ function getEstimateAssistMeta(m) {
     pricingSources: derivePricingSources(pricingReason),
     materials,
     type,
+    typeLabel: labelForTemplateMilestoneType(type) || type,
     durationDays,
     durationLabel: formatDurationDays(durationDays),
     suggestedAmount: deriveSuggestedPriceAmount(m),
@@ -3258,8 +3260,11 @@ export default function Step2Milestones({
                     ) : null}
                     {estimate.type ? (
                       <div className="mt-1">
-                        <span className="rounded bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
-                          {estimate.type}
+                        <span
+                          className="rounded bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700"
+                          data-testid={`step2-milestone-type-badge-${m.id || idx + 1}`}
+                        >
+                          {estimate.typeLabel}
                         </span>
                       </div>
                     ) : null}
@@ -3643,7 +3648,13 @@ export default function Step2Milestones({
                     {safeStr(editForm.normalized_milestone_type) ? (
                       <div>
                         <span className="font-medium text-slate-800">Type:</span>{" "}
-                        <span className="text-slate-700">{editForm.normalized_milestone_type}</span>
+                        <span
+                          className="text-slate-700"
+                          data-testid="step2-edit-estimate-type-label"
+                        >
+                          {labelForTemplateMilestoneType(editForm.normalized_milestone_type) ||
+                            editForm.normalized_milestone_type}
+                        </span>
                       </div>
                     ) : null}
 
