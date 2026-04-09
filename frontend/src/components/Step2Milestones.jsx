@@ -1367,6 +1367,7 @@ export default function Step2Milestones({
 
   function shapeAiMilestonePreview(preview) {
     if (!preview || !Array.isArray(preview.milestones)) return preview;
+    if (preview?.raw?.clarification_shaped) return preview;
 
     return {
       ...preview,

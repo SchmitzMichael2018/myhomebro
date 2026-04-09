@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 from datetime import datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
@@ -14,6 +15,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from projects.api.ai_agreement_views import ai_suggest_milestones
+from projects.ai.agreement_milestone_writer import suggest_scope_and_milestones
 from projects.models import (
     Agreement,
     AgreementAIScope,
@@ -177,6 +179,218 @@ class AgreementMilestoneAIRouteTests(TestCase):
         self.assertTrue(data["ai_unlimited"])
 
         mock_suggest.assert_called_once_with(agreement=self.agreement, notes="Please suggest milestones")
+
+
+class AgreementMilestoneSuggestionShapingTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            email="milestone-shaping@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.user,
+            business_name="Milestone Shaping Contractor",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Milestone Homeowner",
+            email="milestone-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Milestone Shaping Project",
+        )
+
+    def _agreement(self, *, project_subtype="Kitchen Remodel", answers=None, description="Kitchen remodel scope"):
+        agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description=description,
+            project_type="Remodel",
+            project_subtype=project_subtype,
+            total_cost=Decimal("24000.00"),
+            milestone_count=5,
+        )
+        AgreementAIScope.objects.create(agreement=agreement, answers=answers or {})
+        return agreement
+
+    def _mock_openai_response(self, milestones):
+        payload = {
+            "scope_text": "AI generated scope text",
+            "milestones": milestones,
+            "questions": [],
+        }
+        fake_client = SimpleNamespace(
+            responses=SimpleNamespace(
+                create=lambda **kwargs: SimpleNamespace(output_text=json.dumps(payload))
+            )
+        )
+        return fake_client
+
+    def test_service_shapes_kitchen_milestones_from_saved_clarifications(self):
+        agreement = self._agreement(
+            answers={
+                "layout_changes": "yes",
+                "cabinet_scope": "no",
+                "finish_scope_notes": "backsplash and pendant lighting",
+            }
+        )
+        base_milestones = [
+            {
+                "order": 1,
+                "title": "Planning",
+                "description": "Base planning milestone",
+                "amount": 1000,
+                "start_date": "",
+                "completion_date": "",
+            },
+            {
+                "order": 2,
+                "title": "Demo",
+                "description": "Base demo milestone",
+                "amount": 2000,
+                "start_date": "",
+                "completion_date": "",
+            },
+            {
+                "order": 3,
+                "title": "Cabinets",
+                "description": "Base cabinet milestone",
+                "amount": 3000,
+                "start_date": "",
+                "completion_date": "",
+            },
+            {
+                "order": 4,
+                "title": "Finishes",
+                "description": "Base finish milestone",
+                "amount": 4000,
+                "start_date": "",
+                "completion_date": "",
+            },
+            {
+                "order": 5,
+                "title": "Walkthrough",
+                "description": "Base closeout milestone",
+                "amount": 5000,
+                "start_date": "",
+                "completion_date": "",
+            },
+        ]
+
+        with patch(
+            "projects.ai.agreement_milestone_writer._require_openai_client",
+            return_value=self._mock_openai_response(base_milestones),
+        ), patch(
+            "projects.ai.agreement_milestone_writer._model_name",
+            return_value="test-model",
+        ):
+            result = suggest_scope_and_milestones(agreement=agreement, notes="")
+
+        titles = [row["title"] for row in result["milestones"]]
+        self.assertEqual(
+            titles,
+            [
+                "Planning & protection",
+                "Layout review & utility changes",
+                "Selective demolition & rough-in",
+                "Countertops, surfaces & finishes",
+                "Fixtures & appliances",
+                "Punch list & walkthrough",
+            ],
+        )
+        self.assertTrue(result["clarification_shaped"])
+        self.assertEqual(result["milestones"][0]["amount"], 1000)
+        self.assertEqual(result["milestones"][5]["amount"], 0.0)
+        self.assertIn(
+            "Included finish scope: backsplash and pendant lighting.",
+            result["milestones"][4]["description"],
+        )
+
+    def test_service_removes_bathroom_tile_phase_when_scope_is_excluded(self):
+        agreement = self._agreement(
+            project_subtype="Bathroom Remodel",
+            description="Bathroom remodel scope",
+            answers={"wet_area_tile": "no"},
+        )
+        base_milestones = [
+            {
+                "order": 1,
+                "title": "Protection",
+                "description": "Base protection milestone",
+                "amount": 1000,
+                "start_date": "",
+                "completion_date": "",
+            },
+            {
+                "order": 2,
+                "title": "Rough-in",
+                "description": "Base rough-in milestone",
+                "amount": 2000,
+                "start_date": "",
+                "completion_date": "",
+            },
+            {
+                "order": 3,
+                "title": "Tile",
+                "description": "Base tile milestone",
+                "amount": 3000,
+                "start_date": "",
+                "completion_date": "",
+            },
+            {
+                "order": 4,
+                "title": "Fixtures",
+                "description": "Base fixtures milestone",
+                "amount": 4000,
+                "start_date": "",
+                "completion_date": "",
+            },
+            {
+                "order": 5,
+                "title": "Closeout",
+                "description": "Base closeout milestone",
+                "amount": 5000,
+                "start_date": "",
+                "completion_date": "",
+            },
+        ]
+
+        with patch(
+            "projects.ai.agreement_milestone_writer._require_openai_client",
+            return_value=self._mock_openai_response(base_milestones),
+        ), patch(
+            "projects.ai.agreement_milestone_writer._model_name",
+            return_value="test-model",
+        ):
+            result = suggest_scope_and_milestones(agreement=agreement, notes="")
+
+        titles = [row["title"] for row in result["milestones"]]
+        self.assertEqual(
+            titles,
+            [
+                "Protection & demolition",
+                "Rough plumbing & electrical",
+                "Vanity, fixtures & trim",
+                "Final cleanup & walkthrough",
+            ],
+        )
+        self.assertNotIn("Walls, waterproofing & tile", titles)
+        self.assertNotIn("Tile & waterproofing finish", titles)
+        self.assertIn(
+            "Include wall touch-up and non-tile surface prep needed before the fixture phase.",
+            result["milestones"][2]["description"],
+        )
 
 
 class SubcontractorHubApiTests(TestCase):

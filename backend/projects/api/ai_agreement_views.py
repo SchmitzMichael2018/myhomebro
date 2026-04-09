@@ -128,6 +128,7 @@ def ai_suggest_milestones(request, agreement_id: int):
         "scope_text": out["scope_text"],
         "milestones": out["milestones"],
         "questions": out.get("questions", []),
+        "clarification_shaped": bool(out.get("clarification_shaped")),
         "_model": out.get("_model"),
         **_ai_access_payload(),
     }
