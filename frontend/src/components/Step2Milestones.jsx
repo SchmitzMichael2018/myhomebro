@@ -13,6 +13,7 @@ import toast from "react-hot-toast";
 import api from "../api";
 import ClarificationsModal from "./ClarificationsModal.jsx";
 import { StartWithAIEntry } from "./StartWithAIAssistant.jsx";
+import SaveTemplateModal from "./step1/SaveTemplateModal.jsx";
 import useAgreementMilestoneAI from "./ai/useAgreementMilestoneAI.jsx";
 import useAiFieldHighlights from "../hooks/useAiFieldHighlights.js";
 import { getAiPanelConfigForStep } from "../lib/agreementWizardAiPanel.js";
@@ -2106,10 +2107,10 @@ export default function Step2Milestones({
     setSaveTemplateOpen(true);
   }
 
-  async function handleSaveAsTemplate() {
+  async function handleSaveAsTemplate(payload = {}) {
     if (!agreementId) return;
 
-    const name = safeStr(saveTemplateName);
+    const name = safeStr(payload?.name || saveTemplateName);
     if (!name) {
       toast.error("Template name is required.");
       return;
@@ -2117,13 +2118,16 @@ export default function Step2Milestones({
 
     setSaveTemplateBusy(true);
     try {
-      const payload = {
+      const requestPayload = {
         name,
-        description: safeStr(saveTemplateDescription),
-        is_active: true,
+        description: safeStr(payload?.description || saveTemplateDescription),
+        is_active: payload?.is_active !== false,
       };
 
-      const res = await api.post(`/projects/agreements/${agreementId}/save-as-template/`, payload);
+      const res = await api.post(
+        `/projects/agreements/${agreementId}/save-as-template/`,
+        requestPayload
+      );
       const tplName = res?.data?.template?.name || name;
 
       toast.success(`Template saved: ${tplName}`);
@@ -3435,7 +3439,28 @@ export default function Step2Milestones({
         </button>
       </div>
 
-      {saveTemplateOpen ? (
+      <SaveTemplateModal
+        open={saveTemplateOpen}
+        onClose={() => {
+          if (saveTemplateBusy) return;
+          setSaveTemplateOpen(false);
+        }}
+        onSubmit={handleSaveAsTemplate}
+        busy={saveTemplateBusy}
+        defaultName={saveTemplateName}
+        defaultDescription={saveTemplateDescription}
+        projectType={safeStr(agreementMeta?.project_type)}
+        projectSubtype={safeStr(agreementMeta?.project_subtype)}
+        milestoneCount={effectiveMilestones.length}
+        scopeDescription={
+          safeStr(agreementMeta?.description) ||
+          safeStr(agreementMeta?.project_description) ||
+          safeStr(agreementMeta?.scope)
+        }
+        milestones={effectiveMilestones}
+      />
+
+      {false && saveTemplateOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl">
             <div className="flex items-start justify-between gap-3">

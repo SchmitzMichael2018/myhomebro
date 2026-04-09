@@ -25,6 +25,8 @@ export default function SaveTemplateModal({
   projectType,
   projectSubtype,
   milestoneCount,
+  scopeDescription,
+  milestones,
 }) {
   const [name, setName] = useState(defaultName || "");
   const [description, setDescription] = useState(defaultDescription || "");
@@ -39,6 +41,11 @@ export default function SaveTemplateModal({
 
   const trimmedName = useMemo(() => safeTrim(name), [name]);
   const trimmedDescription = useMemo(() => safeTrim(description), [description]);
+  const reviewedScope = useMemo(() => safeTrim(scopeDescription), [scopeDescription]);
+  const reviewedMilestones = useMemo(
+    () => (Array.isArray(milestones) ? milestones.filter(Boolean) : []),
+    [milestones]
+  );
 
   if (!open) return null;
 
@@ -74,9 +81,57 @@ export default function SaveTemplateModal({
             </div>
           </div>
 
+          {reviewedScope ? (
+            <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+                Agreement description
+              </div>
+              <div
+                className="mt-2 text-sm leading-6 text-slate-700"
+                data-testid="save-template-scope-preview"
+              >
+                {reviewedScope}
+              </div>
+            </div>
+          ) : null}
+
+          {reviewedMilestones.length ? (
+            <div className="rounded-lg border border-slate-200 bg-white p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+                  Milestone structure
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  Review the order before saving
+                </div>
+              </div>
+              <div className="mt-3 space-y-2" data-testid="save-template-milestone-preview">
+                {reviewedMilestones.map((milestone, index) => {
+                  const title =
+                    safeTrim(milestone?.title) || safeTrim(milestone?.name) || `Milestone ${index + 1}`;
+                  const detail = safeTrim(milestone?.description);
+                  return (
+                    <div
+                      key={milestone?.id || `${title}-${index}`}
+                      className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2"
+                    >
+                      <div className="text-sm font-medium text-slate-800">
+                        {index + 1}. {title}
+                      </div>
+                      {detail ? (
+                        <div className="mt-1 text-xs leading-5 text-slate-600">{detail}</div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
           <div>
             <label className="mb-1 block text-sm font-medium">Template Name</label>
             <input
+              data-testid="save-template-name-input"
               className="w-full rounded border px-3 py-2 text-sm"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -90,6 +145,7 @@ export default function SaveTemplateModal({
           <div>
             <label className="mb-1 block text-sm font-medium">Template Note (optional)</label>
             <textarea
+              data-testid="save-template-note-input"
               className="w-full rounded border px-3 py-2 text-sm"
               rows={4}
               value={description}
@@ -121,6 +177,7 @@ export default function SaveTemplateModal({
             type="button"
             onClick={onClose}
             disabled={busy}
+            data-testid="save-template-cancel-button"
             className="rounded border px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
           >
             Cancel
@@ -136,6 +193,7 @@ export default function SaveTemplateModal({
               })
             }
             disabled={busy || !trimmedName}
+            data-testid="save-template-confirm-button"
             className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
           >
             {busy ? "Saving…" : "Save Template"}

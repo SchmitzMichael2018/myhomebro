@@ -425,6 +425,50 @@ async function installWizardRoutes(page, store, agreement, milestoneState) {
     }
   );
 
+  await page.route(
+    new RegExp(`/api/projects/agreements/${agreement.id}/save-as-template/$`),
+    async (route) => {
+      const payload = route.request().postDataJSON();
+      const created = buildTemplate({
+        id: store.nextTemplateId++,
+        name: payload?.name || `${agreement.project_title || agreement.title || 'Agreement'} Template`,
+        project_type: agreement.project_type || '',
+        project_subtype: agreement.project_subtype || '',
+        description: agreement.description || '',
+        milestones: milestoneState.items.map((row, idx) => ({
+          id: store.nextMilestoneId++,
+          title: row.title,
+          description: row.description,
+          sort_order: Number(row.order || idx + 1) || idx + 1,
+          normalized_milestone_type: row.normalized_milestone_type || '',
+          suggested_amount_fixed: row.amount || null,
+          suggested_amount_low: null,
+          suggested_amount_high: null,
+          pricing_confidence: '',
+          pricing_source_note: '',
+          recommended_days_from_start: idx === 0 ? 0 : null,
+          recommended_duration_days: null,
+          materials_hint: '',
+          is_optional: false,
+        })),
+      });
+      created.default_scope = agreement.description || '';
+      created.is_active = payload?.is_active !== false;
+      created.internal_note = payload?.description || '';
+      created.milestone_count = created.milestones.length;
+      store.templates = [created, ...store.templates];
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          detail: 'Template saved successfully.',
+          template: clone(created),
+        }),
+      });
+    }
+  );
+
   await page.route(/\/api\/projects\/milestones\/?(\?.*)?$/, async (route) => {
     await route.fulfill({
       status: 200,
@@ -607,4 +651,112 @@ test('AI can recommend and apply a matching template in step 1 while keeping the
 
   await expect(page.getByText('Demo & protection')).toBeVisible();
   await expect(page.getByText('Cabinets & surfaces')).toBeVisible();
+});
+
+test('wizard save as template stores the current setup and supports reuse in a later wizard visit', async ({
+  page,
+}) => {
+  const initialAgreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Bathroom Remodel',
+    title: 'Bathroom Remodel',
+    project_type: 'Remodel',
+    project_subtype: 'Bathroom Remodel',
+    payment_mode: 'escrow',
+    payment_structure: 'progress',
+    description:
+      'Complete bathroom remodel with demo, waterproofing, tile, vanity, tub and shower updates, and finish work.',
+    homeowner: null,
+    status: 'draft',
+    compliance_warning: { warning_level: 'none', message: '' },
+    selected_template_id: null,
+    selected_template: null,
+    selected_template_name_snapshot: '',
+  };
+
+  const { store, milestoneState } = await installWorkflowMocks(page, {
+    agreement: initialAgreement,
+  });
+
+  milestoneState.items = [
+    {
+      id: 301,
+      agreement: AGREEMENT_ID,
+      order: 1,
+      title: 'Demo & prep',
+      description: 'Protect the work area and remove existing bathroom finishes.',
+      amount: '1200.00',
+    },
+    {
+      id: 302,
+      agreement: AGREEMENT_ID,
+      order: 2,
+      title: 'Waterproof & tile',
+      description: 'Prep wet areas and complete tile installation.',
+      amount: '2400.00',
+    },
+    {
+      id: 303,
+      agreement: AGREEMENT_ID,
+      order: 3,
+      title: 'Fixtures & walkthrough',
+      description: 'Install fixtures, finish trim, and review the completed work.',
+      amount: '1800.00',
+    },
+  ];
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await page.locator('summary').filter({ hasText: 'More' }).click();
+  await page.getByRole('button', { name: 'Save as Template' }).click();
+
+  await expect(page.getByTestId('save-template-name-input')).toBeVisible();
+  await expect(page.getByTestId('save-template-scope-preview')).toContainText(
+    'Complete bathroom remodel'
+  );
+  await expect(page.getByTestId('save-template-milestone-preview')).toContainText(
+    '1. Demo & prep'
+  );
+  await expect(page.getByTestId('save-template-milestone-preview')).toContainText(
+    '2. Waterproof & tile'
+  );
+
+  await page.getByTestId('save-template-name-input').fill('Bathroom Remodel Reusable');
+  await page.getByTestId('save-template-note-input').fill(
+    'Reusable bathroom remodel structure for future projects.'
+  );
+  await page.getByTestId('save-template-confirm-button').click();
+
+  await expect.poll(() =>
+    store.templates.some((row) => row.name === 'Bathroom Remodel Reusable')
+  ).toBe(true);
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('heading', { name: 'Bathroom Remodel Reusable' })).toBeVisible();
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+    waitUntil: 'domcontentloaded',
+  });
+  await page.getByRole('button', { name: 'Use Template' }).click();
+  await expect(page.getByTestId('step1-template-browser')).toBeVisible();
+  await page
+    .getByPlaceholder('Search templates by keyword, like "bathroom", "deck", or "bedroom addition"...')
+    .fill('Bathroom Remodel Reusable');
+  await page.getByRole('button', { name: /Bathroom Remodel Reusable/ }).click();
+  await page.getByRole('button', { name: 'Apply Selected Template' }).click();
+
+  await expect(page.locator('select[name="project_subtype"]')).toHaveValue('Bathroom Remodel');
+  await expect(page.locator('textarea[name="description"]')).toContainText(
+    'Complete bathroom remodel'
+  );
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+  await expect(page.getByText('Demo & prep')).toBeVisible();
+  await expect(page.getByText('Waterproof & tile')).toBeVisible();
+  await expect(page.getByText('Fixtures & walkthrough')).toBeVisible();
 });
