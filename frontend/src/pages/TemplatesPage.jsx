@@ -325,6 +325,7 @@ export default function TemplatesPage() {
   const [creatingNew, setCreatingNew] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [assistantPrefillBanner, setAssistantPrefillBanner] = useState("");
+  const [assistantField, setAssistantField] = useState("description");
 
   const [editHeader, setEditHeader] = useState(buildBlankHeader());
   const [editMilestones, setEditMilestones] = useState([buildBlankMilestone(1)]);
@@ -489,6 +490,20 @@ export default function TemplatesPage() {
   const assistantContext = useMemo(
     () => ({
       current_route: "/app/templates",
+      page: "templates",
+      field: assistantField,
+      template_name:
+        currentHeader?.name || selectedDetail?.name || selectedTemplate?.name || "",
+      project_type:
+        currentHeader?.project_type ||
+        selectedDetail?.project_type ||
+        selectedTemplate?.project_type ||
+        "",
+      project_subtype:
+        currentHeader?.project_subtype ||
+        selectedDetail?.project_subtype ||
+        selectedTemplate?.project_subtype ||
+        "",
       template_id: selectedDetail?.id || selectedTemplate?.id || null,
       template_summary: {
         name: currentHeader?.name || selectedDetail?.name || selectedTemplate?.name || "",
@@ -510,7 +525,7 @@ export default function TemplatesPage() {
         suggested_titles: currentMilestones.map((row) => row?.title).filter(Boolean),
       },
     }),
-    [currentHeader, currentMilestones, selectedDetail, selectedTemplate]
+    [assistantField, currentHeader, currentMilestones, selectedDetail, selectedTemplate]
   );
 
   function startNewTemplate() {
@@ -676,6 +691,23 @@ export default function TemplatesPage() {
 
   function updateHeader(field, value) {
     setEditHeader((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function handleTemplatesAssistantAction(payload) {
+    const actionKey = safeTrim(
+      payload?.assistant_action_key || payload?.action_key || payload?.next_action?.action_key
+    );
+
+    if (actionKey !== "apply_template_description") return false;
+
+    const nextDescription = safeTrim(payload?.value);
+    if (!nextDescription) return false;
+
+    updateHeader("description", nextDescription);
+    updateHeader("default_scope", nextDescription);
+    setAssistantField("description");
+    toast.success("Description applied.");
+    return true;
   }
 
   function updateMilestone(index, patch) {
@@ -1029,8 +1061,9 @@ export default function TemplatesPage() {
         className="mb-4"
         testId="templates-ai-entry"
         title="Ask AI in templates"
-        description="Use the current template context to apply it, refine the milestone structure, or jump into agreement drafting."
+        description="Use the current template and field context to draft or refine reusable template content."
         context={assistantContext}
+        onAction={handleTemplatesAssistantAction}
       />
 
       <div className="mb-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
@@ -1539,9 +1572,11 @@ export default function TemplatesPage() {
                         rows={6}
                         value={currentHeader?.description || ""}
                         onChange={(e) => {
+                          setAssistantField("description");
                           updateHeader("description", e.target.value);
                           updateHeader("default_scope", e.target.value);
                         }}
+                        onFocus={() => setAssistantField("description")}
                         disabled={!editMode && !creatingNew}
                         placeholder="Describe the reusable project template in generic terms..."
                       />

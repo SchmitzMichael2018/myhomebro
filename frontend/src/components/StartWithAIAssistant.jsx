@@ -149,6 +149,39 @@ function ChecklistTone({ tone = "success" }) {
   return <span className="text-sm font-semibold text-emerald-700">OK</span>;
 }
 
+function isTemplateDescriptionMode(context = {}) {
+  return (
+    String(context?.page || "").trim().toLowerCase() === "templates" &&
+    String(context?.field || "").trim().toLowerCase() === "description"
+  );
+}
+
+function buildTemplateDescriptionDraft(context = {}) {
+  const templateName = String(context?.template_name || context?.template_summary?.name || "").trim();
+  const projectType = String(
+    context?.project_type || context?.template_summary?.project_type || ""
+  ).trim();
+  const projectSubtype = String(
+    context?.project_subtype || context?.template_summary?.project_subtype || ""
+  ).trim();
+
+  const subtypePhrase = projectSubtype || projectType || "project";
+  const typePhrase = projectType && projectType !== projectSubtype ? projectType.toLowerCase() : "";
+
+  const opening = subtypePhrase
+    ? `Reusable ${subtypePhrase.toLowerCase()} scope covering the typical planning, preparation, core work, and closeout needed for this type of project.`
+    : "Reusable project scope covering the typical planning, preparation, execution, and closeout needed for this type of work.";
+
+  const middle = [
+    "Includes the work commonly expected by the customer, coordination between major phases, and the standard finishing steps needed to deliver a complete result.",
+    typePhrase
+      ? `Built to give teams a clean starting point for repeatable ${typePhrase} jobs while leaving room for project-specific pricing, clarifications, and milestone detail.`
+      : "Built to give teams a clean starting point for repeatable jobs while leaving room for project-specific pricing, clarifications, and milestone detail.",
+  ];
+
+  return [opening, ...middle].join(" ");
+}
+
 export function StartWithAIEntry({
   title = "Ask AI",
   description = "Get contextual help for the workflow you are already in.",
@@ -266,6 +299,10 @@ export default function StartWithAIAssistant({
   const contextSignature = useMemo(() => JSON.stringify(context || {}), [context]);
   const normalizedContext = useMemo(() => context || {}, [contextSignature, context]);
   const isContextualMode = mode === "dock" || mode === "panel";
+  const isFieldAwareDescriptionMode = useMemo(
+    () => isTemplateDescriptionMode(normalizedContext),
+    [normalizedContext]
+  );
   const panelConfig = useMemo(
     () => normalizePanelConfig(normalizedContext),
     [normalizedContext]
@@ -275,6 +312,7 @@ export default function StartWithAIAssistant({
   const [showStructuredPayload, setShowStructuredPayload] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState("idle");
   const [isPlanning, setIsPlanning] = useState(false);
+  const [fieldDraft, setFieldDraft] = useState("");
   const [plan, setPlan] = useState(() =>
     produceStructuredAssistantPlan({
       preferredIntent: "navigate_app",
@@ -341,10 +379,32 @@ export default function StartWithAIAssistant({
     import.meta.env.DEV ||
     (typeof window !== "undefined" && window.MYHOMEBRO_DEBUG_ASSISTANT === true);
   const visibleQuickActions = isContextualMode ? [] : userFacingPanel.quickActions;
-  const sectionEyebrow = isContextualMode ? "AI Copilot" : "AI Assistant";
-  const inputHelperText = isContextualMode
+  const sectionEyebrow = isFieldAwareDescriptionMode
+    ? "AI Copilot"
+    : isContextualMode
+    ? "AI Copilot"
+    : "AI Assistant";
+  const inputHelperText = isFieldAwareDescriptionMode
+    ? "Generate reusable template scope text for this description field."
+    : isContextualMode
     ? "Ask AI about the step you're on right now."
     : "Describe the work you want to start or improve.";
+  const headline = isFieldAwareDescriptionMode
+    ? "Generate description text for this template"
+    : userFacingPanel.headline;
+  const helperText = isFieldAwareDescriptionMode
+    ? "Use the current template name, type, and subtype to draft reusable scope language for the Description / Scope field."
+    : userFacingPanel.helperText;
+  const promptPlaceholder = isFieldAwareDescriptionMode
+    ? 'Optional: add extra scope guidance like "include prep, finish work, and cleanup."'
+    : userFacingPanel.promptPlaceholder;
+  const submitLabel = isFieldAwareDescriptionMode
+    ? "Generate Description"
+    : panelConfig.submitButtonLabel || "Ask AI";
+
+  useEffect(() => {
+    setFieldDraft("");
+  }, [contextSignature, isFieldAwareDescriptionMode]);
 
   function applyPlan(nextPlan, submittedPrompt = "", options = {}) {
     setPlan(nextPlan);
@@ -388,6 +448,18 @@ export default function StartWithAIAssistant({
   async function submitPrompt(event) {
     event?.preventDefault();
     const cleanPrompt = String(prompt || "").trim();
+    if (isFieldAwareDescriptionMode) {
+      const baseDraft = buildTemplateDescriptionDraft(normalizedContext);
+      const finalDraft = cleanPrompt
+        ? `${baseDraft} ${cleanPrompt}`.trim()
+        : baseDraft;
+      setFieldDraft(finalDraft);
+      setHistory((prev) => [
+        ...prev,
+        { prompt: cleanPrompt || "Generate description", plan: { intent_label: "Template Description" } },
+      ]);
+      return;
+    }
     if (!cleanPrompt) return;
     if (panelConfig.submitActionKey && typeof onAction === "function") {
       const handled = await onAction({
@@ -507,6 +579,20 @@ export default function StartWithAIAssistant({
     });
   }
 
+  async function handleApplyFieldDraft() {
+    if (!fieldDraft || typeof onAction !== "function") return;
+    const handled = await onAction({
+      assistant_action_key: "apply_template_description",
+      action_key: "apply_template_description",
+      source: "field_generation",
+      field: "description",
+      value: fieldDraft,
+    });
+    if (handled === true) {
+      setPrompt("");
+    }
+  }
+
   async function handleTemplateRecommendationAction() {
     const actionKey = safeActionKey(
       userFacingPanel?.templateRecommendation?.actionKey || "save_as_template"
@@ -544,10 +630,10 @@ export default function StartWithAIAssistant({
                 data-testid={testId("start-with-ai-title")}
                 className="mt-1 text-2xl font-bold tracking-tight text-slate-900"
               >
-                {userFacingPanel.headline}
+                {headline}
               </h2>
               <p className="mt-2 max-w-2xl text-sm text-slate-600">
-                {userFacingPanel.helperText}
+                {helperText}
               </p>
             </div>
           </div>
@@ -564,27 +650,47 @@ export default function StartWithAIAssistant({
       </div>
 
       <div className="space-y-4 px-5 py-5">
-        <div
-          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
-          data-testid={testId("start-with-ai-status")}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-slate-900">{userFacingPanel.status}</div>
-              {userFacingPanel.statusDetail ? (
-                <div
-                  className="mt-1 text-sm text-slate-600"
-                  data-testid={testId("start-with-ai-status-summary")}
-                >
-                  {userFacingPanel.statusDetail}
-                </div>
-              ) : null}
+        {!isFieldAwareDescriptionMode ? (
+          <div
+            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+            data-testid={testId("start-with-ai-status")}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">{userFacingPanel.status}</div>
+                {userFacingPanel.statusDetail ? (
+                  <div
+                    className="mt-1 text-sm text-slate-600"
+                    data-testid={testId("start-with-ai-status-summary")}
+                  >
+                    {userFacingPanel.statusDetail}
+                  </div>
+                ) : null}
+              </div>
+              {isPlanning ? <CompactBadge>Working...</CompactBadge> : null}
             </div>
-            {isPlanning ? <CompactBadge>Working...</CompactBadge> : null}
           </div>
-        </div>
+        ) : (
+          <div
+            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+            data-testid={testId("start-with-ai-field-context")}
+          >
+            <div className="text-sm font-semibold text-slate-900">
+              Description / Scope field assistance
+            </div>
+            <div className="mt-1 text-sm text-slate-600">
+              {[
+                normalizedContext?.template_name || normalizedContext?.template_summary?.name,
+                normalizedContext?.project_type || normalizedContext?.template_summary?.project_type,
+                normalizedContext?.project_subtype || normalizedContext?.template_summary?.project_subtype,
+              ]
+                .filter(Boolean)
+                .join(" · ") || "Using the current template context"}
+            </div>
+          </div>
+        )}
 
-        {userFacingPanel.coachingTitle || userFacingPanel.coachingMessage ? (
+        {!isFieldAwareDescriptionMode && (userFacingPanel.coachingTitle || userFacingPanel.coachingMessage) ? (
           <div
             className={`rounded-2xl border px-4 py-4 ${coachingToneClasses(
               userFacingPanel.coachingTone
@@ -663,7 +769,7 @@ export default function StartWithAIAssistant({
               onChange={(e) => setPrompt(e.target.value)}
               rows={4}
               className="w-full resize-none bg-transparent px-2 py-2 text-base text-slate-900 outline-none"
-              placeholder={userFacingPanel.promptPlaceholder}
+              placeholder={promptPlaceholder}
             />
             <div className="mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-3">
               <div className="text-xs text-slate-500">
@@ -691,7 +797,7 @@ export default function StartWithAIAssistant({
                 >
                   {isPlanning
                     ? "Working..."
-                    : panelConfig.submitButtonLabel || "Ask AI"}
+                    : submitLabel}
                   {isPlanning ? (
                     <LoaderCircle className="h-4 w-4 animate-spin" />
                   ) : (
@@ -723,7 +829,27 @@ export default function StartWithAIAssistant({
           </ResultBlock>
         ) : null}
 
-        {userFacingPanel.templateRecommendation?.title ? (
+        {isFieldAwareDescriptionMode && fieldDraft ? (
+          <ResultBlock
+            title="Description Draft"
+            testId={testId("start-with-ai-description-draft")}
+          >
+            <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-slate-800">
+              {fieldDraft}
+            </div>
+            <button
+              type="button"
+              onClick={handleApplyFieldDraft}
+              data-testid={testId("start-with-ai-apply-description")}
+              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              Apply to Description
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </ResultBlock>
+        ) : null}
+
+        {!isFieldAwareDescriptionMode && userFacingPanel.templateRecommendation?.title ? (
           <ResultBlock
             title="AI Recommendation"
             testId={testId("start-with-ai-template-recommendation")}
@@ -750,7 +876,7 @@ export default function StartWithAIAssistant({
           </ResultBlock>
         ) : null}
 
-        {userFacingPanel.checklistItems.length ? (
+        {!isFieldAwareDescriptionMode && userFacingPanel.checklistItems.length ? (
           <ResultBlock title="Pre-send Checklist" testId={testId("start-with-ai-checklist")}>
             <div className="space-y-2">
               {userFacingPanel.checklistItems.map((item) => {
@@ -783,6 +909,7 @@ export default function StartWithAIAssistant({
           </ResultBlock>
         ) : null}
 
+        {!isFieldAwareDescriptionMode ? (
         <ResultBlock title={userFacingPanel.nextActionTitle || "Next Action"}>
           <div
             className="text-sm font-medium text-slate-800"
@@ -802,8 +929,9 @@ export default function StartWithAIAssistant({
             </button>
           ) : null}
         </ResultBlock>
+        ) : null}
 
-        {userFacingPanel.nextGuidance ? (
+        {!isFieldAwareDescriptionMode && userFacingPanel.nextGuidance ? (
           <ResultBlock
             title={userFacingPanel.nextGuidanceTitle || "What happens next"}
             testId={testId("start-with-ai-next-guidance")}

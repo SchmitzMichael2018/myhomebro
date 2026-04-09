@@ -653,6 +653,43 @@ test('AI can recommend and apply a matching template in step 1 while keeping the
   await expect(page.getByText('Cabinets & surfaces')).toBeVisible();
 });
 
+test('template copilot can generate and explicitly apply description field text', async ({
+  page,
+}) => {
+  await installWorkflowMocks(page);
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('templates-new-draft-button').click();
+  await page.getByTestId('templates-name-input').fill('Kitchen Remodel Starter');
+  await page.getByTestId('templates-project-type-input').fill('Remodel');
+  await page.getByTestId('templates-project-subtype-input').fill('Kitchen Remodel');
+
+  await expect(page.getByTestId('templates-description-input')).toHaveValue('');
+
+  await page.getByTestId('templates-ai-entry-toggle').click();
+  await expect(page.getByTestId('start-with-ai-field-context')).toContainText(
+    'Kitchen Remodel Starter'
+  );
+  await expect(page.getByTestId('start-with-ai-title')).toContainText(
+    'Generate description text for this template'
+  );
+
+  await page.getByTestId('start-with-ai-submit').click();
+
+  await expect(page.getByTestId('start-with-ai-description-draft')).toBeVisible();
+  await expect(page.getByTestId('start-with-ai-description-draft')).toContainText(
+    'Reusable kitchen remodel scope'
+  );
+  await expect(page.getByTestId('templates-description-input')).toHaveValue('');
+
+  await page.getByTestId('start-with-ai-apply-description').click();
+  await expect(page.getByTestId('templates-description-input')).not.toHaveValue('');
+  await expect(page.getByTestId('templates-description-input')).toContainText(
+    'Includes the work commonly expected by the customer'
+  );
+});
+
 test('wizard save as template stores the current setup and supports reuse in a later wizard visit', async ({
   page,
 }) => {
