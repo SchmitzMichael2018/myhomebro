@@ -18,6 +18,10 @@ import {
   produceStructuredAssistantPlan,
 } from "../lib/assistantReasoning.js";
 import { buildUserFacingAiPanel } from "../lib/agreementWizardAiPanel.js";
+import {
+  canonicalizeTemplateMilestoneType,
+  labelForTemplateMilestoneType,
+} from "../lib/milestoneTypes.js";
 import { useAssistantDock } from "./AssistantDock.jsx";
 
 function getSpeechRecognitionCtor() {
@@ -434,6 +438,24 @@ function buildTemplateMilestoneDrafts(context = {}) {
   ];
 }
 
+function normalizeTemplateMilestoneDrafts(items = []) {
+  return items.map((item, idx) => {
+    const title = String(item?.title || "").trim();
+    const description = String(item?.description || "").trim();
+    const normalized_milestone_type = canonicalizeTemplateMilestoneType(
+      item?.normalized_milestone_type,
+      `${title} ${description}`
+    );
+
+    return {
+      title,
+      description,
+      normalized_milestone_type,
+      sort_order: idx + 1,
+    };
+  });
+}
+
 export function StartWithAIEntry({
   title = "Ask AI",
   description = "Get contextual help for the workflow you are already in.",
@@ -741,14 +763,7 @@ export default function StartWithAIAssistant({
               : item
           )
         : baseDrafts;
-      setMilestoneDrafts(
-        finalDrafts.map((item, idx) => ({
-          title: String(item?.title || "").trim(),
-          description: String(item?.description || "").trim(),
-          normalized_milestone_type: String(item?.normalized_milestone_type || "").trim(),
-          sort_order: idx + 1,
-        }))
-      );
+      setMilestoneDrafts(normalizeTemplateMilestoneDrafts(finalDrafts));
       setHistory((prev) => [
         ...prev,
         { prompt: cleanPrompt || "Generate milestones", plan: { intent_label: "Template Milestones" } },
@@ -1182,7 +1197,8 @@ export default function StartWithAIAssistant({
                     </div>
                     {item.normalized_milestone_type ? (
                       <span className="rounded-full border border-sky-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-700">
-                        {item.normalized_milestone_type.replaceAll("_", " ")}
+                        {labelForTemplateMilestoneType(item.normalized_milestone_type) ||
+                          item.normalized_milestone_type.replaceAll("_", " ")}
                       </span>
                     ) : null}
                   </div>

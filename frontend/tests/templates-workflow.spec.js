@@ -726,10 +726,11 @@ test('template copilot can generate and explicitly apply milestone details', asy
     'Remove existing finishes and prep the space for the next phase'
   );
   await expect(page.getByTestId('start-with-ai-milestone-drafts')).toContainText(
-    'rough in'
+    'Electrical Rough'
   );
   await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue('');
   await expect(page.getByTestId('templates-milestone-description-1')).toHaveValue('');
+  await expect(page.getByTestId('templates-milestone-type-1')).toHaveValue('');
 
   await page.getByTestId('start-with-ai-apply-milestones').click();
   await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue(
@@ -744,6 +745,11 @@ test('template copilot can generate and explicitly apply milestone details', asy
   await expect(page.getByTestId('templates-milestone-description-2')).toHaveValue(
     /Remove existing finishes and prep the space/
   );
+  await expect(page.getByTestId('templates-milestone-type-1')).toHaveValue('site_prep');
+  await expect(page.getByTestId('templates-milestone-type-2')).toHaveValue('demolition');
+  await expect(page.getByTestId('templates-milestone-type-3')).toHaveValue('electrical_rough');
+  await expect(page.getByTestId('templates-milestone-type-4')).toHaveValue('cabinetry');
+  await expect(page.getByTestId('templates-milestone-type-6')).toHaveValue('inspection');
 });
 
 test('template copilot milestone generation does not overwrite rows until apply', async ({
@@ -774,6 +780,7 @@ test('template copilot milestone generation does not overwrite rows until apply'
     'Existing kickoff milestone'
   );
   await expect(page.getByTestId('templates-milestone-description-1')).toHaveValue('');
+  await expect(page.getByTestId('templates-milestone-type-1')).toHaveValue('');
 
   await page.getByTestId('start-with-ai-apply-milestones').click();
   await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue(
@@ -782,6 +789,9 @@ test('template copilot milestone generation does not overwrite rows until apply'
   await expect(page.getByTestId('templates-milestone-description-1')).toHaveValue(
     /Review layout assumptions, coordinate approvals/
   );
+  await expect(page.getByTestId('templates-milestone-type-1')).toHaveValue('site_prep');
+  await expect(page.getByTestId('templates-milestone-type-3')).toHaveValue('framing');
+  await expect(page.getByTestId('templates-milestone-type-5')).toHaveValue('inspection');
 });
 
 test('wizard save as template stores the current setup and supports reuse in a later wizard visit', async ({

@@ -9,6 +9,7 @@
 // - Can be used inside TemplatesPage or a dedicated template edit screen
 
 import React, { useMemo, useState } from "react";
+import { TEMPLATE_MILESTONE_TYPE_OPTIONS } from "../lib/milestoneTypes.js";
 
 function safeTrim(v) {
   return v == null ? "" : String(v).trim();
@@ -79,29 +80,7 @@ const CONFIDENCE_OPTIONS = [
 ];
 
 // You can replace/expand these later from taxonomy or backend if desired.
-const DEFAULT_MILESTONE_TYPE_OPTIONS = [
-  { value: "", label: "Not set" },
-  { value: "demolition", label: "Demolition" },
-  { value: "site_prep", label: "Site Prep" },
-  { value: "framing", label: "Framing" },
-  { value: "foundation", label: "Foundation" },
-  { value: "roofing", label: "Roofing" },
-  { value: "siding", label: "Siding" },
-  { value: "windows_doors", label: "Windows / Doors" },
-  { value: "electrical_rough", label: "Electrical Rough" },
-  { value: "plumbing_rough", label: "Plumbing Rough" },
-  { value: "hvac_rough", label: "HVAC Rough" },
-  { value: "insulation", label: "Insulation" },
-  { value: "drywall", label: "Drywall" },
-  { value: "paint_finish", label: "Paint / Finish" },
-  { value: "flooring", label: "Flooring" },
-  { value: "tile_install", label: "Tile Install" },
-  { value: "cabinetry", label: "Cabinetry" },
-  { value: "fixtures", label: "Fixtures" },
-  { value: "trim_finish", label: "Trim / Finish" },
-  { value: "cleanup", label: "Cleanup" },
-  { value: "inspection", label: "Inspection" },
-];
+const DEFAULT_MILESTONE_TYPE_OPTIONS = TEMPLATE_MILESTONE_TYPE_OPTIONS;
 
 export default function TemplateMilestoneEditor({
   value,

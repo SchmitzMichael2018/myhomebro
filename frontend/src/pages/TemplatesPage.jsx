@@ -9,6 +9,7 @@ import {
   getAssistantHandoff,
   normalizeAssistantQuestion,
 } from "../lib/assistantHandoff.js";
+import { canonicalizeTemplateMilestoneType } from "../lib/milestoneTypes.js";
 
 function safeTrim(v) {
   return v == null ? "" : String(v).trim();
@@ -743,7 +744,10 @@ export default function TemplatesPage() {
             {
               title: safeTrim(row?.title),
               description: safeTrim(row?.description),
-              normalized_milestone_type: safeTrim(row?.normalized_milestone_type),
+              normalized_milestone_type: canonicalizeTemplateMilestoneType(
+                row?.normalized_milestone_type,
+                `${safeTrim(row?.title)} ${safeTrim(row?.description)}`
+              ),
               sort_order: idx + 1,
             },
             idx
@@ -1770,6 +1774,7 @@ export default function TemplatesPage() {
                               <div>
                                 <label className="mb-1 block text-xs font-semibold text-slate-700">Type</label>
                                 <input
+                                  data-testid={`templates-milestone-type-${idx + 1}`}
                                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                                   value={m?.normalized_milestone_type || ""}
                                   onChange={(e) =>
