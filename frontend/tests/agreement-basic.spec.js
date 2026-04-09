@@ -2134,13 +2134,13 @@ test('agreement wizard step 2 auto-drafts default subtype milestones when clarif
     waitUntil: 'domcontentloaded',
   });
 
-  await expect(page.getByTestId('step2-ai-autodraft-banner')).toBeVisible();
+  await expect.poll(() => milestoneState.createCount).toBe(5);
   await expect(page.getByText('Planning & protection')).toBeVisible();
   await expect(page.getByText('Demolition & rough-in')).toBeVisible();
   await expect(page.getByText('Cabinets & surfaces')).toBeVisible();
   await expect(page.getByText('Punch list & walkthrough')).toBeVisible();
   await expect(page.locator('[data-testid^="step2-milestone-ai-indicator-"]')).toHaveCount(5);
-  await expect.poll(() => milestoneState.createCount).toBe(5);
+  await expect(page.getByTestId('step2-ai-autodraft-banner')).toBeVisible();
 });
 
 test('agreement wizard step 2 uses clarification answers to shape kitchen milestone drafts', async ({
@@ -2198,12 +2198,13 @@ test('agreement wizard step 2 uses clarification answers to shape kitchen milest
   });
 
   await expect(page.getByTestId('step2-ai-autodraft-banner')).toBeVisible();
-  await expect(page.getByText('Layout changes & rough-in')).toBeVisible();
+  await expect(page.getByText('Layout review & utility changes')).toBeVisible();
+  await expect(page.getByText('Selective demolition & rough-in')).toBeVisible();
   await expect(page.getByText('Countertops, surfaces & finishes')).toBeVisible();
   await expect(page.getByText('Included finish scope: backsplash, pendant lighting, and quartz countertops.')).toBeVisible();
   await expect(page.getByText('Cabinets & surfaces')).toHaveCount(0);
-  await expect(page.getByText('Demolition & rough-in')).toHaveCount(0);
-  await expect.poll(() => milestoneState.createCount).toBe(5);
+  await expect(page.locator('[data-testid^="step2-milestone-ai-indicator-"]')).toHaveCount(6);
+  await expect.poll(() => milestoneState.createCount).toBe(6);
 });
 
 test('agreement wizard step 2 auto-drafts focused install milestones for cabinet installation projects', async ({
@@ -2259,6 +2260,129 @@ test('agreement wizard step 2 auto-drafts focused install milestones for cabinet
   await expect(page.getByText('Hardware & adjustments')).toBeVisible();
   await expect(page.getByText('Final walkthrough')).toBeVisible();
   await expect(page.getByText('Demolition & rough-in')).toHaveCount(0);
+  await expect(page.locator('[data-testid^="step2-milestone-ai-indicator-"]')).toHaveCount(4);
+  await expect.poll(() => milestoneState.createCount).toBe(4);
+});
+
+test('agreement wizard step 2 adds optional cabinet milestones when clarified scope includes demo and hardware', async ({
+  page,
+}) => {
+  const agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Cabinet Installation',
+    title: 'Cabinet Installation',
+    project_type: 'Cabinetry',
+    project_subtype: 'Cabinet Installation',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description:
+      'Install new kitchen cabinets and hardware with minor trim adjustments and final fit checks.',
+    homeowner: null,
+    status: 'draft',
+    ai_scope: {
+      answers: {
+        demo_required: 'yes',
+        hardware_included: 'yes',
+        cabinet_style_notes: 'full-height pantry wall and island base cabinets',
+      },
+    },
+    compliance_warning: {
+      warning_level: 'none',
+      message: '',
+    },
+  };
+
+  const milestoneState = {
+    items: [],
+    nextId: 965,
+    createCount: 0,
+  };
+
+  await installStep2AutoDraftRoutes(page, {
+    agreement,
+    projectTypes: [{ id: 9, value: 'Cabinetry', label: 'Cabinetry', owner_type: 'system' }],
+    projectSubtypes: [
+      {
+        id: 19,
+        value: 'Cabinet Installation',
+        label: 'Cabinet Installation',
+        owner_type: 'system',
+        project_type: 'Cabinetry',
+      },
+    ],
+    milestoneState,
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step2-ai-autodraft-banner')).toBeVisible();
+  await expect(page.getByText('Demo & site prep')).toBeVisible();
+  await expect(page.getByText('Hardware, fillers & trim')).toBeVisible();
+  await expect(page.getByText('Alignment & final adjustments')).toBeVisible();
+  await expect(page.getByText('Layout details: full-height pantry wall and island base cabinets.')).toBeVisible();
+  await expect(page.locator('[data-testid^="step2-milestone-ai-indicator-"]')).toHaveCount(6);
+  await expect.poll(() => milestoneState.createCount).toBe(6);
+});
+
+test('agreement wizard step 2 removes optional bathroom tile milestone rows when tile scope is excluded', async ({
+  page,
+}) => {
+  const agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Bathroom Remodel',
+    title: 'Bathroom Remodel',
+    project_type: 'Remodel',
+    project_subtype: 'Bathroom Remodel',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description:
+      'Bathroom remodel with fixture updates, wall prep, and finish work but no tile replacement in wet areas.',
+    homeowner: null,
+    status: 'draft',
+    ai_scope: {
+      answers: {
+        wet_area_tile: 'no',
+      },
+    },
+    compliance_warning: {
+      warning_level: 'none',
+      message: '',
+    },
+  };
+
+  const milestoneState = {
+    items: [],
+    nextId: 972,
+    createCount: 0,
+  };
+
+  await installStep2AutoDraftRoutes(page, {
+    agreement,
+    projectTypes: [{ id: 7, value: 'Remodel', label: 'Remodel', owner_type: 'system' }],
+    projectSubtypes: [
+      {
+        id: 17,
+        value: 'Bathroom Remodel',
+        label: 'Bathroom Remodel',
+        owner_type: 'system',
+        project_type: 'Remodel',
+      },
+    ],
+    milestoneState,
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step2-ai-autodraft-banner')).toBeVisible();
+  await expect(page.getByText('Include wall touch-up and non-tile surface prep needed before the fixture phase.')).toBeVisible();
+  await expect(page.getByText('Tile & waterproofing finish')).toHaveCount(0);
+  await expect(page.getByText('Walls, waterproofing & tile')).toHaveCount(0);
   await expect(page.locator('[data-testid^="step2-milestone-ai-indicator-"]')).toHaveCount(4);
   await expect.poll(() => milestoneState.createCount).toBe(4);
 });

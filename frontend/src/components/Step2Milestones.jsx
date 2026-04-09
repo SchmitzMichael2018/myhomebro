@@ -588,6 +588,12 @@ function appendMilestoneDetail(baseText, detail) {
   return `${trimmedBase}. ${extra}`;
 }
 
+function insertMilestoneRow(rows, index, row) {
+  const next = Array.isArray(rows) ? [...rows] : [];
+  next.splice(Math.max(0, Math.min(index, next.length)), 0, row);
+  return next;
+}
+
 function buildClarificationAwareMilestoneNotes(answers = {}) {
   const lines = [];
 
@@ -688,22 +694,43 @@ function buildStep2AutoMilestoneDraft({
       { title: "Punch list & walkthrough", description: "Finish punch items, final cleanup, and customer walkthrough." },
     ];
     if (layoutChanges === "yes") {
-      rows[1] = {
-        title: "Layout changes & rough-in",
+      rows = insertMilestoneRow(rows, 1, {
+        title: "Layout review & utility changes",
         description:
-          "Remove existing finishes, adjust the kitchen layout as needed, and complete rough utility changes before finishes begin.",
+          "Confirm layout changes, coordinate updated appliance locations, and complete the major utility adjustments before finish installation.",
+      });
+      rows[2] = {
+        title: "Selective demolition & rough-in",
+        description:
+          "Remove existing finishes and complete rough framing, plumbing, or electrical work needed for the updated kitchen layout.",
       };
     }
-    if (cabinetScope === "no") {
-      rows[2] = {
+    const cabinetsIndex = rows.findIndex((row) => row.title === "Cabinets & surfaces");
+    if (cabinetScope === "yes" && cabinetsIndex >= 0) {
+      rows[cabinetsIndex] = {
+        title: "Cabinet installation",
+        description:
+          "Install cabinetry, secure boxes in the planned layout, and prepare for final countertop or trim work.",
+      };
+      rows = insertMilestoneRow(rows, cabinetsIndex + 1, {
+        title: "Countertops & surface finishes",
+        description:
+          "Install countertops, backsplash, and the major kitchen surface finishes that complete the cabinetry phase.",
+      });
+    } else if (cabinetScope === "no" && cabinetsIndex >= 0) {
+      rows[cabinetsIndex] = {
         title: "Countertops, surfaces & finishes",
         description:
           "Complete countertop work, backsplash or wall finishes, and other major kitchen surface upgrades without cabinet replacement.",
       };
     }
     if (finishScopeNotes) {
-      rows[3].description = appendMilestoneDetail(
-        rows[3].description,
+      const finishRowIndex =
+        rows.findIndex((row) => row.title === "Countertops & surface finishes") >= 0
+          ? rows.findIndex((row) => row.title === "Countertops & surface finishes")
+          : rows.findIndex((row) => row.title === "Fixtures & appliances");
+      rows[finishRowIndex].description = appendMilestoneDetail(
+        rows[finishRowIndex].description,
         `Included finish scope: ${finishScopeNotes}.`
       );
     }
@@ -716,18 +743,33 @@ function buildStep2AutoMilestoneDraft({
       { title: "Final cleanup & walkthrough", description: "Complete punch work, cleanup, and final customer review." },
     ];
     if (layoutChanges === "yes") {
-      rows[1] = {
+      rows = insertMilestoneRow(rows, 1, {
         title: "Layout changes & rough-ins",
         description:
           "Complete plumbing and electrical rough changes needed for the updated bathroom layout before finish work starts.",
-      };
+      });
     }
-    if (wetAreaTile === "no") {
-      rows[2] = {
-        title: "Walls & surface prep",
+    const wetAreaIndex = rows.findIndex((row) => row.title === "Walls, waterproofing & tile");
+    if (wetAreaTile === "yes" && wetAreaIndex >= 0) {
+      rows[wetAreaIndex] = {
+        title: "Walls & waterproofing prep",
         description:
-          "Prep wall and wet-area surfaces, complete needed backing or repairs, and ready the room for finish installation without tile scope.",
+          "Prep backing, wall surfaces, and wet-area protection so the finish tile work has a clean installation base.",
       };
+      rows = insertMilestoneRow(rows, wetAreaIndex + 1, {
+        title: "Tile & waterproofing finish",
+        description:
+          "Install tile finishes, seal wet areas, and complete the detailed waterproofing work included in the remodel scope.",
+      });
+    } else if (wetAreaTile === "no" && wetAreaIndex >= 0) {
+      rows = rows.filter((_, idx) => idx !== wetAreaIndex);
+      const fixtureIndex = rows.findIndex((row) => row.title === "Vanity, fixtures & trim");
+      if (fixtureIndex >= 0) {
+        rows[fixtureIndex].description = appendMilestoneDetail(
+          rows[fixtureIndex].description,
+          "Include wall touch-up and non-tile surface prep needed before the fixture phase."
+        );
+      }
     }
     if (fixtureUpgradeNotes) {
       rows[3].description = appendMilestoneDetail(
@@ -743,14 +785,26 @@ function buildStep2AutoMilestoneDraft({
       { title: "Final walkthrough", description: "Review fit and finish, cleanup, and confirm punch items with the customer." },
     ];
     if (demoRequired === "yes") {
-      rows[0] = {
-        title: "Demo, measurements & prep",
+      rows = insertMilestoneRow(rows, 0, {
+        title: "Demo & site prep",
         description:
-          "Remove existing cabinetry as needed, confirm layout, and stage the site for the new cabinet installation.",
-      };
+          "Remove existing cabinetry if needed, protect surrounding finishes, and prepare the space for the new cabinet install.",
+      });
     }
-    if (hardwareIncluded === "no") {
-      rows[2] = {
+    const hardwareIndex = rows.findIndex((row) => row.title === "Hardware & adjustments");
+    if (hardwareIncluded === "yes" && hardwareIndex >= 0) {
+      rows[hardwareIndex] = {
+        title: "Hardware, fillers & trim",
+        description:
+          "Install pulls, fillers, panels, and trim pieces that complete the cabinetry scope.",
+      };
+      rows = insertMilestoneRow(rows, hardwareIndex + 1, {
+        title: "Alignment & final adjustments",
+        description:
+          "Align doors and drawers, fine tune reveals, and complete final fit checks before walkthrough.",
+      });
+    } else if (hardwareIncluded === "no" && hardwareIndex >= 0) {
+      rows[hardwareIndex] = {
         title: "Alignment & adjustments",
         description:
           "Align doors and drawers, confirm fit, and complete final adjustment work without hardware or trim installation scope.",
@@ -776,22 +830,29 @@ function buildStep2AutoMilestoneDraft({
       { title: "Testing & adjustments", description: "Test operation, fine tune fit, and complete any adjustments." },
       { title: "Cleanup & customer review", description: "Clean the area and review operation and handoff details with the customer." },
     ];
-    if (connectionReady === "no") {
-      rows[1] = {
-        title: "Utility prep & installation",
-        description:
-          "Prepare required hookups or utility connections, then set appliances in place and complete the installation.",
-      };
-    }
     if (haulAwayExisting === "yes") {
-      rows[0].description = appendMilestoneDetail(
-        rows[0].description,
-        "Disconnect and remove existing appliances as part of staging."
-      );
+      rows = insertMilestoneRow(rows, 1, {
+        title: "Disconnect & haul-away",
+        description:
+          "Disconnect existing appliances safely, remove them from the work area, and prep the site for the new installation.",
+      });
+    }
+    if (connectionReady === "no") {
+      rows = insertMilestoneRow(rows, haulAwayExisting === "yes" ? 2 : 1, {
+        title: "Utility prep",
+        description:
+          "Prepare required hookups, shutoffs, or connection points so the appliance installation can proceed cleanly.",
+      });
+      const installIndex = rows.findIndex((row) => row.title === "Installation");
+      if (installIndex >= 0) {
+        rows[installIndex].description =
+          "Set appliances in place, complete final hookups, and secure the finished installation once utilities are ready.";
+      }
     }
     if (applianceScopeNotes) {
-      rows[1].description = appendMilestoneDetail(
-        rows[1].description,
+      const installIndex = rows.findIndex((row) => row.title === "Installation");
+      rows[installIndex].description = appendMilestoneDetail(
+        rows[installIndex].description,
         `Included appliance details: ${applianceScopeNotes}.`
       );
     }
@@ -810,14 +871,16 @@ function buildStep2AutoMilestoneDraft({
       };
     }
     if (deckingAllowance === "yes") {
-      rows[1].description = appendMilestoneDetail(
-        rows[1].description,
-        "Include minor decking repair where needed before the roof system is installed."
-      );
+      rows = insertMilestoneRow(rows, 2, {
+        title: "Deck repair allowance",
+        description:
+          "Complete minor decking repairs or spot replacement where needed before the roofing system is closed in.",
+      });
     }
     if (roofingNotes) {
-      rows[2].description = appendMilestoneDetail(
-        rows[2].description,
+      const roofInstallIndex = rows.findIndex((row) => row.title === "Roof system installation");
+      rows[roofInstallIndex].description = appendMilestoneDetail(
+        rows[roofInstallIndex].description,
         `System details: ${roofingNotes}.`
       );
     }
@@ -828,8 +891,23 @@ function buildStep2AutoMilestoneDraft({
       { title: "Flooring installation", description: "Install flooring materials and transitions." },
       { title: "Trim & cleanup", description: "Complete trim details, cleanup, and final walkthrough." },
     ];
-    if (subfloorPrep === "no") {
-      rows[1] = {
+    if (demoRequired === "yes") {
+      rows = insertMilestoneRow(rows, 1, {
+        title: "Demo & disposal",
+        description:
+          "Remove existing flooring materials, dispose of debris, and leave the work areas ready for substrate prep.",
+      });
+    }
+    if (subfloorPrep === "yes") {
+      const prepIndex = rows.findIndex((row) => row.title === "Surface preparation");
+      rows[prepIndex] = {
+        title: "Subfloor prep & leveling",
+        description:
+          "Complete subfloor repairs, patching, or leveling work needed before finish flooring installation begins.",
+      };
+    } else if (subfloorPrep === "no") {
+      const prepIndex = rows.findIndex((row) => row.title === "Surface preparation");
+      rows[prepIndex] = {
         title: "Surface readiness check",
         description:
           "Verify the substrate is ready for installation and complete only minor prep before flooring work begins.",
