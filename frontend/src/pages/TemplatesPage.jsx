@@ -1028,7 +1028,7 @@ export default function TemplatesPage() {
       <StartWithAIEntry
         className="mb-4"
         testId="templates-ai-entry"
-        title="Start with AI inside templates"
+        title="Ask AI in templates"
         description="Use the current template context to apply it, refine the milestone structure, or jump into agreement drafting."
         context={assistantContext}
       />

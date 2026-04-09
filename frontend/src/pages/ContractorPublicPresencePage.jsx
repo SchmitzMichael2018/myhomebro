@@ -1026,7 +1026,7 @@ export default function ContractorPublicPresencePage() {
                     <StartWithAIEntry
                       className="mb-4"
                       testId="public-lead-ai-entry"
-                      title="Start with AI for this lead"
+                      title="Ask AI about this lead"
                       description="Use the current lead context to decide whether to review, analyze, send intake, or draft the agreement."
                       context={leadAssistantContext}
                       onAction={handleLeadAssistantAction}

@@ -36,7 +36,7 @@ import {
 
 const NAV_HINTS = {
   "/app/dashboard": "See what needs attention and what to do next",
-  "/app/assistant": "Capture new leads and start projects quickly",
+  "/app/assistant": "Start new work with AI guidance across agreements, templates, leads, and setup",
   "/app/business": "View revenue, activity, and business performance",
   "/app/reviewer/queue": "Review items waiting on your action or approval",
   "/app/agreements": "Create and manage project agreements, signatures, and funding",
@@ -341,7 +341,7 @@ export default function Sidebar({ variant = "desktop" }) {
     return (
       <>
         <Item to={`${APP_BASE}/dashboard`} label="Dashboard" icon={LayoutDashboard} />
-        <Item to={`${APP_BASE}/assistant`} label="Start with AI" icon={Bot} />
+        <Item to={`${APP_BASE}/assistant`} label="AI Workspace" icon={Bot} />
         <Item to={`${APP_BASE}/business`} label="Business Dashboard" icon={Gauge} />
         <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} />
         <Item to={`${APP_BASE}/agreements`} label="Agreements" icon={FileSignature} />
@@ -602,7 +602,7 @@ export default function Sidebar({ variant = "desktop" }) {
                 data-testid="assistant-dock-open-button"
                 onClick={() =>
                   openAssistant({
-                    title: "Start with AI",
+                    title: "Ask AI",
                     context: { current_route: `${location.pathname}${location.search || ""}` },
                   })
                 }
@@ -610,13 +610,13 @@ export default function Sidebar({ variant = "desktop" }) {
               >
                 <span aria-hidden="true">âœ¨</span>
                 <Sparkles size={16} strokeWidth={2} className="shrink-0 text-[#214d7f]" />
-                <span>Open AI Panel</span>
+                <span>Ask AI</span>
               </button>
             </div>
 
             <NavGroup label="Main">
               <Item to={`${APP_BASE}/dashboard`} label="Dashboard" icon={LayoutDashboard} />
-              <Item to={`${APP_BASE}/assistant`} label="Start with AI" icon={Bot} />
+              <Item to={`${APP_BASE}/assistant`} label="AI Workspace" icon={Bot} />
             </NavGroup>
 
             <NavGroup label="Work" className="pt-1">
@@ -671,14 +671,14 @@ export default function Sidebar({ variant = "desktop" }) {
               data-testid="assistant-dock-open-button"
               onClick={() =>
                 openAssistant({
-                  title: "Start with AI",
+                  title: "Ask AI",
                   context: { current_route: `${location.pathname}${location.search || ""}` },
                 })
               }
               className="mb-3 hidden w-full items-center justify-center gap-2 rounded-xl border border-black/10 bg-white px-3 py-2 text-sm font-extrabold text-slate-800 transition hover:bg-slate-50 xl:flex"
             >
               <span aria-hidden="true">✨</span>
-              Open AI Panel
+              Ask AI
             </button>
           ) : null}
           <div className="space-y-2">{mainNav}</div>

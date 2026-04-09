@@ -1548,7 +1548,7 @@ export default function ContractorDashboard() {
         title: "Complete your next agreement with AI",
         message: "Use AI to create your next agreement and project plan. It will guide you step by step.",
         rationale: "",
-        ctaLabel: "Start with AI",
+        ctaLabel: "AI Workspace",
         navigationTarget: "/app/assistant",
         action: goStartFirstProjectWithAi,
       };
@@ -1558,7 +1558,7 @@ export default function ContractorDashboard() {
       title: "Start your next agreement",
       message: "Use AI to quickly create your next project agreement.",
       rationale: "",
-      ctaLabel: "Start with AI",
+      ctaLabel: "AI Workspace",
       navigationTarget: "/app/assistant",
       action: goStartFirstProjectWithAi,
     };

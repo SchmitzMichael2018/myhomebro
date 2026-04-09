@@ -101,7 +101,7 @@ export function AssistantDockProvider({ children }) {
   const location = useLocation();
   const [open, setOpen] = useState(false);
   const [minimized, setMinimized] = useState(false);
-  const [dockTitle, setDockTitle] = useState("Start with AI");
+  const [dockTitle, setDockTitle] = useState("Ask AI");
   const [dockContext, setDockContext] = useState(null);
   const [dockOnAction, setDockOnAction] = useState(null);
 
@@ -109,7 +109,7 @@ export function AssistantDockProvider({ children }) {
     (options = {}) => {
       setOpen(true);
       setMinimized(false);
-      setDockTitle(options.title || "Start with AI");
+      setDockTitle(options.title || "Ask AI");
       setDockContext(options.context || buildRouteContext(location));
       setDockOnAction(() =>
         typeof options.onAction === "function" ? options.onAction : null

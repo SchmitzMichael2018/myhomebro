@@ -150,8 +150,8 @@ function ChecklistTone({ tone = "success" }) {
 }
 
 export function StartWithAIEntry({
-  title = "Start with AI",
-  description = "Get a guided next step for the workflow you are already in.",
+  title = "Ask AI",
+  description = "Get contextual help for the workflow you are already in.",
   context = {},
   onAction,
   onOpenChange = null,
@@ -197,7 +197,7 @@ export function StartWithAIEntry({
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
           >
             <Wand2 className="h-4 w-4" />
-            {resolvedOpen ? "Hide Assistant" : "Start with AI"}
+            {resolvedOpen ? "Hide Assistant" : "Ask AI"}
           </button>
           <button
             type="button"
@@ -209,7 +209,7 @@ export function StartWithAIEntry({
             className="hidden items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 xl:inline-flex"
           >
             <PanelRightOpen className="h-4 w-4" />
-            Open Side Panel
+            Open Copilot
           </button>
         </div>
       </div>
@@ -228,6 +228,31 @@ export function StartWithAIEntry({
   );
 }
 
+export function buildAssistantNavigationState(plan, normalizedContext) {
+  return {
+    assistantPrefill: plan.prefill_fields || {},
+    assistantDraftPayload: plan.draft_payload || {},
+    assistantWizardStepTarget: plan.wizard_step_target || null,
+    assistantSuggestedMilestones: plan.suggested_milestones || [],
+    assistantClarificationQuestions: plan.clarification_questions || [],
+    assistantEstimatePreview:
+      plan.applyable_preview?.estimate_preview || plan.preview_payload?.estimate_preview || {},
+    assistantTemplateRecommendations:
+      plan.applyable_preview?.template_recommendations || plan.preview_payload?.templates || [],
+    assistantTopTemplatePreview:
+      plan.applyable_preview?.top_template_preview || plan.preview_payload?.top_template_preview || {},
+    assistantProactiveRecommendations: plan.proactive_recommendations || [],
+    assistantPredictiveInsights: plan.predictive_insights || [],
+    assistantProposedActions: plan.proposed_actions || [],
+    assistantConfirmationRequiredActions: plan.confirmation_required_actions || [],
+    assistantGuidedFlow: plan.automation_plan?.guided_flow || plan.guided_flow || {},
+    assistantAutomationPlan: plan.automation_plan || {},
+    assistantOnboarding: plan.preview_payload?.onboarding || {},
+    assistantIntent: plan.intent || "",
+    assistantContext: normalizedContext,
+  };
+}
+
 export default function StartWithAIAssistant({
   mode = "page",
   context = null,
@@ -240,6 +265,7 @@ export default function StartWithAIAssistant({
   const testId = (base) => (mode === "dock" ? `${base}-dock` : base);
   const contextSignature = useMemo(() => JSON.stringify(context || {}), [context]);
   const normalizedContext = useMemo(() => context || {}, [contextSignature, context]);
+  const isContextualMode = mode === "dock" || mode === "panel";
   const panelConfig = useMemo(
     () => normalizePanelConfig(normalizedContext),
     [normalizedContext]
@@ -314,6 +340,11 @@ export default function StartWithAIAssistant({
   const showDiagnostics =
     import.meta.env.DEV ||
     (typeof window !== "undefined" && window.MYHOMEBRO_DEBUG_ASSISTANT === true);
+  const visibleQuickActions = isContextualMode ? [] : userFacingPanel.quickActions;
+  const sectionEyebrow = isContextualMode ? "AI Copilot" : "AI Assistant";
+  const inputHelperText = isContextualMode
+    ? "Ask AI about the step you're on right now."
+    : "Describe the work you want to start or improve.";
 
   function applyPlan(nextPlan, submittedPrompt = "", options = {}) {
     setPlan(nextPlan);
@@ -472,28 +503,7 @@ export default function StartWithAIAssistant({
     }
     if (!plan?.navigation_target) return;
     navigate(plan.navigation_target, {
-      state: {
-        assistantPrefill: plan.prefill_fields || {},
-        assistantDraftPayload: plan.draft_payload || {},
-        assistantWizardStepTarget: plan.wizard_step_target || null,
-        assistantSuggestedMilestones: plan.suggested_milestones || [],
-        assistantClarificationQuestions: plan.clarification_questions || [],
-        assistantEstimatePreview:
-          plan.applyable_preview?.estimate_preview || plan.preview_payload?.estimate_preview || {},
-        assistantTemplateRecommendations:
-          plan.applyable_preview?.template_recommendations || plan.preview_payload?.templates || [],
-        assistantTopTemplatePreview:
-          plan.applyable_preview?.top_template_preview || plan.preview_payload?.top_template_preview || {},
-        assistantProactiveRecommendations: plan.proactive_recommendations || [],
-        assistantPredictiveInsights: plan.predictive_insights || [],
-        assistantProposedActions: plan.proposed_actions || [],
-        assistantConfirmationRequiredActions: plan.confirmation_required_actions || [],
-        assistantGuidedFlow: plan.automation_plan?.guided_flow || plan.guided_flow || {},
-        assistantAutomationPlan: plan.automation_plan || {},
-        assistantOnboarding: plan.preview_payload?.onboarding || {},
-        assistantIntent: plan.intent || "",
-        assistantContext: normalizedContext,
-      },
+      state: buildAssistantNavigationState(plan, normalizedContext),
     });
   }
 
@@ -528,7 +538,7 @@ export default function StartWithAIAssistant({
             </div>
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-                AI Assistant
+                {sectionEyebrow}
               </div>
               <h2
                 data-testid={testId("start-with-ai-title")}
@@ -629,9 +639,9 @@ export default function StartWithAIAssistant({
           </div>
         ) : null}
 
-        {userFacingPanel.quickActions.length ? (
+        {visibleQuickActions.length ? (
           <div className="flex flex-wrap gap-2">
-            {userFacingPanel.quickActions.map((action) => (
+            {visibleQuickActions.map((action) => (
               <button
                 key={action.intent || action.label}
                 type="button"
@@ -657,7 +667,7 @@ export default function StartWithAIAssistant({
             />
             <div className="mt-2 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-3">
               <div className="text-xs text-slate-500">
-                Ask AI what you want to improve in this step.
+                {inputHelperText}
               </div>
               <div className="flex items-center gap-2">
                 <button
