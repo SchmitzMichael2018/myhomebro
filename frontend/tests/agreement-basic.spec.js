@@ -1307,6 +1307,206 @@ test('agreement wizard step 1 refines a rough description and recommends a templ
   );
 });
 
+test('agreement wizard step 1 shows clarifications after template application and keeps them skippable', async ({
+  page,
+}) => {
+  let agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Template-driven draft',
+    title: 'Template-driven draft',
+    project_type: '',
+    project_subtype: '',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description: '',
+    homeowner: null,
+    status: 'draft',
+    ai_scope: {
+      answers: {},
+    },
+    compliance_warning: {
+      warning_level: 'none',
+      message: '',
+    },
+  };
+  const patchPayloads = [];
+
+  await installWizardAuthRoutes(page);
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, value: 'Remodel', label: 'Remodel', owner_type: 'system' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 11,
+            value: 'Kitchen Remodel',
+            label: 'Kitchen Remodel',
+            owner_type: 'system',
+            project_type: 'Remodel',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/**', async (route) => {
+    const url = route.request().url();
+    if (url.includes('/templates/recommend/')) {
+      await route.fallback();
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 44,
+            name: 'Kitchen Remodel Template',
+            project_type: 'Remodel',
+            project_subtype: 'Kitchen Remodel',
+            milestone_count: 5,
+            description: 'Reusable kitchen remodel starting point.',
+            owner_type: 'system',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/templates\/44\/?(\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 44,
+        name: 'Kitchen Remodel Template',
+        project_type: 'Remodel',
+        project_subtype: 'Kitchen Remodel',
+        milestone_count: 5,
+        estimated_days: 7,
+        description: 'Reusable kitchen remodel starting point.',
+        milestones: [
+          { id: 1, title: 'Demo', description: 'Protect space and remove old finishes.' },
+        ],
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/123\/apply-template\/$/, async (route) => {
+    agreement = {
+      ...agreement,
+      selected_template_id: 44,
+      selected_template: {
+        id: 44,
+        name: 'Kitchen Remodel Template',
+        project_type: 'Remodel',
+        project_subtype: 'Kitchen Remodel',
+      },
+      selected_template_name_snapshot: 'Kitchen Remodel Template',
+      project_type: '',
+      project_subtype: '',
+    };
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        agreement,
+      }),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`),
+    async (route) => {
+      const request = route.request();
+
+      if (request.method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+
+      if (request.method() === 'PATCH') {
+        const payload = request.postDataJSON();
+        patchPayloads.push(payload);
+        agreement = {
+          ...agreement,
+          ...payload,
+          ai_scope: {
+            ...(agreement.ai_scope || {}),
+            answers: {
+              ...((agreement.ai_scope && agreement.ai_scope.answers) || {}),
+              ...(payload.scope_clarifications || {}),
+            },
+          },
+        };
+
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+
+      await route.fallback();
+    }
+  );
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await page.getByRole('button', { name: 'Use Template' }).click();
+  await expect(page.getByTestId('step1-template-browser')).toBeVisible();
+
+  await page.locator('input[placeholder*="Search templates by keyword"]').fill('kitchen');
+  await page.getByRole('button', { name: /Kitchen Remodel Template/ }).click();
+  await page.getByRole('button', { name: 'Apply Selected Template' }).click();
+
+  await expect(page.getByText('Applied to Agreement')).toBeVisible();
+  await expect(page.locator('select[name="project_subtype"]')).toHaveValue('');
+  await expect(page.getByTestId('agreement-clarification-section')).toBeVisible();
+  await expect(page.getByTestId('agreement-clarification-question-layout_changes')).toContainText(
+    'Does the kitchen layout or appliance placement change?'
+  );
+
+  await page.getByTestId('agreement-clarification-cabinet_scope-yes').click();
+  await expect(page.getByTestId('agreement-clarification-summary')).toContainText(
+    'Are cabinets included in the project scope? Yes.'
+  );
+
+  await expect.poll(() =>
+    patchPayloads.some(
+      (payload) => payload.scope_clarifications?.cabinet_scope === 'yes'
+    )
+  ).toBeTruthy();
+
+  await page.getByTestId('agreement-clarification-skip').click();
+  await expect(page.getByTestId('agreement-clarification-skipped')).toContainText(
+    'You can skip these for now and still keep moving'
+  );
+});
+
 test('agreement wizard step 1 prefers remodel taxonomy over supporting electrical or plumbing scope', async ({
   page,
 }) => {

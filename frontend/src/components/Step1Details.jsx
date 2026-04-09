@@ -645,26 +645,8 @@ export default function Step1Details({
       null
     );
   }, [projectSubtypeOptions, dLocal?.project_subtype]);
-  const clarificationQuestions = useMemo(
-    () => getSubtypeClarificationQuestions(dLocal?.project_subtype),
-    [dLocal?.project_subtype]
-  );
-  const agreementClarificationAnswers = useMemo(
-    () => pickClarificationAnswers(clarificationQuestions, agreement?.ai_scope?.answers || {}),
-    [clarificationQuestions, agreement?.ai_scope?.answers]
-  );
   const [clarificationAnswers, setClarificationAnswers] = useState({});
   const [clarificationsSkipped, setClarificationsSkipped] = useState(false);
-
-  useEffect(() => {
-    setClarificationAnswers(agreementClarificationAnswers);
-    setClarificationsSkipped(false);
-  }, [agreementClarificationAnswers, safeTrim(dLocal?.project_subtype)]);
-
-  const clarificationSummaryLines = useMemo(
-    () => buildClarificationNotes(clarificationQuestions, clarificationAnswers),
-    [clarificationQuestions, clarificationAnswers]
-  );
   const augmentedProjectTypeOptions = useMemo(() => {
     const current = safeTrim(dLocal?.project_type);
     if (!current || (projectTypeOptions || []).some((opt) => safeTrim(opt?.value) === current)) {
@@ -1746,6 +1728,38 @@ export default function Step1Details({
       agreement?.selected_template_name_snapshot ||
       dLocal?.selected_template_name_snapshot ||
       selectedTemplate?.name
+  );
+  const effectiveClarificationSubtype = useMemo(() => {
+    return safeTrim(
+      dLocal?.project_subtype ||
+        agreement?.selected_template?.project_subtype ||
+        dLocal?.selected_template?.project_subtype ||
+        selectedTemplate?.project_subtype ||
+        assistantTopTemplatePreview?.project_subtype ||
+        ""
+    );
+  }, [
+    dLocal?.project_subtype,
+    agreement?.selected_template?.project_subtype,
+    dLocal?.selected_template?.project_subtype,
+    selectedTemplate?.project_subtype,
+    assistantTopTemplatePreview?.project_subtype,
+  ]);
+  const clarificationQuestions = useMemo(
+    () => getSubtypeClarificationQuestions(effectiveClarificationSubtype),
+    [effectiveClarificationSubtype]
+  );
+  const agreementClarificationAnswers = useMemo(
+    () => pickClarificationAnswers(clarificationQuestions, agreement?.ai_scope?.answers || {}),
+    [clarificationQuestions, agreement?.ai_scope?.answers]
+  );
+  useEffect(() => {
+    setClarificationAnswers(agreementClarificationAnswers);
+    setClarificationsSkipped(false);
+  }, [agreementClarificationAnswers, effectiveClarificationSubtype]);
+  const clarificationSummaryLines = useMemo(
+    () => buildClarificationNotes(clarificationQuestions, clarificationAnswers),
+    [clarificationQuestions, clarificationAnswers]
   );
   const aiRecommendedTemplate = useMemo(() => {
     const assistantTop = Array.isArray(assistantTemplateRecommendations)
@@ -3274,7 +3288,7 @@ export default function Step1Details({
                       </div>
                       <div className="mt-1 text-sm text-slate-600">
                         Answer a few quick questions so the scope and milestone plan fit this{" "}
-                        {safeTrim(dLocal?.project_subtype) || "project"} more closely.
+                        {effectiveClarificationSubtype || "project"} more closely.
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
