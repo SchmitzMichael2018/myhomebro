@@ -6474,7 +6474,7 @@ class SeededBenchmarkFoundationTests(TestCase):
     def test_national_fallback_when_no_local_match_exists(self):
         result = resolve_seed_benchmark_defaults(
             project_type="Plumbing",
-            project_subtype="Plumbing Repair / Replacement",
+            project_subtype="Plumbing Repair",
             region_state="FL",
             region_city="Miami",
         )
@@ -6484,6 +6484,33 @@ class SeededBenchmarkFoundationTests(TestCase):
         self.assertEqual(result["region_scope_used"], "national")
         self.assertEqual(result["normalized_region_key"], "US")
         self.assertIn("national", result["fallback_reason"].lower())
+
+    def test_starter_library_templates_seed_with_expected_names_and_milestone_counts(self):
+        expected_templates = {
+            "Bathroom Remodel",
+            "Kitchen Remodel",
+            "Cabinet Installation",
+            "Countertop Installation",
+            "Appliance Installation",
+            "Flooring Installation",
+            "Interior Painting",
+            "Roof Replacement",
+            "Fence Installation",
+            "Deck Build",
+            "Plumbing Repair",
+            "Electrical Work",
+        }
+
+        system_templates = {
+            row.name: row
+            for row in ProjectTemplate.objects.filter(is_system=True, name__in=expected_templates).prefetch_related("milestones")
+        }
+
+        self.assertEqual(set(system_templates.keys()), expected_templates)
+        for name, template in system_templates.items():
+            self.assertIn(template.project_subtype, expected_templates)
+            self.assertGreaterEqual(template.milestones.count(), 4, msg=name)
+            self.assertLessEqual(template.milestones.count(), 7, msg=name)
 
     def test_structured_resolver_output_includes_region_and_fallback_metadata(self):
         result = resolve_seed_benchmark_defaults(
@@ -6890,6 +6917,26 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         response = self.client.get("/api/projects/templates/discover/", {"source": "system"})
         self.assertEqual(response.status_code, 200)
         self.assertTrue(any(row["is_system"] for row in response.json()["results"]))
+        names = {row["name"] for row in response.json()["results"]}
+        self.assertIn("Bathroom Remodel", names)
+        self.assertIn("Kitchen Remodel", names)
+        self.assertIn("Roof Replacement", names)
+
+    def test_recommend_endpoint_can_return_seeded_starter_template(self):
+        response = self.client.post(
+            "/api/projects/templates/recommend/",
+            {
+                "project_title": "Bathroom Remodel",
+                "project_type": "Remodel",
+                "project_subtype": "Bathroom Remodel",
+                "description": "Full bathroom remodel with demo, waterproofing, tile, vanity, and fixture replacement.",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["confidence"], "recommended")
+        self.assertEqual(body["recommended_template"]["name"], "Bathroom Remodel")
 
     def test_regional_templates_rank_above_national_when_region_matches(self):
         result = discover_templates(
