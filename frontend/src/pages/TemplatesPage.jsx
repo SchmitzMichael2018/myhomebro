@@ -9,7 +9,10 @@ import {
   getAssistantHandoff,
   normalizeAssistantQuestion,
 } from "../lib/assistantHandoff.js";
-import { canonicalizeTemplateMilestoneType } from "../lib/milestoneTypes.js";
+import {
+  canonicalizeTemplateMilestoneType,
+  TEMPLATE_MILESTONE_TYPE_OPTIONS,
+} from "../lib/milestoneTypes.js";
 
 function safeTrim(v) {
   return v == null ? "" : String(v).trim();
@@ -1773,7 +1776,7 @@ export default function TemplatesPage() {
 
                               <div>
                                 <label className="mb-1 block text-xs font-semibold text-slate-700">Type</label>
-                                <input
+                                <select
                                   data-testid={`templates-milestone-type-${idx + 1}`}
                                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                                   value={m?.normalized_milestone_type || ""}
@@ -1781,8 +1784,13 @@ export default function TemplatesPage() {
                                     updateMilestone(idx, { normalized_milestone_type: e.target.value })
                                   }
                                   onFocus={() => setAssistantField("milestones")}
-                                  placeholder="e.g., framing"
-                                />
+                                >
+                                  {TEMPLATE_MILESTONE_TYPE_OPTIONS.map((option) => (
+                                    <option key={option.value || "blank"} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
 
                               <div className="md:col-span-4">

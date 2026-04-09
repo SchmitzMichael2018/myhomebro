@@ -794,6 +794,36 @@ test('template copilot milestone generation does not overwrite rows until apply'
   await expect(page.getByTestId('templates-milestone-type-5')).toHaveValue('inspection');
 });
 
+test('template milestone types use the canonical select vocabulary during manual editing', async ({
+  page,
+}) => {
+  await installWorkflowMocks(page);
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('templates-new-draft-button').click();
+  await page.getByTestId('templates-name-input').fill('Canonical Type Template');
+  await page.getByTestId('templates-project-type-input').fill('Remodel');
+  await page.getByTestId('templates-project-subtype-input').fill('Kitchen Remodel');
+  await page.getByTestId('templates-tab-milestones').click();
+
+  await expect(page.getByTestId('templates-milestone-type-1')).toHaveValue('');
+  await page.getByTestId('templates-milestone-type-1').selectOption('cabinetry');
+  await expect(page.getByTestId('templates-milestone-type-1')).toHaveValue('cabinetry');
+
+  const optionValues = await page
+    .getByTestId('templates-milestone-type-1')
+    .locator('option')
+    .evaluateAll((options) => options.map((option) => option.getAttribute('value')));
+
+  expect(optionValues).toContain('cabinetry');
+  expect(optionValues).toContain('site_prep');
+  expect(optionValues).toContain('inspection');
+  expect(optionValues).not.toContain('cabinet_installation');
+  expect(optionValues).not.toContain('site_preparation');
+  expect(optionValues).not.toContain('final_walkthrough');
+});
+
 test('wizard save as template stores the current setup and supports reuse in a later wizard visit', async ({
   page,
 }) => {
