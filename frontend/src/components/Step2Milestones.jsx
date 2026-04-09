@@ -572,6 +572,62 @@ function normalizeMilestoneDraftKey(value) {
   return safeStr(value).toLowerCase();
 }
 
+function normalizeYesNoAnswer(value) {
+  const normalized = safeStr(value).toLowerCase();
+  if (normalized === "yes" || normalized === "true") return "yes";
+  if (normalized === "no" || normalized === "false") return "no";
+  return "";
+}
+
+function appendMilestoneDetail(baseText, detail) {
+  const base = safeStr(baseText);
+  const extra = safeStr(detail);
+  if (!extra) return base;
+  if (!base) return extra;
+  const trimmedBase = base.replace(/[.]+$/, "");
+  return `${trimmedBase}. ${extra}`;
+}
+
+function buildClarificationAwareMilestoneNotes(answers = {}) {
+  const lines = [];
+
+  const mappings = [
+    ["layout_changes", "Layout changes required"],
+    ["wet_area_tile", "Wet-area tile and waterproofing included"],
+    ["cabinet_scope", "Cabinet scope included"],
+    ["demo_required", "Existing materials require removal first"],
+    ["hardware_included", "Hardware, fillers, and trim included"],
+    ["connection_ready", "Utilities and hookups ready on arrival"],
+    ["haul_away_existing", "Old appliances require disconnect or haul-away"],
+    ["tear_off_scope", "Full tear-off included"],
+    ["decking_allowance", "Minor decking repair allowed if needed"],
+    ["subfloor_prep", "Subfloor prep or leveling included"],
+  ];
+
+  for (const [key, label] of mappings) {
+    const normalized = normalizeYesNoAnswer(answers?.[key]);
+    if (!normalized) continue;
+    lines.push(`${label}: ${normalized === "yes" ? "Yes" : "No"}.`);
+  }
+
+  const textFields = [
+    ["finish_scope_notes", "Finish scope notes"],
+    ["fixture_upgrade_notes", "Fixture or finish notes"],
+    ["cabinet_style_notes", "Cabinet layout notes"],
+    ["appliance_scope_notes", "Appliance notes"],
+    ["roofing_notes", "Roofing notes"],
+    ["flooring_notes", "Flooring notes"],
+  ];
+
+  for (const [key, label] of textFields) {
+    const value = safeStr(answers?.[key]);
+    if (!value) continue;
+    lines.push(`${label}: ${value}.`);
+  }
+
+  return lines;
+}
+
 function buildDefaultMilestoneAmounts(count, totalBudget) {
   const safeCount = Math.max(1, Number(count || 0));
   const normalizedTotal = Number(totalBudget);
@@ -594,10 +650,32 @@ function buildDefaultMilestoneAmounts(count, totalBudget) {
   });
 }
 
-function buildStep2AutoMilestoneDraft({ projectType = "", projectSubtype = "", description = "", totalBudget = 0 }) {
+function buildStep2AutoMilestoneDraft({
+  projectType = "",
+  projectSubtype = "",
+  description = "",
+  totalBudget = 0,
+  clarificationAnswers = {},
+}) {
   const typeKey = normalizeMilestoneDraftKey(projectType);
   const subtypeKey = normalizeMilestoneDraftKey(projectSubtype);
   const text = `${subtypeKey} ${normalizeMilestoneDraftKey(description)}`;
+  const layoutChanges = normalizeYesNoAnswer(clarificationAnswers?.layout_changes);
+  const cabinetScope = normalizeYesNoAnswer(clarificationAnswers?.cabinet_scope);
+  const wetAreaTile = normalizeYesNoAnswer(clarificationAnswers?.wet_area_tile);
+  const demoRequired = normalizeYesNoAnswer(clarificationAnswers?.demo_required);
+  const hardwareIncluded = normalizeYesNoAnswer(clarificationAnswers?.hardware_included);
+  const connectionReady = normalizeYesNoAnswer(clarificationAnswers?.connection_ready);
+  const haulAwayExisting = normalizeYesNoAnswer(clarificationAnswers?.haul_away_existing);
+  const tearOffScope = normalizeYesNoAnswer(clarificationAnswers?.tear_off_scope);
+  const deckingAllowance = normalizeYesNoAnswer(clarificationAnswers?.decking_allowance);
+  const subfloorPrep = normalizeYesNoAnswer(clarificationAnswers?.subfloor_prep);
+  const finishScopeNotes = safeStr(clarificationAnswers?.finish_scope_notes);
+  const fixtureUpgradeNotes = safeStr(clarificationAnswers?.fixture_upgrade_notes);
+  const cabinetStyleNotes = safeStr(clarificationAnswers?.cabinet_style_notes);
+  const applianceScopeNotes = safeStr(clarificationAnswers?.appliance_scope_notes);
+  const roofingNotes = safeStr(clarificationAnswers?.roofing_notes);
+  const flooringNotes = safeStr(clarificationAnswers?.flooring_notes);
 
   let rows = [];
 
@@ -609,6 +687,26 @@ function buildStep2AutoMilestoneDraft({ projectType = "", projectSubtype = "", d
       { title: "Fixtures & appliances", description: "Set fixtures, connect appliances, and complete trim details." },
       { title: "Punch list & walkthrough", description: "Finish punch items, final cleanup, and customer walkthrough." },
     ];
+    if (layoutChanges === "yes") {
+      rows[1] = {
+        title: "Layout changes & rough-in",
+        description:
+          "Remove existing finishes, adjust the kitchen layout as needed, and complete rough utility changes before finishes begin.",
+      };
+    }
+    if (cabinetScope === "no") {
+      rows[2] = {
+        title: "Countertops, surfaces & finishes",
+        description:
+          "Complete countertop work, backsplash or wall finishes, and other major kitchen surface upgrades without cabinet replacement.",
+      };
+    }
+    if (finishScopeNotes) {
+      rows[3].description = appendMilestoneDetail(
+        rows[3].description,
+        `Included finish scope: ${finishScopeNotes}.`
+      );
+    }
   } else if (subtypeKey.includes("bathroom remodel")) {
     rows = [
       { title: "Protection & demolition", description: "Protect nearby finishes and remove existing bathroom components." },
@@ -617,6 +715,26 @@ function buildStep2AutoMilestoneDraft({ projectType = "", projectSubtype = "", d
       { title: "Vanity, fixtures & trim", description: "Install vanity, fixtures, accessories, and finish details." },
       { title: "Final cleanup & walkthrough", description: "Complete punch work, cleanup, and final customer review." },
     ];
+    if (layoutChanges === "yes") {
+      rows[1] = {
+        title: "Layout changes & rough-ins",
+        description:
+          "Complete plumbing and electrical rough changes needed for the updated bathroom layout before finish work starts.",
+      };
+    }
+    if (wetAreaTile === "no") {
+      rows[2] = {
+        title: "Walls & surface prep",
+        description:
+          "Prep wall and wet-area surfaces, complete needed backing or repairs, and ready the room for finish installation without tile scope.",
+      };
+    }
+    if (fixtureUpgradeNotes) {
+      rows[3].description = appendMilestoneDetail(
+        rows[3].description,
+        `Included upgrades: ${fixtureUpgradeNotes}.`
+      );
+    }
   } else if (subtypeKey.includes("cabinet installation")) {
     rows = [
       { title: "Measurements & prep", description: "Confirm cabinet layout, site readiness, and delivery staging." },
@@ -624,6 +742,26 @@ function buildStep2AutoMilestoneDraft({ projectType = "", projectSubtype = "", d
       { title: "Hardware & adjustments", description: "Align doors and drawers, install hardware, and complete trim adjustments." },
       { title: "Final walkthrough", description: "Review fit and finish, cleanup, and confirm punch items with the customer." },
     ];
+    if (demoRequired === "yes") {
+      rows[0] = {
+        title: "Demo, measurements & prep",
+        description:
+          "Remove existing cabinetry as needed, confirm layout, and stage the site for the new cabinet installation.",
+      };
+    }
+    if (hardwareIncluded === "no") {
+      rows[2] = {
+        title: "Alignment & adjustments",
+        description:
+          "Align doors and drawers, confirm fit, and complete final adjustment work without hardware or trim installation scope.",
+      };
+    }
+    if (cabinetStyleNotes) {
+      rows[1].description = appendMilestoneDetail(
+        rows[1].description,
+        `Layout details: ${cabinetStyleNotes}.`
+      );
+    }
   } else if (subtypeKey.includes("countertop installation")) {
     rows = [
       { title: "Template & prep", description: "Confirm measurements, protect work areas, and prep cabinet surfaces." },
@@ -638,6 +776,25 @@ function buildStep2AutoMilestoneDraft({ projectType = "", projectSubtype = "", d
       { title: "Testing & adjustments", description: "Test operation, fine tune fit, and complete any adjustments." },
       { title: "Cleanup & customer review", description: "Clean the area and review operation and handoff details with the customer." },
     ];
+    if (connectionReady === "no") {
+      rows[1] = {
+        title: "Utility prep & installation",
+        description:
+          "Prepare required hookups or utility connections, then set appliances in place and complete the installation.",
+      };
+    }
+    if (haulAwayExisting === "yes") {
+      rows[0].description = appendMilestoneDetail(
+        rows[0].description,
+        "Disconnect and remove existing appliances as part of staging."
+      );
+    }
+    if (applianceScopeNotes) {
+      rows[1].description = appendMilestoneDetail(
+        rows[1].description,
+        `Included appliance details: ${applianceScopeNotes}.`
+      );
+    }
   } else if (subtypeKey.includes("roof replacement") || typeKey.includes("roof")) {
     rows = [
       { title: "Protection & tear-off", description: "Protect the site and remove existing roofing materials." },
@@ -645,6 +802,25 @@ function buildStep2AutoMilestoneDraft({ projectType = "", projectSubtype = "", d
       { title: "Roof system installation", description: "Install underlayment, roofing materials, and required flashings." },
       { title: "Cleanup & final review", description: "Complete cleanup, magnetic sweep, and final walkthrough." },
     ];
+    if (tearOffScope === "no") {
+      rows[0] = {
+        title: "Protection & roof prep",
+        description:
+          "Protect the site, prep the existing roof surface, and ready the system for the new roofing work without a full tear-off.",
+      };
+    }
+    if (deckingAllowance === "yes") {
+      rows[1].description = appendMilestoneDetail(
+        rows[1].description,
+        "Include minor decking repair where needed before the roof system is installed."
+      );
+    }
+    if (roofingNotes) {
+      rows[2].description = appendMilestoneDetail(
+        rows[2].description,
+        `System details: ${roofingNotes}.`
+      );
+    }
   } else if (typeKey.includes("floor")) {
     rows = [
       { title: "Prep & materials", description: "Confirm material staging and prepare the work areas." },
@@ -652,6 +828,19 @@ function buildStep2AutoMilestoneDraft({ projectType = "", projectSubtype = "", d
       { title: "Flooring installation", description: "Install flooring materials and transitions." },
       { title: "Trim & cleanup", description: "Complete trim details, cleanup, and final walkthrough." },
     ];
+    if (subfloorPrep === "no") {
+      rows[1] = {
+        title: "Surface readiness check",
+        description:
+          "Verify the substrate is ready for installation and complete only minor prep before flooring work begins.",
+      };
+    }
+    if (flooringNotes) {
+      rows[2].description = appendMilestoneDetail(
+        rows[2].description,
+        `Material details: ${flooringNotes}.`
+      );
+    }
   } else {
     const limitedScope =
       /\binstall(ation)?\b/.test(text) &&
@@ -1502,6 +1691,9 @@ export default function Step2Milestones({
       return;
     }
 
+    const clarificationNotes = buildClarificationAwareMilestoneNotes(
+      agreementMeta?.ai_scope?.answers || {}
+    );
     const extraNotes = [
       `Materials purchasing responsibility: ${materialsWho}.`,
       needsMeasurements
@@ -1509,6 +1701,9 @@ export default function Step2Milestones({
         : "Measurements needed: NO.",
       allowanceNotes ? `Allowances / selections: ${allowanceNotes}` : "",
       permitNotes ? `Permits / inspections: ${permitNotes}` : "",
+      clarificationNotes.length
+        ? `Saved scope clarifications:\n- ${clarificationNotes.join("\n- ")}`
+        : "",
     ]
       .filter(Boolean)
       .join("\n");
@@ -2205,6 +2400,7 @@ export default function Step2Milestones({
     const projectSubtype = safeStr(agreementMeta?.project_subtype);
     const projectType = safeStr(agreementMeta?.project_type);
     const description = safeStr(agreementMeta?.description || agreementMeta?.project_description);
+    const clarificationAnswers = agreementMeta?.ai_scope?.answers || {};
     if (!projectSubtype && !projectType && !description) return;
 
     autoDraftAttemptedRef.current = true;
@@ -2216,6 +2412,7 @@ export default function Step2Milestones({
           projectSubtype,
           projectType,
           description,
+          clarificationAnswers,
           totalBudget:
             agreementMeta?.display_total ??
             agreementMeta?.total ??

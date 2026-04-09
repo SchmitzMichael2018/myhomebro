@@ -2084,7 +2084,7 @@ test('agreement wizard step 2 AI can recommend saving a reusable template and op
   ).toBeVisible();
 });
 
-test('agreement wizard step 2 auto-drafts multi-phase milestones for kitchen remodel projects', async ({
+test('agreement wizard step 2 auto-drafts default subtype milestones when clarifications are skipped', async ({
   page,
 }) => {
   const agreement = {
@@ -2100,6 +2100,9 @@ test('agreement wizard step 2 auto-drafts multi-phase milestones for kitchen rem
       'Full kitchen remodel with demolition, cabinet replacement, countertop installation, appliance reconnects, plumbing, electrical, and finish work.',
     homeowner: null,
     status: 'draft',
+    ai_scope: {
+      answers: {},
+    },
     compliance_warning: {
       warning_level: 'none',
       message: '',
@@ -2137,6 +2140,69 @@ test('agreement wizard step 2 auto-drafts multi-phase milestones for kitchen rem
   await expect(page.getByText('Cabinets & surfaces')).toBeVisible();
   await expect(page.getByText('Punch list & walkthrough')).toBeVisible();
   await expect(page.locator('[data-testid^="step2-milestone-ai-indicator-"]')).toHaveCount(5);
+  await expect.poll(() => milestoneState.createCount).toBe(5);
+});
+
+test('agreement wizard step 2 uses clarification answers to shape kitchen milestone drafts', async ({
+  page,
+}) => {
+  const agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Kitchen Remodel',
+    title: 'Kitchen Remodel',
+    project_type: 'Remodel',
+    project_subtype: 'Kitchen Remodel',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description:
+      'Full kitchen remodel with demolition, cabinet replacement, countertop installation, appliance reconnects, plumbing, electrical, and finish work.',
+    homeowner: null,
+    status: 'draft',
+    ai_scope: {
+      answers: {
+        layout_changes: 'yes',
+        cabinet_scope: 'no',
+        finish_scope_notes: 'backsplash, pendant lighting, and quartz countertops',
+      },
+    },
+    compliance_warning: {
+      warning_level: 'none',
+      message: '',
+    },
+  };
+
+  const milestoneState = {
+    items: [],
+    nextId: 930,
+    createCount: 0,
+  };
+
+  await installStep2AutoDraftRoutes(page, {
+    agreement,
+    projectTypes: [{ id: 7, value: 'Remodel', label: 'Remodel', owner_type: 'system' }],
+    projectSubtypes: [
+      {
+        id: 18,
+        value: 'Kitchen Remodel',
+        label: 'Kitchen Remodel',
+        owner_type: 'system',
+        project_type: 'Remodel',
+      },
+    ],
+    milestoneState,
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('step2-ai-autodraft-banner')).toBeVisible();
+  await expect(page.getByText('Layout changes & rough-in')).toBeVisible();
+  await expect(page.getByText('Countertops, surfaces & finishes')).toBeVisible();
+  await expect(page.getByText('Included finish scope: backsplash, pendant lighting, and quartz countertops.')).toBeVisible();
+  await expect(page.getByText('Cabinets & surfaces')).toHaveCount(0);
+  await expect(page.getByText('Demolition & rough-in')).toHaveCount(0);
   await expect.poll(() => milestoneState.createCount).toBe(5);
 });
 
