@@ -504,6 +504,22 @@ export default function TemplatesPage() {
         selectedDetail?.project_subtype ||
         selectedTemplate?.project_subtype ||
         "",
+      description:
+        currentHeader?.description ||
+        currentHeader?.default_scope ||
+        selectedDetail?.description ||
+        selectedDetail?.default_scope ||
+        selectedTemplate?.description ||
+        selectedTemplate?.default_scope ||
+        "",
+      default_scope:
+        currentHeader?.default_scope ||
+        currentHeader?.description ||
+        selectedDetail?.default_scope ||
+        selectedDetail?.description ||
+        selectedTemplate?.default_scope ||
+        selectedTemplate?.description ||
+        "",
       template_id: selectedDetail?.id || selectedTemplate?.id || null,
       template_summary: {
         name: currentHeader?.name || selectedDetail?.name || selectedTemplate?.name || "",
@@ -519,6 +535,14 @@ export default function TemplatesPage() {
           "",
         description:
           currentHeader?.description || selectedDetail?.description || selectedTemplate?.description || "",
+        default_scope:
+          currentHeader?.default_scope ||
+          currentHeader?.description ||
+          selectedDetail?.default_scope ||
+          selectedDetail?.description ||
+          selectedTemplate?.default_scope ||
+          selectedTemplate?.description ||
+          "",
       },
       milestone_summary: {
         count: currentMilestones.length,
@@ -698,16 +722,40 @@ export default function TemplatesPage() {
       payload?.assistant_action_key || payload?.action_key || payload?.next_action?.action_key
     );
 
-    if (actionKey !== "apply_template_description") return false;
+    if (actionKey === "apply_template_description") {
+      const nextDescription = safeTrim(payload?.value);
+      if (!nextDescription) return false;
 
-    const nextDescription = safeTrim(payload?.value);
-    if (!nextDescription) return false;
+      updateHeader("description", nextDescription);
+      updateHeader("default_scope", nextDescription);
+      setAssistantField("description");
+      toast.success("Description applied.");
+      return true;
+    }
 
-    updateHeader("description", nextDescription);
-    updateHeader("default_scope", nextDescription);
-    setAssistantField("description");
-    toast.success("Description applied.");
-    return true;
+    if (actionKey === "apply_template_milestones") {
+      const incomingRows = Array.isArray(payload?.value) ? payload.value : [];
+      if (!incomingRows.length) return false;
+
+      setEditMilestones(
+        incomingRows.map((row, idx) =>
+          normalizeMilestoneForEdit(
+            {
+              title: safeTrim(row?.title),
+              description: "",
+              sort_order: idx + 1,
+            },
+            idx
+          )
+        )
+      );
+      setActiveTab("milestones");
+      setAssistantField("milestones");
+      toast.success("Milestones applied.");
+      return true;
+    }
+
+    return false;
   }
 
   function updateMilestone(index, patch) {
@@ -1467,7 +1515,10 @@ export default function TemplatesPage() {
                 <TabButton
                   data-testid="templates-tab-milestones"
                   active={activeTab === "milestones"}
-                  onClick={() => setActiveTab("milestones")}
+                  onClick={() => {
+                    setActiveTab("milestones");
+                    setAssistantField("milestones");
+                  }}
                 >
                   Milestones
                 </TabButton>
@@ -1700,6 +1751,7 @@ export default function TemplatesPage() {
                                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                                   value={m?.title || ""}
                                   onChange={(e) => updateMilestone(idx, { title: e.target.value })}
+                                  onFocus={() => setAssistantField("milestones")}
                                 />
                               </div>
 
@@ -1722,6 +1774,7 @@ export default function TemplatesPage() {
                                   onChange={(e) =>
                                     updateMilestone(idx, { normalized_milestone_type: e.target.value })
                                   }
+                                  onFocus={() => setAssistantField("milestones")}
                                   placeholder="e.g., framing"
                                 />
                               </div>
@@ -1734,6 +1787,7 @@ export default function TemplatesPage() {
                                   rows={3}
                                   value={m?.description || ""}
                                   onChange={(e) => updateMilestone(idx, { description: e.target.value })}
+                                  onFocus={() => setAssistantField("milestones")}
                                 />
                               </div>
 

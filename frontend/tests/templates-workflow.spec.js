@@ -690,6 +690,83 @@ test('template copilot can generate and explicitly apply description field text'
   );
 });
 
+test('template copilot can generate and explicitly apply milestone titles', async ({
+  page,
+}) => {
+  await installWorkflowMocks(page);
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('templates-new-draft-button').click();
+  await page.getByTestId('templates-name-input').fill('Kitchen Remodel Starter');
+  await page.getByTestId('templates-project-type-input').fill('Remodel');
+  await page.getByTestId('templates-project-subtype-input').fill('Kitchen Remodel');
+  await page
+    .getByTestId('templates-description-input')
+    .fill('Reusable kitchen remodel scope covering demo, rough work, install, finish work, and closeout.');
+
+  await page.getByTestId('templates-tab-milestones').click();
+  await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue('');
+
+  await page.getByTestId('templates-ai-entry-toggle').click();
+  await expect(page.getByTestId('start-with-ai-field-context')).toContainText(
+    'Kitchen Remodel Starter'
+  );
+  await expect(page.getByTestId('start-with-ai-title')).toContainText(
+    'Generate milestone sequence for this template'
+  );
+
+  await page.getByTestId('start-with-ai-submit').click();
+
+  await expect(page.getByTestId('start-with-ai-milestone-drafts')).toBeVisible();
+  await expect(page.getByTestId('start-with-ai-milestone-drafts')).toContainText(
+    'Demolition & rough prep'
+  );
+  await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue('');
+
+  await page.getByTestId('start-with-ai-apply-milestones').click();
+  await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue(
+    'Planning & site protection'
+  );
+  await expect(page.getByTestId('templates-milestone-title-2')).toHaveValue(
+    'Demolition & rough prep'
+  );
+});
+
+test('template copilot milestone generation does not overwrite rows until apply', async ({
+  page,
+}) => {
+  await installWorkflowMocks(page);
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('templates-new-draft-button').click();
+  await page.getByTestId('templates-name-input').fill('Deck Build Starter');
+  await page.getByTestId('templates-project-type-input').fill('Outdoor');
+  await page.getByTestId('templates-project-subtype-input').fill('Deck Build');
+  await page
+    .getByTestId('templates-description-input')
+    .fill('Reusable deck build scope covering layout, framing, decking, rails, and closeout.');
+
+  await page.getByTestId('templates-tab-milestones').click();
+  await page.getByTestId('templates-milestone-title-1').fill('Existing kickoff milestone');
+
+  await page.getByTestId('templates-ai-entry-toggle').click();
+  await page.getByTestId('start-with-ai-submit').click();
+
+  await expect(page.getByTestId('start-with-ai-milestone-drafts')).toContainText(
+    'Footings, framing & structural build'
+  );
+  await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue(
+    'Existing kickoff milestone'
+  );
+
+  await page.getByTestId('start-with-ai-apply-milestones').click();
+  await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue(
+    'Layout, permits & material staging'
+  );
+});
+
 test('wizard save as template stores the current setup and supports reuse in a later wizard visit', async ({
   page,
 }) => {

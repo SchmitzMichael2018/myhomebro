@@ -156,6 +156,13 @@ function isTemplateDescriptionMode(context = {}) {
   );
 }
 
+function isTemplateMilestonesMode(context = {}) {
+  return (
+    String(context?.page || "").trim().toLowerCase() === "templates" &&
+    String(context?.field || "").trim().toLowerCase() === "milestones"
+  );
+}
+
 function buildTemplateDescriptionDraft(context = {}) {
   const templateName = String(context?.template_name || context?.template_summary?.name || "").trim();
   const projectType = String(
@@ -180,6 +187,86 @@ function buildTemplateDescriptionDraft(context = {}) {
   ];
 
   return [opening, ...middle].join(" ");
+}
+
+function buildTemplateMilestoneDrafts(context = {}) {
+  const projectType = String(
+    context?.project_type || context?.template_summary?.project_type || ""
+  ).trim();
+  const projectSubtype = String(
+    context?.project_subtype || context?.template_summary?.project_subtype || ""
+  ).trim();
+  const scope = String(
+    context?.description ||
+      context?.default_scope ||
+      context?.template_summary?.description ||
+      context?.template_summary?.default_scope ||
+      ""
+  ).trim();
+
+  const subtype = projectSubtype.toLowerCase();
+  const type = projectType.toLowerCase();
+
+  if (subtype.includes("kitchen")) {
+    return [
+      "Planning & site protection",
+      "Demolition & rough prep",
+      "Electrical, plumbing & layout readiness",
+      "Cabinets, trim & built-ins",
+      "Countertops, fixtures & appliances",
+      "Finishes, punch list & final walkthrough",
+    ];
+  }
+
+  if (subtype.includes("bathroom")) {
+    return [
+      "Planning & protection",
+      "Demolition & substrate prep",
+      "Plumbing, electrical & framing updates",
+      "Waterproofing & tile work",
+      "Fixtures, trim & accessories",
+      "Punch list & final walkthrough",
+    ];
+  }
+
+  if (subtype.includes("deck")) {
+    return [
+      "Layout, permits & material staging",
+      "Demo & site prep",
+      "Footings, framing & structural build",
+      "Decking, rails & stairs",
+      "Finish details & cleanup",
+    ];
+  }
+
+  if (subtype.includes("cabinet")) {
+    return [
+      "Field measure & layout confirmation",
+      "Delivery review & site prep",
+      "Cabinet install & alignment",
+      "Trim, hardware & adjustments",
+      "Punch list & final walkthrough",
+    ];
+  }
+
+  if (type.includes("remodel") || scope.toLowerCase().includes("remodel")) {
+    return [
+      "Planning & site protection",
+      "Demolition & prep",
+      "Core rough-in work",
+      "Install major finishes",
+      "Fixtures, trim & final adjustments",
+      "Punch list & walkthrough",
+    ];
+  }
+
+  return [
+    "Planning & site prep",
+    "Core work phase one",
+    "Core work phase two",
+    "Finish work & quality check",
+    "Closeout & walkthrough",
+  ];
 }
 
 export function StartWithAIEntry({
@@ -303,6 +390,11 @@ export default function StartWithAIAssistant({
     () => isTemplateDescriptionMode(normalizedContext),
     [normalizedContext]
   );
+  const isFieldAwareMilestonesMode = useMemo(
+    () => isTemplateMilestonesMode(normalizedContext),
+    [normalizedContext]
+  );
+  const isFieldAwareMode = isFieldAwareDescriptionMode || isFieldAwareMilestonesMode;
   const panelConfig = useMemo(
     () => normalizePanelConfig(normalizedContext),
     [normalizedContext]
@@ -313,6 +405,7 @@ export default function StartWithAIAssistant({
   const [voiceStatus, setVoiceStatus] = useState("idle");
   const [isPlanning, setIsPlanning] = useState(false);
   const [fieldDraft, setFieldDraft] = useState("");
+  const [milestoneDrafts, setMilestoneDrafts] = useState([]);
   const [plan, setPlan] = useState(() =>
     produceStructuredAssistantPlan({
       preferredIntent: "navigate_app",
@@ -379,32 +472,43 @@ export default function StartWithAIAssistant({
     import.meta.env.DEV ||
     (typeof window !== "undefined" && window.MYHOMEBRO_DEBUG_ASSISTANT === true);
   const visibleQuickActions = isContextualMode ? [] : userFacingPanel.quickActions;
-  const sectionEyebrow = isFieldAwareDescriptionMode
+  const sectionEyebrow = isFieldAwareMode
     ? "AI Copilot"
     : isContextualMode
     ? "AI Copilot"
     : "AI Assistant";
   const inputHelperText = isFieldAwareDescriptionMode
     ? "Generate reusable template scope text for this description field."
+    : isFieldAwareMilestonesMode
+    ? "Generate reusable milestone titles for this template."
     : isContextualMode
     ? "Ask AI about the step you're on right now."
     : "Describe the work you want to start or improve.";
   const headline = isFieldAwareDescriptionMode
     ? "Generate description text for this template"
+    : isFieldAwareMilestonesMode
+    ? "Generate milestone sequence for this template"
     : userFacingPanel.headline;
   const helperText = isFieldAwareDescriptionMode
     ? "Use the current template name, type, and subtype to draft reusable scope language for the Description / Scope field."
+    : isFieldAwareMilestonesMode
+    ? "Use the current template scope, type, and subtype to draft a reusable milestone sequence for this template."
     : userFacingPanel.helperText;
   const promptPlaceholder = isFieldAwareDescriptionMode
     ? 'Optional: add extra scope guidance like "include prep, finish work, and cleanup."'
+    : isFieldAwareMilestonesMode
+    ? 'Optional: add sequencing guidance like "include permit review and punch list."'
     : userFacingPanel.promptPlaceholder;
   const submitLabel = isFieldAwareDescriptionMode
     ? "Generate Description"
+    : isFieldAwareMilestonesMode
+    ? "Generate Milestones"
     : panelConfig.submitButtonLabel || "Ask AI";
 
   useEffect(() => {
     setFieldDraft("");
-  }, [contextSignature, isFieldAwareDescriptionMode]);
+    setMilestoneDrafts([]);
+  }, [contextSignature, isFieldAwareMode]);
 
   function applyPlan(nextPlan, submittedPrompt = "", options = {}) {
     setPlan(nextPlan);
@@ -457,6 +561,21 @@ export default function StartWithAIAssistant({
       setHistory((prev) => [
         ...prev,
         { prompt: cleanPrompt || "Generate description", plan: { intent_label: "Template Description" } },
+      ]);
+      return;
+    }
+    if (isFieldAwareMilestonesMode) {
+      const baseDrafts = buildTemplateMilestoneDrafts(normalizedContext).slice(0, 7);
+      const finalDrafts = cleanPrompt ? [...baseDrafts, cleanPrompt].slice(0, 7) : baseDrafts;
+      setMilestoneDrafts(
+        finalDrafts.map((title, idx) => ({
+          title: String(title || "").trim(),
+          sort_order: idx + 1,
+        }))
+      );
+      setHistory((prev) => [
+        ...prev,
+        { prompt: cleanPrompt || "Generate milestones", plan: { intent_label: "Template Milestones" } },
       ]);
       return;
     }
@@ -593,6 +712,20 @@ export default function StartWithAIAssistant({
     }
   }
 
+  async function handleApplyMilestoneDrafts() {
+    if (!milestoneDrafts.length || typeof onAction !== "function") return;
+    const handled = await onAction({
+      assistant_action_key: "apply_template_milestones",
+      action_key: "apply_template_milestones",
+      source: "field_generation",
+      field: "milestones",
+      value: milestoneDrafts,
+    });
+    if (handled === true) {
+      setPrompt("");
+    }
+  }
+
   async function handleTemplateRecommendationAction() {
     const actionKey = safeActionKey(
       userFacingPanel?.templateRecommendation?.actionKey || "save_as_template"
@@ -650,7 +783,7 @@ export default function StartWithAIAssistant({
       </div>
 
       <div className="space-y-4 px-5 py-5">
-        {!isFieldAwareDescriptionMode ? (
+        {!isFieldAwareMode ? (
           <div
             className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
             data-testid={testId("start-with-ai-status")}
@@ -676,7 +809,9 @@ export default function StartWithAIAssistant({
             data-testid={testId("start-with-ai-field-context")}
           >
             <div className="text-sm font-semibold text-slate-900">
-              Description / Scope field assistance
+              {isFieldAwareDescriptionMode
+                ? "Description / Scope field assistance"
+                : "Milestones field assistance"}
             </div>
             <div className="mt-1 text-sm text-slate-600">
               {[
@@ -687,10 +822,15 @@ export default function StartWithAIAssistant({
                 .filter(Boolean)
                 .join(" · ") || "Using the current template context"}
             </div>
+            {isFieldAwareMilestonesMode && normalizedContext?.description ? (
+              <div className="mt-2 text-xs leading-5 text-slate-500">
+                Scope signal: {normalizedContext.description}
+              </div>
+            ) : null}
           </div>
         )}
 
-        {!isFieldAwareDescriptionMode && (userFacingPanel.coachingTitle || userFacingPanel.coachingMessage) ? (
+        {!isFieldAwareMode && (userFacingPanel.coachingTitle || userFacingPanel.coachingMessage) ? (
           <div
             className={`rounded-2xl border px-4 py-4 ${coachingToneClasses(
               userFacingPanel.coachingTone
@@ -849,7 +989,35 @@ export default function StartWithAIAssistant({
           </ResultBlock>
         ) : null}
 
-        {!isFieldAwareDescriptionMode && userFacingPanel.templateRecommendation?.title ? (
+        {isFieldAwareMilestonesMode && milestoneDrafts.length ? (
+          <ResultBlock
+            title="Milestone Drafts"
+            testId={testId("start-with-ai-milestone-drafts")}
+          >
+            <div className="space-y-2">
+              {milestoneDrafts.map((item, idx) => (
+                <div
+                  key={`${item.title}-${idx}`}
+                  className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-slate-800"
+                >
+                  <span className="font-semibold text-slate-900">{idx + 1}.</span>{" "}
+                  {item.title}
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={handleApplyMilestoneDrafts}
+              data-testid={testId("start-with-ai-apply-milestones")}
+              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              Apply Milestones
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </ResultBlock>
+        ) : null}
+
+        {!isFieldAwareMode && userFacingPanel.templateRecommendation?.title ? (
           <ResultBlock
             title="AI Recommendation"
             testId={testId("start-with-ai-template-recommendation")}
@@ -876,7 +1044,7 @@ export default function StartWithAIAssistant({
           </ResultBlock>
         ) : null}
 
-        {!isFieldAwareDescriptionMode && userFacingPanel.checklistItems.length ? (
+        {!isFieldAwareMode && userFacingPanel.checklistItems.length ? (
           <ResultBlock title="Pre-send Checklist" testId={testId("start-with-ai-checklist")}>
             <div className="space-y-2">
               {userFacingPanel.checklistItems.map((item) => {
