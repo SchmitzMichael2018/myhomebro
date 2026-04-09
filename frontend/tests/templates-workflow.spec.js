@@ -690,7 +690,7 @@ test('template copilot can generate and explicitly apply description field text'
   );
 });
 
-test('template copilot can generate and explicitly apply milestone titles', async ({
+test('template copilot can generate and explicitly apply milestone details', async ({
   page,
 }) => {
   await installWorkflowMocks(page);
@@ -722,7 +722,14 @@ test('template copilot can generate and explicitly apply milestone titles', asyn
   await expect(page.getByTestId('start-with-ai-milestone-drafts')).toContainText(
     'Demolition & rough prep'
   );
+  await expect(page.getByTestId('start-with-ai-milestone-drafts')).toContainText(
+    'Remove existing finishes and prep the space for the next phase'
+  );
+  await expect(page.getByTestId('start-with-ai-milestone-drafts')).toContainText(
+    'rough in'
+  );
   await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue('');
+  await expect(page.getByTestId('templates-milestone-description-1')).toHaveValue('');
 
   await page.getByTestId('start-with-ai-apply-milestones').click();
   await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue(
@@ -730,6 +737,12 @@ test('template copilot can generate and explicitly apply milestone titles', asyn
   );
   await expect(page.getByTestId('templates-milestone-title-2')).toHaveValue(
     'Demolition & rough prep'
+  );
+  await expect(page.getByTestId('templates-milestone-description-1')).toHaveValue(
+    /Confirm the reusable kitchen scope/
+  );
+  await expect(page.getByTestId('templates-milestone-description-2')).toHaveValue(
+    /Remove existing finishes and prep the space/
   );
 });
 
@@ -760,10 +773,14 @@ test('template copilot milestone generation does not overwrite rows until apply'
   await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue(
     'Existing kickoff milestone'
   );
+  await expect(page.getByTestId('templates-milestone-description-1')).toHaveValue('');
 
   await page.getByTestId('start-with-ai-apply-milestones').click();
   await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue(
     'Layout, permits & material staging'
+  );
+  await expect(page.getByTestId('templates-milestone-description-1')).toHaveValue(
+    /Review layout assumptions, coordinate approvals/
   );
 });
 

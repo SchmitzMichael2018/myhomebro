@@ -209,63 +209,228 @@ function buildTemplateMilestoneDrafts(context = {}) {
 
   if (subtype.includes("kitchen")) {
     return [
-      "Planning & site protection",
-      "Demolition & rough prep",
-      "Electrical, plumbing & layout readiness",
-      "Cabinets, trim & built-ins",
-      "Countertops, fixtures & appliances",
-      "Finishes, punch list & final walkthrough",
+      {
+        title: "Planning & site protection",
+        description:
+          "Confirm the reusable kitchen scope, protect adjacent areas, stage materials, and align the crew on the sequence before physical work begins.",
+        normalized_milestone_type: "planning",
+      },
+      {
+        title: "Demolition & rough prep",
+        description:
+          "Remove existing finishes and prep the space for the next phase while keeping disposal, protection, and access needs generic for similar remodels.",
+        normalized_milestone_type: "demolition",
+      },
+      {
+        title: "Electrical, plumbing & layout readiness",
+        description:
+          "Complete the typical rough-in coordination, backing, and layout checks needed before cabinets, fixtures, and finish work move forward.",
+        normalized_milestone_type: "rough_in",
+      },
+      {
+        title: "Cabinets, trim & built-ins",
+        description:
+          "Install and align the core built-in components, including the standard fitting, fastening, and adjustment work expected in this type of kitchen project.",
+        normalized_milestone_type: "installation",
+      },
+      {
+        title: "Countertops, fixtures & appliances",
+        description:
+          "Handle the normal countertop placement, fixture setting, reconnect work, and coordination steps that turn the cabinet package into a usable kitchen.",
+        normalized_milestone_type: "fixtures",
+      },
+      {
+        title: "Finishes, punch list & final walkthrough",
+        description:
+          "Wrap up finish details, complete quality checks, and prepare the project for customer review with a reusable closeout phase.",
+        normalized_milestone_type: "closeout",
+      },
     ];
   }
 
   if (subtype.includes("bathroom")) {
     return [
-      "Planning & protection",
-      "Demolition & substrate prep",
-      "Plumbing, electrical & framing updates",
-      "Waterproofing & tile work",
-      "Fixtures, trim & accessories",
-      "Punch list & final walkthrough",
+      {
+        title: "Planning & protection",
+        description:
+          "Confirm the bathroom scope, protect adjacent finishes, and stage the job so repeatable remodel work starts with a clean plan and protected site.",
+        normalized_milestone_type: "planning",
+      },
+      {
+        title: "Demolition & substrate prep",
+        description:
+          "Remove existing materials and prep underlying surfaces for the waterproofing and finish phases that typically follow in bathroom projects.",
+        normalized_milestone_type: "demolition",
+      },
+      {
+        title: "Plumbing, electrical & framing updates",
+        description:
+          "Complete the common in-wall adjustments, backing, and rough positioning needed before wet-area finishes and fixture installation.",
+        normalized_milestone_type: "rough_in",
+      },
+      {
+        title: "Waterproofing & tile work",
+        description:
+          "Handle the usual prep, waterproofing, tile setting, and curing steps that define the main finish phase of a bathroom remodel.",
+        normalized_milestone_type: "tile",
+      },
+      {
+        title: "Fixtures, trim & accessories",
+        description:
+          "Install standard bathroom fixtures, trim pieces, and accessories while keeping the scope reusable across similar projects.",
+        normalized_milestone_type: "fixtures",
+      },
+      {
+        title: "Punch list & final walkthrough",
+        description:
+          "Close out the work with final touchups, quality review, and customer-facing completion steps.",
+        normalized_milestone_type: "closeout",
+      },
     ];
   }
 
   if (subtype.includes("deck")) {
     return [
-      "Layout, permits & material staging",
-      "Demo & site prep",
-      "Footings, framing & structural build",
-      "Decking, rails & stairs",
-      "Finish details & cleanup",
+      {
+        title: "Layout, permits & material staging",
+        description:
+          "Review layout assumptions, coordinate approvals as needed, and stage the materials and site access required for a repeatable deck build.",
+        normalized_milestone_type: "planning",
+      },
+      {
+        title: "Demo & site prep",
+        description:
+          "Clear the work area, remove any affected existing elements, and prepare the site for the structural build phase.",
+        normalized_milestone_type: "demolition",
+      },
+      {
+        title: "Footings, framing & structural build",
+        description:
+          "Complete the standard structural work, including the support, framing, and alignment tasks needed to establish the main deck platform.",
+        normalized_milestone_type: "framing",
+      },
+      {
+        title: "Decking, rails & stairs",
+        description:
+          "Install the walking surface and the common access and guard components that make the deck usable and code-ready.",
+        normalized_milestone_type: "installation",
+      },
+      {
+        title: "Finish details & cleanup",
+        description:
+          "Handle finishing details, hardware adjustments, cleanup, and handoff preparation as a reusable closeout phase.",
+        normalized_milestone_type: "closeout",
+      },
     ];
   }
 
   if (subtype.includes("cabinet")) {
     return [
-      "Field measure & layout confirmation",
-      "Delivery review & site prep",
-      "Cabinet install & alignment",
-      "Trim, hardware & adjustments",
-      "Punch list & final walkthrough",
+      {
+        title: "Field measure & layout confirmation",
+        description:
+          "Verify field conditions, confirm layout assumptions, and prepare the job for a clean installation sequence across similar cabinet projects.",
+        normalized_milestone_type: "planning",
+      },
+      {
+        title: "Delivery review & site prep",
+        description:
+          "Check delivered materials, stage components, and prep the work area for efficient installation without overfitting to a single room layout.",
+        normalized_milestone_type: "staging",
+      },
+      {
+        title: "Cabinet install & alignment",
+        description:
+          "Install, level, secure, and align the cabinet package with the common fitting and fastening steps expected in this type of work.",
+        normalized_milestone_type: "installation",
+      },
+      {
+        title: "Trim, hardware & adjustments",
+        description:
+          "Complete trim pieces, hardware, reveals, and standard adjustments that refine the finished cabinet install.",
+        normalized_milestone_type: "finish",
+      },
+      {
+        title: "Punch list & final walkthrough",
+        description:
+          "Review the completed installation, address touchups, and close out the project with a reusable final handoff phase.",
+        normalized_milestone_type: "closeout",
+      },
     ];
   }
 
   if (type.includes("remodel") || scope.toLowerCase().includes("remodel")) {
     return [
-      "Planning & site protection",
-      "Demolition & prep",
-      "Core rough-in work",
-      "Install major finishes",
-      "Fixtures, trim & final adjustments",
-      "Punch list & walkthrough",
+      {
+        title: "Planning & site protection",
+        description:
+          "Confirm the reusable scope, protect the site, and align scheduling, staging, and handoff expectations before physical work starts.",
+        normalized_milestone_type: "planning",
+      },
+      {
+        title: "Demolition & prep",
+        description:
+          "Remove affected materials and prepare the space for the core build phases that follow in a typical remodel.",
+        normalized_milestone_type: "demolition",
+      },
+      {
+        title: "Core rough-in work",
+        description:
+          "Complete the common behind-the-wall, layout, and coordination tasks needed before finish installations can proceed.",
+        normalized_milestone_type: "rough_in",
+      },
+      {
+        title: "Install major finishes",
+        description:
+          "Install the main finished components that define the visible transformation of the project while keeping the scope broadly reusable.",
+        normalized_milestone_type: "installation",
+      },
+      {
+        title: "Fixtures, trim & final adjustments",
+        description:
+          "Set standard fixtures, complete trim work, and make the adjustments typically required to bring the project to completion.",
+        normalized_milestone_type: "finish",
+      },
+      {
+        title: "Punch list & walkthrough",
+        description:
+          "Wrap up remaining details, verify quality, and prepare the project for customer review and closeout.",
+        normalized_milestone_type: "closeout",
+      },
     ];
   }
 
   return [
-    "Planning & site prep",
-    "Core work phase one",
-    "Core work phase two",
-    "Finish work & quality check",
-    "Closeout & walkthrough",
+    {
+      title: "Planning & site prep",
+      description:
+        "Confirm the reusable scope, prepare the site, and stage materials and access needs before the work begins.",
+      normalized_milestone_type: "planning",
+    },
+    {
+      title: "Core work phase one",
+      description:
+        "Complete the first major block of work in a way that remains generic enough for repeatable use across similar projects.",
+      normalized_milestone_type: "phase_1",
+    },
+    {
+      title: "Core work phase two",
+      description:
+        "Handle the follow-on build or installation steps needed to move the project from preparation into completion.",
+      normalized_milestone_type: "phase_2",
+    },
+    {
+      title: "Finish work & quality check",
+      description:
+        "Complete finish details, adjustments, and the quality review tasks that typically happen near the end of the job.",
+      normalized_milestone_type: "finish",
+    },
+    {
+      title: "Closeout & walkthrough",
+      description:
+        "Finalize the project with cleanup, handoff preparation, and customer-facing completion steps.",
+      normalized_milestone_type: "closeout",
+    },
   ];
 }
 
@@ -566,10 +731,21 @@ export default function StartWithAIAssistant({
     }
     if (isFieldAwareMilestonesMode) {
       const baseDrafts = buildTemplateMilestoneDrafts(normalizedContext).slice(0, 7);
-      const finalDrafts = cleanPrompt ? [...baseDrafts, cleanPrompt].slice(0, 7) : baseDrafts;
+      const finalDrafts = cleanPrompt
+        ? baseDrafts.map((item, idx) =>
+            idx === baseDrafts.length - 1
+              ? {
+                  ...item,
+                  description: `${item.description} ${cleanPrompt}`.trim(),
+                }
+              : item
+          )
+        : baseDrafts;
       setMilestoneDrafts(
-        finalDrafts.map((title, idx) => ({
-          title: String(title || "").trim(),
+        finalDrafts.map((item, idx) => ({
+          title: String(item?.title || "").trim(),
+          description: String(item?.description || "").trim(),
+          normalized_milestone_type: String(item?.normalized_milestone_type || "").trim(),
           sort_order: idx + 1,
         }))
       );
@@ -1000,8 +1176,19 @@ export default function StartWithAIAssistant({
                   key={`${item.title}-${idx}`}
                   className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-slate-800"
                 >
-                  <span className="font-semibold text-slate-900">{idx + 1}.</span>{" "}
-                  {item.title}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="font-semibold text-slate-900">
+                      {idx + 1}. {item.title}
+                    </div>
+                    {item.normalized_milestone_type ? (
+                      <span className="rounded-full border border-sky-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-700">
+                        {item.normalized_milestone_type.replaceAll("_", " ")}
+                      </span>
+                    ) : null}
+                  </div>
+                  {item.description ? (
+                    <div className="mt-2 leading-6 text-slate-700">{item.description}</div>
+                  ) : null}
                 </div>
               ))}
             </div>

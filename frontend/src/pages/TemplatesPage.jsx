@@ -742,7 +742,8 @@ export default function TemplatesPage() {
           normalizeMilestoneForEdit(
             {
               title: safeTrim(row?.title),
-              description: "",
+              description: safeTrim(row?.description),
+              normalized_milestone_type: safeTrim(row?.normalized_milestone_type),
               sort_order: idx + 1,
             },
             idx
