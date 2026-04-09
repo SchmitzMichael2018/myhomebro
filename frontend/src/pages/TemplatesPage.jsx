@@ -199,6 +199,8 @@ function buildBlankHeader() {
     project_type: "",
     project_subtype: "",
     description: "",
+    exclusions_text: "",
+    assumptions_text: "",
     estimated_days: 1,
     default_scope: "",
     default_clarifications: [],
@@ -252,6 +254,8 @@ function normalizeHeaderForEdit(detail) {
     project_type: detail?.project_type ?? "",
     project_subtype: detail?.project_subtype ?? "",
     description: detail?.description ?? "",
+    exclusions_text: detail?.exclusions_text ?? "",
+    assumptions_text: detail?.assumptions_text ?? "",
     estimated_days: detail?.estimated_days ?? 1,
     default_scope: detail?.default_scope ?? "",
     default_clarifications: Array.isArray(detail?.default_clarifications)
@@ -268,6 +272,8 @@ function buildTemplatePayload(header, milestones) {
     project_type: header?.project_type ?? "",
     project_subtype: header?.project_subtype ?? "",
     description: header?.description ?? "",
+    exclusions_text: header?.exclusions_text ?? "",
+    assumptions_text: header?.assumptions_text ?? "",
     estimated_days: Number(header?.estimated_days || 1) || 1,
     default_scope: header?.default_scope || header?.description || "",
     default_clarifications: Array.isArray(header?.default_clarifications)
@@ -517,6 +523,16 @@ export default function TemplatesPage() {
         selectedTemplate?.description ||
         selectedTemplate?.default_scope ||
         "",
+      exclusions_text:
+        currentHeader?.exclusions_text ||
+        selectedDetail?.exclusions_text ||
+        selectedTemplate?.exclusions_text ||
+        "",
+      assumptions_text:
+        currentHeader?.assumptions_text ||
+        selectedDetail?.assumptions_text ||
+        selectedTemplate?.assumptions_text ||
+        "",
       default_scope:
         currentHeader?.default_scope ||
         currentHeader?.description ||
@@ -540,6 +556,16 @@ export default function TemplatesPage() {
           "",
         description:
           currentHeader?.description || selectedDetail?.description || selectedTemplate?.description || "",
+        exclusions_text:
+          currentHeader?.exclusions_text ||
+          selectedDetail?.exclusions_text ||
+          selectedTemplate?.exclusions_text ||
+          "",
+        assumptions_text:
+          currentHeader?.assumptions_text ||
+          selectedDetail?.assumptions_text ||
+          selectedTemplate?.assumptions_text ||
+          "",
         default_scope:
           currentHeader?.default_scope ||
           currentHeader?.description ||
@@ -592,6 +618,8 @@ export default function TemplatesPage() {
       project_type: header?.project_type ?? "",
       project_subtype: header?.project_subtype ?? "",
       description: header?.description ?? "",
+      exclusions_text: header?.exclusions_text ?? "",
+      assumptions_text: header?.assumptions_text ?? "",
       default_scope: header?.default_scope ?? header?.description ?? "",
       default_clarifications: Array.isArray(header?.default_clarifications)
         ? header.default_clarifications
@@ -647,6 +675,8 @@ export default function TemplatesPage() {
         assistantHandoff.prefillFields.project_summary ||
         assistantHandoff.draftPayload.description ||
         "",
+      exclusions_text: assistantHandoff.draftPayload.exclusions_text || "",
+      assumptions_text: assistantHandoff.draftPayload.assumptions_text || "",
       default_scope:
         assistantHandoff.prefillFields.project_summary ||
         assistantHandoff.draftPayload.description ||
@@ -671,6 +701,8 @@ export default function TemplatesPage() {
         project_type: prev.project_type || headerPatch.project_type || "",
         project_subtype: prev.project_subtype || headerPatch.project_subtype || "",
         description: prev.description || headerPatch.description || "",
+        exclusions_text: prev.exclusions_text || headerPatch.exclusions_text || "",
+        assumptions_text: prev.assumptions_text || headerPatch.assumptions_text || "",
         default_scope: prev.default_scope || headerPatch.default_scope || "",
         default_clarifications:
           Array.isArray(prev.default_clarifications) && prev.default_clarifications.length
@@ -761,6 +793,16 @@ export default function TemplatesPage() {
       setActiveTab("milestones");
       setAssistantField("milestones");
       toast.success("Milestones applied.");
+      return true;
+    }
+
+    if (actionKey === "apply_template_exclusions") {
+      const nextExclusions = Array.isArray(payload?.exclusions) ? payload.exclusions : [];
+      const nextAssumptions = Array.isArray(payload?.assumptions) ? payload.assumptions : [];
+      updateHeader("exclusions_text", nextExclusions.join("\n"));
+      updateHeader("assumptions_text", nextAssumptions.join("\n"));
+      setAssistantField("exclusions");
+      toast.success("Exclusions applied.");
       return true;
     }
 
@@ -1643,6 +1685,40 @@ export default function TemplatesPage() {
                       <div className="mt-2 text-xs text-slate-500">
                         This description should be generic and reusable across projects.
                         Avoid exact measurements or quantities — those will be collected later via clarifications.
+                      </div>
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="mb-1 block text-sm font-medium">Exclusions</label>
+                      <textarea
+                        data-testid="templates-exclusions-input"
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        rows={5}
+                        value={currentHeader?.exclusions_text || ""}
+                        onChange={(e) => updateHeader("exclusions_text", e.target.value)}
+                        onFocus={() => setAssistantField("exclusions")}
+                        disabled={!editMode && !creatingNew}
+                        placeholder="List what is commonly excluded from this template scope..."
+                      />
+                      <div className="mt-2 text-xs text-slate-500">
+                        Use reusable exclusions to define what stays outside the standard template scope.
+                      </div>
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="mb-1 block text-sm font-medium">Assumptions</label>
+                      <textarea
+                        data-testid="templates-assumptions-input"
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                        rows={4}
+                        value={currentHeader?.assumptions_text || ""}
+                        onChange={(e) => updateHeader("assumptions_text", e.target.value)}
+                        onFocus={() => setAssistantField("exclusions")}
+                        disabled={!editMode && !creatingNew}
+                        placeholder="List reusable assumptions that define standard conditions..."
+                      />
+                      <div className="mt-2 text-xs text-slate-500">
+                        Assumptions clarify expected access, site conditions, selections, and responsibilities for similar jobs.
                       </div>
                     </div>
                   </div>

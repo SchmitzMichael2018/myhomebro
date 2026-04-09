@@ -11,6 +11,8 @@ function buildTemplate({
   project_type = 'Remodel',
   project_subtype = 'Kitchen Remodel',
   description = '',
+  exclusions_text = '',
+  assumptions_text = '',
   milestones = [],
 }) {
   return {
@@ -25,6 +27,8 @@ function buildTemplate({
     project_subtype,
     description: description || `${name} description`,
     default_scope: description || `${name} description`,
+    exclusions_text,
+    assumptions_text,
     estimated_days: 14,
     milestone_count: milestones.length,
     usage_count: 1,
@@ -278,6 +282,8 @@ async function installTemplateRoutes(page, store) {
         project_type: payload.project_type,
         project_subtype: payload.project_subtype,
         description: payload.description,
+        exclusions_text: payload.exclusions_text || '',
+        assumptions_text: payload.assumptions_text || '',
         milestones: (Array.isArray(payload.milestones) ? payload.milestones : []).map((row, idx) => ({
           ...row,
           id: store.nextMilestoneId++,
@@ -760,6 +766,89 @@ test('template copilot can generate and explicitly apply description field text'
   await expect(page.getByTestId('templates-description-input')).not.toHaveValue('');
   await expect(page.getByTestId('templates-description-input')).toContainText(
     'Includes the work commonly expected by the customer'
+  );
+});
+
+test('template copilot can generate and explicitly apply exclusions and assumptions', async ({
+  page,
+}) => {
+  await installWorkflowMocks(page);
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('templates-new-draft-button').click();
+  await page.getByTestId('templates-name-input').fill('Kitchen Remodel Starter');
+  await page.getByTestId('templates-project-type-input').fill('Remodel');
+  await page.getByTestId('templates-project-subtype-input').fill('Kitchen Remodel');
+  await page
+    .getByTestId('templates-description-input')
+    .fill('Reusable kitchen remodel scope covering demo, rough-ins, cabinetry, fixtures, and closeout.');
+  await expect(page.getByTestId('templates-exclusions-input')).toHaveValue('');
+  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue('');
+
+  await page.getByTestId('templates-exclusions-input').focus();
+  await page.getByTestId('templates-ai-entry-toggle').click();
+  await expect(page.getByTestId('start-with-ai-title')).toContainText(
+    'Generate exclusions and assumptions for this template'
+  );
+
+  await page.getByTestId('start-with-ai-submit').click();
+
+  await expect(page.getByTestId('start-with-ai-exclusions-draft')).toBeVisible();
+  await expect(page.getByTestId('start-with-ai-exclusions-draft')).toContainText('Exclusions');
+  await expect(page.getByTestId('start-with-ai-exclusions-draft')).toContainText('Assumptions');
+  await expect(page.getByTestId('start-with-ai-exclusions-draft')).toContainText(
+    'Permit fees, specialty inspections'
+  );
+  await expect(page.getByTestId('templates-exclusions-input')).toHaveValue('');
+  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue('');
+
+  await page.getByTestId('start-with-ai-apply-exclusions').click();
+  await expect(page.getByTestId('templates-exclusions-input')).toHaveValue(
+    /Permit fees, specialty inspections/
+  );
+  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue(
+    /The existing kitchen is accessible/
+  );
+});
+
+test('template copilot exclusions generation does not overwrite text until apply', async ({
+  page,
+}) => {
+  await installWorkflowMocks(page);
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('templates-new-draft-button').click();
+  await page.getByTestId('templates-name-input').fill('Deck Build Starter');
+  await page.getByTestId('templates-project-type-input').fill('Outdoor');
+  await page.getByTestId('templates-project-subtype-input').fill('Deck Build');
+  await page
+    .getByTestId('templates-description-input')
+    .fill('Reusable deck scope covering layout, framing, decking, rails, and closeout.');
+  await page
+    .getByTestId('templates-exclusions-input')
+    .fill('Existing exclusions text');
+  await page
+    .getByTestId('templates-assumptions-input')
+    .fill('Existing assumptions text');
+
+  await page.getByTestId('templates-exclusions-input').focus();
+  await page.getByTestId('templates-ai-entry-toggle').click();
+  await page.getByTestId('start-with-ai-submit').click();
+
+  await expect(page.getByTestId('start-with-ai-exclusions-draft')).toContainText(
+    'Surveying, engineering, soil correction'
+  );
+  await expect(page.getByTestId('templates-exclusions-input')).toHaveValue('Existing exclusions text');
+  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue('Existing assumptions text');
+
+  await page.getByTestId('start-with-ai-apply-exclusions').click();
+  await expect(page.getByTestId('templates-exclusions-input')).toHaveValue(
+    /Surveying, engineering, soil correction/
+  );
+  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue(
+    /The site has standard access/
   );
 });
 

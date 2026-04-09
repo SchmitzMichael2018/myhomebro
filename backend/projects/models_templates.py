@@ -49,6 +49,8 @@ class ProjectTemplate(models.Model):
     )
 
     default_scope = models.TextField(blank=True, default="")
+    exclusions_text = models.TextField(blank=True, default="")
+    assumptions_text = models.TextField(blank=True, default="")
     default_clarifications = models.JSONField(blank=True, default=list)
     benchmark_match_key = models.CharField(
         max_length=120,

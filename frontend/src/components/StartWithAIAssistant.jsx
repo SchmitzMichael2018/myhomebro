@@ -167,6 +167,13 @@ function isTemplateMilestonesMode(context = {}) {
   );
 }
 
+function isTemplateExclusionsMode(context = {}) {
+  return (
+    String(context?.page || "").trim().toLowerCase() === "templates" &&
+    String(context?.field || "").trim().toLowerCase() === "exclusions"
+  );
+}
+
 function buildTemplateDescriptionDraft(context = {}) {
   const templateName = String(context?.template_name || context?.template_summary?.name || "").trim();
   const projectType = String(
@@ -438,6 +445,107 @@ function buildTemplateMilestoneDrafts(context = {}) {
   ];
 }
 
+function buildTemplateExclusionsDraft(context = {}) {
+  const projectType = String(
+    context?.project_type || context?.template_summary?.project_type || ""
+  ).trim();
+  const projectSubtype = String(
+    context?.project_subtype || context?.template_summary?.project_subtype || ""
+  ).trim();
+  const scope = String(
+    context?.description ||
+      context?.default_scope ||
+      context?.template_summary?.description ||
+      context?.template_summary?.default_scope ||
+      ""
+  ).trim();
+
+  const subtype = projectSubtype.toLowerCase();
+  const type = projectType.toLowerCase();
+
+  if (subtype.includes("kitchen")) {
+    return {
+      exclusions: [
+        "Owner selections, change orders, and scope upgrades beyond the standard kitchen template are excluded unless added in writing.",
+        "Structural redesign, major layout relocation, or hidden-condition repair is excluded from the baseline scope unless specifically priced.",
+        "Permit fees, specialty inspections, and utility-company charges are excluded unless the final agreement states otherwise.",
+      ],
+      assumptions: [
+        "The existing kitchen is accessible during normal working hours with utilities available for standard installation and testing.",
+        "Template pricing assumes standard cabinet, countertop, fixture, and appliance coordination without custom fabrication beyond the selected scope.",
+      ],
+    };
+  }
+
+  if (subtype.includes("bathroom")) {
+    return {
+      exclusions: [
+        "Hidden water damage, mold remediation, structural repair, or code-driven redesign is excluded unless identified and approved separately.",
+        "Owner-supplied specialty fixtures, custom glass, and premium finish upgrades are excluded from the baseline template unless listed in scope.",
+        "Permit fees, engineering, and jurisdiction-required specialty inspections are excluded unless specifically included in the final agreement.",
+      ],
+      assumptions: [
+        "The work area can be isolated with normal access to water, power, and standard demolition/disposal pathways.",
+        "Template scope assumes standard waterproofing, tile, and fixture installation conditions without major substrate reconstruction.",
+      ],
+    };
+  }
+
+  if (subtype.includes("deck")) {
+    return {
+      exclusions: [
+        "Surveying, engineering, soil correction, and unforeseen footing redesign are excluded unless added to the project scope.",
+        "Landscape restoration, irrigation repair, or utility relocation outside the immediate deck area is excluded unless specifically included.",
+        "Permit fees, HOA approvals, and jurisdictional review costs are excluded unless identified in writing.",
+      ],
+      assumptions: [
+        "The site has standard access for materials, staging, and crew movement during normal working hours.",
+        "Template scope assumes typical framing, decking, and guardrail conditions without major hidden structural correction.",
+      ],
+    };
+  }
+
+  if (subtype.includes("cabinet")) {
+    return {
+      exclusions: [
+        "Wall repair, repainting, countertop fabrication, and major utility relocation are excluded unless specifically included with the cabinet scope.",
+        "Owner-supplied specialty hardware, organizational accessories, or custom finish modifications are excluded unless listed in the agreement.",
+        "Permit fees, engineering, and unrelated trade work outside normal cabinet installation are excluded from the baseline template.",
+      ],
+      assumptions: [
+        "Existing field dimensions, surfaces, and access conditions support a standard cabinet install without major substrate correction.",
+        "Template scope assumes materials, approvals, and selections are ready in time for a normal installation sequence.",
+      ],
+    };
+  }
+
+  if (type.includes("remodel") || scope.toLowerCase().includes("remodel")) {
+    return {
+      exclusions: [
+        "Hidden conditions, code-driven redesign, and scope changes discovered after demolition are excluded unless approved through change order.",
+        "Permit fees, specialty engineering, and third-party inspection costs are excluded unless the final agreement includes them.",
+        "Owner upgrades, specialty materials, and work outside the defined remodel area are excluded from the baseline template scope.",
+      ],
+      assumptions: [
+        "The project area is reasonably accessible with normal utilities, staging space, and standard working-hour access.",
+        "Selections, approvals, and customer decisions will be provided in time to support a normal project sequence.",
+      ],
+    };
+  }
+
+  return {
+    exclusions: [
+      "Hidden conditions, unforeseen code requirements, and scope changes outside the written template are excluded unless approved separately.",
+      "Permit fees, specialty inspections, and third-party costs are excluded unless specifically included in the agreement.",
+      "Owner-requested upgrades, premium finishes, and work outside the defined scope are excluded from the standard template baseline.",
+    ],
+    assumptions: [
+      "The site is accessible during normal working hours with standard utility access and staging conditions.",
+      "Selections, approvals, and customer decisions will be available in time to support the planned work sequence.",
+    ],
+  };
+}
+
 function normalizeTemplateMilestoneDrafts(items = []) {
   return items.map((item, idx) => {
     const title = String(item?.title || "").trim();
@@ -581,7 +689,12 @@ export default function StartWithAIAssistant({
     () => isTemplateMilestonesMode(normalizedContext),
     [normalizedContext]
   );
-  const isFieldAwareMode = isFieldAwareDescriptionMode || isFieldAwareMilestonesMode;
+  const isFieldAwareExclusionsMode = useMemo(
+    () => isTemplateExclusionsMode(normalizedContext),
+    [normalizedContext]
+  );
+  const isFieldAwareMode =
+    isFieldAwareDescriptionMode || isFieldAwareMilestonesMode || isFieldAwareExclusionsMode;
   const panelConfig = useMemo(
     () => normalizePanelConfig(normalizedContext),
     [normalizedContext]
@@ -593,6 +706,7 @@ export default function StartWithAIAssistant({
   const [isPlanning, setIsPlanning] = useState(false);
   const [fieldDraft, setFieldDraft] = useState("");
   const [milestoneDrafts, setMilestoneDrafts] = useState([]);
+  const [exclusionsDraft, setExclusionsDraft] = useState({ exclusions: [], assumptions: [] });
   const [plan, setPlan] = useState(() =>
     produceStructuredAssistantPlan({
       preferredIntent: "navigate_app",
@@ -668,6 +782,8 @@ export default function StartWithAIAssistant({
     ? "Generate reusable template scope text for this description field."
     : isFieldAwareMilestonesMode
     ? "Generate reusable milestone titles for this template."
+    : isFieldAwareExclusionsMode
+    ? "Generate reusable exclusions and assumptions for this template."
     : isContextualMode
     ? "Ask AI about the step you're on right now."
     : "Describe the work you want to start or improve.";
@@ -675,26 +791,35 @@ export default function StartWithAIAssistant({
     ? "Generate description text for this template"
     : isFieldAwareMilestonesMode
     ? "Generate milestone sequence for this template"
+    : isFieldAwareExclusionsMode
+    ? "Generate exclusions and assumptions for this template"
     : userFacingPanel.headline;
   const helperText = isFieldAwareDescriptionMode
     ? "Use the current template name, type, and subtype to draft reusable scope language for the Description / Scope field."
     : isFieldAwareMilestonesMode
     ? "Use the current template scope, type, and subtype to draft a reusable milestone sequence for this template."
+    : isFieldAwareExclusionsMode
+    ? "Use the current template scope, type, and subtype to draft reusable exclusions and assumptions that define clear project boundaries."
     : userFacingPanel.helperText;
   const promptPlaceholder = isFieldAwareDescriptionMode
     ? 'Optional: add extra scope guidance like "include prep, finish work, and cleanup."'
     : isFieldAwareMilestonesMode
     ? 'Optional: add sequencing guidance like "include permit review and punch list."'
+    : isFieldAwareExclusionsMode
+    ? 'Optional: add boundary guidance like "exclude owner-supplied fixtures and permit fees."'
     : userFacingPanel.promptPlaceholder;
   const submitLabel = isFieldAwareDescriptionMode
     ? "Generate Description"
     : isFieldAwareMilestonesMode
     ? "Generate Milestones"
+    : isFieldAwareExclusionsMode
+    ? "Generate Exclusions"
     : panelConfig.submitButtonLabel || "Ask AI";
 
   useEffect(() => {
     setFieldDraft("");
     setMilestoneDrafts([]);
+    setExclusionsDraft({ exclusions: [], assumptions: [] });
   }, [contextSignature, isFieldAwareMode]);
 
   function applyPlan(nextPlan, submittedPrompt = "", options = {}) {
@@ -767,6 +892,22 @@ export default function StartWithAIAssistant({
       setHistory((prev) => [
         ...prev,
         { prompt: cleanPrompt || "Generate milestones", plan: { intent_label: "Template Milestones" } },
+      ]);
+      return;
+    }
+    if (isFieldAwareExclusionsMode) {
+      const baseDraft = buildTemplateExclusionsDraft(normalizedContext);
+      const cleanNote = String(cleanPrompt || "").trim();
+      const nextDraft = cleanNote
+        ? {
+            exclusions: [...baseDraft.exclusions, cleanNote],
+            assumptions: baseDraft.assumptions,
+          }
+        : baseDraft;
+      setExclusionsDraft(nextDraft);
+      setHistory((prev) => [
+        ...prev,
+        { prompt: cleanPrompt || "Generate exclusions", plan: { intent_label: "Template Exclusions" } },
       ]);
       return;
     }
@@ -917,6 +1058,27 @@ export default function StartWithAIAssistant({
     }
   }
 
+  async function handleApplyExclusionsDraft() {
+    if (
+      (!Array.isArray(exclusionsDraft?.exclusions) || !exclusionsDraft.exclusions.length) &&
+      (!Array.isArray(exclusionsDraft?.assumptions) || !exclusionsDraft.assumptions.length)
+    ) {
+      return;
+    }
+    if (typeof onAction !== "function") return;
+    const handled = await onAction({
+      assistant_action_key: "apply_template_exclusions",
+      action_key: "apply_template_exclusions",
+      source: "field_generation",
+      field: "exclusions",
+      exclusions: Array.isArray(exclusionsDraft.exclusions) ? exclusionsDraft.exclusions : [],
+      assumptions: Array.isArray(exclusionsDraft.assumptions) ? exclusionsDraft.assumptions : [],
+    });
+    if (handled === true) {
+      setPrompt("");
+    }
+  }
+
   async function handleTemplateRecommendationAction() {
     const actionKey = safeActionKey(
       userFacingPanel?.templateRecommendation?.actionKey || "save_as_template"
@@ -1002,7 +1164,9 @@ export default function StartWithAIAssistant({
             <div className="text-sm font-semibold text-slate-900">
               {isFieldAwareDescriptionMode
                 ? "Description / Scope field assistance"
-                : "Milestones field assistance"}
+                : isFieldAwareMilestonesMode
+                ? "Milestones field assistance"
+                : "Exclusions / Assumptions field assistance"}
             </div>
             <div className="mt-1 text-sm text-slate-600">
               {[
@@ -1013,7 +1177,7 @@ export default function StartWithAIAssistant({
                 .filter(Boolean)
                 .join(" · ") || "Using the current template context"}
             </div>
-            {isFieldAwareMilestonesMode && normalizedContext?.description ? (
+            {(isFieldAwareMilestonesMode || isFieldAwareExclusionsMode) && normalizedContext?.description ? (
               <div className="mt-2 text-xs leading-5 text-slate-500">
                 Scope signal: {normalizedContext.description}
               </div>
@@ -1215,6 +1379,48 @@ export default function StartWithAIAssistant({
               className="mt-3 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
             >
               Apply Milestones
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </ResultBlock>
+        ) : null}
+
+        {isFieldAwareExclusionsMode &&
+        (exclusionsDraft.exclusions.length || exclusionsDraft.assumptions.length) ? (
+          <ResultBlock
+            title="Exclusions Draft"
+            testId={testId("start-with-ai-exclusions-draft")}
+          >
+            {exclusionsDraft.exclusions.length ? (
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Exclusions
+                </div>
+                <ul className="mt-2 list-disc space-y-2 pl-5 text-sm leading-6 text-slate-800">
+                  {exclusionsDraft.exclusions.map((item, idx) => (
+                    <li key={`exclusion-${idx}`}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {exclusionsDraft.assumptions.length ? (
+              <div className="mt-4">
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Assumptions
+                </div>
+                <ul className="mt-2 list-disc space-y-2 pl-5 text-sm leading-6 text-slate-800">
+                  {exclusionsDraft.assumptions.map((item, idx) => (
+                    <li key={`assumption-${idx}`}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              onClick={handleApplyExclusionsDraft}
+              data-testid={testId("start-with-ai-apply-exclusions")}
+              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+            >
+              Apply Exclusions
               <ArrowRight className="h-4 w-4" />
             </button>
           </ResultBlock>

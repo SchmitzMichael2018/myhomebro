@@ -271,6 +271,8 @@ class ProjectTemplateCreateUpdateSerializer(serializers.ModelSerializer):
             "payment_structure",
             "retainage_percent",
             "default_scope",
+            "exclusions_text",
+            "assumptions_text",
             "default_clarifications",
             "project_materials_hint",
             "is_active",
