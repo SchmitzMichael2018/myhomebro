@@ -40,7 +40,7 @@ const NAV_HINTS = {
   "/app/business": "View revenue, activity, and business performance",
   "/app/reviewer/queue": "Review items waiting on your action or approval",
   "/app/agreements": "Create and manage project agreements, signatures, and funding",
-  "/app/templates": "Create and manage project agreements, signatures, and funding",
+  "/app/templates": "Build reusable project templates and milestone structures",
   "/app/milestones": "Track active work and what's ready to invoice",
   "/app/subcontractors": "Manage your team, subcontractors, and assignments",
   "/app/public-presence": "Showcase your work and build trust with customers",

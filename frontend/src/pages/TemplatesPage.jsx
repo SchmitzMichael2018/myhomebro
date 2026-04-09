@@ -1001,6 +1001,7 @@ export default function TemplatesPage() {
           <button
             type="button"
             onClick={startNewTemplate}
+            data-testid="templates-new-draft-button"
             className="rounded-xl border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50"
           >
             New Template Draft
@@ -1280,6 +1281,7 @@ export default function TemplatesPage() {
                   <button
                     type="button"
                     onClick={startEditMode}
+                    data-testid="templates-edit-button"
                     className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
                   >
                     Edit Template
@@ -1291,6 +1293,7 @@ export default function TemplatesPage() {
                     <button
                       type="button"
                       onClick={cancelEditMode}
+                      data-testid="templates-cancel-button"
                       disabled={savingTemplate}
                       className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                     >
@@ -1300,6 +1303,7 @@ export default function TemplatesPage() {
                     <button
                       type="button"
                       onClick={saveTemplateEdits}
+                      data-testid="templates-save-button"
                       disabled={savingTemplate}
                       className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
                     >
@@ -1419,19 +1423,39 @@ export default function TemplatesPage() {
               </div>
 
               <div className="mb-4 flex flex-wrap gap-2">
-                <TabButton active={activeTab === "setup"} onClick={() => setActiveTab("setup")}>
+                <TabButton
+                  data-testid="templates-tab-setup"
+                  active={activeTab === "setup"}
+                  onClick={() => setActiveTab("setup")}
+                >
                   Project Setup
                 </TabButton>
-                <TabButton active={activeTab === "milestones"} onClick={() => setActiveTab("milestones")}>
+                <TabButton
+                  data-testid="templates-tab-milestones"
+                  active={activeTab === "milestones"}
+                  onClick={() => setActiveTab("milestones")}
+                >
                   Milestones
                 </TabButton>
-                <TabButton active={activeTab === "pricing"} onClick={() => setActiveTab("pricing")}>
+                <TabButton
+                  data-testid="templates-tab-pricing"
+                  active={activeTab === "pricing"}
+                  onClick={() => setActiveTab("pricing")}
+                >
                   Pricing
                 </TabButton>
-                <TabButton active={activeTab === "schedule"} onClick={() => setActiveTab("schedule")}>
+                <TabButton
+                  data-testid="templates-tab-schedule"
+                  active={activeTab === "schedule"}
+                  onClick={() => setActiveTab("schedule")}
+                >
                   Schedule
                 </TabButton>
-                <TabButton active={activeTab === "materials"} onClick={() => setActiveTab("materials")}>
+                <TabButton
+                  data-testid="templates-tab-materials"
+                  active={activeTab === "materials"}
+                  onClick={() => setActiveTab("materials")}
+                >
                   Materials
                 </TabButton>
               </div>
@@ -1458,6 +1482,7 @@ export default function TemplatesPage() {
                     <div>
                       <label className="mb-1 block text-sm font-medium">Template Name</label>
                       <input
+                        data-testid="templates-name-input"
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                         value={currentHeader?.name || ""}
                         onChange={(e) => updateHeader("name", e.target.value)}
@@ -1470,6 +1495,7 @@ export default function TemplatesPage() {
                       <input
                         type="number"
                         min="1"
+                        data-testid="templates-estimated-days-input"
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                         value={currentHeader?.estimated_days || 1}
                         onChange={(e) => updateHeader("estimated_days", e.target.value)}
@@ -1483,6 +1509,7 @@ export default function TemplatesPage() {
                     <div>
                       <label className="mb-1 block text-sm font-medium">Project Type</label>
                       <input
+                        data-testid="templates-project-type-input"
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                         value={currentHeader?.project_type || ""}
                         onChange={(e) => updateHeader("project_type", e.target.value)}
@@ -1494,6 +1521,7 @@ export default function TemplatesPage() {
                     <div>
                       <label className="mb-1 block text-sm font-medium">Project Subtype</label>
                       <input
+                        data-testid="templates-project-subtype-input"
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                         value={currentHeader?.project_subtype || ""}
                         onChange={(e) => updateHeader("project_subtype", e.target.value)}
@@ -1505,6 +1533,7 @@ export default function TemplatesPage() {
                     <div className="md:col-span-2">
                       <label className="mb-1 block text-sm font-medium">Description / Scope</label>
                       <textarea
+                        data-testid="templates-description-input"
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                         rows={6}
                         value={currentHeader?.description || ""}
@@ -1602,6 +1631,7 @@ export default function TemplatesPage() {
                         <button
                           type="button"
                           onClick={addMilestone}
+                          data-testid="templates-add-milestone-button"
                           className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                         >
                           Add Milestone
@@ -1630,6 +1660,7 @@ export default function TemplatesPage() {
                               <div className="md:col-span-2">
                                 <label className="mb-1 block text-xs font-semibold text-slate-700">Title</label>
                                 <input
+                                  data-testid={`templates-milestone-title-${idx + 1}`}
                                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                                   value={m?.title || ""}
                                   onChange={(e) => updateMilestone(idx, { title: e.target.value })}
@@ -1662,6 +1693,7 @@ export default function TemplatesPage() {
                               <div className="md:col-span-4">
                                 <label className="mb-1 block text-xs font-semibold text-slate-700">Description</label>
                                 <textarea
+                                  data-testid={`templates-milestone-description-${idx + 1}`}
                                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                                   rows={3}
                                   value={m?.description || ""}
