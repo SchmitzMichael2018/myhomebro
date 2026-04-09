@@ -1,0 +1,535 @@
+{
+  "defaultAmountWeights": {
+    "4": [0.2, 0.35, 0.3, 0.15],
+    "5": [0.12, 0.18, 0.28, 0.26, 0.16],
+    "6": [0.1, 0.15, 0.2, 0.2, 0.2, 0.15],
+    "7": [0.08, 0.12, 0.16, 0.18, 0.18, 0.16, 0.12]
+  },
+  "clarificationNoteMappings": {
+    "boolean": [
+      ["layout_changes", "Layout changes required"],
+      ["wet_area_tile", "Wet-area tile and waterproofing included"],
+      ["cabinet_scope", "Cabinet scope included"],
+      ["demo_required", "Existing materials require removal first"],
+      ["hardware_included", "Hardware, fillers, and trim included"],
+      ["connection_ready", "Utilities and hookups ready on arrival"],
+      ["haul_away_existing", "Old appliances require disconnect or haul-away"],
+      ["tear_off_scope", "Full tear-off included"],
+      ["decking_allowance", "Minor decking repair allowed if needed"],
+      ["subfloor_prep", "Subfloor prep or leveling included"]
+    ],
+    "text": [
+      ["finish_scope_notes", "Finish scope notes"],
+      ["fixture_upgrade_notes", "Fixture or finish notes"],
+      ["cabinet_style_notes", "Cabinet layout notes"],
+      ["appliance_scope_notes", "Appliance notes"],
+      ["roofing_notes", "Roofing notes"],
+      ["flooring_notes", "Flooring notes"]
+    ]
+  },
+  "subtypeRules": [
+    {
+      "id": "kitchen_remodel",
+      "match": { "subtypeIncludes": ["kitchen remodel"] },
+      "baseRows": [
+        { "title": "Planning & protection", "description": "Confirm selections, protect adjacent areas, and stage materials." },
+        { "title": "Demolition & rough-in", "description": "Remove existing finishes and complete rough adjustments for the new layout." },
+        { "title": "Cabinets & surfaces", "description": "Install cabinetry, countertops, and major kitchen surfaces." },
+        { "title": "Fixtures & appliances", "description": "Set fixtures, connect appliances, and complete trim details." },
+        { "title": "Punch list & walkthrough", "description": "Finish punch items, final cleanup, and customer walkthrough." }
+      ],
+      "operations": [
+        {
+          "when": { "answer": "layout_changes", "equals": "yes" },
+          "actions": [
+            {
+              "type": "insert_after_title",
+              "title": "Planning & protection",
+              "row": {
+                "title": "Layout review & utility changes",
+                "description": "Confirm layout changes, coordinate updated appliance locations, and complete the major utility adjustments before finish installation."
+              }
+            },
+            {
+              "type": "replace_title",
+              "title": "Demolition & rough-in",
+              "row": {
+                "title": "Selective demolition & rough-in",
+                "description": "Remove existing finishes and complete rough framing, plumbing, or electrical work needed for the updated kitchen layout."
+              }
+            }
+          ]
+        },
+        {
+          "when": { "answer": "cabinet_scope", "equals": "yes" },
+          "actions": [
+            {
+              "type": "replace_title",
+              "title": "Cabinets & surfaces",
+              "row": {
+                "title": "Cabinet installation",
+                "description": "Install cabinetry, secure boxes in the planned layout, and prepare for final countertop or trim work."
+              }
+            },
+            {
+              "type": "insert_after_title",
+              "title": "Cabinet installation",
+              "row": {
+                "title": "Countertops & surface finishes",
+                "description": "Install countertops, backsplash, and the major kitchen surface finishes that complete the cabinetry phase."
+              }
+            }
+          ]
+        },
+        {
+          "when": { "answer": "cabinet_scope", "equals": "no" },
+          "actions": [
+            {
+              "type": "replace_title",
+              "title": "Cabinets & surfaces",
+              "row": {
+                "title": "Countertops, surfaces & finishes",
+                "description": "Complete countertop work, backsplash or wall finishes, and other major kitchen surface upgrades without cabinet replacement."
+              }
+            }
+          ]
+        },
+        {
+          "when": { "answer": "finish_scope_notes", "present": true },
+          "actions": [
+            {
+              "type": "append_detail",
+              "title": "Countertops & surface finishes",
+              "fallbackTitle": "Fixtures & appliances",
+              "template": "Included finish scope: {answer:finish_scope_notes}."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bathroom_remodel",
+      "match": { "subtypeIncludes": ["bathroom remodel"] },
+      "baseRows": [
+        { "title": "Protection & demolition", "description": "Protect nearby finishes and remove existing bathroom components." },
+        { "title": "Rough plumbing & electrical", "description": "Complete rough adjustments needed for the updated bathroom layout." },
+        { "title": "Walls, waterproofing & tile", "description": "Prep surfaces, waterproof wet areas, and install tile finishes." },
+        { "title": "Vanity, fixtures & trim", "description": "Install vanity, fixtures, accessories, and finish details." },
+        { "title": "Final cleanup & walkthrough", "description": "Complete punch work, cleanup, and final customer review." }
+      ],
+      "operations": [
+        {
+          "when": { "answer": "layout_changes", "equals": "yes" },
+          "actions": [
+            {
+              "type": "insert_after_title",
+              "title": "Protection & demolition",
+              "row": {
+                "title": "Layout changes & rough-ins",
+                "description": "Complete plumbing and electrical rough changes needed for the updated bathroom layout before finish work starts."
+              }
+            }
+          ]
+        },
+        {
+          "when": { "answer": "wet_area_tile", "equals": "yes" },
+          "actions": [
+            {
+              "type": "replace_title",
+              "title": "Walls, waterproofing & tile",
+              "row": {
+                "title": "Walls & waterproofing prep",
+                "description": "Prep backing, wall surfaces, and wet-area protection so the finish tile work has a clean installation base."
+              }
+            },
+            {
+              "type": "insert_after_title",
+              "title": "Walls & waterproofing prep",
+              "row": {
+                "title": "Tile & waterproofing finish",
+                "description": "Install tile finishes, seal wet areas, and complete the detailed waterproofing work included in the remodel scope."
+              }
+            }
+          ]
+        },
+        {
+          "when": { "answer": "wet_area_tile", "equals": "no" },
+          "actions": [
+            { "type": "remove_title", "title": "Walls, waterproofing & tile" },
+            {
+              "type": "append_detail",
+              "title": "Vanity, fixtures & trim",
+              "template": "Include wall touch-up and non-tile surface prep needed before the fixture phase."
+            }
+          ]
+        },
+        {
+          "when": { "answer": "fixture_upgrade_notes", "present": true },
+          "actions": [
+            {
+              "type": "append_detail",
+              "title": "Vanity, fixtures & trim",
+              "template": "Included upgrades: {answer:fixture_upgrade_notes}."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cabinet_installation",
+      "match": { "subtypeIncludes": ["cabinet installation"] },
+      "baseRows": [
+        { "title": "Measurements & prep", "description": "Confirm cabinet layout, site readiness, and delivery staging." },
+        { "title": "Cabinet installation", "description": "Install and secure new cabinets in the planned configuration." },
+        { "title": "Hardware & adjustments", "description": "Align doors and drawers, install hardware, and complete trim adjustments." },
+        { "title": "Final walkthrough", "description": "Review fit and finish, cleanup, and confirm punch items with the customer." }
+      ],
+      "operations": [
+        {
+          "when": { "answer": "demo_required", "equals": "yes" },
+          "actions": [
+            {
+              "type": "insert_at",
+              "index": 0,
+              "row": {
+                "title": "Demo & site prep",
+                "description": "Remove existing cabinetry if needed, protect surrounding finishes, and prepare the space for the new cabinet install."
+              }
+            }
+          ]
+        },
+        {
+          "when": { "answer": "hardware_included", "equals": "yes" },
+          "actions": [
+            {
+              "type": "replace_title",
+              "title": "Hardware & adjustments",
+              "row": {
+                "title": "Hardware, fillers & trim",
+                "description": "Install pulls, fillers, panels, and trim pieces that complete the cabinetry scope."
+              }
+            },
+            {
+              "type": "insert_after_title",
+              "title": "Hardware, fillers & trim",
+              "row": {
+                "title": "Alignment & final adjustments",
+                "description": "Align doors and drawers, fine tune reveals, and complete final fit checks before walkthrough."
+              }
+            }
+          ]
+        },
+        {
+          "when": { "answer": "hardware_included", "equals": "no" },
+          "actions": [
+            {
+              "type": "replace_title",
+              "title": "Hardware & adjustments",
+              "row": {
+                "title": "Alignment & adjustments",
+                "description": "Align doors and drawers, confirm fit, and complete final adjustment work without hardware or trim installation scope."
+              }
+            }
+          ]
+        },
+        {
+          "when": { "answer": "cabinet_style_notes", "present": true },
+          "actions": [
+            {
+              "type": "append_detail",
+              "title": "Cabinet installation",
+              "template": "Layout details: {answer:cabinet_style_notes}."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "countertop_installation",
+      "match": { "subtypeIncludes": ["countertop installation"] },
+      "baseRows": [
+        { "title": "Template & prep", "description": "Confirm measurements, protect work areas, and prep cabinet surfaces." },
+        { "title": "Countertop installation", "description": "Install countertops, seams, and edge details." },
+        { "title": "Sink & fixture reconnect", "description": "Reconnect sink and finish related countertop details." },
+        { "title": "Cleanup & walkthrough", "description": "Complete cleanup, seal where needed, and review the finished install." }
+      ],
+      "operations": []
+    },
+    {
+      "id": "appliance_installation",
+      "match": { "subtypeIncludes": ["appliance installation"] },
+      "baseRows": [
+        { "title": "Delivery & staging", "description": "Stage appliances, verify openings, and prep the install area." },
+        { "title": "Installation", "description": "Set appliances in place and complete all required connections." },
+        { "title": "Testing & adjustments", "description": "Test operation, fine tune fit, and complete any adjustments." },
+        { "title": "Cleanup & customer review", "description": "Clean the area and review operation and handoff details with the customer." }
+      ],
+      "operations": [
+        {
+          "when": { "answer": "haul_away_existing", "equals": "yes" },
+          "actions": [
+            {
+              "type": "insert_after_title",
+              "title": "Delivery & staging",
+              "row": {
+                "title": "Disconnect & haul-away",
+                "description": "Disconnect existing appliances safely, remove them from the work area, and prep the site for the new installation."
+              }
+            }
+          ]
+        },
+        {
+          "when": { "answer": "connection_ready", "equals": "no" },
+          "actions": [
+            {
+              "type": "insert_after_title",
+              "title": "Disconnect & haul-away",
+              "fallbackTitle": "Delivery & staging",
+              "row": {
+                "title": "Utility prep",
+                "description": "Prepare required hookups, shutoffs, or connection points so the appliance installation can proceed cleanly."
+              }
+            },
+            {
+              "type": "replace_title",
+              "title": "Installation",
+              "row": {
+                "title": "Installation",
+                "description": "Set appliances in place, complete final hookups, and secure the finished installation once utilities are ready."
+              }
+            }
+          ]
+        },
+        {
+          "when": { "answer": "appliance_scope_notes", "present": true },
+          "actions": [
+            {
+              "type": "append_detail",
+              "title": "Installation",
+              "template": "Included appliance details: {answer:appliance_scope_notes}."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "roof_replacement",
+      "match": { "subtypeIncludes": ["roof replacement"], "typeIncludes": ["roof"] },
+      "baseRows": [
+        { "title": "Protection & tear-off", "description": "Protect the site and remove existing roofing materials." },
+        { "title": "Decking & prep", "description": "Inspect decking, complete repairs, and prep the roof system." },
+        { "title": "Roof system installation", "description": "Install underlayment, roofing materials, and required flashings." },
+        { "title": "Cleanup & final review", "description": "Complete cleanup, magnetic sweep, and final walkthrough." }
+      ],
+      "operations": [
+        {
+          "when": { "answer": "tear_off_scope", "equals": "no" },
+          "actions": [
+            {
+              "type": "replace_title",
+              "title": "Protection & tear-off",
+              "row": {
+                "title": "Protection & roof prep",
+                "description": "Protect the site, prep the existing roof surface, and ready the system for the new roofing work without a full tear-off."
+              }
+            }
+          ]
+        },
+        {
+          "when": { "answer": "decking_allowance", "equals": "yes" },
+          "actions": [
+            {
+              "type": "insert_after_title",
+              "title": "Decking & prep",
+              "row": {
+                "title": "Deck repair allowance",
+                "description": "Complete minor decking repairs or spot replacement where needed before the roofing system is closed in."
+              }
+            }
+          ]
+        },
+        {
+          "when": { "answer": "roofing_notes", "present": true },
+          "actions": [
+            {
+              "type": "append_detail",
+              "title": "Roof system installation",
+              "template": "System details: {answer:roofing_notes}."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "flooring",
+      "match": { "typeIncludes": ["floor"] },
+      "baseRows": [
+        { "title": "Prep & materials", "description": "Confirm material staging and prepare the work areas." },
+        { "title": "Surface preparation", "description": "Demo or prep the substrate for the new flooring system." },
+        { "title": "Flooring installation", "description": "Install flooring materials and transitions." },
+        { "title": "Trim & cleanup", "description": "Complete trim details, cleanup, and final walkthrough." }
+      ],
+      "operations": [
+        {
+          "when": { "answer": "demo_required", "equals": "yes" },
+          "actions": [
+            {
+              "type": "insert_after_title",
+              "title": "Prep & materials",
+              "row": {
+                "title": "Demo & disposal",
+                "description": "Remove existing flooring materials, dispose of debris, and leave the work areas ready for substrate prep."
+              }
+            }
+          ]
+        },
+        {
+          "when": { "answer": "subfloor_prep", "equals": "yes" },
+          "actions": [
+            {
+              "type": "replace_title",
+              "title": "Surface preparation",
+              "row": {
+                "title": "Subfloor prep & leveling",
+                "description": "Complete subfloor repairs, patching, or leveling work needed before finish flooring installation begins."
+              }
+            }
+          ]
+        },
+        {
+          "when": { "answer": "subfloor_prep", "equals": "no" },
+          "actions": [
+            {
+              "type": "replace_title",
+              "title": "Surface preparation",
+              "row": {
+                "title": "Surface readiness check",
+                "description": "Verify the substrate is ready for installation and complete only minor prep before flooring work begins."
+              }
+            }
+          ]
+        },
+        {
+          "when": { "answer": "flooring_notes", "present": true },
+          "actions": [
+            {
+              "type": "append_detail",
+              "title": "Flooring installation",
+              "template": "Material details: {answer:flooring_notes}."
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "regressionCases": [
+    {
+      "id": "default_kitchen_skipped",
+      "input": {
+        "projectType": "Remodel",
+        "projectSubtype": "Kitchen Remodel",
+        "description": "Kitchen remodel scope",
+        "clarificationAnswers": {}
+      },
+      "expectedTitles": [
+        "Planning & protection",
+        "Demolition & rough-in",
+        "Cabinets & surfaces",
+        "Fixtures & appliances",
+        "Punch list & walkthrough"
+      ]
+    },
+    {
+      "id": "kitchen_layout_no_cabinets",
+      "input": {
+        "projectType": "Remodel",
+        "projectSubtype": "Kitchen Remodel",
+        "description": "Kitchen remodel scope",
+        "clarificationAnswers": {
+          "layout_changes": "yes",
+          "cabinet_scope": "no",
+          "finish_scope_notes": "backsplash and pendant lighting"
+        },
+        "amountMode": "preserve_base",
+        "baseMilestones": [
+          { "amount": 0 },
+          { "amount": 0 },
+          { "amount": 0 },
+          { "amount": 0 },
+          { "amount": 0 },
+          { "amount": 0 }
+        ]
+      },
+      "expectedTitles": [
+        "Planning & protection",
+        "Layout review & utility changes",
+        "Selective demolition & rough-in",
+        "Countertops, surfaces & finishes",
+        "Fixtures & appliances",
+        "Punch list & walkthrough"
+      ],
+      "expectedDescriptionIncludes": [
+        {
+          "title": "Fixtures & appliances",
+          "text": "Included finish scope: backsplash and pendant lighting."
+        }
+      ],
+      "expectedAllAmounts": 0
+    },
+    {
+      "id": "bathroom_no_tile",
+      "input": {
+        "projectType": "Remodel",
+        "projectSubtype": "Bathroom Remodel",
+        "description": "Bathroom remodel scope",
+        "clarificationAnswers": {
+          "wet_area_tile": "no"
+        },
+        "amountMode": "preserve_base",
+        "baseMilestones": [
+          { "amount": 0 },
+          { "amount": 0 },
+          { "amount": 0 },
+          { "amount": 0 }
+        ]
+      },
+      "expectedTitles": [
+        "Protection & demolition",
+        "Rough plumbing & electrical",
+        "Vanity, fixtures & trim",
+        "Final cleanup & walkthrough"
+      ],
+      "expectedMissingTitles": [
+        "Walls, waterproofing & tile",
+        "Tile & waterproofing finish"
+      ]
+    },
+    {
+      "id": "cabinet_optional_additions",
+      "input": {
+        "projectType": "Cabinetry",
+        "projectSubtype": "Cabinet Installation",
+        "description": "Cabinet installation scope",
+        "clarificationAnswers": {
+          "demo_required": "yes",
+          "hardware_included": "yes",
+          "cabinet_style_notes": "full-height pantry wall and island base cabinets"
+        }
+      },
+      "expectedTitles": [
+        "Demo & site prep",
+        "Measurements & prep",
+        "Cabinet installation",
+        "Hardware, fillers & trim",
+        "Alignment & final adjustments",
+        "Final walkthrough"
+      ],
+      "expectedDescriptionIncludes": [
+        {
+          "title": "Cabinet installation",
+          "text": "Layout details: full-height pantry wall and island base cabinets."
+        }
+      ]
+    }
+  ]
+}

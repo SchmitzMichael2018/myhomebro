@@ -2,6 +2,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -15,7 +16,10 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from projects.api.ai_agreement_views import ai_suggest_milestones
-from projects.ai.agreement_milestone_writer import suggest_scope_and_milestones
+from projects.ai.agreement_milestone_writer import (
+    _shape_milestone_rows_for_clarifications,
+    suggest_scope_and_milestones,
+)
 from projects.models import (
     Agreement,
     AgreementAIScope,
@@ -237,6 +241,11 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
         )
         return fake_client
 
+    def _shared_shaping_rules(self):
+        rules_path = Path(__file__).resolve().parents[2] / "frontend" / "src" / "lib" / "milestone_shaping_rules.json"
+        with rules_path.open("r", encoding="utf-8") as fh:
+            return json.load(fh)
+
     def test_service_shapes_kitchen_milestones_from_saved_clarifications(self):
         agreement = self._agreement(
             answers={
@@ -391,6 +400,39 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
             "Include wall touch-up and non-tile surface prep needed before the fixture phase.",
             result["milestones"][2]["description"],
         )
+
+    def test_backend_shape_helper_matches_shared_regression_contract(self):
+        rules = self._shared_shaping_rules()
+        for case in rules.get("regressionCases", []):
+            with self.subTest(case=case.get("id")):
+                input_data = case.get("input", {})
+                rows = _shape_milestone_rows_for_clarifications(
+                    project_type=input_data.get("projectType", ""),
+                    project_subtype=input_data.get("projectSubtype", ""),
+                    description=input_data.get("description", ""),
+                    clarification_answers=input_data.get("clarificationAnswers", {}),
+                    total_budget=input_data.get("totalBudget", 0),
+                    amount_mode=input_data.get("amountMode", "default"),
+                    base_milestones=input_data.get("baseMilestones", []),
+                )
+                titles = [row["title"] for row in rows]
+
+                if isinstance(case.get("expectedTitles"), list):
+                    self.assertEqual(titles, case["expectedTitles"])
+
+                for missing_title in case.get("expectedMissingTitles", []):
+                    self.assertNotIn(missing_title, titles)
+
+                for expectation in case.get("expectedDescriptionIncludes", []):
+                    row = next(
+                        (candidate for candidate in rows if candidate["title"] == expectation.get("title")),
+                        None,
+                    )
+                    self.assertIsNotNone(row)
+                    self.assertIn(expectation.get("text", ""), row["description"])
+
+                if "expectedAllAmounts" in case:
+                    self.assertTrue(all(row["amount"] == case["expectedAllAmounts"] for row in rows))
 
 
 class SubcontractorHubApiTests(TestCase):

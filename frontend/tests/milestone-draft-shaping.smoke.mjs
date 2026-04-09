@@ -2,66 +2,41 @@ import assert from 'node:assert/strict';
 import {
   buildClarificationAwareMilestoneDraft,
 } from '../src/lib/milestoneDraftShaping.js';
+import rules from '../src/lib/milestone_shaping_rules.json' with { type: 'json' };
 
 function titles(rows) {
   return rows.map((row) => row.title);
 }
 
-const defaultKitchenRows = buildClarificationAwareMilestoneDraft({
-  projectType: 'Remodel',
-  projectSubtype: 'Kitchen Remodel',
-  description: 'Kitchen remodel scope',
-  clarificationAnswers: {},
-});
+for (const testCase of rules.regressionCases ?? []) {
+  const rows = buildClarificationAwareMilestoneDraft(testCase.input ?? {});
+  const rowTitles = titles(rows);
 
-assert.deepEqual(titles(defaultKitchenRows), [
-  'Planning & protection',
-  'Demolition & rough-in',
-  'Cabinets & surfaces',
-  'Fixtures & appliances',
-  'Punch list & walkthrough',
-]);
+  if (Array.isArray(testCase.expectedTitles)) {
+    assert.deepEqual(rowTitles, testCase.expectedTitles, `${testCase.id}: titles`);
+  }
 
-const aiKitchenRows = buildClarificationAwareMilestoneDraft({
-  projectType: 'Remodel',
-  projectSubtype: 'Kitchen Remodel',
-  description: 'Kitchen remodel scope',
-  clarificationAnswers: {
-    layout_changes: 'yes',
-    cabinet_scope: 'no',
-    finish_scope_notes: 'backsplash and pendant lighting',
-  },
-  amountMode: 'preserve_base',
-  baseMilestones: Array.from({ length: 6 }, () => ({ amount: 0 })),
-});
+  for (const missingTitle of testCase.expectedMissingTitles ?? []) {
+    assert.equal(rowTitles.includes(missingTitle), false, `${testCase.id}: missing ${missingTitle}`);
+  }
 
-assert.deepEqual(titles(aiKitchenRows), [
-  'Planning & protection',
-  'Layout review & utility changes',
-  'Selective demolition & rough-in',
-  'Countertops, surfaces & finishes',
-  'Fixtures & appliances',
-  'Punch list & walkthrough',
-]);
-assert.equal(
-  aiKitchenRows[4].description.includes('Included finish scope: backsplash and pendant lighting.'),
-  true
-);
-assert.equal(aiKitchenRows.every((row) => row.amount === 0), true);
+  for (const expectation of testCase.expectedDescriptionIncludes ?? []) {
+    const row = rows.find((candidate) => candidate.title === expectation.title);
+    assert.ok(row, `${testCase.id}: row exists for ${expectation.title}`);
+    assert.equal(
+      row.description.includes(expectation.text),
+      true,
+      `${testCase.id}: description includes expected text for ${expectation.title}`
+    );
+  }
 
-const aiBathroomRows = buildClarificationAwareMilestoneDraft({
-  projectType: 'Remodel',
-  projectSubtype: 'Bathroom Remodel',
-  description: 'Bathroom remodel scope',
-  clarificationAnswers: {
-    wet_area_tile: 'no',
-  },
-  amountMode: 'preserve_base',
-  baseMilestones: Array.from({ length: 4 }, () => ({ amount: 0 })),
-});
-
-assert.equal(titles(aiBathroomRows).includes('Walls, waterproofing & tile'), false);
-assert.equal(titles(aiBathroomRows).includes('Tile & waterproofing finish'), false);
-assert.equal(aiBathroomRows.length, 4);
+  if (typeof testCase.expectedAllAmounts === 'number') {
+    assert.equal(
+      rows.every((row) => row.amount === testCase.expectedAllAmounts),
+      true,
+      `${testCase.id}: amounts`
+    );
+  }
+}
 
 console.log('milestone-draft-shaping smoke: PASS');

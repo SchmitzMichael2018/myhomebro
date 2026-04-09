@@ -17,6 +17,8 @@ import json
 import logging
 import re
 from decimal import Decimal
+from functools import lru_cache
+from pathlib import Path
 from typing import Dict, Any, List
 
 from django.conf import settings
@@ -630,17 +632,151 @@ def _insert_milestone_row(rows: List[Dict[str, Any]], index: int, row: Dict[str,
     return next_rows
 
 
+@lru_cache(maxsize=1)
+def _milestone_shaping_rules() -> Dict[str, Any]:
+    rules_path = Path(__file__).resolve().parents[3] / "frontend" / "src" / "lib" / "milestone_shaping_rules.json"
+    with rules_path.open("r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _clone_milestone_row(row: Dict[str, Any] | None) -> Dict[str, Any]:
+    return {
+        "title": _safe_str((row or {}).get("title")),
+        "description": _safe_str((row or {}).get("description")),
+    }
+
+
+def _find_milestone_row_index(rows: List[Dict[str, Any]], title: Any) -> int:
+    target = _safe_str(title)
+    for idx, row in enumerate(rows or []):
+        if _safe_str(row.get("title")) == target:
+            return idx
+    return -1
+
+
+def _resolve_milestone_action_index(rows: List[Dict[str, Any]], title: Any, fallback_title: Any = "") -> int:
+    direct_index = _find_milestone_row_index(rows, title)
+    if direct_index >= 0:
+        return direct_index
+    if _safe_str(fallback_title):
+        return _find_milestone_row_index(rows, fallback_title)
+    return -1
+
+
+def _resolve_milestone_template(template: Any, answers: Dict[str, Any]) -> str:
+    raw = _safe_str(template)
+    if not raw:
+        return ""
+
+    def replacer(match: re.Match[str]) -> str:
+        return _safe_str(answers.get(match.group(1)))
+
+    return re.sub(r"\{answer:([^}]+)\}", replacer, raw)
+
+
+def _milestone_condition_matches(condition: Dict[str, Any] | None, answers: Dict[str, Any]) -> bool:
+    if not isinstance(condition, dict):
+        return True
+    raw_value = answers.get(condition.get("answer"))
+    if condition.get("present"):
+        return bool(_safe_str(raw_value))
+    equals = condition.get("equals")
+    if equals in {"yes", "no"}:
+        return _normalize_yes_no_answer(raw_value) == equals
+    return _safe_str(raw_value) == _safe_str(equals)
+
+
+def _milestone_rule_matches(rule: Dict[str, Any], *, project_type: Any, project_subtype: Any) -> bool:
+    match = rule.get("match") if isinstance(rule, dict) else {}
+    normalized_subtype = _normalize_baseline_key(project_subtype)
+    normalized_type = _normalize_baseline_key(project_type)
+
+    subtype_includes = match.get("subtypeIncludes") if isinstance(match, dict) else None
+    type_includes = match.get("typeIncludes") if isinstance(match, dict) else None
+
+    subtype_matches = not isinstance(subtype_includes, list) or any(
+        _normalize_baseline_key(token) in normalized_subtype for token in subtype_includes
+    )
+    type_matches = not isinstance(type_includes, list) or any(
+        _normalize_baseline_key(token) in normalized_type for token in type_includes
+    )
+    return subtype_matches and type_matches
+
+
+def _fallback_milestone_rows(description: Any) -> List[Dict[str, Any]]:
+    normalized = _normalize_baseline_key(description)
+    limited_scope = bool(re.search(r"\binstall(?:ation)?\b", normalized)) and not bool(
+        re.search(r"\b(remodel|renovation|addition)\b", normalized)
+    )
+    return (
+        [
+            {"title": "Prep & materials", "description": "Confirm scope, stage materials, and prep the work area."},
+            {"title": "Primary installation", "description": "Complete the core installation or replacement work."},
+            {"title": "Adjustments & finish", "description": "Make adjustments, complete finish details, and test where needed."},
+            {"title": "Cleanup & walkthrough", "description": "Clean the site and review the finished work with the customer."},
+        ]
+        if limited_scope
+        else [
+            {"title": "Planning & prep", "description": "Confirm scope, materials, and site readiness for the project."},
+            {"title": "Core work phase 1", "description": "Begin the main work and complete the first major phase."},
+            {"title": "Core work phase 2", "description": "Continue the main work and complete the next major phase."},
+            {"title": "Finish work", "description": "Complete finish details, punch items, and final quality checks."},
+            {"title": "Cleanup & handoff", "description": "Complete cleanup and customer walkthrough before closeout."},
+        ]
+    )
+
+
+def _apply_milestone_rule_action(rows: List[Dict[str, Any]], action: Dict[str, Any], answers: Dict[str, Any]) -> List[Dict[str, Any]]:
+    next_rows = list(rows or [])
+    if not isinstance(action, dict):
+        return next_rows
+
+    action_type = action.get("type")
+    if action_type == "insert_at":
+        return _insert_milestone_row(next_rows, int(action.get("index") or 0), _clone_milestone_row(action.get("row")))
+
+    if action_type == "insert_after_title":
+        index = _resolve_milestone_action_index(next_rows, action.get("title"), action.get("fallbackTitle"))
+        if index < 0:
+            return next_rows
+        return _insert_milestone_row(next_rows, index + 1, _clone_milestone_row(action.get("row")))
+
+    if action_type == "replace_title":
+        index = _find_milestone_row_index(next_rows, action.get("title"))
+        if index < 0:
+            return next_rows
+        next_rows[index] = _clone_milestone_row(action.get("row"))
+        return next_rows
+
+    if action_type == "remove_title":
+        index = _find_milestone_row_index(next_rows, action.get("title"))
+        if index < 0:
+            return next_rows
+        next_rows.pop(index)
+        return next_rows
+
+    if action_type == "append_detail":
+        index = _resolve_milestone_action_index(next_rows, action.get("title"), action.get("fallbackTitle"))
+        if index < 0:
+            return next_rows
+        next_rows[index] = {
+            **next_rows[index],
+            "description": _append_milestone_detail(
+                next_rows[index].get("description"),
+                _resolve_milestone_template(action.get("template"), answers),
+            ),
+        }
+        return next_rows
+
+    return next_rows
+
+
 def _default_milestone_amounts(count: int, total_budget: Any) -> List[float]:
     safe_count = max(1, int(count or 0))
     normalized_total = _safe_float(total_budget, 0.0)
     fallback_total = normalized_total if normalized_total > 0 else (4000.0 if safe_count <= 4 else 6000.0)
-    weight_sets = {
-        4: [0.2, 0.35, 0.3, 0.15],
-        5: [0.12, 0.18, 0.28, 0.26, 0.16],
-        6: [0.1, 0.15, 0.2, 0.2, 0.2, 0.15],
-        7: [0.08, 0.12, 0.16, 0.18, 0.18, 0.16, 0.12],
-    }
-    weights = weight_sets.get(safe_count) or [round(1 / safe_count, 6)] * safe_count
+    configured_weights = _milestone_shaping_rules().get("defaultAmountWeights", {}).get(str(safe_count))
+    weights = configured_weights if isinstance(configured_weights, list) and len(configured_weights) == safe_count else [round(1 / safe_count, 6)] * safe_count
     allocated = 0.0
     amounts: List[float] = []
     for idx, weight in enumerate(weights):
@@ -664,243 +800,26 @@ def _shape_milestone_rows_for_clarifications(
     base_milestones: List[Dict[str, Any]] | None = None,
 ) -> List[Dict[str, Any]]:
     answers = clarification_answers if isinstance(clarification_answers, dict) else {}
-    type_key = _normalize_baseline_key(project_type)
-    subtype_key = _normalize_baseline_key(project_subtype)
-    text = f"{subtype_key} {_normalize_baseline_key(description)}"
-    layout_changes = _normalize_yes_no_answer(answers.get("layout_changes"))
-    cabinet_scope = _normalize_yes_no_answer(answers.get("cabinet_scope"))
-    wet_area_tile = _normalize_yes_no_answer(answers.get("wet_area_tile"))
-    demo_required = _normalize_yes_no_answer(answers.get("demo_required"))
-    hardware_included = _normalize_yes_no_answer(answers.get("hardware_included"))
-    connection_ready = _normalize_yes_no_answer(answers.get("connection_ready"))
-    haul_away_existing = _normalize_yes_no_answer(answers.get("haul_away_existing"))
-    tear_off_scope = _normalize_yes_no_answer(answers.get("tear_off_scope"))
-    decking_allowance = _normalize_yes_no_answer(answers.get("decking_allowance"))
-    subfloor_prep = _normalize_yes_no_answer(answers.get("subfloor_prep"))
-    finish_scope_notes = _safe_str(answers.get("finish_scope_notes"))
-    fixture_upgrade_notes = _safe_str(answers.get("fixture_upgrade_notes"))
-    cabinet_style_notes = _safe_str(answers.get("cabinet_style_notes"))
-    appliance_scope_notes = _safe_str(answers.get("appliance_scope_notes"))
-    roofing_notes = _safe_str(answers.get("roofing_notes"))
-    flooring_notes = _safe_str(answers.get("flooring_notes"))
+    subtype_rules = _milestone_shaping_rules().get("subtypeRules", [])
+    subtype_rule = next(
+        (
+            rule
+            for rule in subtype_rules
+            if isinstance(rule, dict) and _milestone_rule_matches(rule, project_type=project_type, project_subtype=project_subtype)
+        ),
+        None,
+    )
+    rows: List[Dict[str, Any]] = (
+        [_clone_milestone_row(row) for row in (subtype_rule.get("baseRows") or [])]
+        if isinstance(subtype_rule, dict)
+        else _fallback_milestone_rows(description)
+    )
 
-    rows: List[Dict[str, Any]] = []
-
-    if "kitchen remodel" in subtype_key:
-        rows = [
-            {"title": "Planning & protection", "description": "Confirm selections, protect adjacent areas, and stage materials."},
-            {"title": "Demolition & rough-in", "description": "Remove existing finishes and complete rough adjustments for the new layout."},
-            {"title": "Cabinets & surfaces", "description": "Install cabinetry, countertops, and major kitchen surfaces."},
-            {"title": "Fixtures & appliances", "description": "Set fixtures, connect appliances, and complete trim details."},
-            {"title": "Punch list & walkthrough", "description": "Finish punch items, final cleanup, and customer walkthrough."},
-        ]
-        if layout_changes == "yes":
-            rows = _insert_milestone_row(rows, 1, {
-                "title": "Layout review & utility changes",
-                "description": "Confirm layout changes, coordinate updated appliance locations, and complete the major utility adjustments before finish installation.",
-            })
-            rows[2] = {
-                "title": "Selective demolition & rough-in",
-                "description": "Remove existing finishes and complete rough framing, plumbing, or electrical work needed for the updated kitchen layout.",
-            }
-        cabinets_index = next((idx for idx, row in enumerate(rows) if row.get("title") == "Cabinets & surfaces"), -1)
-        if cabinet_scope == "yes" and cabinets_index >= 0:
-            rows[cabinets_index] = {
-                "title": "Cabinet installation",
-                "description": "Install cabinetry, secure boxes in the planned layout, and prepare for final countertop or trim work.",
-            }
-            rows = _insert_milestone_row(rows, cabinets_index + 1, {
-                "title": "Countertops & surface finishes",
-                "description": "Install countertops, backsplash, and the major kitchen surface finishes that complete the cabinetry phase.",
-            })
-        elif cabinet_scope == "no" and cabinets_index >= 0:
-            rows[cabinets_index] = {
-                "title": "Countertops, surfaces & finishes",
-                "description": "Complete countertop work, backsplash or wall finishes, and other major kitchen surface upgrades without cabinet replacement.",
-            }
-        if finish_scope_notes:
-            finish_index = next((idx for idx, row in enumerate(rows) if row.get("title") == "Countertops & surface finishes"), -1)
-            if finish_index < 0:
-                finish_index = next((idx for idx, row in enumerate(rows) if row.get("title") == "Fixtures & appliances"), -1)
-            if finish_index >= 0:
-                rows[finish_index]["description"] = _append_milestone_detail(
-                    rows[finish_index].get("description"),
-                    f"Included finish scope: {finish_scope_notes}.",
-                )
-    elif "bathroom remodel" in subtype_key:
-        rows = [
-            {"title": "Protection & demolition", "description": "Protect nearby finishes and remove existing bathroom components."},
-            {"title": "Rough plumbing & electrical", "description": "Complete rough adjustments needed for the updated bathroom layout."},
-            {"title": "Walls, waterproofing & tile", "description": "Prep surfaces, waterproof wet areas, and install tile finishes."},
-            {"title": "Vanity, fixtures & trim", "description": "Install vanity, fixtures, accessories, and finish details."},
-            {"title": "Final cleanup & walkthrough", "description": "Complete punch work, cleanup, and final customer review."},
-        ]
-        if layout_changes == "yes":
-            rows = _insert_milestone_row(rows, 1, {
-                "title": "Layout changes & rough-ins",
-                "description": "Complete plumbing and electrical rough changes needed for the updated bathroom layout before finish work starts.",
-            })
-        wet_index = next((idx for idx, row in enumerate(rows) if row.get("title") == "Walls, waterproofing & tile"), -1)
-        if wet_area_tile == "yes" and wet_index >= 0:
-            rows[wet_index] = {
-                "title": "Walls & waterproofing prep",
-                "description": "Prep backing, wall surfaces, and wet-area protection so the finish tile work has a clean installation base.",
-            }
-            rows = _insert_milestone_row(rows, wet_index + 1, {
-                "title": "Tile & waterproofing finish",
-                "description": "Install tile finishes, seal wet areas, and complete the detailed waterproofing work included in the remodel scope.",
-            })
-        elif wet_area_tile == "no" and wet_index >= 0:
-            rows = [row for idx, row in enumerate(rows) if idx != wet_index]
-            fixture_index = next((idx for idx, row in enumerate(rows) if row.get("title") == "Vanity, fixtures & trim"), -1)
-            if fixture_index >= 0:
-                rows[fixture_index]["description"] = _append_milestone_detail(
-                    rows[fixture_index].get("description"),
-                    "Include wall touch-up and non-tile surface prep needed before the fixture phase.",
-                )
-        if fixture_upgrade_notes:
-            fixture_index = next((idx for idx, row in enumerate(rows) if row.get("title") == "Vanity, fixtures & trim"), -1)
-            if fixture_index >= 0:
-                rows[fixture_index]["description"] = _append_milestone_detail(
-                    rows[fixture_index].get("description"),
-                    f"Included upgrades: {fixture_upgrade_notes}.",
-                )
-    elif "cabinet installation" in subtype_key:
-        rows = [
-            {"title": "Measurements & prep", "description": "Confirm cabinet layout, site readiness, and delivery staging."},
-            {"title": "Cabinet installation", "description": "Install and secure new cabinets in the planned configuration."},
-            {"title": "Hardware & adjustments", "description": "Align doors and drawers, install hardware, and complete trim adjustments."},
-            {"title": "Final walkthrough", "description": "Review fit and finish, cleanup, and confirm punch items with the customer."},
-        ]
-        if demo_required == "yes":
-            rows = _insert_milestone_row(rows, 0, {
-                "title": "Demo & site prep",
-                "description": "Remove existing cabinetry if needed, protect surrounding finishes, and prepare the space for the new cabinet install.",
-            })
-        hardware_index = next((idx for idx, row in enumerate(rows) if row.get("title") == "Hardware & adjustments"), -1)
-        if hardware_included == "yes" and hardware_index >= 0:
-            rows[hardware_index] = {
-                "title": "Hardware, fillers & trim",
-                "description": "Install pulls, fillers, panels, and trim pieces that complete the cabinetry scope.",
-            }
-            rows = _insert_milestone_row(rows, hardware_index + 1, {
-                "title": "Alignment & final adjustments",
-                "description": "Align doors and drawers, fine tune reveals, and complete final fit checks before walkthrough.",
-            })
-        elif hardware_included == "no" and hardware_index >= 0:
-            rows[hardware_index] = {
-                "title": "Alignment & adjustments",
-                "description": "Align doors and drawers, confirm fit, and complete final adjustment work without hardware or trim installation scope.",
-            }
-        install_index = next((idx for idx, row in enumerate(rows) if row.get("title") == "Cabinet installation"), -1)
-        if cabinet_style_notes and install_index >= 0:
-            rows[install_index]["description"] = _append_milestone_detail(
-                rows[install_index].get("description"),
-                f"Layout details: {cabinet_style_notes}.",
-            )
-    elif "countertop installation" in subtype_key:
-        rows = [
-            {"title": "Template & prep", "description": "Confirm measurements, protect work areas, and prep cabinet surfaces."},
-            {"title": "Countertop installation", "description": "Install countertops, seams, and edge details."},
-            {"title": "Sink & fixture reconnect", "description": "Reconnect sink and finish related countertop details."},
-            {"title": "Cleanup & walkthrough", "description": "Complete cleanup, seal where needed, and review the finished install."},
-        ]
-    elif "appliance installation" in subtype_key:
-        rows = [
-            {"title": "Delivery & staging", "description": "Stage appliances, verify openings, and prep the install area."},
-            {"title": "Installation", "description": "Set appliances in place and complete all required connections."},
-            {"title": "Testing & adjustments", "description": "Test operation, fine tune fit, and complete any adjustments."},
-            {"title": "Cleanup & customer review", "description": "Clean the area and review operation and handoff details with the customer."},
-        ]
-        if haul_away_existing == "yes":
-            rows = _insert_milestone_row(rows, 1, {
-                "title": "Disconnect & haul-away",
-                "description": "Disconnect existing appliances safely, remove them from the work area, and prep the site for the new installation.",
-            })
-        if connection_ready == "no":
-            rows = _insert_milestone_row(rows, 2 if haul_away_existing == "yes" else 1, {
-                "title": "Utility prep",
-                "description": "Prepare required hookups, shutoffs, or connection points so the appliance installation can proceed cleanly.",
-            })
-            install_index = next((idx for idx, row in enumerate(rows) if row.get("title") == "Installation"), -1)
-            if install_index >= 0:
-                rows[install_index]["description"] = "Set appliances in place, complete final hookups, and secure the finished installation once utilities are ready."
-        install_index = next((idx for idx, row in enumerate(rows) if row.get("title") == "Installation"), -1)
-        if appliance_scope_notes and install_index >= 0:
-            rows[install_index]["description"] = _append_milestone_detail(
-                rows[install_index].get("description"),
-                f"Included appliance details: {appliance_scope_notes}.",
-            )
-    elif "roof replacement" in subtype_key or "roof" in type_key:
-        rows = [
-            {"title": "Protection & tear-off", "description": "Protect the site and remove existing roofing materials."},
-            {"title": "Decking & prep", "description": "Inspect decking, complete repairs, and prep the roof system."},
-            {"title": "Roof system installation", "description": "Install underlayment, roofing materials, and required flashings."},
-            {"title": "Cleanup & final review", "description": "Complete cleanup, magnetic sweep, and final walkthrough."},
-        ]
-        if tear_off_scope == "no":
-            rows[0] = {
-                "title": "Protection & roof prep",
-                "description": "Protect the site, prep the existing roof surface, and ready the system for the new roofing work without a full tear-off.",
-            }
-        if decking_allowance == "yes":
-            rows = _insert_milestone_row(rows, 2, {
-                "title": "Deck repair allowance",
-                "description": "Complete minor decking repairs or spot replacement where needed before the roofing system is closed in.",
-            })
-        install_index = next((idx for idx, row in enumerate(rows) if row.get("title") == "Roof system installation"), -1)
-        if roofing_notes and install_index >= 0:
-            rows[install_index]["description"] = _append_milestone_detail(
-                rows[install_index].get("description"),
-                f"System details: {roofing_notes}.",
-            )
-    elif "floor" in type_key:
-        rows = [
-            {"title": "Prep & materials", "description": "Confirm material staging and prepare the work areas."},
-            {"title": "Surface preparation", "description": "Demo or prep the substrate for the new flooring system."},
-            {"title": "Flooring installation", "description": "Install flooring materials and transitions."},
-            {"title": "Trim & cleanup", "description": "Complete trim details, cleanup, and final walkthrough."},
-        ]
-        if demo_required == "yes":
-            rows = _insert_milestone_row(rows, 1, {
-                "title": "Demo & disposal",
-                "description": "Remove existing flooring materials, dispose of debris, and leave the work areas ready for substrate prep.",
-            })
-        prep_index = next((idx for idx, row in enumerate(rows) if row.get("title") == "Surface preparation"), -1)
-        if subfloor_prep == "yes" and prep_index >= 0:
-            rows[prep_index] = {
-                "title": "Subfloor prep & leveling",
-                "description": "Complete subfloor repairs, patching, or leveling work needed before finish flooring installation begins.",
-            }
-        elif subfloor_prep == "no" and prep_index >= 0:
-            rows[prep_index] = {
-                "title": "Surface readiness check",
-                "description": "Verify the substrate is ready for installation and complete only minor prep before flooring work begins.",
-            }
-        install_index = next((idx for idx, row in enumerate(rows) if row.get("title") == "Flooring installation"), -1)
-        if flooring_notes and install_index >= 0:
-            rows[install_index]["description"] = _append_milestone_detail(
-                rows[install_index].get("description"),
-                f"Material details: {flooring_notes}.",
-            )
-    else:
-        limited_scope = bool(re.search(r"\binstall(?:ation)?\b", text)) and not bool(re.search(r"\b(remodel|renovation|addition)\b", text))
-        rows = (
-            [
-                {"title": "Prep & materials", "description": "Confirm scope, stage materials, and prep the work area."},
-                {"title": "Primary installation", "description": "Complete the core installation or replacement work."},
-                {"title": "Adjustments & finish", "description": "Make adjustments, complete finish details, and test where needed."},
-                {"title": "Cleanup & walkthrough", "description": "Clean the site and review the finished work with the customer."},
-            ]
-            if limited_scope
-            else [
-                {"title": "Planning & prep", "description": "Confirm scope, materials, and site readiness for the project."},
-                {"title": "Core work phase 1", "description": "Begin the main work and complete the first major phase."},
-                {"title": "Core work phase 2", "description": "Continue the main work and complete the next major phase."},
-                {"title": "Finish work", "description": "Complete finish details, punch items, and final quality checks."},
-                {"title": "Cleanup & handoff", "description": "Complete cleanup and customer walkthrough before closeout."},
-            ]
-        )
+    for operation in (subtype_rule.get("operations") or []) if isinstance(subtype_rule, dict) else []:
+        if not _milestone_condition_matches(operation.get("when"), answers):
+            continue
+        for action in operation.get("actions") or []:
+            rows = _apply_milestone_rule_action(rows, action, answers)
 
     default_amounts = _default_milestone_amounts(len(rows), total_budget)
     shaped: List[Dict[str, Any]] = []
