@@ -181,6 +181,59 @@ function formatDurationDays(days) {
   return `${n} day${n === 1 ? "" : "s"}`;
 }
 
+function formatPercent(value, digits = 0) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "";
+  return `${(n * 100).toFixed(digits)}%`;
+}
+
+function estimateWeightLabel(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return "0%";
+  return formatPercent(n, n < 0.1 ? 1 : 0);
+}
+
+function explainBenchmarkSource(preview) {
+  const source = safeStr(preview?.benchmark_source).toLowerCase();
+  const regionScope = safeStr(preview?.source_metadata?.seeded_region_scope).toLowerCase();
+  const templateUsed = safeStr(preview?.template_used);
+
+  if (source === "seeded_plus_learned") {
+    if (regionScope) {
+      return `Based on ${templateUsed || "template"} defaults and similar completed ${regionScope}-level jobs.`;
+    }
+    return `Based on ${templateUsed || "template"} defaults and completed job benchmarks.`;
+  }
+
+  if (templateUsed) {
+    return `Based on ${templateUsed} defaults and current project details.`;
+  }
+
+  return "Based on template defaults and current project details.";
+}
+
+function explainRangeVariability(preview) {
+  const low = Number(preview?.suggested_price_low || 0);
+  const high = Number(preview?.suggested_price_high || 0);
+  const total = Number(preview?.suggested_total_price || 0);
+  const confidence = safeStr(preview?.confidence_level).toLowerCase();
+
+  if (!Number.isFinite(low) || !Number.isFinite(high) || !Number.isFinite(total) || total <= 0) {
+    return "Ranges stay broad when there is limited pricing context.";
+  }
+
+  const spread = Math.max(high - low, 0);
+  const spreadPct = spread / total;
+
+  if (confidence === "low") {
+    return "Limited data means this range should be treated as an early planning guide.";
+  }
+  if (spreadPct <= 0.2) {
+    return "The range is relatively tight because the current project context is more consistent.";
+  }
+  return "The range stays wider to reflect job-to-job variability, finish choices, and site conditions.";
+}
+
 function formatRecurringCadence(pattern, interval) {
   const safePattern = safeStr(pattern) || "monthly";
   const safeInterval = Math.max(1, Number(interval || 1) || 1);
@@ -679,6 +732,7 @@ export default function Step2Milestones({
   const [dismissedPricingReviewSignature, setDismissedPricingReviewSignature] = useState("");
   const [estimatePreview, setEstimatePreview] = useState(null);
   const [estimateBanner, setEstimateBanner] = useState("");
+  const [projectBudgetInput, setProjectBudgetInput] = useState("");
   const [assistantApplyingMilestones, setAssistantApplyingMilestones] = useState(false);
   const [aiChangeSummary, setAiChangeSummary] = useState("");
   const [autoDraftBusy, setAutoDraftBusy] = useState(false);
@@ -1300,6 +1354,84 @@ export default function Step2Milestones({
     hasStagedSuggestedAmountChanges ||
     hasStagedSuggestedTimelineChanges ||
     Boolean(estimatePreview);
+  const estimateSuggestions = useMemo(
+    () =>
+      Array.isArray(estimatePreview?.milestone_suggestions)
+        ? estimatePreview.milestone_suggestions
+        : Array.isArray(estimatePreview?.suggested_milestones)
+        ? estimatePreview.suggested_milestones
+        : [],
+    [estimatePreview]
+  );
+  const estimateBudgetValue = useMemo(() => {
+    const parsed = parseAmountStrict(projectBudgetInput);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [projectBudgetInput]);
+  const estimateSummaryMeta = useMemo(() => {
+    if (!estimatePreview) return null;
+    const explanation = explainBenchmarkSource(estimatePreview);
+    const templateWeight = estimateWeightLabel(estimatePreview?.source_metadata?.template_weight);
+    const learnedWeight = estimateWeightLabel(estimatePreview?.source_metadata?.learned_weight);
+    const clarificationCount =
+      (Array.isArray(estimatePreview?.price_adjustments) ? estimatePreview.price_adjustments.length : 0) +
+      (Array.isArray(estimatePreview?.timeline_adjustments) ? estimatePreview.timeline_adjustments.length : 0);
+    const fallbackMode =
+      !estimatePreview?.learned_benchmark_used || safeStr(estimatePreview?.benchmark_source) === "seeded_only";
+    const lowConfidence = safeStr(estimatePreview?.confidence_level).toLowerCase() === "low";
+    return {
+      explanation,
+      templateWeight,
+      learnedWeight,
+      clarificationCount,
+      fallbackMode,
+      lowConfidence,
+      fallbackMessage: fallbackMode
+        ? "No strong learned benchmark is available yet, so this estimate is leaning on template baseline guidance."
+        : "",
+      confidenceMessage: lowConfidence
+        ? "Limited completed-job data means these numbers should be treated as advisory planning guidance."
+        : "",
+      variabilityMessage: explainRangeVariability(estimatePreview),
+    };
+  }, [estimatePreview]);
+  const estimateGuidanceByMilestone = useMemo(() => {
+    const rows = Array.isArray(effectiveMilestones) ? effectiveMilestones : [];
+    if (!rows.length) return new Map();
+
+    const suggestionById = new Map(
+      estimateSuggestions.filter((row) => row?.milestone_id != null).map((row) => [row.milestone_id, row])
+    );
+    const enriched = rows.map((row, idx) => {
+      const suggestion =
+        suggestionById.get(row?.id) ||
+        estimateSuggestions.find((item) => Number(item?.suggested_order || 0) === idx + 1) ||
+        null;
+      const suggestedAmount = parseAmountStrict(suggestion?.suggested_amount);
+      const fallbackWeight = parseAmountStrict(row?.amount);
+      return {
+        row,
+        idx,
+        suggestion,
+        weight:
+          (Number.isFinite(suggestedAmount) && suggestedAmount > 0 ? suggestedAmount : null) ??
+          (Number.isFinite(fallbackWeight) && fallbackWeight > 0 ? fallbackWeight : 1),
+        suggestedAmount: Number.isFinite(suggestedAmount) && suggestedAmount > 0 ? suggestedAmount : null,
+      };
+    });
+    const totalWeight = enriched.reduce((sum, item) => sum + Number(item.weight || 0), 0) || enriched.length || 1;
+    const map = new Map();
+    enriched.forEach((item) => {
+      const share = Number(item.weight || 0) / totalWeight;
+      const budgetSuggestion = estimateBudgetValue ? roundSuggestedAmount(estimateBudgetValue * share) : null;
+      map.set(item.row?.id ?? `row-${item.idx + 1}`, {
+        share,
+        suggestedAmount: item.suggestedAmount,
+        budgetSuggestion,
+        durationDays: Number(item.suggestion?.suggested_duration_days || 0) || null,
+      });
+    });
+    return map;
+  }, [effectiveMilestones, estimateBudgetValue, estimateSuggestions]);
   const hasPlanningDetails =
     Boolean(assistantGuidedFlow?.guided_question) ||
     assistantProactiveRecommendations.length > 0 ||
@@ -2726,36 +2858,41 @@ export default function Step2Milestones({
       ) : null}
 
       {estimatePreview ? (
-        <details
-          className="rounded-xl border border-slate-200 bg-slate-50/60"
+        <section
+          className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-emerald-50/40 shadow-sm"
           data-testid="step2-estimate-panel"
         >
-          <summary className="cursor-pointer list-none px-4 py-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div>
-                <div className="text-sm font-semibold text-slate-900">Estimate summary</div>
-                <div className="mt-1 text-xs text-slate-600">
-                  Pricing and timeline guidance based on current project details.
+          <div className="px-4 py-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="max-w-3xl">
+                <div className="text-sm font-semibold text-slate-900">Estimate Summary</div>
+                <div className="mt-1 text-sm text-slate-600">
+                  {estimateSummaryMeta?.explanation || "Pricing and timeline guidance based on current project details."}
                 </div>
                 {estimateBanner ? (
                   <div
-                    className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800"
+                    className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800"
                     data-testid="step2-estimate-banner"
                   >
                     {estimateBanner}
                   </div>
                 ) : null}
+                {estimateSummaryMeta?.fallbackMode ? (
+                  <div className="mt-3 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+                    {estimateSummaryMeta.fallbackMessage}
+                  </div>
+                ) : null}
+                {estimateSummaryMeta?.lowConfidence ? (
+                  <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    {estimateSummaryMeta.confidenceMessage}
+                  </div>
+                ) : null}
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                  View estimate details
-                </span>
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
+                  onClick={() => {
                     handleRefreshProjectEstimate({
                       successMessage: "Estimate refreshed from current project details.",
                     }).catch((err) =>
@@ -2763,83 +2900,162 @@ export default function Step2Milestones({
                     );
                   }}
                   disabled={estimateRefreshing}
-                  className="rounded border px-3 py-2 text-sm font-medium hover:bg-white disabled:opacity-60"
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                   data-testid="step2-refresh-estimate"
                 >
                   {estimateRefreshing ? "Refreshing Estimate…" : "Refresh Estimate"}
                 </button>
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    applyEstimateSuggestedAmounts();
-                  }}
+                  onClick={applyEstimateSuggestedAmounts}
                   disabled={milestonesLocked}
-                  className="rounded border px-3 py-2 text-sm font-medium hover:bg-white disabled:opacity-60"
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                   data-testid="step2-apply-estimate-amounts"
                 >
                   Apply Suggested Amounts
                 </button>
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    applyEstimateSuggestedTimeline();
-                  }}
+                  onClick={applyEstimateSuggestedTimeline}
                   disabled={milestonesLocked}
-                  className="rounded border px-3 py-2 text-sm font-medium hover:bg-white disabled:opacity-60"
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                   data-testid="step2-apply-estimate-timeline"
                 >
                   Apply Suggested Timeline
                 </button>
               </div>
             </div>
-          </summary>
 
-          <div className="border-t border-slate-200 px-4 py-4">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-              <div className="rounded-md border bg-white px-3 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Suggested Total</div>
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+              <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Cost range</div>
                 <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-estimate-total">
-                  {formatCurrency(estimatePreview.suggested_total_price)}
+                  {formatCurrency(estimatePreview.suggested_price_low)} – {formatCurrency(estimatePreview.suggested_price_high)}
                 </div>
-                <div className="text-xs text-slate-600">
-                  Range {formatCurrency(estimatePreview.suggested_price_low)} – {formatCurrency(estimatePreview.suggested_price_high)}
+                <div className="mt-1 text-xs text-slate-600">
+                  Centered around {formatCurrency(estimatePreview.suggested_total_price)}
                 </div>
               </div>
-              <div className="rounded-md border bg-white px-3 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Timeline</div>
+              <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Duration range</div>
                 <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-estimate-duration">
-                  {formatDurationDays(estimatePreview.suggested_duration_days)}
+                  {formatDurationDays(estimatePreview.suggested_duration_low)} – {formatDurationDays(estimatePreview.suggested_duration_high)}
                 </div>
-                <div className="text-xs text-slate-600">
-                  Range {formatDurationDays(estimatePreview.suggested_duration_low)} – {formatDurationDays(estimatePreview.suggested_duration_high)}
+                <div className="mt-1 text-xs text-slate-600">
+                  Typical pace: {formatDurationDays(estimatePreview.suggested_duration_days)}
                 </div>
               </div>
-              <div className="rounded-md border bg-white px-3 py-3">
+              <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Confidence</div>
                 <div className="mt-1 text-sm font-semibold text-slate-900" data-testid="step2-estimate-confidence">
                   {formatEstimateConfidence(estimatePreview.confidence_level) || "Estimate available"}
                 </div>
-                <div className="mt-1 text-xs text-slate-600">{estimatePreview.confidence_reasoning}</div>
+                <div className="mt-1 text-xs text-slate-600">
+                  {estimateSummaryMeta?.lowConfidence ? "Limited data available." : estimatePreview.confidence_reasoning}
+                </div>
               </div>
-              <div className="rounded-md border bg-white px-3 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Source</div>
+              <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Based on</div>
                 <div className="mt-1 text-sm font-semibold text-slate-900" data-testid="step2-estimate-source">
                   {safeStr(estimatePreview.template_used) || "Project benchmark"}
                 </div>
-                <div className="mt-1 text-xs text-slate-600">
-                  {safeStr(estimatePreview.benchmark_source).replace(/_/g, " ")}
-                  {estimatePreview.source_metadata?.seeded_region_scope
-                    ? ` • ${estimatePreview.source_metadata.seeded_region_scope}`
-                    : ""}
+                <div className="mt-1 text-xs text-slate-600">{estimateSummaryMeta?.explanation}</div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Optional Project Budget</div>
+                  <div className="mt-1 text-xs text-slate-600">
+                    Enter a planning budget to convert milestone shares into advisory dollar suggestions. This will not overwrite milestone amounts.
+                  </div>
+                </div>
+                <div className="w-full max-w-xs">
+                  <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Planning budget
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={projectBudgetInput}
+                    onChange={(e) => setProjectBudgetInput(e.target.value)}
+                    placeholder={safeStr(estimatePreview?.suggested_total_price) || "Enter budget"}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+                    data-testid="step2-project-budget-input"
+                  />
                 </div>
               </div>
             </div>
+
+            <details className="mt-4 rounded-xl border border-slate-200 bg-white">
+              <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-900">
+                Estimate details
+              </summary>
+              <div className="border-t border-slate-200 px-4 py-4">
+                <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Weighting</div>
+                    <div className="mt-2 text-sm text-slate-700">
+                      Template defaults: <span className="font-semibold text-slate-900">{estimateSummaryMeta?.templateWeight}</span>
+                    </div>
+                    <div className="mt-1 text-sm text-slate-700">
+                      Learned job data: <span className="font-semibold text-slate-900">{estimateSummaryMeta?.learnedWeight}</span>
+                    </div>
+                    <div className="mt-2 text-xs text-slate-600">
+                      Learned data influences the estimate only when matching benchmark rows are available.
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Clarification impact</div>
+                    {estimateSummaryMeta?.clarificationCount ? (
+                      <div className="mt-2 space-y-2 text-xs text-slate-700">
+                        {Array.isArray(estimatePreview?.price_adjustments) && estimatePreview.price_adjustments.length ? (
+                          <div>
+                            <div className="font-semibold text-slate-900">Price guidance</div>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {estimatePreview.price_adjustments.map((row, idx) => (
+                                <span key={`price-adjustment-${idx}`} className="rounded-full bg-white px-2 py-1 font-medium text-slate-700">
+                                  {row?.label}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                        {Array.isArray(estimatePreview?.timeline_adjustments) && estimatePreview.timeline_adjustments.length ? (
+                          <div>
+                            <div className="font-semibold text-slate-900">Timeline guidance</div>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {estimatePreview.timeline_adjustments.map((row, idx) => (
+                                <span key={`timeline-adjustment-${idx}`} className="rounded-full bg-white px-2 py-1 font-medium text-slate-700">
+                                  {row?.label}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="mt-2 text-xs text-slate-600">
+                        Current clarification answers did not materially change the baseline estimate.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Range variability</div>
+                    <div className="mt-2 text-sm text-slate-700">{estimateSummaryMeta?.variabilityMessage}</div>
+                    <div className="mt-2 text-xs text-slate-600">
+                      Estimates remain advisory so you can adjust milestone scope, pricing, and timing freely.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </details>
           </div>
-        </details>
+        </section>
       ) : null}
 
       <ClarificationsModal
@@ -3161,6 +3377,8 @@ export default function Step2Milestones({
           <tbody>
             {effectiveMilestones.map((m, idx) => {
               const estimate = getEstimateAssistMeta(m);
+              const projectEstimateGuidance =
+                estimateGuidanceByMilestone.get(m?.id ?? `row-${idx + 1}`) || null;
               const aiHighlight = m?.id != null ? aiHighlights[`milestone:${m.id}`] : null;
               const isAiSuggested = m?.id != null && aiSuggestedMilestoneIds.includes(m.id);
               return (
@@ -3281,6 +3499,24 @@ export default function Step2Milestones({
 
                         {estimate.durationLabel ? (
                           <div className="text-gray-600">Est. duration: {estimate.durationLabel}</div>
+                        ) : null}
+
+                        {projectEstimateGuidance?.share ? (
+                          <div className="text-gray-600">
+                            Suggested share:{" "}
+                            <span className="font-medium text-gray-800">
+                              {formatPercent(projectEstimateGuidance.share)}
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {estimateBudgetValue && Number.isFinite(projectEstimateGuidance?.budgetSuggestion) ? (
+                          <div className="text-gray-600">
+                            At entered budget:{" "}
+                            <span className="font-medium text-gray-800">
+                              {formatCurrency(projectEstimateGuidance.budgetSuggestion)}
+                            </span>
+                          </div>
                         ) : null}
 
                         {estimate.materials ? (
