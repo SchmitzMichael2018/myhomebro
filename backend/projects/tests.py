@@ -90,7 +90,7 @@ from projects.services.activity_feed import (
     create_activity_event,
     get_next_best_action,
 )
-from projects.services.estimation_engine import build_project_estimate
+from projects.services.estimation_engine import build_project_estimate, _clarification_signature_from_answers
 from projects.services.regions import build_normalized_region_key
 from projects.services.template_apply import apply_template_to_agreement, save_agreement_as_template
 from projects.services.template_discovery import discover_templates
@@ -7003,6 +7003,8 @@ class ProjectEstimationEngineTests(TestCase):
         self.assertTrue(result["seeded_benchmark_used"])
         self.assertFalse(result["learned_benchmark_used"])
         self.assertEqual(result["benchmark_match_scope"], "exact_subtype_city")
+        self.assertEqual(result["source_metadata"]["learned_weight"], "0.00")
+        self.assertEqual(result["source_metadata"]["template_weight"], "1.00")
         self.assertGreater(Decimal(result["suggested_total_price"]), Decimal("0.00"))
         self.assertTrue(result["milestone_suggestions"])
 
@@ -7016,6 +7018,7 @@ class ProjectEstimationEngineTests(TestCase):
 
     def test_learned_benchmark_blending_when_sample_size_is_strong(self):
         agreement = self._agreement()
+        seeded_only = build_project_estimate(agreement=agreement)
         ProjectBenchmarkAggregate.objects.create(
             scope=ProjectBenchmarkAggregate.Scope.TEMPLATE,
             template=agreement.selected_template,
@@ -7045,7 +7048,64 @@ class ProjectEstimationEngineTests(TestCase):
         self.assertEqual(result["benchmark_source"], "seeded_plus_learned")
         self.assertTrue(result["learned_benchmark_used"])
         self.assertEqual(result["source_metadata"]["learned_scope"], "template_exact_subtype")
-        self.assertGreater(Decimal(result["source_metadata"]["learned_weight"]), Decimal("0.00"))
+        self.assertEqual(result["source_metadata"]["learned_weight"], "0.40")
+        self.assertEqual(result["source_metadata"]["template_weight"], "0.60")
+        self.assertGreater(Decimal(result["suggested_total_price"]), Decimal(seeded_only["suggested_total_price"]))
+
+    def test_clarification_specific_benchmark_is_preferred_when_available(self):
+        agreement = self._agreement()
+        agreement.ai_scope.answers = {
+            "square_footage": "320",
+            "finish_level": "premium",
+        }
+        agreement.ai_scope.save(update_fields=["answers"])
+        clarification_signature = _clarification_signature_from_answers(agreement.ai_scope.answers)
+
+        ProjectBenchmarkAggregate.objects.create(
+            scope=ProjectBenchmarkAggregate.Scope.REGIONAL,
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            country="US",
+            state="TX",
+            city="San Antonio",
+            normalized_region_key="US-TX-SAN_ANTONIO",
+            completed_project_count=7,
+            average_final_total=Decimal("26000.00"),
+            median_final_total=Decimal("26000.00"),
+            min_final_total=Decimal("22000.00"),
+            max_final_total=Decimal("30000.00"),
+            average_actual_duration_days=Decimal("20.00"),
+            median_actual_duration_days=Decimal("20.00"),
+            average_milestone_count=Decimal("4.00"),
+            clarification_signature="",
+            region_granularity="city",
+        )
+        ProjectBenchmarkAggregate.objects.create(
+            scope=ProjectBenchmarkAggregate.Scope.REGIONAL,
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            country="US",
+            state="TX",
+            city="San Antonio",
+            normalized_region_key="US-TX-SAN_ANTONIO",
+            completed_project_count=4,
+            average_final_total=Decimal("34000.00"),
+            median_final_total=Decimal("34000.00"),
+            min_final_total=Decimal("31000.00"),
+            max_final_total=Decimal("37000.00"),
+            average_actual_duration_days=Decimal("30.00"),
+            median_actual_duration_days=Decimal("30.00"),
+            average_milestone_count=Decimal("5.00"),
+            clarification_signature=clarification_signature,
+            region_granularity="city",
+        )
+
+        result = build_project_estimate(agreement=agreement)
+
+        self.assertEqual(result["benchmark_source"], "seeded_plus_learned")
+        self.assertEqual(result["source_metadata"]["learned_scope"], "regional_exact_subtype_clarification")
+        self.assertEqual(result["source_metadata"]["learned_clarification_signature"], clarification_signature)
+        self.assertGreater(Decimal(result["suggested_total_price"]), Decimal("26000.00"))
 
     def test_clarification_driven_price_and_timeline_adjustments(self):
         agreement = self._agreement()

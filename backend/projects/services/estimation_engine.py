@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_HALF_UP
+import hashlib
 from math import sqrt
 from typing import Any
+
+from django.db.models import Q
 
 from projects.models import Agreement, AgreementAIScope, Milestone, ProjectBenchmarkAggregate
 from projects.models_templates import SeedBenchmarkProfile
@@ -13,6 +16,8 @@ from projects.services.regions import build_normalized_region_key
 
 STRUCTURED_RESULT_VERSION = "2026-03-26-estimator-v1"
 MONEY_QUANT = Decimal("0.01")
+TEMPLATE_BLEND_WEIGHT = Decimal("0.60")
+BENCHMARK_BLEND_WEIGHT = Decimal("0.40")
 
 
 @dataclass
@@ -105,6 +110,50 @@ def _normalize_answer_value(value: Any) -> str:
     return "_".join(part for part in _slug(value).split() if part)
 
 
+def _bucket_numeric_answer(key: str, value: str) -> str:
+    try:
+        number = int(float(str(value).replace(",", "").strip()))
+    except (TypeError, ValueError):
+        return ""
+    if "square_foot" in key or "sq_ft" in key or "sqft" in key or "project_size" in key:
+        lower = max((number // 250) * 250, 0)
+        upper = lower + 249
+        return f"{lower}_{upper}"
+    if number <= 1:
+        return "1"
+    if number <= 3:
+        return "2_3"
+    if number <= 7:
+        return "4_7"
+    return "8_plus"
+
+
+def _clarification_signature_from_answers(answers: dict[str, Any]) -> str:
+    if not isinstance(answers, dict):
+        return ""
+    traits: dict[str, str] = {}
+    for raw_key, raw_value in sorted(answers.items()):
+        key = _normalize_answer_key(raw_key)
+        if not key:
+            continue
+        value_text = _safe_text(raw_value)
+        if not value_text:
+            continue
+        bucketed = _bucket_numeric_answer(key, value_text)
+        if bucketed:
+            traits[key] = bucketed
+            continue
+        if len(value_text.split()) > 6:
+            continue
+        normalized = _normalize_answer_value(value_text)
+        if normalized:
+            traits[key] = normalized[:64]
+    if not traits:
+        return ""
+    joined = "|".join(f"{key}={traits[key]}" for key in sorted(traits))
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:24]
+
+
 def _first_matching_answer(answers: dict[str, Any], *needles: str) -> Any:
     if not isinstance(answers, dict):
         return None
@@ -184,53 +233,71 @@ def _pick_learned_candidate(*, agreement: Agreement, region_key: str) -> Learned
     project_type = _safe_text(getattr(agreement, "project_type", ""))
     project_subtype = _safe_text(getattr(agreement, "project_subtype", ""))
     template_id = getattr(agreement, "selected_template_id", None)
+    clarification_signature = _clarification_signature_from_answers(_extract_answers(agreement))
     if not project_type:
         return LearnedBenchmarkDecision(None, Decimal("0.00"), 0, Decimal("0.00"), "", "")
 
-    candidates = list(
-        ProjectBenchmarkAggregate.objects.filter(
-            completed_project_count__gt=0,
-            project_type__iexact=project_type,
-            clarification_signature="",
-        )
-        .order_by("-completed_project_count", "-updated_at")
+    queryset = ProjectBenchmarkAggregate.objects.filter(
+        completed_project_count__gt=0,
+        project_type__iexact=project_type,
     )
+    if project_subtype:
+        queryset = queryset.filter(Q(project_subtype__iexact=project_subtype) | Q(project_subtype=""))
+    if clarification_signature:
+        queryset = queryset.filter(Q(clarification_signature=clarification_signature) | Q(clarification_signature=""))
+    else:
+        queryset = queryset.filter(clarification_signature="")
+    candidates = list(queryset.order_by("-completed_project_count", "-updated_at"))
 
-    def candidate_tuple(aggregate: ProjectBenchmarkAggregate) -> tuple[int, int, int, int]:
-        exact_subtype = int(bool(project_subtype) and _safe_text(aggregate.project_subtype).lower() == project_subtype.lower())
+    def candidate_tuple(aggregate: ProjectBenchmarkAggregate) -> tuple[int, int, int, int, int, int]:
+        exact_signature = int(
+            bool(clarification_signature)
+            and _safe_text(aggregate.clarification_signature) == clarification_signature
+        )
+        exact_subtype = int(
+            bool(project_subtype)
+            and _safe_text(aggregate.project_subtype).lower() == project_subtype.lower()
+        )
         type_only = int(not _safe_text(aggregate.project_subtype))
         scope_score = {
-            ProjectBenchmarkAggregate.Scope.TEMPLATE: 40,
-            ProjectBenchmarkAggregate.Scope.REGIONAL: 30,
+            ProjectBenchmarkAggregate.Scope.REGIONAL: 40,
+            ProjectBenchmarkAggregate.Scope.TEMPLATE: 35,
+            ProjectBenchmarkAggregate.Scope.CONTRACTOR: 25,
             ProjectBenchmarkAggregate.Scope.GLOBAL: 20,
-            ProjectBenchmarkAggregate.Scope.CONTRACTOR: 10,
         }.get(aggregate.scope, 0)
         region_score = 0
-        if aggregate.scope == ProjectBenchmarkAggregate.Scope.TEMPLATE and template_id and aggregate.template_id == template_id:
-            region_score = 5
-        elif aggregate.scope == ProjectBenchmarkAggregate.Scope.REGIONAL:
-            if aggregate.normalized_region_key and aggregate.normalized_region_key == region_key:
-                region_score = 5
-            elif aggregate.normalized_region_key and region_key.startswith(f"{aggregate.normalized_region_key}-"):
-                region_score = 4
-        return (exact_subtype, type_only, scope_score + region_score, min(int(aggregate.completed_project_count), 50))
+        if aggregate.scope == ProjectBenchmarkAggregate.Scope.REGIONAL:
+            aggregate_region_key = _safe_text(aggregate.normalized_region_key)
+            if region_key and aggregate_region_key == region_key:
+                region_score = 8
+            elif region_key and aggregate_region_key and region_key.startswith(f"{aggregate_region_key}-"):
+                region_score = 6
+            elif aggregate_region_key:
+                region_score = -10
+        elif aggregate.scope == ProjectBenchmarkAggregate.Scope.TEMPLATE and template_id and aggregate.template_id == template_id:
+            region_score = 4
+        template_score = int(bool(template_id) and aggregate.template_id == template_id)
+        contractor_score = int(aggregate.scope == ProjectBenchmarkAggregate.Scope.CONTRACTOR and aggregate.contractor_id == getattr(getattr(agreement, "contractor", None), "id", None))
+        return (
+            exact_signature,
+            exact_subtype,
+            template_score,
+            contractor_score,
+            scope_score + region_score,
+            min(int(aggregate.completed_project_count), 50),
+        )
 
-    def meets_minimum(aggregate: ProjectBenchmarkAggregate) -> bool:
-        minimum = {
-            ProjectBenchmarkAggregate.Scope.TEMPLATE: 3,
-            ProjectBenchmarkAggregate.Scope.REGIONAL: 5,
-            ProjectBenchmarkAggregate.Scope.GLOBAL: 8,
-            ProjectBenchmarkAggregate.Scope.CONTRACTOR: 6,
-        }.get(aggregate.scope, 8)
-        if aggregate.completed_project_count < minimum:
-            return False
+    def candidate_is_usable(aggregate: ProjectBenchmarkAggregate) -> bool:
         if aggregate.scope == ProjectBenchmarkAggregate.Scope.TEMPLATE and template_id:
             return aggregate.template_id == template_id
         if aggregate.scope == ProjectBenchmarkAggregate.Scope.REGIONAL:
-            return bool(region_key) and bool(aggregate.normalized_region_key)
+            aggregate_region_key = _safe_text(aggregate.normalized_region_key)
+            return bool(region_key) and bool(aggregate_region_key) and (
+                aggregate_region_key == region_key or region_key.startswith(f"{aggregate_region_key}-")
+            )
         return True
 
-    eligible = [candidate for candidate in candidates if meets_minimum(candidate)]
+    eligible = [candidate for candidate in candidates if candidate_is_usable(candidate)]
     if not eligible:
         return LearnedBenchmarkDecision(None, Decimal("0.00"), 0, Decimal("0.00"), "", "")
 
@@ -244,35 +311,27 @@ def _pick_learned_candidate(*, agreement: Agreement, region_key: str) -> Learned
     if learned_duration <= 0:
         learned_duration = int(round(float(aggregate.average_actual_duration_days or 0)))
 
-    sample_strength = min(Decimal(str(aggregate.completed_project_count)) / Decimal("20"), Decimal("1.00"))
-    specificity_bonus = {
-        ProjectBenchmarkAggregate.Scope.TEMPLATE: Decimal("0.15"),
-        ProjectBenchmarkAggregate.Scope.REGIONAL: Decimal("0.12"),
-        ProjectBenchmarkAggregate.Scope.GLOBAL: Decimal("0.08"),
-    }.get(aggregate.scope, Decimal("0.04"))
-
+    scope_bits: list[str] = [aggregate.scope]
     if project_subtype and _safe_text(aggregate.project_subtype).lower() == project_subtype.lower():
-        specificity_bonus += Decimal("0.08")
-        scope_label = f"{aggregate.scope}_exact_subtype"
+        scope_bits.append("exact_subtype")
     else:
-        scope_label = f"{aggregate.scope}_type_fallback"
-
-    variability_penalty = Decimal("0.00")
-    avg_total = _safe_decimal(aggregate.average_final_total)
-    stddev = _safe_decimal(aggregate.amount_stddev)
-    if avg_total > 0 and stddev > 0:
-        coefficient = stddev / avg_total
-        if coefficient > Decimal("0.45"):
-            variability_penalty = Decimal("0.08")
-        elif coefficient > Decimal("0.30"):
-            variability_penalty = Decimal("0.04")
-
-    learned_weight = _clamp_decimal((sample_strength * Decimal("0.42")) + specificity_bonus - variability_penalty, Decimal("0.00"), Decimal("0.55"))
+        scope_bits.append("type_fallback")
+    if clarification_signature and _safe_text(aggregate.clarification_signature) == clarification_signature:
+        scope_bits.append("clarification")
+    learned_weight = BENCHMARK_BLEND_WEIGHT
     reasoning = (
         f"Learned benchmark from {aggregate.scope} scope with {aggregate.completed_project_count} completed project"
-        f"{'' if aggregate.completed_project_count == 1 else 's'}."
+        f"{'' if aggregate.completed_project_count == 1 else 's'}"
+        f"{' and a clarification-specific match' if clarification_signature and _safe_text(aggregate.clarification_signature) == clarification_signature else ''}."
     )
-    return LearnedBenchmarkDecision(aggregate, _money(learned_price), max(learned_duration, 0), learned_weight, scope_label, reasoning)
+    return LearnedBenchmarkDecision(
+        aggregate,
+        _money(learned_price),
+        max(learned_duration, 0),
+        learned_weight,
+        "_".join(scope_bits),
+        reasoning,
+    )
 
 
 def _apply_multiplier_adjustment(
@@ -736,9 +795,8 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
         city=context.get("region_city", ""),
     )
     learned_decision = _pick_learned_candidate(agreement=agreement, region_key=region_key)
-    seeded_weight_guard = _safe_decimal(seeded_defaults.get("region_priority_weight"), Decimal("1.00"))
-    max_learned_weight = _clamp_decimal(Decimal("0.60") / max(seeded_weight_guard, Decimal("0.75")), Decimal("0.15"), Decimal("0.55"))
-    learned_weight = min(learned_decision.learned_weight, max_learned_weight)
+    learned_weight = learned_decision.learned_weight if learned_decision.aggregate is not None else Decimal("0.00")
+    template_weight = TEMPLATE_BLEND_WEIGHT if learned_weight > 0 else Decimal("1.00")
 
     baseline_price = seeded_price_anchor
     baseline_duration = seeded_duration_days
@@ -753,20 +811,22 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
 
     if learned_decision.aggregate is not None and learned_weight > 0:
         if learned_decision.learned_price > 0 and baseline_price > 0:
-            baseline_price = _money((baseline_price * (Decimal("1.00") - learned_weight)) + (learned_decision.learned_price * learned_weight))
+            baseline_price = _money((baseline_price * template_weight) + (learned_decision.learned_price * learned_weight))
         elif learned_decision.learned_price > 0:
             baseline_price = learned_decision.learned_price
 
         if learned_decision.learned_duration_days > 0 and baseline_duration > 0:
             baseline_duration = max(
-                int(round((baseline_duration * float(Decimal("1.00") - learned_weight)) + (learned_decision.learned_duration_days * float(learned_weight)))),
+                int(round((baseline_duration * float(template_weight)) + (learned_decision.learned_duration_days * float(learned_weight)))),
                 1,
             )
         elif learned_decision.learned_duration_days > 0:
             baseline_duration = learned_decision.learned_duration_days
 
         benchmark_source = "seeded_plus_learned"
-        explanation_lines.append(f"Blended in learned benchmark data with weight {learned_weight.quantize(Decimal('0.01'))}.")
+        explanation_lines.append(
+            f"Blended template defaults ({template_weight.quantize(Decimal('0.01'))}) with learned benchmark data ({learned_weight.quantize(Decimal('0.01'))})."
+        )
         explanation_lines.append(learned_decision.reasoning)
 
     clarification_answers = _extract_answers(agreement)
@@ -835,6 +895,8 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
             "learned_scope": learned_decision.scope_label,
             "learned_completed_project_count": getattr(learned_decision.aggregate, "completed_project_count", 0) if learned_decision.aggregate else 0,
             "learned_weight": str(learned_weight.quantize(Decimal("0.01"))),
+            "template_weight": str(template_weight.quantize(Decimal("0.01"))),
+            "learned_clarification_signature": _safe_text(getattr(learned_decision.aggregate, "clarification_signature", "")),
             "region_key_used": region_key,
         },
     }
