@@ -188,7 +188,11 @@ def _pick_learned_candidate(*, agreement: Agreement, region_key: str) -> Learned
         return LearnedBenchmarkDecision(None, Decimal("0.00"), 0, Decimal("0.00"), "", "")
 
     candidates = list(
-        ProjectBenchmarkAggregate.objects.filter(completed_project_count__gt=0, project_type__iexact=project_type)
+        ProjectBenchmarkAggregate.objects.filter(
+            completed_project_count__gt=0,
+            project_type__iexact=project_type,
+            clarification_signature="",
+        )
         .order_by("-completed_project_count", "-updated_at")
     )
 

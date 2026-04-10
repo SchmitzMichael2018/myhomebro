@@ -4,6 +4,7 @@ from django.core.management.base import BaseCommand
 
 from projects.services.project_learning import (
     backfill_completed_agreement_snapshots,
+    rebuild_milestone_benchmarks,
     rebuild_project_benchmarks,
 )
 
@@ -35,8 +36,9 @@ class Command(BaseCommand):
             self.stdout.write(self.style.NOTICE(f"Refreshed {refreshed} completed agreement snapshots."))
 
         aggregate_count = rebuild_project_benchmarks()
+        milestone_aggregate_count = rebuild_milestone_benchmarks()
         self.stdout.write(
             self.style.SUCCESS(
-                f"Rebuilt {aggregate_count} benchmark aggregate rows from normalized snapshots."
+                f"Rebuilt {aggregate_count} project aggregate rows and {milestone_aggregate_count} milestone aggregate rows from normalized snapshots."
             )
         )

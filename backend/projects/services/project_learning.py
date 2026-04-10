@@ -4,6 +4,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+import hashlib
 from statistics import median, pstdev
 from typing import Iterable
 
@@ -16,6 +17,7 @@ from projects.models_dispute import Dispute
 from projects.models_learning import (
     AgreementOutcomeMilestoneSnapshot,
     AgreementOutcomeSnapshot,
+    MilestoneBenchmarkAggregate,
     ProjectBenchmarkAggregate,
 )
 from projects.services.agreement_completion import _agreement_mode, _invoice_is_paid, _invoice_is_system_funding_invoice
@@ -76,6 +78,28 @@ def _stddev_number(values: Iterable[int | float | Decimal]) -> Decimal:
 
 def _safe_text(value) -> str:
     return str(value or "").strip()
+
+
+def _slug(value) -> str:
+    return (
+        _safe_text(value)
+        .lower()
+        .replace("&", " and ")
+        .replace("/", " ")
+        .replace("-", " ")
+        .replace(",", " ")
+        .replace("(", " ")
+        .replace(")", " ")
+        .replace(".", " ")
+    )
+
+
+def _normalize_answer_key(value) -> str:
+    return "_".join(part for part in _slug(value).split() if part)
+
+
+def _normalize_answer_value(value) -> str:
+    return "_".join(part for part in _slug(value).split() if part)
 
 
 def build_normalized_region_key(*, country: str = "US", state: str = "", city: str = "") -> str:
@@ -221,6 +245,50 @@ def _clarification_summary(agreement: Agreement) -> dict:
     return summary
 
 
+def _bucket_numeric_answer(key: str, value: str) -> str:
+    try:
+        number = int(float(str(value).replace(",", "").strip()))
+    except (TypeError, ValueError):
+        return ""
+    if "square_foot" in key or "sq_ft" in key or "sqft" in key or "project_size" in key:
+        lower = max((number // 250) * 250, 0)
+        upper = lower + 249
+        return f"{lower}_{upper}"
+    if number <= 1:
+        return "1"
+    if number <= 3:
+        return "2_3"
+    if number <= 7:
+        return "4_7"
+    return "8_plus"
+
+
+def _clarification_traits(summary: dict) -> tuple[dict, str]:
+    answers = dict(summary.get("answers") or {})
+    traits: dict[str, str] = {}
+    for raw_key, raw_value in sorted(answers.items()):
+        key = _normalize_answer_key(raw_key)
+        if not key:
+            continue
+        value_text = _safe_text(raw_value)
+        if not value_text:
+            continue
+        bucketed = _bucket_numeric_answer(key, value_text)
+        if bucketed:
+            traits[key] = bucketed
+            continue
+        if len(value_text.split()) > 6:
+            continue
+        normalized = _normalize_answer_value(value_text)
+        if normalized:
+            traits[key] = normalized[:64]
+    if not traits:
+        return {}, ""
+    joined = "|".join(f"{key}={traits[key]}" for key in sorted(traits))
+    signature = hashlib.sha256(joined.encode("utf-8")).hexdigest()[:24]
+    return traits, signature
+
+
 def _milestone_summary(milestones: list[Milestone]) -> dict:
     normalized_types: list[str] = []
     pattern: list[str] = []
@@ -255,7 +323,18 @@ def _milestone_summary(milestones: list[Milestone]) -> dict:
     }
 
 
-def _milestone_child_payload(milestone: Milestone) -> dict:
+def _milestone_invoices(agreement: Agreement, milestone: Milestone):
+    invoice_rows = []
+    for invoice in agreement.invoices.all():
+        if getattr(invoice, "milestone_id_snapshot", None) == milestone.id:
+            invoice_rows.append(invoice)
+            continue
+        if getattr(milestone, "invoice_id", None) and getattr(invoice, "id", None) == milestone.invoice_id:
+            invoice_rows.append(invoice)
+    return invoice_rows
+
+
+def _milestone_child_payload(agreement: Agreement, milestone: Milestone) -> dict:
     actual_duration_days = None
     if getattr(milestone, "completed_at", None) and getattr(milestone, "start_date", None):
         actual_duration_days = _days_between(milestone.start_date, milestone.completed_at.date())
@@ -269,19 +348,54 @@ def _milestone_child_payload(milestone: Milestone) -> dict:
             description=_safe_text(getattr(milestone, "description", "")),
         )
 
+    estimate_amount = _dec(getattr(milestone, "ai_suggested_amount", None), default=None)
+    if estimate_amount is None:
+        estimate_amount = _dec(getattr(milestone, "template_suggested_amount", None), default=None)
+
+    invoice_rows = _milestone_invoices(agreement, milestone)
+    invoiced_amount = _quantize(
+        sum((_dec(getattr(invoice, "amount", None)) or Decimal("0.00")) for invoice in invoice_rows)
+    )
+    paid_amount = _quantize(
+        sum(
+            (_dec(getattr(invoice, "amount", None)) or Decimal("0.00"))
+            for invoice in invoice_rows
+            if _invoice_is_paid(invoice, mode=_agreement_mode(agreement))
+        )
+    )
+    dispute_count = agreement.disputes.exclude(status__in=["canceled", "cancelled"]).filter(milestone_id=milestone.id).count()
+    amount = _quantize(_dec(getattr(milestone, "amount", None)))
+    amount_delta = _quantize(amount - estimate_amount) if estimate_amount is not None else None
+    duration_delta = (
+        actual_duration_days - int(getattr(milestone, "recommended_duration_days", 0) or 0)
+        if actual_duration_days is not None and getattr(milestone, "recommended_duration_days", None) is not None
+        else None
+    )
+
     return {
         "milestone": milestone,
         "sort_order": int(getattr(milestone, "order", 0) or 0),
         "title": _safe_text(getattr(milestone, "title", "")),
         "normalized_milestone_type": normalized_type,
-        "amount": _quantize(_dec(getattr(milestone, "amount", None))),
+        "amount": amount,
         "template_suggested_amount": _dec(getattr(milestone, "template_suggested_amount", None), default=None),
         "ai_suggested_amount": _dec(getattr(milestone, "ai_suggested_amount", None), default=None),
+        "estimated_amount": estimate_amount,
+        "amount_delta_from_estimate": amount_delta,
         "start_date": getattr(milestone, "start_date", None),
         "completion_date": getattr(milestone, "completion_date", None),
         "estimated_offset_days": getattr(milestone, "recommended_days_from_start", None),
         "estimated_duration_days": getattr(milestone, "recommended_duration_days", None) or _duration_to_days(getattr(milestone, "duration", None)),
         "actual_duration_days": actual_duration_days,
+        "duration_delta_from_estimate": duration_delta,
+        "has_invoice": bool(invoice_rows),
+        "invoice_count": len(invoice_rows),
+        "invoiced_amount": invoiced_amount,
+        "paid_amount": paid_amount,
+        "has_dispute": dispute_count > 0,
+        "dispute_count": dispute_count,
+        "is_rework": bool(getattr(milestone, "rework_origin_milestone_id", None)),
+        "rework_origin_milestone_id": getattr(milestone, "rework_origin_milestone_id", None),
     }
 
 
@@ -307,11 +421,17 @@ def _build_snapshot_payload(agreement: Agreement) -> tuple[dict, list[dict]]:
     region_key = build_normalized_region_key(country=country, state=state, city=city)
 
     milestone_summary = _milestone_summary(milestones)
-    milestone_rows = [_milestone_child_payload(milestone) for milestone in milestones]
+    milestone_rows = [_milestone_child_payload(agreement, milestone) for milestone in milestones]
+    clarification_summary = _clarification_summary(agreement)
+    clarification_traits, clarification_signature = _clarification_traits(clarification_summary)
+    selected_template = getattr(agreement, "selected_template", None)
 
     payload = {
         "contractor": getattr(agreement, "contractor", None),
-        "template": getattr(agreement, "selected_template", None),
+        "template": selected_template,
+        "template_name_snapshot": _safe_text(getattr(selected_template, "name", None))
+        or _safe_text(getattr(agreement, "selected_template_name_snapshot", None)),
+        "template_benchmark_match_key": _safe_text(getattr(selected_template, "benchmark_match_key", None)),
         "project_type": _safe_text(getattr(agreement, "project_type", None)),
         "project_subtype": _safe_text(getattr(agreement, "project_subtype", None)),
         "country": country,
@@ -333,9 +453,13 @@ def _build_snapshot_payload(agreement: Agreement) -> tuple[dict, list[dict]]:
         "actual_duration_days": actual_duration_days,
         "milestone_count": len(milestones),
         "milestone_summary": milestone_summary,
-        "clarification_summary": _clarification_summary(agreement),
+        "clarification_summary": clarification_summary,
+        "clarification_traits": clarification_traits,
+        "clarification_signature": clarification_signature,
         "has_amendments": bool(amendment_children or amendment_number),
         "amendment_count": amendment_children + (1 if amendment_number else 0),
+        "has_change_orders": bool(amendment_children or amendment_number),
+        "change_order_count": amendment_children + (1 if amendment_number else 0),
         "has_disputes": dispute_qs.exists(),
         "dispute_count": dispute_qs.count(),
         "excluded_from_benchmarks": False,
@@ -345,7 +469,7 @@ def _build_snapshot_payload(agreement: Agreement) -> tuple[dict, list[dict]]:
 
 
 def _snapshot_signatures(snapshot: AgreementOutcomeSnapshot) -> list[dict]:
-    signatures = [
+    base_rows = [
         {
             "scope": ProjectBenchmarkAggregate.Scope.GLOBAL,
             "project_type": snapshot.project_type,
@@ -356,7 +480,7 @@ def _snapshot_signatures(snapshot: AgreementOutcomeSnapshot) -> list[dict]:
         }
     ]
     if snapshot.normalized_region_key:
-        signatures.append(
+        base_rows.append(
             {
                 "scope": ProjectBenchmarkAggregate.Scope.REGIONAL,
                 "project_type": snapshot.project_type,
@@ -367,7 +491,7 @@ def _snapshot_signatures(snapshot: AgreementOutcomeSnapshot) -> list[dict]:
             }
         )
     if snapshot.template_id:
-        signatures.append(
+        base_rows.append(
             {
                 "scope": ProjectBenchmarkAggregate.Scope.TEMPLATE,
                 "project_type": snapshot.project_type,
@@ -378,7 +502,7 @@ def _snapshot_signatures(snapshot: AgreementOutcomeSnapshot) -> list[dict]:
             }
         )
     if snapshot.contractor_id:
-        signatures.append(
+        base_rows.append(
             {
                 "scope": ProjectBenchmarkAggregate.Scope.CONTRACTOR,
                 "project_type": snapshot.project_type,
@@ -388,6 +512,18 @@ def _snapshot_signatures(snapshot: AgreementOutcomeSnapshot) -> list[dict]:
                 "template_id": None,
             }
         )
+
+    signatures = [{**row, "clarification_signature": ""} for row in base_rows]
+    if snapshot.clarification_signature:
+        signatures.extend(
+            [
+                {
+                    **row,
+                    "clarification_signature": snapshot.clarification_signature,
+                }
+                for row in base_rows
+            ]
+        )
     return signatures
 
 
@@ -396,6 +532,7 @@ def _signature_tuple(signature: dict) -> tuple:
         signature.get("scope", ""),
         signature.get("project_type", ""),
         signature.get("project_subtype", ""),
+        signature.get("clarification_signature", ""),
         signature.get("normalized_region_key", ""),
         signature.get("contractor_id"),
         signature.get("template_id"),
@@ -413,6 +550,7 @@ def _snapshots_for_signature(signature: dict):
     queryset = _eligible_snapshots_qs().filter(
         project_type=signature.get("project_type", ""),
         project_subtype=signature.get("project_subtype", ""),
+        clarification_signature=signature.get("clarification_signature", ""),
     )
     scope = signature.get("scope")
     if scope == ProjectBenchmarkAggregate.Scope.REGIONAL:
@@ -443,15 +581,19 @@ def _aggregate_metadata(scope: str, snapshots: list[AgreementOutcomeSnapshot], s
         "has_template_specificity": bool(signature.get("template_id")),
         "has_contractor_specificity": bool(signature.get("contractor_id")),
         "has_region_specificity": bool(signature.get("normalized_region_key")),
+        "has_clarification_specificity": bool(signature.get("clarification_signature")),
     }
 
 
 def _build_aggregate_payload(signature: dict, snapshots: list[AgreementOutcomeSnapshot]) -> dict:
     final_totals = [snapshot.final_agreed_total_amount for snapshot in snapshots if snapshot.final_agreed_total_amount is not None]
+    final_paid_amounts = [snapshot.final_paid_amount for snapshot in snapshots if snapshot.final_paid_amount is not None]
     durations = [snapshot.actual_duration_days for snapshot in snapshots if snapshot.actual_duration_days is not None]
     milestone_counts = [snapshot.milestone_count for snapshot in snapshots]
     retainage_amounts = [snapshot.retainage_amount for snapshot in snapshots if snapshot.retainage_amount is not None]
     retainage_percents = [snapshot.retainage_percent for snapshot in snapshots if snapshot.retainage_percent is not None]
+    change_order_counts = [snapshot.change_order_count for snapshot in snapshots]
+    dispute_counts = [snapshot.dispute_count for snapshot in snapshots]
 
     estimate_variances_amount: list[Decimal] = []
     estimate_variances_percent: list[Decimal] = []
@@ -473,12 +615,15 @@ def _build_aggregate_payload(signature: dict, snapshots: list[AgreementOutcomeSn
         "template_id": signature.get("template_id"),
         "project_type": signature.get("project_type", ""),
         "project_subtype": signature.get("project_subtype", ""),
+        "clarification_signature": signature.get("clarification_signature", ""),
+        "clarification_traits": getattr(reference_snapshot, "clarification_traits", {}) if signature.get("clarification_signature") else {},
         "country": getattr(reference_snapshot, "country", "US") or "US",
         "state": getattr(reference_snapshot, "state", "") if signature["scope"] == ProjectBenchmarkAggregate.Scope.REGIONAL else "",
         "city": getattr(reference_snapshot, "city", "") if signature["scope"] == ProjectBenchmarkAggregate.Scope.REGIONAL else "",
         "normalized_region_key": signature.get("normalized_region_key", ""),
         "completed_project_count": len(snapshots),
         "average_final_total": _mean_decimal(final_totals),
+        "average_final_paid_amount": _mean_decimal(final_paid_amounts),
         "median_final_total": _median_decimal(final_totals),
         "min_final_total": _quantize(min(final_totals)) if final_totals else Decimal("0.00"),
         "max_final_total": _quantize(max(final_totals)) if final_totals else Decimal("0.00"),
@@ -487,9 +632,13 @@ def _build_aggregate_payload(signature: dict, snapshots: list[AgreementOutcomeSn
         "average_milestone_count": _mean_number(milestone_counts),
         "average_retainage_amount": _mean_decimal(retainage_amounts),
         "average_retainage_percent": _mean_decimal(retainage_percents),
+        "average_change_order_count": _mean_number(change_order_counts),
+        "average_dispute_count": _mean_number(dispute_counts),
         "average_estimate_variance_amount": _mean_decimal(estimate_variances_amount),
         "average_estimate_variance_percent": _mean_decimal(estimate_variances_percent),
         "average_duration_variance_days": _mean_number(duration_variances),
+        "change_order_project_count": len([snapshot for snapshot in snapshots if snapshot.change_order_count > 0]),
+        "dispute_project_count": len([snapshot for snapshot in snapshots if snapshot.dispute_count > 0]),
         "amount_sample_size": len(final_totals),
         "duration_sample_size": len(durations),
         "estimate_variance_sample_size": len(estimate_variances_amount),
@@ -499,6 +648,10 @@ def _build_aggregate_payload(signature: dict, snapshots: list[AgreementOutcomeSn
         "region_granularity": _region_granularity(reference_snapshot) if reference_snapshot and signature["scope"] == ProjectBenchmarkAggregate.Scope.REGIONAL else "none",
         "common_milestone_patterns": _common_patterns(snapshots),
         "metadata": _aggregate_metadata(signature["scope"], snapshots, signature),
+        "first_snapshot_completed_date": min(
+            (snapshot.agreement_completed_date for snapshot in snapshots if snapshot.agreement_completed_date),
+            default=None,
+        ),
         "last_snapshot_completed_date": max(
             (snapshot.agreement_completed_date for snapshot in snapshots if snapshot.agreement_completed_date),
             default=None,
@@ -521,6 +674,7 @@ def rebuild_benchmarks_for_signatures(signatures: Iterable[dict]) -> int:
             "template_id": signature.get("template_id"),
             "project_type": signature.get("project_type", ""),
             "project_subtype": signature.get("project_subtype", ""),
+            "clarification_signature": signature.get("clarification_signature", ""),
             "normalized_region_key": signature.get("normalized_region_key", ""),
         }
         if not snapshots:
@@ -545,6 +699,194 @@ def rebuild_benchmarks_for_snapshot(snapshot: AgreementOutcomeSnapshot) -> int:
     return rebuild_benchmarks_for_signatures(_snapshot_signatures(snapshot))
 
 
+def _eligible_milestone_snapshots_qs():
+    return AgreementOutcomeMilestoneSnapshot.objects.filter(
+        snapshot__excluded_from_benchmarks=False
+    ).select_related("snapshot", "snapshot__contractor", "snapshot__template")
+
+
+def _milestone_signatures(snapshot: AgreementOutcomeSnapshot, milestone_type: str) -> list[dict]:
+    base_rows = [
+        {
+            "scope": MilestoneBenchmarkAggregate.Scope.GLOBAL,
+            "project_type": snapshot.project_type,
+            "project_subtype": snapshot.project_subtype,
+            "normalized_region_key": "",
+            "contractor_id": None,
+            "template_id": None,
+            "normalized_milestone_type": milestone_type,
+        }
+    ]
+    if snapshot.normalized_region_key:
+        base_rows.append(
+            {
+                "scope": MilestoneBenchmarkAggregate.Scope.REGIONAL,
+                "project_type": snapshot.project_type,
+                "project_subtype": snapshot.project_subtype,
+                "normalized_region_key": snapshot.normalized_region_key,
+                "contractor_id": None,
+                "template_id": None,
+                "normalized_milestone_type": milestone_type,
+            }
+        )
+    if snapshot.template_id:
+        base_rows.append(
+            {
+                "scope": MilestoneBenchmarkAggregate.Scope.TEMPLATE,
+                "project_type": snapshot.project_type,
+                "project_subtype": snapshot.project_subtype,
+                "normalized_region_key": "",
+                "contractor_id": None,
+                "template_id": snapshot.template_id,
+                "normalized_milestone_type": milestone_type,
+            }
+        )
+    if snapshot.contractor_id:
+        base_rows.append(
+            {
+                "scope": MilestoneBenchmarkAggregate.Scope.CONTRACTOR,
+                "project_type": snapshot.project_type,
+                "project_subtype": snapshot.project_subtype,
+                "normalized_region_key": "",
+                "contractor_id": snapshot.contractor_id,
+                "template_id": None,
+                "normalized_milestone_type": milestone_type,
+            }
+        )
+    signatures = [{**row, "clarification_signature": ""} for row in base_rows]
+    if snapshot.clarification_signature:
+        signatures.extend([{**row, "clarification_signature": snapshot.clarification_signature} for row in base_rows])
+    return signatures
+
+
+def _milestone_signature_tuple(signature: dict) -> tuple:
+    return (
+        signature.get("scope", ""),
+        signature.get("project_type", ""),
+        signature.get("project_subtype", ""),
+        signature.get("clarification_signature", ""),
+        signature.get("normalized_region_key", ""),
+        signature.get("contractor_id"),
+        signature.get("template_id"),
+        signature.get("normalized_milestone_type", ""),
+    )
+
+
+def _milestones_for_signature(signature: dict):
+    queryset = _eligible_milestone_snapshots_qs().filter(
+        snapshot__project_type=signature.get("project_type", ""),
+        snapshot__project_subtype=signature.get("project_subtype", ""),
+        snapshot__clarification_signature=signature.get("clarification_signature", ""),
+        normalized_milestone_type=signature.get("normalized_milestone_type", ""),
+    )
+    scope = signature.get("scope")
+    if scope == MilestoneBenchmarkAggregate.Scope.REGIONAL:
+        queryset = queryset.filter(snapshot__normalized_region_key=signature.get("normalized_region_key", ""))
+    if scope == MilestoneBenchmarkAggregate.Scope.TEMPLATE:
+        queryset = queryset.filter(snapshot__template_id=signature.get("template_id"))
+    if scope == MilestoneBenchmarkAggregate.Scope.CONTRACTOR:
+        queryset = queryset.filter(snapshot__contractor_id=signature.get("contractor_id"))
+    return list(queryset)
+
+
+def _build_milestone_aggregate_payload(signature: dict, rows: list[AgreementOutcomeMilestoneSnapshot]) -> dict:
+    amounts = [row.amount for row in rows if row.amount is not None]
+    paid_amounts = [row.paid_amount for row in rows if row.paid_amount is not None]
+    durations = [row.actual_duration_days for row in rows if row.actual_duration_days is not None]
+    estimate_variances = [row.amount_delta_from_estimate for row in rows if row.amount_delta_from_estimate is not None]
+    duration_variances = [row.duration_delta_from_estimate for row in rows if row.duration_delta_from_estimate is not None]
+    reference = rows[0].snapshot if rows else None
+    return {
+        "scope": signature["scope"],
+        "contractor_id": signature.get("contractor_id"),
+        "template_id": signature.get("template_id"),
+        "project_type": signature.get("project_type", ""),
+        "project_subtype": signature.get("project_subtype", ""),
+        "clarification_signature": signature.get("clarification_signature", ""),
+        "clarification_traits": getattr(reference, "clarification_traits", {}) if signature.get("clarification_signature") else {},
+        "normalized_milestone_type": signature.get("normalized_milestone_type", ""),
+        "country": getattr(reference, "country", "US") or "US",
+        "state": getattr(reference, "state", "") if signature["scope"] == MilestoneBenchmarkAggregate.Scope.REGIONAL else "",
+        "city": getattr(reference, "city", "") if signature["scope"] == MilestoneBenchmarkAggregate.Scope.REGIONAL else "",
+        "normalized_region_key": signature.get("normalized_region_key", ""),
+        "completed_milestone_count": len(rows),
+        "paid_milestone_count": len([row for row in rows if row.paid_amount > 0]),
+        "disputed_milestone_count": len([row for row in rows if row.dispute_count > 0]),
+        "rework_milestone_count": len([row for row in rows if row.is_rework]),
+        "average_final_amount": _mean_decimal(amounts),
+        "median_final_amount": _median_decimal(amounts),
+        "min_final_amount": _quantize(min(amounts)) if amounts else Decimal("0.00"),
+        "max_final_amount": _quantize(max(amounts)) if amounts else Decimal("0.00"),
+        "average_paid_amount": _mean_decimal(paid_amounts),
+        "average_actual_duration_days": _mean_number(durations),
+        "median_actual_duration_days": _mean_number([median(durations)]) if durations else Decimal("0.00"),
+        "average_estimate_variance_amount": _mean_decimal(estimate_variances),
+        "average_duration_variance_days": _mean_number(duration_variances),
+        "amount_sample_size": len(amounts),
+        "duration_sample_size": len(durations),
+        "estimate_variance_sample_size": len(estimate_variances),
+        "duration_variance_sample_size": len(duration_variances),
+        "metadata": {
+            "scope": signature["scope"],
+            "sample_size": len(rows),
+            "has_clarification_specificity": bool(signature.get("clarification_signature")),
+        },
+        "first_snapshot_completed_date": min(
+            (row.snapshot.agreement_completed_date for row in rows if row.snapshot.agreement_completed_date),
+            default=None,
+        ),
+        "last_snapshot_completed_date": max(
+            (row.snapshot.agreement_completed_date for row in rows if row.snapshot.agreement_completed_date),
+            default=None,
+        ),
+    }
+
+
+@transaction.atomic
+def rebuild_milestone_benchmarks_for_signatures(signatures: Iterable[dict]) -> int:
+    touched = 0
+    unique_signatures = {_milestone_signature_tuple(signature): signature for signature in signatures}
+    for signature in unique_signatures.values():
+        rows = _milestones_for_signature(signature)
+        lookup = {
+            "scope": signature["scope"],
+            "contractor_id": signature.get("contractor_id"),
+            "template_id": signature.get("template_id"),
+            "project_type": signature.get("project_type", ""),
+            "project_subtype": signature.get("project_subtype", ""),
+            "clarification_signature": signature.get("clarification_signature", ""),
+            "normalized_region_key": signature.get("normalized_region_key", ""),
+            "normalized_milestone_type": signature.get("normalized_milestone_type", ""),
+        }
+        if not rows:
+            MilestoneBenchmarkAggregate.objects.filter(**lookup).delete()
+            continue
+        payload = _build_milestone_aggregate_payload(signature, rows)
+        MilestoneBenchmarkAggregate.objects.update_or_create(defaults=payload, **lookup)
+        touched += 1
+    return touched
+
+
+@transaction.atomic
+def rebuild_milestone_benchmarks() -> int:
+    MilestoneBenchmarkAggregate.objects.all().delete()
+    signatures: list[dict] = []
+    for milestone_snapshot in _eligible_milestone_snapshots_qs():
+        signatures.extend(_milestone_signatures(milestone_snapshot.snapshot, milestone_snapshot.normalized_milestone_type))
+    return rebuild_milestone_benchmarks_for_signatures(signatures)
+
+
+def rebuild_milestone_benchmarks_for_snapshot(snapshot: AgreementOutcomeSnapshot) -> int:
+    signatures: list[dict] = []
+    milestone_types = (
+        AgreementOutcomeMilestoneSnapshot.objects.filter(snapshot=snapshot)
+        .values_list("normalized_milestone_type", flat=True)
+    )
+    for milestone_type in milestone_types:
+        signatures.extend(_milestone_signatures(snapshot, milestone_type))
+    return rebuild_milestone_benchmarks_for_signatures(signatures)
+
+
 def capture_agreement_outcome_snapshot(agreement: Agreement | int) -> AgreementOutcomeSnapshot:
     if isinstance(agreement, int):
         agreement = Agreement.objects.select_related(
@@ -563,6 +905,14 @@ def capture_agreement_outcome_snapshot(agreement: Agreement | int) -> AgreementO
     eligible, exclusion_reason = _eligible_for_benchmarks(agreement)
     snapshot = AgreementOutcomeSnapshot.objects.filter(agreement=agreement).first()
     previous_signatures = _snapshot_signatures(snapshot) if snapshot else []
+    previous_milestone_signatures: list[dict] = []
+    if snapshot:
+        previous_milestone_types = (
+            AgreementOutcomeMilestoneSnapshot.objects.filter(snapshot=snapshot)
+            .values_list("normalized_milestone_type", flat=True)
+        )
+        for milestone_type in previous_milestone_types:
+            previous_milestone_signatures.extend(_milestone_signatures(snapshot, milestone_type))
 
     if not eligible:
         if snapshot is None:
@@ -581,6 +931,7 @@ def capture_agreement_outcome_snapshot(agreement: Agreement | int) -> AgreementO
             snapshot.save(update_fields=["excluded_from_benchmarks", "exclusion_reason", "snapshot_updated_at"])
             snapshot.milestones.all().delete()
         rebuild_benchmarks_for_signatures(previous_signatures)
+        rebuild_milestone_benchmarks_for_signatures(previous_milestone_signatures)
         return snapshot
 
     payload, milestone_rows = _build_snapshot_payload(agreement)
@@ -594,6 +945,8 @@ def capture_agreement_outcome_snapshot(agreement: Agreement | int) -> AgreementO
     )
 
     rebuild_benchmarks_for_signatures(previous_signatures + _snapshot_signatures(snapshot))
+    rebuild_milestone_benchmarks_for_signatures(previous_milestone_signatures)
+    rebuild_milestone_benchmarks_for_snapshot(snapshot)
     return snapshot
 
 

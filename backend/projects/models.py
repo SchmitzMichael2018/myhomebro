@@ -2204,6 +2204,7 @@ from .models_amendment_request import AmendmentRequest  # noqa: E402,F401
 from .models_learning import (
     AgreementOutcomeSnapshot,
     AgreementOutcomeMilestoneSnapshot,
+    MilestoneBenchmarkAggregate,
     ProjectBenchmarkAggregate,
 )  # noqa: E402,F401
 from .models_compliance import (

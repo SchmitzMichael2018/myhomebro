@@ -33,6 +33,8 @@ class AgreementOutcomeSnapshot(models.Model):
         on_delete=models.SET_NULL,
         related_name="outcome_snapshots",
     )
+    template_name_snapshot = models.CharField(max_length=255, blank=True, default="")
+    template_benchmark_match_key = models.CharField(max_length=120, blank=True, default="", db_index=True)
 
     project_type = models.CharField(max_length=120, blank=True, default="", db_index=True)
     project_subtype = models.CharField(max_length=120, blank=True, default="")
@@ -62,9 +64,13 @@ class AgreementOutcomeSnapshot(models.Model):
     milestone_count = models.PositiveIntegerField(default=0)
     milestone_summary = models.JSONField(default=dict, blank=True)
     clarification_summary = models.JSONField(default=dict, blank=True)
+    clarification_traits = models.JSONField(default=dict, blank=True)
+    clarification_signature = models.CharField(max_length=64, blank=True, default="", db_index=True)
 
     has_amendments = models.BooleanField(default=False)
     amendment_count = models.PositiveIntegerField(default=0)
+    has_change_orders = models.BooleanField(default=False)
+    change_order_count = models.PositiveIntegerField(default=0)
     has_disputes = models.BooleanField(default=False)
     dispute_count = models.PositiveIntegerField(default=0)
 
@@ -83,6 +89,7 @@ class AgreementOutcomeSnapshot(models.Model):
             models.Index(fields=["template"]),
             models.Index(fields=["contractor"]),
             models.Index(fields=["normalized_region_key"]),
+            models.Index(fields=["project_type", "project_subtype", "clarification_signature"]),
         ]
 
     def __str__(self) -> str:
@@ -110,12 +117,23 @@ class AgreementOutcomeMilestoneSnapshot(models.Model):
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     template_suggested_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     ai_suggested_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    estimated_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    amount_delta_from_estimate = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
 
     start_date = models.DateField(null=True, blank=True)
     completion_date = models.DateField(null=True, blank=True)
     estimated_offset_days = models.PositiveIntegerField(null=True, blank=True)
     estimated_duration_days = models.PositiveIntegerField(null=True, blank=True)
     actual_duration_days = models.PositiveIntegerField(null=True, blank=True)
+    duration_delta_from_estimate = models.IntegerField(null=True, blank=True)
+    has_invoice = models.BooleanField(default=False)
+    invoice_count = models.PositiveIntegerField(default=0)
+    invoiced_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    paid_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    has_dispute = models.BooleanField(default=False)
+    dispute_count = models.PositiveIntegerField(default=0)
+    is_rework = models.BooleanField(default=False)
+    rework_origin_milestone_id = models.IntegerField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -124,6 +142,7 @@ class AgreementOutcomeMilestoneSnapshot(models.Model):
         indexes = [
             models.Index(fields=["snapshot", "sort_order"]),
             models.Index(fields=["normalized_milestone_type"]),
+            models.Index(fields=["has_dispute", "is_rework"]),
         ]
 
     def __str__(self) -> str:
@@ -156,6 +175,8 @@ class ProjectBenchmarkAggregate(models.Model):
 
     project_type = models.CharField(max_length=120, blank=True, default="", db_index=True)
     project_subtype = models.CharField(max_length=120, blank=True, default="")
+    clarification_signature = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    clarification_traits = models.JSONField(default=dict, blank=True)
 
     country = models.CharField(max_length=8, blank=True, default="US")
     state = models.CharField(max_length=64, blank=True, default="")
@@ -165,6 +186,7 @@ class ProjectBenchmarkAggregate(models.Model):
     completed_project_count = models.PositiveIntegerField(default=0)
 
     average_final_total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    average_final_paid_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     median_final_total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     min_final_total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     max_final_total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
@@ -175,9 +197,13 @@ class ProjectBenchmarkAggregate(models.Model):
 
     average_retainage_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     average_retainage_percent = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("0.00"))
+    average_change_order_count = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    average_dispute_count = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
     average_estimate_variance_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     average_estimate_variance_percent = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("0.00"))
     average_duration_variance_days = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    change_order_project_count = models.PositiveIntegerField(default=0)
+    dispute_project_count = models.PositiveIntegerField(default=0)
 
     amount_sample_size = models.PositiveIntegerField(default=0)
     duration_sample_size = models.PositiveIntegerField(default=0)
@@ -191,6 +217,7 @@ class ProjectBenchmarkAggregate(models.Model):
     common_milestone_patterns = models.JSONField(default=list, blank=True)
     metadata = models.JSONField(default=dict, blank=True)
 
+    first_snapshot_completed_date = models.DateField(null=True, blank=True)
     last_snapshot_completed_date = models.DateField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -204,6 +231,7 @@ class ProjectBenchmarkAggregate(models.Model):
                     "template",
                     "project_type",
                     "project_subtype",
+                    "clarification_signature",
                     "normalized_region_key",
                 ],
                 name="uniq_project_benchmark_scope_dimensions",
@@ -214,7 +242,99 @@ class ProjectBenchmarkAggregate(models.Model):
             models.Index(fields=["scope", "normalized_region_key"]),
             models.Index(fields=["scope", "template"]),
             models.Index(fields=["scope", "contractor"]),
+            models.Index(fields=["scope", "project_type", "project_subtype", "clarification_signature"]),
         ]
 
     def __str__(self) -> str:
         return f"ProjectBenchmarkAggregate(scope={self.scope}, type={self.project_type}, subtype={self.project_subtype})"
+
+
+class MilestoneBenchmarkAggregate(models.Model):
+    class Scope(models.TextChoices):
+        GLOBAL = "global", "Global"
+        REGIONAL = "regional", "Regional"
+        TEMPLATE = "template", "Template"
+        CONTRACTOR = "contractor", "Contractor"
+
+    scope = models.CharField(max_length=24, choices=Scope.choices, db_index=True)
+
+    contractor = models.ForeignKey(
+        "projects.Contractor",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="milestone_benchmark_aggregates",
+    )
+    template = models.ForeignKey(
+        "projects.ProjectTemplate",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="milestone_benchmark_aggregates",
+    )
+
+    project_type = models.CharField(max_length=120, blank=True, default="", db_index=True)
+    project_subtype = models.CharField(max_length=120, blank=True, default="")
+    clarification_signature = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    clarification_traits = models.JSONField(default=dict, blank=True)
+    normalized_milestone_type = models.CharField(max_length=128, blank=True, default="", db_index=True)
+
+    country = models.CharField(max_length=8, blank=True, default="US")
+    state = models.CharField(max_length=64, blank=True, default="")
+    city = models.CharField(max_length=128, blank=True, default="")
+    normalized_region_key = models.CharField(max_length=255, blank=True, default="", db_index=True)
+
+    completed_milestone_count = models.PositiveIntegerField(default=0)
+    paid_milestone_count = models.PositiveIntegerField(default=0)
+    disputed_milestone_count = models.PositiveIntegerField(default=0)
+    rework_milestone_count = models.PositiveIntegerField(default=0)
+
+    average_final_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    median_final_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    min_final_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    max_final_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    average_paid_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    average_actual_duration_days = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    median_actual_duration_days = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    average_estimate_variance_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    average_duration_variance_days = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+
+    amount_sample_size = models.PositiveIntegerField(default=0)
+    duration_sample_size = models.PositiveIntegerField(default=0)
+    estimate_variance_sample_size = models.PositiveIntegerField(default=0)
+    duration_variance_sample_size = models.PositiveIntegerField(default=0)
+
+    metadata = models.JSONField(default=dict, blank=True)
+    first_snapshot_completed_date = models.DateField(null=True, blank=True)
+    last_snapshot_completed_date = models.DateField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["scope", "project_type", "project_subtype", "normalized_milestone_type", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "scope",
+                    "contractor",
+                    "template",
+                    "project_type",
+                    "project_subtype",
+                    "clarification_signature",
+                    "normalized_region_key",
+                    "normalized_milestone_type",
+                ],
+                name="uniq_milestone_benchmark_scope_dimensions",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["scope", "project_type", "project_subtype", "normalized_milestone_type"]),
+            models.Index(fields=["scope", "normalized_region_key", "normalized_milestone_type"]),
+            models.Index(fields=["scope", "template", "normalized_milestone_type"]),
+            models.Index(fields=["scope", "contractor", "normalized_milestone_type"]),
+        ]
+
+    def __str__(self) -> str:
+        return (
+            f"MilestoneBenchmarkAggregate(scope={self.scope}, type={self.project_type}, "
+            f"subtype={self.project_subtype}, milestone_type={self.normalized_milestone_type})"
+        )

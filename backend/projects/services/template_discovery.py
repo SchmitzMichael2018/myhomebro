@@ -162,6 +162,7 @@ def attach_template_learning_metrics(templates: Iterable[ProjectTemplate]) -> No
         ProjectBenchmarkAggregate.objects.filter(
             scope=ProjectBenchmarkAggregate.Scope.TEMPLATE,
             template_id__in=template_ids,
+            clarification_signature="",
         )
         .order_by("template_id", "-completed_project_count", "-updated_at")
     )

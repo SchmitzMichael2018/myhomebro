@@ -47,6 +47,7 @@ from projects.models import (
     MilestonePayout,
     MilestonePayoutStatus,
     MaintenanceStatus,
+    MilestoneBenchmarkAggregate,
     Notification,
     Project,
     ProjectBenchmarkAggregate,
@@ -72,6 +73,7 @@ from projects.models_dispute import Dispute
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
 from projects.services.project_learning import (
     capture_agreement_outcome_snapshot,
+    rebuild_milestone_benchmarks,
     rebuild_project_benchmarks,
 )
 from projects.services.benchmark_resolution import resolve_seed_benchmark_defaults
@@ -6539,6 +6541,10 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertEqual(snapshot.final_paid_amount, Decimal("12000.00"))
         self.assertEqual(snapshot.milestone_count, 2)
         self.assertEqual(snapshot.clarification_summary["answered_count"], 2)
+        self.assertEqual(snapshot.clarification_traits["cabinet_supplier"], "owner_supplied")
+        self.assertTrue(snapshot.clarification_signature)
+        self.assertFalse(snapshot.has_change_orders)
+        self.assertEqual(snapshot.change_order_count, 0)
         self.assertEqual(snapshot.milestones.count(), 2)
 
     def test_snapshot_capture_is_idempotent_for_repeated_completion(self):
@@ -6564,6 +6570,25 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertIn("cancelled", snapshot.exclusion_reason.lower())
         rebuild_project_benchmarks()
         self.assertEqual(ProjectBenchmarkAggregate.objects.count(), 0)
+
+    def test_snapshot_marks_change_orders_and_disputes(self):
+        agreement = self._create_completed_agreement(status=ProjectStatus.COMPLETED)
+        agreement.amendment_number = 1
+        agreement.save(update_fields=["amendment_number"])
+        Dispute.objects.create(
+            agreement=agreement,
+            milestone=agreement.milestones.first(),
+            initiator="homeowner",
+            reason="Finish concern",
+            status="open",
+        )
+
+        snapshot = capture_agreement_outcome_snapshot(agreement)
+
+        self.assertTrue(snapshot.has_change_orders)
+        self.assertEqual(snapshot.change_order_count, 1)
+        self.assertTrue(snapshot.has_disputes)
+        self.assertEqual(snapshot.dispute_count, 1)
 
     def test_aggregate_rebuild_produces_expected_metrics(self):
         agreement_one = self._create_completed_agreement(
@@ -6625,7 +6650,42 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertEqual(len(child_rows), 2)
         self.assertEqual(child_rows[0].normalized_milestone_type, "demolition")
         self.assertEqual(child_rows[1].normalized_milestone_type, "cabinet_installation")
+        self.assertEqual(child_rows[0].paid_amount, Decimal("4000.00"))
+        self.assertEqual(child_rows[1].paid_amount, Decimal("8000.00"))
+        self.assertEqual(child_rows[0].amount_delta_from_estimate, Decimal("1000.00"))
+        self.assertEqual(child_rows[1].amount_delta_from_estimate, Decimal("2000.00"))
         self.assertEqual(snapshot.milestone_summary["pattern_key"], "demolition > cabinet_installation")
+
+    def test_clarification_specific_and_milestone_aggregates_are_created(self):
+        agreement = self._create_completed_agreement(status=ProjectStatus.COMPLETED)
+        snapshot = capture_agreement_outcome_snapshot(agreement)
+
+        rebuild_project_benchmarks()
+        rebuild_milestone_benchmarks()
+
+        clarification_aggregate = ProjectBenchmarkAggregate.objects.get(
+            scope=ProjectBenchmarkAggregate.Scope.TEMPLATE,
+            template=self.template,
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            clarification_signature=snapshot.clarification_signature,
+        )
+        self.assertEqual(clarification_aggregate.completed_project_count, 1)
+        self.assertEqual(clarification_aggregate.clarification_traits["cabinet_supplier"], "owner_supplied")
+        self.assertEqual(clarification_aggregate.average_final_paid_amount, Decimal("12000.00"))
+
+        milestone_aggregate = MilestoneBenchmarkAggregate.objects.get(
+            scope=MilestoneBenchmarkAggregate.Scope.TEMPLATE,
+            template=self.template,
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            normalized_milestone_type="demolition",
+            clarification_signature=snapshot.clarification_signature,
+        )
+        self.assertEqual(milestone_aggregate.completed_milestone_count, 1)
+        self.assertEqual(milestone_aggregate.paid_milestone_count, 1)
+        self.assertEqual(milestone_aggregate.average_final_amount, Decimal("4000.00"))
+        self.assertEqual(milestone_aggregate.average_paid_amount, Decimal("4000.00"))
 
 
 class SeededBenchmarkFoundationTests(TestCase):

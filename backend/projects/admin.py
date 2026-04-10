@@ -27,6 +27,7 @@ try:
         AgreementAmendment,
         AgreementOutcomeSnapshot,
         AgreementOutcomeMilestoneSnapshot,
+        MilestoneBenchmarkAggregate,
         ProjectBenchmarkAggregate,
     )
 except Exception:  # pragma: no cover
@@ -35,7 +36,7 @@ except Exception:  # pragma: no cover
     Milestone = MilestoneFile = MilestoneComment = None
     PublicContractorLead = None
     Invoice = Expense = AgreementAmendment = None
-    AgreementOutcomeSnapshot = AgreementOutcomeMilestoneSnapshot = ProjectBenchmarkAggregate = None
+    AgreementOutcomeSnapshot = AgreementOutcomeMilestoneSnapshot = MilestoneBenchmarkAggregate = ProjectBenchmarkAggregate = None
 
 # Optional/independent models (guarded with try so admin doesn’t break)
 try:
@@ -982,6 +983,35 @@ if ProjectBenchmarkAggregate is not None:
         search_fields = (
             "project_type",
             "project_subtype",
+            "normalized_region_key",
+            "template__name",
+            "contractor__business_name",
+        )
+        readonly_fields = ("updated_at",)
+
+
+if MilestoneBenchmarkAggregate is not None:
+    @admin.register(MilestoneBenchmarkAggregate)
+    class MilestoneBenchmarkAggregateAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "scope",
+            "project_type",
+            "project_subtype",
+            "normalized_milestone_type",
+            "normalized_region_key",
+            "template",
+            "contractor",
+            "completed_milestone_count",
+            "average_final_amount",
+            "average_actual_duration_days",
+            "updated_at",
+        )
+        list_filter = ("scope", "project_type", "project_subtype", "normalized_milestone_type")
+        search_fields = (
+            "project_type",
+            "project_subtype",
+            "normalized_milestone_type",
             "normalized_region_key",
             "template__name",
             "contractor__business_name",
