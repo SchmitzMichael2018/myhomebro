@@ -634,7 +634,7 @@ def _insert_milestone_row(rows: List[Dict[str, Any]], index: int, row: Dict[str,
 
 @lru_cache(maxsize=1)
 def _milestone_shaping_rules() -> Dict[str, Any]:
-    rules_path = Path(__file__).resolve().parents[3] / "frontend" / "src" / "lib" / "milestone_shaping_rules.json"
+    rules_path = Path(__file__).resolve().parents[3] / "shared" / "milestone_shaping_rules.json"
     with rules_path.open("r", encoding="utf-8") as fh:
         return json.load(fh)
 

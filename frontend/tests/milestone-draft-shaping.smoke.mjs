@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {
   buildClarificationAwareMilestoneDraft,
 } from '../src/lib/milestoneDraftShaping.js';
-import rules from '../src/lib/milestone_shaping_rules.json' with { type: 'json' };
+import rules from '../../shared/milestone_shaping_rules.json' with { type: 'json' };
 
 function titles(rows) {
   return rows.map((row) => row.title);

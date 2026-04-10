@@ -1,4 +1,4 @@
-import rules from "./milestone_shaping_rules.json" with { type: "json" };
+import rules from "../../../shared/milestone_shaping_rules.json" with { type: "json" };
 
 function safeStr(value) {
   return value == null ? "" : String(value).trim();

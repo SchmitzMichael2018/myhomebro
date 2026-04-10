@@ -242,7 +242,7 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
         return fake_client
 
     def _shared_shaping_rules(self):
-        rules_path = Path(__file__).resolve().parents[2] / "frontend" / "src" / "lib" / "milestone_shaping_rules.json"
+        rules_path = Path(__file__).resolve().parents[2] / "shared" / "milestone_shaping_rules.json"
         with rules_path.open("r", encoding="utf-8") as fh:
             return json.load(fh)
 
