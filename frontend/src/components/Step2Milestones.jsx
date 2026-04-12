@@ -124,6 +124,10 @@ function safeStr(v) {
   return (v == null ? "" : String(v)).trim();
 }
 
+function normalizeProjectClass(value) {
+  return safeStr(value).toLowerCase() === "commercial" ? "commercial" : "residential";
+}
+
 function formatCurrency(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return "";
@@ -185,6 +189,10 @@ function formatPercent(value, digits = 0) {
   const n = Number(value);
   if (!Number.isFinite(n)) return "";
   return `${(n * 100).toFixed(digits)}%`;
+}
+
+function projectClassLabel(value) {
+  return normalizeProjectClass(value) === "commercial" ? "Commercial" : "Residential";
 }
 
 function estimateWeightLabel(raw) {
@@ -1126,8 +1134,99 @@ export default function Step2Milestones({
 
   const selectedTemplateMeta = useMemo(() => deriveSelectedTemplateMeta(agreementMeta), [agreementMeta]);
   const templateApplied = !!selectedTemplateMeta;
+  const projectClass = normalizeProjectClass(agreementMeta?.project_class);
+  const isCommercialProject = projectClass === "commercial";
+  const isResidentialProject = !isCommercialProject;
   const paymentStructure = String(agreementMeta?.payment_structure || "simple").trim().toLowerCase();
   const isProgressPayments = paymentStructure === "progress";
+  const step2ModeMeta = useMemo(() => {
+    const aiPlanningActive =
+      Boolean(aiChangeSummary) ||
+      Boolean(assistantGuidedFlow?.guided_question) ||
+      assistantProactiveRecommendations.length > 0 ||
+      assistantPredictiveInsights.length > 0 ||
+      assistantSuggestionRows.length > 0 ||
+      showAssistantMilestoneSuggestions ||
+      hasStagedSuggestedAmountChanges ||
+      hasStagedSuggestedTimelineChanges ||
+      Boolean(estimatePreview);
+
+    if (isCommercialProject) {
+      return {
+        pathLabel: "Commercial",
+        workspaceEyebrow: "Structured planning",
+        workspaceTitle: "Commercial Schedule Builder",
+        workspaceDescription:
+          "Build the schedule of values, sequencing, and pricing plan you want the project team to work from.",
+        aiEntryTitle: aiPlanningActive ? "Refine commercial schedule with AI" : "Plan commercial schedule with AI",
+        aiEntryDescription:
+          "Use current scope, pricing, clarifications, and benchmark context to shape a professional milestone schedule.",
+        contextDescription:
+          "Contract context that shapes the schedule of values, sequencing, and commercial pricing guidance.",
+        planningDetailsDescription:
+          "Clarifications, AI reasoning, and secondary planning guidance for this commercial job.",
+        controlsDescription:
+          "Keep the focus on schedule of values, sequencing, pricing guidance, and what should be saved next.",
+        estimateTitle: "Commercial Estimate Summary",
+        estimateDescription:
+          "Benchmark and template guidance for commercial pricing, sequencing, and payment-schedule planning.",
+        budgetDescription:
+          "Enter a planning contract value to translate schedule shares into advisory commercial dollar targets. This will not overwrite milestone values.",
+        timelineLabel: "Schedule window",
+        pricingColumnLabel: "Schedule guidance",
+        amountLabel: isProgressPayments ? "Scheduled Value" : "Contract Value",
+        progressPanelTitle: "Progress Payments",
+        progressPanelBody:
+          "Milestones act as your schedule of values. Use the suggested shares, durations, and sequencing here to prepare for draw requests after signing.",
+        simplePanelTitle: "Commercial milestone planning",
+        simplePanelBody:
+          "These milestones still support a structured commercial workflow even when you stay on simple milestone billing.",
+      };
+    }
+
+    return {
+      pathLabel: "Residential",
+      workspaceEyebrow: "Simple planning",
+      workspaceTitle: "Residential Milestone Planner",
+      workspaceDescription:
+        "Keep the plan easy to review with homeowner-friendly milestones, pricing, and timing.",
+      aiEntryTitle: aiPlanningActive ? "Refine milestone plan with AI" : "Plan milestones with AI",
+      aiEntryDescription:
+        "Use current pricing, template, and clarification context to keep milestone work moving.",
+      contextDescription:
+        "Grounding details that shape milestone planning and pricing for this homeowner-facing project.",
+      planningDetailsDescription:
+        "Clarifications, AI reasoning, and secondary planning guidance for this residential job.",
+      controlsDescription:
+        "Keep the focus on milestone pricing, schedule, and the edits you want to save next.",
+      estimateTitle: "Residential Estimate Summary",
+      estimateDescription:
+        "Pricing and timeline guidance to help you shape a clear, homeowner-friendly milestone plan.",
+      budgetDescription:
+        "Enter a planning budget to convert milestone guidance into advisory dollar suggestions. This will not overwrite milestone amounts.",
+      timelineLabel: "Project window",
+      pricingColumnLabel: "Estimate Assist",
+      amountLabel: "Amount",
+      progressPanelTitle: "Structured payment planning",
+      progressPanelBody:
+        "This residential agreement is using progress payments. Keep milestones clear and customer-friendly while using them for draw planning after signing.",
+      simplePanelTitle: "Simple milestone planning",
+      simplePanelBody:
+        "Keep milestones straightforward so the homeowner can easily understand the order of work and when payments are expected.",
+    };
+  }, [
+    aiChangeSummary,
+    assistantGuidedFlow,
+    assistantPredictiveInsights.length,
+    assistantProactiveRecommendations.length,
+    assistantSuggestionRows.length,
+    estimatePreview,
+    hasStagedSuggestedAmountChanges,
+    hasStagedSuggestedTimelineChanges,
+    isCommercialProject,
+    isProgressPayments,
+    showAssistantMilestoneSuggestions,
+  ]);
   const projectContextSummary = useMemo(() => {
     const agreementAnswers = agreementMeta?.ai_scope?.answers || {};
     const projectType =
@@ -1413,6 +1512,9 @@ export default function Step2Milestones({
         idx,
         suggestion,
         weight:
+          (isCommercialProject && Number.isFinite(fallbackWeight) && fallbackWeight > 0
+            ? fallbackWeight
+            : null) ??
           (Number.isFinite(suggestedAmount) && suggestedAmount > 0 ? suggestedAmount : null) ??
           (Number.isFinite(fallbackWeight) && fallbackWeight > 0 ? fallbackWeight : 1),
         suggestedAmount: Number.isFinite(suggestedAmount) && suggestedAmount > 0 ? suggestedAmount : null,
@@ -1431,7 +1533,7 @@ export default function Step2Milestones({
       });
     });
     return map;
-  }, [effectiveMilestones, estimateBudgetValue, estimateSuggestions]);
+  }, [effectiveMilestones, estimateBudgetValue, estimateSuggestions, isCommercialProject]);
   const hasPlanningDetails =
     Boolean(assistantGuidedFlow?.guided_question) ||
     assistantProactiveRecommendations.length > 0 ||
@@ -2350,6 +2452,8 @@ export default function Step2Milestones({
           agreementMeta?.homeowner_name ||
           agreementMeta?.customer_name ||
           "",
+        project_class: projectClass,
+        payment_structure: agreementMeta?.payment_structure || "simple",
         milestone_count: effectiveMilestones.length,
         pending_clarifications: Array.isArray(mergedClarificationQuestions)
           ? mergedClarificationQuestions
@@ -2378,6 +2482,8 @@ export default function Step2Milestones({
           project_title: agreementMeta?.project_title || agreementMeta?.title || "",
           description: agreementMeta?.description || agreementMeta?.project_description || "",
           payment_mode: agreementMeta?.payment_mode || "",
+          project_class: projectClass,
+          payment_structure: agreementMeta?.payment_structure || "simple",
         },
         milestones: effectiveMilestones,
         aiUpdateFeedback: aiChangeSummary,
@@ -2387,7 +2493,7 @@ export default function Step2Milestones({
           null,
       }),
     }),
-    [agreementId, agreementMeta, effectiveMilestones, mergedClarificationQuestions, aiChangeSummary]
+    [agreementId, agreementMeta, effectiveMilestones, mergedClarificationQuestions, aiChangeSummary, projectClass]
   );
 
   async function handleAssistantAction(plan) {
@@ -2453,6 +2559,66 @@ export default function Step2Milestones({
 
   return (
     <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section
+        className={`rounded-2xl border px-4 py-4 shadow-sm ${
+          isCommercialProject
+            ? "border-slate-300 bg-gradient-to-br from-slate-50 via-white to-blue-50/50"
+            : "border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-sky-50/40"
+        }`}
+        data-testid="step2-workflow-panel"
+      >
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-3xl">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+              {step2ModeMeta.workspaceEyebrow}
+            </div>
+            <h3 className="mt-1 text-xl font-semibold text-slate-950">{step2ModeMeta.workspaceTitle}</h3>
+            <p className="mt-2 text-sm text-slate-600">{step2ModeMeta.workspaceDescription}</p>
+          </div>
+          <div className="grid min-w-[280px] grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Project path</div>
+              <div className="mt-1 text-sm font-semibold text-slate-900" data-testid="step2-project-class-label">
+                {projectClassLabel(projectClass)}
+              </div>
+              <div className="mt-1 text-xs text-slate-600">
+                {isCommercialProject ? "Structured workflow" : "Homeowner-friendly workflow"}
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                {step2ModeMeta.timelineLabel}
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                {minStart && maxEnd ? `${friendly(minStart)} → ${friendly(maxEnd)}` : "Add dates to map timing"}
+              </div>
+              <div className="mt-1 text-xs text-slate-600">
+                {effectiveMilestones.length} milestone{effectiveMilestones.length === 1 ? "" : "s"} planned
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                {isCommercialProject ? "Billing structure" : "Planning style"}
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">
+                {isProgressPayments
+                  ? "Progress-payment aware"
+                  : isCommercialProject
+                  ? "Commercial milestone billing"
+                  : "Simple milestone billing"}
+              </div>
+              <div className="mt-1 text-xs text-slate-600">
+                {isProgressPayments
+                  ? "Supports draw-request planning after signing."
+                  : isCommercialProject
+                  ? "Keeps commercial milestones structured without draw schedules."
+                  : "Designed to stay easy for customers to follow."}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {milestonesLocked ? (
         <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <div className="font-semibold">Locked</div>
@@ -2466,12 +2632,12 @@ export default function Step2Milestones({
         <details className="mb-3 rounded-xl border border-slate-200 bg-slate-50/80 shadow-sm">
           <summary className="cursor-pointer list-none px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-slate-900">Project context</div>
-                <div className="mt-1 text-xs text-slate-600">
-                  Grounding details that shape milestone planning and pricing.
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Project context</div>
+                  <div className="mt-1 text-xs text-slate-600">
+                  {step2ModeMeta.contextDescription}
+                  </div>
                 </div>
-              </div>
               <div className="flex flex-wrap items-center gap-2">
                 {isAiPlanningMode ? (
                   <span className="rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
@@ -2567,8 +2733,8 @@ export default function Step2Milestones({
       <StartWithAIEntry
         className=""
         testId="milestones-ai-entry"
-        title={isAiPlanningMode ? "Refine milestone plan with AI" : "Plan milestones with AI"}
-        description="Use current pricing, template, and clarification context to keep milestone work moving."
+        title={step2ModeMeta.aiEntryTitle}
+        description={step2ModeMeta.aiEntryDescription}
         context={assistantContext}
         onAction={handleAssistantAction}
       />
@@ -2597,7 +2763,7 @@ export default function Step2Milestones({
               <div>
                 <div className="text-sm font-semibold text-slate-900">Planning details</div>
                 <div className="mt-1 text-xs text-slate-600">
-                  Clarifications, AI reasoning, and secondary planning guidance.
+                  {step2ModeMeta.planningDetailsDescription}
                 </div>
               </div>
               <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
@@ -2710,15 +2876,15 @@ export default function Step2Milestones({
       <div className="mt-6 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-indigo-700">
-            Primary workspace
+            {step2ModeMeta.workspaceEyebrow}
           </div>
-          <h3 className="mt-1 text-xl font-semibold text-slate-950">Milestone Editor</h3>
+          <h3 className="mt-1 text-xl font-semibold text-slate-950">{step2ModeMeta.workspaceTitle}</h3>
           <div className="mt-1 text-sm text-slate-600">
-            Add milestones, confirm pricing, and refine the current plan before you continue.
+            {step2ModeMeta.workspaceDescription}
           </div>
         </div>
         <div className="text-sm text-gray-600">
-          Schedule:{" "}
+          {step2ModeMeta.timelineLabel}:{" "}
           {minStart && maxEnd ? (
             <span className="rounded-full bg-slate-100 px-3 py-1 font-medium text-slate-700">
               {friendly(minStart)} → {friendly(maxEnd)} (est.)
@@ -2733,7 +2899,7 @@ export default function Step2Milestones({
         <div className="mb-3">
           <h4 className="text-sm font-semibold text-slate-900">Planning controls</h4>
           <p className="mt-1 text-[12px] text-slate-600">
-            Keep the focus on milestone pricing, schedule, and the edits you want to save next.
+            {step2ModeMeta.controlsDescription}
           </p>
         </div>
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -2780,7 +2946,9 @@ export default function Step2Milestones({
 
             {pricingEstimateStale ? (
               <span className="text-xs text-amber-700">
-                Pricing inputs changed. Refresh pricing guidance before you lock in milestone amounts.
+                {isCommercialProject
+                  ? "Pricing inputs changed. Refresh guidance before you lock in the schedule of values."
+                  : "Pricing inputs changed. Refresh pricing guidance before you lock in milestone amounts."}
               </span>
             ) : null}
 
@@ -2865,9 +3033,17 @@ export default function Step2Milestones({
           <div className="px-4 py-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div className="max-w-3xl">
-                <div className="text-sm font-semibold text-slate-900">Estimate Summary</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-sm font-semibold text-slate-900">{step2ModeMeta.estimateTitle}</div>
+                  <span
+                    className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600"
+                    data-testid="step2-estimate-mode-badge"
+                  >
+                    {projectClassLabel(projectClass)}
+                  </span>
+                </div>
                 <div className="mt-1 text-sm text-slate-600">
-                  {estimateSummaryMeta?.explanation || "Pricing and timeline guidance based on current project details."}
+                  {estimateSummaryMeta?.explanation || step2ModeMeta.estimateDescription}
                 </div>
                 {estimateBanner ? (
                   <div
@@ -2968,7 +3144,7 @@ export default function Step2Milestones({
                 <div>
                   <div className="text-sm font-semibold text-slate-900">Optional Project Budget</div>
                   <div className="mt-1 text-xs text-slate-600">
-                    Enter a planning budget to convert milestone shares into advisory dollar suggestions. This will not overwrite milestone amounts.
+                    {step2ModeMeta.budgetDescription}
                   </div>
                 </div>
                 <div className="w-full max-w-xs">
@@ -3004,7 +3180,9 @@ export default function Step2Milestones({
                       Learned job data: <span className="font-semibold text-slate-900">{estimateSummaryMeta?.learnedWeight}</span>
                     </div>
                     <div className="mt-2 text-xs text-slate-600">
-                      Learned data influences the estimate only when matching benchmark rows are available.
+                      {isCommercialProject
+                        ? "Learned data only shifts commercial guidance when similar completed jobs are available."
+                        : "Learned data influences the estimate only when matching benchmark rows are available."}
                     </div>
                   </div>
 
@@ -3048,7 +3226,9 @@ export default function Step2Milestones({
                     <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Range variability</div>
                     <div className="mt-2 text-sm text-slate-700">{estimateSummaryMeta?.variabilityMessage}</div>
                     <div className="mt-2 text-xs text-slate-600">
-                      Estimates remain advisory so you can adjust milestone scope, pricing, and timing freely.
+                      {isCommercialProject
+                        ? "Guidance stays advisory so you can refine the schedule of values, sequencing, and pricing freely."
+                        : "Estimates remain advisory so you can adjust milestone scope, pricing, and timing freely."}
                     </div>
                   </div>
                 </div>
@@ -3271,9 +3451,13 @@ export default function Step2Milestones({
 
       <section className="rounded-3xl border border-slate-300 bg-white p-5 shadow-md ring-1 ring-slate-100">
       <div className="mb-4">
-        <h4 className="text-base font-semibold text-slate-950">Add or edit milestones</h4>
+        <h4 className="text-base font-semibold text-slate-950">
+          {isCommercialProject ? "Add or edit schedule items" : "Add or edit milestones"}
+        </h4>
         <p className="mt-1 text-sm text-slate-600">
-          Keep milestone editing as the primary task here. Save staged changes only after you review pricing and dates.
+          {isCommercialProject
+            ? "Keep the schedule of values and sequencing accurate here. Save staged changes only after you review pricing and dates."
+            : "Keep milestone editing as the primary task here. Save staged changes only after you review pricing and dates."}
         </p>
       </div>
 
@@ -3307,7 +3491,7 @@ export default function Step2Milestones({
           min="0.01"
           step="0.01"
           className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
-          placeholder={isProgressPayments ? "Scheduled Value" : "Amount"}
+          placeholder={step2ModeMeta.amountLabel}
           name="amount"
           value={mLocal.amount}
           onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
@@ -3337,16 +3521,17 @@ export default function Step2Milestones({
           className="rounded-xl bg-indigo-600 px-3 py-2 text-sm text-white hover:bg-indigo-700 disabled:opacity-60"
           disabled={milestonesLocked}
         >
-          + Add Milestone
+          {isCommercialProject ? "+ Add Schedule Item" : "+ Add Milestone"}
         </button>
       </div>
 
-      {isProgressPayments ? (
+      {isProgressPayments || isCommercialProject ? (
         <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 text-sm text-indigo-900">
-          <div className="font-semibold">Progress Payments</div>
+          <div className="font-semibold">
+            {isProgressPayments ? step2ModeMeta.progressPanelTitle : step2ModeMeta.simplePanelTitle}
+          </div>
           <div className="mt-1">
-            Milestones stay as your schedule of values. Percent complete, earned amount, and remaining balance are
-            shown here for draw-request planning after signing.
+            {isProgressPayments ? step2ModeMeta.progressPanelBody : step2ModeMeta.simplePanelBody}
           </div>
         </div>
       ) : null}
@@ -3360,10 +3545,10 @@ export default function Step2Milestones({
               <th>Description</th>
               <th>Start</th>
               <th>Due</th>
-              <th>Amount</th>
+              <th>{step2ModeMeta.amountLabel}</th>
               <th>
                 <div className="flex items-center gap-2">
-                  <span>Estimate Assist</span>
+                  <span>{step2ModeMeta.pricingColumnLabel}</span>
                   {pricingEstimateStale ? (
                     <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
                       Stale
@@ -3498,12 +3683,14 @@ export default function Step2Milestones({
                         ) : null}
 
                         {estimate.durationLabel ? (
-                          <div className="text-gray-600">Est. duration: {estimate.durationLabel}</div>
+                          <div className="text-gray-600">
+                            {isCommercialProject ? "Planned duration" : "Est. duration"}: {estimate.durationLabel}
+                          </div>
                         ) : null}
 
                         {projectEstimateGuidance?.share ? (
                           <div className="text-gray-600">
-                            Suggested share:{" "}
+                            {isCommercialProject ? "Schedule share" : "Suggested share"}:{" "}
                             <span className="font-medium text-gray-800">
                               {formatPercent(projectEstimateGuidance.share)}
                             </span>
@@ -3512,7 +3699,7 @@ export default function Step2Milestones({
 
                         {estimateBudgetValue && Number.isFinite(projectEstimateGuidance?.budgetSuggestion) ? (
                           <div className="text-gray-600">
-                            At entered budget:{" "}
+                            {isCommercialProject ? "At contract value" : "At entered budget"}:{" "}
                             <span className="font-medium text-gray-800">
                               {formatCurrency(projectEstimateGuidance.budgetSuggestion)}
                             </span>
