@@ -28,6 +28,7 @@ import {
   safeTrim,
   computeCustomerAddressMissing,
   normalizePaymentMode,
+  normalizeProjectClass,
   normalizePaymentStructure,
   extractAiCredits,
   isAgreementLocked,
@@ -850,6 +851,16 @@ export default function Step1Details({
   }, [isNewAgreement]);
 
   useEffect(() => {
+    const normalized = normalizeProjectClass(dLocal?.project_class);
+    if (!safeTrim(dLocal?.project_class)) {
+      setDLocal((s) => ({ ...s, project_class: normalized }));
+      if (!isNewAgreement) {
+        writeCache({ project_class: normalized });
+      }
+    }
+  }, [agreementId, isNewAgreement, dLocal?.project_class, setDLocal]);
+
+  useEffect(() => {
     const normalized = normalizePaymentMode(dLocal?.payment_mode);
     if (!safeTrim(dLocal?.payment_mode)) {
       setDLocal((s) => ({ ...s, payment_mode: normalized }));
@@ -880,6 +891,9 @@ export default function Step1Details({
       setDLocal((prev) => {
         const next = { ...prev };
 
+        if (!safeTrim(next.project_class) && safeTrim(saved.project_class)) {
+          next.project_class = saved.project_class;
+        }
         if (!safeTrim(next.payment_mode) && safeTrim(saved.payment_mode)) {
           next.payment_mode = saved.payment_mode;
         }
@@ -1267,6 +1281,8 @@ export default function Step1Details({
   }
 
   const paymentStructure = normalizePaymentStructure(dLocal?.payment_structure);
+  const projectClass = normalizeProjectClass(dLocal?.project_class);
+  const isCommercialProject = projectClass === "commercial";
   const retainagePercent = safeTrim(dLocal?.retainage_percent) || "0.00";
   const agreementMode = safeTrim(dLocal?.agreement_mode) || "standard";
   const isMaintenanceMode = agreementMode === "maintenance";
@@ -1285,6 +1301,7 @@ export default function Step1Details({
 
   async function handlePaymentStructureChange(nextMode) {
     if (locked) return;
+    if (!isCommercialProject && nextMode === "progress") return;
 
     const normalized = normalizePaymentStructure(nextMode);
     if (normalized === paymentStructure) return;
@@ -1328,6 +1345,61 @@ export default function Step1Details({
         });
       }
       toast.error(formatApiError(e, "Could not update payment structure."));
+    }
+  }
+
+  async function handleProjectClassChange(nextClass) {
+    if (locked) return;
+
+    const normalized = normalizeProjectClass(nextClass);
+    if (normalized === projectClass) return;
+
+    const nextPaymentStructure = normalized === "commercial" ? paymentStructure : "simple";
+    const nextRetainage = normalized === "commercial" && nextPaymentStructure === "progress"
+      ? retainagePercent || "0.00"
+      : "0.00";
+
+    const previousProjectClass = projectClass;
+    const previousPaymentStructure = paymentStructure;
+    const previousRetainage = retainagePercent || "0.00";
+
+    setDLocal((s) => ({
+      ...s,
+      project_class: normalized,
+      payment_structure: nextPaymentStructure,
+      retainage_percent: nextRetainage,
+    }));
+    if (!isNewAgreement) {
+      writeCache({
+        project_class: normalized,
+        payment_structure: nextPaymentStructure,
+        retainage_percent: nextRetainage,
+      });
+    }
+
+    if (!agreementId) return;
+
+    try {
+      await api.patch(`/projects/agreements/${agreementId}/`, {
+        project_class: normalized,
+        payment_structure: nextPaymentStructure,
+        retainage_percent: nextRetainage,
+      });
+    } catch (e) {
+      setDLocal((s) => ({
+        ...s,
+        project_class: previousProjectClass,
+        payment_structure: previousPaymentStructure,
+        retainage_percent: previousRetainage,
+      }));
+      if (!isNewAgreement) {
+        writeCache({
+          project_class: previousProjectClass,
+          payment_structure: previousPaymentStructure,
+          retainage_percent: previousRetainage,
+        });
+      }
+      toast.error(formatApiError(e, "Could not update the project workflow."));
     }
   }
 
@@ -1596,6 +1668,7 @@ export default function Step1Details({
     setDLocal((prev) => ({
       ...prev,
       project_title: nextProjectTitle,
+      project_class: normalizeProjectClass(nextAgreement.project_class ?? prev.project_class),
       project_type:
         nextAgreement.project_type ?? nextAgreement.projectType ?? prev.project_type ?? "",
       project_subtype:
@@ -1639,6 +1712,7 @@ export default function Step1Details({
 
     if (!isNewAgreement) {
       writeCache({
+        project_class: normalizeProjectClass(nextAgreement.project_class ?? dLocal?.project_class),
         description: nextAgreement.description ?? dLocal?.description ?? "",
         payment_mode:
           normalizePaymentMode(
@@ -3533,6 +3607,56 @@ export default function Step1Details({
             </div>
           </StepSection>
             <StepSection
+              title="Project Path"
+              description="Choose the workflow that matches the job. Residential stays simpler for homeowner-facing work, while Commercial unlocks structured billing tools."
+              className={supportSectionClass}
+              highlighted={hasAiSectionHighlight("project_class")}
+            >
+              <div className="grid gap-3 md:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => handleProjectClassChange("residential")}
+                  disabled={locked}
+                  data-testid="agreement-project-class-residential"
+                  className={`rounded-2xl border px-4 py-4 text-left transition ${
+                    projectClass === "residential"
+                      ? "border-indigo-300 bg-indigo-50"
+                      : "border-slate-200 bg-white hover:bg-slate-50"
+                  } disabled:opacity-60`}
+                >
+                  <div className="text-sm font-semibold text-slate-900">Residential</div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    Homeowner-friendly setup with simple pricing, milestone payments, and fewer advanced controls.
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleProjectClassChange("commercial")}
+                  disabled={locked}
+                  data-testid="agreement-project-class-commercial"
+                  className={`rounded-2xl border px-4 py-4 text-left transition ${
+                    projectClass === "commercial"
+                      ? "border-indigo-300 bg-indigo-50"
+                      : "border-slate-200 bg-white hover:bg-slate-50"
+                  } disabled:opacity-60`}
+                >
+                  <div className="text-sm font-semibold text-slate-900">Commercial</div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    Structured workflow for draws, retainage, and future bid or proposal handoff.
+                  </div>
+                </button>
+              </div>
+              <div
+                className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700"
+                data-testid="agreement-project-class-summary"
+              >
+                {isCommercialProject
+                  ? "Commercial agreements can use simple milestones or progress payments with retainage."
+                  : "Residential agreements stay on the simpler milestone-payment path and hide commercial billing tools."}
+              </div>
+            </StepSection>
+
+            <StepSection
               title="Customer"
               description="Select the customer for this agreement, or add one quickly if you need to keep moving."
               className={supportSectionClass}
@@ -3594,14 +3718,20 @@ export default function Step1Details({
 
             <StepSection
               title="Payment Timing"
-              description="Choose when payments happen. You can confirm escrow versus direct pay during final review once pricing is complete."
+              description={
+                isCommercialProject
+                  ? "Choose the billing structure for this commercial agreement. You can confirm escrow versus direct pay during final review."
+                  : "Residential agreements keep payment timing simple. Escrow versus direct pay is still confirmed during final review."
+              }
               className={supportSectionClass}
               highlighted={hasAiSectionHighlight("payment_structure", "retainage_percent")}
             >
               <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="text-sm font-semibold text-slate-900">Payment Structure</div>
                 <div className="mt-1 text-sm text-slate-600">
-                  Pick the timing model that fits how this project will be billed.
+                  {isCommercialProject
+                    ? "Pick the timing model that fits how this commercial project will be billed."
+                    : "Residential projects use simple milestone payments to keep the agreement clearer for homeowners."}
                 </div>
 
                 <div className="mt-4 grid gap-3">
@@ -3609,36 +3739,53 @@ export default function Step1Details({
                     type="button"
                     onClick={() => handlePaymentStructureChange("simple")}
                     disabled={locked}
+                    data-testid="agreement-payment-structure-simple"
                     className={`rounded-xl border px-4 py-3 text-left transition ${
                       paymentStructure === "simple"
                         ? "border-indigo-300 bg-indigo-50"
                         : "border-slate-200 bg-white hover:bg-slate-50"
                     } disabled:opacity-60`}
                   >
-                    <div className="font-semibold text-slate-900">Simple Payments</div>
+                    <div className="font-semibold text-slate-900">
+                      {isCommercialProject ? "Simple Milestone Payments" : "Simple Payments"}
+                    </div>
                     <div className="mt-1 text-sm text-slate-600">
-                      Get paid when milestones are completed.
+                      {isCommercialProject
+                        ? "Use straightforward milestone billing without draw schedules."
+                        : "Get paid when milestones are completed."}
                     </div>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => handlePaymentStructureChange("progress")}
-                    disabled={locked}
-                    className={`rounded-xl border px-4 py-3 text-left transition ${
-                      paymentStructure === "progress"
-                        ? "border-indigo-300 bg-indigo-50"
-                        : "border-slate-200 bg-white hover:bg-slate-50"
-                    } disabled:opacity-60`}
-                  >
-                    <div className="font-semibold text-slate-900">Progress Payments</div>
-                    <div className="mt-1 text-sm text-slate-600">
-                      Use draw requests and retainage once the agreement is signed.
-                    </div>
-                  </button>
+                  {isCommercialProject ? (
+                    <button
+                      type="button"
+                      onClick={() => handlePaymentStructureChange("progress")}
+                      disabled={locked}
+                      data-testid="agreement-payment-structure-progress"
+                      className={`rounded-xl border px-4 py-3 text-left transition ${
+                        paymentStructure === "progress"
+                          ? "border-indigo-300 bg-indigo-50"
+                          : "border-slate-200 bg-white hover:bg-slate-50"
+                      } disabled:opacity-60`}
+                    >
+                      <div className="font-semibold text-slate-900">Progress Payments</div>
+                      <div className="mt-1 text-sm text-slate-600">
+                        Use draw requests and retainage once the agreement is signed.
+                      </div>
+                    </button>
+                  ) : null}
                 </div>
 
-                {paymentStructure === "progress" ? (
+                {!isCommercialProject ? (
+                  <div
+                    className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600"
+                    data-testid="agreement-project-class-residential-note"
+                  >
+                    Commercial-only options like draw schedules and retainage stay hidden on Residential agreements.
+                  </div>
+                ) : null}
+
+                {isCommercialProject && paymentStructure === "progress" ? (
                   <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
                     <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
                       Retainage %
@@ -3648,6 +3795,7 @@ export default function Step1Details({
                       min="0"
                       max="100"
                       step="0.01"
+                      data-testid="agreement-retainage-percent-input"
                       value={retainagePercent}
                       disabled={locked}
                       onChange={(e) =>

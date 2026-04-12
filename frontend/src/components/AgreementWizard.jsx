@@ -48,6 +48,11 @@ function safeStr(v) {
   return v == null ? "" : String(v).trim();
 }
 
+function normalizeProjectClass(value) {
+  const s = safeStr(value).toLowerCase();
+  return s === "commercial" ? "commercial" : "residential";
+}
+
 function money(v) {
   const n = Number(v || 0);
   if (!Number.isFinite(n)) return 0;
@@ -194,6 +199,7 @@ Contractor’s obligation under this warranty is limited to repair or replacemen
 const EMPTY_DLOCAL = {
   homeowner: "",
   project_title: "",
+  project_class: "residential",
   project_type: "",
   project_subtype: "",
   agreement_mode: "standard",
@@ -510,6 +516,7 @@ export default function AgreementWizard() {
           ...prev,
           homeowner: data?.homeowner != null ? String(data.homeowner) : prev.homeowner,
           project_title: data?.project_title || data?.title || data?.project?.title || prev.project_title,
+          project_class: normalizeProjectClass(data?.project_class ?? prev.project_class),
           project_type: data?.project_type || prev.project_type,
           project_subtype: data?.project_subtype ?? prev.project_subtype,
           agreement_mode: data?.agreement_mode || prev.agreement_mode || "standard",
@@ -667,6 +674,8 @@ export default function AgreementWizard() {
           : "",
       project_title:
         draftPayload.project_title || draftPayload.title || prefill.project_title || "",
+      project_class:
+        normalizeProjectClass(draftPayload.project_class || prefill.project_class || "residential"),
       project_type: draftPayload.project_type || prefill.project_type || "",
       project_subtype: draftPayload.project_subtype || prefill.project_subtype || "",
       agreement_mode: draftPayload.agreement_mode || prefill.agreement_mode || "",
@@ -862,6 +871,7 @@ export default function AgreementWizard() {
       homeowner: dLocal.homeowner ? Number(dLocal.homeowner) : null,
       title: forDraftCreate ? rawTitle || fallbackTitle : rawTitle,
       project_title: forDraftCreate ? rawTitle || fallbackTitle : rawTitle,
+      project_class: normalizeProjectClass(dLocal.project_class),
       project_type: dLocal.project_type || "",
       project_subtype: dLocal.project_subtype || "",
       project_type_ref: selectedType?.id || null,
@@ -1180,6 +1190,8 @@ export default function AgreementWizard() {
             hydratedAgreement?.title ||
             hydratedAgreement?.project?.title ||
             prev.project_title,
+          project_class:
+            normalizeProjectClass(hydratedAgreement?.project_class ?? prev.project_class),
           project_type: hydratedAgreement?.project_type ?? prev.project_type,
           project_subtype: hydratedAgreement?.project_subtype ?? prev.project_subtype,
           agreement_mode:
@@ -1295,6 +1307,7 @@ export default function AgreementWizard() {
         project_title: dLocal.project_title || agreement?.project_title || agreement?.title || "",
         project_summary: dLocal.description || agreement?.description || "",
         description: dLocal.description || agreement?.description || "",
+        project_class: dLocal.project_class || agreement?.project_class || "residential",
         customer_name:
           homeownerOptions.find((option) => option.value === dLocal.homeowner)?.label || "",
         project_type: dLocal.project_type || agreement?.project_type || "",

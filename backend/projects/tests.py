@@ -6074,6 +6074,66 @@ class ProgressPaymentWorkflowTests(TestCase):
         self.agreement.refresh_from_db()
         self.assertEqual(self.agreement.payment_structure, "progress")
         self.assertEqual(self.agreement.retainage_percent, Decimal("12.50"))
+        self.assertEqual(self.agreement.project_class, "commercial")
+
+    def test_residential_agreement_rejects_commercial_payment_features(self):
+        residential_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Residential Agreement Project",
+        )
+        residential_agreement = Agreement.objects.create(
+            project=residential_project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Residential agreement",
+            payment_structure="simple",
+            total_cost=Decimal("4500.00"),
+            project_class="residential",
+        )
+
+        response = self.client.patch(
+            f"/api/projects/agreements/{residential_agreement.id}/",
+            {
+                "project_class": "residential",
+                "payment_structure": "progress",
+                "retainage_percent": "10.00",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("payment_structure", response.json())
+
+    def test_commercial_project_class_can_be_set_on_create(self):
+        response = self.client.post(
+            "/api/projects/agreements/",
+            {
+                "homeowner": self.homeowner.id,
+                "project_title": "Commercial Buildout",
+                "title": "Commercial Buildout",
+                "project_class": "commercial",
+                "project_type": "Remodel",
+                "project_subtype": "Commercial Interior",
+                "payment_mode": "escrow",
+                "payment_structure": "progress",
+                "retainage_percent": "5.00",
+                "description": "Tenant improvement scope.",
+                "milestones": [
+                    {
+                        "title": "Draw Schedule Setup",
+                        "amount": "5000.00",
+                    }
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        agreement = Agreement.objects.get(pk=response.json()["id"])
+        self.assertEqual(agreement.project_class, "commercial")
+        self.assertEqual(agreement.payment_structure, "progress")
+        self.assertEqual(agreement.retainage_percent, Decimal("5.00"))
 
     def test_progress_draw_endpoints_create_transition_and_record_payment(self):
         self.agreement.signed_by_contractor = True

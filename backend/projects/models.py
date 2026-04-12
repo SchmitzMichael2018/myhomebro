@@ -73,6 +73,11 @@ class AgreementMode(models.TextChoices):
     MAINTENANCE = "maintenance", "Maintenance"
 
 
+class AgreementProjectClass(models.TextChoices):
+    RESIDENTIAL = "residential", "Residential"
+    COMMERCIAL = "commercial", "Commercial"
+
+
 class RecurrencePattern(models.TextChoices):
     WEEKLY = "weekly", "Weekly"
     MONTHLY = "monthly", "Monthly"
@@ -745,6 +750,13 @@ class Agreement(models.Model):
 
     project_uid = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
 
+    project_class = models.CharField(
+        max_length=24,
+        choices=AgreementProjectClass.choices,
+        default=AgreementProjectClass.RESIDENTIAL,
+        db_index=True,
+        help_text="Top-level workflow path. Residential keeps the experience simpler; Commercial unlocks structured billing workflows.",
+    )
     payment_mode = models.CharField(
         max_length=20,
         choices=AgreementPaymentMode.choices,
@@ -1058,6 +1070,14 @@ class Agreement(models.Model):
         return self.payment_mode == AgreementPaymentMode.DIRECT
 
     @property
+    def is_residential(self) -> bool:
+        return self.project_class == AgreementProjectClass.RESIDENTIAL
+
+    @property
+    def is_commercial(self) -> bool:
+        return self.project_class == AgreementProjectClass.COMMERCIAL
+
+    @property
     def requires_escrow(self) -> bool:
         return not self.is_direct_pay
 
@@ -1068,6 +1088,13 @@ class Agreement(models.Model):
     def save(self, *args, **kwargs):
         if not self.contractor and self.project and self.project.contractor_id:
             self.contractor = self.project.contractor
+
+        if not (self.project_class or "").strip():
+            self.project_class = (
+                AgreementProjectClass.COMMERCIAL
+                if self.payment_structure == AgreementPaymentStructure.PROGRESS
+                else AgreementProjectClass.RESIDENTIAL
+            )
 
         if self.agreement_mode == AgreementMode.MAINTENANCE:
             self.recurring_service_enabled = True

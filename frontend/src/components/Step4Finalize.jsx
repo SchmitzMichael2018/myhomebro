@@ -221,6 +221,15 @@ function normalizePaymentMode(v) {
   return "";
 }
 
+function normalizeProjectClass(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "commercial" ? "commercial" : "residential";
+}
+
+function projectClassLabel(value) {
+  return normalizeProjectClass(value) === "commercial" ? "Commercial" : "Residential";
+}
+
 function formatMoney(v) {
   return `$${Number(v || 0).toLocaleString(undefined, {
     minimumFractionDigits: 2,
@@ -841,6 +850,9 @@ export default function Step4Finalize({
   }, [agreement?.payment_mode, agreement?.paymentMode, dLocal?.payment_mode]);
 
   const isDirectPay = paymentMode === "direct";
+  const projectClass = normalizeProjectClass(
+    agreement?.project_class || dLocal?.project_class || "residential"
+  );
   const paymentStructure = String(
     agreement?.payment_structure || dLocal?.payment_structure || "simple"
   )
@@ -1595,9 +1607,10 @@ export default function Step4Finalize({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <SummaryCard label="Project Title" value={agreement?.project_title || agreement?.title || "Untitled Project"} />
           <SummaryCard label="Agreement ID" value={agreementId ? `#${agreementId}` : "New"} />
+          <SummaryCard label="Project Path" value={projectClassLabel(projectClass)} />
           <SummaryCard label="Project Type" value={agreement?.project_type || agreement?.project?.project_type || "—"} />
           <SummaryCard label="Status" value={status} />
         </div>

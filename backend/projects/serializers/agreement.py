@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional, List
 from django.utils import timezone
 from rest_framework import serializers
 
-from projects.models import Agreement, Homeowner
+from projects.models import Agreement, AgreementProjectClass, Homeowner
 from projects.models_project_taxonomy import ProjectType, ProjectSubtype
 
 try:
@@ -78,6 +78,17 @@ def _normalize_payment_mode(value: Optional[str]) -> Optional[str]:
         return "direct"
     if s in ("escrow", "protected", "stripe", "funding"):
         return "escrow"
+    return value
+
+
+def _normalize_project_class(value: Optional[str]) -> Optional[str]:
+    if value in (None, ""):
+        return None
+    s = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    if s in ("residential", "homeowner", "home"):
+        return AgreementProjectClass.RESIDENTIAL
+    if s in ("commercial", "business", "pro"):
+        return AgreementProjectClass.COMMERCIAL
     return value
 
 
@@ -877,6 +888,12 @@ class AgreementSerializer(serializers.ModelSerializer):
         if "payment_mode" in data and data["payment_mode"] is not None:
             data["payment_mode"] = _normalize_payment_mode(data["payment_mode"])
 
+        if "project_class" in data and data["project_class"] is not None:
+            data["project_class"] = _normalize_project_class(data["project_class"])
+
+        if "project_category" in data and "project_class" not in data:
+            data["project_class"] = _normalize_project_class(data.pop("project_category"))
+
         if "signature_policy" in data and data["signature_policy"] is not None:
             data["signature_policy"] = _normalize_signature_policy(data["signature_policy"])
 
@@ -1167,6 +1184,10 @@ class AgreementSerializer(serializers.ModelSerializer):
         payment_structure = str(
             attrs.get("payment_structure", getattr(self.instance, "payment_structure", "simple")) or "simple"
         ).strip().lower()
+        project_class = str(
+            attrs.get("project_class", getattr(self.instance, "project_class", AgreementProjectClass.RESIDENTIAL))
+            or AgreementProjectClass.RESIDENTIAL
+        ).strip().lower()
         current_payment_structure = str(
             getattr(self.instance, "payment_structure", payment_structure) or "simple"
         ).strip().lower()
@@ -1184,6 +1205,35 @@ class AgreementSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"retainage_percent": "Retainage percent must be between 0 and 100."}
             )
+
+        if project_class not in {
+            AgreementProjectClass.RESIDENTIAL,
+            AgreementProjectClass.COMMERCIAL,
+        }:
+            raise serializers.ValidationError(
+                {"project_class": "Choose either Residential or Commercial."}
+            )
+
+        attrs["project_class"] = project_class
+
+        if project_class == AgreementProjectClass.RESIDENTIAL:
+            if payment_structure == "progress":
+                raise serializers.ValidationError(
+                    {
+                        "payment_structure": (
+                            "Progress Payments are only available for Commercial agreements."
+                        )
+                    }
+                )
+            if retainage_decimal > 0:
+                raise serializers.ValidationError(
+                    {
+                        "retainage_percent": (
+                            "Retainage is only available for Commercial progress-payment agreements."
+                        )
+                    }
+                )
+            attrs["external_payment_enabled"] = False
 
         if self.instance is not None and payment_structure != current_payment_structure:
             has_invoices = bool(Invoice and Invoice.objects.filter(agreement=self.instance).exists())

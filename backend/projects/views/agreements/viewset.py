@@ -241,6 +241,8 @@ class AgreementViewSet(viewsets.ModelViewSet):
             data["project_type"] = ""
         if data.get("project_subtype") is None:
             data["project_subtype"] = ""
+        if not self._safe_str(data.get("project_class")):
+            data["project_class"] = "residential"
 
         if not self._safe_str(data.get("payment_mode")):
             data["payment_mode"] = "escrow"

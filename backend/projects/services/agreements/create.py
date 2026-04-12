@@ -95,6 +95,8 @@ def create_agreement_from_validated(validated: Dict[str, Any]) -> Agreement:
     # Draft-friendly safety: allow empty description during early Step 1 flow.
     if data.get("description", None) is None:
         data["description"] = ""
+    if not _safe_str(data.get("project_class")):
+        data["project_class"] = "residential"
 
     ag = Agreement.objects.create(**data)
 

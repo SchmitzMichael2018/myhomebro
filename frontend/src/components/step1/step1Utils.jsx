@@ -44,6 +44,12 @@ export function normalizePaymentMode(value) {
   return "escrow";
 }
 
+export function normalizeProjectClass(value) {
+  const s = String(value || "").trim().toLowerCase();
+  if (s === "commercial") return "commercial";
+  return "residential";
+}
+
 export function normalizePaymentStructure(value) {
   const s = String(value || "").trim().toLowerCase();
   if (s === "progress") return "progress";

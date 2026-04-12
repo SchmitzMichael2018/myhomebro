@@ -88,6 +88,15 @@ function normalizePaymentStructure(val) {
   return s === "progress" ? "progress" : "simple";
 }
 
+function normalizeProjectClass(val) {
+  const s = String(val || "").trim().toLowerCase();
+  return s === "commercial" ? "commercial" : "residential";
+}
+
+function projectClassLabel(val) {
+  return normalizeProjectClass(val) === "commercial" ? "Commercial" : "Residential";
+}
+
 function paymentModeLabel(mode) {
   const m = normalizePaymentMode(mode);
   return m === "direct" ? "Direct Pay" : "Escrow (Protected)";
@@ -1176,6 +1185,11 @@ export default function AgreementDetail() {
             <SummaryCard
               label="Payment Mode"
               value={paymentModeLabel(norm.payment_mode)}
+              className="border-sky-200 bg-white"
+            />
+            <SummaryCard
+              label="Project Path"
+              value={projectClassLabel(agreement?.project_class)}
               className="border-sky-200 bg-white"
             />
             <SummaryCard
