@@ -141,6 +141,7 @@ function buildAgreement(overrides = {}) {
     project_title: 'Kitchen Remodel Agreement',
     title: 'Kitchen Remodel Agreement',
     description: 'Kitchen remodel with upgraded finishes.',
+    total_cost: '25000.00',
     project_class: 'residential',
     project_type: 'Remodel',
     project_subtype: 'Kitchen Remodel',
@@ -215,6 +216,7 @@ test('residential step 2 uses lightweight homeowner-friendly planning language',
   await expect(page.getByTestId('step2-workflow-panel')).toContainText('Homeowner-friendly workflow');
   await expect(page.getByTestId('step2-project-class-label')).toContainText('Residential');
   await expect(page.getByTestId('step2-estimate-mode-badge')).toContainText('Residential');
+  await expect(page.getByTestId('step2-commercial-payment-overview')).toHaveCount(0);
   await expect(page.getByText('Simple milestone planning')).toHaveCount(0);
   await expect(page.getByText('Suggested share: 21%')).toBeVisible();
   await expect(page.getByRole('columnheader', { name: 'Amount' })).toBeVisible();
@@ -236,6 +238,14 @@ test('commercial step 2 uses structured schedule and payment-aware guidance', as
   await expect(page.getByTestId('step2-workflow-panel')).toContainText('Commercial Schedule Builder');
   await expect(page.getByTestId('step2-project-class-label')).toContainText('Commercial');
   await expect(page.getByTestId('step2-estimate-mode-badge')).toContainText('Commercial');
+  await expect(page.getByTestId('step2-commercial-payment-overview')).toBeVisible();
+  await expect(page.getByTestId('step2-commercial-contract-value')).toContainText('$25,000.00');
+  await expect(page.getByTestId('step2-commercial-allocated-value')).toContainText('$16,000.00');
+  await expect(page.getByTestId('step2-commercial-unallocated-value')).toContainText('$9,000.00');
+  await expect(page.getByTestId('step2-commercial-payment-structure')).toContainText('Progress Payments');
+  await expect(page.getByTestId('step2-commercial-retainage-status')).toContainText('Not enabled');
+  await expect(page.getByTestId('step2-commercial-status-allocation')).toContainText('Needs allocation');
+  await expect(page.getByTestId('step2-commercial-status-readiness')).toContainText('Draw planning needs review');
   await expect(page.getByText('Supports draw-request planning after signing.')).toBeVisible();
   await expect(page.getByText('Schedule share: 25%')).toBeVisible();
   await expect(page.getByText('At contract value:')).toHaveCount(0);

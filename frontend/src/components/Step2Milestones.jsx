@@ -195,6 +195,12 @@ function projectClassLabel(value) {
   return normalizeProjectClass(value) === "commercial" ? "Commercial" : "Residential";
 }
 
+function statusToneClasses(tone = "neutral") {
+  if (tone === "good") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (tone === "warn") return "border-amber-200 bg-amber-50 text-amber-800";
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
 function estimateWeightLabel(raw) {
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return "0%";
@@ -1272,6 +1278,85 @@ export default function Step2Milestones({
         !!scopeSummary,
     };
   }, [agreementMeta, materialsWho, measurementNotes, selectedTemplateMeta]);
+  const commercialPaymentOverview = useMemo(() => {
+    if (!isCommercialProject) return null;
+
+    const agreementTotalRaw =
+      agreementMeta?.total_cost ??
+      agreementMeta?.display_total ??
+      agreementMeta?.total ??
+      agreementMeta?.amount ??
+      0;
+    const contractValue = Number(agreementTotalRaw || 0);
+    const safeContractValue = Number.isFinite(contractValue) && contractValue > 0 ? contractValue : 0;
+    const allocatedValue = (Array.isArray(effectiveMilestones) ? effectiveMilestones : []).reduce(
+      (sum, row) => sum + Math.max(0, Number(row?.amount || 0)),
+      0
+    );
+    const unallocatedValue = Math.max(safeContractValue - allocatedValue, 0);
+    const overAllocatedValue = Math.max(allocatedValue - safeContractValue, 0);
+    const retainagePercent = Number(agreementMeta?.retainage_percent ?? 0);
+    const retainageEnabled = Number.isFinite(retainagePercent) && retainagePercent > 0;
+    const structureLabel =
+      paymentStructure === "progress" ? "Progress Payments" : "Commercial milestone billing";
+
+    const allocationDelta = safeContractValue > 0 ? Math.abs(safeContractValue - allocatedValue) : 0;
+    const fullyAllocated = safeContractValue > 0 && allocationDelta < 0.01;
+    const scheduleReadyForProgress =
+      paymentStructure === "progress" &&
+      fullyAllocated &&
+      allocatedValue > 0 &&
+      effectiveMilestones.length > 0;
+
+    return {
+      contractValue: safeContractValue,
+      allocatedValue,
+      unallocatedValue,
+      overAllocatedValue,
+      retainagePercent,
+      retainageEnabled,
+      structureLabel,
+      fullyAllocated,
+      scheduleReadyForProgress,
+      hasContractValue: safeContractValue > 0,
+      statusItems: [
+        {
+          key: "allocation",
+          label: fullyAllocated ? "Fully allocated" : safeContractValue > 0 ? "Needs allocation" : "Contract value missing",
+          tone:
+            safeContractValue <= 0
+              ? "warn"
+              : fullyAllocated
+              ? "good"
+              : "warn",
+        },
+        {
+          key: "retainage",
+          label: retainageEnabled ? `Retainage ${retainagePercent.toFixed(2)}% enabled` : "Retainage off",
+          tone: retainageEnabled ? "good" : "neutral",
+        },
+        {
+          key: "readiness",
+          label:
+            paymentStructure === "progress"
+              ? scheduleReadyForProgress
+                ? "Ready for future draw planning"
+                : "Draw planning needs review"
+              : fullyAllocated && allocatedValue > 0
+              ? "Structured schedule looks ready"
+              : "Schedule needs review",
+          tone:
+            paymentStructure === "progress"
+              ? scheduleReadyForProgress
+                ? "good"
+                : "warn"
+              : fullyAllocated && allocatedValue > 0
+              ? "good"
+              : "neutral",
+        },
+      ],
+    };
+  }, [agreementMeta, effectiveMilestones, isCommercialProject, paymentStructure]);
   const estimateContextSignature = useMemo(
     () =>
       JSON.stringify({
@@ -2618,6 +2703,98 @@ export default function Step2Milestones({
           </div>
         </div>
       </section>
+
+      {commercialPaymentOverview ? (
+        <section
+          className="rounded-2xl border border-slate-300 bg-white px-4 py-4 shadow-sm"
+          data-testid="step2-commercial-payment-overview"
+        >
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-3xl">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+                Payment overview
+              </div>
+              <h3 className="mt-1 text-lg font-semibold text-slate-950">
+                Commercial Payment Planning
+              </h3>
+              <p className="mt-2 text-sm text-slate-600">
+                A quick schedule-of-values snapshot to show how the contract is currently allocated before future progress or draw workflows.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {commercialPaymentOverview.statusItems.map((item) => (
+                <span
+                  key={item.key}
+                  className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${statusToneClasses(
+                    item.tone
+                  )}`}
+                  data-testid={`step2-commercial-status-${item.key}`}
+                >
+                  {item.label}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-5">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Total contract value
+              </div>
+              <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-commercial-contract-value">
+                {commercialPaymentOverview.hasContractValue
+                  ? formatCurrency(commercialPaymentOverview.contractValue)
+                  : "Add contract value in agreement setup"}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Scheduled across milestones
+              </div>
+              <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-commercial-allocated-value">
+                {formatCurrency(commercialPaymentOverview.allocatedValue)}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Remaining unallocated
+              </div>
+              <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-commercial-unallocated-value">
+                {commercialPaymentOverview.hasContractValue
+                  ? formatCurrency(commercialPaymentOverview.unallocatedValue)
+                  : "—"}
+              </div>
+              {commercialPaymentOverview.overAllocatedValue > 0 ? (
+                <div className="mt-1 text-xs text-amber-700">
+                  Overallocated by {formatCurrency(commercialPaymentOverview.overAllocatedValue)}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Payment structure
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900" data-testid="step2-commercial-payment-structure">
+                {commercialPaymentOverview.structureLabel}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Retainage
+              </div>
+              <div className="mt-1 text-sm font-semibold text-slate-900" data-testid="step2-commercial-retainage-status">
+                {commercialPaymentOverview.retainageEnabled
+                  ? `${commercialPaymentOverview.retainagePercent.toFixed(2)}% enabled`
+                  : "Not enabled"}
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {milestonesLocked ? (
         <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
