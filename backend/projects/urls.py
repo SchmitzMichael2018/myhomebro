@@ -220,6 +220,11 @@ from .views.draw_requests import (
     DrawRequestChangesView,
     DrawSubmitView,
 )
+from .views.magic_draw_request import (
+    MagicDrawRequestApproveView,
+    MagicDrawRequestChangesView,
+    MagicDrawRequestView,
+)
 
 from .views.invoice_direct_pay import invoice_create_direct_pay_link
 
@@ -426,6 +431,13 @@ urlpatterns = [
         "draws/<int:draw_id>/record_external_payment/",
         DrawRecordExternalPaymentView.as_view(),
         name="draw-record-external-payment",
+    ),
+    path("draws/magic/<uuid:token>/", MagicDrawRequestView.as_view(), name="draw-magic-view"),
+    path("draws/magic/<uuid:token>/approve/", MagicDrawRequestApproveView.as_view(), name="draw-magic-approve"),
+    path(
+        "draws/magic/<uuid:token>/request_changes/",
+        MagicDrawRequestChangesView.as_view(),
+        name="draw-magic-request-changes",
     ),
     path(
         "agreements/<int:agreement_id>/subcontractor-invitations/<int:invitation_id>/revoke/",

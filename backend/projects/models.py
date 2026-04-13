@@ -1789,6 +1789,13 @@ class DrawRequest(models.Model):
     )
     title = models.CharField(max_length=255)
     notes = models.TextField(blank=True, default="")
+    public_token = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+        db_index=True,
+        help_text="Public token for owner draw review and payment flow.",
+    )
     submitted_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
@@ -1805,11 +1812,21 @@ class DrawRequest(models.Model):
         related_name="reviewed_draw_requests",
     )
     reviewed_at = models.DateTimeField(null=True, blank=True)
+    homeowner_viewed_at = models.DateTimeField(null=True, blank=True)
+    homeowner_acted_at = models.DateTimeField(null=True, blank=True)
+    homeowner_review_notes = models.TextField(blank=True, default="")
+    review_email_sent_at = models.DateTimeField(null=True, blank=True)
+    last_review_email_error = models.TextField(blank=True, default="")
     gross_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     retainage_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     net_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     previous_payments_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     current_requested_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    stripe_checkout_session_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    stripe_checkout_url = models.URLField(blank=True, default="")
+    stripe_payment_intent_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    paid_via = models.CharField(max_length=32, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 

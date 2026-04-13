@@ -17,6 +17,7 @@ import HomeownerSign from "../pages/HomeownerSign.jsx"; // /agreements/sign/:id?
 import PublicIntake from "../pages/PublicIntake.jsx"; // /start-project/:token or legacy /public-intake/:token
 import StartProjectIntake from "../pages/StartProjectIntake.jsx"; // /start-project
 import MagicInvoice from "../pages/MagicInvoice.jsx"; // /invoices/magic/:token
+import MagicDrawRequest from "../pages/MagicDrawRequest.jsx"; // /draws/magic/:token
 import MagicAgreement from "../pages/MagicAgreement.jsx"; // /agreements/magic/:token
 import PublicProfile from "../pages/PublicProfile.jsx"; // /contractors/:slug public view
 
@@ -57,6 +58,9 @@ export default function PublicRoutes() {
 
       {/* Public magic invoice */}
       <Route path="/invoices/magic/:token" element={<MagicInvoice />} />
+
+      {/* Public magic draw review */}
+      <Route path="/draws/magic/:token" element={<MagicDrawRequest />} />
 
       {/* Magic agreement */}
       <Route path="/agreements/magic/:token" element={<MagicAgreement />} />

@@ -1,0 +1,16 @@
+Hi {{ customer_name }},
+
+{{ contractor_name }} submitted draw request {{ draw.draw_number }} for {{ project_title }}.
+
+Requested now: ${{ draw.net_amount }}
+Gross amount: ${{ draw.gross_amount }}
+Retainage withheld: ${{ draw.retainage_amount }}
+
+Review and respond in MyHomeBro:
+{{ review_link }}
+
+{% if draw.notes %}Contractor notes:
+{{ draw.notes }}
+{% endif %}
+
+You can approve this draw, request changes, and if this agreement uses Direct Pay, continue into secure Stripe payment after approval.

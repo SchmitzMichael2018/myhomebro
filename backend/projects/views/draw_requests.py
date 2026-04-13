@@ -20,6 +20,7 @@ from projects.models import (
     ExternalPaymentStatus,
     Milestone,
 )
+from projects.services.draw_requests import build_public_draw_link, send_draw_request_review_email
 
 
 def _contractor_for_request(request):
@@ -124,11 +125,20 @@ def _serialize_draw(draw: DrawRequest):
         "notes": draw.notes,
         "submitted_at": draw.submitted_at.isoformat() if draw.submitted_at else None,
         "reviewed_at": draw.reviewed_at.isoformat() if draw.reviewed_at else None,
+        "homeowner_viewed_at": draw.homeowner_viewed_at.isoformat() if getattr(draw, "homeowner_viewed_at", None) else None,
+        "homeowner_acted_at": draw.homeowner_acted_at.isoformat() if getattr(draw, "homeowner_acted_at", None) else None,
+        "homeowner_review_notes": getattr(draw, "homeowner_review_notes", "") or "",
+        "review_email_sent_at": draw.review_email_sent_at.isoformat() if getattr(draw, "review_email_sent_at", None) else None,
         "gross_amount": _money(draw.gross_amount),
         "retainage_amount": _money(draw.retainage_amount),
         "net_amount": _money(draw.net_amount),
         "previous_payments_amount": _money(draw.previous_payments_amount),
         "current_requested_amount": _money(draw.current_requested_amount),
+        "public_review_url": build_public_draw_link(draw),
+        "stripe_checkout_url": getattr(draw, "stripe_checkout_url", "") or "",
+        "paid_at": draw.paid_at.isoformat() if getattr(draw, "paid_at", None) else None,
+        "paid_via": getattr(draw, "paid_via", "") or "",
+        "payment_mode": str(getattr(agreement, "payment_mode", "") or "").strip().lower(),
         "line_items": [_serialize_draw_line_item(item) for item in draw.line_items.select_related("milestone").all()],
     }
 
@@ -384,8 +394,16 @@ class DrawStatusActionView(APIView):
             update_fields = ["status", "reviewed_by", "reviewed_at", "updated_at"]
         draw.save(update_fields=update_fields)
 
+        email_delivery = None
+        if self.target_status == DrawRequestStatus.SUBMITTED:
+            ok, message = send_draw_request_review_email(draw)
+            email_delivery = {"ok": ok, "message": message}
+
         draw = DrawRequest.objects.prefetch_related("line_items__milestone").get(pk=draw.pk)
-        return Response(_serialize_draw(draw))
+        payload = _serialize_draw(draw)
+        if email_delivery is not None:
+            payload["email_delivery"] = email_delivery
+        return Response(payload)
 
 
 class DrawSubmitView(DrawStatusActionView):

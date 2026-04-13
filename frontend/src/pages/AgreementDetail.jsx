@@ -14,14 +14,11 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import api, {
-  approveDrawRequest,
   createAgreementDrawRequest,
   getAccessToken,
   getAgreementDrawRequests,
   getAgreementExternalPayments,
   recordDrawExternalPayment,
-  rejectDrawRequest,
-  requestDrawChanges,
   submitDrawRequest,
 } from "../api";
 import SignatureModal from "../components/SignatureModal";
@@ -749,17 +746,41 @@ export default function AgreementDetail() {
 
   const runDrawAction = async (drawId, action) => {
     try {
-      if (action === "submit") await submitDrawRequest(drawId);
-      if (action === "approve") await approveDrawRequest(drawId);
-      if (action === "reject") await rejectDrawRequest(drawId);
-      if (action === "changes") await requestDrawChanges(drawId);
-      toast.success("Draw updated.");
+      let result = null;
+      if (action === "submit") result = await submitDrawRequest(drawId);
+      if (action === "approve") result = await approveDrawRequest(drawId);
+      if (action === "reject") result = await rejectDrawRequest(drawId);
+      if (action === "changes") result = await requestDrawChanges(drawId);
+      toast.success(result?.email_delivery?.message || "Draw updated.");
       await fetchDraws();
       await fetchExternalPayments();
     } catch (e) {
       console.error(e);
       toast.error(formatApiError(e, "Failed to update draw."));
     }
+  };
+
+  const copyDrawReviewLink = async (draw) => {
+    const url = String(draw?.public_review_url || "").trim();
+    if (!url) {
+      toast.error("Owner review link is not ready yet.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Owner review link copied.");
+    } catch {
+      toast.error("Unable to copy the owner review link.");
+    }
+  };
+
+  const openDrawReviewLink = (draw) => {
+    const url = String(draw?.public_review_url || "").trim();
+    if (!url) {
+      toast.error("Owner review link is not ready yet.");
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const openExternalPaymentModal = (draw) => {
@@ -2460,6 +2481,21 @@ export default function AgreementDetail() {
                           Status: {String(draw.status || "").replaceAll("_", " ")} • Gross {formatMoney(draw.gross_amount)} •
                           Retainage {formatMoney(draw.retainage_amount)} • Net {formatMoney(draw.net_amount)}
                         </div>
+                        {draw.review_email_sent_at ? (
+                          <div className="mt-1 text-xs text-emerald-700">
+                            Owner review email sent. The public review link is ready to share.
+                          </div>
+                        ) : null}
+                        {draw.homeowner_review_notes ? (
+                          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                            Owner note: {draw.homeowner_review_notes}
+                          </div>
+                        ) : null}
+                        {draw.status === "approved" && isDirectPay && !draw.paid_at ? (
+                          <div className="mt-2 text-xs text-indigo-700">
+                            Owner approval is complete. Payment continues from the draw review page through Stripe.
+                          </div>
+                        ) : null}
                         {draw.notes ? (
                           <div className="mt-2 text-sm text-gray-600 whitespace-pre-wrap">{draw.notes}</div>
                         ) : null}
@@ -2478,35 +2514,37 @@ export default function AgreementDetail() {
                           <>
                             <button
                               type="button"
-                              onClick={() => runDrawAction(draw.id, "approve")}
+                              onClick={() => openDrawReviewLink(draw)}
                               className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
                             >
-                              Mark Reviewed
+                              Open Owner Review
                             </button>
                             <button
                               type="button"
-                              onClick={() => runDrawAction(draw.id, "changes")}
-                              className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-50"
+                              onClick={() => copyDrawReviewLink(draw)}
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                             >
-                              Needs Changes
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => runDrawAction(draw.id, "reject")}
-                              className="rounded-lg border border-rose-300 bg-white px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-50"
-                            >
-                              Close Draw
+                              Copy Review Link
                             </button>
                           </>
                         ) : null}
                         {draw.status === "approved" ? (
-                          <button
-                            type="button"
-                            onClick={() => openExternalPaymentModal(draw)}
-                            className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
-                          >
-                            Record External Payment
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => openDrawReviewLink(draw)}
+                              className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                            >
+                              View Owner Page
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openExternalPaymentModal(draw)}
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              Record Offline Payment
+                            </button>
+                          </>
                         ) : null}
                       </div>
                     </div>

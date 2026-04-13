@@ -90,6 +90,7 @@ from projects.services.activity_feed import (
     create_activity_event,
     get_next_best_action,
 )
+from projects.services.draw_requests import finalize_draw_paid
 from projects.services.estimation_engine import build_project_estimate, _clarification_signature_from_answers
 from projects.services.regions import build_normalized_region_key
 from projects.services.template_apply import apply_template_to_agreement, save_agreement_as_template
@@ -6167,6 +6168,8 @@ class ProgressPaymentWorkflowTests(TestCase):
         submit_response = self.client.post(f"/api/projects/draws/{draw_id}/submit/", {}, format="json")
         self.assertEqual(submit_response.status_code, 200)
         self.assertEqual(submit_response.json()["status"], "submitted")
+        self.assertTrue(submit_response.json()["public_review_url"])
+        self.assertEqual(mail.outbox[-1].to, [self.homeowner.email])
 
         approve_response = self.client.post(f"/api/projects/draws/{draw_id}/approve/", {}, format="json")
         self.assertEqual(approve_response.status_code, 200)
@@ -6372,6 +6375,113 @@ class ProgressPaymentWorkflowTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("progress-payment agreements", str(response.json()).lower())
+
+    @override_settings(FRONTEND_URL="https://app.myhomebro.test")
+    def test_magic_draw_review_flow_starts_direct_checkout_after_owner_approval(self):
+        self.agreement.payment_mode = "direct"
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_by_homeowner = True
+        self.agreement.save(update_fields=["payment_mode", "signed_by_contractor", "signed_by_homeowner"])
+
+        create_response = self.client.post(
+            f"/api/projects/agreements/{self.agreement.id}/draws/",
+            {
+                "title": "First Draw",
+                "notes": "Initial direct-pay draw",
+                "line_items": [
+                    {
+                        "milestone_id": self.milestone_one.id,
+                        "scheduled_value": "4000.00",
+                        "percent_complete": "50.00",
+                    }
+                ],
+            },
+            format="json",
+        )
+        draw_id = create_response.json()["id"]
+        draw = DrawRequest.objects.get(pk=draw_id)
+
+        submit_response = self.client.post(f"/api/projects/draws/{draw_id}/submit/", {}, format="json")
+        self.assertEqual(submit_response.status_code, 200)
+
+        view_response = self.client.get(f"/api/projects/draws/magic/{draw.public_token}/")
+        self.assertEqual(view_response.status_code, 200)
+        self.assertEqual(view_response.json()["status"], "submitted")
+
+        with patch(
+            "projects.views.magic_draw_request.create_direct_checkout_for_draw",
+            return_value="https://checkout.stripe.test/draw-123",
+        ):
+            approve_response = self.client.patch(
+                f"/api/projects/draws/magic/{draw.public_token}/approve/",
+                {},
+                format="json",
+            )
+
+        self.assertEqual(approve_response.status_code, 200)
+        self.assertEqual(approve_response.json()["mode"], "direct_checkout")
+        self.assertEqual(approve_response.json()["checkout_url"], "https://checkout.stripe.test/draw-123")
+
+        draw.refresh_from_db()
+        self.assertEqual(draw.status, DrawRequestStatus.APPROVED)
+        self.assertIsNotNone(draw.homeowner_acted_at)
+
+    def test_magic_draw_request_changes_sets_changes_requested_and_note(self):
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_by_homeowner = True
+        self.agreement.save(update_fields=["signed_by_contractor", "signed_by_homeowner"])
+
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=1,
+            status=DrawRequestStatus.SUBMITTED,
+            title="Submitted Draw",
+            gross_amount=Decimal("2500.00"),
+            retainage_amount=Decimal("250.00"),
+            net_amount=Decimal("2250.00"),
+            current_requested_amount=Decimal("2500.00"),
+        )
+
+        response = self.client.patch(
+            f"/api/projects/draws/magic/{draw.public_token}/request_changes/",
+            {"note": "Please clarify the completed scope before payment."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        draw.refresh_from_db()
+        self.assertEqual(draw.status, DrawRequestStatus.CHANGES_REQUESTED)
+        self.assertEqual(draw.homeowner_review_notes, "Please clarify the completed scope before payment.")
+
+    def test_finalize_draw_paid_marks_paid_and_creates_verified_payment_record(self):
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=4,
+            status=DrawRequestStatus.APPROVED,
+            title="Approved Draw",
+            gross_amount=Decimal("3000.00"),
+            retainage_amount=Decimal("300.00"),
+            net_amount=Decimal("2700.00"),
+            current_requested_amount=Decimal("3000.00"),
+        )
+
+        finalized = finalize_draw_paid(
+            draw_request_id=draw.id,
+            checkout_session_id="cs_test_draw_123",
+            payment_intent_id="pi_test_draw_123",
+            payment_method="stripe_checkout",
+        )
+
+        self.assertEqual(finalized.status, DrawRequestStatus.PAID)
+        self.assertEqual(finalized.paid_via, "stripe_checkout")
+        self.assertIsNotNone(finalized.paid_at)
+        self.assertTrue(
+            ExternalPaymentRecord.objects.filter(
+                draw_request=draw,
+                agreement=self.agreement,
+                status=ExternalPaymentStatus.VERIFIED,
+            ).exists()
+        )
 
     def test_business_dashboard_includes_progress_summary(self):
         draw = DrawRequest.objects.create(

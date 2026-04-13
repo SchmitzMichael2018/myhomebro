@@ -1,0 +1,25 @@
+<html>
+  <body style="font-family: Arial, sans-serif; color: #0f172a;">
+    <p>Hi {{ customer_name }},</p>
+    <p>
+      {{ contractor_name }} submitted draw request {{ draw.draw_number }} for
+      <strong>{{ project_title }}</strong>.
+    </p>
+    <p>
+      Requested now: <strong>${{ draw.net_amount }}</strong><br />
+      Gross amount: ${{ draw.gross_amount }}<br />
+      Retainage withheld: ${{ draw.retainage_amount }}
+    </p>
+    <p>
+      Review and respond in MyHomeBro:
+      <a href="{{ review_link }}">{{ review_link }}</a>
+    </p>
+    {% if draw.notes %}
+    <p><strong>Contractor notes:</strong><br />{{ draw.notes|linebreaksbr }}</p>
+    {% endif %}
+    <p>
+      You can approve this draw, request changes, and if this agreement uses Direct Pay,
+      continue into secure Stripe payment after approval.
+    </p>
+  </body>
+</html>

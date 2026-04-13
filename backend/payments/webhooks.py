@@ -28,6 +28,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 # ✅ Canonical agreement completion recompute
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
+from projects.services.draw_requests import finalize_draw_paid
 
 log = logging.getLogger(__name__)
 
@@ -460,6 +461,31 @@ def _handle_direct_pay_checkout_completed(session: dict) -> None:
             log.warning("Agreement completion recompute scheduling failed (direct pay inv=%s): %s", inv_id, exc)
 
         log.info("Direct Pay invoice marked PAID invoice=%s session=%s pi=%s", inv_id, session_id, payment_intent)
+
+
+def _handle_draw_direct_checkout_completed(session: dict) -> None:
+    meta = session.get("metadata") or {}
+    if str(meta.get("kind") or "").strip().lower() != "draw_direct_checkout":
+        return
+
+    draw_request_id = _safe_int(meta.get("draw_request_id"), default=0)
+    if draw_request_id <= 0:
+        return
+
+    payment_status = str(session.get("payment_status") or "").strip().lower()
+    if payment_status not in {"paid", "no_payment_required"}:
+        return
+
+    session_id = session.get("id") or ""
+    payment_intent = session.get("payment_intent") or ""
+
+    finalize_draw_paid(
+        draw_request_id=draw_request_id,
+        checkout_session_id=session_id or None,
+        payment_intent_id=payment_intent or None,
+        payment_method="stripe_checkout",
+    )
+    log.info("Direct draw marked PAID draw=%s session=%s pi=%s", draw_request_id, session_id, payment_intent)
 
 
 def _handle_expense_checkout_completed(session: dict) -> None:
@@ -920,6 +946,10 @@ def stripe_webhook(request):
                 _handle_direct_pay_checkout_completed(data_obj)
             except Exception:
                 log.exception("Direct Pay checkout handler failed (session=%s).", data_obj.get("id"))
+            try:
+                _handle_draw_direct_checkout_completed(data_obj)
+            except Exception:
+                log.exception("Draw checkout handler failed (session=%s).", data_obj.get("id"))
 
             try:
                 _handle_expense_checkout_completed(data_obj)
@@ -966,6 +996,17 @@ def stripe_webhook(request):
                 _handle_expense_payment_intent_succeeded(intent)
             except Exception:
                 log.exception("Expense PI handler failed (pi=%s).", intent.get("id"))
+            return HttpResponse(status=200)
+
+        if metadata.get("kind") == "draw_direct_checkout" or metadata.get("draw_request_id"):
+            try:
+                finalize_draw_paid(
+                    draw_request_id=_safe_int(metadata.get("draw_request_id"), default=0),
+                    payment_intent_id=intent.get("id") or "",
+                    payment_method="stripe_checkout",
+                )
+            except Exception:
+                log.exception("Draw PI handler failed (pi=%s).", intent.get("id"))
             return HttpResponse(status=200)
 
         # ✅ Escrow funding payments (Agreement)

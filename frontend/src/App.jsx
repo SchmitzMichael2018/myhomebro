@@ -21,6 +21,7 @@ import PublicSign from "./components/PublicSign";
 import PublicFund from "./components/PublicFund";
 
 import InvoicePage from "./pages/InvoicePage.jsx";
+import MagicDrawRequest from "./pages/MagicDrawRequest.jsx";
 import MagicInvoice from "./pages/MagicInvoice.jsx";
 
 // ✅ App routes live under protectedRoutes() (/app + AuthenticatedLayout + RoleGate)
@@ -51,6 +52,7 @@ export default function App() {
           {/* 🔓 Public invoice links */}
           <Route path="/invoice/:token" element={<InvoicePage />} />
           <Route path="/invoices/magic/:token" element={<MagicInvoice />} />
+          <Route path="/draws/magic/:token" element={<MagicDrawRequest />} />
 
           {/* 🔓 Public agreement preview */}
           <Route path="/agreements/public/:id" element={<AgreementReview />} />
