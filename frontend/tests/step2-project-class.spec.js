@@ -81,7 +81,7 @@ async function installBaseMocks(page) {
   });
 }
 
-async function installStep2Mocks(page, { agreement, estimateResponse }) {
+async function installStep2Mocks(page, { agreement, estimateResponse, milestones }) {
   await installBaseMocks(page);
 
   await page.route(new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`), async (route) => {
@@ -97,30 +97,7 @@ async function installStep2Mocks(page, { agreement, estimateResponse }) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        results: [
-          {
-            id: 901,
-            agreement: AGREEMENT_ID,
-            order: 1,
-            title: 'Demo & Prep',
-            description: 'Protect work area and demo existing finishes.',
-            amount: '4000.00',
-            start_date: '2026-04-01',
-            completion_date: '2026-04-02',
-            normalized_milestone_type: 'demolition',
-          },
-          {
-            id: 902,
-            agreement: AGREEMENT_ID,
-            order: 2,
-            title: 'Install & Finish',
-            description: 'Install cabinets, finishes, and fixtures.',
-            amount: '12000.00',
-            start_date: '2026-04-03',
-            completion_date: '2026-04-08',
-            normalized_milestone_type: 'installation',
-          },
-        ],
+        results: milestones ?? buildMilestones(),
       }),
     });
   });
@@ -132,6 +109,34 @@ async function installStep2Mocks(page, { agreement, estimateResponse }) {
       body: JSON.stringify(estimateResponse),
     });
   });
+}
+
+function buildMilestones(overrides) {
+  const base = [
+    {
+      id: 901,
+      agreement: AGREEMENT_ID,
+      order: 1,
+      title: 'Demo & Prep',
+      description: 'Protect work area and demo existing finishes.',
+      amount: '4000.00',
+      start_date: '2026-04-01',
+      completion_date: '2026-04-02',
+      normalized_milestone_type: 'demolition',
+    },
+    {
+      id: 902,
+      agreement: AGREEMENT_ID,
+      order: 2,
+      title: 'Install & Finish',
+      description: 'Install cabinets, finishes, and fixtures.',
+      amount: '12000.00',
+      start_date: '2026-04-03',
+      completion_date: '2026-04-08',
+      normalized_milestone_type: 'installation',
+    },
+  ];
+  return overrides ?? base;
 }
 
 function buildAgreement(overrides = {}) {
@@ -243,12 +248,101 @@ test('commercial step 2 uses structured schedule and payment-aware guidance', as
   await expect(page.getByTestId('step2-commercial-allocated-value')).toContainText('$16,000.00');
   await expect(page.getByTestId('step2-commercial-unallocated-value')).toContainText('$9,000.00');
   await expect(page.getByTestId('step2-commercial-payment-structure')).toContainText('Progress Payments');
-  await expect(page.getByTestId('step2-commercial-retainage-status')).toContainText('Not enabled');
-  await expect(page.getByTestId('step2-commercial-status-allocation')).toContainText('Needs allocation');
-  await expect(page.getByTestId('step2-commercial-status-readiness')).toContainText('Draw planning needs review');
+  await expect(page.getByTestId('step2-commercial-retainage-status')).toContainText('Disabled');
+  await expect(page.getByTestId('step2-commercial-status-allocation')).toContainText('Under Allocated');
+  await expect(page.getByTestId('step2-commercial-status-readiness')).toContainText('Progress / Draw Needs Review');
+  await expect(page.getByTestId('step2-commercial-status-retainage')).toHaveCount(0);
   await expect(page.getByText('Supports draw-request planning after signing.')).toBeVisible();
   await expect(page.getByText('Schedule share: 25%')).toBeVisible();
   await expect(page.getByText('At contract value:')).toHaveCount(0);
   await expect(page.getByRole('columnheader', { name: 'Scheduled Value' })).toBeVisible();
   await expect(page.getByText('Commercial Estimate Summary')).toBeVisible();
+});
+
+test('commercial payment overview treats near-match totals as fully allocated and ready', async ({ page }) => {
+  await installStep2Mocks(page, {
+    agreement: buildAgreement({
+      project_class: 'commercial',
+      payment_structure: 'progress',
+      retainage_percent: '10.00',
+      total_cost: '25000.00',
+    }),
+    milestones: buildMilestones([
+      {
+        id: 901,
+        agreement: AGREEMENT_ID,
+        order: 1,
+        title: 'Mobilization',
+        description: 'Initial setup and procurement.',
+        amount: '13000.00',
+        start_date: '2026-04-01',
+        completion_date: '2026-04-03',
+        normalized_milestone_type: 'mobilization',
+      },
+      {
+        id: 902,
+        agreement: AGREEMENT_ID,
+        order: 2,
+        title: 'Rough & Finish',
+        description: 'Field execution and closeout items.',
+        amount: '11999.995',
+        start_date: '2026-04-04',
+        completion_date: '2026-04-10',
+        normalized_milestone_type: 'installation',
+      },
+    ]),
+    estimateResponse: buildEstimateResponse(),
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('step2-commercial-allocated-value')).toContainText('$25,000.00');
+  await expect(page.getByTestId('step2-commercial-unallocated-value')).toContainText('$0.00');
+  await expect(page.getByTestId('step2-commercial-retainage-status')).toContainText('Enabled at 10.00%');
+  await expect(page.getByTestId('step2-commercial-status-allocation')).toContainText('Fully Allocated');
+  await expect(page.getByTestId('step2-commercial-status-retainage')).toContainText('Retainage Enabled 10.00%');
+  await expect(page.getByTestId('step2-commercial-status-readiness')).toContainText('Progress / Draw Ready');
+});
+
+test('commercial payment overview flags over allocation cleanly', async ({ page }) => {
+  await installStep2Mocks(page, {
+    agreement: buildAgreement({
+      project_class: 'commercial',
+      payment_structure: 'simple',
+      total_cost: '25000.00',
+    }),
+    milestones: buildMilestones([
+      {
+        id: 901,
+        agreement: AGREEMENT_ID,
+        order: 1,
+        title: 'Phase 1',
+        description: 'Work package one.',
+        amount: '15000.00',
+        start_date: '2026-04-01',
+        completion_date: '2026-04-03',
+        normalized_milestone_type: 'mobilization',
+      },
+      {
+        id: 902,
+        agreement: AGREEMENT_ID,
+        order: 2,
+        title: 'Phase 2',
+        description: 'Work package two.',
+        amount: '11000.00',
+        start_date: '2026-04-04',
+        completion_date: '2026-04-10',
+        normalized_milestone_type: 'installation',
+      },
+    ]),
+    estimateResponse: buildEstimateResponse(),
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('step2-commercial-payment-structure')).toContainText('Commercial Milestones');
+  await expect(page.getByTestId('step2-commercial-unallocated-value')).toContainText('$0.00');
+  await expect(page.getByText('Over by $1,000.00')).toBeVisible();
+  await expect(page.getByTestId('step2-commercial-status-allocation')).toContainText('Over Allocated');
+  await expect(page.getByTestId('step2-commercial-status-readiness')).toContainText('Schedule Needs Review');
 });

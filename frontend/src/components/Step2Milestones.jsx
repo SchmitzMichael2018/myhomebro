@@ -116,6 +116,15 @@ function amountsDifferMeaningfully(currentAmount, suggestedAmount) {
   return Math.abs(current - suggestedAmount) >= 0.01;
 }
 
+const MONEY_COMPARISON_TOLERANCE = 0.01;
+
+function amountsApproximatelyMatch(left, right, tolerance = MONEY_COMPARISON_TOLERANCE) {
+  const a = Number(left);
+  const b = Number(right);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+  return Math.abs(a - b) <= tolerance;
+}
+
 function truthy(v) {
   return v === true || v === 1 || v === "1" || v === "true" || v === "True" || v === "yes";
 }
@@ -193,6 +202,15 @@ function formatPercent(value, digits = 0) {
 
 function projectClassLabel(value) {
   return normalizeProjectClass(value) === "commercial" ? "Commercial" : "Residential";
+}
+
+function paymentStructureLabel(value, { commercial = false } = {}) {
+  const normalized = safeStr(value).toLowerCase();
+  if (normalized === "progress") return "Progress Payments";
+  if (normalized === "escrow") return "Escrow";
+  if (normalized === "direct") return "Direct Pay";
+  if (commercial) return "Commercial Milestones";
+  return "Simple Milestones";
 }
 
 function statusToneClasses(tone = "neutral") {
@@ -1297,16 +1315,33 @@ export default function Step2Milestones({
     const overAllocatedValue = Math.max(allocatedValue - safeContractValue, 0);
     const retainagePercent = Number(agreementMeta?.retainage_percent ?? 0);
     const retainageEnabled = Number.isFinite(retainagePercent) && retainagePercent > 0;
-    const structureLabel =
-      paymentStructure === "progress" ? "Progress Payments" : "Commercial milestone billing";
+    const structureLabel = paymentStructureLabel(paymentStructure, { commercial: true });
 
-    const allocationDelta = safeContractValue > 0 ? Math.abs(safeContractValue - allocatedValue) : 0;
-    const fullyAllocated = safeContractValue > 0 && allocationDelta < 0.01;
+    const fullyAllocated = safeContractValue > 0 && amountsApproximatelyMatch(safeContractValue, allocatedValue);
+    const underAllocated = safeContractValue > 0 && allocatedValue + MONEY_COMPARISON_TOLERANCE < safeContractValue;
+    const overAllocated = safeContractValue > 0 && allocatedValue - MONEY_COMPARISON_TOLERANCE > safeContractValue;
     const scheduleReadyForProgress =
       paymentStructure === "progress" &&
       fullyAllocated &&
       allocatedValue > 0 &&
       effectiveMilestones.length > 0;
+    const scheduleReadyForStructuredBilling =
+      fullyAllocated && allocatedValue > 0 && effectiveMilestones.length > 0;
+
+    let allocationLabel = "Contract value missing";
+    let allocationTone = "warn";
+    if (safeContractValue > 0) {
+      if (fullyAllocated) {
+        allocationLabel = "Fully Allocated";
+        allocationTone = "good";
+      } else if (overAllocated) {
+        allocationLabel = "Over Allocated";
+        allocationTone = "warn";
+      } else if (underAllocated) {
+        allocationLabel = "Under Allocated";
+        allocationTone = "warn";
+      }
+    }
 
     return {
       contractValue: safeContractValue,
@@ -1317,40 +1352,42 @@ export default function Step2Milestones({
       retainageEnabled,
       structureLabel,
       fullyAllocated,
+      underAllocated,
+      overAllocated,
       scheduleReadyForProgress,
+      scheduleReadyForStructuredBilling,
       hasContractValue: safeContractValue > 0,
       statusItems: [
         {
           key: "allocation",
-          label: fullyAllocated ? "Fully allocated" : safeContractValue > 0 ? "Needs allocation" : "Contract value missing",
-          tone:
-            safeContractValue <= 0
-              ? "warn"
-              : fullyAllocated
-              ? "good"
-              : "warn",
+          label: allocationLabel,
+          tone: allocationTone,
         },
-        {
-          key: "retainage",
-          label: retainageEnabled ? `Retainage ${retainagePercent.toFixed(2)}% enabled` : "Retainage off",
-          tone: retainageEnabled ? "good" : "neutral",
-        },
+        ...(retainageEnabled
+          ? [
+              {
+                key: "retainage",
+                label: `Retainage Enabled${retainagePercent > 0 ? ` ${retainagePercent.toFixed(2)}%` : ""}`,
+                tone: "good",
+              },
+            ]
+          : []),
         {
           key: "readiness",
           label:
             paymentStructure === "progress"
               ? scheduleReadyForProgress
-                ? "Ready for future draw planning"
-                : "Draw planning needs review"
-              : fullyAllocated && allocatedValue > 0
-              ? "Structured schedule looks ready"
-              : "Schedule needs review",
+                ? "Progress / Draw Ready"
+                : "Progress / Draw Needs Review"
+              : scheduleReadyForStructuredBilling
+              ? "Structured Schedule Ready"
+              : "Schedule Needs Review",
           tone:
             paymentStructure === "progress"
               ? scheduleReadyForProgress
                 ? "good"
                 : "warn"
-              : fullyAllocated && allocatedValue > 0
+              : scheduleReadyForStructuredBilling
               ? "good"
               : "neutral",
         },
@@ -2718,7 +2755,7 @@ export default function Step2Milestones({
                 Commercial Payment Planning
               </h3>
               <p className="mt-2 text-sm text-slate-600">
-                A quick schedule-of-values snapshot to show how the contract is currently allocated before future progress or draw workflows.
+                A clean snapshot of how the contract is allocated today, so it is easier to spot what is ready for progress or draw-based billing next.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -2739,7 +2776,7 @@ export default function Step2Milestones({
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-5">
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Total contract value
+                Total Contract Value
               </div>
               <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-commercial-contract-value">
                 {commercialPaymentOverview.hasContractValue
@@ -2750,7 +2787,7 @@ export default function Step2Milestones({
 
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Scheduled across milestones
+                Scheduled Value Allocated
               </div>
               <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-commercial-allocated-value">
                 {formatCurrency(commercialPaymentOverview.allocatedValue)}
@@ -2759,7 +2796,7 @@ export default function Step2Milestones({
 
             <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Remaining unallocated
+                Remaining to Allocate
               </div>
               <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-commercial-unallocated-value">
                 {commercialPaymentOverview.hasContractValue
@@ -2768,7 +2805,7 @@ export default function Step2Milestones({
               </div>
               {commercialPaymentOverview.overAllocatedValue > 0 ? (
                 <div className="mt-1 text-xs text-amber-700">
-                  Overallocated by {formatCurrency(commercialPaymentOverview.overAllocatedValue)}
+                  Over by {formatCurrency(commercialPaymentOverview.overAllocatedValue)}
                 </div>
               ) : null}
             </div>
@@ -2788,8 +2825,8 @@ export default function Step2Milestones({
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-900" data-testid="step2-commercial-retainage-status">
                 {commercialPaymentOverview.retainageEnabled
-                  ? `${commercialPaymentOverview.retainagePercent.toFixed(2)}% enabled`
-                  : "Not enabled"}
+                  ? `Enabled at ${commercialPaymentOverview.retainagePercent.toFixed(2)}%`
+                  : "Disabled"}
               </div>
             </div>
           </div>
