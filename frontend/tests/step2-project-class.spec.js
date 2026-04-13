@@ -302,6 +302,11 @@ test('commercial payment overview treats near-match totals as fully allocated an
   await expect(page.getByTestId('step2-commercial-status-allocation')).toContainText('Fully Allocated');
   await expect(page.getByTestId('step2-commercial-status-retainage')).toContainText('Retainage Enabled 10.00%');
   await expect(page.getByTestId('step2-commercial-status-readiness')).toContainText('Progress / Draw Ready');
+  await expect(
+    page.getByText(
+      'Retainage is enabled at 10.00%. Final released amounts may differ from scheduled values until retainage is released.'
+    )
+  ).toBeVisible();
 });
 
 test('commercial payment overview flags over allocation cleanly', async ({ page }) => {

@@ -1359,6 +1359,11 @@ export default function Step2Milestones({
         : scheduleReadyForStructuredBilling
         ? "The commercial payment plan is taking shape with a balanced schedule."
         : "As milestone values are filled in, this will become a clearer commercial payment plan.";
+    const retainageMessage = retainageEnabled
+      ? `Retainage is enabled at ${retainagePercent.toFixed(
+          2
+        )}%. Final released amounts may differ from scheduled values until retainage is released.`
+      : "No retainage is currently built into this payment plan.";
 
     return {
       contractValue: safeContractValue,
@@ -1376,6 +1381,7 @@ export default function Step2Milestones({
       hasContractValue: safeContractValue > 0,
       allocationMessage,
       readinessMessage,
+      retainageMessage,
       statusItems: [
         {
           key: "allocation",
@@ -2888,9 +2894,7 @@ export default function Step2Milestones({
                   ) : null}
                 </div>
                 <div className="mt-1 text-xs leading-5 text-slate-600">
-                  {commercialPaymentOverview.retainageEnabled
-                    ? "Held-back value is built into this commercial payment plan."
-                    : "No retainage is currently built into this payment plan."}
+                  {commercialPaymentOverview.retainageMessage}
                 </div>
               </div>
             </div>
