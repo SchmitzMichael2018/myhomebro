@@ -28,11 +28,11 @@ import {
   safeTrim,
   computeCustomerAddressMissing,
   normalizePaymentMode,
-  normalizeProjectClass,
   normalizePaymentStructure,
   extractAiCredits,
   isAgreementLocked,
 } from "./step1/step1Utils";
+import { normalizeProjectClass } from "../utils/projectClass.js";
 
 function PrettyJson({ data }) {
   if (!data) return null;

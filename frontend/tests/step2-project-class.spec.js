@@ -82,6 +82,7 @@ async function installBaseMocks(page) {
 }
 
 async function installStep2Mocks(page, { agreement, estimateResponse, milestones }) {
+  expect(agreement?.total_cost, 'Step 2 test agreements must include total_cost').toBeTruthy();
   await installBaseMocks(page);
 
   await page.route(new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`), async (route) => {

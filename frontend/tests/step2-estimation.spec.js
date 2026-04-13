@@ -83,6 +83,30 @@ async function installBaseAuthMocks(page) {
 
 async function installAgreementWizardMocks(page, { estimateResponse }) {
   await installBaseAuthMocks(page);
+  const agreementResponse = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: 'Kitchen Remodel Agreement',
+    title: 'Kitchen Remodel Agreement',
+    description: 'Kitchen remodel with upgraded finishes.',
+    total_cost: '25000.00',
+    project_type: 'Remodel',
+    project_subtype: 'Kitchen Remodel',
+    project_address_city: 'San Antonio',
+    project_address_state: 'TX',
+    start: '2026-04-01',
+    selected_template_id: 55,
+    selected_template: { id: 55, name: 'Kitchen Remodel Starter' },
+    ai_scope: {
+      answers: {
+        finish_level: 'premium',
+        demolition_required: 'yes',
+      },
+      questions: [],
+    },
+    status: 'draft',
+  };
+  expect(agreementResponse.total_cost, 'Step 2 estimate test agreements must include total_cost').toBeTruthy();
 
   await page.route(new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`), async (route) => {
     const request = route.request();
@@ -92,18 +116,7 @@ async function installAgreementWizardMocks(page, { estimateResponse }) {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          id: AGREEMENT_ID,
-          agreement_id: AGREEMENT_ID,
-          project_title: 'Kitchen Remodel Agreement',
-          title: 'Kitchen Remodel Agreement',
-          description: 'Kitchen remodel with upgraded finishes.',
-          project_type: 'Remodel',
-          project_subtype: 'Kitchen Remodel',
-          project_address_city: 'San Antonio',
-          project_address_state: 'TX',
-          start: '2026-04-01',
-          selected_template_id: 55,
-          selected_template: { id: 55, name: 'Kitchen Remodel Starter' },
+          ...agreementResponse,
           ai_scope: {
             answers:
               payload?.ai_scope?.answers || {
@@ -112,7 +125,6 @@ async function installAgreementWizardMocks(page, { estimateResponse }) {
               },
             questions: [],
           },
-          status: 'draft',
         }),
       });
       return;
@@ -121,28 +133,7 @@ async function installAgreementWizardMocks(page, { estimateResponse }) {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
-        id: AGREEMENT_ID,
-        agreement_id: AGREEMENT_ID,
-        project_title: 'Kitchen Remodel Agreement',
-        title: 'Kitchen Remodel Agreement',
-        description: 'Kitchen remodel with upgraded finishes.',
-        project_type: 'Remodel',
-        project_subtype: 'Kitchen Remodel',
-        project_address_city: 'San Antonio',
-        project_address_state: 'TX',
-        start: '2026-04-01',
-        selected_template_id: 55,
-        selected_template: { id: 55, name: 'Kitchen Remodel Starter' },
-        ai_scope: {
-          answers: {
-            finish_level: 'premium',
-            demolition_required: 'yes',
-          },
-          questions: [],
-        },
-        status: 'draft',
-      }),
+      body: JSON.stringify(agreementResponse),
     });
   });
 

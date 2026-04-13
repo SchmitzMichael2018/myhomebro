@@ -38,6 +38,7 @@ import AssignReviewerInline from "../components/AssignReviewerInline";
 import AssignEmployeeInline from "../components/AssignEmployeeInline";
 import { WorkflowHint } from "../components/WorkflowHint.jsx";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
+import { normalizeProjectClass } from "../utils/projectClass.js";
 import { getAgreementDetailHint } from "../lib/workflowHints.js";
 import {
   assignAgreementToSubaccount,
@@ -86,11 +87,6 @@ function normalizePaymentMode(val) {
 function normalizePaymentStructure(val) {
   const s = String(val || "").trim().toLowerCase();
   return s === "progress" ? "progress" : "simple";
-}
-
-function normalizeProjectClass(val) {
-  const s = String(val || "").trim().toLowerCase();
-  return s === "commercial" ? "commercial" : "residential";
 }
 
 function projectClassLabel(val) {

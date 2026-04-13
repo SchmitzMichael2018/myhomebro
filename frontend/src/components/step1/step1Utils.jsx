@@ -1,3 +1,5 @@
+export { normalizeProjectClass } from "../../utils/projectClass.js";
+
 // frontend/src/components/step1/step1Utils.jsx
 
 export function safeTrim(s) {
@@ -42,12 +44,6 @@ export function normalizePaymentMode(value) {
   if (!s) return "escrow";
   if (s.includes("direct")) return "direct";
   return "escrow";
-}
-
-export function normalizeProjectClass(value) {
-  const s = String(value || "").trim().toLowerCase();
-  if (s === "commercial") return "commercial";
-  return "residential";
 }
 
 export function normalizePaymentStructure(value) {

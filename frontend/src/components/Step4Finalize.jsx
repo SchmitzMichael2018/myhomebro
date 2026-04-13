@@ -14,6 +14,7 @@ import Modal from "react-modal";
 import SignatureModal from "./SignatureModal";
 import SendFundingLinkButton from "./SendFundingLinkButton";
 import ClarificationsModal from "./ClarificationsModal";
+import { normalizeProjectClass } from "../utils/projectClass.js";
 
 Modal.setAppElement("#root");
 
@@ -219,11 +220,6 @@ function normalizePaymentMode(v) {
   if (s.includes("direct")) return "direct";
   if (s.includes("escrow")) return "escrow";
   return "";
-}
-
-function normalizeProjectClass(value) {
-  const normalized = String(value || "").trim().toLowerCase();
-  return normalized === "commercial" ? "commercial" : "residential";
 }
 
 function projectClassLabel(value) {

@@ -177,6 +177,7 @@ function buildEstimateResponse() {
 }
 
 async function installStep2Mocks(page, { agreement, milestones, estimateResponse }) {
+  expect(agreement?.total_cost, 'Commercial payment overview test agreements must include total_cost').toBeTruthy();
   await installBaseMocks(page);
 
   await page.route(new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`), async (route) => {
@@ -336,4 +337,121 @@ test('commercial payment overview updates status for under, fully, and over allo
   await expect(page.getByTestId('step2-commercial-status-allocation')).toContainText('Over Allocated');
   await expect(page.getByTestId('step2-commercial-status-readiness')).toContainText('Commercial schedule taking shape');
   await expect(page.getByText('Currently over by $1,000.00.')).toBeVisible();
+});
+
+test('commercial payment overview respects MONEY_COMPARISON_TOLERANCE boundaries', async ({ page }) => {
+  const fullyAllocatedCases = [
+    { label: 'exact match', secondAmount: '12000.00' },
+    { label: 'within tolerance low', secondAmount: '11999.995' },
+    { label: 'within tolerance high', secondAmount: '12000.005' },
+    { label: 'at tolerance low edge', secondAmount: '11999.99' },
+    { label: 'at tolerance high edge', secondAmount: '12000.01' },
+  ];
+
+  for (const testCase of fullyAllocatedCases) {
+    await installStep2Mocks(page, {
+      agreement: buildAgreement({
+        payment_structure: 'progress',
+        total_cost: '25000.00',
+      }),
+      milestones: buildMilestones([
+        {
+          id: 1001,
+          agreement: AGREEMENT_ID,
+          order: 1,
+          title: 'Mobilization',
+          description: 'Startup, procurement, and site prep.',
+          amount: '13000.00',
+          start_date: '2026-04-01',
+          completion_date: '2026-04-03',
+          normalized_milestone_type: 'mobilization',
+        },
+        {
+          id: 1002,
+          agreement: AGREEMENT_ID,
+          order: 2,
+          title: 'Buildout',
+          description: `Tolerance boundary case: ${testCase.label}`,
+          amount: testCase.secondAmount,
+          start_date: '2026-04-04',
+          completion_date: '2026-04-10',
+          normalized_milestone_type: 'installation',
+        },
+      ]),
+    });
+
+    await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, { waitUntil: 'domcontentloaded' });
+    await expect(
+      page.getByTestId('step2-commercial-status-allocation'),
+      `Expected fully allocated for ${testCase.label}`
+    ).toContainText('Fully Allocated');
+  }
+
+  await installStep2Mocks(page, {
+    agreement: buildAgreement({
+      payment_structure: 'progress',
+      total_cost: '25000.00',
+    }),
+    milestones: buildMilestones([
+      {
+        id: 1001,
+        agreement: AGREEMENT_ID,
+        order: 1,
+        title: 'Mobilization',
+        description: 'Startup, procurement, and site prep.',
+        amount: '13000.00',
+        start_date: '2026-04-01',
+        completion_date: '2026-04-03',
+        normalized_milestone_type: 'mobilization',
+      },
+      {
+        id: 1002,
+        agreement: AGREEMENT_ID,
+        order: 2,
+        title: 'Buildout',
+        description: 'Outside tolerance low edge.',
+        amount: '11999.98',
+        start_date: '2026-04-04',
+        completion_date: '2026-04-10',
+        normalized_milestone_type: 'installation',
+      },
+    ]),
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('step2-commercial-status-allocation')).toContainText('Under Allocated');
+
+  await installStep2Mocks(page, {
+    agreement: buildAgreement({
+      payment_structure: 'progress',
+      total_cost: '25000.00',
+    }),
+    milestones: buildMilestones([
+      {
+        id: 1001,
+        agreement: AGREEMENT_ID,
+        order: 1,
+        title: 'Mobilization',
+        description: 'Startup, procurement, and site prep.',
+        amount: '13000.00',
+        start_date: '2026-04-01',
+        completion_date: '2026-04-03',
+        normalized_milestone_type: 'mobilization',
+      },
+      {
+        id: 1002,
+        agreement: AGREEMENT_ID,
+        order: 2,
+        title: 'Buildout',
+        description: 'Outside tolerance high edge.',
+        amount: '12000.02',
+        start_date: '2026-04-04',
+        completion_date: '2026-04-10',
+        normalized_milestone_type: 'installation',
+      },
+    ]),
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('step2-commercial-status-allocation')).toContainText('Over Allocated');
 });

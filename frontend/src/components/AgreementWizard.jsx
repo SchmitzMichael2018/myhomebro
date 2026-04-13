@@ -31,6 +31,7 @@ import { getAiPanelConfigForStep } from "../lib/agreementWizardAiPanel.js";
 import { trackOnboardingEvent } from "../lib/onboardingAnalytics.js";
 import { getAgreementWizardHint } from "../lib/workflowHints.js";
 import useAiFieldHighlights from "../hooks/useAiFieldHighlights.js";
+import { normalizeProjectClass } from "../utils/projectClass.js";
 import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 
 /* ---------------- helpers ---------------- */
@@ -46,11 +47,6 @@ function clampStep(v) {
 
 function safeStr(v) {
   return v == null ? "" : String(v).trim();
-}
-
-function normalizeProjectClass(value) {
-  const s = safeStr(value).toLowerCase();
-  return s === "commercial" ? "commercial" : "residential";
 }
 
 function money(v) {
@@ -1644,6 +1640,7 @@ export default function AgreementWizard() {
             onNext={() => goStep(3)}
             reloadMilestones={loadMilestones}
             refreshAgreement={refreshAgreement}
+            projectClassOverride={normalizeProjectClass(dLocal.project_class || agreement?.project_class)}
             assistantSuggestedMilestones={assistantHandoff.suggestedMilestones}
             assistantClarificationQuestions={assistantHandoff.clarificationQuestions}
             assistantEstimatePreview={assistantHandoff.estimatePreview}
