@@ -105,6 +105,16 @@ function buildAgreement(overrides = {}) {
     },
     status: 'draft',
     payment_structure: 'progress',
+    next_billable_stage: {
+      available: true,
+      status: 'ready_to_bill',
+      status_label: 'Ready to bill',
+      tone: 'good',
+      title: 'Buildout',
+      order: 2,
+      amount: '12000.00',
+      message: "This stage looks ready for the next commercial billing step when you're ready to invoice it.",
+    },
     ...overrides,
   };
 }
@@ -250,6 +260,71 @@ test('commercial payment overview displays key values and retainage messaging', 
       'Retainage is enabled at 10.00%. Final released amounts may differ from scheduled values until retainage is released.'
     )
   ).toBeVisible();
+  await expect(page.getByTestId('step2-commercial-next-billable-title')).toContainText('Stage 2: Buildout');
+  await expect(page.getByTestId('step2-commercial-next-billable-status')).toContainText('Ready to bill');
+  await expect(page.getByTestId('step2-commercial-next-billable-amount')).toContainText('$12,000.00');
+  await expect(
+    page.getByText(
+      "This stage looks ready for the next commercial billing step when you're ready to invoice it."
+    )
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      'Retainage is enabled at 10.00%. Final released amounts for this stage may differ from its scheduled value until retainage is released.'
+    )
+  ).toBeVisible();
+});
+
+test('commercial payment overview shows next billable stage readiness states cleanly', async ({ page }) => {
+  await installStep2Mocks(page, {
+    agreement: buildAgreement({
+      next_billable_stage: {
+        available: true,
+        status: 'awaiting_approval',
+        status_label: 'Awaiting approval',
+        tone: 'neutral',
+        title: 'Mobilization',
+        order: 1,
+        amount: '4000.00',
+        message:
+          'This stage is already billed. Approval should happen before the next structured billing step.',
+      },
+    }),
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('step2-commercial-next-billable-title')).toContainText('Stage 1: Mobilization');
+  await expect(page.getByTestId('step2-commercial-next-billable-status')).toContainText('Awaiting approval');
+  await expect(
+    page.getByText('This stage is already billed. Approval should happen before the next structured billing step.')
+  ).toBeVisible();
+
+  await installStep2Mocks(page, {
+    agreement: buildAgreement({
+      next_billable_stage: {
+        available: false,
+        status: 'all_settled',
+        status_label: 'All current stages are settled',
+        tone: 'good',
+        title: 'Billing plan caught up',
+        message:
+          'All current commercial stages are already billed or settled. Add the next stage when more work is ready.',
+      },
+    }),
+    milestones: [],
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('step2-commercial-next-billable-title')).toContainText('Billing plan caught up');
+  await expect(page.getByTestId('step2-commercial-next-billable-status')).toContainText(
+    'All current stages are settled'
+  );
+  await expect(
+    page.getByText(
+      'All current commercial stages are already billed or settled. Add the next stage when more work is ready.'
+    )
+  ).toBeVisible();
+  await expect(page.getByTestId('step2-commercial-next-billable-amount')).toHaveCount(0);
 });
 
 test('commercial payment overview updates status for under, fully, and over allocated schedules', async ({ page }) => {

@@ -96,6 +96,11 @@ class AgreementViewSet(viewsets.ModelViewSet):
         "project", "contractor", "homeowner"
     ).order_by("-updated_at")
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["include_next_billable_stage"] = getattr(self, "action", None) != "list"
+        return context
+
     def get_queryset(self):
         qs = Agreement.objects.select_related(
             "project", "contractor", "homeowner"

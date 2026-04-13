@@ -32,6 +32,7 @@ except Exception:  # pragma: no cover
     ProjectTemplate = None  # type: ignore
 
 from projects.services.compliance import get_agreement_compliance_warning
+from projects.services.next_billable_stage import build_next_billable_stage
 from projects.services.recurring_maintenance import build_recurring_preview, ensure_recurring_milestones
 from projects.services.sms_automation import build_sms_automation_summary
 from projects.services.sms_service import get_sms_status_payload
@@ -571,6 +572,7 @@ class AgreementSerializer(serializers.ModelSerializer):
     selected_template_name_snapshot = serializers.CharField(read_only=True)
     compliance_warning = serializers.SerializerMethodField()
     recurring_preview = serializers.SerializerMethodField()
+    next_billable_stage = serializers.SerializerMethodField()
     sms_status = serializers.SerializerMethodField()
     sms_enabled = serializers.SerializerMethodField()
     sms_opted_out = serializers.SerializerMethodField()
@@ -625,6 +627,14 @@ class AgreementSerializer(serializers.ModelSerializer):
             return build_recurring_preview(obj, horizon=3)
         except Exception:
             return {}
+
+    def get_next_billable_stage(self, obj):
+        if not self.context.get("include_next_billable_stage", False):
+            return None
+        try:
+            return build_next_billable_stage(obj)
+        except Exception:
+            return None
 
     def get_sms_status(self, obj):
         return get_sms_status_payload(homeowner=self._homeowner_obj(obj), contractor=getattr(obj, "contractor", None))

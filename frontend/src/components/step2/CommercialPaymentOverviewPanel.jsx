@@ -39,6 +39,12 @@ function statusToneClasses(tone = "neutral") {
   return "border-slate-200 bg-slate-50 text-slate-700";
 }
 
+function nextBillableToneClasses(tone = "neutral") {
+  if (tone === "good") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (tone === "warn") return "border-amber-200 bg-amber-50 text-amber-800";
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
 export default function CommercialPaymentOverviewPanel({
   agreementMeta,
   effectiveMilestones,
@@ -131,6 +137,29 @@ export default function CommercialPaymentOverviewPanel({
         )}%. Final released amounts may differ from scheduled values until retainage is released.`
       : "No retainage is currently built into this payment plan.";
 
+    const rawNextBillableStage =
+      agreementMeta?.next_billable_stage &&
+      typeof agreementMeta.next_billable_stage === "object" &&
+      !Array.isArray(agreementMeta.next_billable_stage)
+        ? agreementMeta.next_billable_stage
+        : null;
+
+    const nextBillableStage =
+      rawNextBillableStage && (rawNextBillableStage.available || rawNextBillableStage.status)
+        ? {
+            available: rawNextBillableStage.available !== false,
+            title: safeStr(rawNextBillableStage.title) || "Next billable stage",
+            order: rawNextBillableStage.order,
+            amount: Number(rawNextBillableStage.amount),
+            status: safeStr(rawNextBillableStage.status).toLowerCase(),
+            statusLabel: safeStr(rawNextBillableStage.status_label) || "Commercial billing update",
+            tone: safeStr(rawNextBillableStage.tone).toLowerCase() || "neutral",
+            message:
+              safeStr(rawNextBillableStage.message) ||
+              "This is the next commercial stage the system is watching for future billing workflows.",
+          }
+        : null;
+
     return {
       contractValue: safeContractValue,
       allocatedValue,
@@ -147,6 +176,7 @@ export default function CommercialPaymentOverviewPanel({
       futureWorkflowTone,
       retainageMessage,
       isProgressPayments,
+      nextBillableStage,
       statusItems: [
         {
           key: "allocation",
@@ -330,6 +360,58 @@ export default function CommercialPaymentOverviewPanel({
           </div>
         </div>
       </div>
+
+      {commercialPaymentOverview.nextBillableStage ? (
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="max-w-3xl">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                Next billable stage
+              </div>
+              <div
+                className="mt-1 text-base font-semibold text-slate-950"
+                data-testid="step2-commercial-next-billable-title"
+              >
+                {commercialPaymentOverview.nextBillableStage.available &&
+                commercialPaymentOverview.nextBillableStage.order != null
+                  ? `Stage ${commercialPaymentOverview.nextBillableStage.order}: ${commercialPaymentOverview.nextBillableStage.title}`
+                  : commercialPaymentOverview.nextBillableStage.title}
+              </div>
+              <div className="mt-2 text-sm leading-6 text-slate-600">
+                {commercialPaymentOverview.nextBillableStage.message}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${nextBillableToneClasses(
+                  commercialPaymentOverview.nextBillableStage.tone
+                )}`}
+                data-testid="step2-commercial-next-billable-status"
+              >
+                {commercialPaymentOverview.nextBillableStage.statusLabel}
+              </span>
+              {commercialPaymentOverview.nextBillableStage.available &&
+              Number.isFinite(commercialPaymentOverview.nextBillableStage.amount) &&
+              commercialPaymentOverview.nextBillableStage.amount > 0 ? (
+                <span
+                  className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-700"
+                  data-testid="step2-commercial-next-billable-amount"
+                >
+                  {formatCurrency(commercialPaymentOverview.nextBillableStage.amount)}
+                </span>
+              ) : null}
+            </div>
+          </div>
+
+          {commercialPaymentOverview.retainageEnabled ? (
+            <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50/70 px-3 py-2 text-xs leading-5 text-blue-900">
+              Retainage is enabled at {commercialPaymentOverview.retainagePercent.toFixed(2)}%. Final
+              released amounts for this stage may differ from its scheduled value until retainage is
+              released.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-slate-600 sm:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2">
