@@ -1343,6 +1343,23 @@ export default function Step2Milestones({
       }
     }
 
+    const allocationMessage =
+      safeContractValue <= 0
+        ? "Add the contract total to compare milestone values against the full agreement."
+        : fullyAllocated
+        ? "Milestone values are aligned with the current contract total."
+        : overAllocated
+        ? `${formatCurrency(overAllocatedValue)} is assigned above the current contract total.`
+        : `${formatCurrency(unallocatedValue)} is still available to assign across the remaining schedule.`;
+    const readinessMessage =
+      paymentStructure === "progress"
+        ? scheduleReadyForProgress
+          ? "The payment plan is balanced and ready to support future draw requests."
+          : "A little more allocation detail will make this schedule ready for draw-based billing."
+        : scheduleReadyForStructuredBilling
+        ? "The commercial payment plan is taking shape with a balanced schedule."
+        : "As milestone values are filled in, this will become a clearer commercial payment plan.";
+
     return {
       contractValue: safeContractValue,
       allocatedValue,
@@ -1357,6 +1374,8 @@ export default function Step2Milestones({
       scheduleReadyForProgress,
       scheduleReadyForStructuredBilling,
       hasContractValue: safeContractValue > 0,
+      allocationMessage,
+      readinessMessage,
       statusItems: [
         {
           key: "allocation",
@@ -2743,26 +2762,26 @@ export default function Step2Milestones({
 
       {commercialPaymentOverview ? (
         <section
-          className="rounded-2xl border border-slate-300 bg-white px-4 py-4 shadow-sm"
+          className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-slate-100/60 px-4 py-4 shadow-sm"
           data-testid="step2-commercial-payment-overview"
         >
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
             <div className="max-w-3xl">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
                 Payment overview
               </div>
               <h3 className="mt-1 text-lg font-semibold text-slate-950">
                 Commercial Payment Planning
               </h3>
-              <p className="mt-2 text-sm text-slate-600">
-                A clean snapshot of how the contract is allocated today, so it is easier to spot what is ready for progress or draw-based billing next.
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                A compact view of how much value is already assigned, what is left to place, and whether the commercial payment plan is starting to take shape.
               </p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 xl:max-w-[340px] xl:justify-end">
               {commercialPaymentOverview.statusItems.map((item) => (
                 <span
                   key={item.key}
-                  className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${statusToneClasses(
+                  className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide shadow-sm ${statusToneClasses(
                     item.tone
                   )}`}
                   data-testid={`step2-commercial-status-${item.key}`}
@@ -2773,61 +2792,130 @@ export default function Step2Milestones({
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-5">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    Schedule snapshot
+                  </div>
+                  <div className="mt-2 text-3xl font-semibold tracking-tight text-slate-950" data-testid="step2-commercial-allocated-value">
+                    {formatCurrency(commercialPaymentOverview.allocatedValue)}
+                  </div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    assigned across current milestone values
+                  </div>
+                </div>
+                <div className="min-w-[180px] rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Remaining to Allocate
+                  </div>
+                  <div className="mt-1 text-xl font-semibold text-slate-900" data-testid="step2-commercial-unallocated-value">
+                    {commercialPaymentOverview.hasContractValue
+                      ? formatCurrency(commercialPaymentOverview.unallocatedValue)
+                      : "—"}
+                  </div>
+                  <div className="mt-1 text-xs leading-5 text-slate-600">
+                    {commercialPaymentOverview.overAllocatedValue > 0
+                      ? `Currently over by ${formatCurrency(commercialPaymentOverview.overAllocatedValue)}.`
+                      : commercialPaymentOverview.fullyAllocated
+                      ? "The schedule is aligned with the contract value."
+                      : "Value that still needs to be assigned to milestones."}
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Allocation status
+                </div>
+                <div className="mt-1 text-sm font-medium text-slate-900">
+                  {commercialPaymentOverview.allocationMessage}
+                </div>
+                <div className="mt-1 text-xs leading-5 text-slate-600">
+                  {commercialPaymentOverview.readinessMessage}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
+              <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Total Contract Value
+                </div>
+                <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-commercial-contract-value">
+                  {commercialPaymentOverview.hasContractValue
+                    ? formatCurrency(commercialPaymentOverview.contractValue)
+                    : "Add contract value in agreement setup"}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Payment Structure
+                </div>
+                <div className="mt-1 text-sm font-semibold text-slate-900" data-testid="step2-commercial-payment-structure">
+                  {commercialPaymentOverview.structureLabel}
+                </div>
+                <div className="mt-1 text-xs leading-5 text-slate-600">
+                  {isProgressPayments
+                    ? "Supports progress and draw-style billing after signing."
+                    : "Keeps the commercial schedule clear without extra billing overhead."}
+                </div>
+              </div>
+
+              <div
+                className={`rounded-xl border px-4 py-3 shadow-sm ${
+                  commercialPaymentOverview.retainageEnabled
+                    ? "border-blue-200 bg-blue-50/70"
+                    : "border-slate-200 bg-white"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      Retainage
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-slate-900" data-testid="step2-commercial-retainage-status">
+                      {commercialPaymentOverview.retainageEnabled
+                        ? `Enabled at ${commercialPaymentOverview.retainagePercent.toFixed(2)}%`
+                        : "Disabled"}
+                    </div>
+                  </div>
+                  {commercialPaymentOverview.retainageEnabled ? (
+                    <span className="rounded-full border border-blue-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-blue-700">
+                      Active
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-1 text-xs leading-5 text-slate-600">
+                  {commercialPaymentOverview.retainageEnabled
+                    ? "Held-back value is built into this commercial payment plan."
+                    : "No retainage is currently built into this payment plan."}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-slate-600 sm:grid-cols-3">
+            <div className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2">
+              <div className="font-semibold text-slate-800">
                 Total Contract Value
               </div>
-              <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-commercial-contract-value">
-                {commercialPaymentOverview.hasContractValue
-                  ? formatCurrency(commercialPaymentOverview.contractValue)
-                  : "Add contract value in agreement setup"}
-              </div>
+              <div className="mt-1">Use the agreement total as the anchor for milestone planning.</div>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <div className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2">
+              <div className="font-semibold text-slate-800">
                 Scheduled Value Allocated
               </div>
-              <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-commercial-allocated-value">
-                {formatCurrency(commercialPaymentOverview.allocatedValue)}
-              </div>
+              <div className="mt-1">Shows how much of the contract has already been distributed across milestones.</div>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Remaining to Allocate
+            <div className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2">
+              <div className="font-semibold text-slate-800">
+                Commercial plan health
               </div>
-              <div className="mt-1 text-lg font-semibold text-slate-900" data-testid="step2-commercial-unallocated-value">
-                {commercialPaymentOverview.hasContractValue
-                  ? formatCurrency(commercialPaymentOverview.unallocatedValue)
-                  : "—"}
-              </div>
-              {commercialPaymentOverview.overAllocatedValue > 0 ? (
-                <div className="mt-1 text-xs text-amber-700">
-                  Over by {formatCurrency(commercialPaymentOverview.overAllocatedValue)}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Payment structure
-              </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900" data-testid="step2-commercial-payment-structure">
-                {commercialPaymentOverview.structureLabel}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Retainage
-              </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900" data-testid="step2-commercial-retainage-status">
-                {commercialPaymentOverview.retainageEnabled
-                  ? `Enabled at ${commercialPaymentOverview.retainagePercent.toFixed(2)}%`
-                  : "Disabled"}
-              </div>
+              <div className="mt-1">Helps you see whether the payment plan is taking shape without slowing down milestone editing.</div>
             </div>
           </div>
         </section>
