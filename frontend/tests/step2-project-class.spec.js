@@ -250,7 +250,12 @@ test('commercial step 2 uses structured schedule and payment-aware guidance', as
   await expect(page.getByTestId('step2-commercial-payment-structure')).toContainText('Progress Payments');
   await expect(page.getByTestId('step2-commercial-retainage-status')).toContainText('Disabled');
   await expect(page.getByTestId('step2-commercial-status-allocation')).toContainText('Under Allocated');
-  await expect(page.getByTestId('step2-commercial-status-readiness')).toContainText('Progress / Draw Needs Review');
+  await expect(page.getByTestId('step2-commercial-status-readiness')).toContainText(
+    'Needs more allocation before draw planning'
+  );
+  await expect(page.getByTestId('step2-commercial-future-status')).toContainText(
+    'Needs more allocation before draw planning'
+  );
   await expect(page.getByTestId('step2-commercial-status-retainage')).toHaveCount(0);
   await expect(page.getByText('Supports draw-request planning after signing.')).toBeVisible();
   await expect(page.getByText('Schedule share: 25%')).toBeVisible();
@@ -301,7 +306,8 @@ test('commercial payment overview treats near-match totals as fully allocated an
   await expect(page.getByTestId('step2-commercial-retainage-status')).toContainText('Enabled at 10.00%');
   await expect(page.getByTestId('step2-commercial-status-allocation')).toContainText('Fully Allocated');
   await expect(page.getByTestId('step2-commercial-status-retainage')).toContainText('Retainage Enabled 10.00%');
-  await expect(page.getByTestId('step2-commercial-status-readiness')).toContainText('Progress / Draw Ready');
+  await expect(page.getByTestId('step2-commercial-status-readiness')).toContainText('Ready for structured billing');
+  await expect(page.getByTestId('step2-commercial-future-status')).toContainText('Ready for structured billing');
   await expect(
     page.getByText(
       'Retainage is enabled at 10.00%. Final released amounts may differ from scheduled values until retainage is released.'
@@ -349,5 +355,6 @@ test('commercial payment overview flags over allocation cleanly', async ({ page 
   await expect(page.getByTestId('step2-commercial-unallocated-value')).toContainText('$0.00');
   await expect(page.getByText('Over by $1,000.00')).toBeVisible();
   await expect(page.getByTestId('step2-commercial-status-allocation')).toContainText('Over Allocated');
-  await expect(page.getByTestId('step2-commercial-status-readiness')).toContainText('Schedule Needs Review');
+  await expect(page.getByTestId('step2-commercial-status-readiness')).toContainText('Commercial schedule taking shape');
+  await expect(page.getByTestId('step2-commercial-future-status')).toContainText('Commercial schedule taking shape');
 });

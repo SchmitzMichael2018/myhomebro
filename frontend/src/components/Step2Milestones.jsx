@@ -1359,6 +1359,23 @@ export default function Step2Milestones({
         : scheduleReadyForStructuredBilling
         ? "The commercial payment plan is taking shape with a balanced schedule."
         : "As milestone values are filled in, this will become a clearer commercial payment plan.";
+    let futureWorkflowLabel = "Commercial schedule taking shape";
+    let futureWorkflowTone = "neutral";
+    if (paymentStructure === "progress") {
+      if (scheduleReadyForProgress) {
+        futureWorkflowLabel = "Ready for structured billing";
+        futureWorkflowTone = "good";
+      } else if (overAllocated) {
+        futureWorkflowLabel = "Needs review before draw planning";
+        futureWorkflowTone = "warn";
+      } else {
+        futureWorkflowLabel = "Needs more allocation before draw planning";
+        futureWorkflowTone = "neutral";
+      }
+    } else if (scheduleReadyForStructuredBilling) {
+      futureWorkflowLabel = "Ready for structured billing";
+      futureWorkflowTone = "good";
+    }
     const retainageMessage = retainageEnabled
       ? `Retainage is enabled at ${retainagePercent.toFixed(
           2
@@ -1381,6 +1398,8 @@ export default function Step2Milestones({
       hasContractValue: safeContractValue > 0,
       allocationMessage,
       readinessMessage,
+      futureWorkflowLabel,
+      futureWorkflowTone,
       retainageMessage,
       statusItems: [
         {
@@ -1399,22 +1418,8 @@ export default function Step2Milestones({
           : []),
         {
           key: "readiness",
-          label:
-            paymentStructure === "progress"
-              ? scheduleReadyForProgress
-                ? "Progress / Draw Ready"
-                : "Progress / Draw Needs Review"
-              : scheduleReadyForStructuredBilling
-              ? "Structured Schedule Ready"
-              : "Schedule Needs Review",
-          tone:
-            paymentStructure === "progress"
-              ? scheduleReadyForProgress
-                ? "good"
-                : "warn"
-              : scheduleReadyForStructuredBilling
-              ? "good"
-              : "neutral",
+          label: futureWorkflowLabel,
+          tone: futureWorkflowTone,
         },
       ],
     };
@@ -2831,13 +2836,25 @@ export default function Step2Milestones({
                 </div>
               </div>
               <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  Allocation status
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      Allocation status
+                    </div>
+                    <div className="mt-1 text-sm font-medium text-slate-900">
+                      {commercialPaymentOverview.allocationMessage}
+                    </div>
+                  </div>
+                  <span
+                    className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${statusToneClasses(
+                      commercialPaymentOverview.futureWorkflowTone
+                    )}`}
+                    data-testid="step2-commercial-future-status"
+                  >
+                    {commercialPaymentOverview.futureWorkflowLabel}
+                  </span>
                 </div>
-                <div className="mt-1 text-sm font-medium text-slate-900">
-                  {commercialPaymentOverview.allocationMessage}
-                </div>
-                <div className="mt-1 text-xs leading-5 text-slate-600">
+                <div className="mt-2 text-xs leading-5 text-slate-600">
                   {commercialPaymentOverview.readinessMessage}
                 </div>
               </div>
