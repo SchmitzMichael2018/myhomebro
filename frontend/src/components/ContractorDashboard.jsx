@@ -172,6 +172,75 @@ const isMilestoneCompleted = (m) => {
 
 const isMilestoneIncomplete = (m) => !isMilestoneCompleted(m);
 
+const hasMilestoneInvoice = (m) =>
+  m?.is_invoiced === true || !!getInvoiceIdFromMilestone(m);
+
+const milestonePercentComplete = (m) => {
+  const candidates = [
+    m?.percent_complete,
+    m?.progress_percent,
+    m?.completion_percent,
+    m?.progress,
+  ];
+  for (const value of candidates) {
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+};
+
+const isMilestoneReviewedStage = (m) => {
+  if (!m) return false;
+  const st = milestoneStatus(m);
+  if (
+    [
+      "review",
+      "in_review",
+      "pending_review",
+      "submitted",
+      "pending_approval",
+      "awaiting_approval",
+      "approval_pending",
+    ].includes(st)
+  ) {
+    return true;
+  }
+  return !!m?.submitted_at || !!m?.submitted_on || !!m?.completion_submitted_at;
+};
+
+const isMilestoneCompletedStage = (m, invoicesById) => {
+  if (!isMilestoneCompleted(m)) return false;
+  if (isMilestonePaid(m, invoicesById)) return false;
+  if (hasMilestoneInvoice(m)) return false;
+  if (isMilestoneReviewedStage(m)) return false;
+  return true;
+};
+
+const isMilestoneInvoicedStage = (m, invoicesById) => {
+  if (isMilestonePaid(m, invoicesById)) return false;
+  return hasMilestoneInvoice(m);
+};
+
+const isMilestoneNotStarted = (m, invoicesById) => {
+  if (!m) return false;
+  if (isMilestonePaid(m, invoicesById)) return false;
+  if (hasMilestoneInvoice(m)) return false;
+  if (isMilestoneCompleted(m)) return false;
+  const st = milestoneStatus(m);
+  if (["not_started", "not started", "todo", "planned", "draft"].includes(st)) {
+    return true;
+  }
+  return milestonePercentComplete(m) <= 0;
+};
+
+const isMilestoneInProgressStage = (m, invoicesById) => {
+  if (!m) return false;
+  if (isMilestonePaid(m, invoicesById)) return false;
+  if (hasMilestoneInvoice(m)) return false;
+  if (isMilestoneCompleted(m)) return false;
+  return !isMilestoneNotStarted(m, invoicesById);
+};
+
 // Paid milestone = invoice is paid OR escrow released (via invoices list or embedded invoice object)
 const isMilestonePaid = (m, invoicesById) => {
   if (!m) return false;
@@ -1299,27 +1368,35 @@ export default function ContractorDashboard() {
 
     const nonRework = all.filter((m) => !isReworkMilestone(m));
 
-    const incomp = nonRework.filter(isMilestoneIncomplete);
-    const incompAmt = sum(incomp);
+    const notStarted = nonRework.filter((m) => isMilestoneNotStarted(m, invoicesById));
+    const notStartedAmt = sum(notStarted);
 
-    const ready = nonRework.filter((m) => isMilestoneReadyToInvoice(m, invoicesById));
-    const readyAmt = sum(ready);
+    const inProgress = nonRework.filter((m) => isMilestoneInProgressStage(m, invoicesById));
+    const inProgressAmt = sum(inProgress);
 
-    const paid = nonRework.filter((m) => isMilestonePaid(m, invoicesById));
-    const paidAmt = sum(paid);
+    const completed = nonRework.filter((m) => isMilestoneCompletedStage(m, invoicesById));
+    const completedAmt = sum(completed);
+
+    const reviewed = nonRework.filter((m) => isMilestoneReviewedStage(m) && !isMilestoneInvoicedStage(m, invoicesById) && !isMilestonePaid(m, invoicesById));
+    const reviewedAmt = sum(reviewed);
+
+    const invoiced = nonRework.filter((m) => isMilestoneInvoicedStage(m, invoicesById));
+    const invoicedAmt = sum(invoiced);
 
     return {
       totalCount: all.length,
       totalAmount: allAmt,
 
-      incompleteCount: incomp.length,
-      incompleteAmount: incompAmt,
-
-      readyCount: ready.length,
-      readyAmount: readyAmt,
-
-      paidCount: paid.length,
-      paidAmount: paidAmt,
+      notStartedCount: notStarted.length,
+      notStartedAmount: notStartedAmt,
+      inProgressCount: inProgress.length,
+      inProgressAmount: inProgressAmt,
+      completedCount: completed.length,
+      completedAmount: completedAmt,
+      reviewedCount: reviewed.length,
+      reviewedAmount: reviewedAmt,
+      invoicedCount: invoiced.length,
+      invoicedAmount: invoicedAmt,
 
       reworkCount: rework.length,
       reworkAmount: reworkAmt,
@@ -1825,8 +1902,12 @@ export default function ContractorDashboard() {
     dueSchedule.tomorrow.count > 0 ||
     dueSchedule.week.count > 0;
   const workMoneyConnectorLabel =
-    mStats.readyCount > 0
-      ? `${mStats.readyCount} ${mStats.readyCount === 1 ? "milestone" : "milestones"} ready for payment request`
+    mStats.reviewedCount > 0
+      ? `${mStats.reviewedCount} ${mStats.reviewedCount === 1 ? "milestone" : "milestones"} in review`
+      : mStats.completedCount > 0
+      ? `${mStats.completedCount} ${mStats.completedCount === 1 ? "milestone" : "milestones"} completed`
+      : mStats.invoicedCount > 0
+      ? `${mStats.invoicedCount} ${mStats.invoicedCount === 1 ? "milestone" : "milestones"} invoiced`
       : dStats.paymentPendingCount > 0
       ? `${dStats.paymentPendingCount} ${dStats.paymentPendingCount === 1 ? "request" : "requests"} awaiting payment`
       : "Completed work flows into payment requests and payout";
@@ -1835,7 +1916,8 @@ export default function ContractorDashboard() {
       needsAttentionItems.length > 0 ||
       dueSchedule.late.count > 0 ||
       dueSchedule.today.count > 0 ||
-      mStats.readyCount > 0 ||
+      mStats.reviewedCount > 0 ||
+      mStats.completedCount > 0 ||
       dStats.awaitingApprovalCount > 0 ||
       dStats.paymentPendingCount > 0;
 
@@ -1876,7 +1958,8 @@ export default function ContractorDashboard() {
     dStats.awaitingApprovalCount,
     dStats.paymentPendingCount,
     isOnboardingComplete,
-    mStats.readyCount,
+    mStats.reviewedCount,
+    mStats.completedCount,
     needsAttentionItems.length,
     nextBestAction?.title,
   ]);
@@ -2093,18 +2176,18 @@ export default function ContractorDashboard() {
                 />
                 <StatCard
                   icon={BadgeCheck}
-                  title="Pending Payments"
-                  subtitle="Direct-payment requests still waiting on payment."
+                  title="Payment Pending"
+                  subtitle="Approved requests still moving through the next payment step."
                   count={dStats.paymentPendingCount}
                   amount={dStats.paymentPendingAmount}
                   onClick={goDrawRequests}
                 />
                 <StatCard
-                  icon={BadgeDollarSign}
-                  title="Awaiting Approval"
-                  subtitle="Submitted requests waiting on owner review."
-                  count={dStats.awaitingApprovalCount}
-                  amount={dStats.awaitingApprovalAmount}
+                  icon={AlertTriangle}
+                  title="Issues / Disputes"
+                  subtitle="Requested changes, rejected requests, disputes, or payment issues."
+                  count={dStats.issuesCount}
+                  amount={dStats.issuesAmount}
                   onClick={goDrawRequests}
                 />
               </div>
@@ -2114,35 +2197,53 @@ export default function ContractorDashboard() {
                     <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#52749a]">
                       Active Work
                     </div>
-                    <div className="mt-1 text-lg font-semibold text-[#18395f]">What is moving toward payment</div>
+                    <div className="mt-1 text-lg font-semibold text-[#18395f]">Track current work stage across active milestones</div>
                   </div>
                   <FlowMetricButton
                     icon={ListTodo}
+                    label="Not Started"
+                    description="Milestones with no recorded progress yet."
+                    count={mStats.notStartedCount}
+                    amount={mStats.notStartedAmount}
+                    onClick={() => navigate(`/app/milestones?filter=incomplete`)}
+                    testId="dashboard-work-not-started"
+                  />
+                  <FlowMetricButton
+                    icon={Target}
                     label="In Progress"
-                    description="Milestones that still need work or completion."
-                    count={mStats.incompleteCount}
-                    amount={mStats.incompleteAmount}
+                    description="Milestones underway but not yet complete."
+                    count={mStats.inProgressCount}
+                    amount={mStats.inProgressAmount}
                     onClick={() => navigate(`/app/milestones?filter=incomplete`)}
                     testId="dashboard-work-in-progress"
                   />
                   <FlowMetricButton
                     icon={CheckCircle2}
-                    label="Ready for Payment Request"
-                    description="Completed work ready to move into a payment request."
-                    count={mStats.readyCount}
-                    amount={mStats.readyAmount}
+                    label="Completed"
+                    description="Finished milestones that have not yet moved into review."
+                    count={mStats.completedCount}
+                    amount={mStats.completedAmount}
                     onClick={() => navigate(`/app/milestones?filter=complete_not_invoiced`)}
                     emphasized
-                    testId="dashboard-work-ready-to-invoice"
+                    testId="dashboard-work-completed"
                   />
                   <FlowMetricButton
-                    icon={BadgeDollarSign}
-                    label="Paid Work"
-                    description="Milestones already tied to paid or released funds."
-                    count={mStats.paidCount}
-                    amount={mStats.paidAmount}
-                    onClick={() => navigate(`/app/milestones?filter=paid`)}
-                    testId="dashboard-work-paid"
+                    icon={BadgeCheck}
+                    label="Reviewed"
+                    description="Completed milestones currently in review or approval."
+                    count={mStats.reviewedCount}
+                    amount={mStats.reviewedAmount}
+                    onClick={() => navigate(`/app/milestones`)}
+                    testId="dashboard-work-reviewed"
+                  />
+                  <FlowMetricButton
+                    icon={Receipt}
+                    label="Invoiced"
+                    description="Milestones already tied to an invoice or payment request."
+                    count={mStats.invoicedCount}
+                    amount={mStats.invoicedAmount}
+                    onClick={goInvoices}
+                    testId="dashboard-work-invoiced"
                   />
                   {mStats.reworkCount > 0 ? (
                     <FlowMetricButton
@@ -2178,8 +2279,8 @@ export default function ContractorDashboard() {
                   </div>
                   <FlowMetricButton
                     icon={BadgeDollarSign}
-                    label="Awaiting Approval"
-                    description="Submitted payment requests waiting on owner review."
+                    label="Awaiting Customer Approval"
+                    description="Submitted payment requests waiting on owner or customer review."
                     count={dStats.awaitingApprovalCount}
                     amount={dStats.awaitingApprovalAmount}
                     onClick={goDrawRequests}
@@ -2328,25 +2429,25 @@ export default function ContractorDashboard() {
                   icon={ListTodo}
                   title="Incomplete"
                   subtitle="Not yet completed."
-                  count={mStats.incompleteCount}
-                  amount={mStats.incompleteAmount}
+                  count={mStats.notStartedCount + mStats.inProgressCount}
+                  amount={mStats.notStartedAmount + mStats.inProgressAmount}
                   onClick={() => navigate(`/app/milestones?filter=incomplete`)}
                 />
                 <StatCard
                   icon={CheckCircle2}
-                  title="Ready for Payment Request"
-                  subtitle="Completed (Not Yet Requested)."
-                  count={mStats.readyCount}
-                  amount={mStats.readyAmount}
+                  title="Completed"
+                  subtitle="Completed but not yet invoiced."
+                  count={mStats.completedCount}
+                  amount={mStats.completedAmount}
                   onClick={() => navigate(`/app/milestones?filter=complete_not_invoiced`)}
                 />
                 <StatCard
                   icon={BadgeDollarSign}
-                  title="Paid"
-                  subtitle="Escrow released / paid."
-                  count={mStats.paidCount}
-                  amount={mStats.paidAmount}
-                  onClick={() => navigate(`/app/milestones?filter=paid`)}
+                  title="Invoiced"
+                  subtitle="Already tied to an invoice or request."
+                  count={mStats.invoicedCount}
+                  amount={mStats.invoicedAmount}
+                  onClick={goInvoices}
                 />
                 <StatCard
                   icon={Wrench}
@@ -2564,8 +2665,8 @@ export default function ContractorDashboard() {
               icon={ListTodo}
               title="Incomplete"
               subtitle="Not yet completed."
-              count={mStats.incompleteCount}
-              amount={mStats.incompleteAmount}
+              count={mStats.notStartedCount + mStats.inProgressCount}
+              amount={mStats.notStartedAmount + mStats.inProgressAmount}
               onClick={() => navigate(`/app/milestones?filter=incomplete`)}
             />
 

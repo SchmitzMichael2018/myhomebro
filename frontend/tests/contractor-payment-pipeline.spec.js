@@ -135,15 +135,26 @@ async function mockDashboard(page) {
       contentType: 'application/json',
       body: JSON.stringify({
         results: [
-          { id: 11, title: 'Ready Stage', amount: '2000.00', completed: true, is_invoiced: false },
-          { id: 12, title: 'In Progress Stage', amount: '5000.00', completed: false, is_invoiced: false },
+          { id: 11, title: 'Not Started Stage', amount: '1800.00', status: 'not_started', completed: false, is_invoiced: false, progress_percent: 0 },
+          { id: 12, title: 'In Progress Stage', amount: '5000.00', completed: false, is_invoiced: false, progress_percent: 40 },
+          { id: 13, title: 'Completed Stage', amount: '2200.00', completed: true, is_invoiced: false, status: 'completed' },
+          { id: 14, title: 'Reviewed Stage', amount: '1400.00', completed: true, is_invoiced: false, status: 'pending_review', completion_submitted_at: '2026-04-10T12:00:00Z' },
+          { id: 15, title: 'Invoiced Stage', amount: '2600.00', completed: true, is_invoiced: true, invoice_id: 71, status: 'completed' },
         ],
       }),
     });
   });
 
   await page.route(/\/api\/projects\/invoices\/?(?:\?.*)?$/, async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results: [] }) });
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          { id: 71, amount: '2600.00', status: 'approved', display_status: 'approved' },
+        ],
+      }),
+    });
   });
 
   await page.route(/\/api\/projects\/agreements\/?(?:\?.*)?$/, async (route) => {
@@ -264,16 +275,23 @@ test('contractor dashboard reflects draw-request payment pipeline and actions', 
   await page.goto('/app', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByText('Payment Pipeline')).toBeVisible();
-  await expect(page.getByTestId('dashboard-work-ready-to-invoice')).toBeVisible();
-  await expect(page.getByText('Total Earned')).toBeVisible();
-  await expect(page.getByText('Pending Payments')).toBeVisible();
+  await expect(page.getByTestId('dashboard-work-not-started')).toBeVisible();
+  await expect(page.getByTestId('dashboard-work-in-progress')).toBeVisible();
+  await expect(page.getByTestId('dashboard-work-completed')).toBeVisible();
+  await expect(page.getByTestId('dashboard-work-reviewed')).toBeVisible();
+  await expect(page.getByTestId('dashboard-work-invoiced')).toBeVisible();
+  await expect(page.locator('text=Total Earned').first()).toBeVisible();
+  await expect(page.locator('text=Payment Pending').first()).toBeVisible();
+  await expect(page.locator('text=Issues / Disputes').first()).toBeVisible();
   await expect(page.getByTestId('dashboard-money-awaiting-customer')).toBeVisible();
   await expect(page.getByTestId('dashboard-money-approved')).toBeVisible();
   await expect(page.getByTestId('dashboard-money-issues')).toBeVisible();
   await expect(page.getByText('Send Payment Request')).toBeVisible();
+  await expect(page.getByText('Paid Work')).toHaveCount(0);
 
   await expect(page.getByTestId('dashboard-draw-requests-table')).toBeVisible();
   await expect(page.getByText('Mobilization')).toBeVisible();
+  await expect(page.getByTestId('dashboard-money-awaiting-customer')).toContainText('Awaiting Customer Approval');
   await expect(page.getByTestId('dashboard-money-approved')).toContainText('Payment Pending');
   await expect(page.getByTestId('dashboard-draw-requests-table').getByText('Changes Requested')).toBeVisible();
   await expect(page.locator('text=/awaiting payment/i').first()).toBeVisible();
