@@ -352,6 +352,23 @@ def finalize_draw_paid(
                 notes="Paid through MyHomeBro Stripe Checkout.",
                 status=ExternalPaymentStatus.VERIFIED,
             )
+        elif existing_payment.status != ExternalPaymentStatus.VERIFIED:
+            existing_payment.status = ExternalPaymentStatus.VERIFIED
+            if payment_intent_id or checkout_session_id:
+                existing_payment.reference_number = str(payment_intent_id or checkout_session_id or "")
+            existing_payment.notes = "Paid through MyHomeBro Stripe Checkout."
+            existing_payment.payment_method = payment_method
+            existing_payment.payment_date = timezone.localdate()
+            existing_payment.save(
+                update_fields=[
+                    "status",
+                    "reference_number",
+                    "notes",
+                    "payment_method",
+                    "payment_date",
+                    "updated_at",
+                ]
+            )
 
     draw.refresh_from_db()
     create_draw_activity_notification(
@@ -363,6 +380,79 @@ def finalize_draw_paid(
         dedupe_key=f"draw_paid:{draw.id}",
     )
     create_draw_lifecycle_notification(draw, event_type="draw_paid")
+    return draw
+
+
+def mark_draw_payment_issue(
+    *,
+    draw_request_id: Optional[int] = None,
+    checkout_session_id: Optional[str] = None,
+    payment_intent_id: Optional[str] = None,
+    issue_message: str = "",
+    payment_method: str = "stripe_checkout",
+) -> DrawRequest:
+    if not any([draw_request_id, checkout_session_id, payment_intent_id]):
+        raise ValueError("Must provide a draw identifier.")
+
+    with transaction.atomic():
+        qs = DrawRequest.objects.select_for_update().select_related(
+            "agreement", "agreement__contractor", "agreement__homeowner"
+        )
+        draw = None
+        if draw_request_id:
+            draw = qs.filter(id=draw_request_id).first()
+        if draw is None and checkout_session_id:
+            draw = qs.filter(stripe_checkout_session_id=checkout_session_id).first()
+        if draw is None and payment_intent_id:
+            draw = qs.filter(stripe_payment_intent_id=payment_intent_id).first()
+        if draw is None:
+            raise ValueError("Draw request not found.")
+
+        if payment_intent_id and not str(getattr(draw, "stripe_payment_intent_id", "") or "").strip():
+            draw.stripe_payment_intent_id = str(payment_intent_id)
+            draw.save(update_fields=["stripe_payment_intent_id", "updated_at"])
+        if checkout_session_id and not str(getattr(draw, "stripe_checkout_session_id", "") or "").strip():
+            draw.stripe_checkout_session_id = str(checkout_session_id)
+            draw.save(update_fields=["stripe_checkout_session_id", "updated_at"])
+
+        payment_record = draw.external_payment_records.exclude(status=ExternalPaymentStatus.VOIDED).first()
+        if payment_record is None:
+            agreement = draw.agreement
+            customer = getattr(agreement, "homeowner", None)
+            contractor = getattr(agreement, "contractor", None)
+            payment_record = ExternalPaymentRecord.objects.create(
+                agreement=agreement,
+                draw_request=draw,
+                payer_name=getattr(customer, "full_name", "") or getattr(customer, "email", "") or "Customer",
+                payee_name=getattr(contractor, "business_name", "") or getattr(contractor, "email", "") or "Contractor",
+                gross_amount=getattr(draw, "gross_amount", Decimal("0.00")),
+                retainage_withheld_amount=getattr(draw, "retainage_amount", Decimal("0.00")),
+                net_amount=getattr(draw, "net_amount", Decimal("0.00")),
+                payment_method=payment_method,
+                payment_date=timezone.localdate(),
+                reference_number=str(payment_intent_id or checkout_session_id or ""),
+                notes=str(issue_message or "").strip() or "A Stripe payment issue needs review.",
+                status=ExternalPaymentStatus.DISPUTED,
+            )
+        else:
+            payment_record.status = ExternalPaymentStatus.DISPUTED
+            payment_record.payment_method = payment_method
+            payment_record.payment_date = timezone.localdate()
+            if payment_intent_id or checkout_session_id:
+                payment_record.reference_number = str(payment_intent_id or checkout_session_id or "")
+            if issue_message:
+                payment_record.notes = str(issue_message).strip()
+            payment_record.save(
+                update_fields=[
+                    "status",
+                    "payment_method",
+                    "payment_date",
+                    "reference_number",
+                    "notes",
+                    "updated_at",
+                ]
+            )
+
     return draw
 
 

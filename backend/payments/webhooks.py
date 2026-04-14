@@ -28,7 +28,12 @@ from django.views.decorators.csrf import csrf_exempt
 
 # ✅ Canonical agreement completion recompute
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
-from projects.services.draw_requests import finalize_draw_paid
+from projects.services.direct_pay import (
+    finalize_direct_pay_invoice_paid,
+    mark_direct_pay_invoice_payment_issue,
+    mark_direct_pay_invoice_payment_pending,
+)
+from projects.services.draw_requests import finalize_draw_paid, mark_draw_payment_issue
 
 log = logging.getLogger(__name__)
 
@@ -271,6 +276,8 @@ def _handle_invoice_payment_succeeded(intent: dict) -> None:
     Receipt = _get_model("receipts", "Receipt")
     platform_fee_cents = _safe_int(metadata.get("platform_fee_cents"), default=0)
 
+    is_direct_pay_checkout = str(metadata.get("kind") or "").strip().lower() == "direct_pay_checkout"
+
     with transaction.atomic():
         try:
             inv = Invoice.objects.select_for_update().get(id=invoice_id_int)
@@ -279,6 +286,22 @@ def _handle_invoice_payment_succeeded(intent: dict) -> None:
             return
 
         changed = _mark_invoice_paid(inv, pi_id=pi_id, stripe_charge_id=stripe_charge_id)
+        invoice_update_fields = []
+        if is_direct_pay_checkout and hasattr(inv, "direct_pay_paid_at") and not getattr(inv, "direct_pay_paid_at", None):
+            inv.direct_pay_paid_at = now()
+            invoice_update_fields.append("direct_pay_paid_at")
+        for field_name, reset_value in (
+            ("disputed", False),
+            ("disputed_at", None),
+            ("dispute_reason", ""),
+            ("dispute_by", ""),
+            ("last_email_error", ""),
+        ):
+            if hasattr(inv, field_name) and getattr(inv, field_name) != reset_value:
+                setattr(inv, field_name, reset_value)
+                invoice_update_fields.append(field_name)
+        if invoice_update_fields:
+            inv.save(update_fields=list(dict.fromkeys(invoice_update_fields)))
 
         # ✅ recompute agreement completion AFTER commit if invoice changed to paid
         if changed:
@@ -392,75 +415,23 @@ def _handle_direct_pay_checkout_completed(session: dict) -> None:
     if not invoice_id:
         return
 
-    Invoice = _get_model("projects", "Invoice")
-    if Invoice is None:
-        return
-
     inv_id = _safe_int(invoice_id, default=0)
     if inv_id <= 0:
         return
 
     session_id = session.get("id") or ""
     payment_intent = session.get("payment_intent") or ""
-
-    with transaction.atomic():
-        try:
-            inv = Invoice.objects.select_for_update().select_related("agreement").get(id=inv_id)
-        except Exception:
-            log.warning("Direct Pay checkout handler: invoice not found id=%s (session=%s)", invoice_id, session_id)
-            return
-
-        try:
-            ag = getattr(inv, "agreement", None)
-            if ag and str(getattr(ag, "payment_mode", "") or "").lower() != "direct":
-                log.warning("Direct Pay checkout handler: invoice=%s agreement not direct; skipping", inv_id)
-                return
-        except Exception:
-            pass
-
-        if str(getattr(inv, "status", "") or "").lower() == "paid":
-            return
-        if getattr(inv, "direct_pay_paid_at", None):
-            return
-
-        update_fields = []
-
-        try:
-            from projects.models import InvoiceStatus  # type: ignore
-            inv.status = InvoiceStatus.PAID if hasattr(InvoiceStatus, "PAID") else "paid"
-        except Exception:
-            inv.status = "paid"
-        update_fields.append("status")
-
-        if hasattr(inv, "direct_pay_paid_at"):
-            inv.direct_pay_paid_at = now()
-            update_fields.append("direct_pay_paid_at")
-
-        if payment_intent and hasattr(inv, "direct_pay_payment_intent_id"):
-            inv.direct_pay_payment_intent_id = payment_intent
-            update_fields.append("direct_pay_payment_intent_id")
-
-        if session_id and hasattr(inv, "direct_pay_checkout_session_id"):
-            inv.direct_pay_checkout_session_id = session_id
-            update_fields.append("direct_pay_checkout_session_id")
-
-        try:
-            if update_fields:
-                inv.save(update_fields=update_fields)
-            else:
-                inv.save()
-        except Exception:
-            inv.save()
-
-        # ✅ recompute agreement completion AFTER commit
-        try:
-            ag_id = getattr(inv, "agreement_id", None)
-            if ag_id:
-                transaction.on_commit(lambda: recompute_and_apply_agreement_completion(int(ag_id)))
-        except Exception as exc:
-            log.warning("Agreement completion recompute scheduling failed (direct pay inv=%s): %s", inv_id, exc)
-
-        log.info("Direct Pay invoice marked PAID invoice=%s session=%s pi=%s", inv_id, session_id, payment_intent)
+    mark_direct_pay_invoice_payment_pending(
+        invoice_id=inv_id,
+        checkout_session_id=session_id or None,
+        payment_intent_id=payment_intent or None,
+    )
+    log.info(
+        "Direct Pay invoice checkout completed; awaiting Stripe payment confirmation invoice=%s session=%s pi=%s",
+        inv_id,
+        session_id,
+        payment_intent,
+    )
 
 
 def _handle_draw_direct_checkout_completed(session: dict) -> None:
@@ -472,20 +443,105 @@ def _handle_draw_direct_checkout_completed(session: dict) -> None:
     if draw_request_id <= 0:
         return
 
-    payment_status = str(session.get("payment_status") or "").strip().lower()
-    if payment_status not in {"paid", "no_payment_required"}:
-        return
-
     session_id = session.get("id") or ""
     payment_intent = session.get("payment_intent") or ""
-
-    finalize_draw_paid(
-        draw_request_id=draw_request_id,
-        checkout_session_id=session_id or None,
-        payment_intent_id=payment_intent or None,
-        payment_method="stripe_checkout",
+    log.info(
+        "Direct draw checkout completed; awaiting Stripe payment confirmation draw=%s session=%s pi=%s",
+        draw_request_id,
+        session_id,
+        payment_intent,
     )
-    log.info("Direct draw marked PAID draw=%s session=%s pi=%s", draw_request_id, session_id, payment_intent)
+
+
+def _handle_payment_intent_processing(intent: dict) -> None:
+    metadata = intent.get("metadata") or {}
+    payment_intent_id = intent.get("id") or ""
+    issue_ref = payment_intent_id or None
+    is_direct_invoice_checkout = str(metadata.get("kind") or "").strip().lower() == "direct_pay_checkout"
+
+    if metadata.get("invoice_id") and is_direct_invoice_checkout:
+        mark_direct_pay_invoice_payment_pending(
+            invoice_id=_safe_int(metadata.get("invoice_id"), default=0) or None,
+            payment_intent_id=issue_ref,
+        )
+        return
+
+
+def _handle_payment_intent_failed(intent: dict) -> None:
+    metadata = intent.get("metadata") or {}
+    payment_intent_id = intent.get("id") or ""
+    last_error = intent.get("last_payment_error") or {}
+    issue_message = (
+        last_error.get("message")
+        or last_error.get("decline_code")
+        or intent.get("cancellation_reason")
+        or "Stripe reported that the payment failed."
+    )
+    is_direct_invoice_checkout = str(metadata.get("kind") or "").strip().lower() == "direct_pay_checkout"
+
+    if metadata.get("invoice_id"):
+        mark_direct_pay_invoice_payment_issue(
+            invoice_id=_safe_int(metadata.get("invoice_id"), default=0) or None,
+            payment_intent_id=payment_intent_id or None if is_direct_invoice_checkout else None,
+            issue_message=str(issue_message),
+        )
+        return
+
+    if metadata.get("kind") == "draw_direct_checkout" or metadata.get("draw_request_id"):
+        mark_draw_payment_issue(
+            draw_request_id=_safe_int(metadata.get("draw_request_id"), default=0) or None,
+            payment_intent_id=payment_intent_id or None,
+            issue_message=str(issue_message),
+        )
+
+
+def _handle_checkout_session_async_payment_failed(session: dict) -> None:
+    metadata = session.get("metadata") or {}
+    session_id = session.get("id") or ""
+    payment_intent = session.get("payment_intent") or ""
+    issue_message = "Stripe reported that the payment did not complete."
+
+    if metadata.get("invoice_id"):
+        mark_direct_pay_invoice_payment_issue(
+            invoice_id=_safe_int(metadata.get("invoice_id"), default=0) or None,
+            checkout_session_id=session_id or None,
+            payment_intent_id=payment_intent or None,
+            issue_message=issue_message,
+        )
+        return
+
+    if metadata.get("kind") == "draw_direct_checkout" or metadata.get("draw_request_id"):
+        mark_draw_payment_issue(
+            draw_request_id=_safe_int(metadata.get("draw_request_id"), default=0) or None,
+            checkout_session_id=session_id or None,
+            payment_intent_id=payment_intent or None,
+            issue_message=issue_message,
+        )
+
+
+def _handle_charge_dispute_created(charge: dict) -> None:
+    payment_intent_id = charge.get("payment_intent") or ""
+    if not payment_intent_id:
+        return
+
+    issue_message = "Stripe reported a payment dispute that needs review."
+
+    try:
+        mark_direct_pay_invoice_payment_issue(
+            payment_intent_id=payment_intent_id,
+            issue_message=issue_message,
+        )
+        return
+    except Exception:
+        pass
+
+    try:
+        mark_draw_payment_issue(
+            payment_intent_id=payment_intent_id,
+            issue_message=issue_message,
+        )
+    except Exception:
+        pass
 
 
 def _handle_expense_checkout_completed(session: dict) -> None:
@@ -958,6 +1014,13 @@ def stripe_webhook(request):
 
             return HttpResponse(status=200)
 
+        if event_type == "checkout.session.async_payment_failed":
+            try:
+                _handle_checkout_session_async_payment_failed(data_obj)
+            except Exception:
+                log.exception("Async checkout failure handler failed (session=%s).", data_obj.get("id"))
+            return HttpResponse(status=200)
+
         if event_type == "refund.updated":
             try:
                 _sync_refund_from_stripe(data_obj)
@@ -975,6 +1038,27 @@ def stripe_webhook(request):
                 log.exception("Refund sync failed for charge.refunded charge=%s", data_obj.get("id"))
             return HttpResponse(status=200)
 
+        if event_type == "charge.dispute.created":
+            try:
+                _handle_charge_dispute_created(data_obj)
+            except Exception:
+                log.exception("Charge dispute handler failed for charge=%s", data_obj.get("id"))
+            return HttpResponse(status=200)
+
+        if event_type == "payment_intent.processing":
+            try:
+                _handle_payment_intent_processing(data_obj)
+            except Exception:
+                log.exception("Payment intent processing handler failed (pi=%s).", data_obj.get("id"))
+            return HttpResponse(status=200)
+
+        if event_type == "payment_intent.payment_failed":
+            try:
+                _handle_payment_intent_failed(data_obj)
+            except Exception:
+                log.exception("Payment intent failure handler failed (pi=%s).", data_obj.get("id"))
+            return HttpResponse(status=200)
+
         if event_type != "payment_intent.succeeded":
             return HttpResponse(status=200)
 
@@ -985,6 +1069,11 @@ def stripe_webhook(request):
         # ✅ Invoice payments
         if metadata.get("invoice_id"):
             try:
+                if str(metadata.get("kind") or "").strip().lower() == "direct_pay_checkout":
+                    finalize_direct_pay_invoice_paid(
+                        invoice_id=_safe_int(metadata.get("invoice_id"), default=0) or None,
+                        payment_intent_id=intent.get("id") or None,
+                    )
                 _handle_invoice_payment_succeeded(intent)
             except Exception:
                 log.exception("Invoice payment handler failed (pi=%s).", intent.get("id"))

@@ -65,6 +65,31 @@ def _frontend_url() -> str:
     return v.rstrip("/") if v else ""
 
 
+def _resolve_invoice_for_update(
+    *,
+    invoice_id: Optional[int] = None,
+    invoice_number: Optional[str] = None,
+    checkout_session_id: Optional[str] = None,
+    payment_intent_id: Optional[str] = None,
+) -> Invoice:
+    if not any([invoice_id, invoice_number, checkout_session_id, payment_intent_id]):
+        raise ValueError("Must provide at least one identifier.")
+
+    qs = Invoice.objects.select_for_update().all()
+    inv = None
+    if invoice_id:
+        inv = qs.filter(id=invoice_id).first()
+    if inv is None and invoice_number:
+        inv = qs.filter(invoice_number=invoice_number).first()
+    if inv is None and checkout_session_id:
+        inv = qs.filter(direct_pay_checkout_session_id=checkout_session_id).first()
+    if inv is None and payment_intent_id:
+        inv = qs.filter(direct_pay_payment_intent_id=payment_intent_id).first()
+    if inv is None:
+        raise ValueError("Invoice not found for direct pay update.")
+    return inv
+
+
 def _compute_direct_pay_fee_cents(amount_cents: int) -> int:
     """
     Direct Pay pricing is fixed for all contractors: 1% + $1.
@@ -212,7 +237,7 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
         try:
             session = stripe.checkout.Session.create(
                 mode="payment",
-                payment_method_types=["card"],
+                payment_method_types=["card", "us_bank_account"],
 
                 # ✅ This pre-fills email on Stripe Checkout and ties receipts to customer email
                 customer_email=customer_email,
@@ -286,6 +311,108 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
         return inv.direct_pay_checkout_url
 
 
+def mark_direct_pay_invoice_payment_pending(
+    *,
+    invoice_id: Optional[int] = None,
+    invoice_number: Optional[str] = None,
+    checkout_session_id: Optional[str] = None,
+    payment_intent_id: Optional[str] = None,
+) -> Invoice:
+    """
+    Webhook-driven transition for a direct-pay invoice that has entered Stripe's
+    post-checkout / processing phase but is not yet confirmed paid.
+    """
+    with transaction.atomic():
+        inv = _resolve_invoice_for_update(
+            invoice_id=invoice_id,
+            invoice_number=invoice_number,
+            checkout_session_id=checkout_session_id,
+            payment_intent_id=payment_intent_id,
+        )
+
+        if _is_paid(inv) or inv.status == InvoiceStatus.PAID:
+            return inv
+
+        update_fields = []
+        if inv.status not in {InvoiceStatus.APPROVED, InvoiceStatus.DISPUTED}:
+            inv.status = InvoiceStatus.APPROVED
+            update_fields.append("status")
+
+        if checkout_session_id and getattr(inv, "direct_pay_checkout_session_id", "") != str(checkout_session_id):
+            inv.direct_pay_checkout_session_id = str(checkout_session_id)
+            update_fields.append("direct_pay_checkout_session_id")
+
+        if payment_intent_id and getattr(inv, "direct_pay_payment_intent_id", "") != str(payment_intent_id):
+            inv.direct_pay_payment_intent_id = str(payment_intent_id)
+            update_fields.append("direct_pay_payment_intent_id")
+
+        if update_fields:
+            inv.save(update_fields=list(dict.fromkeys(update_fields)))
+
+    return inv
+
+
+def mark_direct_pay_invoice_payment_issue(
+    *,
+    invoice_id: Optional[int] = None,
+    invoice_number: Optional[str] = None,
+    checkout_session_id: Optional[str] = None,
+    payment_intent_id: Optional[str] = None,
+    issue_message: str = "",
+) -> Invoice:
+    """
+    Best-effort issue state for direct-pay invoice failures/disputes.
+    Uses the existing disputed invoice state so contractor-facing payment views
+    can surface the record under Issues / Disputes without introducing a second
+    payment state system.
+    """
+    with transaction.atomic():
+        inv = _resolve_invoice_for_update(
+            invoice_id=invoice_id,
+            invoice_number=invoice_number,
+            checkout_session_id=checkout_session_id,
+            payment_intent_id=payment_intent_id,
+        )
+
+        if _is_paid(inv) or inv.status == InvoiceStatus.PAID:
+            return inv
+
+        update_fields = []
+        if inv.status != InvoiceStatus.DISPUTED:
+            inv.status = InvoiceStatus.DISPUTED
+            update_fields.append("status")
+
+        if hasattr(inv, "disputed") and inv.disputed is not True:
+            inv.disputed = True
+            update_fields.append("disputed")
+
+        if hasattr(inv, "disputed_at") and not getattr(inv, "disputed_at", None):
+            inv.disputed_at = timezone.now()
+            update_fields.append("disputed_at")
+
+        message = str(issue_message or "").strip()
+        if message:
+            if hasattr(inv, "dispute_reason") and getattr(inv, "dispute_reason", "") != message:
+                inv.dispute_reason = message
+                update_fields.append("dispute_reason")
+            if hasattr(inv, "last_email_error") and getattr(inv, "last_email_error", "") != message:
+                inv.last_email_error = message
+                update_fields.append("last_email_error")
+
+        if checkout_session_id and getattr(inv, "direct_pay_checkout_session_id", "") != str(checkout_session_id):
+            inv.direct_pay_checkout_session_id = str(checkout_session_id)
+            update_fields.append("direct_pay_checkout_session_id")
+
+        if payment_intent_id and getattr(inv, "direct_pay_payment_intent_id", "") != str(payment_intent_id):
+            inv.direct_pay_payment_intent_id = str(payment_intent_id)
+            update_fields.append("direct_pay_payment_intent_id")
+
+        if update_fields:
+            inv.save(update_fields=list(dict.fromkeys(update_fields)))
+
+    return inv
+
+
 def finalize_direct_pay_invoice_paid(
     *,
     invoice_id: Optional[int] = None,
@@ -337,11 +464,25 @@ def finalize_direct_pay_invoice_paid(
             if not (getattr(inv, "direct_pay_payment_intent_id", "") or "").strip():
                 inv.direct_pay_payment_intent_id = str(payment_intent_id)
 
+        if hasattr(inv, "disputed") and getattr(inv, "disputed", False):
+            inv.disputed = False
+        if hasattr(inv, "disputed_at") and getattr(inv, "disputed_at", None):
+            inv.disputed_at = None
+        if hasattr(inv, "dispute_reason") and getattr(inv, "dispute_reason", ""):
+            inv.dispute_reason = ""
+        if hasattr(inv, "dispute_by") and getattr(inv, "dispute_by", ""):
+            inv.dispute_by = ""
+        if hasattr(inv, "last_email_error") and getattr(inv, "last_email_error", ""):
+            inv.last_email_error = ""
+
         update_fields = ["status"]
         if hasattr(inv, "direct_pay_paid_at"):
             update_fields.append("direct_pay_paid_at")
         if payment_intent_id and hasattr(inv, "direct_pay_payment_intent_id"):
             update_fields.append("direct_pay_payment_intent_id")
+        for field_name in ("disputed", "disputed_at", "dispute_reason", "dispute_by", "last_email_error"):
+            if hasattr(inv, field_name):
+                update_fields.append(field_name)
 
         inv.save(update_fields=list(set(update_fields)))
 

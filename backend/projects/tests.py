@@ -90,6 +90,7 @@ from projects.services.activity_feed import (
     create_activity_event,
     get_next_best_action,
 )
+from projects.services.direct_pay import create_direct_pay_checkout_for_invoice
 from projects.services.draw_requests import finalize_draw_paid
 from projects.services.estimation_engine import build_project_estimate, _clarification_signature_from_answers
 from projects.services.regions import build_normalized_region_key
@@ -118,6 +119,12 @@ from projects.services.sms_service import (
     set_sms_opt_out,
 )
 from projects.services.sms_automation import build_sms_automation_summary, evaluate_sms_automation
+from payments.webhooks import (
+    _handle_direct_pay_checkout_completed,
+    _handle_draw_direct_checkout_completed,
+    _handle_payment_intent_failed,
+    _handle_payment_intent_processing,
+)
 from payments.models import ConnectedAccount
 
 
@@ -6646,6 +6653,170 @@ class ProgressPaymentWorkflowTests(TestCase):
             agreement=self.agreement,
         ).first()
         self.assertIsNotNone(notification)
+
+    @override_settings(STRIPE_SECRET_KEY="sk_test_123", FRONTEND_URL="https://app.myhomebro.test")
+    def test_invoice_direct_checkout_supports_card_and_ach(self):
+        self.agreement.payment_mode = "direct"
+        self.agreement.save(update_fields=["payment_mode"])
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("4250.00"),
+            status=InvoiceStatus.PENDING,
+        )
+
+        created_calls = []
+
+        def _fake_create(**kwargs):
+            created_calls.append(kwargs)
+            return {"id": "cs_test_invoice_123", "url": "https://checkout.stripe.test/invoice-123", "payment_intent": "pi_test_invoice_123"}
+
+        with patch("stripe.checkout.Session.create", side_effect=_fake_create):
+            checkout_url = create_direct_pay_checkout_for_invoice(invoice)
+
+        self.assertEqual(checkout_url, "https://checkout.stripe.test/invoice-123")
+        self.assertEqual(created_calls[0]["payment_method_types"], ["card", "us_bank_account"])
+
+    def test_direct_pay_invoice_checkout_completion_keeps_invoice_pending_until_payment_intent_success(self):
+        self.agreement.payment_mode = "direct"
+        self.agreement.save(update_fields=["payment_mode"])
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("1900.00"),
+            status=InvoiceStatus.SENT,
+        )
+
+        _handle_direct_pay_checkout_completed(
+            {
+                "id": "cs_test_invoice_pending",
+                "payment_intent": "pi_test_invoice_pending",
+                "metadata": {
+                    "invoice_id": str(invoice.id),
+                    "payment_mode": "DIRECT",
+                    "kind": "direct_pay_checkout",
+                },
+            }
+        )
+
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, InvoiceStatus.APPROVED)
+        self.assertEqual(invoice.direct_pay_checkout_session_id, "cs_test_invoice_pending")
+        self.assertEqual(invoice.direct_pay_payment_intent_id, "pi_test_invoice_pending")
+        self.assertIsNone(invoice.direct_pay_paid_at)
+
+    def test_payment_intent_processing_keeps_direct_invoice_in_payment_pending(self):
+        self.agreement.payment_mode = "direct"
+        self.agreement.save(update_fields=["payment_mode"])
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("1400.00"),
+            status=InvoiceStatus.SENT,
+        )
+
+        _handle_payment_intent_processing(
+            {
+                "id": "pi_test_invoice_processing",
+                "metadata": {
+                    "invoice_id": str(invoice.id),
+                    "kind": "direct_pay_checkout",
+                },
+            }
+        )
+
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, InvoiceStatus.APPROVED)
+        self.assertEqual(invoice.direct_pay_payment_intent_id, "pi_test_invoice_processing")
+        self.assertIsNone(invoice.direct_pay_paid_at)
+
+    def test_payment_intent_failure_marks_direct_invoice_as_disputed_issue(self):
+        self.agreement.payment_mode = "direct"
+        self.agreement.save(update_fields=["payment_mode"])
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("1600.00"),
+            status=InvoiceStatus.APPROVED,
+        )
+
+        _handle_payment_intent_failed(
+            {
+                "id": "pi_test_invoice_failed",
+                "metadata": {
+                    "invoice_id": str(invoice.id),
+                    "kind": "direct_pay_checkout",
+                },
+                "last_payment_error": {"message": "ACH debit failed"},
+            }
+        )
+
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, InvoiceStatus.DISPUTED)
+        self.assertTrue(invoice.disputed)
+        self.assertEqual(invoice.dispute_reason, "ACH debit failed")
+        self.assertEqual(invoice.direct_pay_payment_intent_id, "pi_test_invoice_failed")
+
+    def test_draw_checkout_completion_does_not_mark_draw_paid_before_payment_intent_success(self):
+        self.agreement.payment_mode = "direct"
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_by_homeowner = True
+        self.agreement.save(update_fields=["payment_mode", "signed_by_contractor", "signed_by_homeowner"])
+
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=13,
+            status=DrawRequestStatus.APPROVED,
+            title="Pending Stripe Draw",
+            gross_amount=Decimal("2000.00"),
+            retainage_amount=Decimal("200.00"),
+            net_amount=Decimal("1800.00"),
+            current_requested_amount=Decimal("2000.00"),
+            stripe_checkout_session_id="cs_test_draw_pending",
+            stripe_payment_intent_id="pi_test_draw_pending",
+        )
+
+        _handle_draw_direct_checkout_completed(
+            {
+                "id": "cs_test_draw_pending",
+                "payment_intent": "pi_test_draw_pending",
+                "payment_status": "paid",
+                "metadata": {
+                    "kind": "draw_direct_checkout",
+                    "draw_request_id": str(draw.id),
+                },
+            }
+        )
+
+        draw.refresh_from_db()
+        self.assertEqual(draw.status, DrawRequestStatus.APPROVED)
+        self.assertIsNone(draw.paid_at)
+
+    def test_payment_intent_failure_marks_draw_as_issue_without_creating_parallel_state(self):
+        self.agreement.payment_mode = "direct"
+        self.agreement.save(update_fields=["payment_mode"])
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=14,
+            status=DrawRequestStatus.APPROVED,
+            title="Draw With Failed ACH",
+            gross_amount=Decimal("2100.00"),
+            retainage_amount=Decimal("210.00"),
+            net_amount=Decimal("1890.00"),
+            current_requested_amount=Decimal("2100.00"),
+            stripe_payment_intent_id="pi_test_draw_failed",
+        )
+
+        _handle_payment_intent_failed(
+            {
+                "id": "pi_test_draw_failed",
+                "metadata": {
+                    "kind": "draw_direct_checkout",
+                    "draw_request_id": str(draw.id),
+                },
+                "last_payment_error": {"message": "Bank account verification failed"},
+            }
+        )
+
+        payment_record = ExternalPaymentRecord.objects.get(draw_request=draw)
+        self.assertEqual(payment_record.status, ExternalPaymentStatus.DISPUTED)
+        self.assertEqual(payment_record.notes, "Bank account verification failed")
 
     def test_draw_list_serializes_payment_pending_for_direct_approved_draw(self):
         self.agreement.payment_mode = "direct"
