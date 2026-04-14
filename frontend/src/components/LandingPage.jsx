@@ -9,6 +9,7 @@ import {
   Handshake,
   Scale,
   Camera,
+  AlertTriangle,
 } from "lucide-react";
 import logo from "../assets/myhomebro_logo.png";
 
@@ -53,6 +54,20 @@ export default function LandingPage() {
       <div style={S.rail}>
         <div style={S.logoFrame}>
           <img src={logo} alt="MyHomeBro" style={S.logo} draggable={false} />
+        </div>
+
+        <div data-testid="landing-maintenance-notice" style={S.maintenanceNotice}>
+          <div style={S.maintenanceIcon}>
+            <AlertTriangle size={18} />
+          </div>
+          <div style={S.maintenanceCopy}>
+            <div style={S.maintenanceHeadline}>MyHomeBro is currently undergoing maintenance</div>
+            <div style={S.maintenanceBody}>
+              We&rsquo;re making improvements to the platform. Some features may be temporarily unavailable or
+              limited while updates are being completed. Thank you for your patience.
+            </div>
+            <div style={S.maintenanceSubline}>We&rsquo;ll be back soon with updates and improvements.</div>
+          </div>
         </div>
 
         <h1 data-testid="landing-hero-heading" style={S.title}>
@@ -214,6 +229,54 @@ const S = {
     border: "2px solid rgba(255,255,255,.4)",
   },
   logo: { width: 180, height: 180, objectFit: "cover", borderRadius: 16 },
+  maintenanceNotice: {
+    width: "100%",
+    maxWidth: 860,
+    margin: "0 auto 20px",
+    padding: "14px 16px",
+    borderRadius: 18,
+    display: "grid",
+    gridTemplateColumns: "auto 1fr",
+    gap: 14,
+    alignItems: "start",
+    background: "rgba(255,255,255,.94)",
+    color: "#0f172a",
+    boxShadow: "0 12px 28px rgba(15,23,42,.16)",
+    border: "1px solid rgba(255,255,255,.72)",
+    textAlign: "left",
+  },
+  maintenanceIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    display: "grid",
+    placeItems: "center",
+    background: "linear-gradient(135deg, #fff4d6 0%, #ffe7a3 100%)",
+    color: "#9a6700",
+    border: "1px solid rgba(154,103,0,.14)",
+    flexShrink: 0,
+  },
+  maintenanceCopy: {
+    minWidth: 0,
+  },
+  maintenanceHeadline: {
+    fontSize: 18,
+    fontWeight: 900,
+    color: "#163250",
+    lineHeight: 1.25,
+  },
+  maintenanceBody: {
+    marginTop: 6,
+    fontSize: 14,
+    lineHeight: 1.5,
+    color: "#334155",
+  },
+  maintenanceSubline: {
+    marginTop: 8,
+    fontSize: 13,
+    fontWeight: 700,
+    color: "#58779b",
+  },
   title: {
     margin: "8px 0 0",
     fontSize: clamp(34, 56),
