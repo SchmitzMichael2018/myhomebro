@@ -14,11 +14,15 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import api, {
+  approveDrawRequest,
   createAgreementDrawRequest,
   getAccessToken,
   getAgreementDrawRequests,
   getAgreementExternalPayments,
   recordDrawExternalPayment,
+  releaseDrawRequest,
+  rejectDrawRequest,
+  requestDrawChanges,
   submitDrawRequest,
 } from "../api";
 import SignatureModal from "../components/SignatureModal";
@@ -760,9 +764,14 @@ export default function AgreementDetail() {
       let result = null;
       if (action === "submit") result = await submitDrawRequest(drawId);
       if (action === "approve") result = await approveDrawRequest(drawId);
+      if (action === "release") result = await releaseDrawRequest(drawId);
       if (action === "reject") result = await rejectDrawRequest(drawId);
       if (action === "changes") result = await requestDrawChanges(drawId);
-      toast.success(result?.email_delivery?.message || "Draw updated.");
+      const successMessage =
+        action === "release"
+          ? "Escrow funds marked as released."
+          : result?.email_delivery?.message || "Draw updated.";
+      toast.success(successMessage);
       await fetchDraws();
       await fetchExternalPayments();
     } catch (e) {
@@ -2559,7 +2568,7 @@ export default function AgreementDetail() {
                             </button>
                           </>
                         ) : null}
-                        {draw.status === "approved" ? (
+                        {drawWorkflowStatus(draw) === "payment_pending" ? (
                           <>
                             <button
                               type="button"
@@ -2574,6 +2583,24 @@ export default function AgreementDetail() {
                               className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                             >
                               Record Offline Payment
+                            </button>
+                          </>
+                        ) : null}
+                        {drawWorkflowStatus(draw) === "awaiting_release" ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => openDrawReviewLink(draw)}
+                              className="rounded-lg border border-teal-300 bg-white px-3 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-50"
+                            >
+                              View Owner Page
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => runDrawAction(draw.id, "release")}
+                              className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
+                            >
+                              Release Funds
                             </button>
                           </>
                         ) : null}

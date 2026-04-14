@@ -403,6 +403,13 @@ class DrawStatusActionView(APIView):
     target_status = None
     allowed_current_statuses: tuple[str, ...] = ()
 
+    def _resolved_target_status(self, draw: DrawRequest) -> str:
+        if self.target_status == DrawRequestStatus.APPROVED:
+            payment_mode = str(getattr(getattr(draw, "agreement", None), "payment_mode", "") or "").strip().lower()
+            if payment_mode == "escrow":
+                return DrawRequestStatus.AWAITING_RELEASE
+        return self.target_status
+
     def post(self, request, draw_id: int):
         contractor = _contractor_for_request(request)
         if contractor is None:
@@ -412,14 +419,16 @@ class DrawStatusActionView(APIView):
         _require_progress_agreement(draw.agreement)
         _require_executed_agreement(draw.agreement)
 
+        actual_target_status = self._resolved_target_status(draw)
+
         if draw.status not in self.allowed_current_statuses:
             return Response(
-                {"detail": f"Draw cannot transition from {draw.status} to {self.target_status}."},
+                {"detail": f"Draw cannot transition from {draw.status} to {actual_target_status}."},
                 status=400,
             )
 
-        draw.status = self.target_status
-        if self.target_status == DrawRequestStatus.SUBMITTED:
+        draw.status = actual_target_status
+        if actual_target_status == DrawRequestStatus.SUBMITTED:
             draw.submitted_by = request.user
             draw.submitted_at = timezone.now()
             update_fields = ["status", "submitted_by", "submitted_at", "updated_at"]
@@ -430,7 +439,7 @@ class DrawStatusActionView(APIView):
         draw.save(update_fields=update_fields)
 
         email_delivery = None
-        if self.target_status == DrawRequestStatus.SUBMITTED:
+        if actual_target_status == DrawRequestStatus.SUBMITTED:
             ok, message = send_draw_request_review_email(draw)
             email_delivery = {"ok": ok, "message": message}
 

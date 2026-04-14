@@ -6514,6 +6514,30 @@ class ProgressPaymentWorkflowTests(TestCase):
         ).first()
         self.assertIsNotNone(notification)
 
+    def test_contractor_approve_endpoint_routes_escrow_draw_to_awaiting_release(self):
+        self.agreement.payment_mode = "escrow"
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_by_homeowner = True
+        self.agreement.save(update_fields=["payment_mode", "signed_by_contractor", "signed_by_homeowner"])
+
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=10,
+            status=DrawRequestStatus.SUBMITTED,
+            title="Contractor Approved Escrow Draw",
+            gross_amount=Decimal("2600.00"),
+            retainage_amount=Decimal("260.00"),
+            net_amount=Decimal("2340.00"),
+            current_requested_amount=Decimal("2600.00"),
+        )
+
+        approve_response = self.client.post(f"/api/projects/draws/{draw.id}/approve/", {}, format="json")
+
+        self.assertEqual(approve_response.status_code, 200)
+        self.assertEqual(approve_response.json()["workflow_status"], "awaiting_release")
+        draw.refresh_from_db()
+        self.assertEqual(draw.status, DrawRequestStatus.AWAITING_RELEASE)
+
     def test_release_endpoint_rejects_direct_draws(self):
         self.agreement.payment_mode = "direct"
         self.agreement.signed_by_contractor = True
