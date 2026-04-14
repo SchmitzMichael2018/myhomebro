@@ -442,6 +442,11 @@ export async function approveDrawRequest(drawId) {
   return res.data;
 }
 
+export async function releaseDrawRequest(drawId) {
+  const res = await api.post(`/projects/draws/${drawId}/release/`);
+  return res.data;
+}
+
 export async function rejectDrawRequest(drawId) {
   const res = await api.post(`/projects/draws/${drawId}/reject/`);
   return res.data;

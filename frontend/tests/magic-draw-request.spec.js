@@ -142,3 +142,23 @@ test('magic draw review page supports change requests', async ({ page }) => {
   await expect(page.getByText('This draw is currently changes requested.')).toBeVisible();
   await expect(page.getByText('Please confirm the rough-in inspection is complete.')).toBeVisible();
 });
+
+test('magic draw review page shows awaiting release state for escrow draws after approval', async ({ page }) => {
+  await installPublicDrawMocks(page, {
+    getDraw: buildDraw({ payment_mode: 'escrow' }),
+    approveDraw: buildDraw({
+      payment_mode: 'escrow',
+      status: 'awaiting_release',
+      workflow_status: 'awaiting_release',
+      workflow_status_label: 'Awaiting Release',
+      workflow_message: 'Approved by the owner. Escrow release is the next step.',
+    }),
+  });
+
+  await page.goto(`/draws/magic/${DRAW_TOKEN}`, { waitUntil: 'domcontentloaded' });
+
+  await page.getByRole('button', { name: 'Approve Draw' }).click();
+
+  await expect(page.getByText('Awaiting Release')).toBeVisible();
+  await expect(page.getByText('This draw has been approved and is now awaiting escrow release in MyHomeBro.')).toBeVisible();
+});

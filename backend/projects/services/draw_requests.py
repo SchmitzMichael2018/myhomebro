@@ -364,3 +364,42 @@ def finalize_draw_paid(
     )
     create_draw_lifecycle_notification(draw, event_type="draw_paid")
     return draw
+
+
+def release_escrow_draw(
+    *,
+    draw_request_id: int,
+    released_at=None,
+) -> DrawRequest:
+    released_at = released_at or timezone.now()
+
+    with transaction.atomic():
+        draw = (
+            DrawRequest.objects.select_for_update()
+            .select_related("agreement", "agreement__contractor", "agreement__homeowner")
+            .get(pk=draw_request_id)
+        )
+
+        payment_mode = str(getattr(getattr(draw, "agreement", None), "payment_mode", "") or "").strip().lower()
+        if payment_mode != "escrow":
+            raise ValueError("Escrow release is only available for escrow draw requests.")
+        if draw.status == DrawRequestStatus.RELEASED or getattr(draw, "released_at", None):
+            raise ValueError("Escrow funds have already been released for this draw.")
+        if draw.status not in {DrawRequestStatus.APPROVED, DrawRequestStatus.AWAITING_RELEASE}:
+            raise ValueError("Escrow funds can only be released after the draw is approved.")
+
+        draw.status = DrawRequestStatus.RELEASED
+        draw.released_at = released_at
+        draw.save(update_fields=["status", "released_at", "updated_at"])
+
+    draw.refresh_from_db()
+    create_draw_activity_notification(
+        draw,
+        event_type="draw_released",
+        title=f"Funds released for Draw {draw.draw_number}",
+        summary="Escrow funds were released for this draw in MyHomeBro.",
+        severity="success",
+        dedupe_key=f"draw_released:{draw.id}",
+    )
+    create_draw_lifecycle_notification(draw, event_type="draw_released")
+    return draw

@@ -1,7 +1,7 @@
 // src/components/ContractorDashboard.jsx
 import React, { useEffect, useId, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api, { getContractorDrawRequests, resendDrawReview } from "../api";
+import api, { getContractorDrawRequests, releaseDrawRequest, resendDrawReview } from "../api";
 import { toast } from "react-hot-toast";
 import PageShell from "./PageShell.jsx";
 import StatCard from "./StatCard.jsx";
@@ -299,6 +299,8 @@ const drawPrimaryMilestoneLabel = (draw) => {
 function drawStatusTone(workflowStatus) {
   const status = norm(workflowStatus);
   if (status === "paid") return "text-emerald-700 bg-emerald-50 border-emerald-200";
+  if (status === "released") return "text-emerald-700 bg-emerald-50 border-emerald-200";
+  if (status === "awaiting_release") return "text-teal-700 bg-teal-50 border-teal-200";
   if (status === "payment_pending" || status === "approved") return "text-indigo-700 bg-indigo-50 border-indigo-200";
   if (status === "submitted") return "text-slate-700 bg-slate-50 border-slate-200";
   if (status === "changes_requested") return "text-amber-800 bg-amber-50 border-amber-200";
@@ -1348,6 +1350,7 @@ export default function ContractorDashboard() {
   const dStats = useMemo(() => {
     const buckets = {
       awaitingApproval: [],
+      awaitingRelease: [],
       paymentPending: [],
       paid: [],
       issues: [],
@@ -1355,13 +1358,16 @@ export default function ContractorDashboard() {
     for (const draw of Array.isArray(drawRequests) ? drawRequests : []) {
       const workflowStatus = drawWorkflowStatus(draw);
       if (workflowStatus === "submitted") buckets.awaitingApproval.push(draw);
+      else if (workflowStatus === "awaiting_release") buckets.awaitingRelease.push(draw);
       else if (workflowStatus === "payment_pending" || workflowStatus === "approved") buckets.paymentPending.push(draw);
-      else if (workflowStatus === "paid") buckets.paid.push(draw);
+      else if (workflowStatus === "paid" || workflowStatus === "released") buckets.paid.push(draw);
       else if (["changes_requested", "rejected", "disputed"].includes(workflowStatus)) buckets.issues.push(draw);
     }
     return {
       awaitingApprovalCount: buckets.awaitingApproval.length,
       awaitingApprovalAmount: sum(buckets.awaitingApproval, "net_amount"),
+      awaitingReleaseCount: buckets.awaitingRelease.length,
+      awaitingReleaseAmount: sum(buckets.awaitingRelease, "net_amount"),
       paymentPendingCount: buckets.paymentPending.length,
       paymentPendingAmount: sum(buckets.paymentPending, "net_amount"),
       paidCount: buckets.paid.length,
@@ -1371,6 +1377,12 @@ export default function ContractorDashboard() {
       requestedChangesCount: buckets.issues.filter((draw) => drawWorkflowStatus(draw) === "changes_requested").length,
     };
   }, [drawRequests]);
+  const showAwaitingReleaseLane = useMemo(
+    () =>
+      dStats.awaitingReleaseCount > 0 ||
+      (Array.isArray(drawRequests) ? drawRequests : []).some((draw) => norm(draw?.payment_mode) === "escrow"),
+    [dStats.awaitingReleaseCount, drawRequests]
+  );
   const dashboardNextSteps = useMemo(
     () =>
       getDashboardNextSteps({
@@ -1469,8 +1481,10 @@ export default function ContractorDashboard() {
       (Array.isArray(drawRequests) ? drawRequests : [])
         .slice()
         .sort((a, b) => {
-          const aTime = parseDateAny(a?.updated_at || a?.paid_at || a?.submitted_at || a?.created_at)?.getTime() || 0;
-          const bTime = parseDateAny(b?.updated_at || b?.paid_at || b?.submitted_at || b?.created_at)?.getTime() || 0;
+          const aTime =
+            parseDateAny(a?.updated_at || a?.released_at || a?.paid_at || a?.submitted_at || a?.created_at)?.getTime() || 0;
+          const bTime =
+            parseDateAny(b?.updated_at || b?.released_at || b?.paid_at || b?.submitted_at || b?.created_at)?.getTime() || 0;
           return bTime - aTime;
         })
         .slice(0, 6),
@@ -1536,6 +1550,20 @@ export default function ContractorDashboard() {
     } catch (error) {
       console.error(error);
       toast.error(error?.response?.data?.detail || "Unable to resend the payment request link.");
+    }
+  };
+
+  const releaseEscrowFunds = async (draw) => {
+    if (!draw?.id) return;
+    try {
+      const data = await releaseDrawRequest(draw.id);
+      setDrawRequests((current) =>
+        (Array.isArray(current) ? current : []).map((item) => (item.id === draw.id ? { ...item, ...data } : item))
+      );
+      toast.success("Escrow funds marked as released.");
+    } catch (error) {
+      console.error(error);
+      toast.error(error?.response?.data?.detail || "Unable to release escrow funds for this draw.");
     }
   };
 
@@ -1811,6 +1839,8 @@ export default function ContractorDashboard() {
   const workMoneyConnectorLabel =
     mStats.readyCount > 0
       ? `${mStats.readyCount} ${mStats.readyCount === 1 ? "milestone" : "milestones"} ready for payment request`
+      : dStats.awaitingReleaseCount > 0
+      ? `${dStats.awaitingReleaseCount} ${dStats.awaitingReleaseCount === 1 ? "request" : "requests"} awaiting escrow release`
       : dStats.paymentPendingCount > 0
       ? `${dStats.paymentPendingCount} ${dStats.paymentPendingCount === 1 ? "request" : "requests"} awaiting payment`
       : "Completed work flows into payment requests and payout";
@@ -1821,6 +1851,7 @@ export default function ContractorDashboard() {
       dueSchedule.today.count > 0 ||
       mStats.readyCount > 0 ||
       dStats.awaitingApprovalCount > 0 ||
+      dStats.awaitingReleaseCount > 0 ||
       dStats.paymentPendingCount > 0;
 
     const looksLikeSetup =
@@ -1858,6 +1889,7 @@ export default function ContractorDashboard() {
     hasProjectsStarted,
     heroAction,
     dStats.awaitingApprovalCount,
+    dStats.awaitingReleaseCount,
     dStats.paymentPendingCount,
     isOnboardingComplete,
     mStats.readyCount,
@@ -2070,7 +2102,7 @@ export default function ContractorDashboard() {
                 <StatCard
                   icon={WalletMinimal}
                   title="Total Earned"
-                  subtitle="Paid draw requests recorded in MyHomeBro."
+                  subtitle="Paid or released draw requests recorded in MyHomeBro."
                   count={dStats.paidCount}
                   amount={dStats.paidAmount}
                   onClick={goDrawRequests}
@@ -2078,7 +2110,7 @@ export default function ContractorDashboard() {
                 <StatCard
                   icon={BadgeCheck}
                   title="Pending Payments"
-                  subtitle="Approved requests still waiting on payment."
+                  subtitle="Direct-payment requests still waiting on payment."
                   count={dStats.paymentPendingCount}
                   amount={dStats.paymentPendingAmount}
                   onClick={goDrawRequests}
@@ -2179,10 +2211,22 @@ export default function ContractorDashboard() {
                     onClick={goDrawRequests}
                     testId="dashboard-money-approved"
                   />
+                  {showAwaitingReleaseLane ? (
+                    <FlowMetricButton
+                      icon={BadgeCheck}
+                      label="Awaiting Release"
+                      description="Escrow-approved requests waiting for the release step."
+                      count={dStats.awaitingReleaseCount}
+                      amount={dStats.awaitingReleaseAmount}
+                      onClick={goDrawRequests}
+                      emphasized={dStats.awaitingReleaseCount > 0}
+                      testId="dashboard-money-awaiting-release"
+                    />
+                  ) : null}
                   <FlowMetricButton
                     icon={WalletMinimal}
                     label="Paid"
-                    description="Payment requests that have been fully paid."
+                    description="Payment requests that have been fully paid or released."
                     count={dStats.paidCount}
                     amount={dStats.paidAmount}
                     onClick={goDrawRequests}
@@ -2246,13 +2290,24 @@ export default function ContractorDashboard() {
                           </td>
                           <td className="py-3">
                             <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={() => resendDrawLink(draw)}
-                                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                              >
-                                Resend Link
-                              </button>
+                              {["submitted", "payment_pending"].includes(drawWorkflowStatus(draw)) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => resendDrawLink(draw)}
+                                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                >
+                                  Resend Link
+                                </button>
+                              ) : null}
+                              {drawWorkflowStatus(draw) === "awaiting_release" && norm(draw?.payment_mode) === "escrow" ? (
+                                <button
+                                  type="button"
+                                  onClick={() => releaseEscrowFunds(draw)}
+                                  className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                                >
+                                  Release Funds
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
                                 onClick={() => openDrawEditor(draw)}

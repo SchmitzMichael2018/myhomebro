@@ -61,9 +61,14 @@ class MagicDrawRequestApproveView(APIView):
                 public_token=token,
             )
 
-            if draw.status == DrawRequestStatus.PAID or getattr(draw, "paid_at", None):
+            if draw.status in {DrawRequestStatus.PAID, DrawRequestStatus.RELEASED} or getattr(draw, "paid_at", None):
                 payload = _serialize_draw(draw)
-                payload["mode"] = "paid"
+                payload["mode"] = "paid" if draw.status == DrawRequestStatus.PAID else "released"
+                return Response(payload)
+
+            if draw.status == DrawRequestStatus.AWAITING_RELEASE:
+                payload = _serialize_draw(draw)
+                payload["mode"] = "escrow_review"
                 return Response(payload)
 
             if draw.status not in {DrawRequestStatus.SUBMITTED, DrawRequestStatus.APPROVED}:
@@ -72,7 +77,8 @@ class MagicDrawRequestApproveView(APIView):
                     status=400,
                 )
 
-            draw.status = DrawRequestStatus.APPROVED
+            is_direct = str(getattr(getattr(draw, "agreement", None), "payment_mode", "") or "").lower() == "direct"
+            draw.status = DrawRequestStatus.APPROVED if is_direct else DrawRequestStatus.AWAITING_RELEASE
             draw.reviewed_at = draw.reviewed_at or timezone.now()
             draw.homeowner_acted_at = timezone.now()
             draw.save(update_fields=["status", "reviewed_at", "homeowner_acted_at", "updated_at"])
@@ -103,14 +109,14 @@ class MagicDrawRequestApproveView(APIView):
             draw,
             event_type="draw_approved",
             title=f"Draw {draw.draw_number} approved",
-            summary="The owner approved this draw. Release and payment handling can continue from here.",
+            summary="The owner approved this draw. It is now waiting for escrow release in MyHomeBro.",
             severity="success",
             dedupe_key=f"draw_approved:{draw.id}",
         )
         create_draw_lifecycle_notification(draw, event_type="draw_approved")
         payload = _serialize_draw(draw)
         payload["mode"] = "escrow_review"
-        payload["detail"] = "Draw approved. Escrow release stays separate and can be handled later."
+        payload["detail"] = "Draw approved. Escrow release is the next step in MyHomeBro."
         return Response(payload)
 
 

@@ -167,6 +167,8 @@ class DrawRequestStatus(models.TextChoices):
     DRAFT = "draft", "Draft"
     SUBMITTED = "submitted", "Submitted"
     APPROVED = "approved", "Approved"
+    AWAITING_RELEASE = "awaiting_release", "Awaiting Release"
+    RELEASED = "released", "Released"
     REJECTED = "rejected", "Rejected"
     CHANGES_REQUESTED = "changes_requested", "Changes Requested"
     PAID = "paid", "Paid"
@@ -1694,6 +1696,7 @@ class Notification(models.Model):
     EVENT_DRAW_APPROVED = "draw_approved"
     EVENT_DRAW_CHANGES_REQUESTED = "draw_changes_requested"
     EVENT_DRAW_PAID = "draw_paid"
+    EVENT_DRAW_RELEASED = "draw_released"
 
     EVENT_CHOICES = (
         (EVENT_SUBCONTRACTOR_COMMENT, "Subcontractor Comment"),
@@ -1702,6 +1705,7 @@ class Notification(models.Model):
         (EVENT_DRAW_APPROVED, "Draw Approved"),
         (EVENT_DRAW_CHANGES_REQUESTED, "Draw Changes Requested"),
         (EVENT_DRAW_PAID, "Draw Paid"),
+        (EVENT_DRAW_RELEASED, "Draw Released"),
     )
 
     contractor = models.ForeignKey(
@@ -1840,6 +1844,7 @@ class DrawRequest(models.Model):
     stripe_payment_intent_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
     paid_at = models.DateTimeField(null=True, blank=True)
     paid_via = models.CharField(max_length=32, blank=True, default="")
+    released_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 

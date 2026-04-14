@@ -6443,6 +6443,99 @@ class ProgressPaymentWorkflowTests(TestCase):
         ).first()
         self.assertIsNotNone(notification)
 
+    def test_magic_draw_review_flow_moves_escrow_draw_to_awaiting_release(self):
+        self.agreement.payment_mode = "escrow"
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_by_homeowner = True
+        self.agreement.save(update_fields=["payment_mode", "signed_by_contractor", "signed_by_homeowner"])
+
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=9,
+            status=DrawRequestStatus.SUBMITTED,
+            title="Escrow Draw",
+            gross_amount=Decimal("2500.00"),
+            retainage_amount=Decimal("250.00"),
+            net_amount=Decimal("2250.00"),
+            current_requested_amount=Decimal("2500.00"),
+        )
+
+        approve_response = self.client.patch(
+            f"/api/projects/draws/magic/{draw.public_token}/approve/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(approve_response.status_code, 200)
+        self.assertEqual(approve_response.json()["mode"], "escrow_review")
+        self.assertEqual(approve_response.json()["workflow_status"], "awaiting_release")
+
+        draw.refresh_from_db()
+        self.assertEqual(draw.status, DrawRequestStatus.AWAITING_RELEASE)
+        self.assertIsNotNone(draw.homeowner_acted_at)
+
+    def test_contractor_can_release_approved_escrow_draw(self):
+        self.agreement.payment_mode = "escrow"
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_by_homeowner = True
+        self.agreement.save(update_fields=["payment_mode", "signed_by_contractor", "signed_by_homeowner"])
+
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=10,
+            status=DrawRequestStatus.AWAITING_RELEASE,
+            title="Awaiting Release Draw",
+            gross_amount=Decimal("2600.00"),
+            retainage_amount=Decimal("260.00"),
+            net_amount=Decimal("2340.00"),
+            current_requested_amount=Decimal("2600.00"),
+        )
+
+        release_response = self.client.post(f"/api/projects/draws/{draw.id}/release/", {}, format="json")
+
+        self.assertEqual(release_response.status_code, 200)
+        self.assertEqual(release_response.json()["workflow_status"], "released")
+
+        draw.refresh_from_db()
+        self.assertEqual(draw.status, DrawRequestStatus.RELEASED)
+        self.assertIsNotNone(draw.released_at)
+        self.assertTrue(
+            ContractorActivityEvent.objects.filter(
+                contractor=self.contractor,
+                event_type="draw_released",
+                dedupe_key=f"draw_released:{draw.id}",
+            ).exists()
+        )
+        notification = Notification.objects.filter(
+            contractor=self.contractor,
+            event_type=Notification.EVENT_DRAW_RELEASED,
+            draw_request=draw,
+            agreement=self.agreement,
+        ).first()
+        self.assertIsNotNone(notification)
+
+    def test_release_endpoint_rejects_direct_draws(self):
+        self.agreement.payment_mode = "direct"
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_by_homeowner = True
+        self.agreement.save(update_fields=["payment_mode", "signed_by_contractor", "signed_by_homeowner"])
+
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=11,
+            status=DrawRequestStatus.APPROVED,
+            title="Direct Draw",
+            gross_amount=Decimal("1800.00"),
+            retainage_amount=Decimal("180.00"),
+            net_amount=Decimal("1620.00"),
+            current_requested_amount=Decimal("1800.00"),
+        )
+
+        release_response = self.client.post(f"/api/projects/draws/{draw.id}/release/", {}, format="json")
+
+        self.assertEqual(release_response.status_code, 400)
+        self.assertIn("escrow", str(release_response.json()["detail"]).lower())
+
     def test_magic_draw_request_changes_sets_changes_requested_and_note(self):
         self.agreement.signed_by_contractor = True
         self.agreement.signed_by_homeowner = True
@@ -6552,6 +6645,30 @@ class ProgressPaymentWorkflowTests(TestCase):
         self.assertEqual(payload["status"], "approved")
         self.assertEqual(payload["workflow_status"], "payment_pending")
         self.assertTrue(payload["is_payment_pending"])
+
+    def test_draw_list_serializes_awaiting_release_for_escrow_draw(self):
+        self.agreement.payment_mode = "escrow"
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_by_homeowner = True
+        self.agreement.save(update_fields=["payment_mode", "signed_by_contractor", "signed_by_homeowner"])
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=12,
+            status=DrawRequestStatus.AWAITING_RELEASE,
+            title="Escrow Approved Draw",
+            gross_amount=Decimal("1800.00"),
+            retainage_amount=Decimal("180.00"),
+            net_amount=Decimal("1620.00"),
+            current_requested_amount=Decimal("1800.00"),
+        )
+
+        response = self.client.get(f"/api/projects/agreements/{self.agreement.id}/draws/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["results"][0]
+        self.assertEqual(payload["id"], draw.id)
+        self.assertEqual(payload["workflow_status"], "awaiting_release")
+        self.assertTrue(payload["is_awaiting_release"])
 
     def test_draw_list_serializes_disputed_when_payment_record_is_disputed(self):
         self.agreement.signed_by_contractor = True

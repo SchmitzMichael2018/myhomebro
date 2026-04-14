@@ -27,6 +27,7 @@ const draws = [
     workflow_status: 'payment_pending',
     workflow_status_label: 'Payment Pending',
     workflow_message: 'Approved by the owner. Payment is still pending through MyHomeBro.',
+    payment_mode: 'direct',
     net_amount: '2400.00',
     gross_amount: '2600.00',
     current_requested_amount: '2600.00',
@@ -38,11 +39,29 @@ const draws = [
     agreement_id: 301,
     agreement_title: 'Office Renovation',
     draw_number: 3,
+    title: 'Inspection Holdback',
+    status: 'awaiting_release',
+    workflow_status: 'awaiting_release',
+    workflow_status_label: 'Awaiting Release',
+    workflow_message: 'Approved by the owner. Escrow release is the next step.',
+    payment_mode: 'escrow',
+    net_amount: '1500.00',
+    gross_amount: '1700.00',
+    current_requested_amount: '1700.00',
+    public_review_url: 'https://app.myhomebro.test/draws/magic/release',
+    line_items: [{ id: 3, milestone_title: 'Inspection Holdback', description: 'Inspection Holdback' }],
+  },
+  {
+    id: 904,
+    agreement_id: 301,
+    agreement_title: 'Office Renovation',
+    draw_number: 4,
     title: 'Finish',
     status: 'paid',
     workflow_status: 'paid',
     workflow_status_label: 'Paid',
     workflow_message: 'Payment has been recorded for this draw.',
+    payment_mode: 'direct',
     net_amount: '3100.00',
     gross_amount: '3400.00',
     current_requested_amount: '3400.00',
@@ -50,15 +69,16 @@ const draws = [
     line_items: [{ id: 3, milestone_title: 'Finish', description: 'Finish' }],
   },
   {
-    id: 904,
+    id: 905,
     agreement_id: 301,
     agreement_title: 'Office Renovation',
-    draw_number: 4,
+    draw_number: 5,
     title: 'Punch List',
     status: 'changes_requested',
     workflow_status: 'changes_requested',
     workflow_status_label: 'Changes Requested',
     workflow_message: 'The owner requested changes before payment moves forward.',
+    payment_mode: 'direct',
     net_amount: '700.00',
     gross_amount: '800.00',
     current_requested_amount: '800.00',
@@ -220,6 +240,21 @@ async function mockDashboard(page) {
       }),
     });
   });
+
+  await page.route(/\/api\/projects\/draws\/\d+\/release\/$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ...draws[2],
+        status: 'released',
+        workflow_status: 'released',
+        workflow_status_label: 'Released',
+        workflow_message: 'Escrow funds have been released for this draw.',
+        released_at: '2026-04-13T16:30:00Z',
+      }),
+    });
+  });
 }
 
 test('contractor dashboard reflects draw-request payment pipeline and actions', async ({ page }) => {
@@ -233,17 +268,24 @@ test('contractor dashboard reflects draw-request payment pipeline and actions', 
   await expect(page.getByText('Pending Payments')).toBeVisible();
   await expect(page.getByTestId('dashboard-money-awaiting-customer')).toBeVisible();
   await expect(page.getByTestId('dashboard-money-approved')).toBeVisible();
+  await expect(page.getByTestId('dashboard-money-awaiting-release')).toBeVisible();
   await expect(page.getByTestId('dashboard-money-issues')).toBeVisible();
   await expect(page.getByText('Send Payment Request')).toBeVisible();
 
   await expect(page.getByTestId('dashboard-draw-requests-table')).toBeVisible();
   await expect(page.getByText('Mobilization')).toBeVisible();
-  await expect(page.getByText('Payment Pending')).toBeVisible();
-  await expect(page.getByText('Changes Requested')).toBeVisible();
+  await expect(page.getByTestId('dashboard-money-approved')).toContainText('Approved / Awaiting Payment');
+  await expect(page.getByTestId('dashboard-money-awaiting-release')).toContainText('Awaiting Release');
+  await expect(page.getByTestId('dashboard-draw-requests-table').getByText('Changes Requested')).toBeVisible();
   await expect(page.locator('text=/awaiting payment/i').first()).toBeVisible();
+  await expect(page.getByText('Escrow-approved requests waiting for the release step.')).toBeVisible();
   await expect(page.locator('text=/requested changes/i').first()).toBeVisible();
   await expect(page.locator('text=/failed.*follow-up/i').first()).toBeVisible();
 
   await page.getByRole('button', { name: 'Resend Link' }).first().click();
   await expect(page.getByText('Review email sent to owner@example.com.')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Release Funds' }).click();
+  await expect(page.getByText('Escrow funds marked as released.')).toBeVisible();
+  await expect(page.getByTestId('dashboard-draw-requests-table').getByText('Released')).toBeVisible();
 });

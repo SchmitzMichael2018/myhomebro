@@ -24,6 +24,7 @@ from projects.models import (
 from projects.services.draw_requests import (
     build_public_draw_link,
     create_draw_activity_notification,
+    release_escrow_draw,
     send_draw_request_review_email,
 )
 from projects.services.draw_state import serialize_draw_workflow
@@ -93,7 +94,12 @@ def _previous_billed_amount(agreement: Agreement, milestone: Milestone | None, e
         return Decimal("0.00")
     qs = DrawLineItem.objects.filter(
         draw_request__agreement=agreement,
-        draw_request__status__in=[DrawRequestStatus.APPROVED, DrawRequestStatus.PAID],
+        draw_request__status__in=[
+            DrawRequestStatus.APPROVED,
+            DrawRequestStatus.AWAITING_RELEASE,
+            DrawRequestStatus.RELEASED,
+            DrawRequestStatus.PAID,
+        ],
         milestone=milestone,
     )
     if exclude_draw_id:
@@ -144,6 +150,7 @@ def _serialize_draw(draw: DrawRequest):
         "stripe_checkout_url": getattr(draw, "stripe_checkout_url", "") or "",
         "paid_at": draw.paid_at.isoformat() if getattr(draw, "paid_at", None) else None,
         "paid_via": getattr(draw, "paid_via", "") or "",
+        "released_at": draw.released_at.isoformat() if getattr(draw, "released_at", None) else None,
         "payment_mode": str(getattr(agreement, "payment_mode", "") or "").strip().lower(),
         "line_items": [_serialize_draw_line_item(item) for item in draw.line_items.select_related("milestone").all()],
     }
@@ -538,6 +545,30 @@ class DrawRecordExternalPaymentView(APIView):
         )
 
         return Response(_serialize_external_payment(payment), status=status.HTTP_201_CREATED)
+
+
+class DrawReleaseView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, draw_id: int):
+        contractor = _contractor_for_request(request)
+        if contractor is None:
+            return Response({"detail": "Contractor profile not found."}, status=400)
+
+        draw = _draw_for_contractor(contractor, draw_id)
+        agreement = draw.agreement
+        _require_progress_agreement(agreement)
+        _require_executed_agreement(agreement)
+
+        try:
+            draw = release_escrow_draw(draw_request_id=draw.id)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+
+        draw = DrawRequest.objects.prefetch_related("line_items__milestone", "external_payment_records").select_related(
+            "agreement", "agreement__project", "agreement__contractor", "agreement__homeowner"
+        ).get(pk=draw.pk)
+        return Response(_serialize_draw(draw))
 
 
 class AgreementExternalPaymentListView(APIView):

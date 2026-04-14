@@ -10,6 +10,8 @@ function money(value) {
 function statusClasses(status) {
   const normalized = String(status || "").toLowerCase();
   if (normalized.includes("paid")) return "bg-emerald-100 text-emerald-800";
+  if (normalized.includes("released")) return "bg-emerald-100 text-emerald-800";
+  if (normalized.includes("awaiting_release")) return "bg-teal-100 text-teal-800";
   if (normalized.includes("pending")) return "bg-indigo-100 text-indigo-800";
   if (normalized.includes("approved")) return "bg-blue-100 text-blue-800";
   if (normalized.includes("dispute")) return "bg-rose-100 text-rose-800";
@@ -204,6 +206,14 @@ export default function MagicDrawRequest() {
               Continue to Secure Payment
             </a>
             <div className="mt-2 text-xs text-emerald-900/80">Stripe supports card and ACH for this direct-payment draw.</div>
+          </div>
+        ) : workflowStatus === "awaiting_release" ? (
+          <div className="mt-5 rounded-xl border border-teal-200 bg-teal-50 px-4 py-4 text-sm text-teal-900">
+            This draw has been approved and is now awaiting escrow release in MyHomeBro.
+          </div>
+        ) : workflowStatus === "released" ? (
+          <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
+            Escrow funds have been released for this draw.
           </div>
         ) : workflowStatus === "approved" ? (
           <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-4 text-sm text-blue-900">

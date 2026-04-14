@@ -55,6 +55,12 @@ def _build_event_copy(draw, event_type: str) -> tuple[str, str, str]:
             f"Payment completed for {draw_label} in {project_title}. Money received is now reflected in MyHomeBro.",
             "Payment completed",
         )
+    if event_type == Notification.EVENT_DRAW_RELEASED:
+        return (
+            "Funds released",
+            f"Escrow funds were released for {draw_label} in {project_title}. The released amount is now reflected in MyHomeBro.",
+            "Funds released",
+        )
     raise ValueError(f"Unsupported draw notification event: {event_type}")
 
 

@@ -2507,6 +2507,16 @@ export default function AgreementDetail() {
                             Owner approval is complete. Payment is still pending through the draw review page in MyHomeBro.
                           </div>
                         ) : null}
+                        {drawWorkflowStatus(draw) === "awaiting_release" ? (
+                          <div className="mt-2 text-xs text-teal-700">
+                            Owner approval is complete. This escrow draw is waiting for release in MyHomeBro.
+                          </div>
+                        ) : null}
+                        {drawWorkflowStatus(draw) === "released" ? (
+                          <div className="mt-2 text-xs text-emerald-700">
+                            Escrow funds released{draw.released_at ? ` on ${fmtDateTime(draw.released_at)}` : ""}.
+                          </div>
+                        ) : null}
                         {drawWorkflowStatus(draw) === "paid" ? (
                           <div className="mt-2 text-xs text-emerald-700">
                             Payment recorded{draw.paid_at ? ` on ${fmtDateTime(draw.paid_at)}` : ""}{draw.paid_via ? ` via ${String(draw.paid_via).toUpperCase()}` : ""}.

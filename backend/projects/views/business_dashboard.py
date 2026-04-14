@@ -427,7 +427,14 @@ def _build_progress_summary(contractor, end_dt):
         agreement__payment_structure="progress",
         created_at__lte=end_dt,
     )
-    valid_earned_draws = progress_draws.filter(status__in=[DrawRequestStatus.APPROVED, DrawRequestStatus.PAID])
+    valid_earned_draws = progress_draws.filter(
+        status__in=[
+            DrawRequestStatus.APPROVED,
+            DrawRequestStatus.AWAITING_RELEASE,
+            DrawRequestStatus.RELEASED,
+            DrawRequestStatus.PAID,
+        ]
+    )
     earned_to_date = (
         valid_earned_draws.aggregate(total=Coalesce(Sum("gross_amount"), Decimal("0.00"))).get("total")
         or Decimal("0.00")
