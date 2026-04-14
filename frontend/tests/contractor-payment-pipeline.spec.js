@@ -1,0 +1,249 @@
+import { expect, test } from '@playwright/test';
+
+const draws = [
+  {
+    id: 901,
+    agreement_id: 301,
+    agreement_title: 'Office Renovation',
+    draw_number: 1,
+    title: 'Mobilization',
+    status: 'submitted',
+    workflow_status: 'submitted',
+    workflow_status_label: 'Submitted',
+    workflow_message: 'Submitted for owner review.',
+    net_amount: '1250.00',
+    gross_amount: '1400.00',
+    current_requested_amount: '1400.00',
+    public_review_url: 'https://app.myhomebro.test/draws/magic/submitted',
+    line_items: [{ id: 1, milestone_title: 'Mobilization', description: 'Mobilization' }],
+  },
+  {
+    id: 902,
+    agreement_id: 301,
+    agreement_title: 'Office Renovation',
+    draw_number: 2,
+    title: 'Framing',
+    status: 'approved',
+    workflow_status: 'payment_pending',
+    workflow_status_label: 'Payment Pending',
+    workflow_message: 'Approved by the owner. Payment is still pending through MyHomeBro.',
+    net_amount: '2400.00',
+    gross_amount: '2600.00',
+    current_requested_amount: '2600.00',
+    public_review_url: 'https://app.myhomebro.test/draws/magic/pending',
+    line_items: [{ id: 2, milestone_title: 'Framing', description: 'Framing' }],
+  },
+  {
+    id: 903,
+    agreement_id: 301,
+    agreement_title: 'Office Renovation',
+    draw_number: 3,
+    title: 'Finish',
+    status: 'paid',
+    workflow_status: 'paid',
+    workflow_status_label: 'Paid',
+    workflow_message: 'Payment has been recorded for this draw.',
+    net_amount: '3100.00',
+    gross_amount: '3400.00',
+    current_requested_amount: '3400.00',
+    public_review_url: 'https://app.myhomebro.test/draws/magic/paid',
+    line_items: [{ id: 3, milestone_title: 'Finish', description: 'Finish' }],
+  },
+  {
+    id: 904,
+    agreement_id: 301,
+    agreement_title: 'Office Renovation',
+    draw_number: 4,
+    title: 'Punch List',
+    status: 'changes_requested',
+    workflow_status: 'changes_requested',
+    workflow_status_label: 'Changes Requested',
+    workflow_message: 'The owner requested changes before payment moves forward.',
+    net_amount: '700.00',
+    gross_amount: '800.00',
+    current_requested_amount: '800.00',
+    public_review_url: 'https://app.myhomebro.test/draws/magic/changes',
+    line_items: [{ id: 4, milestone_title: 'Punch List', description: 'Punch List' }],
+  },
+];
+
+async function mockDashboard(page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ onboarding_status: 'complete', connected: true }),
+    });
+  });
+
+  await page.route('**/api/projects/contractors/me/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 77,
+        created_at: '2026-03-01T10:00:00Z',
+        business_name: 'MHB Commercial',
+        city: 'Dallas',
+        payouts_enabled: true,
+        charges_enabled: true,
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/milestones\/?(?:\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          { id: 11, title: 'Ready Stage', amount: '2000.00', completed: true, is_invoiced: false },
+          { id: 12, title: 'In Progress Stage', amount: '5000.00', completed: false, is_invoiced: false },
+        ],
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/invoices\/?(?:\?.*)?$/, async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results: [] }) });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/?(?:\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          { id: 301, title: 'Office Renovation', payment_structure: 'progress', total_cost: '25000.00' },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/301/funding_preview/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ rate: 0.03, fixed_fee: 1, is_intro: true, tier_name: 'INTRO' }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor/public-leads/', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results: [] }) });
+  });
+
+  await page.route('**/api/projects/expense-requests/**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results: [] }) });
+  });
+
+  await page.route('**/api/projects/activity-feed/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 88,
+            event_type: 'payment_failed',
+            title: 'Failed payment follow-up',
+            summary: 'A payment failed and needs attention.',
+            severity: 'warning',
+            created_at: '2026-04-10T15:00:00Z',
+            navigation_target: '/app/dashboard',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/dashboard/operations/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        identity_type: 'contractor_owner',
+        today: [],
+        tomorrow: [],
+        this_week: [],
+        recent_activity: [],
+        empty_states: { recent_activity: 'No recent worker activity yet.' },
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/draws/', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ results: draws }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ...draws[0],
+        review_email_sent_at: '2026-04-13T12:00:00Z',
+        email_delivery: { ok: true, message: 'Review email sent to owner@example.com.' },
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/draws\/\d+\/resend_review\/$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ...draws[0],
+        review_email_sent_at: '2026-04-13T12:00:00Z',
+        email_delivery: { ok: true, message: 'Review email sent to owner@example.com.' },
+      }),
+    });
+  });
+}
+
+test('contractor dashboard reflects draw-request payment pipeline and actions', async ({ page }) => {
+  await mockDashboard(page);
+
+  await page.goto('/app', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByText('Payment Pipeline')).toBeVisible();
+  await expect(page.getByTestId('dashboard-work-ready-to-invoice')).toBeVisible();
+  await expect(page.getByText('Total Earned')).toBeVisible();
+  await expect(page.getByText('Pending Payments')).toBeVisible();
+  await expect(page.getByTestId('dashboard-money-awaiting-customer')).toBeVisible();
+  await expect(page.getByTestId('dashboard-money-approved')).toBeVisible();
+  await expect(page.getByTestId('dashboard-money-issues')).toBeVisible();
+  await expect(page.getByText('Send Payment Request')).toBeVisible();
+
+  await expect(page.getByTestId('dashboard-draw-requests-table')).toBeVisible();
+  await expect(page.getByText('Mobilization')).toBeVisible();
+  await expect(page.getByText('Payment Pending')).toBeVisible();
+  await expect(page.getByText('Changes Requested')).toBeVisible();
+  await expect(page.locator('text=/awaiting payment/i').first()).toBeVisible();
+  await expect(page.locator('text=/requested changes/i').first()).toBeVisible();
+  await expect(page.locator('text=/failed.*follow-up/i').first()).toBeVisible();
+
+  await page.getByRole('button', { name: 'Resend Link' }).first().click();
+  await expect(page.getByText('Review email sent to owner@example.com.')).toBeVisible();
+});

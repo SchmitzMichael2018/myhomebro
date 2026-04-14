@@ -6564,6 +6564,31 @@ class ProgressPaymentWorkflowTests(TestCase):
         payload = response.json()["results"][0]
         self.assertEqual(payload["workflow_status"], "disputed")
 
+    @override_settings(FRONTEND_URL="https://app.myhomebro.test")
+    def test_contractor_draw_list_and_resend_review_endpoint_work(self):
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_by_homeowner = True
+        self.agreement.save(update_fields=["signed_by_contractor", "signed_by_homeowner"])
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=7,
+            status=DrawRequestStatus.SUBMITTED,
+            title="Submitted Draw",
+            gross_amount=Decimal("1500.00"),
+            retainage_amount=Decimal("150.00"),
+            net_amount=Decimal("1350.00"),
+            current_requested_amount=Decimal("1500.00"),
+        )
+
+        list_response = self.client.get("/api/projects/draws/")
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.json()["results"][0]["id"], draw.id)
+
+        resend_response = self.client.post(f"/api/projects/draws/{draw.id}/resend_review/", {}, format="json")
+        self.assertEqual(resend_response.status_code, 200)
+        self.assertTrue(resend_response.json()["email_delivery"]["ok"])
+        self.assertEqual(resend_response.json()["id"], draw.id)
+
     def test_business_dashboard_includes_progress_summary(self):
         draw = DrawRequest.objects.create(
             agreement=self.agreement,

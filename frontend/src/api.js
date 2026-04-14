@@ -427,6 +427,11 @@ export async function createAgreementDrawRequest(agreementId, payload) {
   return res.data;
 }
 
+export async function getContractorDrawRequests() {
+  const res = await api.get("/projects/draws/");
+  return res.data;
+}
+
 export async function submitDrawRequest(drawId) {
   const res = await api.post(`/projects/draws/${drawId}/submit/`);
   return res.data;
@@ -444,6 +449,11 @@ export async function rejectDrawRequest(drawId) {
 
 export async function requestDrawChanges(drawId) {
   const res = await api.post(`/projects/draws/${drawId}/request_changes/`);
+  return res.data;
+}
+
+export async function resendDrawReview(drawId) {
+  const res = await api.post(`/projects/draws/${drawId}/resend_review/`);
   return res.data;
 }
 

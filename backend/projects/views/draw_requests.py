@@ -13,6 +13,7 @@ from rest_framework.views import APIView
 
 from projects.models import (
     Agreement,
+    AgreementPaymentStructure,
     DrawLineItem,
     DrawRequest,
     DrawRequestStatus,
@@ -370,6 +371,26 @@ class AgreementDrawListCreateView(APIView):
         return Response(_serialize_draw(draw), status=status.HTTP_201_CREATED)
 
 
+class ContractorDrawRequestListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        contractor = _contractor_for_request(request)
+        if contractor is None:
+            return Response({"detail": "Contractor profile not found."}, status=400)
+
+        draws = (
+            DrawRequest.objects.select_related("agreement", "agreement__project")
+            .filter(
+                agreement__contractor=contractor,
+                agreement__payment_structure=AgreementPaymentStructure.PROGRESS,
+            )
+            .prefetch_related("line_items__milestone", "external_payment_records")
+            .order_by("-updated_at", "-draw_number", "-id")
+        )
+        return Response({"results": [_serialize_draw(draw) for draw in draws]})
+
+
 class DrawStatusActionView(APIView):
     permission_classes = [IsAuthenticated]
     target_status = None
@@ -431,6 +452,31 @@ class DrawRejectView(DrawStatusActionView):
 class DrawRequestChangesView(DrawStatusActionView):
     target_status = DrawRequestStatus.CHANGES_REQUESTED
     allowed_current_statuses = (DrawRequestStatus.SUBMITTED,)
+
+
+class DrawResendReviewEmailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, draw_id: int):
+        contractor = _contractor_for_request(request)
+        if contractor is None:
+            return Response({"detail": "Contractor profile not found."}, status=400)
+
+        draw = _draw_for_contractor(contractor, draw_id)
+        _require_progress_agreement(draw.agreement)
+        _require_executed_agreement(draw.agreement)
+
+        if draw.status not in {DrawRequestStatus.SUBMITTED, DrawRequestStatus.APPROVED}:
+            return Response(
+                {"detail": "Review links can only be resent for submitted or approved draws."},
+                status=400,
+            )
+
+        ok, message = send_draw_request_review_email(draw, is_resend=True)
+        draw = DrawRequest.objects.prefetch_related("line_items__milestone", "external_payment_records").get(pk=draw.pk)
+        payload = _serialize_draw(draw)
+        payload["email_delivery"] = {"ok": ok, "message": message}
+        return Response(payload)
 
 
 class DrawRecordExternalPaymentView(APIView):

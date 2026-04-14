@@ -215,8 +215,10 @@ from .views.draw_requests import (
     AgreementDrawListCreateView,
     AgreementExternalPaymentListView,
     DrawApproveView,
+    ContractorDrawRequestListView,
     DrawRecordExternalPaymentView,
     DrawRejectView,
+    DrawResendReviewEmailView,
     DrawRequestChangesView,
     DrawSubmitView,
 )
@@ -419,9 +421,11 @@ urlpatterns = [
         AgreementExternalPaymentListView.as_view(),
         name="agreement-external-payments",
     ),
+    path("draws/", ContractorDrawRequestListView.as_view(), name="draw-list"),
     path("draws/<int:draw_id>/submit/", DrawSubmitView.as_view(), name="draw-submit"),
     path("draws/<int:draw_id>/approve/", DrawApproveView.as_view(), name="draw-approve"),
     path("draws/<int:draw_id>/reject/", DrawRejectView.as_view(), name="draw-reject"),
+    path("draws/<int:draw_id>/resend_review/", DrawResendReviewEmailView.as_view(), name="draw-resend-review"),
     path(
         "draws/<int:draw_id>/request_changes/",
         DrawRequestChangesView.as_view(),

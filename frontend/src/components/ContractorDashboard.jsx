@@ -1,7 +1,7 @@
 // src/components/ContractorDashboard.jsx
 import React, { useEffect, useId, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../api";
+import api, { getContractorDrawRequests, resendDrawReview } from "../api";
 import { toast } from "react-hot-toast";
 import PageShell from "./PageShell.jsx";
 import StatCard from "./StatCard.jsx";
@@ -280,6 +280,31 @@ const invBucket = (inv) => {
 
   return "pending";
 };
+
+const drawWorkflowStatus = (draw) => norm(draw?.workflow_status || draw?.status || "");
+
+const drawWorkflowLabel = (draw) =>
+  draw?.workflow_status_label || String(draw?.workflow_status || draw?.status || "draft").replaceAll("_", " ");
+
+const drawAmount = (draw) => money(draw?.net_amount ?? draw?.current_requested_amount ?? draw?.gross_amount);
+
+const drawPrimaryMilestoneLabel = (draw) => {
+  const items = Array.isArray(draw?.line_items) ? draw.line_items : [];
+  if (!items.length) return draw?.title || `Draw ${draw?.draw_number || ""}`.trim();
+  const first = items[0];
+  const base = first?.milestone_title || first?.description || draw?.title || "Draw stage";
+  return items.length > 1 ? `${base} +${items.length - 1} more` : base;
+};
+
+function drawStatusTone(workflowStatus) {
+  const status = norm(workflowStatus);
+  if (status === "paid") return "text-emerald-700 bg-emerald-50 border-emerald-200";
+  if (status === "payment_pending" || status === "approved") return "text-indigo-700 bg-indigo-50 border-indigo-200";
+  if (status === "submitted") return "text-slate-700 bg-slate-50 border-slate-200";
+  if (status === "changes_requested") return "text-amber-800 bg-amber-50 border-amber-200";
+  if (status === "rejected" || status === "disputed") return "text-rose-700 bg-rose-50 border-rose-200";
+  return "text-slate-700 bg-slate-50 border-slate-200";
+}
 
 const fmtRate = (rateDecimal) => {
   const r = Number(rateDecimal);
@@ -937,6 +962,7 @@ export default function ContractorDashboard() {
   const [publicLeads, setPublicLeads] = useState([]);
   const [milestones, setMilestones] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [drawRequests, setDrawRequests] = useState([]);
 
   const [showExpenseModal, setShowExpenseModal] = useState(false);
 
@@ -1008,14 +1034,16 @@ export default function ContractorDashboard() {
           const list = Array.isArray(mRes.data?.milestones) ? mRes.data.milestones : [];
           setMilestones(list);
           setInvoices([]);
+          setDrawRequests([]);
           return;
         }
 
-        const [mRes, iRes, aRes, lRes] = await Promise.allSettled([
+        const [mRes, iRes, aRes, lRes, dRes] = await Promise.allSettled([
           api.get("/projects/milestones/"),
           api.get("/projects/invoices/"),
           api.get("/projects/agreements/"),
           api.get("/projects/contractor/public-leads/"),
+          getContractorDrawRequests(),
         ]);
 
         if (!mounted) return;
@@ -1054,6 +1082,18 @@ export default function ContractorDashboard() {
         } else {
           console.error(lRes.reason);
           setPublicLeads([]);
+        }
+
+        if (dRes.status === "fulfilled") {
+          const list = Array.isArray(dRes.value?.results)
+            ? dRes.value.results
+            : Array.isArray(dRes.value?.data)
+            ? dRes.value.data
+            : dRes.value?.data?.results || [];
+          setDrawRequests(list);
+        } else {
+          console.error(dRes.reason);
+          setDrawRequests([]);
         }
       } catch (e) {
         console.error(e);
@@ -1305,6 +1345,32 @@ export default function ContractorDashboard() {
       earnedAmount: sum(buckets.earned),
     };
   }, [invoices]);
+  const dStats = useMemo(() => {
+    const buckets = {
+      awaitingApproval: [],
+      paymentPending: [],
+      paid: [],
+      issues: [],
+    };
+    for (const draw of Array.isArray(drawRequests) ? drawRequests : []) {
+      const workflowStatus = drawWorkflowStatus(draw);
+      if (workflowStatus === "submitted") buckets.awaitingApproval.push(draw);
+      else if (workflowStatus === "payment_pending" || workflowStatus === "approved") buckets.paymentPending.push(draw);
+      else if (workflowStatus === "paid") buckets.paid.push(draw);
+      else if (["changes_requested", "rejected", "disputed"].includes(workflowStatus)) buckets.issues.push(draw);
+    }
+    return {
+      awaitingApprovalCount: buckets.awaitingApproval.length,
+      awaitingApprovalAmount: sum(buckets.awaitingApproval, "net_amount"),
+      paymentPendingCount: buckets.paymentPending.length,
+      paymentPendingAmount: sum(buckets.paymentPending, "net_amount"),
+      paidCount: buckets.paid.length,
+      paidAmount: sum(buckets.paid, "net_amount"),
+      issuesCount: buckets.issues.length,
+      issuesAmount: sum(buckets.issues, "net_amount"),
+      requestedChangesCount: buckets.issues.filter((draw) => drawWorkflowStatus(draw) === "changes_requested").length,
+    };
+  }, [drawRequests]);
   const dashboardNextSteps = useMemo(
     () =>
       getDashboardNextSteps({
@@ -1388,6 +1454,28 @@ export default function ContractorDashboard() {
       week: summarize(items.filter((item) => inRange(item.date, todayStart, weekEnd))),
     };
   }, [invoices, invoicesById, milestones]);
+  const failedPaymentItems = useMemo(
+    () =>
+      (Array.isArray(activityFeed) ? activityFeed : []).filter((item) => {
+        const eventType = norm(item?.event_type);
+        const title = norm(item?.title);
+        const summary = norm(item?.summary);
+        return eventType.includes("payment_failed") || title.includes("failed payment") || summary.includes("failed payment");
+      }),
+    [activityFeed]
+  );
+  const drawTableRows = useMemo(
+    () =>
+      (Array.isArray(drawRequests) ? drawRequests : [])
+        .slice()
+        .sort((a, b) => {
+          const aTime = parseDateAny(a?.updated_at || a?.paid_at || a?.submitted_at || a?.created_at)?.getTime() || 0;
+          const bTime = parseDateAny(b?.updated_at || b?.paid_at || b?.submitted_at || b?.created_at)?.getTime() || 0;
+          return bTime - aTime;
+        })
+        .slice(0, 6),
+    [drawRequests]
+  );
 
   /* ----- navigation handlers ----- */
   const goNewAgreement = () => navigate(`/app/agreements`);
@@ -1418,6 +1506,38 @@ export default function ContractorDashboard() {
 
   const openNewExpense = () => setShowExpenseModal(true);
   const onExpenseModalClose = () => setShowExpenseModal(false);
+  const goDrawRequests = () => navigate("/app/agreements?focus=payment_requests");
+
+  const openDrawOwnerView = (draw) => {
+    const url = String(draw?.public_review_url || "").trim();
+    if (!url) {
+      toast.error("Owner review link is not available yet.");
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const openDrawEditor = (draw) => {
+    if (!draw?.agreement_id) {
+      toast.error("Agreement details are unavailable for this draw.");
+      return;
+    }
+    navigate(`/app/agreements/${draw.agreement_id}`);
+  };
+
+  const resendDrawLink = async (draw) => {
+    if (!draw?.id) return;
+    try {
+      const data = await resendDrawReview(draw.id);
+      setDrawRequests((current) =>
+        (Array.isArray(current) ? current : []).map((item) => (item.id === draw.id ? { ...item, ...data } : item))
+      );
+      toast.success(data?.email_delivery?.message || "Payment request link resent.");
+    } catch (error) {
+      console.error(error);
+      toast.error(error?.response?.data?.detail || "Unable to resend the payment request link.");
+    }
+  };
 
   const openEarnedModal = async () => {
     setShowEarnedModal(true);
@@ -1572,6 +1692,36 @@ export default function ContractorDashboard() {
       mapped.push(item);
     };
 
+    if (dStats.paymentPendingCount > 0) {
+      addItem({
+        id: "draw-payment-pending",
+        key: "draw-payment-pending",
+        label: `${pluralizeNeedsAttention(dStats.paymentPendingCount, "payment request")} awaiting payment.`,
+        href: "/app/agreements?focus=payment_requests&filter=payment_pending",
+        ctaText: "Open",
+      });
+    }
+
+    if (dStats.requestedChangesCount > 0) {
+      addItem({
+        id: "draw-changes-requested",
+        key: "draw-changes-requested",
+        label: `${pluralizeNeedsAttention(dStats.requestedChangesCount, "payment request")} waiting on requested changes.`,
+        href: "/app/agreements?focus=payment_requests&filter=changes_requested",
+        ctaText: "Open",
+      });
+    }
+
+    if (failedPaymentItems.length > 0) {
+      addItem({
+        id: "failed-payments",
+        key: "failed-payments",
+        label: `${pluralizeNeedsAttention(failedPaymentItems.length, "payment")} failed and needs follow-up.`,
+        href: "/app/dashboard",
+        ctaText: "Review",
+      });
+    }
+
     (Array.isArray(dashboardNextSteps) ? dashboardNextSteps : []).forEach((item) => {
       const label = String(item || "").trim();
       const lower = label.toLowerCase();
@@ -1641,7 +1791,7 @@ export default function ContractorDashboard() {
     }
 
     return mapped.slice(0, 3);
-  }, [dashboardNextSteps, iStats.disputedCount, iStats.pendingCount]);
+  }, [dStats.paymentPendingCount, dStats.requestedChangesCount, dashboardNextSteps, failedPaymentItems.length, iStats.disputedCount, iStats.pendingCount]);
   const greetingName = useMemo(() => {
     const raw =
       who?.first_name ||
@@ -1660,18 +1810,18 @@ export default function ContractorDashboard() {
     dueSchedule.week.count > 0;
   const workMoneyConnectorLabel =
     mStats.readyCount > 0
-      ? `${mStats.readyCount} ${mStats.readyCount === 1 ? "milestone" : "milestones"} ready to invoice`
-      : iStats.pendingCount > 0
-      ? `${iStats.pendingCount} ${iStats.pendingCount === 1 ? "invoice" : "invoices"} awaiting customer`
-      : "Completed work flows into invoices and payout";
+      ? `${mStats.readyCount} ${mStats.readyCount === 1 ? "milestone" : "milestones"} ready for payment request`
+      : dStats.paymentPendingCount > 0
+      ? `${dStats.paymentPendingCount} ${dStats.paymentPendingCount === 1 ? "request" : "requests"} awaiting payment`
+      : "Completed work flows into payment requests and payout";
   const heroBand = useMemo(() => {
     const hasOperationalPressure =
       needsAttentionItems.length > 0 ||
       dueSchedule.late.count > 0 ||
       dueSchedule.today.count > 0 ||
       mStats.readyCount > 0 ||
-      iStats.pendingCount > 0 ||
-      iStats.approvedCount > 0;
+      dStats.awaitingApprovalCount > 0 ||
+      dStats.paymentPendingCount > 0;
 
     const looksLikeSetup =
       !hasProjectsStarted ||
@@ -1707,8 +1857,8 @@ export default function ContractorDashboard() {
     dueSchedule.today.count,
     hasProjectsStarted,
     heroAction,
-    iStats.approvedCount,
-    iStats.pendingCount,
+    dStats.awaitingApprovalCount,
+    dStats.paymentPendingCount,
     isOnboardingComplete,
     mStats.readyCount,
     needsAttentionItems.length,
@@ -1910,19 +2060,45 @@ export default function ContractorDashboard() {
 
           <DashboardSection
             title="Work and Money"
-            subtitle="Follow the handoff from completed work to invoice approval and payout."
+            subtitle="Follow the handoff from completed work to payment requests, approval, and payout."
           >
             <DashboardCard
               tone="subtle"
               className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)] md:p-5"
             >
+              <div className="mb-5 grid gap-3 md:grid-cols-3">
+                <StatCard
+                  icon={WalletMinimal}
+                  title="Total Earned"
+                  subtitle="Paid draw requests recorded in MyHomeBro."
+                  count={dStats.paidCount}
+                  amount={dStats.paidAmount}
+                  onClick={goDrawRequests}
+                />
+                <StatCard
+                  icon={BadgeCheck}
+                  title="Pending Payments"
+                  subtitle="Approved requests still waiting on payment."
+                  count={dStats.paymentPendingCount}
+                  amount={dStats.paymentPendingAmount}
+                  onClick={goDrawRequests}
+                />
+                <StatCard
+                  icon={BadgeDollarSign}
+                  title="Awaiting Approval"
+                  subtitle="Submitted requests waiting on owner review."
+                  count={dStats.awaitingApprovalCount}
+                  amount={dStats.awaitingApprovalAmount}
+                  onClick={goDrawRequests}
+                />
+              </div>
               <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] xl:items-start">
                 <div className="space-y-3">
                   <div>
                     <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#52749a]">
                       Active Work
                     </div>
-                    <div className="mt-1 text-lg font-semibold text-[#18395f]">What is moving toward invoice</div>
+                    <div className="mt-1 text-lg font-semibold text-[#18395f]">What is moving toward payment</div>
                   </div>
                   <FlowMetricButton
                     icon={ListTodo}
@@ -1935,8 +2111,8 @@ export default function ContractorDashboard() {
                   />
                   <FlowMetricButton
                     icon={CheckCircle2}
-                    label="Ready to Invoice"
-                    description="Completed work ready for the payment handoff."
+                    label="Ready for Payment Request"
+                    description="Completed work ready to move into a payment request."
                     count={mStats.readyCount}
                     amount={mStats.readyAmount}
                     onClick={() => navigate(`/app/milestones?filter=complete_not_invoiced`)}
@@ -1980,40 +2156,125 @@ export default function ContractorDashboard() {
                 <div className="space-y-3">
                   <div>
                     <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#52749a]">
-                      Money Status
+                      Payment Pipeline
                     </div>
-                    <div className="mt-1 text-lg font-semibold text-[#18395f]">Where the money is now</div>
+                    <div className="mt-1 text-lg font-semibold text-[#18395f]">Track each payment request through approval and payout</div>
                   </div>
                   <FlowMetricButton
                     icon={BadgeDollarSign}
-                    label="Awaiting Customer"
-                    description="Invoices sent and waiting on customer approval."
-                    count={iStats.pendingCount}
-                    amount={iStats.pendingAmount}
-                    onClick={goInvoices}
-                    emphasized={iStats.pendingCount > 0}
+                    label="Awaiting Approval"
+                    description="Submitted payment requests waiting on owner review."
+                    count={dStats.awaitingApprovalCount}
+                    amount={dStats.awaitingApprovalAmount}
+                    onClick={goDrawRequests}
+                    emphasized={dStats.awaitingApprovalCount > 0}
                     testId="dashboard-money-awaiting-customer"
                   />
                   <FlowMetricButton
                     icon={BadgeCheck}
-                    label="Approved / Unpaid"
-                    description="Approved invoices that are lined up for payout."
-                    count={iStats.approvedCount}
-                    amount={iStats.approvedAmount}
-                    onClick={goInvoices}
+                    label="Approved / Awaiting Payment"
+                    description="Owner-approved requests that still need payment to complete."
+                    count={dStats.paymentPendingCount}
+                    amount={dStats.paymentPendingAmount}
+                    onClick={goDrawRequests}
                     testId="dashboard-money-approved"
                   />
                   <FlowMetricButton
                     icon={WalletMinimal}
-                    label="Paid Out"
-                    description="Money paid out this year across invoices and paid expenses."
-                    count={iStats.earnedCount}
-                    amount={earnedYtdAmount}
-                    onClick={openEarnedModal}
+                    label="Paid"
+                    description="Payment requests that have been fully paid."
+                    count={dStats.paidCount}
+                    amount={dStats.paidAmount}
+                    onClick={goDrawRequests}
                     testId="dashboard-money-paid-out"
+                  />
+                  <FlowMetricButton
+                    icon={AlertTriangle}
+                    label="Issues / Disputes"
+                    description="Requests with disputes, requested changes, or rejected status."
+                    count={dStats.issuesCount}
+                    amount={dStats.issuesAmount}
+                    onClick={goDrawRequests}
+                    testId="dashboard-money-issues"
                   />
                 </div>
               </div>
+            </DashboardCard>
+          </DashboardSection>
+
+          <DashboardSection
+            title="Draw Requests"
+            subtitle="Commercial payment requests currently in flight."
+          >
+            <DashboardCard
+              tone="subtle"
+              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)] md:p-5"
+            >
+              {drawTableRows.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 px-4 py-4 text-sm text-slate-500">
+                  No draw requests are active right now.
+                </div>
+              ) : (
+                <div className="overflow-x-auto" data-testid="dashboard-draw-requests-table">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <th className="py-3 pr-3">Milestone</th>
+                        <th className="py-3 pr-3">Amount</th>
+                        <th className="py-3 pr-3">Status</th>
+                        <th className="py-3">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {drawTableRows.map((draw) => (
+                        <tr key={draw.id} className="border-b border-slate-100 align-top">
+                          <td className="py-3 pr-3">
+                            <div className="font-semibold text-slate-900">{drawPrimaryMilestoneLabel(draw)}</div>
+                            <div className="mt-1 text-xs text-slate-500">
+                              Draw {draw.draw_number}{draw.agreement_title ? ` • ${draw.agreement_title}` : ""}
+                            </div>
+                          </td>
+                          <td className="py-3 pr-3 font-semibold text-slate-900">{currency(drawAmount(draw))}</td>
+                          <td className="py-3 pr-3">
+                            <span
+                              className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${drawStatusTone(
+                                drawWorkflowStatus(draw)
+                              )}`}
+                            >
+                              {drawWorkflowLabel(draw)}
+                            </span>
+                          </td>
+                          <td className="py-3">
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => resendDrawLink(draw)}
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                              >
+                                Resend Link
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openDrawEditor(draw)}
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openDrawOwnerView(draw)}
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                              >
+                                View
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </DashboardCard>
           </DashboardSection>
 
@@ -2046,8 +2307,8 @@ export default function ContractorDashboard() {
                 />
                 <StatCard
                   icon={CheckCircle2}
-                  title="Ready to Invoice"
-                  subtitle="Completed (Not Invoiced)."
+                  title="Ready for Payment Request"
+                  subtitle="Completed (Not Yet Requested)."
                   count={mStats.readyCount}
                   amount={mStats.readyAmount}
                   onClick={() => navigate(`/app/milestones?filter=complete_not_invoiced`)}
@@ -2144,9 +2405,9 @@ export default function ContractorDashboard() {
                 />
                 <ActionButton
                   icon={Receipt}
-                  label="Send Invoice"
+                  label="Send Payment Request"
                   onClick={goInvoices}
-                  hint="Open invoices so you can create or send the next one."
+                  hint="Open payment tools so you can create or send the next request."
                 />
                 <ActionButton
                   icon={Receipt}
