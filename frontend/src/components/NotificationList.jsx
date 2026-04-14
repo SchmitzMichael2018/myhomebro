@@ -24,8 +24,13 @@ export default function NotificationList({ items = [], onClose }) {
             >
               <p className="text-gray-800 font-medium">{n.title}</p>
               <p className="text-gray-600">{n.message}</p>
+              {n.project_title || n.draw_request_id ? (
+                <p className="text-xs text-slate-500 mt-1">
+                  {[n.project_title, n.draw_request_id ? `Draw #${n.draw_request_id}` : null].filter(Boolean).join(" • ")}
+                </p>
+              ) : null}
               <p className="text-xs text-gray-400 mt-1">
-                {new Date(n.timestamp).toLocaleString()}
+                {new Date(n.created_at || n.timestamp).toLocaleString()}
               </p>
             </li>
           ))

@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from projects.models import DrawRequest, DrawRequestStatus
+from projects.services.draw_notifications import create_draw_lifecycle_notification
 from projects.services.draw_requests import create_direct_checkout_for_draw, create_draw_activity_notification
 from projects.views.draw_requests import _serialize_draw
 
@@ -91,6 +92,7 @@ class MagicDrawRequestApproveView(APIView):
                 severity="success",
                 dedupe_key=f"draw_payment_pending:{draw.id}",
             )
+            create_draw_lifecycle_notification(draw, event_type="draw_approved")
             payload = _serialize_draw(draw)
             payload["mode"] = "direct_checkout"
             payload["checkout_url"] = checkout_url
@@ -105,6 +107,7 @@ class MagicDrawRequestApproveView(APIView):
             severity="success",
             dedupe_key=f"draw_approved:{draw.id}",
         )
+        create_draw_lifecycle_notification(draw, event_type="draw_approved")
         payload = _serialize_draw(draw)
         payload["mode"] = "escrow_review"
         payload["detail"] = "Draw approved. Escrow release stays separate and can be handled later."
@@ -150,6 +153,7 @@ class MagicDrawRequestChangesView(APIView):
             severity="warning",
             dedupe_key=f"draw_changes_requested:{draw.id}:{draw.reviewed_at.isoformat() if draw.reviewed_at else ''}",
         )
+        create_draw_lifecycle_notification(draw, event_type="draw_changes_requested")
         payload = _serialize_draw(draw)
         payload["mode"] = "changes_requested"
         return Response(payload)

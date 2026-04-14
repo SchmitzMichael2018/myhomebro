@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from projects.models import DrawRequest, DrawRequestStatus, ExternalPaymentRecord, ExternalPaymentStatus
 from projects.services.activity_feed import create_activity_event
+from projects.services.draw_notifications import create_draw_lifecycle_notification
 from projects.services.draw_state import derive_draw_workflow_status
 
 log = logging.getLogger(__name__)
@@ -361,4 +362,5 @@ def finalize_draw_paid(
         severity="success",
         dedupe_key=f"draw_paid:{draw.id}",
     )
+    create_draw_lifecycle_notification(draw, event_type="draw_paid")
     return draw

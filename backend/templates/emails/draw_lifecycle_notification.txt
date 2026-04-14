@@ -1,0 +1,7 @@
+{{ message }}
+
+Project: {{ project_title }}
+Draw: {{ draw_label }}
+
+Open in MyHomeBro:
+{{ link }}

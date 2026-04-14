@@ -1691,11 +1691,17 @@ class Notification(models.Model):
     EVENT_SUBCONTRACTOR_COMMENT = "subcontractor_comment"
     EVENT_SUBCONTRACTOR_FILE = "subcontractor_file"
     EVENT_SUBCONTRACTOR_REVIEW = "subcontractor_review"
+    EVENT_DRAW_APPROVED = "draw_approved"
+    EVENT_DRAW_CHANGES_REQUESTED = "draw_changes_requested"
+    EVENT_DRAW_PAID = "draw_paid"
 
     EVENT_CHOICES = (
         (EVENT_SUBCONTRACTOR_COMMENT, "Subcontractor Comment"),
         (EVENT_SUBCONTRACTOR_FILE, "Subcontractor File"),
         (EVENT_SUBCONTRACTOR_REVIEW, "Subcontractor Review Request"),
+        (EVENT_DRAW_APPROVED, "Draw Approved"),
+        (EVENT_DRAW_CHANGES_REQUESTED, "Draw Changes Requested"),
+        (EVENT_DRAW_PAID, "Draw Paid"),
     )
 
     contractor = models.ForeignKey(
@@ -1713,6 +1719,13 @@ class Notification(models.Model):
     )
     milestone = models.ForeignKey(
         Milestone,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        null=True,
+        blank=True,
+    )
+    draw_request = models.ForeignKey(
+        "projects.DrawRequest",
         on_delete=models.CASCADE,
         related_name="notifications",
         null=True,

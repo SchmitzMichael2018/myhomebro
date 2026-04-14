@@ -6435,6 +6435,13 @@ class ProgressPaymentWorkflowTests(TestCase):
                 dedupe_key=f"draw_payment_pending:{draw.id}",
             ).exists()
         )
+        notification = Notification.objects.filter(
+            contractor=self.contractor,
+            event_type=Notification.EVENT_DRAW_APPROVED,
+            draw_request=draw,
+            agreement=self.agreement,
+        ).first()
+        self.assertIsNotNone(notification)
 
     def test_magic_draw_request_changes_sets_changes_requested_and_note(self):
         self.agreement.signed_by_contractor = True
@@ -6469,6 +6476,13 @@ class ProgressPaymentWorkflowTests(TestCase):
                 event_type="draw_changes_requested",
             ).exists()
         )
+        notification = Notification.objects.filter(
+            contractor=self.contractor,
+            event_type=Notification.EVENT_DRAW_CHANGES_REQUESTED,
+            draw_request=draw,
+            agreement=self.agreement,
+        ).first()
+        self.assertIsNotNone(notification)
 
     def test_finalize_draw_paid_marks_paid_and_creates_verified_payment_record(self):
         draw = DrawRequest.objects.create(
@@ -6506,6 +6520,13 @@ class ProgressPaymentWorkflowTests(TestCase):
                 dedupe_key=f"draw_paid:{draw.id}",
             ).exists()
         )
+        notification = Notification.objects.filter(
+            contractor=self.contractor,
+            event_type=Notification.EVENT_DRAW_PAID,
+            draw_request=draw,
+            agreement=self.agreement,
+        ).first()
+        self.assertIsNotNone(notification)
 
     def test_draw_list_serializes_payment_pending_for_direct_approved_draw(self):
         self.agreement.payment_mode = "direct"
@@ -6588,6 +6609,33 @@ class ProgressPaymentWorkflowTests(TestCase):
         self.assertEqual(resend_response.status_code, 200)
         self.assertTrue(resend_response.json()["email_delivery"]["ok"])
         self.assertEqual(resend_response.json()["id"], draw.id)
+
+    def test_notification_list_includes_draw_request_link(self):
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=8,
+            status=DrawRequestStatus.APPROVED,
+            title="Approved Draw",
+            gross_amount=Decimal("1500.00"),
+            retainage_amount=Decimal("150.00"),
+            net_amount=Decimal("1350.00"),
+            current_requested_amount=Decimal("1500.00"),
+        )
+        Notification.objects.create(
+            contractor=self.contractor,
+            event_type=Notification.EVENT_DRAW_APPROVED,
+            agreement=self.agreement,
+            draw_request=draw,
+            title="Draw approved",
+            message="Draw approved for payment.",
+        )
+
+        response = self.client.get("/api/projects/notifications/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()[0]
+        self.assertEqual(payload["draw_request_id"], draw.id)
+        self.assertEqual(payload["agreement_id"], self.agreement.id)
 
     def test_business_dashboard_includes_progress_summary(self):
         draw = DrawRequest.objects.create(

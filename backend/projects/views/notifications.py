@@ -16,7 +16,7 @@ class NotificationListView(APIView):
             return Response([])
 
         rows = (
-            Notification.objects.select_related("agreement", "agreement__project", "milestone")
+            Notification.objects.select_related("agreement", "agreement__project", "milestone", "draw_request")
             .filter(contractor=contractor)
             .order_by("-created_at", "-id")[:20]
         )
