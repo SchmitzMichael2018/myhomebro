@@ -95,6 +95,17 @@ function paymentModeLabel(mode) {
   return m === "direct" ? "Direct Pay" : "Escrow (Protected)";
 }
 
+function drawWorkflowStatus(draw) {
+  return String(draw?.workflow_status || draw?.status || "").trim().toLowerCase();
+}
+
+function drawWorkflowLabel(draw) {
+  return (
+    draw?.workflow_status_label ||
+    String(draw?.workflow_status || draw?.status || "draft").replaceAll("_", " ")
+  );
+}
+
 function formatApiError(error, fallback) {
   const data = error?.response?.data;
   if (!data) return fallback;
@@ -2478,7 +2489,7 @@ export default function AgreementDetail() {
                           Draw {draw.draw_number}: {draw.title}
                         </div>
                         <div className="mt-1 text-xs text-gray-500">
-                          Status: {String(draw.status || "").replaceAll("_", " ")} • Gross {formatMoney(draw.gross_amount)} •
+                          Status: {drawWorkflowLabel(draw)} • Gross {formatMoney(draw.gross_amount)} •
                           Retainage {formatMoney(draw.retainage_amount)} • Net {formatMoney(draw.net_amount)}
                         </div>
                         {draw.review_email_sent_at ? (
@@ -2491,9 +2502,19 @@ export default function AgreementDetail() {
                             Owner note: {draw.homeowner_review_notes}
                           </div>
                         ) : null}
-                        {draw.status === "approved" && isDirectPay && !draw.paid_at ? (
+                        {drawWorkflowStatus(draw) === "payment_pending" ? (
                           <div className="mt-2 text-xs text-indigo-700">
-                            Owner approval is complete. Payment continues from the draw review page through Stripe.
+                            Owner approval is complete. Payment is still pending through the draw review page in MyHomeBro.
+                          </div>
+                        ) : null}
+                        {drawWorkflowStatus(draw) === "paid" ? (
+                          <div className="mt-2 text-xs text-emerald-700">
+                            Payment recorded{draw.paid_at ? ` on ${fmtDateTime(draw.paid_at)}` : ""}{draw.paid_via ? ` via ${String(draw.paid_via).toUpperCase()}` : ""}.
+                          </div>
+                        ) : null}
+                        {drawWorkflowStatus(draw) === "disputed" ? (
+                          <div className="mt-2 text-xs text-rose-700">
+                            A payment issue is under review for this draw.
                           </div>
                         ) : null}
                         {draw.notes ? (

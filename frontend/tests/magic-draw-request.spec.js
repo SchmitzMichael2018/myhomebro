@@ -8,6 +8,9 @@ function buildDraw(overrides = {}) {
     draw_number: 2,
     title: 'Interior Buildout',
     status: 'submitted',
+    workflow_status: 'submitted',
+    workflow_status_label: 'Submitted',
+    workflow_message: 'Submitted for owner review.',
     gross_amount: '5000.00',
     retainage_amount: '500.00',
     net_amount: '4500.00',
@@ -62,6 +65,9 @@ async function installPublicDrawMocks(page, { getDraw, approveDraw, changesDraw 
         approveDraw ??
           buildDraw({
             status: 'approved',
+            workflow_status: 'payment_pending',
+            workflow_status_label: 'Payment Pending',
+            workflow_message: 'Approved by the owner. Payment is still pending through MyHomeBro.',
             stripe_checkout_url: 'https://checkout.stripe.test/draw-123',
           })
       ),
@@ -76,6 +82,9 @@ async function installPublicDrawMocks(page, { getDraw, approveDraw, changesDraw 
         changesDraw ??
           buildDraw({
             status: 'changes_requested',
+            workflow_status: 'changes_requested',
+            workflow_status_label: 'Changes Requested',
+            workflow_message: 'The owner requested changes before payment moves forward.',
             homeowner_review_notes: 'Please confirm the rough-in inspection is complete.',
           })
       ),
@@ -87,6 +96,8 @@ test('magic draw review page supports approve to payment handoff for direct-pay 
   await installPublicDrawMocks(page, {
     approveDraw: buildDraw({
       status: 'approved',
+      workflow_status: 'payment_pending',
+      workflow_status_label: 'Payment Pending',
       stripe_checkout_url: 'https://checkout.stripe.test/draw-123',
     }),
   });
@@ -100,6 +111,7 @@ test('magic draw review page supports approve to payment handoff for direct-pay 
 
   await page.getByRole('button', { name: 'Approve & Continue' }).click();
 
+  await expect(page.getByText('Payment Pending')).toBeVisible();
   await expect(page.getByText('Payment ready')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Continue to Secure Payment' })).toHaveAttribute(
     'href',
@@ -114,6 +126,8 @@ test('magic draw review page supports change requests', async ({ page }) => {
     changesDraw: buildDraw({
       payment_mode: 'escrow',
       status: 'changes_requested',
+      workflow_status: 'changes_requested',
+      workflow_status_label: 'Changes Requested',
       homeowner_review_notes: 'Please confirm the rough-in inspection is complete.',
     }),
   });

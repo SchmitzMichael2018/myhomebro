@@ -6194,6 +6194,8 @@ class ProgressPaymentWorkflowTests(TestCase):
 
         draw = DrawRequest.objects.get(pk=draw_id)
         self.assertEqual(draw.status, DrawRequestStatus.PAID)
+        self.assertIsNotNone(draw.paid_at)
+        self.assertEqual(draw.paid_via, "ach")
         self.assertTrue(
             ExternalPaymentRecord.objects.filter(draw_request=draw, agreement=self.agreement).exists()
         )
@@ -6421,10 +6423,18 @@ class ProgressPaymentWorkflowTests(TestCase):
         self.assertEqual(approve_response.status_code, 200)
         self.assertEqual(approve_response.json()["mode"], "direct_checkout")
         self.assertEqual(approve_response.json()["checkout_url"], "https://checkout.stripe.test/draw-123")
+        self.assertEqual(approve_response.json()["workflow_status"], "payment_pending")
 
         draw.refresh_from_db()
         self.assertEqual(draw.status, DrawRequestStatus.APPROVED)
         self.assertIsNotNone(draw.homeowner_acted_at)
+        self.assertTrue(
+            ContractorActivityEvent.objects.filter(
+                contractor=self.contractor,
+                event_type="draw_payment_pending",
+                dedupe_key=f"draw_payment_pending:{draw.id}",
+            ).exists()
+        )
 
     def test_magic_draw_request_changes_sets_changes_requested_and_note(self):
         self.agreement.signed_by_contractor = True
@@ -6452,6 +6462,13 @@ class ProgressPaymentWorkflowTests(TestCase):
         draw.refresh_from_db()
         self.assertEqual(draw.status, DrawRequestStatus.CHANGES_REQUESTED)
         self.assertEqual(draw.homeowner_review_notes, "Please clarify the completed scope before payment.")
+        self.assertEqual(response.json()["workflow_status"], "changes_requested")
+        self.assertTrue(
+            ContractorActivityEvent.objects.filter(
+                contractor=self.contractor,
+                event_type="draw_changes_requested",
+            ).exists()
+        )
 
     def test_finalize_draw_paid_marks_paid_and_creates_verified_payment_record(self):
         draw = DrawRequest.objects.create(
@@ -6482,6 +6499,70 @@ class ProgressPaymentWorkflowTests(TestCase):
                 status=ExternalPaymentStatus.VERIFIED,
             ).exists()
         )
+        self.assertTrue(
+            ContractorActivityEvent.objects.filter(
+                contractor=self.contractor,
+                event_type="draw_paid",
+                dedupe_key=f"draw_paid:{draw.id}",
+            ).exists()
+        )
+
+    def test_draw_list_serializes_payment_pending_for_direct_approved_draw(self):
+        self.agreement.payment_mode = "direct"
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_by_homeowner = True
+        self.agreement.save(update_fields=["payment_mode", "signed_by_contractor", "signed_by_homeowner"])
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=5,
+            status=DrawRequestStatus.APPROVED,
+            title="Approved Direct Draw",
+            gross_amount=Decimal("1800.00"),
+            retainage_amount=Decimal("180.00"),
+            net_amount=Decimal("1620.00"),
+            current_requested_amount=Decimal("1800.00"),
+        )
+
+        response = self.client.get(f"/api/projects/agreements/{self.agreement.id}/draws/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["results"][0]
+        self.assertEqual(payload["id"], draw.id)
+        self.assertEqual(payload["status"], "approved")
+        self.assertEqual(payload["workflow_status"], "payment_pending")
+        self.assertTrue(payload["is_payment_pending"])
+
+    def test_draw_list_serializes_disputed_when_payment_record_is_disputed(self):
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_by_homeowner = True
+        self.agreement.save(update_fields=["signed_by_contractor", "signed_by_homeowner"])
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=6,
+            status=DrawRequestStatus.APPROVED,
+            title="Approved Draw",
+            gross_amount=Decimal("2200.00"),
+            retainage_amount=Decimal("220.00"),
+            net_amount=Decimal("1980.00"),
+            current_requested_amount=Decimal("2200.00"),
+        )
+        ExternalPaymentRecord.objects.create(
+            agreement=self.agreement,
+            draw_request=draw,
+            gross_amount=Decimal("2200.00"),
+            net_amount=Decimal("1980.00"),
+            retainage_withheld_amount=Decimal("220.00"),
+            payment_method="ach",
+            payment_date=timezone.localdate(),
+            status=ExternalPaymentStatus.DISPUTED,
+            recorded_by=self.contractor_user,
+        )
+
+        response = self.client.get(f"/api/projects/agreements/{self.agreement.id}/draws/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["results"][0]
+        self.assertEqual(payload["workflow_status"], "disputed")
 
     def test_business_dashboard_includes_progress_summary(self):
         draw = DrawRequest.objects.create(

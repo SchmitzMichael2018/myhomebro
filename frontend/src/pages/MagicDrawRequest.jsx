@@ -10,8 +10,11 @@ function money(value) {
 function statusClasses(status) {
   const normalized = String(status || "").toLowerCase();
   if (normalized.includes("paid")) return "bg-emerald-100 text-emerald-800";
+  if (normalized.includes("pending")) return "bg-indigo-100 text-indigo-800";
   if (normalized.includes("approved")) return "bg-blue-100 text-blue-800";
+  if (normalized.includes("dispute")) return "bg-rose-100 text-rose-800";
   if (normalized.includes("change")) return "bg-amber-100 text-amber-800";
+  if (normalized.includes("reject")) return "bg-rose-100 text-rose-800";
   if (normalized.includes("submitted")) return "bg-slate-100 text-slate-800";
   return "bg-gray-100 text-gray-700";
 }
@@ -43,10 +46,13 @@ export default function MagicDrawRequest() {
 
   const paymentMode = String(draw?.payment_mode || "").toLowerCase();
   const isDirect = paymentMode === "direct";
-  const canReview = ["submitted", "approved"].includes(String(draw?.status || "").toLowerCase());
+  const workflowStatus = String(draw?.workflow_status || draw?.status || "").toLowerCase();
+  const workflowLabel = draw?.workflow_status_label || String(draw?.status || "").replaceAll("_", " ");
+  const workflowMessage = draw?.workflow_message || "";
+  const canReview = workflowStatus === "submitted";
   const canContinuePayment =
     isDirect &&
-    ["approved", "paid"].includes(String(draw?.status || "").toLowerCase()) &&
+    workflowStatus === "payment_pending" &&
     !!String(draw?.stripe_checkout_url || "").trim();
 
   const title = useMemo(() => {
@@ -111,8 +117,8 @@ export default function MagicDrawRequest() {
               Review the requested stage billing, respond in MyHomeBro, and continue to payment here when this agreement uses Direct Pay.
             </p>
           </div>
-          <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusClasses(draw.status)}`}>
-            {String(draw.status || "").replaceAll("_", " ")}
+          <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusClasses(workflowStatus)}`}>
+            {workflowLabel}
           </span>
         </div>
 
@@ -175,7 +181,13 @@ export default function MagicDrawRequest() {
           </table>
         </div>
 
-        {String(draw.status || "").toLowerCase() === "paid" ? (
+        {workflowMessage ? (
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+            {workflowMessage}
+          </div>
+        ) : null}
+
+        {workflowStatus === "paid" ? (
           <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
             This draw has been paid. Thank you.
           </div>
@@ -192,6 +204,14 @@ export default function MagicDrawRequest() {
               Continue to Secure Payment
             </a>
             <div className="mt-2 text-xs text-emerald-900/80">Stripe supports card and ACH for this direct-payment draw.</div>
+          </div>
+        ) : workflowStatus === "approved" ? (
+          <div className="mt-5 rounded-xl border border-blue-200 bg-blue-50 px-4 py-4 text-sm text-blue-900">
+            This draw has been approved. Escrow release or payment handling can continue from the contractor workflow.
+          </div>
+        ) : workflowStatus === "disputed" ? (
+          <div className="mt-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-900">
+            A payment issue is being reviewed for this draw. No further action is available here right now.
           </div>
         ) : canReview ? (
           <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -232,7 +252,7 @@ export default function MagicDrawRequest() {
           </div>
         ) : (
           <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-            This draw is currently {String(draw.status || "").replaceAll("_", " ")}.
+            This draw is currently {workflowLabel.toLowerCase()}.
             {draw.homeowner_review_notes ? (
               <div className="mt-2 whitespace-pre-wrap text-sm text-slate-600">{draw.homeowner_review_notes}</div>
             ) : null}

@@ -20,7 +20,12 @@ from projects.models import (
     ExternalPaymentStatus,
     Milestone,
 )
-from projects.services.draw_requests import build_public_draw_link, send_draw_request_review_email
+from projects.services.draw_requests import (
+    build_public_draw_link,
+    create_draw_activity_notification,
+    send_draw_request_review_email,
+)
+from projects.services.draw_state import serialize_draw_workflow
 
 
 def _contractor_for_request(request):
@@ -115,7 +120,7 @@ def _serialize_draw_line_item(line: DrawLineItem):
 def _serialize_draw(draw: DrawRequest):
     agreement = getattr(draw, "agreement", None)
     project = getattr(agreement, "project", None)
-    return {
+    payload = {
         "id": draw.id,
         "agreement_id": draw.agreement_id,
         "agreement_title": getattr(project, "title", "") or f"Agreement #{draw.agreement_id}",
@@ -141,6 +146,8 @@ def _serialize_draw(draw: DrawRequest):
         "payment_mode": str(getattr(agreement, "payment_mode", "") or "").strip().lower(),
         "line_items": [_serialize_draw_line_item(item) for item in draw.line_items.select_related("milestone").all()],
     }
+    payload.update(serialize_draw_workflow(draw))
+    return payload
 
 
 def _serialize_external_payment(record: ExternalPaymentRecord):
@@ -264,7 +271,7 @@ class AgreementDrawListCreateView(APIView):
 
         draws = (
             agreement.draw_requests.all()
-            .prefetch_related("line_items__milestone")
+            .prefetch_related("line_items__milestone", "external_payment_records")
             .order_by("-draw_number", "-id")
         )
         return Response(
@@ -399,7 +406,7 @@ class DrawStatusActionView(APIView):
             ok, message = send_draw_request_review_email(draw)
             email_delivery = {"ok": ok, "message": message}
 
-        draw = DrawRequest.objects.prefetch_related("line_items__milestone").get(pk=draw.pk)
+        draw = DrawRequest.objects.prefetch_related("line_items__milestone", "external_payment_records").get(pk=draw.pk)
         payload = _serialize_draw(draw)
         if email_delivery is not None:
             payload["email_delivery"] = email_delivery
@@ -472,7 +479,17 @@ class DrawRecordExternalPaymentView(APIView):
         )
 
         draw.status = DrawRequestStatus.PAID
-        draw.save(update_fields=["status", "updated_at"])
+        draw.paid_at = timezone.now()
+        draw.paid_via = data["payment_method"]
+        draw.save(update_fields=["status", "paid_at", "paid_via", "updated_at"])
+        create_draw_activity_notification(
+            draw,
+            event_type="draw_paid",
+            title=f"Draw {draw.draw_number} paid",
+            summary="An offline payment was recorded for this draw in MyHomeBro.",
+            severity="success",
+            dedupe_key=f"draw_paid:{draw.id}",
+        )
 
         return Response(_serialize_external_payment(payment), status=status.HTTP_201_CREATED)
 

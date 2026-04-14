@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from projects.models import DrawRequest, DrawRequestStatus
-from projects.services.draw_requests import create_direct_checkout_for_draw
+from projects.services.draw_requests import create_direct_checkout_for_draw, create_draw_activity_notification
 from projects.views.draw_requests import _serialize_draw
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ class MagicDrawRequestView(APIView):
                 "agreement__project",
                 "agreement__contractor",
                 "agreement__homeowner",
-            ).prefetch_related("line_items__milestone"),
+            ).prefetch_related("line_items__milestone", "external_payment_records"),
             public_token=token,
         )
         if not getattr(draw, "homeowner_viewed_at", None):
@@ -83,12 +83,28 @@ class MagicDrawRequestApproveView(APIView):
             except Exception as exc:
                 return Response({"detail": str(exc)}, status=400)
             draw.refresh_from_db()
+            create_draw_activity_notification(
+                draw,
+                event_type="draw_payment_pending",
+                title=f"Draw {draw.draw_number} approved",
+                summary="The owner approved this draw. Payment is now pending through MyHomeBro.",
+                severity="success",
+                dedupe_key=f"draw_payment_pending:{draw.id}",
+            )
             payload = _serialize_draw(draw)
             payload["mode"] = "direct_checkout"
             payload["checkout_url"] = checkout_url
             return Response(payload)
 
         draw.refresh_from_db()
+        create_draw_activity_notification(
+            draw,
+            event_type="draw_approved",
+            title=f"Draw {draw.draw_number} approved",
+            summary="The owner approved this draw. Release and payment handling can continue from here.",
+            severity="success",
+            dedupe_key=f"draw_approved:{draw.id}",
+        )
         payload = _serialize_draw(draw)
         payload["mode"] = "escrow_review"
         payload["detail"] = "Draw approved. Escrow release stays separate and can be handled later."
@@ -123,9 +139,17 @@ class MagicDrawRequestChangesView(APIView):
                     "updated_at",
                 ]
             )
-        draw = DrawRequest.objects.prefetch_related("line_items__milestone").select_related(
+        draw = DrawRequest.objects.prefetch_related("line_items__milestone", "external_payment_records").select_related(
             "agreement", "agreement__project", "agreement__contractor", "agreement__homeowner"
         ).get(pk=draw.pk)
+        create_draw_activity_notification(
+            draw,
+            event_type="draw_changes_requested",
+            title=f"Changes requested for Draw {draw.draw_number}",
+            summary="The owner asked for updates before this draw moves forward.",
+            severity="warning",
+            dedupe_key=f"draw_changes_requested:{draw.id}:{draw.reviewed_at.isoformat() if draw.reviewed_at else ''}",
+        )
         payload = _serialize_draw(draw)
         payload["mode"] = "changes_requested"
         return Response(payload)

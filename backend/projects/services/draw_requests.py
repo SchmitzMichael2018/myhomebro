@@ -11,8 +11,56 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 
 from projects.models import DrawRequest, DrawRequestStatus, ExternalPaymentRecord, ExternalPaymentStatus
+from projects.services.activity_feed import create_activity_event
+from projects.services.draw_state import derive_draw_workflow_status
 
 log = logging.getLogger(__name__)
+
+
+def _draw_activity_target(draw: DrawRequest) -> str:
+    agreement_id = getattr(draw, "agreement_id", None)
+    if agreement_id:
+        return f"/app/agreements/{agreement_id}"
+    return ""
+
+
+def create_draw_activity_notification(
+    draw: DrawRequest,
+    *,
+    event_type: str,
+    title: str,
+    summary: str,
+    severity: str,
+    dedupe_key: str,
+) -> None:
+    agreement = getattr(draw, "agreement", None)
+    contractor = getattr(agreement, "contractor", None) if agreement else None
+    line_item = None
+    try:
+        line_item = draw.line_items.select_related("milestone").first()
+    except Exception:
+        line_item = None
+    milestone = getattr(line_item, "milestone", None)
+    create_activity_event(
+        contractor=contractor,
+        agreement=agreement,
+        milestone=milestone,
+        event_type=event_type,
+        title=title,
+        summary=summary,
+        severity=severity,
+        related_entity_type="draw_request",
+        related_entity_id=getattr(draw, "id", ""),
+        related_label=f"Draw {getattr(draw, 'draw_number', '')}: {getattr(draw, 'title', '')}".strip(": "),
+        icon_hint="payment",
+        navigation_target=_draw_activity_target(draw),
+        metadata={
+            "draw_request_id": getattr(draw, "id", None),
+            "agreement_id": getattr(draw, "agreement_id", None),
+            "workflow_status": derive_draw_workflow_status(draw),
+        },
+        dedupe_key=dedupe_key,
+    )
 
 
 def _frontend_base_url() -> str:
@@ -305,4 +353,12 @@ def finalize_draw_paid(
             )
 
     draw.refresh_from_db()
+    create_draw_activity_notification(
+        draw,
+        event_type="draw_paid",
+        title=f"Draw {draw.draw_number} paid",
+        summary="Payment completed for this draw and the record is now synced in MyHomeBro.",
+        severity="success",
+        dedupe_key=f"draw_paid:{draw.id}",
+    )
     return draw
