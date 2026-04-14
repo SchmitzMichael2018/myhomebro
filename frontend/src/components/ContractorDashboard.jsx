@@ -28,6 +28,12 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { getDashboardNextSteps } from "../lib/workflowHints.js";
+import {
+  buildUnifiedPaymentRecords,
+  moneyStatusLabel,
+  projectClassLabel,
+  summarizePaymentRecords,
+} from "../utils/paymentRecords.js";
 
 /* Ensure react-modal knows the root */
 Modal.setAppElement("#root");
@@ -1448,6 +1454,11 @@ export default function ContractorDashboard() {
       requestedChangesCount: buckets.issues.filter((draw) => drawWorkflowStatus(draw) === "changes_requested").length,
     };
   }, [drawRequests]);
+  const paymentRecords = useMemo(
+    () => buildUnifiedPaymentRecords({ invoices, drawRequests }),
+    [invoices, drawRequests]
+  );
+  const paymentSummary = useMemo(() => summarizePaymentRecords(paymentRecords), [paymentRecords]);
   const dashboardNextSteps = useMemo(
     () =>
       getDashboardNextSteps({
@@ -1555,6 +1566,17 @@ export default function ContractorDashboard() {
         .slice(0, 6),
     [drawRequests]
   );
+  const paymentTableRows = useMemo(
+    () =>
+      [...paymentRecords]
+        .sort((a, b) => {
+          const aTime = parseDateAny(a?.sortDate)?.getTime() || 0;
+          const bTime = parseDateAny(b?.sortDate)?.getTime() || 0;
+          return bTime - aTime;
+        })
+        .slice(0, 8),
+    [paymentRecords]
+  );
 
   /* ----- navigation handlers ----- */
   const goNewAgreement = () => navigate(`/app/agreements`);
@@ -1572,8 +1594,16 @@ export default function ContractorDashboard() {
     });
   const goNewIntake = () => navigate(`/app/intake/new`);
   const goNewMilestone = () => navigate(`/app/milestones?new=1`);
-  const goInvoices = () => navigate(`/app/invoices`);
-  const goInvoicesDisputed = () => navigate(`/app/invoices?filter=disputed`);
+  const goPayments = ({ moneyStatus = "all", projectClass = "all", recordType = "all" } = {}) => {
+    const params = new URLSearchParams();
+    if (moneyStatus && moneyStatus !== "all") params.set("money_status", moneyStatus);
+    if (projectClass && projectClass !== "all") params.set("project_class", projectClass);
+    if (recordType && recordType !== "all") params.set("record_type", recordType);
+    const query = params.toString();
+    navigate(`/app/invoices${query ? `?${query}` : ""}`);
+  };
+  const goInvoices = () => goPayments();
+  const goInvoicesDisputed = () => goPayments({ moneyStatus: "issues", recordType: "invoice" });
   const goCalendar = () => navigate(`/app/calendar`);
   const goAgreementScheduleLate = () => navigate(`/app/agreements?focus=schedule&range=late`);
   const goAgreementScheduleToday = () => navigate(`/app/agreements?focus=schedule&range=today`);
@@ -1585,7 +1615,7 @@ export default function ContractorDashboard() {
 
   const openNewExpense = () => setShowExpenseModal(true);
   const onExpenseModalClose = () => setShowExpenseModal(false);
-  const goDrawRequests = () => navigate("/app/agreements?focus=payment_requests");
+  const goDrawRequests = () => goPayments({ recordType: "draw_request" });
 
   const openDrawOwnerView = (draw) => {
     const url = String(draw?.public_review_url || "").trim();
@@ -2169,26 +2199,26 @@ export default function ContractorDashboard() {
                 <StatCard
                   icon={WalletMinimal}
                   title="Total Earned"
-                  subtitle="Paid or released draw requests recorded in MyHomeBro."
-                  count={dStats.paidCount}
-                  amount={dStats.paidAmount}
-                  onClick={goDrawRequests}
+                  subtitle="Paid invoices and paid or released draw requests recorded in MyHomeBro."
+                  count={paymentSummary.paid.count}
+                  amount={paymentSummary.paid.amount}
+                  onClick={() => goPayments({ moneyStatus: "paid" })}
                 />
                 <StatCard
                   icon={BadgeCheck}
                   title="Payment Pending"
-                  subtitle="Approved requests still moving through the next payment step."
-                  count={dStats.paymentPendingCount}
-                  amount={dStats.paymentPendingAmount}
-                  onClick={goDrawRequests}
+                  subtitle="Approved invoices or draw requests still moving through the next payment step."
+                  count={paymentSummary.payment_pending.count}
+                  amount={paymentSummary.payment_pending.amount}
+                  onClick={() => goPayments({ moneyStatus: "payment_pending" })}
                 />
                 <StatCard
                   icon={AlertTriangle}
                   title="Issues / Disputes"
-                  subtitle="Requested changes, rejected requests, disputes, or payment issues."
-                  count={dStats.issuesCount}
-                  amount={dStats.issuesAmount}
-                  onClick={goDrawRequests}
+                  subtitle="Invoices or draw requests needing attention, dispute follow-up, or changes."
+                  count={paymentSummary.issues.count}
+                  amount={paymentSummary.issues.amount}
+                  onClick={() => goPayments({ moneyStatus: "issues" })}
                 />
               </div>
               <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] xl:items-start">
@@ -2280,38 +2310,38 @@ export default function ContractorDashboard() {
                   <FlowMetricButton
                     icon={BadgeDollarSign}
                     label="Awaiting Customer Approval"
-                    description="Submitted payment requests waiting on owner or customer review."
-                    count={dStats.awaitingApprovalCount}
-                    amount={dStats.awaitingApprovalAmount}
-                    onClick={goDrawRequests}
-                    emphasized={dStats.awaitingApprovalCount > 0}
+                    description="Invoices or draw requests waiting on owner or customer review."
+                    count={paymentSummary.awaiting_customer_approval.count}
+                    amount={paymentSummary.awaiting_customer_approval.amount}
+                    onClick={() => goPayments({ moneyStatus: "awaiting_customer_approval" })}
+                    emphasized={paymentSummary.awaiting_customer_approval.count > 0}
                     testId="dashboard-money-awaiting-customer"
                   />
                   <FlowMetricButton
                     icon={BadgeCheck}
                     label="Payment Pending"
-                    description="Owner-approved requests that are still moving through payment."
-                    count={dStats.paymentPendingCount}
-                    amount={dStats.paymentPendingAmount}
-                    onClick={goDrawRequests}
+                    description="Approved invoices or draw requests still moving through payment."
+                    count={paymentSummary.payment_pending.count}
+                    amount={paymentSummary.payment_pending.amount}
+                    onClick={() => goPayments({ moneyStatus: "payment_pending" })}
                     testId="dashboard-money-approved"
                   />
                   <FlowMetricButton
                     icon={WalletMinimal}
                     label="Paid"
-                    description="Payment requests that have been fully paid or released."
-                    count={dStats.paidCount}
-                    amount={dStats.paidAmount}
-                    onClick={goDrawRequests}
+                    description="Invoices or draw requests that have been fully paid or released."
+                    count={paymentSummary.paid.count}
+                    amount={paymentSummary.paid.amount}
+                    onClick={() => goPayments({ moneyStatus: "paid" })}
                     testId="dashboard-money-paid-out"
                   />
                   <FlowMetricButton
                     icon={AlertTriangle}
                     label="Issues / Disputes"
-                    description="Requests with disputes, requested changes, or rejected status."
-                    count={dStats.issuesCount}
-                    amount={dStats.issuesAmount}
-                    onClick={goDrawRequests}
+                    description="Invoices or draw requests with disputes, requested changes, or rejection issues."
+                    count={paymentSummary.issues.count}
+                    amount={paymentSummary.issues.amount}
+                    onClick={() => goPayments({ moneyStatus: "issues" })}
                     testId="dashboard-money-issues"
                   />
                 </div>
@@ -2320,81 +2350,117 @@ export default function ContractorDashboard() {
           </DashboardSection>
 
           <DashboardSection
-            title="Draw Requests"
-            subtitle="Commercial payment requests currently in flight."
+            title="Payment Records"
+            subtitle="Recent invoices and draw requests, with record type and project class kept visible."
           >
             <DashboardCard
               tone="subtle"
               className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)] md:p-5"
             >
-              {drawTableRows.length === 0 ? (
+              {paymentTableRows.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-300 px-4 py-4 text-sm text-slate-500">
-                  No draw requests are active right now.
+                  No payment records are active right now.
                 </div>
               ) : (
-                <div className="overflow-x-auto" data-testid="dashboard-draw-requests-table">
+                <div className="overflow-x-auto" data-testid="dashboard-payment-records-table">
                   <table className="min-w-full text-sm">
                     <thead>
                       <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        <th className="py-3 pr-3">Milestone</th>
+                        <th className="py-3 pr-3">Record</th>
+                        <th className="py-3 pr-3">Type</th>
+                        <th className="py-3 pr-3">Project</th>
                         <th className="py-3 pr-3">Amount</th>
                         <th className="py-3 pr-3">Status</th>
                         <th className="py-3">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {drawTableRows.map((draw) => (
-                        <tr key={draw.id} className="border-b border-slate-100 align-top">
+                      {paymentTableRows.map((record) => (
+                        <tr key={`${record.recordType}-${record.id}`} className="border-b border-slate-100 align-top">
                           <td className="py-3 pr-3">
-                            <div className="font-semibold text-slate-900">{drawPrimaryMilestoneLabel(draw)}</div>
+                            <div className="font-semibold text-slate-900">{record.title}</div>
                             <div className="mt-1 text-xs text-slate-500">
-                              Draw {draw.draw_number}{draw.agreement_title ? ` • ${draw.agreement_title}` : ""}
+                              {record.subtitle}
+                              {record.agreementTitle ? ` • ${record.agreementTitle}` : ""}
                             </div>
                           </td>
-                          <td className="py-3 pr-3 font-semibold text-slate-900">{currency(drawAmount(draw))}</td>
+                          <td className="py-3 pr-3">
+                            <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                              {record.recordTypeLabel}
+                            </span>
+                          </td>
+                          <td className="py-3 pr-3">
+                            <span className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800">
+                              {projectClassLabel(record.projectClass)}
+                            </span>
+                          </td>
+                          <td className="py-3 pr-3 font-semibold text-slate-900">{currency(record.amount)}</td>
                           <td className="py-3 pr-3">
                             <span
                               className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${drawStatusTone(
-                                drawWorkflowStatus(draw)
+                                record.moneyStatus
                               )}`}
                             >
-                              {drawWorkflowLabel(draw)}
+                              {moneyStatusLabel(record.moneyStatus)}
                             </span>
                           </td>
                           <td className="py-3">
                             <div className="flex flex-wrap gap-2">
-                              {["submitted", "payment_pending"].includes(drawWorkflowStatus(draw)) ? (
-                                <button
-                                  type="button"
-                                  onClick={() => resendDrawLink(draw)}
-                                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                                >
-                                  Resend Link
-                                </button>
-                              ) : null}
-                              {draw?.is_awaiting_release && norm(draw?.payment_mode) === "escrow" ? (
-                                <button
-                                  type="button"
-                                  onClick={() => releaseEscrowFunds(draw)}
-                                  className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
-                                >
-                                  Release Funds
-                                </button>
-                              ) : null}
-                              <button
-                                type="button"
-                                onClick={() => openDrawEditor(draw)}
-                                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openDrawOwnerView(draw)}
-                                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                              >
-                                View
-                              </button>
+                              {record.recordType === "draw_request" ? (
+                                <>
+                                  {["submitted", "payment_pending"].includes(drawWorkflowStatus(record.raw)) ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => resendDrawLink(record.raw)}
+                                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                    >
+                                      Resend Link
+                                    </button>
+                                  ) : null}
+                                  {record.raw?.is_awaiting_release && norm(record.raw?.payment_mode) === "escrow" ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => releaseEscrowFunds(record.raw)}
+                                      className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                                    >
+                                      Release Funds
+                                    </button>
+                                  ) : null}
+                                  <button
+                                    type="button"
+                                    onClick={() => openDrawEditor(record.raw)}
+                                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => openDrawOwnerView(record.raw)}
+                                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                  >
+                                    View
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => navigate(`/app/invoices/${record.id}`)}
+                                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                  >
+                                    View
+                                  </button>
+                                  {record.agreementId ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => navigate(`/app/agreements/${record.agreementId}`)}
+                                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                                    >
+                                      Agreement
+                                    </button>
+                                  ) : null}
+                                </>
+                              )}
                             </div>
                           </td>
                         </tr>

@@ -4,6 +4,7 @@ const draws = [
   {
     id: 901,
     agreement_id: 301,
+    agreement_project_class: 'commercial',
     agreement_title: 'Office Renovation',
     draw_number: 1,
     title: 'Mobilization',
@@ -20,6 +21,7 @@ const draws = [
   {
     id: 902,
     agreement_id: 301,
+    agreement_project_class: 'commercial',
     agreement_title: 'Office Renovation',
     draw_number: 2,
     title: 'Framing',
@@ -37,6 +39,7 @@ const draws = [
   {
     id: 903,
     agreement_id: 301,
+    agreement_project_class: 'commercial',
     agreement_title: 'Office Renovation',
     draw_number: 3,
     title: 'Inspection Holdback',
@@ -55,6 +58,7 @@ const draws = [
   {
     id: 904,
     agreement_id: 301,
+    agreement_project_class: 'commercial',
     agreement_title: 'Office Renovation',
     draw_number: 4,
     title: 'Finish',
@@ -72,6 +76,7 @@ const draws = [
   {
     id: 905,
     agreement_id: 301,
+    agreement_project_class: 'commercial',
     agreement_title: 'Office Renovation',
     draw_number: 5,
     title: 'Punch List',
@@ -151,7 +156,24 @@ async function mockDashboard(page) {
       contentType: 'application/json',
       body: JSON.stringify({
         results: [
-          { id: 71, amount: '2600.00', status: 'approved', display_status: 'approved' },
+          {
+            id: 71,
+            amount: '2600.00',
+            status: 'approved',
+            display_status: 'approved',
+            agreement: { id: 401, title: 'Kitchen Remodel', project_class: 'residential', payment_mode: 'direct' },
+            milestone_title: 'Cabinet Install',
+            invoice_number: 'INV-71',
+          },
+          {
+            id: 72,
+            amount: '1100.00',
+            status: 'paid',
+            display_status: 'paid',
+            agreement: { id: 301, title: 'Office Renovation', project_class: 'commercial', payment_mode: 'escrow' },
+            milestone_title: 'Deposit',
+            invoice_number: 'INV-72',
+          },
         ],
       }),
     });
@@ -289,13 +311,17 @@ test('contractor dashboard reflects draw-request payment pipeline and actions', 
   await expect(page.getByText('Send Payment Request')).toBeVisible();
   await expect(page.getByText('Paid Work')).toHaveCount(0);
 
-  await expect(page.getByTestId('dashboard-draw-requests-table')).toBeVisible();
+  await expect(page.getByTestId('dashboard-payment-records-table')).toBeVisible();
   await expect(page.getByText('Mobilization')).toBeVisible();
+  await expect(page.getByTestId('dashboard-payment-records-table')).toContainText('Draw Request');
+  await expect(page.getByTestId('dashboard-payment-records-table')).toContainText('Invoice');
+  await expect(page.getByTestId('dashboard-payment-records-table')).toContainText('Residential');
+  await expect(page.getByTestId('dashboard-payment-records-table')).toContainText('Commercial');
   await expect(page.getByTestId('dashboard-money-awaiting-customer')).toContainText('Awaiting Customer Approval');
   await expect(page.getByTestId('dashboard-money-approved')).toContainText('Payment Pending');
-  await expect(page.getByTestId('dashboard-draw-requests-table').getByText('Changes Requested')).toBeVisible();
+  await expect(page.getByTestId('dashboard-payment-records-table').getByText('Issues / Disputes')).toBeVisible();
   await expect(page.locator('text=/awaiting payment/i').first()).toBeVisible();
-  await expect(page.getByTestId('dashboard-draw-requests-table').getByText('Payment Pending')).toHaveCount(2);
+  await expect(page.getByTestId('dashboard-payment-records-table').getByText('Payment Pending')).toHaveCount(3);
   await expect(page.locator('text=/requested changes/i').first()).toBeVisible();
   await expect(page.locator('text=/failed.*follow-up/i').first()).toBeVisible();
 
@@ -304,5 +330,5 @@ test('contractor dashboard reflects draw-request payment pipeline and actions', 
 
   await page.getByRole('button', { name: 'Release Funds' }).click();
   await expect(page.getByText('Escrow funds marked as released.')).toBeVisible();
-  await expect(page.getByTestId('dashboard-draw-requests-table').getByText('Paid')).toHaveCount(2);
+  await expect(page.getByTestId('dashboard-payment-records-table').getByText('Paid')).toHaveCount(3);
 });
