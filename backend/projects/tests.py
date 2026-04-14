@@ -6468,7 +6468,8 @@ class ProgressPaymentWorkflowTests(TestCase):
 
         self.assertEqual(approve_response.status_code, 200)
         self.assertEqual(approve_response.json()["mode"], "escrow_review")
-        self.assertEqual(approve_response.json()["workflow_status"], "awaiting_release")
+        self.assertEqual(approve_response.json()["workflow_status"], "payment_pending")
+        self.assertTrue(approve_response.json()["is_awaiting_release"])
 
         draw.refresh_from_db()
         self.assertEqual(draw.status, DrawRequestStatus.AWAITING_RELEASE)
@@ -6494,7 +6495,7 @@ class ProgressPaymentWorkflowTests(TestCase):
         release_response = self.client.post(f"/api/projects/draws/{draw.id}/release/", {}, format="json")
 
         self.assertEqual(release_response.status_code, 200)
-        self.assertEqual(release_response.json()["workflow_status"], "released")
+        self.assertEqual(release_response.json()["workflow_status"], "paid")
 
         draw.refresh_from_db()
         self.assertEqual(draw.status, DrawRequestStatus.RELEASED)
@@ -6534,7 +6535,8 @@ class ProgressPaymentWorkflowTests(TestCase):
         approve_response = self.client.post(f"/api/projects/draws/{draw.id}/approve/", {}, format="json")
 
         self.assertEqual(approve_response.status_code, 200)
-        self.assertEqual(approve_response.json()["workflow_status"], "awaiting_release")
+        self.assertEqual(approve_response.json()["workflow_status"], "payment_pending")
+        self.assertTrue(approve_response.json()["is_awaiting_release"])
         draw.refresh_from_db()
         self.assertEqual(draw.status, DrawRequestStatus.AWAITING_RELEASE)
 
@@ -6691,7 +6693,7 @@ class ProgressPaymentWorkflowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()["results"][0]
         self.assertEqual(payload["id"], draw.id)
-        self.assertEqual(payload["workflow_status"], "awaiting_release")
+        self.assertEqual(payload["workflow_status"], "payment_pending")
         self.assertTrue(payload["is_awaiting_release"])
 
     def test_draw_list_serializes_disputed_when_payment_record_is_disputed(self):

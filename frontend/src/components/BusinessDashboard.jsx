@@ -992,7 +992,7 @@ export default function BusinessDashboard() {
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <Stat label="Contract Value" value={money(progressSummary.contract_value)} />
             <Stat label="Earned to Date" value={money(progressSummary.earned_to_date)} />
-            <Stat label="Approved / Release Stage" value={money(progressSummary.approved_to_date)} />
+            <Stat label="Payment Pending to Date" value={money(progressSummary.approved_to_date)} />
             <Stat label="Paid to Date" value={money(progressSummary.paid_to_date)} tone="good" />
             <Stat label="Retainage Held" value={money(progressSummary.retainage_held)} tone="warn" />
             <Stat label="Remaining Balance" value={money(progressSummary.remaining_balance)} />

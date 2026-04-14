@@ -2512,23 +2512,17 @@ export default function AgreementDetail() {
                           </div>
                         ) : null}
                         {drawWorkflowStatus(draw) === "payment_pending" ? (
-                          <div className="mt-2 text-xs text-indigo-700">
-                            Owner approval is complete. Payment is still pending through the draw review page in MyHomeBro.
-                          </div>
-                        ) : null}
-                        {drawWorkflowStatus(draw) === "awaiting_release" ? (
-                          <div className="mt-2 text-xs text-teal-700">
-                            Owner approval is complete. This escrow draw is waiting for release in MyHomeBro.
-                          </div>
-                        ) : null}
-                        {drawWorkflowStatus(draw) === "released" ? (
-                          <div className="mt-2 text-xs text-emerald-700">
-                            Escrow funds released{draw.released_at ? ` on ${fmtDateTime(draw.released_at)}` : ""}.
+                          <div className={`mt-2 text-xs ${draw?.is_awaiting_release ? "text-teal-700" : "text-indigo-700"}`}>
+                            {draw?.is_awaiting_release
+                              ? "Owner approval is complete. Payment is pending while this escrow draw waits for release in MyHomeBro."
+                              : "Owner approval is complete. Payment is still pending through the draw review page in MyHomeBro."}
                           </div>
                         ) : null}
                         {drawWorkflowStatus(draw) === "paid" ? (
                           <div className="mt-2 text-xs text-emerald-700">
-                            Payment recorded{draw.paid_at ? ` on ${fmtDateTime(draw.paid_at)}` : ""}{draw.paid_via ? ` via ${String(draw.paid_via).toUpperCase()}` : ""}.
+                            {draw?.released_at
+                              ? `Payment completed${draw.released_at ? ` on ${fmtDateTime(draw.released_at)}` : ""}.`
+                              : `Payment recorded${draw.paid_at ? ` on ${fmtDateTime(draw.paid_at)}` : ""}${draw.paid_via ? ` via ${String(draw.paid_via).toUpperCase()}` : ""}.`}
                           </div>
                         ) : null}
                         {drawWorkflowStatus(draw) === "disputed" ? (
@@ -2568,7 +2562,7 @@ export default function AgreementDetail() {
                             </button>
                           </>
                         ) : null}
-                        {drawWorkflowStatus(draw) === "payment_pending" ? (
+                        {drawWorkflowStatus(draw) === "payment_pending" && !draw?.is_awaiting_release ? (
                           <>
                             <button
                               type="button"
@@ -2586,7 +2580,7 @@ export default function AgreementDetail() {
                             </button>
                           </>
                         ) : null}
-                        {drawWorkflowStatus(draw) === "awaiting_release" ? (
+                        {draw?.is_awaiting_release ? (
                           <>
                             <button
                               type="button"

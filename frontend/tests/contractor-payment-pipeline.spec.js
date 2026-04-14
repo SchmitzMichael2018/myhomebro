@@ -41,9 +41,10 @@ const draws = [
     draw_number: 3,
     title: 'Inspection Holdback',
     status: 'awaiting_release',
-    workflow_status: 'awaiting_release',
-    workflow_status_label: 'Awaiting Release',
+    workflow_status: 'payment_pending',
+    workflow_status_label: 'Payment Pending',
     workflow_message: 'Approved by the owner. Escrow release is the next step.',
+    is_awaiting_release: true,
     payment_mode: 'escrow',
     net_amount: '1500.00',
     gross_amount: '1700.00',
@@ -248,8 +249,8 @@ async function mockDashboard(page) {
       body: JSON.stringify({
         ...draws[2],
         status: 'released',
-        workflow_status: 'released',
-        workflow_status_label: 'Released',
+        workflow_status: 'paid',
+        workflow_status_label: 'Paid',
         workflow_message: 'Escrow funds have been released for this draw.',
         released_at: '2026-04-13T16:30:00Z',
       }),
@@ -268,17 +269,15 @@ test('contractor dashboard reflects draw-request payment pipeline and actions', 
   await expect(page.getByText('Pending Payments')).toBeVisible();
   await expect(page.getByTestId('dashboard-money-awaiting-customer')).toBeVisible();
   await expect(page.getByTestId('dashboard-money-approved')).toBeVisible();
-  await expect(page.getByTestId('dashboard-money-awaiting-release')).toBeVisible();
   await expect(page.getByTestId('dashboard-money-issues')).toBeVisible();
   await expect(page.getByText('Send Payment Request')).toBeVisible();
 
   await expect(page.getByTestId('dashboard-draw-requests-table')).toBeVisible();
   await expect(page.getByText('Mobilization')).toBeVisible();
-  await expect(page.getByTestId('dashboard-money-approved')).toContainText('Approved / Awaiting Payment');
-  await expect(page.getByTestId('dashboard-money-awaiting-release')).toContainText('Awaiting Release');
+  await expect(page.getByTestId('dashboard-money-approved')).toContainText('Payment Pending');
   await expect(page.getByTestId('dashboard-draw-requests-table').getByText('Changes Requested')).toBeVisible();
   await expect(page.locator('text=/awaiting payment/i').first()).toBeVisible();
-  await expect(page.getByText('Escrow-approved requests waiting for the release step.')).toBeVisible();
+  await expect(page.getByTestId('dashboard-draw-requests-table').getByText('Payment Pending')).toHaveCount(2);
   await expect(page.locator('text=/requested changes/i').first()).toBeVisible();
   await expect(page.locator('text=/failed.*follow-up/i').first()).toBeVisible();
 
@@ -287,5 +286,5 @@ test('contractor dashboard reflects draw-request payment pipeline and actions', 
 
   await page.getByRole('button', { name: 'Release Funds' }).click();
   await expect(page.getByText('Escrow funds marked as released.')).toBeVisible();
-  await expect(page.getByTestId('dashboard-draw-requests-table').getByText('Released')).toBeVisible();
+  await expect(page.getByTestId('dashboard-draw-requests-table').getByText('Paid')).toHaveCount(2);
 });

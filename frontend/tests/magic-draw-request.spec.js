@@ -149,9 +149,10 @@ test('magic draw review page shows awaiting release state for escrow draws after
     approveDraw: buildDraw({
       payment_mode: 'escrow',
       status: 'awaiting_release',
-      workflow_status: 'awaiting_release',
-      workflow_status_label: 'Awaiting Release',
+      workflow_status: 'payment_pending',
+      workflow_status_label: 'Payment Pending',
       workflow_message: 'Approved by the owner. Escrow release is the next step.',
+      is_awaiting_release: true,
     }),
   });
 
@@ -159,6 +160,6 @@ test('magic draw review page shows awaiting release state for escrow draws after
 
   await page.getByRole('button', { name: 'Approve Draw' }).click();
 
-  await expect(page.getByText('Awaiting Release')).toBeVisible();
+  await expect(page.getByText('Payment Pending')).toBeVisible();
   await expect(page.getByText('This draw has been approved and is now awaiting escrow release in MyHomeBro.')).toBeVisible();
 });

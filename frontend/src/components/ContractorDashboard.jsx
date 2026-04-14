@@ -299,8 +299,6 @@ const drawPrimaryMilestoneLabel = (draw) => {
 function drawStatusTone(workflowStatus) {
   const status = norm(workflowStatus);
   if (status === "paid") return "text-emerald-700 bg-emerald-50 border-emerald-200";
-  if (status === "released") return "text-emerald-700 bg-emerald-50 border-emerald-200";
-  if (status === "awaiting_release") return "text-teal-700 bg-teal-50 border-teal-200";
   if (status === "payment_pending" || status === "approved") return "text-indigo-700 bg-indigo-50 border-indigo-200";
   if (status === "submitted") return "text-slate-700 bg-slate-50 border-slate-200";
   if (status === "changes_requested") return "text-amber-800 bg-amber-50 border-amber-200";
@@ -1350,7 +1348,6 @@ export default function ContractorDashboard() {
   const dStats = useMemo(() => {
     const buckets = {
       awaitingApproval: [],
-      awaitingRelease: [],
       paymentPending: [],
       paid: [],
       issues: [],
@@ -1358,16 +1355,13 @@ export default function ContractorDashboard() {
     for (const draw of Array.isArray(drawRequests) ? drawRequests : []) {
       const workflowStatus = drawWorkflowStatus(draw);
       if (workflowStatus === "submitted") buckets.awaitingApproval.push(draw);
-      else if (workflowStatus === "awaiting_release") buckets.awaitingRelease.push(draw);
       else if (workflowStatus === "payment_pending" || workflowStatus === "approved") buckets.paymentPending.push(draw);
-      else if (workflowStatus === "paid" || workflowStatus === "released") buckets.paid.push(draw);
+      else if (workflowStatus === "paid") buckets.paid.push(draw);
       else if (["changes_requested", "rejected", "disputed"].includes(workflowStatus)) buckets.issues.push(draw);
     }
     return {
       awaitingApprovalCount: buckets.awaitingApproval.length,
       awaitingApprovalAmount: sum(buckets.awaitingApproval, "net_amount"),
-      awaitingReleaseCount: buckets.awaitingRelease.length,
-      awaitingReleaseAmount: sum(buckets.awaitingRelease, "net_amount"),
       paymentPendingCount: buckets.paymentPending.length,
       paymentPendingAmount: sum(buckets.paymentPending, "net_amount"),
       paidCount: buckets.paid.length,
@@ -1377,12 +1371,6 @@ export default function ContractorDashboard() {
       requestedChangesCount: buckets.issues.filter((draw) => drawWorkflowStatus(draw) === "changes_requested").length,
     };
   }, [drawRequests]);
-  const showAwaitingReleaseLane = useMemo(
-    () =>
-      dStats.awaitingReleaseCount > 0 ||
-      (Array.isArray(drawRequests) ? drawRequests : []).some((draw) => norm(draw?.payment_mode) === "escrow"),
-    [dStats.awaitingReleaseCount, drawRequests]
-  );
   const dashboardNextSteps = useMemo(
     () =>
       getDashboardNextSteps({
@@ -1839,8 +1827,6 @@ export default function ContractorDashboard() {
   const workMoneyConnectorLabel =
     mStats.readyCount > 0
       ? `${mStats.readyCount} ${mStats.readyCount === 1 ? "milestone" : "milestones"} ready for payment request`
-      : dStats.awaitingReleaseCount > 0
-      ? `${dStats.awaitingReleaseCount} ${dStats.awaitingReleaseCount === 1 ? "request" : "requests"} awaiting escrow release`
       : dStats.paymentPendingCount > 0
       ? `${dStats.paymentPendingCount} ${dStats.paymentPendingCount === 1 ? "request" : "requests"} awaiting payment`
       : "Completed work flows into payment requests and payout";
@@ -1851,7 +1837,6 @@ export default function ContractorDashboard() {
       dueSchedule.today.count > 0 ||
       mStats.readyCount > 0 ||
       dStats.awaitingApprovalCount > 0 ||
-      dStats.awaitingReleaseCount > 0 ||
       dStats.paymentPendingCount > 0;
 
     const looksLikeSetup =
@@ -1889,7 +1874,6 @@ export default function ContractorDashboard() {
     hasProjectsStarted,
     heroAction,
     dStats.awaitingApprovalCount,
-    dStats.awaitingReleaseCount,
     dStats.paymentPendingCount,
     isOnboardingComplete,
     mStats.readyCount,
@@ -2204,25 +2188,13 @@ export default function ContractorDashboard() {
                   />
                   <FlowMetricButton
                     icon={BadgeCheck}
-                    label="Approved / Awaiting Payment"
-                    description="Owner-approved requests that still need payment to complete."
+                    label="Payment Pending"
+                    description="Owner-approved requests that are still moving through payment."
                     count={dStats.paymentPendingCount}
                     amount={dStats.paymentPendingAmount}
                     onClick={goDrawRequests}
                     testId="dashboard-money-approved"
                   />
-                  {showAwaitingReleaseLane ? (
-                    <FlowMetricButton
-                      icon={BadgeCheck}
-                      label="Awaiting Release"
-                      description="Escrow-approved requests waiting for the release step."
-                      count={dStats.awaitingReleaseCount}
-                      amount={dStats.awaitingReleaseAmount}
-                      onClick={goDrawRequests}
-                      emphasized={dStats.awaitingReleaseCount > 0}
-                      testId="dashboard-money-awaiting-release"
-                    />
-                  ) : null}
                   <FlowMetricButton
                     icon={WalletMinimal}
                     label="Paid"
@@ -2299,7 +2271,7 @@ export default function ContractorDashboard() {
                                   Resend Link
                                 </button>
                               ) : null}
-                              {drawWorkflowStatus(draw) === "awaiting_release" && norm(draw?.payment_mode) === "escrow" ? (
+                              {draw?.is_awaiting_release && norm(draw?.payment_mode) === "escrow" ? (
                                 <button
                                   type="button"
                                   onClick={() => releaseEscrowFunds(draw)}

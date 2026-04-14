@@ -10,8 +10,6 @@ function money(value) {
 function statusClasses(status) {
   const normalized = String(status || "").toLowerCase();
   if (normalized.includes("paid")) return "bg-emerald-100 text-emerald-800";
-  if (normalized.includes("released")) return "bg-emerald-100 text-emerald-800";
-  if (normalized.includes("awaiting_release")) return "bg-teal-100 text-teal-800";
   if (normalized.includes("pending")) return "bg-indigo-100 text-indigo-800";
   if (normalized.includes("approved")) return "bg-blue-100 text-blue-800";
   if (normalized.includes("dispute")) return "bg-rose-100 text-rose-800";
@@ -48,9 +46,12 @@ export default function MagicDrawRequest() {
 
   const paymentMode = String(draw?.payment_mode || "").toLowerCase();
   const isDirect = paymentMode === "direct";
+  const rawStatus = String(draw?.status || "").toLowerCase();
   const workflowStatus = String(draw?.workflow_status || draw?.status || "").toLowerCase();
   const workflowLabel = draw?.workflow_status_label || String(draw?.status || "").replaceAll("_", " ");
   const workflowMessage = draw?.workflow_message || "";
+  const isAwaitingRelease = rawStatus === "awaiting_release" || draw?.is_awaiting_release === true;
+  const isReleased = rawStatus === "released" || !!draw?.released_at;
   const canReview = workflowStatus === "submitted";
   const canContinuePayment =
     isDirect &&
@@ -189,7 +190,7 @@ export default function MagicDrawRequest() {
           </div>
         ) : null}
 
-        {workflowStatus === "paid" ? (
+        {workflowStatus === "paid" && !isReleased ? (
           <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
             This draw has been paid. Thank you.
           </div>
@@ -207,11 +208,11 @@ export default function MagicDrawRequest() {
             </a>
             <div className="mt-2 text-xs text-emerald-900/80">Stripe supports card and ACH for this direct-payment draw.</div>
           </div>
-        ) : workflowStatus === "awaiting_release" ? (
+        ) : isAwaitingRelease ? (
           <div className="mt-5 rounded-xl border border-teal-200 bg-teal-50 px-4 py-4 text-sm text-teal-900">
             This draw has been approved and is now awaiting escrow release in MyHomeBro.
           </div>
-        ) : workflowStatus === "released" ? (
+        ) : isReleased ? (
           <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
             Escrow funds have been released for this draw.
           </div>
