@@ -125,6 +125,35 @@ def _cents_from_money(amount: Decimal) -> int:
     return int((_round_money(amount) * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
+def _monthly_paid_invoice_volume_for_contractor(contractor) -> Decimal:
+    monthly_volume = Decimal("0.00")
+    try:
+        from projects.models import Invoice  # type: ignore
+
+        now_dt = timezone.now()
+        month_start = now_dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        paid_like = ("paid", "released", "completed")
+
+        qs = Invoice.objects.filter(agreement__contractor=contractor)
+        if hasattr(Invoice, "paid_at"):
+            qs = qs.filter(paid_at__gte=month_start)
+        elif hasattr(Invoice, "updated_at"):
+            qs = qs.filter(updated_at__gte=month_start)
+
+        total = Decimal("0.00")
+        for inv in qs.only("amount", "status"):
+            s = str(getattr(inv, "status", "")).lower()
+            if not any(k in s for k in paid_like):
+                continue
+            amt = getattr(inv, "amount", None)
+            if amt is not None:
+                total += _round_money(Decimal(str(amt)))
+        monthly_volume = _round_money(total)
+    except Exception:
+        monthly_volume = Decimal("0.00")
+    return monthly_volume
+
+
 # ---------------------------------------------------------------------------
 # Core tier logic
 # ---------------------------------------------------------------------------
@@ -377,31 +406,7 @@ def compute_fee_summary_for_invoice_payment(
         or timezone.now()
     )
 
-    monthly_volume = Decimal("0.00")
-    try:
-        from projects.models import Invoice  # type: ignore
-
-        now_dt = timezone.now()
-        month_start = now_dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        paid_like = ("paid", "released", "completed")
-
-        qs = Invoice.objects.filter(agreement__contractor=contractor)
-        if hasattr(Invoice, "paid_at"):
-            qs = qs.filter(paid_at__gte=month_start)
-        elif hasattr(Invoice, "updated_at"):
-            qs = qs.filter(updated_at__gte=month_start)
-
-        total = Decimal("0.00")
-        for inv in qs.only("amount", "status"):
-            s = str(getattr(inv, "status", "")).lower()
-            if not any(k in s for k in paid_like):
-                continue
-            amt = getattr(inv, "amount", None)
-            if amt is not None:
-                total += _round_money(Decimal(str(amt)))
-        monthly_volume = _round_money(total)
-    except Exception:
-        monthly_volume = Decimal("0.00")
+    monthly_volume = _monthly_paid_invoice_volume_for_contractor(contractor)
 
     rate_info = get_fee_rate_for_contractor(
         contractor_created_at=contractor_created_at,
@@ -442,6 +447,31 @@ def calculate_platform_fee_cents_for_invoice(
         is_high_risk=is_high_risk,
     )
     return _cents_from_money(summary.platform_fee)
+
+
+def calculate_total_allowed_fee_cents_for_agreement_total(
+    *,
+    contract_amount_cents: int,
+    contractor,
+    is_high_risk: bool = False,
+) -> int:
+    contractor_created_at = (
+        getattr(contractor, "created_at", None)
+        or getattr(contractor, "created", None)
+        or getattr(getattr(contractor, "user", None), "date_joined", None)
+        or timezone.now()
+    )
+    monthly_volume = _monthly_paid_invoice_volume_for_contractor(contractor)
+    rate_info = get_fee_rate_for_contractor(
+        contractor_created_at=contractor_created_at,
+        monthly_volume=monthly_volume,
+        is_high_risk=is_high_risk,
+        today=date.today(),
+    )
+    amount = _money_from_cents(int(contract_amount_cents or 0))
+    uncapped = calculate_platform_fee(project_amount=amount, rate_info=rate_info).total_fee
+    capped = min(_round_money(uncapped), _round_money(MAX_PLATFORM_FEE))
+    return _cents_from_money(capped)
 
 
 def build_invoice_payment_fee_snapshot(summary: InvoicePaymentFeeSummary) -> dict:

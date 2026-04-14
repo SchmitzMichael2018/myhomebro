@@ -76,6 +76,7 @@ from projects.services.project_learning import (
     rebuild_milestone_benchmarks,
     rebuild_project_benchmarks,
 )
+from projects.services.agreement_fee_allocation import refresh_agreement_fee_allocations
 from projects.services.benchmark_resolution import resolve_seed_benchmark_defaults
 from projects.services.compliance import (
     contractor_has_required_license,
@@ -91,7 +92,7 @@ from projects.services.activity_feed import (
     get_next_best_action,
 )
 from projects.services.direct_pay import create_direct_pay_checkout_for_invoice
-from projects.services.draw_requests import finalize_draw_paid
+from projects.services.draw_requests import finalize_draw_paid, release_escrow_draw
 from projects.services.estimation_engine import build_project_estimate, _clarification_signature_from_answers
 from projects.services.regions import build_normalized_region_key
 from projects.services.template_apply import apply_template_to_agreement, save_agreement_as_template
@@ -121,11 +122,13 @@ from projects.services.sms_service import (
 from projects.services.sms_automation import build_sms_automation_summary, evaluate_sms_automation
 from payments.webhooks import (
     _handle_direct_pay_checkout_completed,
+    _handle_draw_transfer_created,
+    _handle_draw_transfer_failed,
     _handle_draw_direct_checkout_completed,
     _handle_payment_intent_failed,
     _handle_payment_intent_processing,
 )
-from payments.models import ConnectedAccount
+from payments.models import ConnectedAccount, Payment
 
 
 class AgreementMilestoneAIRouteTests(TestCase):
@@ -6363,6 +6366,88 @@ class ProgressPaymentWorkflowTests(TestCase):
         self.assertEqual(template_agreement.payment_structure, "progress")
         self.assertEqual(template_agreement.retainage_percent, Decimal("12.50"))
 
+    def test_amendment_fee_delta_allocates_additional_fee_below_cap(self):
+        refresh_agreement_fee_allocations(self.agreement)
+        self.agreement.refresh_from_db()
+        original_total_fee = self.agreement.agreement_fee_total_cents
+        original_allocated_fee = self.agreement.agreement_fee_allocated_cents
+        self.assertEqual(original_total_fee, original_allocated_fee)
+
+        self.agreement.amendment_number = 1
+        self.agreement.save(update_fields=["amendment_number"])
+        amendment_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=3,
+            title="Amendment Scope",
+            amount=Decimal("2000.00"),
+            amendment_number_snapshot=1,
+        )
+
+        summary = refresh_agreement_fee_allocations(self.agreement)
+        self.agreement.refresh_from_db()
+        amendment_milestone.refresh_from_db()
+
+        self.assertGreater(self.agreement.agreement_fee_total_cents, original_total_fee)
+        self.assertEqual(summary["amendment_fee_delta_cents"], self.agreement.agreement_fee_total_cents - original_allocated_fee)
+        self.assertEqual(amendment_milestone.agreement_fee_allocation_cents, summary["amendment_fee_delta_cents"])
+        self.assertEqual(self.agreement.agreement_fee_allocated_cents, self.agreement.agreement_fee_total_cents)
+
+    def test_amendment_fee_delta_caps_at_750(self):
+        self.milestone_one.amount = Decimal("10000.00")
+        self.milestone_one.save(update_fields=["amount"])
+        self.milestone_two.amount = Decimal("10000.00")
+        self.milestone_two.save(update_fields=["amount"])
+        refresh_agreement_fee_allocations(self.agreement)
+        self.agreement.refresh_from_db()
+        base_allocated_fee = self.agreement.agreement_fee_allocated_cents
+
+        self.agreement.amendment_number = 1
+        self.agreement.save(update_fields=["amendment_number"])
+        amendment_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=3,
+            title="Cap Reaching Amendment",
+            amount=Decimal("10000.00"),
+            amendment_number_snapshot=1,
+        )
+
+        summary = refresh_agreement_fee_allocations(self.agreement)
+        self.agreement.refresh_from_db()
+        amendment_milestone.refresh_from_db()
+
+        self.assertEqual(self.agreement.agreement_fee_total_cents, 75000)
+        self.assertEqual(summary["amendment_fee_delta_cents"], 75000 - base_allocated_fee)
+        self.assertEqual(amendment_milestone.agreement_fee_allocation_cents, 75000 - base_allocated_fee)
+        self.assertEqual(self.agreement.agreement_fee_allocated_cents, 75000)
+
+    def test_amendment_fee_delta_is_zero_after_cap_already_reached(self):
+        self.milestone_one.amount = Decimal("15000.00")
+        self.milestone_one.save(update_fields=["amount"])
+        self.milestone_two.amount = Decimal("15000.00")
+        self.milestone_two.save(update_fields=["amount"])
+        refresh_agreement_fee_allocations(self.agreement)
+        self.agreement.refresh_from_db()
+        self.assertEqual(self.agreement.agreement_fee_total_cents, 75000)
+
+        self.agreement.amendment_number = 1
+        self.agreement.save(update_fields=["amendment_number"])
+        amendment_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=3,
+            title="Post Cap Amendment",
+            amount=Decimal("5000.00"),
+            amendment_number_snapshot=1,
+        )
+
+        summary = refresh_agreement_fee_allocations(self.agreement)
+        self.agreement.refresh_from_db()
+        amendment_milestone.refresh_from_db()
+
+        self.assertEqual(summary["amendment_fee_delta_cents"], 0)
+        self.assertEqual(amendment_milestone.agreement_fee_allocation_cents, 0)
+        self.assertEqual(self.agreement.agreement_fee_total_cents, 75000)
+        self.assertEqual(self.agreement.agreement_fee_allocated_cents, 75000)
+
     def test_simple_agreement_rejects_draw_creation(self):
         self.agreement.payment_structure = "simple"
         self.agreement.save(update_fields=["payment_structure"])
@@ -6486,7 +6571,18 @@ class ProgressPaymentWorkflowTests(TestCase):
         self.agreement.payment_mode = "escrow"
         self.agreement.signed_by_contractor = True
         self.agreement.signed_by_homeowner = True
-        self.agreement.save(update_fields=["payment_mode", "signed_by_contractor", "signed_by_homeowner"])
+        self.agreement.escrow_funded_amount = Decimal("5000.00")
+        self.agreement.save(
+            update_fields=["payment_mode", "signed_by_contractor", "signed_by_homeowner", "escrow_funded_amount"]
+        )
+        Payment.objects.create(
+            agreement=self.agreement,
+            stripe_payment_intent_id="pi_escrow_fund_1",
+            stripe_charge_id="ch_escrow_fund_1",
+            amount_cents=500000,
+            currency="usd",
+            status="succeeded",
+        )
 
         draw = DrawRequest.objects.create(
             agreement=self.agreement,
@@ -6499,14 +6595,22 @@ class ProgressPaymentWorkflowTests(TestCase):
             current_requested_amount=Decimal("2600.00"),
         )
 
-        release_response = self.client.post(f"/api/projects/draws/{draw.id}/release/", {}, format="json")
+        with patch("projects.services.draw_requests.stripe.Transfer.create", return_value={"id": "tr_draw_release_123"}) as transfer_create:
+            release_response = self.client.post(f"/api/projects/draws/{draw.id}/release/", {}, format="json")
 
         self.assertEqual(release_response.status_code, 200)
         self.assertEqual(release_response.json()["workflow_status"], "paid")
+        transfer_create.assert_called_once()
 
         draw.refresh_from_db()
         self.assertEqual(draw.status, DrawRequestStatus.RELEASED)
         self.assertIsNotNone(draw.released_at)
+        self.assertEqual(draw.stripe_transfer_id, "tr_draw_release_123")
+        self.assertIsNotNone(draw.transfer_created_at)
+        self.assertGreaterEqual(draw.platform_fee_cents, 0)
+        self.assertEqual(draw.payout_cents, 234000 - draw.platform_fee_cents)
+        self.assertEqual(draw.escrow_source_payment_intent_id, "pi_escrow_fund_1")
+        self.assertEqual(draw.escrow_source_charge_id, "ch_escrow_fund_1")
         self.assertTrue(
             ContractorActivityEvent.objects.filter(
                 contractor=self.contractor,
@@ -6521,6 +6625,98 @@ class ProgressPaymentWorkflowTests(TestCase):
             agreement=self.agreement,
         ).first()
         self.assertIsNotNone(notification)
+
+    def test_release_escrow_draw_prevents_duplicate_transfer_when_already_released(self):
+        self.agreement.payment_mode = "escrow"
+        self.agreement.escrow_funded_amount = Decimal("4000.00")
+        self.agreement.save(update_fields=["payment_mode", "escrow_funded_amount"])
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=15,
+            status=DrawRequestStatus.RELEASED,
+            title="Already Released Draw",
+            gross_amount=Decimal("1000.00"),
+            retainage_amount=Decimal("100.00"),
+            net_amount=Decimal("900.00"),
+            current_requested_amount=Decimal("1000.00"),
+            stripe_transfer_id="tr_existing_123",
+            released_at=timezone.now(),
+        )
+
+        with patch("projects.services.draw_requests.stripe.Transfer.create") as transfer_create:
+            released = release_escrow_draw(draw_request_id=draw.id)
+
+        self.assertEqual(released.id, draw.id)
+        transfer_create.assert_not_called()
+
+    def test_release_escrow_draw_handles_transfer_failure_gracefully(self):
+        self.agreement.payment_mode = "escrow"
+        self.agreement.escrow_funded_amount = Decimal("5000.00")
+        self.agreement.save(update_fields=["payment_mode", "escrow_funded_amount"])
+        Payment.objects.create(
+            agreement=self.agreement,
+            stripe_payment_intent_id="pi_escrow_fund_2",
+            stripe_charge_id="ch_escrow_fund_2",
+            amount_cents=500000,
+            currency="usd",
+            status="succeeded",
+        )
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=16,
+            status=DrawRequestStatus.AWAITING_RELEASE,
+            title="Transfer Failure Draw",
+            gross_amount=Decimal("1200.00"),
+            retainage_amount=Decimal("120.00"),
+            net_amount=Decimal("1080.00"),
+            current_requested_amount=Decimal("1200.00"),
+        )
+
+        with self.assertRaisesMessage(ValueError, "Escrow release transfer failed"):
+            with patch("projects.services.draw_requests.stripe.Transfer.create", side_effect=Exception("transfer failed")):
+                release_escrow_draw(draw_request_id=draw.id)
+
+        draw.refresh_from_db()
+        self.assertEqual(draw.status, DrawRequestStatus.AWAITING_RELEASE)
+        self.assertEqual(draw.transfer_failure_reason, "transfer failed")
+
+    def test_transfer_created_and_failed_webhooks_update_draw_tracking(self):
+        draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=17,
+            status=DrawRequestStatus.RELEASED,
+            title="Webhook Tracked Draw",
+            gross_amount=Decimal("1000.00"),
+            retainage_amount=Decimal("100.00"),
+            net_amount=Decimal("900.00"),
+            current_requested_amount=Decimal("1000.00"),
+        )
+
+        _handle_draw_transfer_created(
+            {
+                "id": "tr_hook_123",
+                "metadata": {
+                    "kind": "escrow_draw_release",
+                    "draw_request_id": str(draw.id),
+                },
+            }
+        )
+        draw.refresh_from_db()
+        self.assertEqual(draw.stripe_transfer_id, "tr_hook_123")
+        self.assertIsNotNone(draw.transfer_created_at)
+
+        _handle_draw_transfer_failed(
+            {
+                "id": "tr_hook_123",
+                "failure_message": "destination account rejected transfer",
+                "metadata": {
+                    "kind": "escrow_draw_release",
+                    "draw_request_id": str(draw.id),
+                },
+            }
+        )
+        draw.refresh_from_db()
+        self.assertEqual(draw.transfer_failure_reason, "destination account rejected transfer")
 
     def test_contractor_approve_endpoint_routes_escrow_draw_to_awaiting_release(self):
         self.agreement.payment_mode = "escrow"

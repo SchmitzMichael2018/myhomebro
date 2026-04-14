@@ -535,6 +535,70 @@ def _handle_charge_dispute_created(charge: dict) -> None:
     except Exception:
         pass
 
+
+def _handle_draw_transfer_created(transfer_obj: dict) -> None:
+    DrawRequest = _get_model("projects", "DrawRequest")
+    if DrawRequest is None:
+        return
+
+    metadata = transfer_obj.get("metadata") or {}
+    if str(metadata.get("kind") or "").strip().lower() != "escrow_draw_release":
+        return
+
+    draw_request_id = _safe_int(metadata.get("draw_request_id"), default=0)
+    transfer_id = str(transfer_obj.get("id") or "").strip()
+    if draw_request_id <= 0 or not transfer_id:
+        return
+
+    with transaction.atomic():
+        draw = DrawRequest.objects.select_for_update().filter(id=draw_request_id).first()
+        if draw is None:
+            return
+        update_fields = []
+        if getattr(draw, "stripe_transfer_id", "") != transfer_id:
+            draw.stripe_transfer_id = transfer_id
+            update_fields.append("stripe_transfer_id")
+        if hasattr(draw, "transfer_created_at") and not getattr(draw, "transfer_created_at", None):
+            draw.transfer_created_at = now()
+            update_fields.append("transfer_created_at")
+        if hasattr(draw, "transfer_failure_reason") and getattr(draw, "transfer_failure_reason", ""):
+            draw.transfer_failure_reason = ""
+            update_fields.append("transfer_failure_reason")
+        if update_fields:
+            draw.save(update_fields=update_fields + ["updated_at"])
+
+
+def _handle_draw_transfer_failed(transfer_obj: dict) -> None:
+    DrawRequest = _get_model("projects", "DrawRequest")
+    if DrawRequest is None:
+        return
+
+    metadata = transfer_obj.get("metadata") or {}
+    if str(metadata.get("kind") or "").strip().lower() != "escrow_draw_release":
+        return
+
+    draw_request_id = _safe_int(metadata.get("draw_request_id"), default=0)
+    if draw_request_id <= 0:
+        return
+
+    failure_message = (
+        transfer_obj.get("failure_message")
+        or transfer_obj.get("failure_code")
+        or transfer_obj.get("description")
+        or "Stripe reported that the escrow release transfer failed."
+    )
+
+    with transaction.atomic():
+        draw = DrawRequest.objects.select_for_update().filter(id=draw_request_id).first()
+        if draw is None:
+            return
+        update_fields = []
+        if hasattr(draw, "transfer_failure_reason") and getattr(draw, "transfer_failure_reason", "") != str(failure_message):
+            draw.transfer_failure_reason = str(failure_message)
+            update_fields.append("transfer_failure_reason")
+        if update_fields:
+            draw.save(update_fields=update_fields + ["updated_at"])
+
     try:
         mark_draw_payment_issue(
             payment_intent_id=payment_intent_id,
@@ -1043,6 +1107,20 @@ def stripe_webhook(request):
                 _handle_charge_dispute_created(data_obj)
             except Exception:
                 log.exception("Charge dispute handler failed for charge=%s", data_obj.get("id"))
+            return HttpResponse(status=200)
+
+        if event_type == "transfer.created":
+            try:
+                _handle_draw_transfer_created(data_obj)
+            except Exception:
+                log.exception("Transfer created handler failed for transfer=%s", data_obj.get("id"))
+            return HttpResponse(status=200)
+
+        if event_type == "transfer.failed":
+            try:
+                _handle_draw_transfer_failed(data_obj)
+            except Exception:
+                log.exception("Transfer failed handler failed for transfer=%s", data_obj.get("id"))
             return HttpResponse(status=200)
 
         if event_type == "payment_intent.processing":

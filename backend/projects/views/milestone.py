@@ -59,6 +59,7 @@ from projects.services.agreement_locking import (
 from projects.services.milestone_workflow import can_user_review_submitted_work
 from projects.services.milestone_payouts import sync_milestone_payout
 from projects.services.recurring_maintenance import handle_milestone_recurring_state_change
+from projects.services.agreement_fee_allocation import refresh_agreement_fee_allocations
 from projects.services.subcontractor_compliance import (
     apply_assignment_compliance_decision,
     evaluate_subcontractor_assignment_compliance,
@@ -139,6 +140,11 @@ def _recompute_agreement_total_cost(agreement: Optional[Agreement]) -> Decimal:
     if getattr(agreement, "total_cost", None) != total:
         agreement.total_cost = total
         agreement.save(update_fields=["total_cost"])
+
+    try:
+        refresh_agreement_fee_allocations(agreement)
+    except Exception:
+        logger.exception("Failed to refresh agreement fee allocations for agreement %s", getattr(agreement, "id", None))
 
     return total
 

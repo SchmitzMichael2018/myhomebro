@@ -22,6 +22,7 @@ from projects.models import Agreement
 from projects.serializers.agreement import AgreementSerializer
 from projects.utils.accounts import get_contractor_for_user
 from projects.services.amendments import mark_agreement_amended
+from projects.services.agreement_fee_allocation import refresh_agreement_fee_allocations
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,7 @@ def create_amendment(request, pk: int):
             agreement.status = "draft"
 
         agreement.save()
+        refresh_agreement_fee_allocations(agreement)
 
     except Exception as e:
         logger.exception("create_amendment failed: %s", e)

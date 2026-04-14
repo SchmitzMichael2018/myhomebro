@@ -261,6 +261,15 @@ class MilestoneSerializer(serializers.ModelSerializer):
         except Exception:
             return None
 
+    def create(self, validated_data):
+        agreement = validated_data.get("agreement")
+        if agreement is not None and "amendment_number_snapshot" not in validated_data:
+            try:
+                validated_data["amendment_number_snapshot"] = int(getattr(agreement, "amendment_number", 0) or 0)
+            except Exception:
+                validated_data["amendment_number_snapshot"] = 0
+        return super().create(validated_data)
+
     def _get_project(self, obj: Milestone):
         ag = self._get_agreement(obj)
         try:

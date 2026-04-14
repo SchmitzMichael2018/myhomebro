@@ -148,9 +148,15 @@ def _serialize_draw(draw: DrawRequest):
         "current_requested_amount": _money(draw.current_requested_amount),
         "public_review_url": build_public_draw_link(draw),
         "stripe_checkout_url": getattr(draw, "stripe_checkout_url", "") or "",
+        "stripe_transfer_id": getattr(draw, "stripe_transfer_id", "") or "",
+        "platform_fee_cents": int(getattr(draw, "platform_fee_cents", 0) or 0),
+        "payout_cents": int(getattr(draw, "payout_cents", 0) or 0),
         "paid_at": draw.paid_at.isoformat() if getattr(draw, "paid_at", None) else None,
         "paid_via": getattr(draw, "paid_via", "") or "",
         "released_at": draw.released_at.isoformat() if getattr(draw, "released_at", None) else None,
+        "transfer_created_at": getattr(draw, "transfer_created_at", None).isoformat()
+        if getattr(draw, "transfer_created_at", None)
+        else None,
         "payment_mode": str(getattr(agreement, "payment_mode", "") or "").strip().lower(),
         "line_items": [_serialize_draw_line_item(item) for item in draw.line_items.select_related("milestone").all()],
     }

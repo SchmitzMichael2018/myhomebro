@@ -7,6 +7,7 @@ from typing import Optional, Tuple
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 from django.db import transaction
+from django.db.models import Sum
 from django.template.loader import render_to_string
 from django.utils import timezone
 
@@ -14,6 +15,9 @@ from projects.models import DrawRequest, DrawRequestStatus, ExternalPaymentRecor
 from projects.services.activity_feed import create_activity_event
 from projects.services.draw_notifications import create_draw_lifecycle_notification
 from projects.services.draw_state import derive_draw_workflow_status
+from payments.fees import calculate_platform_fee_cents_for_invoice
+from payments.models import Payment
+from payments.stripe_config import stripe
 
 log = logging.getLogger(__name__)
 
@@ -79,6 +83,120 @@ def _to_decimal(value) -> Decimal:
 def _to_cents(amount) -> int:
     amount_decimal = _to_decimal(amount)
     return int((amount_decimal * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def _released_invoice_amount_cents(agreement_id: int) -> int:
+    from projects.models import Invoice
+
+    total = (
+        Invoice.objects.filter(
+            agreement_id=agreement_id,
+            escrow_released=True,
+        )
+        .exclude(milestone_title_snapshot="Escrow Funding Payment")
+        .aggregate(total=Sum("amount"))
+        .get("total")
+        or Decimal("0.00")
+    )
+    return _to_cents(total)
+
+
+def _released_draw_amount_cents(agreement_id: int, *, exclude_draw_id: Optional[int] = None) -> int:
+    qs = DrawRequest.objects.filter(
+        agreement_id=agreement_id,
+        status__in=[DrawRequestStatus.RELEASED, DrawRequestStatus.PAID],
+    )
+    if exclude_draw_id:
+        qs = qs.exclude(id=exclude_draw_id)
+    total = qs.aggregate(total=Sum("net_amount")).get("total") or Decimal("0.00")
+    return _to_cents(total)
+
+
+def _available_escrow_amount_cents(draw: DrawRequest) -> int:
+    agreement = getattr(draw, "agreement", None)
+    funded_total = _to_cents(getattr(agreement, "escrow_funded_amount", Decimal("0.00")))
+    consumed = _released_invoice_amount_cents(draw.agreement_id) + _released_draw_amount_cents(
+        draw.agreement_id,
+        exclude_draw_id=draw.id,
+    )
+    return max(funded_total - consumed, 0)
+
+
+def _ensure_draw_release_financials(draw: DrawRequest) -> tuple[int, int]:
+    if int(getattr(draw, "platform_fee_cents", 0) or 0) > 0 or int(getattr(draw, "payout_cents", 0) or 0) > 0:
+        return int(getattr(draw, "platform_fee_cents", 0) or 0), int(getattr(draw, "payout_cents", 0) or 0)
+
+    gross_amount_cents = _to_cents(getattr(draw, "net_amount", None))
+    if gross_amount_cents <= 0:
+        raise ValueError("Draw request amount must be greater than 0 before escrow release.")
+
+    agreement = getattr(draw, "agreement", None)
+    contractor = getattr(agreement, "contractor", None) if agreement else None
+    if contractor is None:
+        raise ValueError("Draw request is missing a contractor.")
+
+    platform_fee_cents = int(
+        calculate_platform_fee_cents_for_invoice(
+            amount_cents=gross_amount_cents,
+            contractor=contractor,
+            agreement_id=getattr(agreement, "id", None),
+            is_high_risk=False,
+        )
+    )
+    if platform_fee_cents < 0:
+        platform_fee_cents = 0
+    if platform_fee_cents > gross_amount_cents:
+        raise ValueError("Calculated platform fee exceeds the released draw amount.")
+
+    payout_cents = gross_amount_cents - platform_fee_cents
+    draw.platform_fee_cents = platform_fee_cents
+    draw.payout_cents = payout_cents
+    draw.save(update_fields=["platform_fee_cents", "payout_cents", "updated_at"])
+    return platform_fee_cents, payout_cents
+
+
+def _select_escrow_source_payment(draw: DrawRequest, payout_cents: int) -> Payment:
+    if str(getattr(draw, "escrow_source_payment_intent_id", "") or "").strip():
+        payment = (
+            Payment.objects.select_for_update()
+            .filter(
+                agreement_id=draw.agreement_id,
+                stripe_payment_intent_id=draw.escrow_source_payment_intent_id,
+            )
+            .first()
+        )
+        if payment is not None and str(getattr(payment, "stripe_charge_id", "") or "").strip():
+            return payment
+
+    payments = (
+        Payment.objects.select_for_update()
+        .filter(
+            agreement_id=draw.agreement_id,
+            status="succeeded",
+        )
+        .exclude(stripe_charge_id__isnull=True)
+        .exclude(stripe_charge_id="")
+        .order_by("created_at", "id")
+    )
+    for payment in payments:
+        allocated = (
+            DrawRequest.objects.filter(
+                agreement_id=draw.agreement_id,
+                escrow_source_payment_intent_id=getattr(payment, "stripe_payment_intent_id", "") or "",
+            )
+            .exclude(id=draw.id)
+            .aggregate(total=Sum("payout_cents"))
+            .get("total")
+            or 0
+        )
+        remaining_transfer_capacity = max(int(getattr(payment, "amount_cents", 0) or 0) - int(allocated or 0), 0)
+        if remaining_transfer_capacity >= payout_cents:
+            return payment
+    raise ValueError("No escrow funding charge has enough remaining capacity to release this draw.")
+
+
+def _draw_release_idempotency_key(draw: DrawRequest) -> str:
+    return f"escrow-draw-release:{draw.id}"
 
 
 def _agreement_customer(agreement) -> Tuple[Optional[object], str, str]:
@@ -473,14 +591,71 @@ def release_escrow_draw(
         payment_mode = str(getattr(getattr(draw, "agreement", None), "payment_mode", "") or "").strip().lower()
         if payment_mode != "escrow":
             raise ValueError("Escrow release is only available for escrow draw requests.")
+        if (getattr(draw, "stripe_transfer_id", "") or "").strip():
+            if draw.status != DrawRequestStatus.RELEASED:
+                draw.status = DrawRequestStatus.RELEASED
+                draw.save(update_fields=["status", "updated_at"])
+            return draw
         if draw.status == DrawRequestStatus.RELEASED or getattr(draw, "released_at", None):
             raise ValueError("Escrow funds have already been released for this draw.")
         if draw.status not in {DrawRequestStatus.APPROVED, DrawRequestStatus.AWAITING_RELEASE}:
             raise ValueError("Escrow funds can only be released after the draw is approved.")
 
+        agreement = getattr(draw, "agreement", None)
+        contractor = getattr(agreement, "contractor", None) if agreement else None
+        stripe_account_id = str(getattr(contractor, "stripe_account_id", "") or "").strip()
+        if not stripe_account_id:
+            raise ValueError("Contractor does not have a Stripe account ready for escrow release.")
+
+        if _available_escrow_amount_cents(draw) < _to_cents(getattr(draw, "net_amount", None)):
+            raise ValueError("Escrow funds are not sufficient to release this draw.")
+
+        platform_fee_cents, payout_cents = _ensure_draw_release_financials(draw)
+        source_payment = _select_escrow_source_payment(draw, payout_cents)
+        source_charge_id = str(getattr(source_payment, "stripe_charge_id", "") or "").strip()
+        if not source_charge_id:
+            raise ValueError("Escrow funding charge is missing, so Stripe cannot create the release transfer.")
+
+        try:
+            transfer = stripe.Transfer.create(
+                amount=int(payout_cents),
+                currency="usd",
+                destination=stripe_account_id,
+                source_transaction=source_charge_id,
+                idempotency_key=_draw_release_idempotency_key(draw),
+                metadata={
+                    "kind": "escrow_draw_release",
+                    "draw_request_id": str(draw.id),
+                    "agreement_id": str(draw.agreement_id),
+                    "platform_fee_cents": str(platform_fee_cents),
+                    "payout_cents": str(payout_cents),
+                    "source_payment_intent_id": str(getattr(source_payment, "stripe_payment_intent_id", "") or ""),
+                },
+            )
+        except Exception as exc:
+            draw.transfer_failure_reason = str(exc)
+            draw.save(update_fields=["transfer_failure_reason", "updated_at"])
+            raise ValueError(f"Escrow release transfer failed: {exc}")
+
         draw.status = DrawRequestStatus.RELEASED
         draw.released_at = released_at
-        draw.save(update_fields=["status", "released_at", "updated_at"])
+        draw.transfer_created_at = timezone.now()
+        draw.transfer_failure_reason = ""
+        draw.stripe_transfer_id = str(transfer.get("id") or "")
+        draw.escrow_source_payment_intent_id = str(getattr(source_payment, "stripe_payment_intent_id", "") or "")
+        draw.escrow_source_charge_id = source_charge_id
+        draw.save(
+            update_fields=[
+                "status",
+                "released_at",
+                "transfer_created_at",
+                "transfer_failure_reason",
+                "stripe_transfer_id",
+                "escrow_source_payment_intent_id",
+                "escrow_source_charge_id",
+                "updated_at",
+            ]
+        )
 
     draw.refresh_from_db()
     create_draw_activity_notification(

@@ -858,6 +858,8 @@ class Agreement(models.Model):
 
     description = models.TextField(blank=True)
     total_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    agreement_fee_total_cents = models.PositiveIntegerField(default=0)
+    agreement_fee_allocated_cents = models.PositiveIntegerField(default=0)
     total_time_estimate = models.DurationField(null=True, blank=True)
     milestone_count = models.PositiveIntegerField(default=0)
 
@@ -1472,6 +1474,8 @@ class Milestone(models.Model):
         default="",
         help_text="Short note describing pricing guidance source.",
     )
+    agreement_fee_allocation_cents = models.PositiveIntegerField(default=0)
+    amendment_number_snapshot = models.PositiveIntegerField(default=0)
     recommended_days_from_start = models.PositiveIntegerField(
         null=True,
         blank=True,
@@ -1842,9 +1846,16 @@ class DrawRequest(models.Model):
     stripe_checkout_session_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
     stripe_checkout_url = models.URLField(blank=True, default="")
     stripe_payment_intent_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    stripe_transfer_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    escrow_source_payment_intent_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    escrow_source_charge_id = models.CharField(max_length=255, blank=True, default="")
+    platform_fee_cents = models.PositiveIntegerField(default=0)
+    payout_cents = models.PositiveIntegerField(default=0)
     paid_at = models.DateTimeField(null=True, blank=True)
     paid_via = models.CharField(max_length=32, blank=True, default="")
     released_at = models.DateTimeField(null=True, blank=True)
+    transfer_created_at = models.DateTimeField(null=True, blank=True)
+    transfer_failure_reason = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
