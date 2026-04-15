@@ -55,6 +55,8 @@ export default function ContractorPayoutHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState(null);
+  const [selectedRow, setSelectedRow] = useState(null);
+  const [copiedRefId, setCopiedRefId] = useState("");
 
   const queryString = useMemo(() => buildQuery(filters), [filters]);
 
@@ -88,6 +90,25 @@ export default function ContractorPayoutHistoryPage() {
   }, [queryString]);
 
   const countsLabel = `${summary?.payout_count ?? rows.length} payout${(summary?.payout_count ?? rows.length) === 1 ? "" : "s"}`;
+
+  const closeDrawer = () => {
+    setSelectedRow(null);
+    setCopiedRefId("");
+  };
+
+  const copyTransferRef = async (value, rowId) => {
+    const text = String(value || "").trim();
+    if (!text || !navigator?.clipboard?.writeText) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedRefId(rowId);
+      window.setTimeout(() => {
+        setCopiedRefId((current) => (current === rowId ? "" : current));
+      }, 1200);
+    } catch {
+      setCopiedRefId("");
+    }
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
@@ -167,7 +188,7 @@ export default function ContractorPayoutHistoryPage() {
             data-testid="payout-history-empty"
             className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600"
           >
-            No completed payouts match these filters.
+            You haven&apos;t received any payouts yet. Completed payments will appear here once funds are paid out.
           </div>
         ) : (
           <div className="mt-4 overflow-x-auto">
@@ -190,7 +211,16 @@ export default function ContractorPayoutHistoryPage() {
                   <tr
                     key={row.id}
                     data-testid={`payout-history-row-${row.record_id || row.id}`}
-                    className="border-b border-slate-100 align-top"
+                    className="cursor-pointer border-b border-slate-100 align-top hover:bg-slate-50"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedRow(row)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelectedRow(row);
+                      }
+                    }}
                   >
                     <td className="px-3 py-3 text-slate-700">{formatDateTime(row.payout_date)}</td>
                     <td className="px-3 py-3">
@@ -220,7 +250,22 @@ export default function ContractorPayoutHistoryPage() {
                       {formatMoney(row.net_payout)}
                     </td>
                     <td className="px-3 py-3 text-slate-700">
-                      <div className="break-all text-xs">{row.transfer_ref || "-"}</div>
+                      <div className="flex items-start gap-2">
+                        <div className="min-w-0 break-all text-xs">{row.transfer_ref || "—"}</div>
+                        {row.transfer_ref ? (
+                          <button
+                            type="button"
+                            data-testid={`payout-history-copy-transfer-${row.record_id || row.id}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              copyTransferRef(row.transfer_ref, row.record_id || row.id);
+                            }}
+                            className="shrink-0 rounded border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            {copiedRefId === (row.record_id || row.id) ? "Copied" : "Copy"}
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-3 py-3 text-slate-700">
                       <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
@@ -235,6 +280,63 @@ export default function ContractorPayoutHistoryPage() {
           </div>
         )}
       </section>
+
+      {selectedRow ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-end bg-slate-950/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          data-testid="payout-history-detail-drawer"
+          onClick={closeDrawer}
+        >
+          <div
+            className="h-full w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+              <div>
+                <div className="text-base font-bold text-slate-900">Payout Detail</div>
+                <div className="mt-1 text-sm text-slate-500">{selectedRow.agreement_label}</div>
+              </div>
+              <button
+                type="button"
+                onClick={closeDrawer}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="space-y-4 px-5 py-5 text-sm text-slate-700">
+              <DetailField label="Project / Agreement" value={selectedRow.agreement_label} />
+              <DetailField label="Type" value={selectedRow.record_type_label || "Paid"} />
+              <DetailField label="Project Class" value={selectedRow.project_class_label || "Residential"} />
+              <DetailField label="Gross Amount" value={formatMoney(selectedRow.gross_amount)} />
+              <DetailField label="Platform Fee" value={formatMoney(selectedRow.platform_fee)} />
+              <DetailField label="Net Payout" value={formatMoney(selectedRow.net_payout)} />
+              <DetailField label="Payout Date" value={formatDateTime(selectedRow.payout_date)} />
+              <DetailField
+                label="Transfer Reference"
+                value={selectedRow.transfer_ref || "—"}
+                mono
+              />
+              <DetailField label="Related Identifier" value={selectedRow.source_label || "—"} />
+              <DetailField label="Notes" value={selectedRow.notes || "—"} />
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function DetailField({ label, value, mono = false }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className={`mt-1 ${mono ? "break-all font-mono text-[13px]" : "font-semibold text-slate-900"}`}>
+        {value}
+      </div>
     </div>
   );
 }

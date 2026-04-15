@@ -145,13 +145,65 @@ test("contractor can reach payout history from payments and filter completed pay
   await expect(page.getByTestId("payout-history-row-2")).toContainText("Draw");
   expect(payoutAuthHeader).toContain("Bearer ");
 
+  await page.getByTestId("payout-history-row-1").click();
+  await expect(page.getByTestId("payout-history-detail-drawer")).toBeVisible();
+  await expect(page.getByTestId("payout-history-detail-drawer")).toContainText("Project / Agreement");
+  await expect(page.getByTestId("payout-history-detail-drawer")).toContainText("Residential Finish");
+  await expect(page.getByTestId("payout-history-detail-drawer")).toContainText("Transfer Reference");
+  await page.getByRole("button", { name: "Close" }).click();
+
+  await expect(page.getByTestId("payout-history-detail-drawer")).toHaveCount(0);
+
   await page.getByTestId("payout-history-filter-project-class").selectOption("commercial");
   await expect(page.getByTestId("payout-history-summary-paid-out")).toContainText("$1,710.00");
   await expect(page.getByTestId("payout-history-summary-count")).toContainText("1");
   await expect(page.getByTestId("payout-history-row-2")).toBeVisible();
-  await expect(page.getByTestId("payout-history-row-1")).toHaveCount(0);
 
   await page.screenshot({ path: "test-results/contractor-payout-history.png", fullPage: true });
 
   expect(consoleErrors.filter((msg) => msg.includes("Failed to load payout history"))).toHaveLength(0);
+});
+
+test("contractor payout history shows a friendly empty state", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("access", "playwright-access-token");
+  });
+
+  await page.route("**/api/projects/whoami/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: 7,
+        type: "contractor",
+        role: "contractor_owner",
+        email: "playwright@myhomebro.local",
+      }),
+    });
+  });
+
+  await page.route("**/api/projects/contractor/payout-history/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        results: [],
+        summary: {
+          total_paid_out: "0.00",
+          total_platform_fees_retained: "0.00",
+          total_gross_released: "0.00",
+          payout_count: 0,
+          invoice_count: 0,
+          draw_count: 0,
+        },
+        filters: {
+          project_class: "all",
+          record_type: "all",
+        },
+      }),
+    });
+  });
+
+  await page.goto("/app/payout-history", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("payout-history-empty")).toContainText("You haven't received any payouts yet");
 });

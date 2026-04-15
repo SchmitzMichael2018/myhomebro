@@ -134,6 +134,61 @@ async function mockDashboard(page) {
     });
   });
 
+  await page.route('**/api/projects/contractor/payout-history/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 'invoice-1',
+            record_id: 71,
+            record_type: 'invoice',
+            record_type_label: 'Invoice',
+            payout_date: '2026-04-12T12:00:00Z',
+            agreement_label: 'Kitchen Remodel Agreement',
+            source_label: 'INV-71',
+            project_class_label: 'Residential',
+            net_payout: '1140.00',
+            gross_amount: '1200.00',
+            platform_fee: '60.00',
+            transfer_ref: 'tr_invoice_71',
+            status_label: 'Paid',
+            notes: 'Escrow released',
+          },
+          {
+            id: 'draw-2',
+            record_id: 72,
+            record_type: 'draw_request',
+            record_type_label: 'Draw',
+            payout_date: '2026-04-13T12:00:00Z',
+            agreement_label: 'Office Renovation',
+            source_label: 'Draw #2',
+            project_class_label: 'Commercial',
+            net_payout: '1710.00',
+            gross_amount: '1800.00',
+            platform_fee: '90.00',
+            transfer_ref: 'tr_draw_72',
+            status_label: 'Paid',
+            notes: 'Released to contractor',
+          },
+        ],
+        summary: {
+          total_paid_out: '2850.00',
+          total_platform_fees_retained: '150.00',
+          total_gross_released: '3000.00',
+          payout_count: 2,
+          invoice_count: 1,
+          draw_count: 1,
+        },
+        filters: {
+          project_class: 'all',
+          record_type: 'all',
+        },
+      }),
+    });
+  });
+
   await page.route(/\/api\/projects\/milestones\/?(?:\?.*)?$/, async (route) => {
     await route.fulfill({
       status: 200,
@@ -317,6 +372,11 @@ test('contractor dashboard reflects draw-request payment pipeline and actions', 
   await expect(page.getByTestId('dashboard-payment-records-table')).toContainText('Invoice');
   await expect(page.getByTestId('dashboard-payment-records-table')).toContainText('Residential');
   await expect(page.getByTestId('dashboard-payment-records-table')).toContainText('Commercial');
+  await expect(page.getByTestId('dashboard-payout-summary')).toBeVisible();
+  await expect(page.getByTestId('dashboard-payout-summary')).toContainText('$2,850.00');
+  await expect(page.getByTestId('dashboard-payout-summary')).toContainText('$150.00');
+  await expect(page.getByTestId('dashboard-payout-row-71')).toContainText('Kitchen Remodel Agreement');
+  await expect(page.getByTestId('dashboard-payout-row-72')).toContainText('Office Renovation');
   await expect(page.getByTestId('dashboard-money-awaiting-customer')).toContainText('Awaiting Customer Approval');
   await expect(page.getByTestId('dashboard-money-approved')).toContainText('Payment Pending');
   await expect(page.getByTestId('dashboard-payment-records-table').getByText('Issues / Disputes')).toBeVisible();

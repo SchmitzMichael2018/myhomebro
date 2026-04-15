@@ -1040,6 +1040,9 @@ export default function ContractorDashboard() {
   const [milestones, setMilestones] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [drawRequests, setDrawRequests] = useState([]);
+  const [payoutHistoryLoading, setPayoutHistoryLoading] = useState(true);
+  const [payoutHistorySummary, setPayoutHistorySummary] = useState(null);
+  const [payoutHistoryRecent, setPayoutHistoryRecent] = useState([]);
 
   const [showExpenseModal, setShowExpenseModal] = useState(false);
 
@@ -1181,6 +1184,34 @@ export default function ContractorDashboard() {
 
     return () => (mounted = false);
   }, [who, isEmployee]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadPayoutHistory = async () => {
+      if (!authReady || !isAuthed || !who || isEmployee) return;
+      setPayoutHistoryLoading(true);
+      try {
+        const { data } = await api.get("/projects/contractor/payout-history/");
+        if (!mounted) return;
+        const rows = Array.isArray(data?.results) ? data.results : [];
+        setPayoutHistorySummary(data?.summary || null);
+        setPayoutHistoryRecent(rows.slice(0, 4));
+      } catch (err) {
+        if (!mounted) return;
+        console.error("Failed to load payout history summary:", err);
+        setPayoutHistorySummary(null);
+        setPayoutHistoryRecent([]);
+      } finally {
+        if (mounted) setPayoutHistoryLoading(false);
+      }
+    };
+
+    loadPayoutHistory();
+    return () => {
+      mounted = false;
+    };
+  }, [authReady, isAuthed, who, isEmployee]);
 
   // ✅ Load PAID expenses in background so Earned card can show YTD total
   useEffect(() => {
@@ -2472,6 +2503,88 @@ export default function ContractorDashboard() {
                   </table>
                 </div>
               )}
+            </DashboardCard>
+          </DashboardSection>
+
+          <DashboardSection
+            title="Payout Snapshot"
+            subtitle="A quick view of completed payouts and retained platform fees."
+          >
+            <DashboardCard
+              testId="dashboard-payout-summary"
+              tone="subtle"
+              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)] md:p-5"
+            >
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Total Paid Out</div>
+                  <div className="mt-2 text-2xl font-extrabold text-slate-900">
+                    {currency(payoutHistorySummary?.total_paid_out)}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    Platform Fees Retained
+                  </div>
+                  <div className="mt-2 text-2xl font-extrabold text-slate-900">
+                    {currency(payoutHistorySummary?.total_platform_fees_retained)}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Payout Count</div>
+                  <div className="mt-2 text-2xl font-extrabold text-slate-900">
+                    {Number(payoutHistorySummary?.payout_count || 0).toLocaleString()}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Recent Payouts</div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    {payoutHistoryLoading
+                      ? "Loading payout snapshot..."
+                      : payoutHistoryRecent.length
+                        ? `${payoutHistoryRecent.length} recent payout${payoutHistoryRecent.length === 1 ? "" : "s"}`
+                        : "No completed payouts yet."}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate("/app/payout-history")}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  View full payout history
+                </button>
+              </div>
+
+              {payoutHistoryRecent.length > 0 ? (
+                <div className="mt-4 overflow-x-auto" data-testid="dashboard-payout-history-table">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <th className="py-3 pr-3">Date</th>
+                        <th className="py-3 pr-3">Project</th>
+                        <th className="py-3 pr-3">Type</th>
+                        <th className="py-3">Net Payout</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {payoutHistoryRecent.map((row) => (
+                        <tr key={row.id} data-testid={`dashboard-payout-row-${row.record_id || row.id}`} className="border-b border-slate-100 last:border-b-0">
+                          <td className="py-3 pr-3 text-slate-700">{row.payout_date ? new Date(row.payout_date).toLocaleDateString() : "—"}</td>
+                          <td className="py-3 pr-3">
+                            <div className="font-semibold text-slate-900">{row.agreement_label}</div>
+                            <div className="mt-1 text-xs text-slate-500">{row.source_label}</div>
+                          </td>
+                          <td className="py-3 pr-3 text-slate-700">{row.record_type_label}</td>
+                          <td className="py-3 font-semibold text-slate-900">{currency(row.net_payout)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
             </DashboardCard>
           </DashboardSection>
 
