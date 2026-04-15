@@ -142,6 +142,7 @@ test('step 4 escrow summary shows estimated net breakdown and subcontractor payo
       payment_mode: 'escrow',
       description: 'Escrow milestone summary test.',
       status: 'draft',
+      agreement_fee_total_cents: 25100,
     },
     milestones: [
       {
@@ -176,13 +177,21 @@ test('step 4 escrow summary shows estimated net breakdown and subcontractor payo
   await expect(page.getByTestId('agreement-wizard-heading')).toBeVisible();
   await expect(page.getByTestId('step4-financial-summary')).toBeVisible();
   await expect(page.getByText('Contractor Take-Home (Before Stripe Fees)')).toHaveCount(0);
-  await expect(page.getByTestId('financial-row-stripe-fee')).toContainText(
-    'Estimated Stripe Processing Fee'
+  await expect(page.getByTestId('financial-row-stripe-fee')).toHaveCount(0);
+  await expect(page.getByTestId('financial-row-subcontractor-payouts')).toHaveCount(0);
+  await expect(page.getByTestId('financial-summary-net')).toContainText('$4,749.00');
+  await expect(page.getByTestId('financial-row-platform-fee')).toContainText(
+    'MyHomeBro Platform Fee'
   );
-  await expect(page.getByTestId('financial-row-subcontractor-payouts')).toContainText(
-    'Subcontractor Payouts'
+  await expect(page.getByTestId('financial-row-platform-fee')).toContainText(
+    'Current rate: 5.0% + $1 (capped at $750)'
   );
-  await expect(page.getByTestId('financial-summary-net')).toContainText('$4,003.70');
+  await expect(
+    page.getByText('Estimated processing fees may vary based on payment method (card vs bank).')
+  ).toBeVisible();
+  await expect(
+    page.getByText('Subcontractor payouts are tracked separately and are not deducted from this main earnings estimate.')
+  ).toBeVisible();
   await expect(page.getByTestId('financial-row-escrow-deposit')).toContainText(
     'Total Escrow Deposit'
   );
@@ -201,6 +210,7 @@ test('step 4 direct pay summary hides subcontractor payouts when not applicable'
       payment_mode: 'direct',
       description: 'Direct pay summary test.',
       status: 'draft',
+      agreement_fee_total_cents: 4100,
     },
     milestones: [
       {
@@ -226,11 +236,15 @@ test('step 4 direct pay summary hides subcontractor payouts when not applicable'
   await expect(page.getByTestId('step4-financial-summary')).toBeVisible();
   await expect(page.getByTestId('financial-row-project-total')).toContainText('$2,000.00');
   await expect(page.getByTestId('financial-row-platform-fee')).toContainText('-$41.00');
-  await expect(page.getByTestId('financial-row-stripe-fee')).toContainText(
-    'Estimated Stripe Processing Fee'
+  await expect(page.getByTestId('financial-row-platform-fee')).toContainText(
+    'MyHomeBro Platform Fee'
   );
-  await expect(page.getByTestId('financial-summary-net')).toContainText('$1,900.70');
+  await expect(page.getByTestId('financial-row-stripe-fee')).toHaveCount(0);
+  await expect(page.getByTestId('financial-summary-net')).toContainText('$1,959.00');
   await expect(page.getByTestId('financial-row-subcontractor-payouts')).toHaveCount(0);
+  await expect(
+    page.getByText('Estimated processing fees may vary based on payment method (card vs bank).')
+  ).toBeVisible();
   await expect(
     page.getByText('Customer pays invoices via Stripe links. No escrow deposit is required.')
   ).toBeVisible();

@@ -1232,16 +1232,6 @@ export default function Step4Finalize({
   );
   const remainingToFund = Math.max(0, Math.round((homeownerEscrow - fundedSoFar) * 100) / 100);
 
-  const DIRECT_RATE = 0.02;
-  const DIRECT_FLAT = 1;
-  const ESTIMATED_STRIPE_RATE = 0.029;
-  const ESTIMATED_STRIPE_FLAT = 0.3;
-
-  const directPlatformFee = Math.max(0, Math.round((projectAmount * DIRECT_RATE + DIRECT_FLAT) * 100) / 100);
-  const estimatedStripeProcessingFee = Math.max(
-    0,
-    roundCurrency(projectAmount * ESTIMATED_STRIPE_RATE + ESTIMATED_STRIPE_FLAT)
-  );
   const subcontractorPayoutTotal = useMemo(
     () =>
       roundCurrency(
@@ -1252,12 +1242,30 @@ export default function Step4Finalize({
       ),
     [displayMilestones]
   );
-  const showSubcontractorPayoutRow = subcontractorPayoutTotal > 0;
-  const platformFee = isDirectPay ? directPlatformFee : escrowPlatformFee;
+  const agreementFeeTotalCents = Number(
+    agreement?.agreement_fee_total_cents ?? agreement?.agreement_fee_allocated_cents ?? 0
+  );
+  const agreementLevelPlatformFee =
+    Number.isFinite(agreementFeeTotalCents) && agreementFeeTotalCents > 0
+      ? roundCurrency(agreementFeeTotalCents / 100)
+      : null;
+  const platformFee = isDirectPay
+    ? agreementLevelPlatformFee ?? 0
+    : agreementLevelPlatformFee ?? escrowPlatformFee;
   const estimatedContractorNet = Math.max(
     0,
-    roundCurrency(projectAmount - platformFee - estimatedStripeProcessingFee - subcontractorPayoutTotal)
+    roundCurrency(projectAmount - platformFee)
   );
+  const platformFeeRateLine =
+    !isDirectPay && fundingPreview?.rate != null
+      ? `${(Number(fundingPreview.rate) * 100).toFixed(1)}% + $${Number(
+          fundingPreview.flat_fee ?? 1
+        ).toFixed(Number.isInteger(Number(fundingPreview.flat_fee ?? 1)) ? 0 : 2)} (capped at $750)`
+      : "";
+  const platformFeeHelperText =
+    Number(agreement?.amendment_number || 0) > 0
+      ? "Your platform fee is tracked at the agreement level and updates cumulatively as approved amendments increase the total."
+      : "Your platform fee is fixed per agreement and does not change across milestones.";
   const summaryBreakdownRows = [
     {
       key: "project-total",
@@ -1267,27 +1275,13 @@ export default function Step4Finalize({
     },
     {
       key: "platform-fee",
-      label: "Platform Fee",
+      label: "MyHomeBro Platform Fee",
       value: `-${formatMoney(platformFee)}`,
       tone: "deduction",
+      help: platformFeeRateLine
+        ? `Current rate: ${platformFeeRateLine}`
+        : "Cumulative per-agreement fee, capped at $750.",
     },
-    {
-      key: "stripe-fee",
-      label: "Estimated Stripe Processing Fee",
-      value: `-${formatMoney(estimatedStripeProcessingFee)}`,
-      tone: "deduction",
-      help: "Estimated based on standard card-processing assumptions and shown for planning only.",
-    },
-    ...(showSubcontractorPayoutRow
-      ? [
-          {
-            key: "subcontractor-payouts",
-            label: "Subcontractor Payouts",
-            value: `-${formatMoney(subcontractorPayoutTotal)}`,
-            tone: "deduction",
-          },
-        ]
-      : []),
   ];
   const readinessItems = [
     {
@@ -2014,7 +2008,7 @@ export default function Step4Finalize({
                 {formatMoney(estimatedContractorNet)}
               </div>
               <div className="mt-1 text-xs text-emerald-800">
-                Project total minus platform fees, estimated Stripe processing, and any subcontractor payouts.
+                Project total minus your MyHomeBro platform fee.
               </div>
             </div>
 
@@ -2040,6 +2034,18 @@ export default function Step4Finalize({
                   </div>
                 </div>
               ))}
+            </div>
+
+            <div className="mt-4 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
+              <div>{platformFeeHelperText}</div>
+              <div className="mt-1">
+                Estimated processing fees may vary based on payment method (card vs bank).
+              </div>
+              {subcontractorPayoutTotal > 0 ? (
+                <div className="mt-1">
+                  Subcontractor payouts are tracked separately and are not deducted from this main earnings estimate.
+                </div>
+              ) : null}
             </div>
           </div>
 
