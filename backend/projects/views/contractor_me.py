@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 from rest_framework.views import APIView
@@ -18,9 +19,14 @@ from projects.services.contractor_onboarding import (
 )
 from projects.services.sms_automation import build_sms_automation_summary
 from projects.services.sms_service import get_sms_status_payload
+from payments.fees import (
+    INTRO_DAYS,
+    MAX_PLATFORM_FEE,
+    get_fee_rate_for_contractor,
+    get_monthly_paid_invoice_volume_for_contractor,
+)
 
-
-INTRO_DAYS_TOTAL = 60
+INTRO_DAYS_TOTAL = INTRO_DAYS
 
 
 def _contractor_for_user(user):
@@ -80,6 +86,17 @@ def _compute_intro(created_dt: datetime | None):
     return intro_active, max(0, remaining)
 
 
+def _tier_type_from_tier_name(tier_name: str) -> str:
+    tier = str(tier_name or "").strip().lower()
+    if tier == "intro":
+        return "intro"
+    if tier == "tier3":
+        return "volume"
+    if tier in {"tier1", "tier2"}:
+        return "standard"
+    return "standard"
+
+
 def _ai_payload() -> dict:
     return {
         "access": "included",
@@ -108,6 +125,32 @@ class ContractorMeView(APIView):
 
         pricing_start_dt = user_joined_dt or contractor_created_dt
         intro_active, intro_days_remaining = _compute_intro(pricing_start_dt)
+        monthly_volume = get_monthly_paid_invoice_volume_for_contractor(c)
+        rate_info = get_fee_rate_for_contractor(
+            contractor_created_at=pricing_start_dt or timezone.now(),
+            monthly_volume=monthly_volume,
+            today=timezone.now().date(),
+        )
+
+        volume_discount_threshold = Decimal("25000.00")
+        volume_discount_active = monthly_volume >= volume_discount_threshold
+        volume_shortfall = max(volume_discount_threshold - monthly_volume, Decimal("0.00"))
+        volume_progress_pct = (
+            100
+            if volume_discount_active
+            else int((monthly_volume / volume_discount_threshold) * 100)
+            if volume_discount_threshold
+            else 0
+        )
+        current_rate_pct = f"{(rate_info.rate * 100):.1f}%"
+        current_rate_label = f"{current_rate_pct} + $1 per agreement"
+        tier_type = _tier_type_from_tier_name(rate_info.tier_name)
+        intro_status_label = "Intro pricing active" if intro_active else "Intro period ended"
+        volume_status_label = (
+            "Volume discount active for this month"
+            if volume_discount_active
+            else f"${volume_shortfall:.2f} away from discounted rate (3.5% + $1)"
+        )
 
         ai_summary = _ai_payload()
         sync_legacy_contractor_compliance_records(c)
@@ -143,6 +186,25 @@ class ContractorMeView(APIView):
             "intro_days_total": INTRO_DAYS_TOTAL,
             "intro_active": bool(intro_active),
             "intro_days_remaining": intro_days_remaining,
+            "pricing_summary": {
+                "current_rate": str(rate_info.rate),
+                "current_rate_label": current_rate_label,
+                "tier_name": rate_info.tier_name,
+                "tier_type": tier_type,
+                "fee_cap": f"{MAX_PLATFORM_FEE:.2f}",
+                "fee_cap_label": "$750 per agreement",
+                "intro_active": bool(intro_active),
+                "intro_status_label": intro_status_label,
+                "intro_days_remaining": intro_days_remaining,
+                "monthly_volume": f"{monthly_volume:.2f}",
+                "monthly_volume_label": f"${monthly_volume:,.2f}",
+                "volume_discount_threshold": f"{volume_discount_threshold:.2f}",
+                "volume_discount_active": bool(volume_discount_active),
+                "volume_discount_label": volume_status_label,
+                "volume_shortfall": f"{volume_shortfall:.2f}",
+                "volume_progress_pct": volume_progress_pct,
+                "next_discount_rate_label": "3.5% + $1",
+            },
             "auto_subcontractor_payouts_enabled": bool(
                 getattr(c, "auto_subcontractor_payouts_enabled", False)
             ),

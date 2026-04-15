@@ -28,10 +28,20 @@ function planLabel() {
   return "Included";
 }
 
-function fmtPercent(rateDecimal) {
-  const r = Number(rateDecimal);
-  if (!Number.isFinite(r)) return null;
-  return `${(r * 100).toFixed(2)}%`;
+function fmtMoney(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+function titleize(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return text
+    .split(/[\s_-]+/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function safeDate(v) {
@@ -72,28 +82,6 @@ function getAiStatusFromMe(meData) {
     enabled: ai.enabled !== false,
     unlimited: ai.unlimited !== false,
   };
-}
-
-function pickZipFromData(data) {
-  return (
-    data?.zip ||
-    data?.zipcode ||
-    data?.postal_code ||
-    data?.postalCode ||
-    data?.zip_code ||
-    ""
-  );
-}
-
-function detectZipFieldName(data) {
-  // To avoid breaking backend, only send ZIP if the backend appears to accept it.
-  // We'll pick the first matching key present in /me payload.
-  if (data && Object.prototype.hasOwnProperty.call(data, "zip")) return "zip";
-  if (data && Object.prototype.hasOwnProperty.call(data, "zipcode")) return "zipcode";
-  if (data && Object.prototype.hasOwnProperty.call(data, "zip_code")) return "zip_code";
-  if (data && Object.prototype.hasOwnProperty.call(data, "postal_code")) return "postal_code";
-  if (data && Object.prototype.hasOwnProperty.call(data, "postalCode")) return "postalCode";
-  return null;
 }
 
 function formatComplianceLabel(value) {
@@ -158,17 +146,6 @@ export default function ContractorProfile() {
   const [compliancePreviewLoading, setCompliancePreviewLoading] = useState(false);
   const [compliancePreviewError, setCompliancePreviewError] = useState("");
 
-  // ✅ NEW: escrow pricing snapshot (tiered)
-  const [escrowInfo, setEscrowInfo] = useState({
-    loading: true,
-    hasAgreement: false,
-    tierName: null,
-    isIntro: null,
-    ratePercent: null, // "4.50%"
-    fixedFee: 1,
-    error: "",
-  });
-
   const stateOptions = useMemo(
     () => US_STATES.map((s) => ({ value: s, label: s })),
     []
@@ -184,72 +161,6 @@ export default function ContractorProfile() {
     setComplianceRecords(Array.isArray(data.compliance_records) ? data.compliance_records : []);
     setInsuranceStatus(data.insurance_status || { has_insurance: false, status: "missing" });
     return data;
-  };
-
-  const refreshEscrowPricing = async () => {
-    setEscrowInfo((s) => ({ ...s, loading: true, error: "" }));
-    try {
-      // Find latest agreement (to pull funding_preview tier/rate)
-      const { data } = await api.get("/projects/agreements/");
-      const list = Array.isArray(data?.results)
-        ? data.results
-        : Array.isArray(data)
-        ? data
-        : [];
-
-      if (!list.length) {
-        setEscrowInfo({
-          loading: false,
-          hasAgreement: false,
-          tierName: null,
-          isIntro: null,
-          ratePercent: null,
-          fixedFee: 1,
-          error: "",
-        });
-        return;
-      }
-
-      const latest = [...list].sort((a, b) => (b?.id || 0) - (a?.id || 0))[0];
-      const agreementId = latest?.id;
-
-      if (!agreementId) {
-        setEscrowInfo({
-          loading: false,
-          hasAgreement: false,
-          tierName: null,
-          isIntro: null,
-          ratePercent: null,
-          fixedFee: 1,
-          error: "",
-        });
-        return;
-      }
-
-      const { data: fp } = await api.get(`/projects/agreements/${agreementId}/funding_preview/`);
-      const ratePercent = fp?.rate != null ? fmtPercent(fp.rate) : null;
-
-      setEscrowInfo({
-        loading: false,
-        hasAgreement: true,
-        tierName: fp?.tier_name ?? (fp?.is_intro ? "INTRO" : null),
-        isIntro: fp?.is_intro ?? null,
-        ratePercent,
-        fixedFee: fp?.fixed_fee ?? 1,
-        error: "",
-      });
-    } catch (e) {
-      console.error("Failed to load escrow pricing preview:", e);
-      setEscrowInfo({
-        loading: false,
-        hasAgreement: false,
-        tierName: null,
-        isIntro: null,
-        ratePercent: null,
-        fixedFee: 1,
-        error: "Unable to load escrow tier/rate right now.",
-      });
-    }
   };
 
   useEffect(() => {
@@ -292,9 +203,6 @@ export default function ContractorProfile() {
         // file URLs from backend
         setLicenseUrl(data.license_file || data.license_document || null);
         setInsuranceUrl(data.insurance_file || data.insurance_document || null);
-
-        // preload escrow pricing snapshot
-        await refreshEscrowPricing();
       } catch (e) {
         setError("Failed to load profile.");
       } finally {
@@ -445,21 +353,110 @@ export default function ContractorProfile() {
   };
 
   const renderBilling = () => {
-    const { introActive, introDaysRemaining } = computeIntroCountdownDays(meData);
+    const pricing = meData?.pricing_summary || {};
+    const fallbackIntro = computeIntroCountdownDays(meData);
+    const introActive = pricing.intro_active ?? fallbackIntro.introActive;
+    const introDaysRemaining = pricing.intro_days_remaining ?? fallbackIntro.introDaysRemaining;
     const introDaysText =
       introDaysRemaining != null
         ? `${introDaysRemaining} day${introDaysRemaining === 1 ? "" : "s"} remaining`
         : null;
-
-    const escrowRateLine = escrowInfo.ratePercent
-      ? `${escrowInfo.ratePercent} + $${Number(escrowInfo.fixedFee || 1).toFixed(0)}`
-      : null;
+    const currentRateLabel = pricing.current_rate_label || null;
+    const tierType = titleize(pricing.tier_type || pricing.tier_name || "");
+    const feeCapLabel = pricing.fee_cap_label || "$750 per agreement";
+    const introStatusLabel =
+      pricing.intro_status_label || (introActive ? "Intro pricing active" : "Intro period ended");
+    const monthlyVolumeLabel = pricing.monthly_volume_label || fmtMoney(pricing.monthly_volume);
+    const volumeDiscountLabel = pricing.volume_discount_label || "";
+    const volumeProgressPct = Number(pricing.volume_progress_pct);
+    const volumeDiscountActive = pricing.volume_discount_active === true;
 
     const aiStatus = getAiStatusFromMe(meData);
 
     return (
       <div className="space-y-4">
-        {/* AI availability */}
+        <div className="rounded-lg border border-slate-200 bg-white p-4" data-testid="contractor-pricing-summary">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-slate-900">Current Platform Rate</div>
+              <div className="mt-1 text-xs text-slate-600">
+                Your current pricing snapshot comes from the backend fee engine.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={refreshMe}
+              className="rounded border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
+              title="Refresh pricing snapshot"
+            >
+              Refresh Pricing
+            </button>
+          </div>
+
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Current rate</div>
+            <div className="mt-1 text-3xl font-semibold text-slate-900">
+              {currentRateLabel || "Pricing data unavailable"}
+            </div>
+            <div className="mt-2 text-sm text-slate-600">
+              Tier type: <span className="font-semibold text-slate-900">{tierType || "Unknown"}</span>
+            </div>
+            <div className="mt-2 text-sm text-slate-600">
+              Fee cap: <span className="font-semibold text-slate-900">{feeCapLabel}</span>
+            </div>
+            <div className="mt-2 text-sm text-slate-600">
+              {introStatusLabel}
+              {introActive && introDaysText ? ` - ${introDaysText}` : ""}
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div className="rounded border bg-slate-50 p-3">
+              <div className="text-xs text-slate-500">Tier Type</div>
+              <div className="text-sm font-semibold text-slate-900">{tierType || "Unknown"}</div>
+            </div>
+
+            <div className="rounded border bg-slate-50 p-3">
+              <div className="text-xs text-slate-500">Fee Cap</div>
+              <div className="text-sm font-semibold text-slate-900">{feeCapLabel}</div>
+            </div>
+
+            <div className="rounded border bg-slate-50 p-3">
+              <div className="text-xs text-slate-500">Intro Status</div>
+              <div className="text-sm font-semibold text-slate-900">{introStatusLabel}</div>
+              {introActive && introDaysText ? (
+                <div className="mt-1 text-xs text-slate-600">{introDaysText}</div>
+              ) : null}
+            </div>
+          </div>
+
+          {monthlyVolumeLabel ? (
+            <div className="mt-4 rounded border border-slate-200 bg-white p-3">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <div className="font-medium text-slate-900">
+                  This month&apos;s processed volume: {monthlyVolumeLabel}
+                </div>
+                <div className="text-xs font-medium text-slate-500">
+                  {volumeDiscountLabel || "Volume data from backend"}
+                </div>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
+                <div
+                  className={`h-full rounded-full ${volumeDiscountActive ? "bg-emerald-600" : "bg-slate-900"}`}
+                  style={{
+                    width: `${Math.max(0, Math.min(100, Number.isFinite(volumeProgressPct) ? volumeProgressPct : 0))}%`,
+                  }}
+                />
+              </div>
+              <div className="mt-2 text-sm text-slate-600">
+                {volumeDiscountActive
+                  ? "Volume discount active for this month."
+                  : volumeDiscountLabel || "Volume discount information unavailable."}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -478,7 +475,7 @@ export default function ContractorProfile() {
             </button>
           </div>
 
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="rounded border bg-slate-50 p-3">
               <div className="text-xs text-slate-500">Availability</div>
               <div className="text-sm font-semibold text-slate-900">
@@ -506,55 +503,6 @@ export default function ContractorProfile() {
           </div>
         </div>
 
-        {/* Escrow Pricing (tiered) */}
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-slate-900">Escrow Pricing (Tiered)</div>
-            </div>
-            <button
-              type="button"
-              onClick={refreshEscrowPricing}
-              className="rounded border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-            >
-              Refresh Escrow Rate
-            </button>
-          </div>
-
-          {escrowInfo.loading ? (
-            <div className="mt-3 text-sm text-slate-600">Loading escrow tier…</div>
-          ) : escrowInfo.error ? (
-            <div className="mt-3 text-sm text-rose-700">{escrowInfo.error}</div>
-          ) : !escrowInfo.hasAgreement ? (
-            <div className="mt-3 text-sm text-slate-600">
-              No agreements yet. Create your first agreement to see your current escrow tier.
-            </div>
-          ) : (
-            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="rounded border bg-slate-50 p-3">
-                <div className="text-xs text-slate-500">Current Tier</div>
-                <div className="text-sm font-semibold text-slate-900">
-                  {String(escrowInfo.tierName || (escrowInfo.isIntro ? "INTRO" : "—")).toUpperCase()}
-                </div>
-              </div>
-
-              <div className="rounded border bg-slate-50 p-3">
-                <div className="text-xs text-slate-500">Escrow Rate</div>
-                <div className="text-sm font-semibold text-slate-900">
-                  {escrowRateLine || "—"}
-                </div>
-              </div>
-
-              <div className="rounded border bg-slate-50 p-3">
-                <div className="text-xs text-slate-500">Intro Window</div>
-                <div className="text-sm font-semibold text-slate-900">
-                  {introActive ? (introDaysText || "Active") : "Ended"}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <div className="text-sm font-semibold text-slate-900">Billing &amp; Fees</div>
 
@@ -566,48 +514,36 @@ export default function ContractorProfile() {
 
             <div>
               <div className="font-semibold text-slate-900">Platform Fees (MyHomeBro)</div>
-
-              <div className="mt-3 font-medium text-slate-900">Escrow Payments</div>
               <ul className="mt-2 list-disc space-y-1 pl-5">
-                <li>3% + $1 for the first 60 days on new accounts</li>
-                <li>4.5% + $1 standard rate</li>
-                <li>3.5% + $1 with volume discount</li>
-                <li>$750 maximum fee per agreement/project</li>
-              </ul>
-
-              <div className="mt-3 font-medium text-slate-900">Direct Pay</div>
-              <ul className="mt-2 list-disc space-y-1 pl-5">
-                <li>2% + $1 per transaction</li>
+                <li>Intro pricing: 3% + $1 for the first 60 days</li>
+                <li>Standard pricing: 4.5% + $1</li>
+                <li>Volume discount: 3.5% + $1</li>
+                <li>$750 cap per agreement</li>
               </ul>
             </div>
 
             <div>
               <div className="font-semibold text-slate-900">Payment Processing (Stripe)</div>
               <div className="mt-1">
-                Payments are processed through Stripe. Processing fees are separate from platform fees and may vary depending on payment method.
+                Payments are processed through Stripe. Processing fees are separate from MyHomeBro platform fees and may vary by payment method.
               </div>
               <ul className="mt-2 list-disc space-y-1 pl-5">
-                <li>Typical card processing fees are around 2.9% + $0.30 per transaction</li>
-                <li>ACH bank payments are typically ~0.8% (capped at $5)</li>
-              </ul>
-              <div className="mt-2">Actual processing fees may vary based on:</div>
-              <ul className="mt-2 list-disc space-y-1 pl-5">
-                <li>card type</li>
-                <li>international payments</li>
-                <li>payment method</li>
+                <li>Card payments: typically about 2.9% + $0.30</li>
+                <li>Bank payments (ACH): typically lower</li>
               </ul>
             </div>
 
             <div>
-              <div className="font-semibold text-slate-900">What You’ll See in the App</div>
+              <div className="font-semibold text-slate-900">What You&apos;ll See in the App</div>
               <div className="mt-1">For every agreement, invoice, and payout, display:</div>
               <ul className="mt-2 list-disc space-y-1 pl-5">
-                <li>total amount</li>
-                <li>platform fee</li>
-                <li>processing fee</li>
-                <li>total deductions</li>
-                <li>net payout</li>
+                <li>Total amount</li>
+                <li>MyHomeBro platform fee</li>
+                <li>Net payout</li>
               </ul>
+              <div className="mt-2 text-xs text-slate-600">
+                Processing fees may apply depending on payment method.
+              </div>
             </div>
           </div>
         </div>

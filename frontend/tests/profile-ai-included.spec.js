@@ -1,8 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('profile billing view renders with included AI wording', async ({
-  page,
-}) => {
+test('profile billing view renders with included AI wording', async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
   });
@@ -46,6 +44,25 @@ test('profile billing view renders with included AI wording', async ({
         state: 'TX',
         zip: '78701',
         skills: [],
+        pricing_summary: {
+          current_rate: '0.045',
+          current_rate_label: '4.5% + $1 per agreement',
+          tier_name: 'tier1',
+          tier_type: 'standard',
+          fee_cap: '750.00',
+          fee_cap_label: '$750 per agreement',
+          intro_active: false,
+          intro_status_label: 'Intro period ended',
+          intro_days_remaining: 0,
+          monthly_volume: '8200.00',
+          monthly_volume_label: '$8,200.00',
+          volume_discount_threshold: '25000.00',
+          volume_discount_active: false,
+          volume_discount_label: '$16,800.00 away from discounted rate (3.5% + $1)',
+          volume_shortfall: '16800.00',
+          volume_progress_pct: 32,
+          next_discount_rate_label: '3.5% + $1',
+        },
         ai: {
           access: 'included',
           enabled: true,
@@ -65,18 +82,26 @@ test('profile billing view renders with included AI wording', async ({
 
   await page.goto('/app/profile', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByRole('heading', { name: 'My Profile' })).toBeVisible();
-  await page.getByRole('button', { name: 'Plan & Billing' }).click();
+  await expect(page.getByRole('button', { name: /Plan & Billing/ })).toBeVisible();
+  await page.getByRole('button', { name: /Plan & Billing/ }).click();
+
+  await expect(page.getByTestId('contractor-pricing-summary')).toBeVisible();
+  await expect(page.getByText('Current Platform Rate')).toBeVisible();
+  await expect(page.getByText('4.5% + $1 per agreement')).toBeVisible();
+  await expect(page.getByText('Tier type: Standard')).toBeVisible();
+  await expect(page.getByText('Fee cap: $750 per agreement')).toBeVisible();
+  await expect(page.getByText("This month's processed volume: $8,200.00")).toBeVisible();
+  await expect(
+    page.getByText('$16,800.00 away from discounted rate (3.5% + $1)').last()
+  ).toBeVisible();
 
   await expect(page.getByText('Billing & Fees')).toBeVisible();
-  await expect(page.getByText('AI & Billing')).toHaveCount(0);
-  await expect(page.getByText('Plan Details')).toHaveCount(0);
   await expect(page.getByText('All AI tools are included with your account.')).toBeVisible();
   await expect(page.getByText('Platform Fees (MyHomeBro)')).toBeVisible();
-  await expect(page.getByText('3% + $1 for the first 60 days on new accounts')).toBeVisible();
-  await expect(page.getByText('2% + $1 per transaction')).toBeVisible();
+  await expect(page.getByText('Intro pricing: 3% + $1 for the first 60 days')).toBeVisible();
   await expect(page.getByText('Payment Processing (Stripe)')).toBeVisible();
-  await expect(page.getByText('Typical card processing fees are around 2.9% + $0.30 per transaction')).toBeVisible();
-  await expect(page.getByText('What You’ll See in the App')).toBeVisible();
-  await expect(page.getByText('net payout')).toBeVisible();
+  await expect(page.getByText('Card payments: typically about 2.9% + $0.30')).toBeVisible();
+  await expect(page.getByText("What You'll See in the App")).toBeVisible();
+  await expect(page.getByText('MyHomeBro platform fee', { exact: true })).toBeVisible();
+  await expect(page.getByText('Net payout')).toBeVisible();
 });

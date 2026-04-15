@@ -32,7 +32,11 @@ import stripe
 from projects.models import Agreement, AgreementFundingLink, Milestone
 from projects.services.contractor_onboarding import build_stripe_requirement_payload
 from projects.services.mailer import email_escrow_funding_request
-from payments.fees import compute_fee_summary, INTRO_DAYS  # ✅ pull intro days for UI consistency
+from payments.fees import (
+    compute_fee_summary,
+    get_monthly_paid_invoice_volume_for_contractor,
+    INTRO_DAYS,
+)  # ✅ pull intro days for UI consistency
 
 logger = logging.getLogger(__name__)
 stripe.api_key = getattr(settings, "STRIPE_SECRET_KEY", None)
@@ -43,7 +47,7 @@ stripe.api_key = getattr(settings, "STRIPE_SECRET_KEY", None)
 # ─────────────────────────────────────────────────────────────
 
 def get_contractor_monthly_volume(contractor) -> Decimal:
-    return Decimal("0.00")
+    return get_monthly_paid_invoice_volume_for_contractor(contractor)
 
 
 def _to_decimal(v, default: str = "0.00") -> Decimal:

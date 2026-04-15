@@ -125,7 +125,7 @@ def _cents_from_money(amount: Decimal) -> int:
     return int((_round_money(amount) * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
-def _monthly_paid_invoice_volume_for_contractor(contractor) -> Decimal:
+def get_monthly_paid_invoice_volume_for_contractor(contractor) -> Decimal:
     monthly_volume = Decimal("0.00")
     try:
         from projects.models import Invoice  # type: ignore
@@ -406,7 +406,7 @@ def compute_fee_summary_for_invoice_payment(
         or timezone.now()
     )
 
-    monthly_volume = _monthly_paid_invoice_volume_for_contractor(contractor)
+    monthly_volume = get_monthly_paid_invoice_volume_for_contractor(contractor)
 
     rate_info = get_fee_rate_for_contractor(
         contractor_created_at=contractor_created_at,
@@ -461,7 +461,7 @@ def calculate_total_allowed_fee_cents_for_agreement_total(
         or getattr(getattr(contractor, "user", None), "date_joined", None)
         or timezone.now()
     )
-    monthly_volume = _monthly_paid_invoice_volume_for_contractor(contractor)
+    monthly_volume = get_monthly_paid_invoice_volume_for_contractor(contractor)
     rate_info = get_fee_rate_for_contractor(
         contractor_created_at=contractor_created_at,
         monthly_volume=monthly_volume,
