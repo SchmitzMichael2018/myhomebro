@@ -270,7 +270,7 @@ function openInNewTab(url) {
 export default function AgreementDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, ready, isAuthed } = useAuth();
 
   const [agreement, setAgreement] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -537,6 +537,12 @@ export default function AgreementDetail() {
   useEffect(() => {
     const fetchFundingPreview = async () => {
       if (!id) return;
+      if (!ready || !isAuthed) {
+        setFundingPreview(null);
+        setFundingError("");
+        setFundingLoading(false);
+        return;
+      }
 
       // ✅ Direct Pay: do not load escrow funding preview
       if (norm.isDirectPay) {
@@ -554,7 +560,6 @@ export default function AgreementDetail() {
         );
         setFundingPreview(data);
       } catch (err) {
-        console.error("funding_preview error:", err);
         const msg =
           err?.response?.data?.detail ||
           "Unable to load fee & escrow summary. Totals are still valid, but rate info is unavailable.";
@@ -567,7 +572,7 @@ export default function AgreementDetail() {
 
     fetchFundingPreview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, norm.isDirectPay]);
+  }, [id, norm.isDirectPay, ready, isAuthed]);
 
   const handleSigned = async () => {
     await fetchAgreement();

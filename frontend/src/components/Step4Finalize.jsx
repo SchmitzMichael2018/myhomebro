@@ -14,6 +14,7 @@ import Modal from "react-modal";
 import SignatureModal from "./SignatureModal";
 import SendFundingLinkButton from "./SendFundingLinkButton";
 import ClarificationsModal from "./ClarificationsModal";
+import { useAuth } from "../context/AuthContext";
 import { normalizeProjectClass } from "../utils/projectClass.js";
 
 Modal.setAppElement("#root");
@@ -833,6 +834,7 @@ export default function Step4Finalize({
   const [fundingError, setFundingError] = useState("");
   const [unsigning, setUnsigning] = useState(false);
   const [paymentModeSaving, setPaymentModeSaving] = useState(false);
+  const { ready: authReady, isAuthed } = useAuth();
 
   const paymentMode = useMemo(() => {
     const rawAgreementMode = agreement?.payment_mode || agreement?.paymentMode || "";
@@ -1091,6 +1093,13 @@ export default function Step4Finalize({
         return;
       }
 
+      if (!authReady || !isAuthed) {
+        setFundingPreview(null);
+        setFundingError("");
+        setFundingLoading(false);
+        return;
+      }
+
       if (isDirectPay) {
         setFundingPreview(null);
         setFundingError("");
@@ -1117,7 +1126,7 @@ export default function Step4Finalize({
       }
     };
     fetchFundingPreview();
-  }, [agreementId, amendmentNumber, projectAmount, isDirectPay]);
+  }, [agreementId, amendmentNumber, projectAmount, isDirectPay, authReady, isAuthed]);
 
   const homeownerAddressDisplay = getHomeownerAddressFromAgreement(agreement, homeownerObj);
   const projectAddressDisplay = getProjectAddressFromAgreement(agreement);

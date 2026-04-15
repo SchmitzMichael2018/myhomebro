@@ -211,6 +211,45 @@ class IsContractorOrReadOnly(permissions.BasePermission):
         return request.user and request.user.is_authenticated
 
 
+def _normalized_email(value) -> str:
+    return str(value or "").strip().lower()
+
+
+def _agreement_contractors(agreement: Agreement):
+    contractors = []
+    contractor = getattr(agreement, "contractor", None)
+    if contractor is not None:
+        contractors.append(contractor)
+
+    project = getattr(agreement, "project", None)
+    project_contractor = getattr(project, "contractor", None) if project else None
+    if project_contractor is not None and project_contractor not in contractors:
+        contractors.append(project_contractor)
+
+    return contractors
+
+
+def _can_view_funding_preview(request, agreement: Agreement) -> bool:
+    user = getattr(request, "user", None)
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+
+    if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
+        return True
+
+    for contractor in _agreement_contractors(agreement):
+        if getattr(getattr(contractor, "user", None), "id", None) == getattr(user, "id", None):
+            return True
+
+    homeowner_email = _normalized_email(
+        getattr(agreement, "homeowner_email", "") or getattr(getattr(agreement, "homeowner", None), "email", "")
+    )
+    if homeowner_email and _normalized_email(getattr(user, "email", "")) == homeowner_email:
+        return True
+
+    return False
+
+
 # ─────────────────────────────────────────────────────────────
 # Views
 # ─────────────────────────────────────────────────────────────
@@ -478,15 +517,28 @@ class FundingReceiptView(APIView):
 
 
 class AgreementFundingPreviewView(APIView):
-    permission_classes = [IsContractorOrReadOnly]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, pk: int, *args, **kwargs):
         try:
-            agreement = Agreement.objects.select_related("contractor", "contractor__user").get(pk=pk)
+            agreement = (
+                Agreement.objects.select_related(
+                    "contractor",
+                    "contractor__user",
+                    "project",
+                    "project__contractor",
+                    "project__contractor__user",
+                    "homeowner",
+                )
+                .get(pk=pk)
+            )
         except Agreement.DoesNotExist:
             return Response({"detail": "Agreement not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        contractor = getattr(agreement, "contractor", None)
+        if not _can_view_funding_preview(request, agreement):
+            return Response({"detail": "You do not have access to this agreement."}, status=status.HTTP_403_FORBIDDEN)
+
+        contractor = getattr(agreement, "contractor", None) or getattr(getattr(agreement, "project", None), "contractor", None)
         if not contractor:
             return Response({"detail": "Agreement is missing contractor metadata."}, status=status.HTTP_400_BAD_REQUEST)
 

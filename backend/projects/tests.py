@@ -7348,6 +7348,94 @@ class ContractorProcessedVolumePricingTests(TestCase):
         self.assertTrue(payload["intro_active"])
 
 
+class AgreementFundingPreviewAccessTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+
+        self.contractor_user = user_model.objects.create_user(
+            email="preview-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Preview Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Preview Homeowner",
+            email="preview-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Preview Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Preview agreement",
+            total_cost=Decimal("15000.00"),
+        )
+
+        self.other_user = user_model.objects.create_user(
+            email="other-contractor@example.com",
+            password="testpass123",
+        )
+        self.other_contractor = Contractor.objects.create(
+            user=self.other_user,
+            business_name="Other Contractor",
+        )
+        self.other_homeowner = Homeowner.objects.create(
+            created_by=self.other_contractor,
+            full_name="Other Homeowner",
+            email="other-homeowner@example.com",
+        )
+        self.other_project = Project.objects.create(
+            contractor=self.other_contractor,
+            homeowner=self.other_homeowner,
+            title="Other Preview Project",
+        )
+        Agreement.objects.create(
+            project=self.other_project,
+            contractor=self.other_contractor,
+            homeowner=self.other_homeowner,
+            description="Other preview agreement",
+            total_cost=Decimal("9000.00"),
+        )
+
+        self.homeowner_user = user_model.objects.create_user(
+            email=self.homeowner.email,
+            password="testpass123",
+        )
+
+        self.client = APIClient()
+
+    def test_contractor_can_access_own_agreement_funding_preview(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get(f"/api/projects/agreements/{self.agreement.id}/funding_preview/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["project_amount"], "15000.00")
+        self.assertIn("rate", payload)
+        self.assertIn("tier_name", payload)
+
+    def test_unrelated_contractor_cannot_access_funding_preview(self):
+        self.client.force_authenticate(user=self.other_user)
+        response = self.client.get(f"/api/projects/agreements/{self.agreement.id}/funding_preview/")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.json()["detail"], "You do not have access to this agreement.")
+
+    def test_homeowner_email_match_can_access_funding_preview(self):
+        self.client.force_authenticate(user=self.homeowner_user)
+        response = self.client.get(f"/api/projects/agreements/{self.agreement.id}/funding_preview/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["project_amount"], "15000.00")
+
+
 class ProjectLearningFoundationTests(TestCase):
     def setUp(self):
         user_model = get_user_model()

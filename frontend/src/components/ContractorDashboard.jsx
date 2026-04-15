@@ -3,6 +3,7 @@ import React, { useEffect, useId, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api, { getContractorDrawRequests, releaseDrawRequest, resendDrawReview } from "../api";
 import { toast } from "react-hot-toast";
+import { useAuth } from "../context/AuthContext";
 import PageShell from "./PageShell.jsx";
 import StatCard from "./StatCard.jsx";
 import Modal from "react-modal";
@@ -1028,6 +1029,7 @@ function EarnedBreakdownModal({ isOpen, onClose, invoices, expenses, loading }) 
 /* =============================== MAIN VIEW ================================= */
 /* ========================================================================== */
 export default function ContractorDashboard() {
+  const { ready: authReady, isAuthed } = useAuth();
   const [who, setWho] = useState(null);
   const [contractorProfile, setContractorProfile] = useState(null);
   const [activityFeed, setActivityFeed] = useState([]);
@@ -1082,6 +1084,7 @@ export default function ContractorDashboard() {
   useEffect(() => {
     let mounted = true;
     (async () => {
+      if (!authReady || !isAuthed) return;
       try {
         const { data } = await api.get("/projects/whoami/");
         if (!mounted) return;
@@ -1093,7 +1096,7 @@ export default function ContractorDashboard() {
       }
     })();
     return () => (mounted = false);
-  }, []);
+  }, [authReady, isAuthed]);
 
   /* ----- load dashboard data ----- */
   useEffect(() => {
@@ -1304,6 +1307,7 @@ export default function ContractorDashboard() {
     let mounted = true;
 
     const loadPricing = async () => {
+      if (!authReady || !isAuthed || !who) return;
       if (isEmployee) {
         setPricing({ loading: false, rate: null, fixed_fee: 1, is_intro: null, tier_name: null, error: "" });
         return;
@@ -1342,7 +1346,6 @@ export default function ContractorDashboard() {
           error: "",
         });
       } catch (err) {
-        console.error("Failed to load pricing (funding_preview)", err);
         if (!mounted) return;
         setPricing({ loading: false, rate: null, fixed_fee: 1, is_intro: null, tier_name: null, error: "" });
       }
@@ -1352,7 +1355,7 @@ export default function ContractorDashboard() {
     return () => {
       mounted = false;
     };
-  }, [isEmployee]);
+  }, [authReady, isAuthed, who, isEmployee]);
 
   // Build invoice lookup map (so milestones can compute Paid)
   const invoicesById = useMemo(() => {
