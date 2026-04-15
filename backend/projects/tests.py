@@ -119,6 +119,7 @@ from projects.services.sms_service import (
     set_sms_opt_in,
     set_sms_opt_out,
 )
+from payments.fees import compute_fee_summary, get_monthly_processed_volume_for_contractor
 from projects.services.sms_automation import build_sms_automation_summary, evaluate_sms_automation
 from payments.webhooks import (
     _handle_direct_pay_checkout_completed,
@@ -7199,6 +7200,152 @@ class ProgressPaymentWorkflowTests(TestCase):
         self.assertEqual(payload["approved_to_date"], "2500.00")
         self.assertEqual(payload["paid_to_date"], "2250.00")
         self.assertEqual(payload["retainage_held"], "250.00")
+
+
+class ContractorProcessedVolumePricingTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="volume-contractor@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Volume Contractor",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Volume Homeowner",
+            email="volume-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Volume Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Volume agreement",
+            payment_structure="progress",
+            payment_mode="escrow",
+            total_cost=Decimal("50000.00"),
+        )
+        self.now = timezone.now()
+
+    def _create_paid_invoice(self, *, amount, **kwargs):
+        return Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal(str(amount)),
+            status=InvoiceStatus.PAID,
+            escrow_released=True,
+            escrow_released_at=self.now,
+            **kwargs,
+        )
+
+    def _create_released_draw(self, *, gross_amount, **kwargs):
+        return DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=kwargs.pop("draw_number", DrawRequest.objects.filter(agreement=self.agreement).count() + 1),
+            status=DrawRequestStatus.RELEASED,
+            title=kwargs.pop("title", "Released Draw"),
+            gross_amount=Decimal(str(gross_amount)),
+            retainage_amount=Decimal("0.00"),
+            net_amount=Decimal(str(gross_amount)),
+            released_at=self.now,
+            paid_at=None,
+            **kwargs,
+        )
+
+    def test_invoice_only_monthly_volume_counts_paid_invoice_activity(self):
+        self._create_paid_invoice(amount="1250.00")
+
+        volume = get_monthly_processed_volume_for_contractor(self.contractor)
+
+        self.assertEqual(volume, Decimal("1250.00"))
+
+    def test_draw_only_monthly_volume_counts_released_draw_activity(self):
+        self._create_released_draw(gross_amount="2400.00")
+
+        volume = get_monthly_processed_volume_for_contractor(self.contractor)
+
+        self.assertEqual(volume, Decimal("2400.00"))
+
+    def test_mixed_invoice_and_draw_monthly_volume_is_unified(self):
+        self._create_paid_invoice(amount="1250.00")
+        self._create_released_draw(gross_amount="2400.00")
+
+        volume = get_monthly_processed_volume_for_contractor(self.contractor)
+
+        self.assertEqual(volume, Decimal("3650.00"))
+
+    def test_threshold_crossing_uses_combined_monthly_volume(self):
+        self._create_paid_invoice(amount="8000.00")
+        self._create_released_draw(gross_amount="18000.00")
+
+        summary = compute_fee_summary(
+            project_amount=Decimal("1000.00"),
+            contractor_created_at=self.now - timedelta(days=120),
+            contractor=self.contractor,
+            fee_payer="contractor",
+            today=self.now.date(),
+        )
+
+        self.assertEqual(summary.rate_info.tier_name, "tier3")
+        self.assertEqual(summary.rate_info.rate, Decimal("0.035"))
+
+    def test_intro_period_still_overrides_volume_logic(self):
+        self._create_paid_invoice(amount="15000.00")
+        self._create_released_draw(gross_amount="15000.00")
+
+        summary = compute_fee_summary(
+            project_amount=Decimal("1000.00"),
+            contractor_created_at=self.now - timedelta(days=10),
+            contractor=self.contractor,
+            fee_payer="contractor",
+            today=self.now.date(),
+        )
+
+        self.assertTrue(summary.rate_info.is_intro)
+        self.assertEqual(summary.rate_info.tier_name, "intro")
+        self.assertEqual(summary.rate_info.rate, Decimal("0.03"))
+
+    def test_linked_draw_payment_record_is_not_double_counted(self):
+        draw = self._create_released_draw(gross_amount="2000.00")
+        ExternalPaymentRecord.objects.create(
+            agreement=self.agreement,
+            draw_request=draw,
+            gross_amount=Decimal("2000.00"),
+            retainage_withheld_amount=Decimal("0.00"),
+            net_amount=Decimal("2000.00"),
+            payment_method="ach",
+            payment_date=timezone.localdate(),
+            reference_number="DRAW-2000",
+            notes="Recorded draw payment",
+            status=ExternalPaymentStatus.VERIFIED,
+            recorded_by=self.contractor_user,
+        )
+
+        volume = get_monthly_processed_volume_for_contractor(self.contractor)
+
+        self.assertEqual(volume, Decimal("2000.00"))
+
+    def test_contractor_profile_pricing_summary_uses_unified_volume(self):
+        self._create_paid_invoice(amount="8000.00")
+        self._create_released_draw(gross_amount="18000.00")
+
+        client = APIClient()
+        client.force_authenticate(user=self.contractor_user)
+        response = client.get("/api/projects/contractors/me/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()["pricing_summary"]
+        self.assertEqual(payload["monthly_volume"], "26000.00")
+        self.assertEqual(payload["monthly_invoice_volume"], "8000.00")
+        self.assertEqual(payload["monthly_draw_volume"], "18000.00")
+        self.assertEqual(payload["tier_type"], "intro")
+        self.assertTrue(payload["intro_active"])
 
 
 class ProjectLearningFoundationTests(TestCase):

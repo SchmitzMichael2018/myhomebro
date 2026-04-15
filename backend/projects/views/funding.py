@@ -34,7 +34,6 @@ from projects.services.contractor_onboarding import build_stripe_requirement_pay
 from projects.services.mailer import email_escrow_funding_request
 from payments.fees import (
     compute_fee_summary,
-    get_monthly_paid_invoice_volume_for_contractor,
     INTRO_DAYS,
 )  # ✅ pull intro days for UI consistency
 
@@ -45,9 +44,6 @@ stripe.api_key = getattr(settings, "STRIPE_SECRET_KEY", None)
 # ─────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────
-
-def get_contractor_monthly_volume(contractor) -> Decimal:
-    return get_monthly_paid_invoice_volume_for_contractor(contractor)
 
 
 def _to_decimal(v, default: str = "0.00") -> Decimal:
@@ -499,13 +495,11 @@ class AgreementFundingPreviewView(APIView):
 
         sync = _sync_funding_flags(agreement, heal_total=True, persist=True)
         total_required = sync["total_required"]
-        monthly_volume = get_contractor_monthly_volume(contractor)
-
         try:
             summary = compute_fee_summary(
                 project_amount=total_required,
                 contractor_created_at=pricing_start,
-                monthly_volume=monthly_volume,
+                contractor=contractor,
                 fee_payer="contractor",
                 is_high_risk=getattr(agreement, "is_high_risk", False),
                 today=timezone.now().date(),

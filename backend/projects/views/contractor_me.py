@@ -23,7 +23,7 @@ from payments.fees import (
     INTRO_DAYS,
     MAX_PLATFORM_FEE,
     get_fee_rate_for_contractor,
-    get_monthly_paid_invoice_volume_for_contractor,
+    get_monthly_processed_volume_breakdown_for_contractor,
 )
 
 INTRO_DAYS_TOTAL = INTRO_DAYS
@@ -125,7 +125,8 @@ class ContractorMeView(APIView):
 
         pricing_start_dt = user_joined_dt or contractor_created_dt
         intro_active, intro_days_remaining = _compute_intro(pricing_start_dt)
-        monthly_volume = get_monthly_paid_invoice_volume_for_contractor(c)
+        volume_breakdown = get_monthly_processed_volume_breakdown_for_contractor(c)
+        monthly_volume = volume_breakdown["total_volume"]
         rate_info = get_fee_rate_for_contractor(
             contractor_created_at=pricing_start_dt or timezone.now(),
             monthly_volume=monthly_volume,
@@ -198,6 +199,8 @@ class ContractorMeView(APIView):
                 "intro_days_remaining": intro_days_remaining,
                 "monthly_volume": f"{monthly_volume:.2f}",
                 "monthly_volume_label": f"${monthly_volume:,.2f}",
+                "monthly_invoice_volume": f"{volume_breakdown['invoice_volume']:.2f}",
+                "monthly_draw_volume": f"{volume_breakdown['draw_volume']:.2f}",
                 "volume_discount_threshold": f"{volume_discount_threshold:.2f}",
                 "volume_discount_active": bool(volume_discount_active),
                 "volume_discount_label": volume_status_label,
