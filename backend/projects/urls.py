@@ -200,6 +200,7 @@ from .views.payout_history import (
     ContractorPayoutHistoryExportView,
     ContractorPayoutHistoryView,
 )
+from .views.contractor_payout_history import ContractorPayoutHistoryView as ContractorCompletedPayoutHistoryView
 from .views.milestone_workflow import (
     approve_work_submission,
     reviewer_queue,
@@ -614,6 +615,7 @@ urlpatterns = [
     path("payouts/history/", ContractorPayoutHistoryView.as_view()),
     path("payouts/history/<int:payout_id>/", ContractorPayoutDetailView.as_view()),
     path("payouts/history/export/", ContractorPayoutHistoryExportView.as_view()),
+    path("contractor/payout-history/", ContractorCompletedPayoutHistoryView.as_view()),
 
     # -------------------------------------------------
     # Public dispute decision

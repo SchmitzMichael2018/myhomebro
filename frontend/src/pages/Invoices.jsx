@@ -417,14 +417,24 @@ export default function Invoices() {
         </div>
       ) : null}
 
-      <div className="mb-5">
-        <div className="text-2xl font-extrabold text-slate-900">Payments</div>
-        <div className="mt-1 text-sm text-slate-600">
-          One contractor-facing money view across invoices and draw requests, with filters to separate the underlying record types.
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-2xl font-extrabold text-slate-900">Payments</div>
+          <div className="mt-1 text-sm text-slate-600">
+            One contractor-facing money view across invoices and draw requests, with filters to separate the underlying record types.
+          </div>
+          <div className="mt-2 text-sm text-slate-500">
+            {loading ? "Loading payment records…" : `${totals.count} records • ${money(totals.total)} total`}
+          </div>
         </div>
-        <div className="mt-2 text-sm text-slate-500">
-          {loading ? "Loading payment records…" : `${totals.count} records • ${money(totals.total)} total`}
-        </div>
+        <button
+          type="button"
+          data-testid="payments-open-payout-history"
+          onClick={() => navigate("/app/payout-history")}
+          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          Payout History
+        </button>
       </div>
 
       <div className="mb-5 grid gap-3 md:grid-cols-4">

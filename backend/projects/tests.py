@@ -24,6 +24,7 @@ from projects.models import (
     Agreement,
     AgreementAIScope,
     AgreementMode,
+    AgreementProjectClass,
     AgreementOutcomeMilestoneSnapshot,
     AgreementOutcomeSnapshot,
     Contractor,
@@ -5510,6 +5511,128 @@ class ContractorPayoutHistoryTests(TestCase):
 
         missing_response = self.client.get("/api/projects/payouts/history/999999/")
         self.assertEqual(missing_response.status_code, 404)
+
+
+class ContractorCompletedPayoutHistoryTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="completed-payout-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Completed Payout Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Completed Homeowner",
+            email="completed-homeowner@example.com",
+        )
+        self.res_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Residential Finish",
+        )
+        self.com_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Commercial Finish",
+        )
+        self.res_agreement = Agreement.objects.create(
+            project=self.res_project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Residential payout agreement",
+            project_class=AgreementProjectClass.RESIDENTIAL,
+        )
+        self.com_agreement = Agreement.objects.create(
+            project=self.com_project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Commercial payout agreement",
+            project_class=AgreementProjectClass.COMMERCIAL,
+        )
+
+        self.non_contractor_user = user_model.objects.create_user(
+            email="non-contractor-payout@example.com",
+            password="testpass123",
+        )
+
+        now = timezone.now()
+        self.invoice = Invoice.objects.create(
+            agreement=self.res_agreement,
+            amount="1200.00",
+            status=InvoiceStatus.PAID,
+            escrow_released=True,
+            escrow_released_at=now - timezone.timedelta(days=2),
+            stripe_transfer_id="tr_invoice_completed",
+            platform_fee_cents=6000,
+            payout_cents=114000,
+        )
+        self.draw = DrawRequest.objects.create(
+            agreement=self.com_agreement,
+            draw_number=1,
+            status=DrawRequestStatus.RELEASED,
+            title="Commercial Draw",
+            gross_amount="1800.00",
+            retainage_amount="90.00",
+            net_amount="1710.00",
+            previous_payments_amount="0.00",
+            current_requested_amount="1800.00",
+            platform_fee_cents=9000,
+            payout_cents=171000,
+            released_at=now - timezone.timedelta(days=1),
+            transfer_created_at=now - timezone.timedelta(days=1),
+            stripe_transfer_id="tr_draw_completed",
+        )
+        self.client = APIClient()
+
+    def test_contractor_sees_completed_invoice_and_draw_payouts(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/contractor/payout-history/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        rows = payload["results"]
+        self.assertEqual(len(rows), 2)
+
+        invoice_row = next(row for row in rows if row["record_type"] == "invoice")
+        draw_row = next(row for row in rows if row["record_type"] == "draw_request")
+
+        self.assertEqual(invoice_row["project_class_label"], "Residential")
+        self.assertEqual(invoice_row["transfer_ref"], "tr_invoice_completed")
+        self.assertEqual(invoice_row["status_label"], "Paid")
+        self.assertEqual(draw_row["project_class_label"], "Commercial")
+        self.assertEqual(draw_row["transfer_ref"], "tr_draw_completed")
+        self.assertEqual(draw_row["status_label"], "Paid")
+
+        summary = payload["summary"]
+        self.assertEqual(summary["total_paid_out"], "2850.00")
+        self.assertEqual(summary["total_platform_fees_retained"], "150.00")
+        self.assertEqual(summary["total_gross_released"], "3000.00")
+        self.assertEqual(summary["payout_count"], 2)
+        self.assertEqual(summary["invoice_count"], 1)
+        self.assertEqual(summary["draw_count"], 1)
+
+    def test_filters_apply_by_project_class_and_access_stays_contractor_scoped(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get(
+            "/api/projects/contractor/payout-history/",
+            {"project_class": "commercial"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["results"]), 1)
+        self.assertEqual(payload["results"][0]["record_type"], "draw_request")
+        self.assertEqual(payload["summary"]["total_paid_out"], "1710.00")
+        self.assertEqual(payload["summary"]["payout_count"], 1)
+
+        other_client = APIClient()
+        other_client.force_authenticate(user=self.non_contractor_user)
+        forbidden = other_client.get("/api/projects/contractor/payout-history/")
+        self.assertEqual(forbidden.status_code, 403)
 
 
 class BusinessDashboardExportTests(TestCase):

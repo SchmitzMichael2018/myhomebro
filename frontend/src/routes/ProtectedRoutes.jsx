@@ -57,6 +57,7 @@ import SubcontractorsPage from "../pages/SubcontractorsPage.jsx";
 import ReviewerQueuePage from "../pages/ReviewerQueuePage.jsx";
 import PayoutHistoryPage from "../pages/PayoutHistoryPage.jsx";
 import PayoutDetailPage from "../pages/PayoutDetailPage.jsx";
+import ContractorPayoutHistoryPage from "../pages/ContractorPayoutHistoryPage.jsx";
 import ContractorPublicPresencePage from "../pages/ContractorPublicPresencePage.jsx";
 import AIAssistantPage from "../pages/AIAssistantPage.jsx";
 
@@ -138,6 +139,7 @@ export function protectedRoutes() {
           <Route path="assistant" element={<AIAssistantPage />} />
           <Route path="payouts/history" element={<PayoutHistoryPage />} />
           <Route path="payouts/history/:id" element={<PayoutDetailPage />} />
+          <Route path="payout-history" element={<ContractorPayoutHistoryPage />} />
 
           <Route path="business" element={<BusinessDashboard />} />
           <Route
