@@ -255,7 +255,9 @@ test("customer portal is reachable from the landing page and loads secure record
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("landing-hero-heading")).toContainText("Start your project with MyHomeBro");
-  await expect(page.getByTestId("landing-customer-portal-button")).toHaveText("View My Records");
+  await expect(page.getByTestId("landing-customer-portal-button")).toHaveText("View Your Project");
+  await expect(page.getByRole("button", { name: "Join MyHomeBro" })).toBeVisible();
+  await expect(page.getByText("For Contractors")).toBeVisible();
 
   await page.getByTestId("landing-customer-portal-button").click();
   await expect(page).toHaveURL(/\/portal$/);

@@ -97,37 +97,44 @@ export default function LandingPage() {
           />
         </div>
 
-        <div style={S.ctas}>
-          <button onClick={openSignup} style={{ ...S.btn, ...S.btnPrimary }} type="button">
-            Contractor Sign Up
-          </button>
+        <div style={S.ctaStack}>
+          <div style={S.customerCtas}>
+            <button
+              data-testid="landing-start-project-intake-button"
+              onClick={() => navigate("/start-project")}
+              style={{ ...S.btn, ...S.btnPrimary }}
+              type="button"
+            >
+              Start Your Project
+            </button>
 
-          <button
-            data-testid="landing-sign-in-button"
-            onClick={() => openLogin("login")}
-            style={S.btn}
-            type="button"
-          >
-            Sign In
-          </button>
+            <button
+              data-testid="landing-customer-portal-button"
+              onClick={() => navigate("/portal")}
+              style={S.btn}
+              type="button"
+            >
+              View Your Project
+            </button>
+          </div>
 
-          <button
-            data-testid="landing-customer-portal-button"
-            onClick={() => navigate("/portal")}
-            style={S.btn}
-            type="button"
-          >
-            View My Records
-          </button>
+          <div style={S.contractorCtaGroup}>
+            <div style={S.contractorLabel}>For Contractors</div>
+            <div style={S.contractorCtas}>
+              <button onClick={openSignup} style={{ ...S.btn, ...S.btnSecondary }} type="button">
+                Join MyHomeBro
+              </button>
 
-          <button
-            data-testid="landing-start-project-intake-button"
-            onClick={() => navigate("/start-project")}
-            style={S.btn}
-            type="button"
-          >
-            Start a Project
-          </button>
+              <button
+                data-testid="landing-sign-in-button"
+                onClick={() => openLogin("login")}
+                style={S.btn}
+                type="button"
+              >
+                Contractor Sign In
+              </button>
+            </div>
+          </div>
         </div>
 
         <div style={S.pricingWrap}>
@@ -386,12 +393,36 @@ const S = {
   },
   badgeText: { textAlign: "left" },
 
-  ctas: {
-    marginTop: 22,
-    display: "flex",
+  ctaStack: {
+    marginTop: 24,
+    display: "grid",
+    gap: 14,
+    textAlign: "left",
+  },
+  customerCtas: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
     gap: 12,
-    justifyContent: "center",
-    flexWrap: "wrap",
+  },
+  contractorCtaGroup: {
+    padding: 14,
+    borderRadius: 18,
+    background: "rgba(255,255,255,.10)",
+    border: "1px solid rgba(255,255,255,.18)",
+    boxShadow: "0 8px 20px rgba(15,23,42,.10)",
+  },
+  contractorLabel: {
+    fontSize: 11,
+    fontWeight: 800,
+    letterSpacing: "0.18em",
+    textTransform: "uppercase",
+    color: "rgba(255,255,255,.86)",
+    marginBottom: 10,
+  },
+  contractorCtas: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+    gap: 12,
   },
   btn: {
     padding: "12px 18px",
@@ -408,6 +439,12 @@ const S = {
     background: "linear-gradient(135deg, #0d47ff 0%, #6b86ff 60%)",
     borderColor: "transparent",
     color: "#fff",
+  },
+  btnSecondary: {
+    background: "rgba(255,255,255,.95)",
+    borderColor: "rgba(255,255,255,.88)",
+    color: "#0f172a",
+    boxShadow: "0 8px 18px rgba(15,23,42,.10)",
   },
 
   featuresWrap: {

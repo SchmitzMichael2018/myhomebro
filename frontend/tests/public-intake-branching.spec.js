@@ -84,7 +84,11 @@ test("landing page drives into intake and public intake shows branching choices 
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("landing-hero-heading")).toContainText("Start your project with MyHomeBro");
-  await expect(page.getByTestId("landing-start-project-intake-button")).toHaveText("Start a Project");
+  await expect(page.getByTestId("landing-start-project-intake-button")).toHaveText("Start Your Project");
+  await expect(page.getByTestId("landing-customer-portal-button")).toHaveText("View Your Project");
+  await expect(page.getByText("For Contractors")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Join MyHomeBro" })).toBeVisible();
+  await expect(page.getByTestId("landing-sign-in-button")).toHaveText("Contractor Sign In");
   await expect(page.getByText("After you submit your request, you can either invite one contractor or request multiple bids.")).toBeVisible();
 
   await page.getByTestId("landing-start-project-intake-button").click();
