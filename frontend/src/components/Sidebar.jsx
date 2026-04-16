@@ -45,6 +45,7 @@ const NAV_HINTS = {
   "/app/subcontractors": "Manage your team, subcontractors, and assignments",
   "/app/public-presence": "Showcase your work and build trust with customers",
   "/app/bids": "Track incoming bids before they turn into agreements",
+  "/app/customer-records": "See requests, bids, agreements, and payments in one place",
   "/app/assignments": "Track work assigned to you and your team",
   "/app/team-schedule": "View upcoming work, deadlines, and project timelines",
   "/app/team": "Manage your team, subcontractors, and assignments",
@@ -356,6 +357,7 @@ export default function Sidebar({ variant = "desktop" }) {
         <Item to={`${APP_BASE}/team`} label="Team" icon={Users} />
         <Item to={`${APP_BASE}/invoices`} label="Invoices" icon={CreditCard} />
         <Item to={`${APP_BASE}/customers`} label="Customers" icon={Users} />
+        <Item to={`${APP_BASE}/customer-records`} label="Records" icon={ClipboardList} />
         <Item to={`${APP_BASE}/calendar`} label="Calendar" icon={CalendarDays} />
         <Item to={`${APP_BASE}/expenses`} label="Expenses" icon={HandCoins} />
         <Item to={`${APP_BASE}/disputes`} label="Disputes" icon={MessageSquareWarning} />

@@ -235,12 +235,20 @@ export default function Customers() {
       title="My Customers"
       subtitle="Track customer relationships, keep contact details close, and move from lead to active project with less friction."
       actions={
-        <Link
-          to={CUSTOMER_NEW_ROUTE}
-          className="inline-flex min-h-[42px] items-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
-        >
-          + Add New Customer
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            to="/app/customer-records"
+            className="inline-flex min-h-[42px] items-center rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            Records
+          </Link>
+          <Link
+            to={CUSTOMER_NEW_ROUTE}
+            className="inline-flex min-h-[42px] items-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+          >
+            + Add New Customer
+          </Link>
+        </div>
       }
     >
       <div className="grid gap-3 sm:grid-cols-3" data-testid="customers-summary">
