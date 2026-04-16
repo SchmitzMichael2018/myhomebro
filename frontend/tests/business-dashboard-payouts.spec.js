@@ -111,6 +111,25 @@ test('business dashboard shows payout reporting and links to full history', asyn
           metric: 'overdue_milestones',
           label: 'Overdue Milestones',
         },
+        business_performance: {
+          funnel: {
+            requests_received: 8,
+            bids_submitted: 6,
+            bids_awarded: 4,
+            agreements_created: 3,
+            paid_projects: 2,
+          },
+          conversion_rates: {
+            request_to_bid_rate: '75.00',
+            bid_to_award_rate: '66.67',
+            award_to_paid_rate: '50.00',
+          },
+          revenue: {
+            total_paid: '10000.00',
+            total_pipeline_value: '18000.00',
+            average_project_value: '6000.00',
+          },
+        },
         by_category: [],
         insights: [
           {
@@ -267,6 +286,18 @@ test('business dashboard shows payout reporting and links to full history', asyn
   await page.goto('/app/business', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('dashboard-charts-section')).toBeVisible();
+  await expect(page.getByTestId('dashboard-business-performance-section')).toBeVisible();
+  await expect(page.getByTestId('dashboard-business-performance-step-requests_received')).toContainText('8');
+  await expect(page.getByTestId('dashboard-business-performance-step-bids_submitted')).toContainText('6');
+  await expect(page.getByTestId('dashboard-business-performance-step-bids_awarded')).toContainText('4');
+  await expect(page.getByTestId('dashboard-business-performance-step-agreements_created')).toContainText('3');
+  await expect(page.getByTestId('dashboard-business-performance-step-paid_projects')).toContainText('2');
+  await expect(page.getByTestId('dashboard-business-performance-section')).toContainText('75.0%');
+  await expect(page.getByTestId('dashboard-business-performance-section')).toContainText('66.7%');
+  await expect(page.getByTestId('dashboard-business-performance-section')).toContainText('50.0%');
+  await expect(page.getByTestId('dashboard-business-performance-section')).toContainText('$10,000.00');
+  await expect(page.getByTestId('dashboard-business-performance-section')).toContainText('$18,000.00');
+  await expect(page.getByTestId('dashboard-business-performance-section')).toContainText('$6,000.00');
   await expect(page.getByTestId('dashboard-chart-revenue')).toContainText('Revenue Over Time');
   await expect(page.getByTestId('dashboard-chart-fees')).toContainText('Fees Over Time');
   await expect(page.getByTestId('dashboard-chart-fees')).toContainText('Platform fees: $640.00');
@@ -396,6 +427,25 @@ test('business dashboard charts show empty states cleanly for low-data ranges', 
           metric: 'overdue_milestones',
           label: 'Overdue Milestones',
         },
+        business_performance: {
+          funnel: {
+            requests_received: 0,
+            bids_submitted: 0,
+            bids_awarded: 0,
+            agreements_created: 0,
+            paid_projects: 0,
+          },
+          conversion_rates: {
+            request_to_bid_rate: '0.00',
+            bid_to_award_rate: '0.00',
+            award_to_paid_rate: '0.00',
+          },
+          revenue: {
+            total_paid: '0.00',
+            total_pipeline_value: '0.00',
+            average_project_value: '0.00',
+          },
+        },
         by_category: [],
         insights: [],
       }),
@@ -446,6 +496,7 @@ test('business dashboard charts show empty states cleanly for low-data ranges', 
   await expect(page.getByTestId('dashboard-chart-workflow')).toContainText(
     'No overdue milestones in this range.'
   );
+  await expect(page.getByTestId('dashboard-business-performance-empty')).toBeVisible();
   await page.getByTestId('chart-point-revenue-2026-03-20').click();
   await expect(page.getByTestId('dashboard-drilldown-modal')).toBeVisible();
   await expect(page.getByTestId('drilldown-empty')).toContainText('No records for this period');

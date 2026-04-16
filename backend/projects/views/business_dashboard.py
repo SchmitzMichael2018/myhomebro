@@ -6,7 +6,7 @@ from datetime import timedelta, datetime, date
 from decimal import Decimal
 
 from django.http import HttpResponse
-from django.db.models import Sum
+from django.db.models import Sum, Q
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -26,8 +26,10 @@ from projects.models import (
     InvoiceStatus,
     Milestone,
     MilestonePayoutStatus,
+    PublicContractorLead,
     ProjectStatus,
 )
+from projects.models_project_intake import ProjectIntake
 from projects.services.business_insights import build_business_insights
 from projects.views.payout_history import _apply_history_filters, _history_base_queryset, _serialize_payout_row
 
@@ -145,6 +147,105 @@ def _amount_to_cents(value):
 def _sum_money_series(rows, key, divisor=Decimal("100")):
     total = sum(Decimal(row.get(key) or 0) for row in rows)
     return str((total / divisor).quantize(Decimal("0.01")))
+
+
+def _percent_value(numerator: int, denominator: int) -> str:
+    if not denominator:
+        return "0.00"
+    return str((Decimal(numerator) / Decimal(denominator) * Decimal("100")).quantize(Decimal("0.01")))
+
+
+def _build_business_performance_summary(contractor, start_dt, end_dt):
+    request_qs = ProjectIntake.objects.filter(
+        contractor=contractor,
+        status__in=[
+            "submitted",
+            "analyzed",
+            "converted",
+        ],
+    ).filter(
+        Q(submitted_at__gte=start_dt, submitted_at__lte=end_dt)
+        | (Q(submitted_at__isnull=True) & Q(created_at__gte=start_dt, created_at__lte=end_dt))
+    )
+
+    lead_qs = PublicContractorLead.objects.filter(
+        contractor=contractor,
+        updated_at__gte=start_dt,
+        updated_at__lte=end_dt,
+    )
+
+    request_received_count = request_qs.count()
+    bids_submitted_count = lead_qs.exclude(status=PublicContractorLead.STATUS_NEW).count()
+    bids_awarded_count = lead_qs.filter(
+        status=PublicContractorLead.STATUS_ACCEPTED
+    ).filter(
+        Q(accepted_at__gte=start_dt, accepted_at__lte=end_dt)
+        | Q(converted_at__gte=start_dt, converted_at__lte=end_dt)
+        | (Q(accepted_at__isnull=True) & Q(converted_at__isnull=True))
+    ).count()
+
+    agreements_qs = Agreement.objects.filter(
+        contractor=contractor,
+        created_at__gte=start_dt,
+        created_at__lte=end_dt,
+    )
+    agreements_created_count = agreements_qs.count()
+
+    invoice_qs = Invoice.objects.filter(
+        agreement__contractor=contractor,
+        status=InvoiceStatus.PAID,
+    ).filter(
+        Q(escrow_released_at__gte=start_dt, escrow_released_at__lte=end_dt)
+        | Q(direct_pay_paid_at__gte=start_dt, direct_pay_paid_at__lte=end_dt)
+    )
+    draw_qs = DrawRequest.objects.filter(
+        agreement__contractor=contractor,
+        status__in=[DrawRequestStatus.RELEASED, DrawRequestStatus.PAID],
+    ).filter(
+        Q(paid_at__gte=start_dt, paid_at__lte=end_dt)
+        | Q(released_at__gte=start_dt, released_at__lte=end_dt)
+    )
+
+    paid_invoice_total = (
+        invoice_qs.aggregate(total=Coalesce(Sum("amount"), Decimal("0.00")))["total"]
+    ).quantize(Decimal("0.01"))
+    paid_draw_total = (
+        draw_qs.aggregate(total=Coalesce(Sum("gross_amount"), Decimal("0.00")))["total"]
+    ).quantize(Decimal("0.01"))
+    total_paid = (paid_invoice_total + paid_draw_total).quantize(Decimal("0.01"))
+
+    paid_project_ids = set(invoice_qs.values_list("agreement_id", flat=True))
+    paid_project_ids.update(draw_qs.values_list("agreement_id", flat=True))
+    paid_projects_count = len(paid_project_ids)
+
+    pipeline_value = (
+        agreements_qs.aggregate(total=Coalesce(Sum("total_cost"), Decimal("0.00")))["total"]
+    ).quantize(Decimal("0.01"))
+    average_project_value = (
+        (pipeline_value / agreements_created_count).quantize(Decimal("0.01"))
+        if agreements_created_count
+        else Decimal("0.00")
+    )
+
+    return {
+        "funnel": {
+            "requests_received": request_received_count,
+            "bids_submitted": bids_submitted_count,
+            "bids_awarded": bids_awarded_count,
+            "agreements_created": agreements_created_count,
+            "paid_projects": paid_projects_count,
+        },
+        "conversion_rates": {
+            "request_to_bid_rate": _percent_value(bids_submitted_count, request_received_count),
+            "bid_to_award_rate": _percent_value(bids_awarded_count, bids_submitted_count),
+            "award_to_paid_rate": _percent_value(paid_projects_count, bids_awarded_count),
+        },
+        "revenue": {
+            "total_paid": str(total_paid),
+            "total_pipeline_value": str(pipeline_value),
+            "average_project_value": str(average_project_value),
+        },
+    }
 
 
 def _build_chart_series(contractor, request, start_dt, end_dt):
@@ -646,6 +747,9 @@ class BusinessDashboardSummaryAPIView(APIView):
                 "disputes_open": invoices.filter(disputed=True).count(),
                 "avg_completion_days": avg_completion_days,
             },
+            "business_performance": _build_business_performance_summary(
+                contractor, start_dt, end_dt
+            ),
             "by_category": category_rows,
             "insights": build_business_insights(contractor, start_dt, end_dt),
             "progress_summary": _build_progress_summary(contractor, end_dt),

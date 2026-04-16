@@ -37,6 +37,11 @@ function num(v, digits = 2) {
   return Number.isFinite(n) ? n.toFixed(digits) : "0.00";
 }
 
+function pct(v, digits = 1) {
+  const n = Number(v || 0);
+  return Number.isFinite(n) ? `${n.toFixed(digits)}%` : "0.0%";
+}
+
 function Empty({ text }) {
   return (
     <div className="rounded-lg border border-dashed border-gray-200 p-6 text-center text-sm text-gray-500">
@@ -150,6 +155,26 @@ function ChartCard({ title, description, testId, children }) {
         <div className="mt-1 text-sm text-slate-600">{description}</div>
       </div>
       {children}
+    </div>
+  );
+}
+
+function FunnelStep({ label, value, sub, fillPct, testId }) {
+  return (
+    <div data-testid={testId} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-slate-600">{label}</div>
+          <div className="mt-1 text-2xl font-extrabold text-slate-900">{int(value)}</div>
+        </div>
+        <div className="text-right text-xs font-semibold text-slate-500">{sub}</div>
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+        <div
+          className="h-full rounded-full bg-slate-900"
+          style={{ width: `${Math.max(6, Math.min(Number(fillPct || 0), 100))}%` }}
+        />
+      </div>
     </div>
   );
 }
@@ -490,6 +515,12 @@ export default function BusinessDashboard() {
   const feeSummary = payload?.fee_summary || {};
   const workflowSummary = payload?.workflow_summary || {};
   const progressSummary = payload?.progress_summary || {};
+  const businessPerformance = payload?.business_performance || {};
+  const funnel = businessPerformance?.funnel || {};
+  const conversionRates = businessPerformance?.conversion_rates || {};
+  const revenueMetrics = businessPerformance?.revenue || {};
+  const rangeLabel =
+    range === "all" ? "All time" : range === "ytd" ? "Year to date" : `Last ${range} days`;
   const payoutQuery = useMemo(() => buildPayoutQuery(range), [range]);
   const recentPayouts = useMemo(() => payoutRows.slice(0, 5), [payoutRows]);
   const pendingExposure = useMemo(
@@ -502,6 +533,47 @@ export default function BusinessDashboard() {
     if (!workflowSeries.length) return 0;
     return Number(workflowSeries[workflowSeries.length - 1]?.overdue_milestones || 0);
   }, [workflowSeries]);
+
+  const funnelEntries = useMemo(() => {
+    const steps = [
+      {
+        key: "requests_received",
+        label: "Requests received",
+        value: Number(funnel.requests_received || 0),
+        sub: "Start of funnel",
+      },
+      {
+        key: "bids_submitted",
+        label: "Bids submitted",
+        value: Number(funnel.bids_submitted || 0),
+        sub: `Request to bid ${pct(conversionRates.request_to_bid_rate || 0)}`,
+      },
+      {
+        key: "bids_awarded",
+        label: "Bids awarded",
+        value: Number(funnel.bids_awarded || 0),
+        sub: `Bid to award ${pct(conversionRates.bid_to_award_rate || 0)}`,
+      },
+      {
+        key: "agreements_created",
+        label: "Agreements created",
+        value: Number(funnel.agreements_created || 0),
+        sub: "Agreement stage",
+      },
+      {
+        key: "paid_projects",
+        label: "Paid projects",
+        value: Number(funnel.paid_projects || 0),
+        sub: `Award to paid ${pct(conversionRates.award_to_paid_rate || 0)}`,
+      },
+    ];
+
+    const top = Math.max(...steps.map((step) => step.value), 0);
+    return steps.map((step) => ({
+      ...step,
+      fillPct: top > 0 ? (step.value / top) * 100 : 0,
+    }));
+  }, [conversionRates.award_to_paid_rate, conversionRates.bid_to_award_rate, conversionRates.request_to_bid_rate, funnel.agreements_created, funnel.bids_awarded, funnel.bids_submitted, funnel.paid_projects, funnel.requests_received]);
 
   const categoryChart = useMemo(() => {
     // Recharts expects numbers; backend returns strings for money fields
@@ -933,6 +1005,94 @@ export default function BusinessDashboard() {
           tone={Number(snapshot.disputes_open || 0) > 0 ? "bad" : "default"}
         />
       </DashboardGrid>
+      </DashboardSection>
+
+      <DashboardSection
+        title="Business Performance"
+        subtitle="A quick contractor funnel showing how requests turn into revenue."
+        className="mb-5"
+      >
+        <section
+          data-testid="dashboard-business-performance-section"
+          className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+        >
+          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="text-base font-bold text-slate-900">Business Performance</div>
+              <div className="mt-1 text-sm text-slate-600">
+                Funnel counts, conversion rates, and contract value at a glance.
+              </div>
+            </div>
+            <div className="text-xs text-slate-500">Range: {rangeLabel}</div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-5">
+            {funnelEntries.map((step) => (
+              <FunnelStep
+                key={step.key}
+                testId={`dashboard-business-performance-step-${step.key}`}
+                label={step.label}
+                value={step.value}
+                sub={step.sub}
+                fillPct={step.fillPct}
+              />
+            ))}
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+            <Stat
+              label="Request to Bid"
+              value={pct(conversionRates.request_to_bid_rate || 0)}
+              sub="Requests that became bids"
+              tone={Number(conversionRates.request_to_bid_rate || 0) > 0 ? "good" : "default"}
+            />
+            <Stat
+              label="Bid to Award"
+              value={pct(conversionRates.bid_to_award_rate || 0)}
+              sub="Bids that won"
+              tone={Number(conversionRates.bid_to_award_rate || 0) > 0 ? "warn" : "default"}
+            />
+            <Stat
+              label="Award to Paid"
+              value={pct(conversionRates.award_to_paid_rate || 0)}
+              sub="Awards that turned into paid work"
+              tone={Number(conversionRates.award_to_paid_rate || 0) > 0 ? "good" : "default"}
+            />
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+            <Stat
+              label="Total Paid"
+              value={money(revenueMetrics.total_paid)}
+              sub="Paid invoices and draw requests"
+              tone={Number(revenueMetrics.total_paid || 0) > 0 ? "good" : "default"}
+            />
+            <Stat
+              label="Pipeline Value"
+              value={money(revenueMetrics.total_pipeline_value)}
+              sub="Agreements created in range"
+              tone={Number(revenueMetrics.total_pipeline_value || 0) > 0 ? "warn" : "default"}
+            />
+            <Stat
+              label="Avg Project Value"
+              value={money(revenueMetrics.average_project_value)}
+              sub="Average created agreement value"
+            />
+          </div>
+
+          {Number(funnel.requests_received || 0) === 0 &&
+          Number(funnel.bids_submitted || 0) === 0 &&
+          Number(funnel.bids_awarded || 0) === 0 &&
+          Number(funnel.agreements_created || 0) === 0 &&
+          Number(funnel.paid_projects || 0) === 0 ? (
+            <div
+              data-testid="dashboard-business-performance-empty"
+              className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600"
+            >
+              No funnel activity in this range yet.
+            </div>
+          ) : null}
+        </section>
       </DashboardSection>
 
       <DashboardSection

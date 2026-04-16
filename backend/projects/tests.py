@@ -6331,6 +6331,246 @@ class BusinessDashboardInsightsTests(TestCase):
         self.assertEqual(response.json()["insights"], [])
 
 
+class BusinessDashboardPerformanceTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        now = timezone.now()
+
+        self.contractor_user = user_model.objects.create_user(
+            email="performance-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Performance Owner",
+        )
+        self.profile = ContractorPublicProfile.objects.create(
+            contractor=self.contractor,
+            business_name_public="Performance Owner Public",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Performance Homeowner",
+            email="performance-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Performance Project",
+        )
+        self.intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            homeowner=self.homeowner,
+            initiated_by="homeowner",
+            status="submitted",
+            lead_source="landing_page",
+            customer_name="Performance Customer",
+            customer_email="performance-customer@example.com",
+            customer_phone="555-101-2020",
+            project_class="commercial",
+            project_address_line1="100 Market St",
+            project_city="Austin",
+            project_state="TX",
+            project_postal_code="78701",
+            accomplishment_text="Need a performance project.",
+            submitted_at=now - timezone.timedelta(days=5),
+            share_token="performance-share-token-1",
+        )
+        self.lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            source=PublicContractorLead.SOURCE_DIRECT,
+            full_name="Performance Customer",
+            email="performance-customer@example.com",
+            phone="555-101-2020",
+            project_address="100 Market St",
+            city="Austin",
+            state="TX",
+            zip_code="78701",
+            project_type="Commercial Remodel",
+            project_description="Performance lead.",
+            preferred_timeline="Soon",
+            budget_text="$12,000",
+            status=PublicContractorLead.STATUS_ACCEPTED,
+            accepted_at=now - timezone.timedelta(days=4),
+            converted_at=now - timezone.timedelta(days=4),
+        )
+        self.intake.public_lead = self.lead
+        self.intake.save(update_fields=["public_lead", "updated_at"])
+        self.lead.converted_homeowner = self.homeowner
+        self.lead.save(update_fields=["converted_homeowner", "converted_agreement", "updated_at"])
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Performance agreement",
+            total_cost=Decimal("12000.00"),
+            status=ProjectStatus.IN_PROGRESS,
+            source_lead=self.lead,
+        )
+        self.lead.converted_agreement = self.agreement
+        self.lead.save(update_fields=["converted_agreement", "updated_at"])
+        self.invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("8000.00"),
+            status=InvoiceStatus.PAID,
+            escrow_released=True,
+            escrow_released_at=now - timezone.timedelta(days=3),
+            platform_fee_cents=40000,
+            payout_cents=760000,
+        )
+        self.draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=1,
+            title="Progress draw",
+            status=DrawRequestStatus.PAID,
+            gross_amount=Decimal("2000.00"),
+            net_amount=Decimal("1900.00"),
+            paid_at=now - timezone.timedelta(days=2),
+            released_at=now - timezone.timedelta(days=2),
+            platform_fee_cents=10000,
+            payout_cents=190000,
+        )
+
+        self.other_user = user_model.objects.create_user(
+            email="performance-other@example.com",
+            password="testpass123",
+        )
+        self.other_contractor = Contractor.objects.create(
+            user=self.other_user,
+            business_name="Performance Other",
+        )
+        self.other_profile = ContractorPublicProfile.objects.create(
+            contractor=self.other_contractor,
+            business_name_public="Performance Other Public",
+        )
+        self.other_homeowner = Homeowner.objects.create(
+            created_by=self.other_contractor,
+            full_name="Other Performance Homeowner",
+            email="other-performance@example.com",
+        )
+        self.other_project = Project.objects.create(
+            contractor=self.other_contractor,
+            homeowner=self.other_homeowner,
+            title="Other Performance Project",
+        )
+        other_intake = ProjectIntake.objects.create(
+            contractor=self.other_contractor,
+            public_profile=self.other_profile,
+            homeowner=self.other_homeowner,
+            initiated_by="homeowner",
+            status="submitted",
+            lead_source="landing_page",
+            customer_name="Other Customer",
+            customer_email="other-performance@example.com",
+            customer_phone="555-303-4040",
+            project_class="residential",
+            project_address_line1="200 Other St",
+            project_city="Dallas",
+            project_state="TX",
+            project_postal_code="75201",
+            accomplishment_text="Other request.",
+            submitted_at=now - timezone.timedelta(days=4),
+            share_token="performance-share-token-2",
+        )
+        other_lead = PublicContractorLead.objects.create(
+            contractor=self.other_contractor,
+            public_profile=self.other_profile,
+            source=PublicContractorLead.SOURCE_DIRECT,
+            full_name="Other Customer",
+            email="other-performance@example.com",
+            phone="555-303-4040",
+            project_address="200 Other St",
+            city="Dallas",
+            state="TX",
+            zip_code="75201",
+            project_type="Residential Remodel",
+            project_description="Other lead.",
+            preferred_timeline="Soon",
+            budget_text="$4,000",
+            status=PublicContractorLead.STATUS_ACCEPTED,
+            accepted_at=now - timezone.timedelta(days=3),
+            converted_at=now - timezone.timedelta(days=3),
+        )
+        other_intake.public_lead = other_lead
+        other_intake.save(update_fields=["public_lead", "updated_at"])
+        other_agreement = Agreement.objects.create(
+            project=self.other_project,
+            contractor=self.other_contractor,
+            homeowner=self.other_homeowner,
+            description="Other performance agreement",
+            total_cost=Decimal("4000.00"),
+            status=ProjectStatus.IN_PROGRESS,
+            source_lead=other_lead,
+        )
+        other_lead.converted_agreement = other_agreement
+        other_lead.save(update_fields=["converted_agreement", "updated_at"])
+        Invoice.objects.create(
+            agreement=other_agreement,
+            amount=Decimal("4000.00"),
+            status=InvoiceStatus.PAID,
+            escrow_released=True,
+            escrow_released_at=now - timezone.timedelta(days=1),
+            platform_fee_cents=20000,
+            payout_cents=380000,
+        )
+        self.client = APIClient()
+
+    def test_business_dashboard_returns_business_performance_metrics(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/business/contractor/summary/?range=30")
+
+        self.assertEqual(response.status_code, 200)
+        performance = response.json()["business_performance"]
+
+        self.assertEqual(performance["funnel"]["requests_received"], 1)
+        self.assertEqual(performance["funnel"]["bids_submitted"], 1)
+        self.assertEqual(performance["funnel"]["bids_awarded"], 1)
+        self.assertEqual(performance["funnel"]["agreements_created"], 1)
+        self.assertEqual(performance["funnel"]["paid_projects"], 1)
+        self.assertEqual(performance["conversion_rates"]["request_to_bid_rate"], "100.00")
+        self.assertEqual(performance["conversion_rates"]["bid_to_award_rate"], "100.00")
+        self.assertEqual(performance["conversion_rates"]["award_to_paid_rate"], "100.00")
+        self.assertEqual(performance["revenue"]["total_paid"], "10000.00")
+        self.assertEqual(performance["revenue"]["total_pipeline_value"], "12000.00")
+        self.assertEqual(performance["revenue"]["average_project_value"], "12000.00")
+
+    def test_business_dashboard_performance_is_contractor_scoped(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/business/contractor/summary/?range=30")
+
+        self.assertEqual(response.status_code, 200)
+        performance = response.json()["business_performance"]
+        self.assertEqual(performance["funnel"]["requests_received"], 1)
+        self.assertEqual(performance["funnel"]["paid_projects"], 1)
+
+    def test_business_dashboard_performance_empty_state_supports_zero_activity(self):
+        user_model = get_user_model()
+        empty_user = user_model.objects.create_user(
+            email="performance-empty@example.com",
+            password="testpass123",
+        )
+        empty_contractor = Contractor.objects.create(
+            user=empty_user,
+            business_name="Empty Performance Contractor",
+        )
+
+        self.client.force_authenticate(user=empty_user)
+        response = self.client.get("/api/projects/business/contractor/summary/?range=30")
+
+        self.assertEqual(response.status_code, 200)
+        performance = response.json()["business_performance"]
+        self.assertEqual(performance["funnel"]["requests_received"], 0)
+        self.assertEqual(performance["funnel"]["bids_submitted"], 0)
+        self.assertEqual(performance["funnel"]["bids_awarded"], 0)
+        self.assertEqual(performance["funnel"]["agreements_created"], 0)
+        self.assertEqual(performance["funnel"]["paid_projects"], 0)
+        self.assertEqual(performance["revenue"]["total_paid"], "0.00")
+        self.assertEqual(performance["revenue"]["total_pipeline_value"], "0.00")
+        self.assertEqual(performance["revenue"]["average_project_value"], "0.00")
+
+
 class BusinessDashboardChartTests(TestCase):
     def setUp(self):
         user_model = get_user_model()
