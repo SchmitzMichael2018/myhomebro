@@ -29,6 +29,7 @@ from projects.serializers.public_presence import (
     make_qr_svg_data,
 )
 from projects.services.intake_analysis import analyze_project_intake
+from projects.services.bid_workflow import infer_project_class, sync_bid_agreement_links
 from projects.services.public_lead_notifications import (
     send_public_lead_accept_email,
     send_public_lead_reject_email,
@@ -513,6 +514,9 @@ class ContractorPublicLeadCreateAgreementView(APIView):
             )
         if lead.converted_agreement_id:
             agreement = lead.converted_agreement
+            source_intake = getattr(lead, "source_intake", None)
+            if source_intake is not None:
+                sync_bid_agreement_links(agreement=agreement, lead=lead, intake=source_intake)
             return Response(
                 {
                     "agreement_id": agreement.id,
@@ -570,11 +574,17 @@ class ContractorPublicLeadCreateAgreementView(APIView):
             selected_template=selected_template,
             selected_template_name_snapshot=getattr(selected_template, "name", "") or "",
             source_lead=lead,
+            project_class=infer_project_class(
+                project_type,
+                project_subtype,
+                description,
+                lead.project_description,
+                lead.project_type,
+            ),
         )
         lead.converted_homeowner = homeowner
-        lead.converted_agreement = agreement
-        lead.converted_at = timezone.now()
-        lead.save(update_fields=["converted_homeowner", "converted_agreement", "converted_at", "updated_at"])
+        source_intake = getattr(lead, "source_intake", None)
+        sync_bid_agreement_links(agreement=agreement, lead=lead, intake=source_intake)
         return Response(
             {
                 "agreement_id": agreement.id,

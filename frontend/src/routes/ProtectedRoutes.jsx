@@ -58,6 +58,7 @@ import ReviewerQueuePage from "../pages/ReviewerQueuePage.jsx";
 import PayoutHistoryPage from "../pages/PayoutHistoryPage.jsx";
 import PayoutDetailPage from "../pages/PayoutDetailPage.jsx";
 import ContractorPayoutHistoryPage from "../pages/ContractorPayoutHistoryPage.jsx";
+import ContractorBidsPage from "../pages/ContractorBidsPage.jsx";
 import ContractorPublicPresencePage from "../pages/ContractorPublicPresencePage.jsx";
 import AIAssistantPage from "../pages/AIAssistantPage.jsx";
 
@@ -151,6 +152,7 @@ export function protectedRoutes() {
           <Route path="team" element={<TeamPage />} />
           <Route path="subcontractors" element={<SubcontractorsPage />} />
           <Route path="public-presence" element={<ContractorPublicPresencePage />} />
+          <Route path="bids" element={<ContractorBidsPage />} />
 
           <Route path="intake/new" element={<ProjectIntakeForm />} />
 

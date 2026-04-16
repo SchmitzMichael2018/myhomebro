@@ -54,6 +54,7 @@ from .views.project_intake import ProjectIntakeViewSet
 
 from .views.contractor_me import ContractorMeView
 from .views.activity_feed import ContractorActivityFeedView
+from .views.contractor_bids import ContractorBidsView
 from .views.compliance import ContractorCompliancePreviewView
 from .views.onboarding import (
     ContractorOnboardingDismissStripePromptView,
@@ -641,6 +642,7 @@ urlpatterns = [
     path("contractor/public-leads/<int:lead_id>/send-intake/", ContractorPublicLeadSendIntakeView.as_view()),
     path("contractor/public-leads/<int:lead_id>/create-agreement/", ContractorPublicLeadCreateAgreementView.as_view()),
     path("contractor/public-leads/<int:lead_id>/convert-homeowner/", ContractorPublicLeadConvertHomeownerView.as_view()),
+    path("contractor/bids/", ContractorBidsView.as_view()),
     path("public/contractors/<slug:slug>/", PublicContractorProfileBySlugView.as_view()),
     path("public/contractors/<slug:slug>/gallery/", PublicContractorGalleryView.as_view()),
     path("public/contractors/<slug:slug>/reviews/", PublicContractorReviewsView.as_view()),

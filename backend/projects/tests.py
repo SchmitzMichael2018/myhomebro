@@ -95,6 +95,7 @@ from projects.services.activity_feed import (
 from projects.services.direct_pay import create_direct_pay_checkout_for_invoice
 from projects.services.draw_requests import finalize_draw_paid, release_escrow_draw
 from projects.services.estimation_engine import build_project_estimate, _clarification_signature_from_answers
+from projects.services.intake_conversion import convert_intake_to_agreement
 from projects.services.regions import build_normalized_region_key
 from projects.services.template_apply import apply_template_to_agreement, save_agreement_as_template
 from projects.services.template_discovery import discover_templates
@@ -1741,6 +1742,204 @@ class ContractorPublicPresenceApiTests(TestCase):
         payload = response.json()
         self.assertNotIn("internal_notes", payload)
         self.assertNotIn("email", payload)
+
+
+class ContractorBidsWorkspaceTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="bids-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Bids Owner",
+        )
+        self.profile = ContractorPublicProfile.objects.create(
+            contractor=self.contractor,
+            business_name_public="Bids Owner",
+            allow_public_intake=True,
+            allow_public_reviews=True,
+        )
+
+        self.other_user = user_model.objects.create_user(
+            email="bids-other@example.com",
+            password="testpass123",
+        )
+        self.other_plain_user = user_model.objects.create_user(
+            email="plain-bids-other@example.com",
+            password="testpass123",
+        )
+
+        self.draft_intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            initiated_by="contractor",
+            status="draft",
+            lead_source="manual",
+            share_token="bids-draft-token",
+            customer_name="Draft Customer",
+            customer_email="draft@example.com",
+            accomplishment_text="Replace attic insulation",
+        )
+
+        self.commercial_under_review = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            initiated_by="contractor",
+            status="analyzed",
+            lead_source="manual",
+            share_token="bids-commercial-under-review-token",
+            customer_name="Commercial Customer",
+            customer_email="commercial@example.com",
+            accomplishment_text="Tenant buildout for a retail storefront",
+            ai_project_type="Commercial",
+            ai_project_subtype="Tenant Improvement",
+            ai_description="Commercial tenant improvement with multiple phases.",
+            ai_milestones=[
+                {"title": "Demo Phase"},
+                {"title": "Buildout Phase"},
+            ],
+            ai_analysis_payload={
+                "milestones": [
+                    {"title": "Demo Phase"},
+                    {"title": "Buildout Phase"},
+                ],
+                "estimate_preview": {"suggested_total_price": "27500.00"},
+            },
+        )
+
+        self.residential_awarded_lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            full_name="Awarded Lead",
+            email="award@example.com",
+            project_type="Kitchen Remodel",
+            project_description="Need a kitchen remodel.",
+            budget_text="$12,000.00",
+            status=PublicContractorLead.STATUS_ACCEPTED,
+            accepted_at=timezone.now() - timezone.timedelta(days=2),
+        )
+
+        self.commercial_declined_lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            full_name="Declined Lead",
+            email="declined@example.com",
+            project_type="Commercial",
+            project_description="Office suite renovation.",
+            status=PublicContractorLead.STATUS_REJECTED,
+            rejected_at=timezone.now() - timezone.timedelta(days=1),
+        )
+
+        self.linked_commercial_lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            full_name="Linked Commercial Lead",
+            email="linked@example.com",
+            project_type="Tenant Buildout",
+            project_description="Retail storefront buildout.",
+            status=PublicContractorLead.STATUS_ACCEPTED,
+            accepted_at=timezone.now() - timezone.timedelta(days=3),
+        )
+        self.linked_commercial_intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            public_lead=self.linked_commercial_lead,
+            initiated_by="contractor",
+            status="submitted",
+            lead_source="contractor_sent_form",
+            share_token="bids-linked-commercial-token",
+            customer_name="Linked Commercial Lead",
+            customer_email="linked@example.com",
+            accomplishment_text="Retail storefront tenant improvement.",
+            ai_project_type="Commercial",
+            ai_project_subtype="Retail Buildout",
+            ai_description="Commercial retail buildout.",
+        )
+        self.linked_agreement = convert_intake_to_agreement(intake=self.linked_commercial_intake)
+        self.linked_agreement.total_cost = Decimal("48000.00")
+        self.linked_agreement.save(update_fields=["total_cost"])
+
+        self.client = APIClient()
+
+    def test_contractor_sees_only_own_unified_bids_and_actions(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/contractor/bids/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        rows = payload["results"]
+
+        self.assertEqual(len(rows), 5)
+        summary = payload["summary"]
+        self.assertEqual(summary["open_bids"], 1)
+        self.assertEqual(summary["under_review_bids"], 1)
+        self.assertEqual(summary["awarded_bids"], 2)
+        self.assertEqual(summary["declined_expired_bids"], 1)
+        self.assertEqual(summary["residential_count"], 2)
+        self.assertEqual(summary["commercial_count"], 3)
+
+        residential_awarded = next(
+            row
+            for row in rows
+            if row["source_kind"] == "lead" and row["source_id"] == self.residential_awarded_lead.id
+        )
+        commercial_under_review = next(
+            row
+            for row in rows
+            if row["source_kind"] == "intake" and row["source_id"] == self.commercial_under_review.id
+        )
+        linked_awarded = next(
+            row
+            for row in rows
+            if row["source_kind"] == "lead" and row["source_id"] == self.linked_commercial_lead.id
+        )
+
+        self.assertEqual(residential_awarded["status"], "awarded")
+        self.assertEqual(residential_awarded["next_action"]["key"], "convert_to_agreement")
+        self.assertEqual(residential_awarded["project_class"], "residential")
+        self.assertEqual(residential_awarded["bid_amount_label"], "$12,000.00")
+
+        self.assertEqual(commercial_under_review["status"], "under_review")
+        self.assertEqual(commercial_under_review["project_class"], "commercial")
+        self.assertEqual(commercial_under_review["bid_amount_label"], "$27,500.00")
+        self.assertEqual(commercial_under_review["milestone_preview"], ["Demo Phase", "Buildout Phase"])
+
+        self.assertEqual(linked_awarded["status"], "awarded")
+        self.assertEqual(linked_awarded["next_action"]["key"], "open_agreement")
+        self.assertEqual(linked_awarded["linked_agreement_id"], self.linked_agreement.id)
+        self.assertEqual(linked_awarded["project_class"], "commercial")
+
+        other_client = APIClient()
+        other_client.force_authenticate(user=self.other_plain_user)
+        forbidden = other_client.get("/api/projects/contractor/bids/")
+        self.assertEqual(forbidden.status_code, 404)
+
+    def test_filters_apply_by_status_and_project_class(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get(
+            "/api/projects/contractor/bids/",
+            {"status": "awarded", "project_class": "commercial"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        rows = payload["results"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["source_kind"], "lead")
+        self.assertEqual(rows[0]["source_id"], self.linked_commercial_lead.id)
+        self.assertEqual(rows[0]["next_action"]["key"], "open_agreement")
+        self.assertEqual(payload["summary"]["awarded_bids"], 1)
+
+    def test_agreement_linking_syncs_both_sides(self):
+        self.linked_commercial_lead.refresh_from_db()
+        self.linked_commercial_intake.refresh_from_db()
+
+        self.assertEqual(self.linked_commercial_intake.agreement_id, self.linked_agreement.id)
+        self.assertEqual(self.linked_commercial_lead.converted_agreement_id, self.linked_agreement.id)
+        self.assertEqual(self.linked_commercial_intake.status, "converted")
+        self.assertEqual(self.linked_agreement.project_class, AgreementProjectClass.COMMERCIAL)
 
 
 class AgreementWarrantyApiTests(TestCase):

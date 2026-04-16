@@ -9,6 +9,7 @@ from django.utils import timezone
 from projects.models import Agreement, Homeowner, Milestone, Project
 from projects.models_project_intake import ProjectIntake
 from projects.models_templates import ProjectTemplate
+from projects.services.bid_workflow import infer_project_class, sync_bid_agreement_links
 
 
 def _safe_str(value: Any) -> str:
@@ -142,25 +143,36 @@ def convert_intake_to_agreement(
 ) -> Agreement:
     if intake.agreement_id:
         return intake.agreement
+    if getattr(intake, "public_lead", None) and getattr(intake.public_lead, "converted_agreement_id", None):
+        agreement = intake.public_lead.converted_agreement
+        sync_bid_agreement_links(agreement=agreement, lead=intake.public_lead, intake=intake)
+        return agreement
 
     homeowner = _ensure_homeowner_from_intake(intake)
     project = _create_project_for_agreement(intake=intake, homeowner=homeowner)
+    project_class = infer_project_class(
+        intake.ai_project_type,
+        intake.ai_project_subtype,
+        intake.ai_description,
+        intake.accomplishment_text,
+        intake.customer_name,
+    )
 
     agreement = Agreement.objects.create(
         project=project,
         contractor=intake.contractor,
         homeowner=homeowner,
-        project_title=_build_project_title(intake),
         project_type=_safe_str(intake.ai_project_type),
         project_subtype=_safe_str(intake.ai_project_subtype),
         description=_safe_str(intake.ai_description) or _safe_str(intake.accomplishment_text),
-        address_line1=_safe_str(intake.project_address_line1),
-        address_line2=_safe_str(intake.project_address_line2),
-        address_city=_safe_str(intake.project_city),
-        address_state=_safe_str(intake.project_state),
-        address_postal_code=_safe_str(intake.project_postal_code),
+        project_address_line1=_safe_str(intake.project_address_line1),
+        project_address_line2=_safe_str(intake.project_address_line2),
+        project_address_city=_safe_str(intake.project_city),
+        project_address_state=_safe_str(intake.project_state),
+        project_postal_code=_safe_str(intake.project_postal_code),
         payment_mode="escrow",
         status="draft",
+        project_class=project_class,
     )
 
     template_id = template_id_override if template_id_override else (
@@ -180,5 +192,8 @@ def convert_intake_to_agreement(
     intake.status = "converted"
     intake.converted_at = timezone.now()
     intake.save(update_fields=["homeowner", "agreement", "status", "converted_at", "updated_at"])
+
+    if getattr(intake, "public_lead", None) is not None:
+        sync_bid_agreement_links(agreement=agreement, lead=intake.public_lead, intake=intake)
 
     return agreement

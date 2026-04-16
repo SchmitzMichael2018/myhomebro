@@ -170,6 +170,8 @@ class ProjectIntakeViewSet(viewsets.ModelViewSet):
             {
                 "agreement_id": agreement.id,
                 "project_id": getattr(agreement.project, "id", None),
+                "wizard_url": f"/app/agreements/{agreement.id}/wizard?step=1",
+                "detail_url": f"/app/agreements/{agreement.id}",
                 "detail": "Agreement created successfully.",
             },
             status=status.HTTP_201_CREATED,
