@@ -1,0 +1,9 @@
+Hello {{ contractor_name }},
+
+Your bid was selected for {{ project_title }}.
+
+Open the agreement:
+{{ agreement_url }}
+
+Thank you,
+MyHomeBro

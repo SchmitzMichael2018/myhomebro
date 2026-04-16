@@ -1,0 +1,10 @@
+Hello {{ contractor_name }},
+
+Thank you for your bid for {{ project_title }}.
+Another contractor was selected for this project.
+
+View your bids:
+{{ bids_url }}
+
+Thank you,
+MyHomeBro

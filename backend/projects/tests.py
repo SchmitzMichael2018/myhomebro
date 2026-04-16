@@ -10472,6 +10472,7 @@ class CustomerPortalAccessTests(TestCase):
         self.assertNotIn("detail", agreement_row)
         self.assertNotIn("stripe_account_id", agreement_row)
 
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
     def test_customer_portal_comparison_accepts_bid_and_reuses_agreement(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         response = self.client.post(f"/api/projects/customer-portal/{token}/bids/lead-{self.comparison_lead_one.id}/accept/")
@@ -10510,6 +10511,18 @@ class CustomerPortalAccessTests(TestCase):
 
         self.assertEqual(winner_notifications.count(), 1)
         self.assertEqual(competitor_notifications.count(), 1)
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(mail.outbox[0].subject, "Your bid was selected on MyHomeBro")
+        self.assertEqual(mail.outbox[0].to, [self.contractor_user.email])
+        self.assertIn("Open the agreement", mail.outbox[0].body)
+        self.assertIn("/app/agreements/", mail.outbox[0].body)
+        self.assertEqual(mail.outbox[1].subject, "Your bid was not selected on MyHomeBro")
+        self.assertEqual(mail.outbox[1].to, [self.other_contractor_user.email])
+        self.assertIn("View your bids", mail.outbox[1].body)
+        self.assertNotIn(
+            "unrelated-bid-notify@example.com",
+            [recipient for message in mail.outbox for recipient in message.to],
+        )
 
         notify_client = APIClient()
         notify_client.force_authenticate(user=self.contractor_user)
@@ -10567,6 +10580,35 @@ class CustomerPortalAccessTests(TestCase):
             ).count(),
             1,
         )
+        self.assertEqual(len(mail.outbox), 2)
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_customer_portal_bid_accept_continues_when_email_delivery_fails(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        with patch("projects.services.bid_notifications._send_bid_outcome_email", side_effect=RuntimeError("smtp down")):
+            response = self.client.post(
+                f"/api/projects/customer-portal/{token}/bids/lead-{self.comparison_lead_one.id}/accept/"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["ok"])
+        self.assertEqual(
+            Notification.objects.filter(
+                contractor=self.contractor,
+                public_lead=self.comparison_lead_one,
+                event_type=Notification.EVENT_BID_AWARDED,
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            Notification.objects.filter(
+                contractor=self.other_contractor,
+                public_lead=self.comparison_lead_two,
+                event_type=Notification.EVENT_BID_NOT_SELECTED,
+            ).count(),
+            1,
+        )
+        self.assertEqual(len(mail.outbox), 0)
 
     def test_customer_portal_rejects_other_customer_bid_accept(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
