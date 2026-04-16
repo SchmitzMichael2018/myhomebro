@@ -1701,6 +1701,8 @@ class Notification(models.Model):
     EVENT_DRAW_CHANGES_REQUESTED = "draw_changes_requested"
     EVENT_DRAW_PAID = "draw_paid"
     EVENT_DRAW_RELEASED = "draw_released"
+    EVENT_BID_AWARDED = "bid_awarded"
+    EVENT_BID_NOT_SELECTED = "bid_not_selected"
 
     EVENT_CHOICES = (
         (EVENT_SUBCONTRACTOR_COMMENT, "Subcontractor Comment"),
@@ -1710,6 +1712,8 @@ class Notification(models.Model):
         (EVENT_DRAW_CHANGES_REQUESTED, "Draw Changes Requested"),
         (EVENT_DRAW_PAID, "Draw Paid"),
         (EVENT_DRAW_RELEASED, "Draw Released"),
+        (EVENT_BID_AWARDED, "Bid Awarded"),
+        (EVENT_BID_NOT_SELECTED, "Bid Not Selected"),
     )
 
     contractor = models.ForeignKey(
@@ -1734,6 +1738,13 @@ class Notification(models.Model):
     )
     draw_request = models.ForeignKey(
         "projects.DrawRequest",
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        null=True,
+        blank=True,
+    )
+    public_lead = models.ForeignKey(
+        "projects.PublicContractorLead",
         on_delete=models.CASCADE,
         related_name="notifications",
         null=True,

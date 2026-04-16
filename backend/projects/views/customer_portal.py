@@ -6,6 +6,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.core import signing
 from django.core.mail import send_mail
+from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers, status
@@ -36,6 +37,7 @@ from projects.services.bid_workflow import (
     project_class_label,
     promote_public_lead_to_agreement,
 )
+from projects.services.bid_notifications import create_bid_outcome_notifications
 
 PORTAL_TOKEN_SALT = "myhomebro.customer-portal"
 PORTAL_TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 14
@@ -806,22 +808,33 @@ class CustomerPortalBidAcceptView(APIView):
         source_intake = getattr(lead, "source_intake", None)
         if _safe_text(getattr(lead, "email", "")).lower() != email and _safe_text(getattr(source_intake, "customer_email", "")).lower() != email:
             return Response({"detail": "You can only choose bids for your own request."}, status=status.HTTP_403_FORBIDDEN)
-        homeowner = getattr(lead, "converted_homeowner", None)
-        agreement, created = promote_public_lead_to_agreement(lead=lead, homeowner=homeowner)
-        _, accepted_address, accepted_class = _request_identity_from_lead(lead)
+        with transaction.atomic():
+            homeowner = getattr(lead, "converted_homeowner", None)
+            agreement, created = promote_public_lead_to_agreement(lead=lead, homeowner=homeowner)
+            _, accepted_address, accepted_class = _request_identity_from_lead(lead)
 
-        accepted_key = _comparison_key(email, accepted_address, accepted_class)
-        competing_bids = PublicContractorLead.objects.select_related("source_intake", "converted_agreement").filter(
-            Q(email__iexact=email) | Q(source_intake__customer_email__iexact=email)
-        ).exclude(pk=lead.pk)
-        for competitor in competing_bids:
-            _, competitor_address, competitor_class = _request_identity_from_lead(competitor)
-            competitor_key = _comparison_key(email, competitor_address, competitor_class)
-            if competitor_key != accepted_key:
-                continue
-            if competitor.status not in {PublicContractorLead.STATUS_ACCEPTED, PublicContractorLead.STATUS_REJECTED}:
-                competitor.status = PublicContractorLead.STATUS_CLOSED
-                competitor.save(update_fields=["status", "updated_at"])
+            accepted_key = _comparison_key(email, accepted_address, accepted_class)
+            competing_bids = list(
+                PublicContractorLead.objects.select_related("source_intake", "converted_agreement").filter(
+                    Q(email__iexact=email) | Q(source_intake__customer_email__iexact=email)
+                ).exclude(pk=lead.pk)
+            )
+            competing_group = []
+            for competitor in competing_bids:
+                _, competitor_address, competitor_class = _request_identity_from_lead(competitor)
+                competitor_key = _comparison_key(email, competitor_address, competitor_class)
+                if competitor_key != accepted_key:
+                    continue
+                if competitor.status not in {PublicContractorLead.STATUS_ACCEPTED, PublicContractorLead.STATUS_REJECTED}:
+                    competitor.status = PublicContractorLead.STATUS_CLOSED
+                    competitor.save(update_fields=["status", "updated_at"])
+                competing_group.append(competitor)
+
+            create_bid_outcome_notifications(
+                accepted_lead=lead,
+                agreement=agreement,
+                competing_leads=competing_group,
+            )
 
         return Response(
             {

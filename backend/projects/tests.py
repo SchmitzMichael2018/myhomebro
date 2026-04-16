@@ -10497,10 +10497,76 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(comparison_row["action_label"], "Open Agreement")
         self.assertTrue(comparison_row["agreement_token"])
 
+        winner_notifications = Notification.objects.filter(
+            contractor=self.contractor,
+            public_lead=self.comparison_lead_one,
+            event_type=Notification.EVENT_BID_AWARDED,
+        )
+        competitor_notifications = Notification.objects.filter(
+            contractor=self.other_contractor,
+            public_lead=self.comparison_lead_two,
+            event_type=Notification.EVENT_BID_NOT_SELECTED,
+        )
+
+        self.assertEqual(winner_notifications.count(), 1)
+        self.assertEqual(competitor_notifications.count(), 1)
+
+        notify_client = APIClient()
+        notify_client.force_authenticate(user=self.contractor_user)
+        notifications_response = notify_client.get("/api/projects/notifications/")
+        self.assertEqual(notifications_response.status_code, 200)
+        self.assertTrue(notifications_response.data)
+        self.assertEqual(notifications_response.data[0]["event_type"], Notification.EVENT_BID_AWARDED)
+        self.assertEqual(notifications_response.data[0]["public_lead_id"], self.comparison_lead_one.id)
+        self.assertEqual(notifications_response.data[0]["action_label"], "Open Agreement")
+        self.assertEqual(
+            notifications_response.data[0]["action_url"],
+            f"/app/agreements/{response.data['agreement_id']}",
+        )
+
+        notify_client.force_authenticate(user=self.other_contractor_user)
+        other_response = notify_client.get("/api/projects/notifications/")
+        self.assertEqual(other_response.status_code, 200)
+        self.assertTrue(other_response.data)
+        self.assertEqual(other_response.data[0]["event_type"], Notification.EVENT_BID_NOT_SELECTED)
+        self.assertEqual(other_response.data[0]["public_lead_id"], self.comparison_lead_two.id)
+        self.assertEqual(other_response.data[0]["action_label"], "View Bids")
+        self.assertEqual(other_response.data[0]["action_url"], "/app/bids")
+
+        unrelated_user = get_user_model().objects.create_user(
+            email="unrelated-bid-notify@example.com",
+            password="testpass123",
+        )
+        unrelated_contractor = Contractor.objects.create(
+            user=unrelated_user,
+            business_name="Unrelated Bid Notify",
+        )
+        notify_client.force_authenticate(user=unrelated_user)
+        unrelated_response = notify_client.get("/api/projects/notifications/")
+        self.assertEqual(unrelated_response.status_code, 200)
+        self.assertEqual(unrelated_response.json(), [])
+        self.assertEqual(Notification.objects.filter(contractor=unrelated_contractor).count(), 0)
+
         repeat = self.client.post(f"/api/projects/customer-portal/{token}/bids/lead-{self.comparison_lead_one.id}/accept/")
         self.assertEqual(repeat.status_code, 200)
         self.assertFalse(repeat.data["created"])
         self.assertEqual(repeat.data["agreement_id"], response.data["agreement_id"])
+        self.assertEqual(
+            Notification.objects.filter(
+                contractor=self.contractor,
+                public_lead=self.comparison_lead_one,
+                event_type=Notification.EVENT_BID_AWARDED,
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            Notification.objects.filter(
+                contractor=self.other_contractor,
+                public_lead=self.comparison_lead_two,
+                event_type=Notification.EVENT_BID_NOT_SELECTED,
+            ).count(),
+            1,
+        )
 
     def test_customer_portal_rejects_other_customer_bid_accept(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
