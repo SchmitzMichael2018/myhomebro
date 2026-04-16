@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core import signing
 from django.core.management import call_command
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -64,6 +65,7 @@ from projects.models import (
     SubcontractorCompletionStatus,
 )
 from projects.models import AgreementWarranty
+from projects.models_attachments import AgreementAttachment
 from projects.models_templates import ProjectTemplate, SeedBenchmarkProfile
 from projects.models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent, SMSConsentStatus
 from projects.models_project_intake import ProjectIntake
@@ -110,6 +112,7 @@ from projects.services.recurring_maintenance import (
     ensure_recurring_milestones,
     handle_milestone_recurring_state_change,
 )
+from projects.views.customer_portal import PORTAL_TOKEN_SALT
 from projects.services.subcontractor_compliance import (
     apply_assignment_compliance_decision,
     evaluate_subcontractor_assignment_compliance,
@@ -10119,3 +10122,262 @@ class RecurringMaintenanceTests(TestCase):
         self.assertEqual(preview["agreement_mode"], "maintenance")
         self.assertEqual(preview["recurrence_pattern"], "quarterly")
         self.assertGreaterEqual(len(preview["preview_occurrences"]), 1)
+
+
+class CustomerPortalAccessTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.contractor_user = User.objects.create_user(
+            email="builder@example.com",
+            password="password123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Builder Co",
+        )
+        self.public_profile = ContractorPublicProfile.objects.create(
+            contractor=self.contractor,
+            business_name_public="Builder Co",
+            allow_public_intake=True,
+            is_public=True,
+        )
+
+        self.customer_email = "customer@example.com"
+        self.customer_homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Pat Customer",
+            email=self.customer_email,
+            company_name="",
+            status="active",
+        )
+        self.other_homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Other Customer",
+            email="other@example.com",
+            company_name="",
+            status="active",
+        )
+
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.customer_homeowner,
+            title="Kitchen Remodel",
+            description="Primary project",
+            project_street_address="123 Main St",
+            project_city="Austin",
+            project_state="TX",
+            project_zip_code="78701",
+        )
+        self.other_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.other_homeowner,
+            title="Other Basement",
+            description="Should not leak",
+            project_street_address="456 Side St",
+            project_city="Dallas",
+            project_state="TX",
+            project_zip_code="75201",
+        )
+
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.customer_homeowner,
+            project_class=AgreementProjectClass.COMMERCIAL,
+            total_cost=Decimal("15000.00"),
+            description="Customer-facing portal agreement",
+            signed_by_contractor=True,
+            signed_by_homeowner=True,
+        )
+        self.other_agreement = Agreement.objects.create(
+            project=self.other_project,
+            contractor=self.contractor,
+            homeowner=self.other_homeowner,
+            project_class=AgreementProjectClass.RESIDENTIAL,
+            total_cost=Decimal("2500.00"),
+            description="Other agreement",
+            signed_by_contractor=True,
+            signed_by_homeowner=True,
+        )
+
+        self.intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            homeowner=self.customer_homeowner,
+            agreement=self.agreement,
+            initiated_by="homeowner",
+            status="submitted",
+            post_submit_flow="multi_contractor",
+            lead_source="landing_page",
+            customer_name="Pat Customer",
+            customer_email=self.customer_email,
+            customer_phone="555-111-2222",
+            project_class="commercial",
+            project_address_line1="123 Main St",
+            project_city="Austin",
+            project_state="TX",
+            project_postal_code="78701",
+            accomplishment_text="Need a commercial remodel.",
+            submitted_at=timezone.now(),
+            completed_at=timezone.now(),
+            share_token="portal-test-token-1",
+        )
+        self.other_intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            homeowner=self.other_homeowner,
+            agreement=self.other_agreement,
+            initiated_by="homeowner",
+            status="submitted",
+            post_submit_flow="single_contractor",
+            lead_source="landing_page",
+            customer_name="Other Customer",
+            customer_email="other@example.com",
+            customer_phone="555-333-4444",
+            project_class="residential",
+            project_address_line1="456 Side St",
+            project_city="Dallas",
+            project_state="TX",
+            project_postal_code="75201",
+            accomplishment_text="Other scope.",
+            submitted_at=timezone.now(),
+            completed_at=timezone.now(),
+            share_token="portal-test-token-2",
+        )
+
+        self.lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.public_profile,
+            source=PublicContractorLead.SOURCE_DIRECT,
+            full_name="Pat Customer",
+            email=self.customer_email,
+            phone="555-111-2222",
+            project_address="123 Main St",
+            city="Austin",
+            state="TX",
+            zip_code="78701",
+            project_type="Commercial Remodel",
+            project_description="Commercial remodel bid.",
+            preferred_timeline="ASAP",
+            budget_text="$15,000",
+            status=PublicContractorLead.STATUS_ACCEPTED,
+            converted_agreement=self.agreement,
+            converted_at=timezone.now(),
+            accepted_at=timezone.now(),
+        )
+        self.intake.public_lead = self.lead
+        self.intake.save(update_fields=["public_lead", "updated_at"])
+
+        self.other_lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.public_profile,
+            source=PublicContractorLead.SOURCE_DIRECT,
+            full_name="Other Customer",
+            email="other@example.com",
+            phone="555-333-4444",
+            project_address="456 Side St",
+            city="Dallas",
+            state="TX",
+            zip_code="75201",
+            project_type="Residential Remodel",
+            project_description="Other bid.",
+            preferred_timeline="Soon",
+            budget_text="$2,500",
+            status=PublicContractorLead.STATUS_NEW,
+            converted_agreement=self.other_agreement,
+        )
+        self.other_intake.public_lead = self.other_lead
+        self.other_intake.save(update_fields=["public_lead", "updated_at"])
+
+        self.invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("15000.00"),
+            status=InvoiceStatus.PAID,
+            escrow_released=True,
+            escrow_released_at=timezone.now(),
+            platform_fee_cents=75000,
+            payout_cents=1425000,
+        )
+        self.draw = DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=1,
+            title="Progress draw",
+            status=DrawRequestStatus.PAID,
+            gross_amount=Decimal("12000.00"),
+            net_amount=Decimal("11400.00"),
+            platform_fee_cents=60000,
+            payout_cents=1140000,
+            paid_at=timezone.now(),
+            released_at=timezone.now(),
+            transfer_created_at=timezone.now(),
+            stripe_transfer_id="tr_portal_draw",
+        )
+        self.attachment = AgreementAttachment.objects.create(
+            agreement=self.agreement,
+            title="Scope Addendum",
+            category=AgreementAttachment.CATEGORY_ADDENDUM,
+            file=SimpleUploadedFile("scope-addendum.txt", b"Portal document"),
+            visible_to_homeowner=True,
+        )
+
+    def test_customer_portal_request_link_is_generic_and_sends_email_for_known_customer(self):
+        response = self.client.post(
+            "/api/projects/customer-portal/request-link/",
+            {"email": self.customer_email},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["ok"])
+        self.assertTrue(response.data["link_sent"])
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("/portal/", mail.outbox[0].body)
+        self.assertIn(self.customer_email, mail.outbox[0].to)
+
+        unknown = self.client.post(
+            "/api/projects/customer-portal/request-link/",
+            {"email": "nobody@example.com"},
+            content_type="application/json",
+        )
+
+        self.assertEqual(unknown.status_code, 200)
+        self.assertTrue(unknown.data["ok"])
+        self.assertFalse(unknown.data["link_sent"])
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_customer_portal_returns_only_customer_owned_records(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        response = self.client.get(f"/api/projects/customer-portal/{token}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["customer"]["email"], self.customer_email)
+        self.assertEqual(response.data["summary"]["active_requests"], 1)
+        self.assertEqual(response.data["summary"]["bids_received"], 1)
+        self.assertEqual(response.data["summary"]["active_agreements"], 1)
+        self.assertEqual(response.data["summary"]["payments"], 2)
+        self.assertEqual(response.data["summary"]["documents"], 1)
+
+        request_titles = [row["project_title"] for row in response.data["requests"]]
+        bid_titles = [row["project_title"] for row in response.data["bids"]]
+        agreement_titles = [row["project_title"] for row in response.data["agreements"]]
+        payment_titles = [row["project_title"] for row in response.data["payments"]]
+        document_titles = [row["project_title"] for row in response.data["documents"]]
+
+        self.assertIn("Kitchen Remodel", request_titles)
+        self.assertIn("Commercial Remodel", bid_titles)
+        self.assertIn("Kitchen Remodel", agreement_titles)
+        self.assertIn("Kitchen Remodel", payment_titles)
+        self.assertIn("Kitchen Remodel", document_titles)
+        self.assertNotIn("Other Basement", request_titles)
+        self.assertNotIn("Other Basement", bid_titles)
+        self.assertNotIn("Other Basement", agreement_titles)
+        self.assertNotIn("Other Basement", payment_titles)
+        self.assertNotIn("Other Basement", document_titles)
+
+        agreement_row = response.data["agreements"][0]
+        self.assertNotIn("detail", agreement_row)
+        self.assertNotIn("stripe_account_id", agreement_row)
+
+    def test_customer_portal_rejects_invalid_token(self):
+        response = self.client.get("/api/projects/customer-portal/not-a-valid-token/")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("Invalid portal link", response.data["detail"])

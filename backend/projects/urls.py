@@ -202,6 +202,12 @@ from .views.payout_history import (
     ContractorPayoutHistoryView,
 )
 from .views.contractor_payout_history import ContractorPayoutHistoryView as ContractorCompletedPayoutHistoryView
+from .views.customer_portal import (
+    AgreementMagicAccessView,
+    AgreementMagicPdfView,
+    CustomerPortalRequestLinkView,
+    CustomerPortalView,
+)
 from .views.milestone_workflow import (
     approve_work_submission,
     reviewer_queue,
@@ -285,6 +291,8 @@ urlpatterns = [
     path("activity-feed/", ContractorActivityFeedView.as_view(), name="activity-feed"),
     path("twilio/inbound-sms/", twilio_inbound_sms, name="twilio-inbound-sms"),
     path("twilio/status/", twilio_sms_status, name="twilio-sms-status"),
+    path("customer-portal/request-link/", CustomerPortalRequestLinkView.as_view(), name="customer-portal-request-link"),
+    path("customer-portal/<str:token>/", CustomerPortalView.as_view(), name="customer-portal-detail"),
     path("sms/automation/preview/", SMSAutomationPreviewView.as_view(), name="sms-automation-preview"),
     path("sms/opt-in/", SMSOptInView.as_view(), name="sms-opt-in"),
     path("sms/opt-out/", SMSOptOutView.as_view(), name="sms-opt-out"),
@@ -367,6 +375,8 @@ urlpatterns = [
     # Agreement utilities
     # -------------------------------------------------
     path("agreements/<int:agreement_id>/pdf/", agreement_pdf),
+    path("agreements/access/<uuid:token>/", AgreementMagicAccessView.as_view(), name="agreement-magic-access"),
+    path("agreements/access/<uuid:token>/pdf/", AgreementMagicPdfView.as_view(), name="agreement-magic-access-pdf"),
     path("agreements/<int:pk>/milestones/", agreement_milestones),
     path("agreements/public_sign/", agreement_public_sign),
     path("agreements/public_pdf/", agreement_public_pdf),

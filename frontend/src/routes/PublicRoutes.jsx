@@ -28,6 +28,7 @@ import InvoicePage from "../pages/InvoicePage.jsx"; // /invoice/:token → redir
 import PublicDisputeView from "../pages/PublicDisputeView.jsx"; // /disputes/:id?token=...
 import PublicDisputeDecision from "../pages/PublicDisputeDecision.jsx"; // /disputes/:id/decision?token=...
 import SubcontractorInvitationAcceptPage from "../pages/SubcontractorInvitationAcceptPage.jsx";
+import CustomerPortalPage from "../pages/CustomerPortalPage.jsx"; // /portal
 
 export default function PublicRoutes() {
   return (
@@ -45,6 +46,14 @@ export default function PublicRoutes() {
 
       {/* Public signature / magic links */}
       <Route path="/agreements/sign/:id" element={<HomeownerSign />} />
+
+      {/* Customer portal */}
+      <Route path="/portal" element={<CustomerPortalPage />} />
+      <Route path="/portal/:token" element={<CustomerPortalPage />} />
+      <Route path="/customer-portal" element={<Navigate to="/portal" replace />} />
+      <Route path="/customer-portal/:token" element={<Navigate to="/portal/:token" replace />} />
+      <Route path="/my-records" element={<Navigate to="/portal" replace />} />
+      <Route path="/my-records/:token" element={<Navigate to="/portal/:token" replace />} />
 
       {/* Public intake */}
       <Route path="/start-project" element={<StartProjectIntake />} />

@@ -112,6 +112,15 @@ export default function LandingPage() {
           </button>
 
           <button
+            data-testid="landing-customer-portal-button"
+            onClick={() => navigate("/portal")}
+            style={S.btn}
+            type="button"
+          >
+            View My Records
+          </button>
+
+          <button
             data-testid="landing-start-project-intake-button"
             onClick={() => navigate("/start-project")}
             style={S.btn}
