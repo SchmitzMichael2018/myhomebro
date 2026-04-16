@@ -1,0 +1,12 @@
+Hello {{ customer_name }},
+
+Your contractor has been selected for {{ project_title }}.
+Selected contractor: {{ contractor_name }}
+
+Next step: review and sign the agreement.
+
+Open Agreement:
+{{ agreement_url }}
+
+Thank you,
+MyHomeBro

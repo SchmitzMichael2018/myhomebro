@@ -1,0 +1,18 @@
+<p>Hello {{ customer_name }},</p>
+
+<p>Your contractor has been selected for <strong>{{ project_title }}</strong>.</p>
+
+<p><strong>Selected contractor:</strong> {{ contractor_name }}</p>
+
+<p>Next step: review and sign the agreement.</p>
+
+<p style="margin:20px 0;">
+  <a href="{{ agreement_url }}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:12px 18px;border-radius:999px;font-weight:700;font-size:14px;">
+    Open Agreement
+  </a>
+</p>
+
+<p>If the button does not work, copy and paste this link into your browser:</p>
+<p><a href="{{ agreement_url }}">{{ agreement_url }}</a></p>
+
+<p>Thank you,<br>MyHomeBro</p>

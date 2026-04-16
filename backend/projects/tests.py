@@ -10511,7 +10511,7 @@ class CustomerPortalAccessTests(TestCase):
 
         self.assertEqual(winner_notifications.count(), 1)
         self.assertEqual(competitor_notifications.count(), 1)
-        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(len(mail.outbox), 3)
         self.assertEqual(mail.outbox[0].subject, "Your bid was selected on MyHomeBro")
         self.assertEqual(mail.outbox[0].to, [self.contractor_user.email])
         self.assertIn("Open the agreement", mail.outbox[0].body)
@@ -10519,6 +10519,10 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(mail.outbox[1].subject, "Your bid was not selected on MyHomeBro")
         self.assertEqual(mail.outbox[1].to, [self.other_contractor_user.email])
         self.assertIn("View your bids", mail.outbox[1].body)
+        self.assertEqual(mail.outbox[2].subject, "Your contractor has been selected on MyHomeBro")
+        self.assertEqual(mail.outbox[2].to, [self.customer_email])
+        self.assertIn("Open Agreement", mail.outbox[2].body)
+        self.assertIn("/agreements/magic/", mail.outbox[2].body)
         self.assertNotIn(
             "unrelated-bid-notify@example.com",
             [recipient for message in mail.outbox for recipient in message.to],
@@ -10580,12 +10584,12 @@ class CustomerPortalAccessTests(TestCase):
             ).count(),
             1,
         )
-        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(len(mail.outbox), 3)
 
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
     def test_customer_portal_bid_accept_continues_when_email_delivery_fails(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
-        with patch("projects.services.bid_notifications._send_bid_outcome_email", side_effect=RuntimeError("smtp down")):
+        with patch("projects.services.bid_notifications._send_customer_confirmation_email", side_effect=RuntimeError("smtp down")):
             response = self.client.post(
                 f"/api/projects/customer-portal/{token}/bids/lead-{self.comparison_lead_one.id}/accept/"
             )
@@ -10608,7 +10612,9 @@ class CustomerPortalAccessTests(TestCase):
             ).count(),
             1,
         )
-        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(mail.outbox[0].subject, "Your bid was selected on MyHomeBro")
+        self.assertEqual(mail.outbox[1].subject, "Your bid was not selected on MyHomeBro")
 
     def test_customer_portal_rejects_other_customer_bid_accept(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
