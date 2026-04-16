@@ -34,6 +34,7 @@ from projects.models import (
     ContractorPublicProfile,
     ContractorReview,
     ContractorSubAccount,
+    ContractorInvite,
     DrawRequest,
     DrawRequestStatus,
     ExternalPaymentRecord,
@@ -1209,6 +1210,127 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(lead.source, PublicContractorLead.SOURCE_LANDING_PAGE)
         self.assertIsNotNone(lead.converted_homeowner_id)
         self.assertIsNotNone(lead.converted_agreement_id)
+
+    def test_landing_page_intake_branching_creates_linked_invites_without_duplicate_intake_records(self):
+        start_response = self.client.post(
+            "/api/projects/public-intake/start/",
+            {
+                "source": "landing_page",
+                "customer_name": "Branch Prospect",
+                "customer_email": "branch@example.com",
+                "customer_phone": "555-111-2222",
+            },
+            format="json",
+        )
+        self.assertEqual(start_response.status_code, 201)
+        token = start_response.json()["token"]
+
+        patch_response = self.client.patch(
+            f"/api/projects/public-intake/?token={token}",
+            {
+                "project_class": "commercial",
+                "customer_name": "Branch Prospect",
+                "customer_email": "branch@example.com",
+                "customer_phone": "555-111-2222",
+                "project_address_line1": "500 Bid Lane",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+                "accomplishment_text": "Need a bid-ready commercial scope.",
+            },
+            format="json",
+        )
+        self.assertEqual(patch_response.status_code, 200)
+
+        branch_response = self.client.patch(
+            f"/api/projects/public-intake/?token={token}",
+            {
+                "branch_flow": "multi_contractor",
+                "contractors": [
+                    {"name": "Alpha Build", "email": "alpha@example.com", "phone": "555-101-0001"},
+                    {"name": "Beta Contracting", "email": "beta@example.com", "phone": "555-202-0002"},
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(branch_response.status_code, 200)
+        self.assertEqual(branch_response.json()["post_submit_flow"], "multi_contractor")
+        self.assertEqual(len(branch_response.json()["branch_invites"]), 2)
+        self.assertEqual(ProjectIntake.objects.filter(share_token=token).count(), 1)
+        intake = ProjectIntake.objects.get(share_token=token)
+        self.assertEqual(intake.project_class, "commercial")
+        self.assertEqual(intake.post_submit_flow, "multi_contractor")
+        self.assertEqual(ContractorInvite.objects.filter(source_intake=intake).count(), 2)
+
+    def test_single_contractor_branch_claims_same_intake_for_contractor_workspace(self):
+        start_response = self.client.post(
+            "/api/projects/public-intake/start/",
+            {
+                "source": "landing_page",
+                "customer_name": "Single Branch Prospect",
+                "customer_email": "single@example.com",
+                "customer_phone": "555-333-4444",
+            },
+            format="json",
+        )
+        token = start_response.json()["token"]
+
+        patch_response = self.client.patch(
+            f"/api/projects/public-intake/?token={token}",
+            {
+                "project_class": "residential",
+                "customer_name": "Single Branch Prospect",
+                "customer_email": "single@example.com",
+                "customer_phone": "555-333-4444",
+                "project_address_line1": "100 Direct Invite St",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78702",
+                "accomplishment_text": "Need a single-contractor direct invite.",
+            },
+            format="json",
+        )
+        self.assertEqual(patch_response.status_code, 200)
+        branch_response = self.client.patch(
+            f"/api/projects/public-intake/?token={token}",
+            {
+                "branch_flow": "single_contractor",
+                "contractor_name": "Prime Builder",
+                "contractor_email": "prime@example.com",
+                "contractor_phone": "555-303-0003",
+            },
+            format="json",
+        )
+        self.assertEqual(branch_response.status_code, 200)
+        intake = ProjectIntake.objects.get(share_token=token)
+        invite = ContractorInvite.objects.get(source_intake=intake)
+        self.assertEqual(invite.contractor_email, "prime@example.com")
+
+        contractor_user = get_user_model().objects.create_user(
+            email="prime@example.com",
+            password="testpass123",
+        )
+        contractor = Contractor.objects.create(
+            user=contractor_user,
+            business_name="Prime Builder",
+        )
+        claim_client = APIClient()
+        claim_client.force_authenticate(user=contractor_user)
+
+        accept_response = claim_client.post(
+            f"/api/projects/invites/{invite.token}/accept/",
+            {},
+            format="json",
+        )
+        self.assertEqual(accept_response.status_code, 200)
+        intake.refresh_from_db()
+        self.assertEqual(intake.contractor_id, contractor.id)
+        self.assertEqual(accept_response.json()["source_intake_id"], intake.id)
+
+        bids_response = claim_client.get("/api/projects/contractor/bids/")
+        self.assertEqual(bids_response.status_code, 200)
+        rows = bids_response.json()["results"]
+        self.assertTrue(any(row["source_kind"] == "intake" and row["source_id"] == intake.id for row in rows))
 
     @patch("projects.services.intake_public.send_postmark_template_email", return_value=None)
     def test_contractor_sent_intake_completes_into_unified_ready_for_review_lead(self, _send_email):

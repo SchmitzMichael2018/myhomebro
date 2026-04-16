@@ -21,6 +21,8 @@ const blankForm = {
 
   same_as_customer_address: true,
 
+  project_class: "residential",
+
   project_address_line1: "",
   project_address_line2: "",
   project_city: "",
@@ -127,6 +129,7 @@ export default function ProjectIntakeForm() {
             data?.same_as_customer_address !== undefined
               ? Boolean(data.same_as_customer_address)
               : prev.same_as_customer_address,
+          project_class: data?.project_class || prev.project_class,
           project_address_line1: data?.project_address_line1 || "",
           project_address_line2: data?.project_address_line2 || "",
           project_city: data?.project_city || "",
@@ -487,8 +490,8 @@ export default function ProjectIntakeForm() {
               Search an existing customer or enter new customer details.
             </p>
 
-            <div className="mt-4 rounded-lg border bg-slate-50 p-3">
-              <div className="mb-1 block text-sm font-medium text-gray-900">Search Existing Customer</div>
+          <div className="mt-4 rounded-lg border bg-slate-50 p-3">
+            <div className="mb-1 block text-sm font-medium text-gray-900">Search Existing Customer</div>
               <input
                 className="w-full rounded border px-3 py-2 text-sm"
                 value={customerSearch}
@@ -528,9 +531,9 @@ export default function ProjectIntakeForm() {
                   </button>
                 </div>
               ) : null}
-            </div>
+          </div>
 
-            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="md:col-span-2">
                 <label className="mb-1 block text-sm font-medium">Customer Name</label>
                 <input
@@ -613,13 +616,33 @@ export default function ProjectIntakeForm() {
             </div>
           </div>
 
-          <div className="rounded-xl border bg-white p-4 shadow-sm">
-            <h2 className="text-lg font-semibold text-gray-900">Project Address</h2>
-            <p className="mt-1 text-sm text-gray-600">
-              The job site can match the customer address or be different.
-            </p>
+        <div className="rounded-xl border bg-white p-4 shadow-sm">
+          <h2 className="text-lg font-semibold text-gray-900">Project Address</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            The job site can match the customer address or be different.
+          </p>
 
-            <label className="mt-4 flex items-center gap-2 text-sm text-gray-700">
+          <div className="mt-4">
+            <div className="mb-2 text-sm font-medium text-gray-900">Project Class</div>
+            <div className="flex flex-wrap gap-3">
+              {[
+                { value: "residential", label: "Residential" },
+                { value: "commercial", label: "Commercial" },
+              ].map((opt) => (
+                <label key={opt.value} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm">
+                  <input
+                    type="radio"
+                    name="project_class"
+                    checked={form.project_class === opt.value}
+                    onChange={() => setField("project_class", opt.value)}
+                  />
+                  {opt.label}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <label className="mt-4 flex items-center gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"
                 checked={form.same_as_customer_address}

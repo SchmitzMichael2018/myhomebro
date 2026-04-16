@@ -29,6 +29,15 @@ class ContractorInvite(models.Model):
     contractor_email = models.EmailField(blank=True)
     contractor_phone = models.CharField(max_length=20, blank=True)
 
+    # Optional source intake that originated the invite
+    source_intake = models.ForeignKey(
+        "projects.ProjectIntake",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="contractor_invites",
+    )
+
     # Optional message from homeowner
     message = models.TextField(blank=True)
 

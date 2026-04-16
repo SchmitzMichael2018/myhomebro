@@ -16,6 +16,8 @@ class ProjectIntakeSerializer(serializers.ModelSerializer):
             "agreement",
             "initiated_by",
             "status",
+            "post_submit_flow",
+            "post_submit_flow_selected_at",
 
             "customer_name",
             "customer_email",
@@ -28,6 +30,7 @@ class ProjectIntakeSerializer(serializers.ModelSerializer):
             "customer_postal_code",
 
             "same_as_customer_address",
+            "project_class",
 
             "project_address_line1",
             "project_address_line2",
@@ -62,6 +65,7 @@ class ProjectIntakeSerializer(serializers.ModelSerializer):
             "submitted_at",
             "analyzed_at",
             "converted_at",
+            "post_submit_flow_selected_at",
             "created_at",
             "updated_at",
             "customer_address_display",

@@ -102,6 +102,12 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
       if (inviteToken) {
         const result = await acceptInviteIfPresent(inviteToken);
         if (result?.ok) {
+          const sourceIntakeUrl = result?.data?.source_intake_url || "";
+          if (sourceIntakeUrl) {
+            toast.success("Invite accepted. Opening the project intake.");
+            navigate(sourceIntakeUrl);
+            return;
+          }
           toast.success("Invite accepted - customer imported into your client list.");
           removeInviteFromUrl();
         } else {

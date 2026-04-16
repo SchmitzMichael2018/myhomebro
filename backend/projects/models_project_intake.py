@@ -8,6 +8,11 @@ from django.db import models
 
 
 class ProjectIntake(models.Model):
+    PROJECT_CLASS_CHOICES = [
+        ("residential", "Residential"),
+        ("commercial", "Commercial"),
+    ]
+
     LEAD_SOURCE_CHOICES = [
         ("landing_page", "Landing Page"),
         ("public_profile", "Public Profile"),
@@ -27,6 +32,12 @@ class ProjectIntake(models.Model):
         ("submitted", "Submitted"),
         ("analyzed", "Analyzed"),
         ("converted", "Converted to Agreement"),
+    ]
+
+    POST_SUBMIT_FLOW_CHOICES = [
+        ("", "Unselected"),
+        ("single_contractor", "Invite One Contractor"),
+        ("multi_contractor", "Invite Multiple Contractors"),
     ]
 
     contractor = models.ForeignKey(
@@ -81,6 +92,14 @@ class ProjectIntake(models.Model):
         default="draft",
     )
 
+    post_submit_flow = models.CharField(
+        max_length=32,
+        choices=POST_SUBMIT_FLOW_CHOICES,
+        blank=True,
+        default="",
+    )
+    post_submit_flow_selected_at = models.DateTimeField(null=True, blank=True)
+
     lead_source = models.CharField(
         max_length=20,
         choices=LEAD_SOURCE_CHOICES,
@@ -101,6 +120,12 @@ class ProjectIntake(models.Model):
 
     # Project address
     same_as_customer_address = models.BooleanField(default=True)
+
+    project_class = models.CharField(
+        max_length=20,
+        choices=PROJECT_CLASS_CHOICES,
+        default="residential",
+    )
 
     project_address_line1 = models.CharField(max_length=255, blank=True, default="")
     project_address_line2 = models.CharField(max_length=255, blank=True, default="")

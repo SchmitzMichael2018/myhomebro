@@ -7,9 +7,11 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from projects.models_invite import ContractorInvite
 from projects.models_project_intake import ProjectIntake
 from projects.models import PublicContractorLead
 from projects.services.intake_analysis import analyze_project_intake
+from projects.services.invites_delivery import build_invite_url
 from projects.services.public_lead_pipeline import sync_public_lead_from_project_intake
 
 
@@ -34,6 +36,7 @@ class PublicIntakeView(APIView):
         "customer_state",
         "customer_postal_code",
         "same_as_customer_address",
+        "project_class",
         "project_address_line1",
         "project_address_line2",
         "project_city",
@@ -41,6 +44,8 @@ class PublicIntakeView(APIView):
         "project_postal_code",
         "accomplishment_text",
     }
+
+    BRANCH_CHOICES = {"single_contractor", "multi_contractor"}
 
     def _get_intake(self, request):
         token = (request.query_params.get("token") or request.data.get("token") or "").strip()
@@ -91,6 +96,7 @@ class PublicIntakeView(APIView):
             "customer_postal_code": intake.customer_postal_code,
 
             "same_as_customer_address": intake.same_as_customer_address,
+            "project_class": intake.project_class,
 
             "project_address_line1": intake.project_address_line1,
             "project_address_line2": intake.project_address_line2,
@@ -99,6 +105,10 @@ class PublicIntakeView(APIView):
             "project_postal_code": intake.project_postal_code,
 
             "accomplishment_text": intake.accomplishment_text,
+            "post_submit_flow": intake.post_submit_flow,
+            "post_submit_flow_selected_at": intake.post_submit_flow_selected_at.isoformat()
+            if intake.post_submit_flow_selected_at
+            else None,
 
             "submitted_at": intake.submitted_at.isoformat() if intake.submitted_at else None,
             "sent_at": intake.sent_at.isoformat() if intake.sent_at else None,
@@ -113,16 +123,130 @@ class PublicIntakeView(APIView):
             return error_response
 
         changed = []
+        has_intake_field_updates = any(field in request.data for field in self.SAFE_FIELDS)
 
         for field in self.SAFE_FIELDS:
             if field in request.data:
+                if field == "project_class":
+                    value = str(request.data.get(field) or "").strip().lower()
+                    if value not in {"residential", "commercial"}:
+                        return Response(
+                            {"project_class": ["Choose residential or commercial."]},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+                    setattr(intake, field, value)
+                    changed.append(field)
+                    continue
                 setattr(intake, field, request.data.get(field))
                 changed.append(field)
 
-        if not changed:
+        branch_flow = (request.data.get("branch_flow") or "").strip().lower()
+
+        if not changed and not branch_flow:
             return Response(
                 {"detail": "No valid intake fields were provided."},
                 status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        branch_invites = []
+        branch_error = None
+
+        if branch_flow:
+            if branch_flow not in self.BRANCH_CHOICES:
+                return Response(
+                    {"detail": "Choose either invite one contractor or invite multiple contractors."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            intake.post_submit_flow = branch_flow
+            if intake.post_submit_flow_selected_at is None:
+                intake.post_submit_flow_selected_at = timezone.now()
+            changed.extend(["post_submit_flow", "post_submit_flow_selected_at"])
+
+            contractor_rows = request.data.get("contractors") or []
+            if isinstance(contractor_rows, str):
+                try:
+                    import json
+
+                    contractor_rows = json.loads(contractor_rows)
+                except Exception:
+                    contractor_rows = []
+
+            if branch_flow == "single_contractor":
+                contractor_rows = [
+                    {
+                        "name": request.data.get("contractor_name", ""),
+                        "email": request.data.get("contractor_email", ""),
+                        "phone": request.data.get("contractor_phone", ""),
+                        "message": request.data.get("contractor_message", ""),
+                    }
+                ]
+
+            if not isinstance(contractor_rows, list) or not contractor_rows:
+                return Response(
+                    {"detail": "Add at least one contractor contact before continuing."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            homeowner_name = (intake.customer_name or "").strip()
+            homeowner_email = (intake.customer_email or "").strip()
+            homeowner_phone = (intake.customer_phone or "").strip()
+            invite_message = (request.data.get("branch_message") or "").strip()
+
+            for row in contractor_rows:
+                if not isinstance(row, dict):
+                    continue
+                contractor_email = (row.get("email") or row.get("contractor_email") or "").strip().lower()
+                contractor_phone = (row.get("phone") or row.get("contractor_phone") or "").strip()
+                contractor_name = (row.get("name") or row.get("contractor_name") or "").strip()
+                contractor_message = (row.get("message") or invite_message or "").strip()
+
+                if not contractor_email and not contractor_phone:
+                    continue
+
+                invite = ContractorInvite.objects.create(
+                    homeowner_name=homeowner_name or "Customer",
+                    homeowner_email=homeowner_email,
+                    homeowner_phone=homeowner_phone,
+                    contractor_email=contractor_email,
+                    contractor_phone=contractor_phone,
+                    message="\n".join(
+                        part for part in [
+                            contractor_name and f"Contact: {contractor_name}",
+                            contractor_message,
+                        ]
+                        if part
+                    ),
+                    source_intake=intake,
+                )
+                branch_invites.append(
+                    {
+                        "token": str(invite.token),
+                        "contractor_email": invite.contractor_email,
+                        "contractor_phone": invite.contractor_phone,
+                        "invite_url": build_invite_url(request, invite.token),
+                    }
+                )
+
+            if not branch_invites:
+                branch_error = "Add at least one contractor contact before continuing."
+
+        if branch_error:
+            return Response({"detail": branch_error}, status=status.HTTP_400_BAD_REQUEST)
+
+        branch_only_request = bool(branch_flow) and not has_intake_field_updates
+        if branch_only_request:
+            intake.save(update_fields=changed + ["updated_at"])
+            return Response(
+                {
+                    "detail": "Intake updated successfully.",
+                    "id": intake.id,
+                    "status": intake.status,
+                    "post_submit_flow": intake.post_submit_flow,
+                    "branch_invites": branch_invites,
+                    "completed_at": intake.completed_at.isoformat() if intake.completed_at else None,
+                },
+                status=status.HTTP_200_OK,
             )
 
         accomplishment = (intake.accomplishment_text or "").strip()
@@ -180,6 +304,8 @@ class PublicIntakeView(APIView):
                 "id": intake.id,
                 "status": intake.status,
                 "lead_id": getattr(lead, "id", None),
+                "post_submit_flow": intake.post_submit_flow,
+                "branch_invites": branch_invites,
                 "completed_at": intake.completed_at.isoformat() if intake.completed_at else None,
             },
             status=status.HTTP_200_OK,

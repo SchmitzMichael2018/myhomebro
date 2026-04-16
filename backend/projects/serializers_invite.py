@@ -13,7 +13,9 @@ class ContractorInviteCreateSerializer(serializers.ModelSerializer):
             "contractor_email",
             "contractor_phone",
             "message",
+            "source_intake",
         ]
+        read_only_fields = ["source_intake"]
 
     def validate(self, attrs):
         contractor_email = (attrs.get("contractor_email") or "").strip()
@@ -43,6 +45,7 @@ class ContractorInviteCreateSerializer(serializers.ModelSerializer):
 
 class ContractorInviteReadSerializer(serializers.ModelSerializer):
     is_accepted = serializers.SerializerMethodField()
+    source_intake_id = serializers.SerializerMethodField()
 
     class Meta:
         model = ContractorInvite
@@ -54,10 +57,14 @@ class ContractorInviteReadSerializer(serializers.ModelSerializer):
             "contractor_email",
             "contractor_phone",
             "message",
+            "source_intake",
+            "source_intake_id",
             "is_accepted",
             "accepted_at",
             "created_at",
         ]
-
     def get_is_accepted(self, obj):
         return obj.is_accepted
+
+    def get_source_intake_id(self, obj):
+        return getattr(obj, "source_intake_id", None)

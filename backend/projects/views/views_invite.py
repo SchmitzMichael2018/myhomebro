@@ -126,16 +126,36 @@ class ContractorInviteViewSet(viewsets.GenericViewSet):
             return Response({"detail": "Only contractors can accept invites."}, status=status.HTTP_403_FORBIDDEN)
 
         invite: ContractorInvite = self.get_object()
-
+        source_intake = getattr(invite, "source_intake", None)
         # Idempotency: if already accepted, OK if same contractor
         if invite.is_accepted:
             if invite.accepted_by_contractor_id == contractor.id:
-                return Response({"ok": True, "message": "Invite already accepted."}, status=status.HTTP_200_OK)
+                return Response(
+                    {
+                        "ok": True,
+                        "message": "Invite already accepted.",
+                        "source_intake_id": getattr(source_intake, "id", None),
+                        "source_intake_url": (
+                            f"/app/intake/new?intakeId={source_intake.id}" if source_intake else ""
+                        ),
+                    },
+                    status=status.HTTP_200_OK,
+                )
             return Response({"detail": "Invite already accepted by another contractor."}, status=status.HTTP_409_CONFLICT)
 
         homeowner_email = (invite.homeowner_email or "").strip().lower()
 
         with transaction.atomic():
+            if source_intake is not None:
+                if source_intake.contractor_id and source_intake.contractor_id != contractor.id:
+                    return Response(
+                        {"detail": "This intake has already been assigned to another contractor."},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                if source_intake.contractor_id != contractor.id:
+                    source_intake.contractor = contractor
+                    source_intake.save(update_fields=["contractor", "updated_at"])
+
             invite.accepted_by_contractor = contractor
             invite.accepted_at = timezone.now()
             invite.save(update_fields=["accepted_by_contractor", "accepted_at"])
@@ -175,6 +195,14 @@ class ContractorInviteViewSet(viewsets.GenericViewSet):
                 pass
 
         return Response(
-            {"ok": True, "client_id": homeowner.id, "client_name": homeowner.full_name},
+            {
+                "ok": True,
+                "client_id": homeowner.id,
+                "client_name": homeowner.full_name,
+                "source_intake_id": getattr(source_intake, "id", None),
+                "source_intake_url": (
+                    f"/app/intake/new?intakeId={source_intake.id}" if source_intake else ""
+                ),
+            },
             status=status.HTTP_200_OK,
         )

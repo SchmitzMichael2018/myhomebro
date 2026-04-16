@@ -147,7 +147,7 @@ def _recommend_template(intake: ProjectIntake):
     accomplishment = _safe_str(intake.accomplishment_text)
 
     if not contractor or not accomplishment:
-        return None, "none", "", None
+        return None, "none", "", None, []
 
     qs = (
         ProjectTemplate.objects.filter(is_active=True)

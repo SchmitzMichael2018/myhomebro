@@ -16,10 +16,15 @@ function copyCustomerAddressToProject(form) {
   };
 }
 
+function getEffectiveProjectForm(form) {
+  return form.same_as_customer_address ? copyCustomerAddressToProject(form) : form;
+}
+
 const blankForm = {
   customer_name: "",
   customer_email: "",
   customer_phone: "",
+  project_class: "residential",
 
   customer_address_line1: "",
   customer_address_line2: "",
@@ -46,6 +51,16 @@ export default function PublicIntake() {
   const [loaded, setLoaded] = useState(false);
   const [contractorName, setContractorName] = useState("Your contractor");
   const [statusText, setStatusText] = useState("");
+  const [submittedAtLeastOnce, setSubmittedAtLeastOnce] = useState(false);
+  const [branchMode, setBranchMode] = useState("single_contractor");
+  const [branchSubmitting, setBranchSubmitting] = useState(false);
+  const [branchResult, setBranchResult] = useState(null);
+  const [branchContacts, setBranchContacts] = useState([
+    { name: "", email: "", phone: "" },
+    { name: "", email: "", phone: "" },
+  ]);
+  const [singleContractor, setSingleContractor] = useState({ name: "", email: "", phone: "" });
+  const [branchMessage, setBranchMessage] = useState("");
   const [form, setForm] = useState(blankForm);
 
   useEffect(() => {
@@ -73,6 +88,7 @@ export default function PublicIntake() {
           customer_name: data?.customer_name || "",
           customer_email: data?.customer_email || "",
           customer_phone: data?.customer_phone || "",
+          project_class: data?.project_class || "residential",
 
           customer_address_line1: data?.customer_address_line1 || "",
           customer_address_line2: data?.customer_address_line2 || "",
@@ -94,6 +110,12 @@ export default function PublicIntake() {
           accomplishment_text: data?.accomplishment_text || "",
         });
 
+        setBranchMode(data?.post_submit_flow || "single_contractor");
+        setBranchResult(
+          data?.post_submit_flow
+            ? { post_submit_flow: data.post_submit_flow, post_submit_flow_selected_at: data.post_submit_flow_selected_at || null }
+            : null
+        );
         setLoaded(true);
       } catch (e) {
         toast.error(
@@ -130,14 +152,15 @@ export default function PublicIntake() {
   ]);
 
   const canSubmit = useMemo(() => {
+    const effectiveForm = getEffectiveProjectForm(form);
     return (
-      !!String(form.customer_name || "").trim() &&
-      !!String(form.customer_email || "").trim() &&
-      !!String(form.project_address_line1 || "").trim() &&
-      !!String(form.project_city || "").trim() &&
-      !!String(form.project_state || "").trim() &&
-      !!String(form.project_postal_code || "").trim() &&
-      !!String(form.accomplishment_text || "").trim()
+      !!String(effectiveForm.customer_name || "").trim() &&
+      !!String(effectiveForm.customer_email || "").trim() &&
+      !!String(effectiveForm.project_address_line1 || "").trim() &&
+      !!String(effectiveForm.project_city || "").trim() &&
+      !!String(effectiveForm.project_state || "").trim() &&
+      !!String(effectiveForm.project_postal_code || "").trim() &&
+      !!String(effectiveForm.accomplishment_text || "").trim()
     );
   }, [form]);
 
@@ -162,13 +185,14 @@ export default function PublicIntake() {
     try {
       setSaving(true);
 
+      const effectiveForm = getEffectiveProjectForm(form);
       const payload = {
         token,
-        ...form,
+        ...effectiveForm,
       };
-
       const { data } = await api.patch("/projects/public-intake/", payload);
       setStatusText(data?.status || "submitted");
+      setSubmittedAtLeastOnce(true);
       toast.success("Your intake has been submitted.");
     } catch (e) {
       toast.error(
@@ -178,6 +202,47 @@ export default function PublicIntake() {
       setSaving(false);
     }
   }
+
+  async function handleBranchSubmit() {
+    if (!token) {
+      toast.error("Missing intake token.");
+      return;
+    }
+
+    const contractors =
+      branchMode === "single_contractor"
+        ? [
+            {
+              name: singleContractor.name,
+              email: singleContractor.email,
+              phone: singleContractor.phone,
+            },
+          ]
+        : branchContacts;
+
+    try {
+      setBranchSubmitting(true);
+      const { data } = await api.patch("/projects/public-intake/", {
+        token,
+        branch_flow: branchMode,
+        branch_message: branchMessage,
+        contractors,
+      });
+
+      setBranchResult(data || null);
+      toast.success(
+        Array.isArray(data?.branch_invites) && data.branch_invites.length
+          ? `Created ${data.branch_invites.length} contractor invite${data.branch_invites.length === 1 ? "" : "s"}.`
+          : "Saved your next-step choice."
+      );
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Could not save your next-step choice.");
+    } finally {
+      setBranchSubmitting(false);
+    }
+  }
+
+  const showBranching = submittedAtLeastOnce || ["submitted", "analyzed", "converted"].includes(String(statusText || "").toLowerCase());
 
   if (loading) {
     return (
@@ -316,6 +381,26 @@ export default function PublicIntake() {
             Tell us where the project will take place.
           </p>
 
+          <div className="mt-4">
+            <div className="mb-2 text-sm font-medium text-gray-900">Project Class</div>
+            <div className="flex flex-wrap gap-3">
+              {[
+                { value: "residential", label: "Residential" },
+                { value: "commercial", label: "Commercial" },
+              ].map((opt) => (
+                <label key={opt.value} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm">
+                  <input
+                    type="radio"
+                    name="project_class"
+                    checked={form.project_class === opt.value}
+                    onChange={() => setField("project_class", opt.value)}
+                  />
+                  {opt.label}
+                </label>
+              ))}
+            </div>
+          </div>
+
           <label className="mt-4 flex items-center gap-2 text-sm text-gray-700">
             <input
               type="checkbox"
@@ -446,6 +531,179 @@ export default function PublicIntake() {
             </button>
           </div>
         </div>
+
+        {showBranching ? (
+          <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-6 shadow-sm" data-testid="public-intake-branching-section">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">How would you like to proceed?</h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  Choose whether you want to invite one contractor directly or invite multiple contractors for bidding.
+                </p>
+              </div>
+              {branchResult?.post_submit_flow ? (
+                <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-indigo-700">
+                  Selected: {branchResult.post_submit_flow === "multi_contractor" ? "Invite Multiple Contractors" : "Invite One Contractor"}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => setBranchMode("single_contractor")}
+                className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                  branchMode === "single_contractor"
+                    ? "border-indigo-500 bg-indigo-600 text-white"
+                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+                data-testid="public-intake-branch-single"
+              >
+                Invite one contractor
+              </button>
+              <button
+                type="button"
+                onClick={() => setBranchMode("multi_contractor")}
+                className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                  branchMode === "multi_contractor"
+                    ? "border-indigo-500 bg-indigo-600 text-white"
+                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+                data-testid="public-intake-branch-multi"
+              >
+                Invite multiple contractors
+              </button>
+            </div>
+
+            {branchMode === "single_contractor" ? (
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Contractor Name</label>
+                  <input
+                    className="w-full rounded border px-3 py-2 text-sm"
+                    value={singleContractor.name}
+                    onChange={(e) => setSingleContractor((prev) => ({ ...prev, name: e.target.value }))}
+                    placeholder="Contractor name"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Contractor Email</label>
+                  <input
+                    className="w-full rounded border px-3 py-2 text-sm"
+                    value={singleContractor.email}
+                    onChange={(e) => setSingleContractor((prev) => ({ ...prev, email: e.target.value }))}
+                    placeholder="contractor@example.com"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Contractor Phone</label>
+                  <input
+                    className="w-full rounded border px-3 py-2 text-sm"
+                    value={singleContractor.phone}
+                    onChange={(e) => setSingleContractor((prev) => ({ ...prev, phone: e.target.value }))}
+                    placeholder="(555) 555-5555"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Message</label>
+                  <input
+                    className="w-full rounded border px-3 py-2 text-sm"
+                    value={branchMessage}
+                    onChange={(e) => setBranchMessage(e.target.value)}
+                    placeholder="Optional note for the contractor"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="mt-5 space-y-3">
+                {branchContacts.map((contact, index) => (
+                  <div key={`contractor-${index}`} className="rounded-lg border border-slate-200 bg-white p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-sm font-semibold text-gray-900">Contractor {index + 1}</div>
+                      {branchContacts.length > 1 ? (
+                        <button
+                          type="button"
+                          className="text-xs font-semibold text-rose-700 hover:underline"
+                          onClick={() =>
+                            setBranchContacts((prev) => prev.filter((_, i) => i !== index))
+                          }
+                        >
+                          Remove
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-3">
+                      <input
+                        className="rounded border px-3 py-2 text-sm"
+                        value={contact.name}
+                        onChange={(e) =>
+                          setBranchContacts((prev) =>
+                            prev.map((item, i) => (i === index ? { ...item, name: e.target.value } : item))
+                          )
+                        }
+                        placeholder="Name"
+                      />
+                      <input
+                        className="rounded border px-3 py-2 text-sm"
+                        value={contact.email}
+                        onChange={(e) =>
+                          setBranchContacts((prev) =>
+                            prev.map((item, i) => (i === index ? { ...item, email: e.target.value } : item))
+                          )
+                        }
+                        placeholder="Email"
+                      />
+                      <input
+                        className="rounded border px-3 py-2 text-sm"
+                        value={contact.phone}
+                        onChange={(e) =>
+                          setBranchContacts((prev) =>
+                            prev.map((item, i) => (i === index ? { ...item, phone: e.target.value } : item))
+                          )
+                        }
+                        placeholder="Phone"
+                      />
+                    </div>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  onClick={() => setBranchContacts((prev) => [...prev, { name: "", email: "", phone: "" }])}
+                >
+                  Add another contractor
+                </button>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Message for invited contractors</label>
+                  <textarea
+                    className="w-full rounded border px-3 py-2 text-sm"
+                    rows={3}
+                    value={branchMessage}
+                    onChange={(e) => setBranchMessage(e.target.value)}
+                    placeholder="Optional note shared with each invited contractor"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm text-gray-600">
+                {branchResult?.branch_invites?.length
+                  ? `${branchResult.branch_invites.length} invite${branchResult.branch_invites.length === 1 ? "" : "s"} ready for the next step.`
+                  : "You can switch paths before sending invites."}
+              </div>
+              <button
+                type="button"
+                onClick={handleBranchSubmit}
+                disabled={branchSubmitting}
+                data-testid="public-intake-branch-submit"
+                className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+              >
+                {branchSubmitting ? "Saving..." : "Save next step"}
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
