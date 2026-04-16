@@ -71,7 +71,7 @@ export default function LandingPage() {
         </div>
 
         <h1 data-testid="landing-hero-heading" style={S.title}>
-          AI-Powered Agreements. Secure Payments. Faster Payouts.
+          Start your project with MyHomeBro
         </h1>
         <div style={S.brand}>
           <span style={S.brandMain}>MyHome</span>
@@ -79,9 +79,13 @@ export default function LandingPage() {
         </div>
 
         <p style={S.subhead}>
-          Create project scope, milestone pricing, signatures, and payment-ready agreements in one place.
+          Invite a contractor you already trust or get multiple quotes from contractors all from one project
+          request.
         </p>
         <p style={S.subheadTiny}>No subscription required. Start free and pay only when you use the platform.</p>
+        <p style={S.branchingNote}>
+          After you submit your request, you can either invite one contractor or request multiple bids.
+        </p>
 
         <div style={S.badges}>
           <Badge icon={Zap} text="AI-powered pricing and milestone generation tailored to your project." />
@@ -113,7 +117,7 @@ export default function LandingPage() {
             style={S.btn}
             type="button"
           >
-            Start Project Intake
+            Start a Project
           </button>
         </div>
 
@@ -295,6 +299,15 @@ const S = {
   brandSub: { color: "#dbeafe" },
   subhead: { marginTop: 12, fontSize: 18, opacity: 0.95 },
   subheadTiny: { marginTop: 4, fontSize: 14, opacity: 0.88 },
+  branchingNote: {
+    marginTop: 12,
+    marginBottom: 0,
+    fontSize: 16,
+    lineHeight: 1.55,
+    fontWeight: 700,
+    maxWidth: 760,
+    textShadow: "0 1px 2px rgba(0,0,0,.18)",
+  },
 
   pricingWrap: {
     marginTop: 14,

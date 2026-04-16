@@ -1,25 +1,29 @@
 import { expect, test } from "@playwright/test";
 
-test("public intake shows branching choices after submit and lets the user switch paths", async ({
+test("landing page drives into intake and public intake shows branching choices after submit", async ({
   page,
 }) => {
   const branchRequests = [];
 
-  await page.route("**/api/projects/public-intake/start/", async (route) => {
-    await route.fulfill({
-      status: 201,
-      contentType: "application/json",
-      body: JSON.stringify({
-        ok: true,
-        intake_id: 501,
-        token: "landing-token",
-        status: "draft",
-        public_url: "http://localhost:5173/start-project/landing-token",
-      }),
-    });
-  });
-
   await page.route("**/api/projects/public-intake/**", async (route) => {
+    const requestUrl = route.request().url();
+    const method = route.request().method();
+
+    if (requestUrl.endsWith("/start/") && method === "POST") {
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          intake_id: 501,
+          token: "landing-token",
+          status: "draft",
+          public_url: "http://localhost:5173/start-project/landing-token",
+        }),
+      });
+      return;
+    }
+
     if (route.request().method() === "GET") {
       await route.fulfill({
         status: 200,
@@ -72,15 +76,20 @@ test("public intake shows branching choices after submit and lets the user switc
                 { token: "invite-1", invite_url: "/login?invite=invite-1" },
                 { token: "invite-2", invite_url: "/login?invite=invite-2" },
               ]
-            : [
-                { token: "invite-1", invite_url: "/login?invite=invite-1" },
-              ],
+            : [{ token: "invite-1", invite_url: "/login?invite=invite-1" }],
         completed_at: "2026-04-15T16:00:00Z",
       }),
     });
   });
 
-  await page.goto("/start-project/landing-token", { waitUntil: "domcontentloaded" });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("landing-hero-heading")).toContainText("Start your project with MyHomeBro");
+  await expect(page.getByTestId("landing-start-project-intake-button")).toHaveText("Start a Project");
+  await expect(page.getByText("After you submit your request, you can either invite one contractor or request multiple bids.")).toBeVisible();
+
+  await page.getByTestId("landing-start-project-intake-button").click();
+  await expect(page).toHaveURL(/\/start-project\/landing-token$/);
+  await expect(page.getByText("Project Intake", { exact: true })).toBeVisible();
 
   await page.getByPlaceholder("Your full name").fill("Branch Prospect");
   await page.getByPlaceholder("you@example.com").fill("branch@example.com");
@@ -93,8 +102,9 @@ test("public intake shows branching choices after submit and lets the user switc
   await page.getByTestId("public-intake-submit-button").click();
 
   await expect(page.getByTestId("public-intake-branching-section")).toBeVisible();
-  await expect(page.getByTestId("public-intake-branch-single")).toBeVisible();
-  await expect(page.getByTestId("public-intake-branch-multi")).toBeVisible();
+  await expect(page.getByTestId("public-intake-branching-section")).toContainText("How would you like to proceed?");
+  await expect(page.getByTestId("public-intake-branch-single")).toHaveText("Work with one contractor");
+  await expect(page.getByTestId("public-intake-branch-multi")).toHaveText("Get multiple quotes");
 
   await page.getByTestId("public-intake-branch-multi").click();
   const multiBranch = page.getByTestId("public-intake-branching-section");
@@ -107,7 +117,7 @@ test("public intake shows branching choices after submit and lets the user switc
   await page.getByTestId("public-intake-branch-submit").click();
 
   await expect(page.getByTestId("public-intake-branching-section")).toContainText("2 invites");
-  await expect(page.getByText("Invite Multiple Contractors").first()).toBeVisible();
+  await expect(page.getByText("Get Multiple Quotes").first()).toBeVisible();
   expect(branchRequests.some((body) => body.branch_flow === "multi_contractor")).toBeTruthy();
 
   await page.getByTestId("public-intake-branch-single").click();

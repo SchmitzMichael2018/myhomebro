@@ -538,12 +538,12 @@ export default function PublicIntake() {
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">How would you like to proceed?</h2>
                 <p className="mt-1 text-sm text-gray-600">
-                  Choose whether you want to invite one contractor directly or invite multiple contractors for bidding.
+                  Choose whether you want to work with one contractor or get multiple quotes from contractors.
                 </p>
               </div>
               {branchResult?.post_submit_flow ? (
                 <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-indigo-700">
-                  Selected: {branchResult.post_submit_flow === "multi_contractor" ? "Invite Multiple Contractors" : "Invite One Contractor"}
+                  Selected: {branchResult.post_submit_flow === "multi_contractor" ? "Get Multiple Quotes" : "Work with One Contractor"}
                 </div>
               ) : null}
             </div>
@@ -559,7 +559,7 @@ export default function PublicIntake() {
                 }`}
                 data-testid="public-intake-branch-single"
               >
-                Invite one contractor
+                Work with one contractor
               </button>
               <button
                 type="button"
@@ -571,7 +571,7 @@ export default function PublicIntake() {
                 }`}
                 data-testid="public-intake-branch-multi"
               >
-                Invite multiple contractors
+                Get multiple quotes
               </button>
             </div>
 

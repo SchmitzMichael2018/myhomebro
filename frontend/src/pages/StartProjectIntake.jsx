@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../api";
@@ -59,10 +59,10 @@ export default function StartProjectIntake() {
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-10">
       <div className="mx-auto max-w-2xl rounded-xl border bg-white p-6 shadow-sm">
-        <h1 className="text-2xl font-bold text-gray-900">Start Project Intake</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Starting your project request</h1>
         {starting ? (
           <p className="mt-2 text-sm text-gray-600">
-            Opening your project intake form…
+            Opening your single project request form...
           </p>
         ) : startError ? (
           <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -70,7 +70,7 @@ export default function StartProjectIntake() {
           </div>
         ) : (
           <p className="mt-2 text-sm text-gray-600">
-            Redirecting to your intake form…
+            Redirecting to your project request...
           </p>
         )}
       </div>
