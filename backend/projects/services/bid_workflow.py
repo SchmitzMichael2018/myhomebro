@@ -3,9 +3,11 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any, Iterable
 
+from django.db import transaction
 from django.utils import timezone
 
-from projects.models import AgreementProjectClass, PublicContractorLead
+from projects.models import Agreement, AgreementProjectClass, Homeowner, Project, PublicContractorLead
+from projects.models_templates import ProjectTemplate
 
 COMMERCIAL_HINTS = {
     "commercial",
@@ -209,3 +211,115 @@ def sync_bid_agreement_links(*, agreement, lead=None, intake=None) -> None:
         if updates:
             updates.append("updated_at")
             lead.save(update_fields=updates)
+
+
+def _ensure_homeowner_for_public_lead(*, lead, homeowner=None):
+    if homeowner is not None:
+        return homeowner
+    if not getattr(lead, "email", ""):
+        return None
+
+    contractor = getattr(lead, "contractor", None)
+    if contractor is None:
+        return None
+
+    existing = contractor.homeowners.filter(email__iexact=lead.email).first()
+    if existing is not None:
+        return existing
+
+    return Homeowner.objects.create(
+        created_by=contractor,
+        full_name=_safe_text(getattr(lead, "full_name", "")) or "Customer",
+        email=_safe_text(getattr(lead, "email", "")),
+        phone_number=_safe_text(getattr(lead, "phone", "")),
+        street_address=_safe_text(getattr(lead, "project_address", "")),
+        city=_safe_text(getattr(lead, "city", "")),
+        state=_safe_text(getattr(lead, "state", "")),
+        zip_code=_safe_text(getattr(lead, "zip_code", "")),
+        status="active",
+    )
+
+
+def promote_public_lead_to_agreement(*, lead, homeowner=None):
+    contractor = getattr(lead, "contractor", None)
+    if contractor is None:
+        return None, False
+
+    if getattr(lead, "converted_agreement_id", None):
+        agreement = lead.converted_agreement
+        source_intake = getattr(lead, "source_intake", None)
+        if source_intake is not None:
+            sync_bid_agreement_links(agreement=agreement, lead=lead, intake=source_intake)
+        return agreement, False
+
+    homeowner = _ensure_homeowner_for_public_lead(lead=lead, homeowner=homeowner)
+    if homeowner is None:
+        return None, False
+
+    analysis = getattr(lead, "ai_analysis", None) or {}
+    title = (
+        _safe_text(analysis.get("suggested_title"))
+        or _safe_text(getattr(lead, "project_type", ""))
+        or "Draft Agreement"
+    )
+    description = (
+        _safe_text(analysis.get("suggested_description"))
+        or _safe_text(getattr(lead, "project_description", ""))
+        or "Draft agreement from public lead."
+    )
+    project_type = _safe_text(analysis.get("project_type")) or _safe_text(getattr(lead, "project_type", ""))
+    project_subtype = _safe_text(analysis.get("project_subtype", ""))
+    template_id = analysis.get("template_id")
+    selected_template = None
+    if template_id:
+        selected_template = (
+            ProjectTemplate.objects.filter(pk=template_id, contractor=contractor, is_active=True).first()
+            or ProjectTemplate.objects.filter(pk=template_id, is_system=True, is_active=True).first()
+        )
+
+    with transaction.atomic():
+        project = Project.objects.create(
+            contractor=contractor,
+            homeowner=homeowner,
+            title=title,
+            description=description,
+            project_street_address=_safe_text(getattr(lead, "project_address", "")),
+            project_city=_safe_text(getattr(lead, "city", "")),
+            project_state=_safe_text(getattr(lead, "state", "")),
+            project_zip_code=_safe_text(getattr(lead, "zip_code", "")),
+            status="draft",
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=contractor,
+            homeowner=homeowner,
+            description=description,
+            project_address_line1=_safe_text(getattr(lead, "project_address", "")),
+            project_address_city=_safe_text(getattr(lead, "city", "")),
+            project_address_state=_safe_text(getattr(lead, "state", "")),
+            project_postal_code=_safe_text(getattr(lead, "zip_code", "")),
+            status="draft",
+            project_type=project_type,
+            project_subtype=project_subtype,
+            selected_template=selected_template,
+            selected_template_name_snapshot=getattr(selected_template, "name", "") or "",
+            source_lead=lead,
+            project_class=infer_project_class(
+                project_type,
+                project_subtype,
+                description,
+                getattr(lead, "project_description", ""),
+                getattr(lead, "project_type", ""),
+            ),
+        )
+        lead.converted_homeowner = homeowner
+        lead.status = PublicContractorLead.STATUS_ACCEPTED
+        if getattr(lead, "accepted_at", None) is None:
+            lead.accepted_at = timezone.now()
+        if getattr(lead, "converted_at", None) is None:
+            lead.converted_at = timezone.now()
+        updates = ["converted_homeowner", "status", "accepted_at", "converted_at", "updated_at"]
+        lead.save(update_fields=updates)
+        source_intake = getattr(lead, "source_intake", None)
+        sync_bid_agreement_links(agreement=agreement, lead=lead, intake=source_intake)
+    return agreement, True

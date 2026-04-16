@@ -7,7 +7,7 @@ const portalPayload = {
   },
   summary: {
     active_requests: 1,
-    bids_received: 1,
+    bids_received: 3,
     active_agreements: 1,
     payments: 2,
     documents: 1,
@@ -24,10 +24,24 @@ const portalPayload = {
       action_target: "",
       notes: "Need a commercial remodel.",
     },
+    {
+      id: "request-2",
+      project_title: "Office Fitout",
+      project_class_label: "Commercial",
+      latest_activity: "2026-04-15T15:30:00Z",
+      bids_count: 2,
+      status: "submitted",
+      status_label: "Submitted",
+      action_target: "",
+      notes: "Need an office fitout.",
+      action_label: "Compare bids",
+      comparison_key: "compare-key",
+    },
   ],
   bids: [
     {
-      id: "bid-1",
+      id: "lead-1",
+      bid_id: 1,
       project_title: "Kitchen Remodel",
       contractor_name: "Builder Co",
       project_class_label: "Commercial",
@@ -35,9 +49,55 @@ const portalPayload = {
       submitted_at: "2026-04-15T15:00:00Z",
       status: "awarded",
       status_label: "Awarded",
+      status_group: "awarded",
       next_action: { label: "Open Agreement" },
       action_target: "/agreements/magic/portal-token",
+      linked_agreement_id: 10,
+      linked_agreement_token: "portal-token",
+      comparison_key: "kitchen-key",
       notes: "Commercial remodel bid.",
+    },
+    {
+      id: "lead-2",
+      bid_id: 2,
+      project_title: "Office Fitout",
+      contractor_name: "Builder Co",
+      project_class_label: "Commercial",
+      bid_amount_label: "$22,000.00",
+      submitted_at: "2026-04-15T15:20:00Z",
+      status: "submitted",
+      status_label: "Submitted",
+      status_group: "open",
+      next_action: { label: "Review Bid" },
+      comparison_key: "compare-key",
+      request_title: "Office Fitout",
+      request_address: "200 Market St, Austin, TX 78701",
+      timeline: "Q2",
+      proposal_summary: "Office fitout bid from Builder Co.",
+      payment_structure_summary: "Bid summary",
+      milestone_preview: ["Demo", "Buildout", "Closeout"],
+      can_accept: true,
+    },
+    {
+      id: "lead-3",
+      bid_id: 3,
+      project_title: "Office Fitout",
+      contractor_name: "Partner Co",
+      project_class_label: "Commercial",
+      bid_amount_label: "$20,500.00",
+      submitted_at: "2026-04-15T15:25:00Z",
+      status: "submitted",
+      status_label: "Submitted",
+      status_group: "open",
+      next_action: { label: "Review Bid" },
+      comparison_key: "compare-key",
+      request_title: "Office Fitout",
+      request_address: "200 Market St, Austin, TX 78701",
+      timeline: "Q2",
+      proposal_summary: "Office fitout bid from Partner Co.",
+      payment_structure_summary: "Bid summary",
+      milestone_preview: ["Demo", "Buildout", "Closeout"],
+      can_accept: true,
     },
   ],
   agreements: [
@@ -92,6 +152,47 @@ const portalPayload = {
   ],
 };
 
+const acceptedPortalPayload = {
+  ...portalPayload,
+  summary: {
+    ...portalPayload.summary,
+    active_agreements: 2,
+  },
+  bids: portalPayload.bids.map((bid) => {
+    if (bid.id === "lead-2") {
+      return {
+        ...bid,
+        status: "awarded",
+        status_label: "Awarded",
+        status_group: "awarded",
+        linked_agreement_id: 11,
+        linked_agreement_token: "office-agreement-token",
+      };
+    }
+    if (bid.id === "lead-3") {
+      return {
+        ...bid,
+        status: "expired",
+        status_label: "Expired",
+        status_group: "declined_expired",
+      };
+    }
+    return bid;
+  }),
+  requests: portalPayload.requests.map((request) => {
+    if (request.id === "request-2") {
+      return {
+        ...request,
+        action_label: "Open Agreement",
+        action_target: "/agreements/magic/office-agreement-token",
+        agreement_id: 11,
+        agreement_token: "office-agreement-token",
+      };
+    }
+    return request;
+  }),
+};
+
 test("customer portal is reachable from the landing page and loads secure records", async ({
   page,
 }) => {
@@ -132,6 +233,22 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    if (requestUrl.includes("/customer-portal/customer-token/bids/") && requestUrl.endsWith("/accept/") && method === "POST") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          created: true,
+          agreement_id: 11,
+          detail_url: "/agreements/magic/office-agreement-token",
+          wizard_url: "/app/agreements/11/wizard?step=1",
+          portal: acceptedPortalPayload,
+        }),
+      });
+      return;
+    }
+
     await route.fallback();
   });
 
@@ -151,13 +268,14 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("customer-portal-summary")).toBeVisible();
   await expect(page.getByTestId("customer-portal-summary-active-requests")).toContainText("1");
-  await expect(page.getByTestId("customer-portal-summary-bids")).toContainText("1");
+  await expect(page.getByTestId("customer-portal-summary-bids")).toContainText("3");
   await expect(page.getByTestId("customer-portal-summary-agreements")).toContainText("1");
   await expect(page.getByTestId("customer-portal-summary-payments")).toContainText("2");
   await expect(page.getByTestId("customer-portal-summary-documents")).toContainText("1");
 
   await expect(page.getByTestId("customer-portal-requests")).toContainText("Kitchen Remodel");
   await expect(page.getByTestId("customer-portal-bids")).toContainText("Builder Co");
+  await expect(page.getByTestId("customer-portal-bids")).toContainText("Partner Co");
   await expect(page.getByTestId("customer-portal-agreements")).toContainText("Kitchen Remodel");
   await expect(page.getByTestId("customer-portal-payments")).toContainText("Invoice");
   await expect(page.getByTestId("customer-portal-documents")).toContainText("Scope Addendum");
@@ -169,8 +287,17 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByRole("button", { name: "Close modal" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
+  await page.getByTestId("customer-portal-compare-bids-button").click();
+  await expect(page.getByRole("dialog")).toContainText("Compare bids");
+  await expect(page.getByRole("dialog")).toContainText("Office Fitout");
+  await expect(page.getByRole("dialog")).toContainText("Partner Co");
+  await page.getByTestId("customer-portal-compare-accept-lead-2").click();
+
+  await expect(page.getByTestId("customer-portal-compare-open-lead-2")).toBeVisible();
+  await page.getByRole("button", { name: "Close modal" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
   await page.screenshot({ path: "test-results/customer-portal.png", fullPage: true });
 
   expect(consoleErrors.filter((msg) => msg.includes("We could not open that portal link"))).toHaveLength(0);
 });
-

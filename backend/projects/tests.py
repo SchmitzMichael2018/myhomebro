@@ -10141,6 +10141,20 @@ class CustomerPortalAccessTests(TestCase):
             allow_public_intake=True,
             is_public=True,
         )
+        self.other_contractor_user = User.objects.create_user(
+            email="partner@example.com",
+            password="password123",
+        )
+        self.other_contractor = Contractor.objects.create(
+            user=self.other_contractor_user,
+            business_name="Partner Co",
+        )
+        self.other_public_profile = ContractorPublicProfile.objects.create(
+            contractor=self.other_contractor,
+            business_name_public="Partner Co",
+            allow_public_intake=True,
+            is_public=True,
+        )
 
         self.customer_email = "customer@example.com"
         self.customer_homeowner = Homeowner.objects.create(
@@ -10243,6 +10257,28 @@ class CustomerPortalAccessTests(TestCase):
             share_token="portal-test-token-2",
         )
 
+        self.comparison_intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            homeowner=self.customer_homeowner,
+            initiated_by="homeowner",
+            status="submitted",
+            post_submit_flow="multi_contractor",
+            lead_source="landing_page",
+            customer_name="Pat Customer",
+            customer_email=self.customer_email,
+            customer_phone="555-111-2222",
+            project_class="commercial",
+            project_address_line1="200 Market St",
+            project_city="Austin",
+            project_state="TX",
+            project_postal_code="78701",
+            accomplishment_text="Need an office fitout.",
+            ai_project_title="Office Fitout",
+            submitted_at=timezone.now(),
+            completed_at=timezone.now(),
+            share_token="portal-test-token-3",
+        )
+
         self.lead = PublicContractorLead.objects.create(
             contractor=self.contractor,
             public_profile=self.public_profile,
@@ -10286,6 +10322,41 @@ class CustomerPortalAccessTests(TestCase):
         )
         self.other_intake.public_lead = self.other_lead
         self.other_intake.save(update_fields=["public_lead", "updated_at"])
+
+        self.comparison_lead_one = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.public_profile,
+            source=PublicContractorLead.SOURCE_DIRECT,
+            full_name="Pat Customer",
+            email=self.customer_email,
+            phone="555-111-2222",
+            project_address="200 Market St",
+            city="Austin",
+            state="TX",
+            zip_code="78701",
+            project_type="Commercial Office Fitout",
+            project_description="Commercial office fitout bid from Builder Co.",
+            preferred_timeline="Q2",
+            budget_text="$22,000",
+            status=PublicContractorLead.STATUS_READY_FOR_REVIEW,
+        )
+        self.comparison_lead_two = PublicContractorLead.objects.create(
+            contractor=self.other_contractor,
+            public_profile=self.other_public_profile,
+            source=PublicContractorLead.SOURCE_DIRECT,
+            full_name="Pat Customer",
+            email=self.customer_email,
+            phone="555-111-2222",
+            project_address="200 Market St",
+            city="Austin",
+            state="TX",
+            zip_code="78701",
+            project_type="Commercial Office Fitout",
+            project_description="Commercial office fitout bid from Partner Co.",
+            preferred_timeline="Q2",
+            budget_text="$20,500",
+            status=PublicContractorLead.STATUS_NEW,
+        )
 
         self.invoice = Invoice.objects.create(
             agreement=self.agreement,
@@ -10349,8 +10420,8 @@ class CustomerPortalAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["customer"]["email"], self.customer_email)
-        self.assertEqual(response.data["summary"]["active_requests"], 1)
-        self.assertEqual(response.data["summary"]["bids_received"], 1)
+        self.assertEqual(response.data["summary"]["active_requests"], 2)
+        self.assertEqual(response.data["summary"]["bids_received"], 3)
         self.assertEqual(response.data["summary"]["active_agreements"], 1)
         self.assertEqual(response.data["summary"]["payments"], 2)
         self.assertEqual(response.data["summary"]["documents"], 1)
@@ -10361,20 +10432,66 @@ class CustomerPortalAccessTests(TestCase):
         payment_titles = [row["project_title"] for row in response.data["payments"]]
         document_titles = [row["project_title"] for row in response.data["documents"]]
 
-        self.assertIn("Kitchen Remodel", request_titles)
-        self.assertIn("Commercial Remodel", bid_titles)
+        self.assertTrue(any("commercial remodel" in title.lower() for title in request_titles))
+        self.assertTrue(any("office fitout" in title.lower() for title in bid_titles))
         self.assertIn("Kitchen Remodel", agreement_titles)
         self.assertIn("Kitchen Remodel", payment_titles)
         self.assertIn("Kitchen Remodel", document_titles)
+        self.assertIn("Office Fitout", request_titles)
         self.assertNotIn("Other Basement", request_titles)
         self.assertNotIn("Other Basement", bid_titles)
         self.assertNotIn("Other Basement", agreement_titles)
         self.assertNotIn("Other Basement", payment_titles)
         self.assertNotIn("Other Basement", document_titles)
 
+        comparison_row = next(row for row in response.data["requests"] if row["project_title"] == "Office Fitout")
+        self.assertEqual(comparison_row["bids_count"], 2)
+        self.assertEqual(comparison_row["action_label"], "Compare bids")
+        self.assertFalse(comparison_row["agreement_token"])
+
         agreement_row = response.data["agreements"][0]
         self.assertNotIn("detail", agreement_row)
         self.assertNotIn("stripe_account_id", agreement_row)
+
+    def test_customer_portal_comparison_accepts_bid_and_reuses_agreement(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        response = self.client.post(f"/api/projects/customer-portal/{token}/bids/lead-{self.comparison_lead_one.id}/accept/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["ok"])
+        self.assertTrue(response.data["created"])
+        self.assertIsNotNone(response.data["agreement_id"])
+        self.assertTrue(response.data["detail_url"].startswith("/agreements/magic/"))
+        self.assertTrue(response.data["portal"]["summary"]["active_agreements"] >= 2)
+
+        portal = response.data["portal"]
+        accepted_bid = next(row for row in portal["bids"] if row["bid_id"] == self.comparison_lead_one.id)
+        competing_bid = next(row for row in portal["bids"] if row["bid_id"] == self.comparison_lead_two.id)
+        comparison_row = next(row for row in portal["requests"] if row["project_title"] == "Office Fitout")
+
+        self.assertEqual(accepted_bid["status"], "awarded")
+        self.assertEqual(accepted_bid["status_label"], "Awarded")
+        self.assertTrue(accepted_bid["linked_agreement_token"])
+        self.assertEqual(competing_bid["status"], "expired")
+        self.assertEqual(competing_bid["status_label"], "Expired")
+        self.assertEqual(comparison_row["action_label"], "Open Agreement")
+        self.assertTrue(comparison_row["agreement_token"])
+
+        repeat = self.client.post(f"/api/projects/customer-portal/{token}/bids/lead-{self.comparison_lead_one.id}/accept/")
+        self.assertEqual(repeat.status_code, 200)
+        self.assertFalse(repeat.data["created"])
+        self.assertEqual(repeat.data["agreement_id"], response.data["agreement_id"])
+
+    def test_customer_portal_rejects_other_customer_bid_accept(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        other_token = signing.dumps({"email": self.other_homeowner.email}, salt=PORTAL_TOKEN_SALT)
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{other_token}/bids/lead-{self.comparison_lead_one.id}/accept/"
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("your own request", response.data["detail"])
 
     def test_customer_portal_rejects_invalid_token(self):
         response = self.client.get("/api/projects/customer-portal/not-a-valid-token/")

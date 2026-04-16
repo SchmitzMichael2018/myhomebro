@@ -115,13 +115,24 @@ function detailPairs(kind, row) {
   }
   if (kind === "bid") {
     return [
-      ["Project", row.project_title],
+      ["Project", row.request_title || row.project_title],
+      ["Project Address", row.request_address || "—"],
       ["Contractor", row.contractor_name],
       ["Project Class", row.project_class_label],
       ["Bid Amount", row.bid_amount_label || "—"],
       ["Submitted", formatDate(row.submitted_at)],
       ["Status", row.status_label],
       ["Next Action", row.next_action?.label || "View details"],
+      ["Timeline", row.timeline || "—"],
+      ["Proposal", row.proposal_summary || "—"],
+      ["Payment Structure", row.payment_structure_summary || "—"],
+      [
+        "Milestones",
+        Array.isArray(row.milestone_preview) && row.milestone_preview.length
+          ? row.milestone_preview.join(", ")
+          : "—",
+      ],
+      ["Agreement", row.linked_agreement_id ? `Agreement #${row.linked_agreement_id}` : "—"],
       ["Notes", row.notes || "—"],
     ];
   }
@@ -158,6 +169,9 @@ function detailPairs(kind, row) {
 }
 
 function openTarget(row) {
+  if (row?.kind === "bid" && row.linked_agreement_token) {
+    return `/agreements/magic/${row.linked_agreement_token}`;
+  }
   return row?.details_url || row?.action_target || row?.url || "";
 }
 
@@ -172,6 +186,8 @@ export default function CustomerPortalPage() {
   const [loadError, setLoadError] = useState("");
   const [portal, setPortal] = useState(null);
   const [selected, setSelected] = useState(null);
+  const [compareRequest, setCompareRequest] = useState(null);
+  const [acceptingBidId, setAcceptingBidId] = useState(null);
 
   useEffect(() => {
     let mounted = true;
@@ -215,6 +231,40 @@ export default function CustomerPortalPage() {
   const documents = Array.isArray(portal?.documents) ? portal.documents : [];
 
   const portalTitle = portal?.customer?.name ? `${portal.customer.name} - MyHomeBro Records` : "MyHomeBro Records";
+  const compareBids = useMemo(() => {
+    if (!compareRequest) return [];
+    const key = compareRequest.comparison_key || "";
+    return bids.filter((bid) => (bid.comparison_key || "") === key);
+  }, [compareRequest, bids]);
+
+  const compareableRequests = useMemo(
+    () => requests.filter((row) => Number(row.bids_count || 0) > 1 && !row.agreement_id),
+    [requests]
+  );
+
+  const handleAcceptBid = async (bid) => {
+    const bidKey = bid?.id || "";
+    if (!token || !bidKey) return;
+    setAcceptingBidId(bidKey);
+    try {
+      const { data } = await api.post(
+        `/projects/customer-portal/${encodeURIComponent(token)}/bids/${encodeURIComponent(bidKey)}/accept/`
+      );
+      if (data?.portal) {
+        setPortal(data.portal);
+      }
+      toast.success(
+        data?.created ? "Your bid has been accepted and your agreement is ready." : "This bid is already linked to an agreement."
+      );
+      if (data?.detail_url) {
+        setSelected(null);
+      }
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "We could not accept that bid right now.");
+    } finally {
+      setAcceptingBidId("");
+    }
+  };
 
   const sections = useMemo(
     () => [
@@ -244,6 +294,17 @@ export default function CustomerPortalPage() {
                   Open
                   <ExternalLink size={14} />
                 </a>
+              ) : row.bids_count > 1 ? (
+                <button
+                  type="button"
+                  className="font-semibold text-indigo-700 hover:text-indigo-900"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCompareRequest(row);
+                  }}
+                >
+                  Compare bids
+                </button>
               ) : (
                 <button
                   type="button"
@@ -286,6 +347,17 @@ export default function CustomerPortalPage() {
                   {row.next_action?.label || "Open"}
                   <ExternalLink size={14} />
                 </a>
+              ) : row.can_accept ? (
+                <button
+                  type="button"
+                  className="font-semibold text-indigo-700 hover:text-indigo-900"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelected({ kind: "bid", row });
+                  }}
+                >
+                  View
+                </button>
               ) : (
                 <button
                   type="button"
@@ -596,6 +668,16 @@ export default function CustomerPortalPage() {
                     <h2 className="text-lg font-semibold text-slate-950">{section.title}</h2>
                     <div className="text-sm text-slate-600">{section.rows.length} item{section.rows.length === 1 ? "" : "s"}</div>
                   </div>
+                  {section.key === "bids" && compareableRequests.length ? (
+                    <button
+                      type="button"
+                      data-testid="customer-portal-compare-bids-button"
+                      className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      onClick={() => setCompareRequest(compareableRequests[0])}
+                    >
+                      Compare bids
+                    </button>
+                  ) : null}
                 </div>
                 <SectionTable
                   testId={`customer-portal-${section.key}`}
@@ -625,7 +707,7 @@ export default function CustomerPortalPage() {
         }
         onClose={() => setSelected(null)}
       >
-        {selected ? (
+            {selected ? (
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
               {selectedPairs.map(([label, value]) => (
@@ -646,6 +728,98 @@ export default function CustomerPortalPage() {
                 <ExternalLink size={14} />
               </a>
             ) : null}
+            {selected?.kind === "bid" && selected?.row?.can_accept ? (
+              <button
+                type="button"
+                data-testid="customer-portal-bid-accept-button"
+                onClick={() => handleAcceptBid(selected.row)}
+                disabled={acceptingBidId === selected.row.id}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {acceptingBidId === selected.row.id ? "Accepting..." : "Accept Bid"}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        visible={!!compareRequest}
+        title="Compare bids"
+        onClose={() => setCompareRequest(null)}
+      >
+        {compareRequest ? (
+          <div className="space-y-4">
+            <div>
+              <div className="text-sm font-semibold text-slate-900">{compareRequest.project_title}</div>
+              <div className="text-sm text-slate-600">{compareRequest.project_address || "Your project request"}</div>
+            </div>
+            {compareBids.length ? (
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {compareBids.map((bid) => {
+                  const awarded = bid.is_awarded || bid.status === "awarded";
+                  return (
+                    <div
+                      key={bid.bid_id}
+                      className={`rounded-2xl border p-4 shadow-sm ${awarded ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-white"}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-base font-semibold text-slate-950">{bid.contractor_name || "Contractor"}</div>
+                          <div className="mt-1 text-xs text-slate-500">{bid.project_class_label}</div>
+                        </div>
+                        <Badge tone={awarded ? "emerald" : bid.status_group === "under_review" ? "amber" : "slate"}>
+                          {bid.status_label}
+                        </Badge>
+                      </div>
+
+                      <div className="mt-4 text-3xl font-bold tabular-nums text-slate-950">
+                        {bid.bid_amount_label || "—"}
+                      </div>
+
+                      <div className="mt-3 space-y-2 text-sm text-slate-700">
+                        <div><span className="font-semibold text-slate-900">Timeline:</span> {bid.timeline || "—"}</div>
+                        <div><span className="font-semibold text-slate-900">Proposal:</span> {bid.proposal_summary || "—"}</div>
+                        <div><span className="font-semibold text-slate-900">Milestones:</span> {Array.isArray(bid.milestone_preview) && bid.milestone_preview.length ? bid.milestone_preview.join(", ") : "—"}</div>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                          onClick={() => setSelected({ kind: "bid", row: bid })}
+                        >
+                          View details
+                        </button>
+                        {bid.linked_agreement_id ? (
+                          <a
+                            data-testid={`customer-portal-compare-open-${bid.id}`}
+                            href={openTarget(bid)}
+                            className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
+                          >
+                            Open Agreement
+                          </a>
+                        ) : (
+                          <button
+                            type="button"
+                            data-testid={`customer-portal-compare-accept-${bid.id}`}
+                            onClick={() => handleAcceptBid(bid)}
+                            disabled={acceptingBidId === bid.id}
+                            className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                          >
+                            {acceptingBidId === bid.id ? "Accepting..." : "Accept Bid"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600">
+                We do not have multiple bids for this request yet.
+              </div>
+            )}
           </div>
         ) : null}
       </Modal>

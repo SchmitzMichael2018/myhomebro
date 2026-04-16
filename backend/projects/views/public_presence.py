@@ -29,7 +29,7 @@ from projects.serializers.public_presence import (
     make_qr_svg_data,
 )
 from projects.services.intake_analysis import analyze_project_intake
-from projects.services.bid_workflow import infer_project_class, sync_bid_agreement_links
+from projects.services.bid_workflow import infer_project_class, promote_public_lead_to_agreement
 from projects.services.public_lead_notifications import (
     send_public_lead_accept_email,
     send_public_lead_reject_email,
@@ -512,85 +512,18 @@ class ContractorPublicLeadCreateAgreementView(APIView):
                 {"detail": "Only accepted cold leads or warm leads that are ready for review can be converted into an agreement."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if lead.converted_agreement_id:
-            agreement = lead.converted_agreement
-            source_intake = getattr(lead, "source_intake", None)
-            if source_intake is not None:
-                sync_bid_agreement_links(agreement=agreement, lead=lead, intake=source_intake)
-            return Response(
-                {
-                    "agreement_id": agreement.id,
-                    "detail_url": f"/app/agreements/{agreement.id}",
-                    "wizard_url": f"/app/agreements/{agreement.id}/wizard?step=1",
-                    "created": False,
-                },
-                status=status.HTTP_200_OK,
-            )
-
-        homeowner = _ensure_homeowner_for_lead(lead)
-        if homeowner is None:
+        agreement, created = promote_public_lead_to_agreement(lead=lead)
+        if agreement is None:
             return Response(
                 {"email": ["An email address is required before creating an agreement from this lead."]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-        analysis = lead.ai_analysis or {}
-        title = (analysis.get("suggested_title") or lead.project_type or "Draft Agreement").strip()
-        description = (analysis.get("suggested_description") or lead.project_description or "Draft agreement from public lead.").strip()
-        project_type = (analysis.get("project_type") or lead.project_type or "").strip()
-        project_subtype = (analysis.get("project_subtype") or "").strip()
-        template_id = analysis.get("template_id")
-        selected_template = None
-        if template_id:
-            selected_template = ProjectTemplate.objects.filter(pk=template_id).filter(
-                is_active=True
-            ).filter(
-                contractor=contractor
-            ).first() or ProjectTemplate.objects.filter(pk=template_id, is_system=True, is_active=True).first()
-
-        project = Project.objects.create(
-            contractor=contractor,
-            homeowner=homeowner,
-            title=title,
-            description=description,
-            project_street_address=lead.project_address or "",
-            project_city=lead.city or "",
-            project_state=lead.state or "",
-            project_zip_code=lead.zip_code or "",
-            status="draft",
-        )
-        agreement = Agreement.objects.create(
-            project=project,
-            contractor=contractor,
-            homeowner=homeowner,
-            description=description,
-            project_address_line1=lead.project_address or "",
-            project_address_city=lead.city or "",
-            project_address_state=lead.state or "",
-            project_postal_code=lead.zip_code or "",
-            status="draft",
-            project_type=project_type,
-            project_subtype=project_subtype,
-            selected_template=selected_template,
-            selected_template_name_snapshot=getattr(selected_template, "name", "") or "",
-            source_lead=lead,
-            project_class=infer_project_class(
-                project_type,
-                project_subtype,
-                description,
-                lead.project_description,
-                lead.project_type,
-            ),
-        )
-        lead.converted_homeowner = homeowner
-        source_intake = getattr(lead, "source_intake", None)
-        sync_bid_agreement_links(agreement=agreement, lead=lead, intake=source_intake)
         return Response(
             {
                 "agreement_id": agreement.id,
                 "detail_url": f"/app/agreements/{agreement.id}",
                 "wizard_url": f"/app/agreements/{agreement.id}/wizard?step=1",
-                "created": True,
+                "created": created,
             },
             status=status.HTTP_201_CREATED,
         )

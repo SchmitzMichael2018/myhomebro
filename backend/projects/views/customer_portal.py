@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from decimal import Decimal
 
 from django.conf import settings
@@ -7,7 +8,6 @@ from django.core import signing
 from django.core.mail import send_mail
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
 from rest_framework import serializers, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -28,11 +28,13 @@ from projects.serializers.base import AgreementDetailPublicSerializer
 from projects.services.bid_workflow import (
     bid_next_action,
     bid_status_label,
+    bid_status_group,
     format_money,
     infer_project_class,
     normalize_bid_status,
     parse_money_like_text,
     project_class_label,
+    promote_public_lead_to_agreement,
 )
 
 PORTAL_TOKEN_SALT = "myhomebro.customer-portal"
@@ -50,6 +52,75 @@ def _safe_dt(value):
         return value.isoformat()
     except Exception:
         return str(value)
+
+
+def _comparison_key(*parts) -> str:
+    text = "|".join(_safe_text(part).lower() for part in parts if _safe_text(part))
+    return hashlib.sha1(text.encode("utf-8")).hexdigest() if text else ""
+
+
+def _request_identity_from_intake(intake) -> tuple[str, str, str]:
+    linked_agreement = getattr(intake, "agreement", None)
+    agreement_project = getattr(linked_agreement, "project", None)
+    project_title = (
+        _safe_text(getattr(intake, "ai_project_title", ""))
+        or _safe_text(getattr(intake, "accomplishment_text", ""))
+        or _safe_text(getattr(agreement_project, "title", None))
+        or f"Request #{getattr(intake, 'id', '')}"
+    )
+    request_address = ", ".join(
+        part
+        for part in [
+            _safe_text(getattr(intake, "project_address_line1", "")),
+            _safe_text(getattr(intake, "project_address_line2", "")),
+            _safe_text(getattr(intake, "project_city", "")),
+            _safe_text(getattr(intake, "project_state", "")),
+            _safe_text(getattr(intake, "project_postal_code", "")),
+        ]
+        if part
+    )
+    project_class = _safe_text(getattr(intake, "project_class", "")) or infer_project_class(
+        getattr(intake, "customer_name", ""),
+        getattr(intake, "accomplishment_text", ""),
+    )
+    return project_title, request_address, project_class
+
+
+def _request_identity_from_lead(lead) -> tuple[str, str, str]:
+    source_intake = getattr(lead, "source_intake", None)
+    analysis = getattr(lead, "ai_analysis", None) or {}
+    request_title = ""
+    if source_intake is not None:
+        source_agreement = getattr(source_intake, "agreement", None)
+        source_project = getattr(source_agreement, "project", None)
+        request_title = _safe_text(getattr(source_project, "title", ""))
+        if not request_title:
+            request_title = _safe_text(getattr(source_intake, "ai_project_title", ""))
+    if not request_title:
+        request_title = (
+            _safe_text(analysis.get("suggested_title"))
+            or _safe_text(getattr(lead, "project_type", ""))
+            or _safe_text(getattr(lead, "project_description", ""))
+            or f"Bid #{getattr(lead, 'id', '')}"
+        )
+    request_address = ", ".join(
+        part
+        for part in [
+            _safe_text(getattr(source_intake, "project_address_line1", "")) if source_intake else _safe_text(getattr(lead, "project_address", "")),
+            _safe_text(getattr(source_intake, "project_address_line2", "")) if source_intake else "",
+            _safe_text(getattr(source_intake, "project_city", "")) if source_intake else _safe_text(getattr(lead, "city", "")),
+            _safe_text(getattr(source_intake, "project_state", "")) if source_intake else _safe_text(getattr(lead, "state", "")),
+            _safe_text(getattr(source_intake, "project_postal_code", "")) if source_intake else _safe_text(getattr(lead, "zip_code", "")),
+        ]
+        if part
+    )
+    project_class = _safe_text(getattr(getattr(lead, "converted_agreement", None), "project_class", "")) or infer_project_class(
+        getattr(lead, "project_type", ""),
+        getattr(lead, "project_description", ""),
+        getattr(lead, "preferred_timeline", ""),
+        getattr(lead, "budget_text", ""),
+    )
+    return request_title, request_address, project_class
 
 
 def _portal_frontend_base() -> str:
@@ -164,8 +235,21 @@ def _request_has_records(email: str) -> bool:
     )
 
 
-def _request_rows(email: str) -> list[dict]:
+def _request_rows(email: str, *, bid_rows: list[dict] | None = None) -> list[dict]:
     rows = []
+    bid_counts: dict[str, int] = {}
+    agreement_by_key: dict[str, dict[str, str | int]] = {}
+    if bid_rows:
+        for row in bid_rows:
+            key = _safe_text(row.get("comparison_key", ""))
+            if not key:
+                continue
+            bid_counts[key] = bid_counts.get(key, 0) + 1
+            if key not in agreement_by_key and row.get("linked_agreement_id"):
+                agreement_by_key[key] = {
+                    "agreement_id": row.get("linked_agreement_id"),
+                    "agreement_token": _safe_text(row.get("linked_agreement_token", "")),
+                }
 
     leads = list(
         PublicContractorLead.objects.select_related(
@@ -186,14 +270,9 @@ def _request_rows(email: str) -> list[dict]:
     for intake in intakes:
         request_status = _safe_text(getattr(intake, "status", "")).lower()
         linked_agreement = getattr(intake, "agreement", None)
-        agreement_project = getattr(linked_agreement, "project", None)
-        project_title = (
-            _safe_text(getattr(agreement_project, "title", None))
-            or
-            _safe_text(getattr(intake, "ai_project_title", "")) or
-            _safe_text(getattr(intake, "accomplishment_text", "")) or
-            f"Request #{intake.id}"
-        )
+        project_title, request_address, project_class = _request_identity_from_intake(intake)
+        comparison_key = _comparison_key(email, request_address, project_class)
+        comparison_agreement = agreement_by_key.get(comparison_key, {})
         latest_activity = (
             getattr(intake, "converted_at", None)
             or getattr(intake, "analyzed_at", None)
@@ -207,11 +286,10 @@ def _request_rows(email: str) -> list[dict]:
                 "id": f"intake-{intake.id}",
                 "request_id": intake.id,
                 "project_title": project_title,
-                "project_class": _safe_text(getattr(intake, "project_class", "")) or infer_project_class(
-                    getattr(intake, "customer_name", ""),
-                    getattr(intake, "accomplishment_text", ""),
-                ),
-                "project_class_label": project_class_label(getattr(intake, "project_class", "")),
+                "project_address": request_address,
+                "project_class": project_class,
+                "project_class_label": project_class_label(project_class),
+                "comparison_key": comparison_key,
                 "status": request_status,
                 "status_label": (
                     "Converted"
@@ -234,11 +312,22 @@ def _request_rows(email: str) -> list[dict]:
                     if request_status == "analyzed"
                     else "Updated"
                 ),
-                "bids_count": related_bids,
-                "agreement_id": getattr(linked_agreement, "id", None),
-                "agreement_token": str(getattr(linked_agreement, "homeowner_access_token", "") or ""),
-                "action_label": "Open Agreement" if linked_agreement else "View Request",
-                "action_target": _agreement_pdf_url(linked_agreement) if linked_agreement else "",
+                "bids_count": bid_counts.get(comparison_key, related_bids),
+                "agreement_id": getattr(linked_agreement, "id", None) or comparison_agreement.get("agreement_id"),
+                "agreement_token": str(getattr(linked_agreement, "homeowner_access_token", "") or "")
+                or _safe_text(comparison_agreement.get("agreement_token", "")),
+                "action_label": (
+                    "Open Agreement"
+                    if linked_agreement or comparison_agreement.get("agreement_token")
+                    else "Compare bids"
+                    if bid_counts.get(comparison_key, related_bids) > 1
+                    else "View Request"
+                ),
+                "action_target": (
+                    f"/agreements/magic/{getattr(linked_agreement, 'homeowner_access_token', '') or _safe_text(comparison_agreement.get('agreement_token', ''))}"
+                    if linked_agreement or comparison_agreement.get("agreement_token")
+                    else ""
+                ),
                 "notes": _safe_text(getattr(intake, "accomplishment_text", "")),
             }
         )
@@ -274,6 +363,8 @@ def _bid_rows(email: str) -> list[dict]:
             record_kind="lead",
         )
         analysis = getattr(lead, "ai_analysis", None) or {}
+        request_title, request_address, request_project_class = _request_identity_from_lead(lead)
+        comparison_key = _comparison_key(email, request_address, request_project_class)
         bid_amount = (
             getattr(linked_agreement, "total_cost", None)
             or parse_money_like_text(getattr(lead, "budget_text", ""))
@@ -285,10 +376,12 @@ def _bid_rows(email: str) -> list[dict]:
             {
                 "id": f"lead-{lead.id}",
                 "bid_id": lead.id,
-                "project_title": _safe_text(analysis.get("suggested_title"))
-                or _safe_text(getattr(lead, "project_type", ""))
-                or _safe_text(getattr(lead, "project_description", ""))
-                or f"Bid #{lead.id}",
+                "source_kind": "lead",
+                "source_kind_label": "Lead",
+                "source_id": lead.id,
+                "source_reference": f"Lead #{lead.id}",
+                "project_title": request_title,
+                "project_address": request_address,
                 "contractor_name": _contractor_name(contractor),
                 "project_class": _safe_text(getattr(linked_agreement, "project_class", "")) or infer_project_class(
                     getattr(lead, "project_type", ""),
@@ -297,26 +390,40 @@ def _bid_rows(email: str) -> list[dict]:
                     getattr(lead, "budget_text", ""),
                 ),
                 "project_class_label": project_class_label(
-                    _safe_text(getattr(linked_agreement, "project_class", "")) or infer_project_class(
-                        getattr(lead, "project_type", ""),
-                        getattr(lead, "project_description", ""),
-                        getattr(lead, "preferred_timeline", ""),
-                        getattr(lead, "budget_text", ""),
-                    )
+                    request_project_class
                 ),
                 "bid_amount": format_money(bid_amount) if bid_amount is not None else None,
                 "bid_amount_label": f"${bid_amount:,.2f}" if bid_amount is not None else "—",
                 "submitted_at": _safe_dt(submitted_at),
                 "status": status,
                 "status_label": bid_status_label(status),
+                "status_group": bid_status_group(status),
                 "linked_agreement_id": getattr(linked_agreement, "id", None),
                 "linked_agreement_token": str(getattr(linked_agreement, "homeowner_access_token", "") or ""),
+                "comparison_key": comparison_key,
+                "request_title": request_title,
+                "request_address": request_address,
+                "proposal_summary": _safe_text(analysis.get("suggested_description"))
+                or _safe_text(getattr(lead, "project_description", "")),
+                "timeline": _safe_text(getattr(lead, "preferred_timeline", "")),
+                "payment_structure_summary": (
+                    "Agreement ready"
+                    if getattr(linked_agreement, "id", None)
+                    else "Bid summary"
+                ),
+                "milestone_preview": [
+                    _safe_text(row.get("title") or row.get("name"))
+                    for row in (analysis.get("milestones") or [])[:3]
+                    if isinstance(row, dict) and _safe_text(row.get("title") or row.get("name"))
+                ],
                 "next_action": bid_next_action(
                     status=status,
                     linked_agreement_id=getattr(linked_agreement, "id", None),
                     source_kind="lead",
                 ),
                 "notes": _safe_text(getattr(lead, "project_description", "")),
+                "can_accept": not bool(getattr(linked_agreement, "id", None)),
+                "is_awarded": status == "awarded",
             }
         )
 
@@ -544,8 +651,8 @@ def _customer_name(email: str) -> str:
 
 
 def _build_customer_portal_payload(email: str, request=None) -> dict:
-    request_rows = _request_rows(email)
     bid_rows = _bid_rows(email)
+    request_rows = _request_rows(email, bid_rows=bid_rows)
     agreement_rows = _agreements(email, request=request)
     payment_rows = _payments(email, request=request)
     document_rows = _documents(email, request=request)
@@ -570,6 +677,35 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
         "payments": payment_rows,
         "documents": document_rows,
     }
+
+
+def _find_customer_bid_record(*, email: str, bid_key: str):
+    key = _safe_text(bid_key)
+    if not key:
+        raise signing.BadSignature("Missing bid key.")
+
+    if "-" not in key:
+        raise signing.BadSignature("Invalid bid key.")
+
+    prefix, raw_id = key.split("-", 1)
+    try:
+        record_id = int(raw_id)
+    except Exception as exc:
+        raise signing.BadSignature("Invalid bid key.") from exc
+
+    if prefix == "lead":
+        return get_object_or_404(
+            PublicContractorLead.objects.select_related(
+                "contractor",
+                "public_profile",
+                "converted_agreement",
+                "source_intake",
+                "source_intake__agreement",
+            ),
+            pk=record_id,
+        )
+
+    raise signing.BadSignature("Invalid bid key.")
 
 
 class CustomerPortalRequestLinkSerializer(serializers.Serializer):
@@ -636,6 +772,52 @@ class CustomerPortalView(APIView):
             return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
 
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalBidAcceptView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str, bid_key: str):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        lead = _find_customer_bid_record(email=email, bid_key=bid_key)
+        source_intake = getattr(lead, "source_intake", None)
+        if _safe_text(getattr(lead, "email", "")).lower() != email and _safe_text(getattr(source_intake, "customer_email", "")).lower() != email:
+            return Response({"detail": "You can only choose bids for your own request."}, status=status.HTTP_403_FORBIDDEN)
+        homeowner = getattr(lead, "converted_homeowner", None)
+        agreement, created = promote_public_lead_to_agreement(lead=lead, homeowner=homeowner)
+        _, accepted_address, accepted_class = _request_identity_from_lead(lead)
+
+        accepted_key = _comparison_key(email, accepted_address, accepted_class)
+        competing_bids = PublicContractorLead.objects.select_related("source_intake", "converted_agreement").filter(
+            Q(email__iexact=email) | Q(source_intake__customer_email__iexact=email)
+        ).exclude(pk=lead.pk)
+        for competitor in competing_bids:
+            _, competitor_address, competitor_class = _request_identity_from_lead(competitor)
+            competitor_key = _comparison_key(email, competitor_address, competitor_class)
+            if competitor_key != accepted_key:
+                continue
+            if competitor.status not in {PublicContractorLead.STATUS_ACCEPTED, PublicContractorLead.STATUS_REJECTED}:
+                competitor.status = PublicContractorLead.STATUS_CLOSED
+                competitor.save(update_fields=["status", "updated_at"])
+
+        return Response(
+            {
+                "ok": True,
+                "created": created,
+                "agreement_id": getattr(agreement, "id", None),
+                "project_id": getattr(getattr(agreement, "project", None), "id", None),
+                "detail_url": f"/agreements/magic/{agreement.homeowner_access_token}",
+                "wizard_url": f"/app/agreements/{agreement.id}/wizard?step=1",
+                "portal": _build_customer_portal_payload(email, request=request),
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class AgreementMagicAccessView(APIView):

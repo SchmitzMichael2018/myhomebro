@@ -205,6 +205,7 @@ from .views.contractor_payout_history import ContractorPayoutHistoryView as Cont
 from .views.customer_portal import (
     AgreementMagicAccessView,
     AgreementMagicPdfView,
+    CustomerPortalBidAcceptView,
     CustomerPortalRequestLinkView,
     CustomerPortalView,
 )
@@ -293,6 +294,7 @@ urlpatterns = [
     path("twilio/status/", twilio_sms_status, name="twilio-sms-status"),
     path("customer-portal/request-link/", CustomerPortalRequestLinkView.as_view(), name="customer-portal-request-link"),
     path("customer-portal/<str:token>/", CustomerPortalView.as_view(), name="customer-portal-detail"),
+    path("customer-portal/<str:token>/bids/<str:bid_key>/accept/", CustomerPortalBidAcceptView.as_view(), name="customer-portal-bid-accept"),
     path("sms/automation/preview/", SMSAutomationPreviewView.as_view(), name="sms-automation-preview"),
     path("sms/opt-in/", SMSOptInView.as_view(), name="sms-opt-in"),
     path("sms/opt-out/", SMSOptOutView.as_view(), name="sms-opt-out"),
