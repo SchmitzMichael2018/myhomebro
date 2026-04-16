@@ -1957,6 +1957,17 @@ class ContractorBidsWorkspaceTests(TestCase):
             rejected_at=timezone.now() - timezone.timedelta(days=1),
         )
 
+        self.commercial_not_selected_lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            full_name="Not Selected Lead",
+            email="notselected@example.com",
+            project_type="Commercial",
+            project_description="Warehouse office buildout.",
+            status=PublicContractorLead.STATUS_CLOSED,
+            converted_at=timezone.now() - timezone.timedelta(hours=12),
+        )
+
         self.linked_commercial_lead = PublicContractorLead.objects.create(
             contractor=self.contractor,
             public_profile=self.profile,
@@ -1996,14 +2007,14 @@ class ContractorBidsWorkspaceTests(TestCase):
         payload = response.json()
         rows = payload["results"]
 
-        self.assertEqual(len(rows), 5)
+        self.assertEqual(len(rows), 6)
         summary = payload["summary"]
         self.assertEqual(summary["open_bids"], 1)
         self.assertEqual(summary["under_review_bids"], 1)
         self.assertEqual(summary["awarded_bids"], 2)
-        self.assertEqual(summary["declined_expired_bids"], 1)
+        self.assertEqual(summary["declined_expired_bids"], 2)
         self.assertEqual(summary["residential_count"], 2)
-        self.assertEqual(summary["commercial_count"], 3)
+        self.assertEqual(summary["commercial_count"], 4)
 
         residential_awarded = next(
             row
@@ -2020,6 +2031,11 @@ class ContractorBidsWorkspaceTests(TestCase):
             for row in rows
             if row["source_kind"] == "lead" and row["source_id"] == self.linked_commercial_lead.id
         )
+        not_selected = next(
+            row
+            for row in rows
+            if row["source_kind"] == "lead" and row["source_id"] == self.commercial_not_selected_lead.id
+        )
 
         self.assertEqual(residential_awarded["status"], "awarded")
         self.assertEqual(residential_awarded["next_action"]["key"], "convert_to_agreement")
@@ -2035,6 +2051,9 @@ class ContractorBidsWorkspaceTests(TestCase):
         self.assertEqual(linked_awarded["next_action"]["key"], "open_agreement")
         self.assertEqual(linked_awarded["linked_agreement_id"], self.linked_agreement.id)
         self.assertEqual(linked_awarded["project_class"], "commercial")
+        self.assertEqual(not_selected["status"], "expired")
+        self.assertEqual(not_selected["status_label"], "Not Selected")
+        self.assertEqual(not_selected["status_note"], "Another contractor was selected for this project.")
 
         other_client = APIClient()
         other_client.force_authenticate(user=self.other_plain_user)
@@ -10473,7 +10492,8 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(accepted_bid["status_label"], "Awarded")
         self.assertTrue(accepted_bid["linked_agreement_token"])
         self.assertEqual(competing_bid["status"], "expired")
-        self.assertEqual(competing_bid["status_label"], "Expired")
+        self.assertEqual(competing_bid["status_label"], "Not Selected")
+        self.assertEqual(competing_bid["status_note"], "Another contractor was selected for this project.")
         self.assertEqual(comparison_row["action_label"], "Open Agreement")
         self.assertTrue(comparison_row["agreement_token"])
 

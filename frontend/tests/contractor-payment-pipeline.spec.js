@@ -127,6 +127,17 @@ const bidRows = [
     status_group: "awarded",
     next_action: { key: "convert_to_agreement", label: "Convert to Agreement", target: "" },
   },
+  {
+    bid_id: "lead-204",
+    project_title: "Retail Buildout West",
+    customer_name: "Casey Selected",
+    project_class: "commercial",
+    project_class_label: "Commercial",
+    status: "expired",
+    status_label: "Not Selected",
+    status_group: "declined_expired",
+    next_action: { key: "view_details", label: "View Details", target: "" },
+  },
 ];
 
 async function mockDashboard(page, options = {}) {
@@ -137,9 +148,9 @@ async function mockDashboard(page, options = {}) {
       open_bids: 1,
       under_review_bids: 1,
       awarded_bids: 1,
-      declined_expired_bids: 0,
+      declined_expired_bids: 1,
       residential_count: 1,
-      commercial_count: 2,
+      commercial_count: 3,
     };
 
   await page.addInitScript(() => {
@@ -445,10 +456,12 @@ test('contractor dashboard reflects draw-request payment pipeline and actions', 
   await expect(page.getByTestId('dashboard-bids-summary')).toContainText('Open Bids');
   await expect(page.getByTestId('dashboard-bids-summary')).toContainText('Under Review');
   await expect(page.getByTestId('dashboard-bids-summary')).toContainText('Awarded');
+  await expect(page.getByTestId('dashboard-bids-summary')).toContainText('Not Selected / Declined');
   await expect(page.getByTestId('dashboard-bids-recent-table')).toBeVisible();
   await expect(page.getByTestId('dashboard-bids-row-lead-201')).toContainText('Kitchen Remodel');
   await expect(page.getByTestId('dashboard-bids-row-intake-202')).toContainText('Office Suite Renovation');
   await expect(page.getByTestId('dashboard-bids-row-lead-203')).toContainText('Convert to Agreement');
+  await expect(page.getByTestId('dashboard-bids-row-lead-204')).toContainText('Not Selected');
   await expect(page.getByTestId('dashboard-money-awaiting-customer')).toContainText('Awaiting Customer Approval');
   await expect(page.getByTestId('dashboard-money-approved')).toContainText('Payment Pending');
   await expect(page.getByTestId('dashboard-payment-records-table').getByText('Issues / Disputes')).toBeVisible();

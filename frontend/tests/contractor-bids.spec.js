@@ -100,8 +100,8 @@ const bidRows = [
     bid_amount: null,
     bid_amount_label: "-",
     submitted_at: "2026-04-13T15:20:00Z",
-    status: "declined",
-    status_label: "Declined",
+    status: "expired",
+    status_label: "Not Selected",
     status_group: "declined_expired",
     linked_agreement_id: null,
     linked_agreement_label: "",
@@ -112,6 +112,7 @@ const bidRows = [
     budget_text: "",
     milestone_preview: [],
     next_action: { key: "view_details", label: "View Details", target: "" },
+    status_note: "Another contractor was selected for this project.",
   },
   {
     bid_id: "lead-5",
@@ -219,10 +220,18 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("bids-summary-under-review")).toContainText("1");
   await expect(page.getByTestId("bids-summary-awarded")).toContainText("2");
   await expect(page.getByTestId("bids-summary-declined")).toContainText("1");
+  await expect(page.getByTestId("bids-row-lead-4")).toContainText("Not Selected");
   expect(authHeader).toContain("Bearer ");
 
   await expect(page.getByTestId("bids-row-lead-3")).toContainText("Convert to Agreement");
   await expect(page.getByTestId("bids-row-lead-5")).toContainText("Open Agreement");
+  await expect(page.getByTestId("bids-row-lead-4")).toContainText("Not Selected");
+
+  await page.getByTestId("bids-row-lead-4").click();
+  await expect(page.getByTestId("bids-detail-drawer")).toBeVisible();
+  await expect(page.getByTestId("bids-detail-drawer")).toContainText("Another contractor was selected for this project.");
+  await page.getByRole("button", { name: "Close bid details" }).click();
+  await expect(page.getByTestId("bids-detail-drawer")).toHaveCount(0);
 
   await page.getByTestId("bids-row-lead-5").click();
   await expect(page.getByTestId("bids-detail-drawer")).toBeVisible();

@@ -51,15 +51,17 @@ function statusTone(status) {
   if (["under_review", "submitted", "analyzed", "payment_pending"].includes(key)) {
     return "border-amber-200 bg-amber-50 text-amber-800";
   }
-  if (["declined", "expired", "rejected", "issues"].includes(key)) {
+  if (["declined", "rejected", "issues"].includes(key)) {
     return "border-rose-200 bg-rose-50 text-rose-800";
   }
+  if (key === "expired") return "border-slate-200 bg-slate-50 text-slate-700";
   return "border-slate-200 bg-slate-50 text-slate-700";
 }
 
 function statusLabel(status, fallback = "—") {
   const text = String(status || "").trim();
   if (!text) return fallback;
+  if (normalize(text) === "expired") return "Not Selected";
   return titleCaseStatus(text);
 }
 

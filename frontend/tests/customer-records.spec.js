@@ -89,12 +89,13 @@ test("customer records dashboard renders requests, bids, agreements, and payment
             customer_name: "Riley Business",
             project_class: "commercial",
             project_class_label: "Commercial",
-            status: "awarded",
-            status_label: "Awarded",
+            status: "expired",
+            status_label: "Not Selected",
             submitted_at: "2026-04-09T11:00:00Z",
-            next_action: { key: "open_agreement", label: "Open Agreement" },
-            linked_agreement_id: 301,
-            linked_agreement_url: "/app/agreements/301",
+            status_note: "Another contractor was selected for this project.",
+            next_action: { key: "view", label: "View Details" },
+            linked_agreement_id: null,
+            linked_agreement_url: "",
           },
         ],
       }),
@@ -185,6 +186,7 @@ test("customer records dashboard renders requests, bids, agreements, and payment
 
   await expect(page.getByTestId("customer-records-requests-table")).toContainText("Kitchen Refresh");
   await expect(page.getByTestId("customer-records-bids-table")).toContainText("Commercial Renovation");
+  await expect(page.getByTestId("customer-records-bids-table")).toContainText("Not Selected");
   await expect(page.getByTestId("customer-records-agreements-table")).toContainText("Commercial Renovation");
   await expect(page.getByTestId("customer-records-payments-table")).toContainText("Commercial Renovation");
 

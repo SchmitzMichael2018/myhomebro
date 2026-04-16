@@ -2654,12 +2654,12 @@ export default function ContractorDashboard() {
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    Declined / Expired
+                    Not Selected / Declined
                   </div>
                   <div className="mt-2 text-2xl font-extrabold text-slate-900">
                     {Number(bidsSnapshotSummary?.declined_expired_bids || 0).toLocaleString()}
                   </div>
-                  <div className="mt-1 text-xs text-slate-500">Closed opportunities</div>
+                  <div className="mt-1 text-xs text-slate-500">Closed opportunities and bids passed over by the customer</div>
                 </div>
               </div>
 

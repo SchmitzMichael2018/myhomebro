@@ -87,6 +87,22 @@ def _format_bid_amount(amount: Decimal | None) -> str:
     return f"${amount:,.2f}"
 
 
+def _contractor_status_label(status: str) -> str:
+    normalized = _safe_text(status).lower()
+    if normalized == "expired":
+        return "Not Selected"
+    return bid_status_label(normalized)
+
+
+def _contractor_status_note(status: str) -> str:
+    normalized = _safe_text(status).lower()
+    if normalized == "expired":
+        return "Another contractor was selected for this project."
+    if normalized == "declined":
+        return "This bid was declined."
+    return ""
+
+
 def _bid_row_from_lead(lead) -> dict:
     linked_agreement = getattr(lead, "converted_agreement", None)
     source_intake = getattr(lead, "source_intake", None)
@@ -146,8 +162,9 @@ def _bid_row_from_lead(lead) -> dict:
         "bid_amount_label": _format_bid_amount(bid_amount),
         "submitted_at": _format_date(submitted_at),
         "status": status,
-        "status_label": bid_status_label(status),
+        "status_label": _contractor_status_label(status),
         "status_group": bid_status_group(status),
+        "status_note": _contractor_status_note(status),
         "linked_agreement_id": getattr(linked_agreement, "id", None),
         "linked_agreement_label": _agreement_label(linked_agreement),
         "linked_agreement_reference": _agreement_reference(linked_agreement),
@@ -221,8 +238,9 @@ def _bid_row_from_intake(intake) -> dict:
         "bid_amount_label": _format_bid_amount(bid_amount),
         "submitted_at": _format_date(submitted_at),
         "status": status,
-        "status_label": bid_status_label(status),
+        "status_label": _contractor_status_label(status),
         "status_group": bid_status_group(status),
+        "status_note": _contractor_status_note(status),
         "linked_agreement_id": getattr(linked_agreement, "id", None),
         "linked_agreement_label": _agreement_label(linked_agreement),
         "linked_agreement_reference": _agreement_reference(linked_agreement),

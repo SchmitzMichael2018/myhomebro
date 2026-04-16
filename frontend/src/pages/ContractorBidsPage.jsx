@@ -132,6 +132,11 @@ export default function ContractorBidsPage() {
     return counts;
   }, [filteredRows]);
 
+  const outcomeNote =
+    normalize(selectedRow?.status_label) === "not selected"
+      ? selectedRow?.status_note || "Another contractor was selected for this project."
+      : "";
+
   const closeDrawer = () => {
     setSelectedRow(null);
     setCopiedRefId("");
@@ -155,6 +160,11 @@ export default function ContractorBidsPage() {
     if (!row) return;
     if (normalize(row.next_action?.key) === "open_agreement" && row.linked_agreement_url) {
       navigate(row.linked_agreement_url);
+      return;
+    }
+
+    if (normalize(row.status_group) === "declined_expired") {
+      setSelectedRow(row);
       return;
     }
 
@@ -218,7 +228,7 @@ export default function ContractorBidsPage() {
         />
         <SummaryCard label="Awarded" value={String(summary.awarded)} tone="emerald" testId="bids-summary-awarded" />
         <SummaryCard
-          label="Declined / Expired"
+          label="Not Selected / Declined"
           value={String(summary.declined_expired)}
           tone="indigo"
           testId="bids-summary-declined"
@@ -263,7 +273,7 @@ export default function ContractorBidsPage() {
                 <option value="under_review">Under Review</option>
                 <option value="awarded">Awarded</option>
                 <option value="declined">Declined</option>
-                <option value="expired">Expired</option>
+                <option value="expired">Not Selected</option>
               </select>
             </label>
 
@@ -351,7 +361,11 @@ export default function ContractorBidsPage() {
                         disabled={actionBusyId === String(row.bid_id)}
                         className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                       >
-                        {actionBusyId === String(row.bid_id) ? "Working..." : row.next_action?.label || "View"}
+                        {actionBusyId === String(row.bid_id)
+                          ? "Working..."
+                          : row.status_group === "declined_expired"
+                            ? "View Details"
+                            : row.next_action?.label || "View"}
                         <ArrowRight size={14} />
                       </button>
                     </td>
@@ -400,6 +414,12 @@ export default function ContractorBidsPage() {
                 <DetailField label="Related ID" value={selectedRow.source_reference || `Bid #${selectedRow.bid_id}`} />
               </div>
 
+              {outcomeNote ? (
+                <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  {outcomeNote}
+                </div>
+              ) : null}
+
               <div className="mt-5 grid gap-3 sm:grid-cols-3">
                 <DetailField label="Customer Email" value={selectedRow.customer_email || "-"} />
                 <DetailField label="Customer Phone" value={selectedRow.customer_phone || "-"} />
@@ -437,9 +457,15 @@ export default function ContractorBidsPage() {
 
               <div className="mt-5 rounded-xl border border-slate-200 bg-white p-4">
                 <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Next Step</div>
-                <div className="mt-2 text-sm text-slate-800">{selectedRow.next_action?.label || "View Details"}</div>
+                <div className="mt-2 text-sm text-slate-800">
+                  {selectedRow.status_group === "declined_expired"
+                    ? selectedRow.status_label === "Not Selected"
+                      ? "Another contractor was selected for this project."
+                      : selectedRow.status_note || "This bid is closed."
+                    : selectedRow.next_action?.label || "View Details"}
+                </div>
                 <div className="mt-4 flex flex-wrap gap-3">
-                  {selectedRow.next_action?.key === "open_agreement" && selectedRow.linked_agreement_url ? (
+                  {selectedRow.status_group === "declined_expired" ? null : selectedRow.next_action?.key === "open_agreement" && selectedRow.linked_agreement_url ? (
                     <button
                       type="button"
                       onClick={() => navigate(selectedRow.linked_agreement_url)}

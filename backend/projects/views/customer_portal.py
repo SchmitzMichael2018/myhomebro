@@ -123,6 +123,22 @@ def _request_identity_from_lead(lead) -> tuple[str, str, str]:
     return request_title, request_address, project_class
 
 
+def _customer_bid_status_label(status: str) -> str:
+    normalized = _safe_text(status).lower()
+    if normalized == "expired":
+        return "Not Selected"
+    return bid_status_label(normalized)
+
+
+def _customer_bid_status_note(status: str) -> str:
+    normalized = _safe_text(status).lower()
+    if normalized == "expired":
+        return "Another contractor was selected for this project."
+    if normalized == "declined":
+        return "This bid was declined."
+    return ""
+
+
 def _portal_frontend_base() -> str:
     base = getattr(settings, "PUBLIC_FRONTEND_BASE_URL", "") or getattr(settings, "FRONTEND_URL", "")
     return str(base or "").rstrip("/")
@@ -396,8 +412,9 @@ def _bid_rows(email: str) -> list[dict]:
                 "bid_amount_label": f"${bid_amount:,.2f}" if bid_amount is not None else "—",
                 "submitted_at": _safe_dt(submitted_at),
                 "status": status,
-                "status_label": bid_status_label(status),
+                "status_label": _customer_bid_status_label(status),
                 "status_group": bid_status_group(status),
+                "status_note": _customer_bid_status_note(status),
                 "linked_agreement_id": getattr(linked_agreement, "id", None),
                 "linked_agreement_token": str(getattr(linked_agreement, "homeowner_access_token", "") or ""),
                 "comparison_key": comparison_key,
@@ -422,7 +439,7 @@ def _bid_rows(email: str) -> list[dict]:
                     source_kind="lead",
                 ),
                 "notes": _safe_text(getattr(lead, "project_description", "")),
-                "can_accept": not bool(getattr(linked_agreement, "id", None)),
+                "can_accept": not bool(getattr(linked_agreement, "id", None)) and status not in {"awarded", "expired", "declined"},
                 "is_awarded": status == "awarded",
             }
         )

@@ -122,6 +122,7 @@ function detailPairs(kind, row) {
       ["Bid Amount", row.bid_amount_label || "—"],
       ["Submitted", formatDate(row.submitted_at)],
       ["Status", row.status_label],
+      ["Outcome", row.status_note || "—"],
       ["Next Action", row.next_action?.label || "View details"],
       ["Timeline", row.timeline || "—"],
       ["Proposal", row.proposal_summary || "—"],
@@ -173,6 +174,13 @@ function openTarget(row) {
     return `/agreements/magic/${row.linked_agreement_token}`;
   }
   return row?.details_url || row?.action_target || row?.url || "";
+}
+
+function canAcceptCustomerBid(row) {
+  if (!row) return false;
+  if (row.linked_agreement_id) return false;
+  if (row.status_group === "declined_expired") return false;
+  return Boolean(row.can_accept);
 }
 
 export default function CustomerPortalPage() {
@@ -772,6 +780,11 @@ export default function CustomerPortalPage() {
                           {bid.status_label}
                         </Badge>
                       </div>
+                      {bid.status_note ? (
+                        <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                          {bid.status_note}
+                        </div>
+                      ) : null}
 
                       <div className="mt-4 text-3xl font-bold tabular-nums text-slate-950">
                         {bid.bid_amount_label || "—"}
@@ -799,7 +812,7 @@ export default function CustomerPortalPage() {
                           >
                             Open Agreement
                           </a>
-                        ) : (
+                        ) : canAcceptCustomerBid(bid) ? (
                           <button
                             type="button"
                             data-testid={`customer-portal-compare-accept-${bid.id}`}
@@ -809,6 +822,10 @@ export default function CustomerPortalPage() {
                           >
                             {acceptingBidId === bid.id ? "Accepting..." : "Accept Bid"}
                           </button>
+                        ) : (
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                            Another contractor was selected for this project.
+                          </div>
                         )}
                       </div>
                     </div>

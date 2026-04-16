@@ -173,8 +173,9 @@ const acceptedPortalPayload = {
       return {
         ...bid,
         status: "expired",
-        status_label: "Expired",
+        status_label: "Not Selected",
         status_group: "declined_expired",
+        status_note: "Another contractor was selected for this project.",
       };
     }
     return bid;
@@ -294,6 +295,8 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("customer-portal-compare-accept-lead-2").click();
 
   await expect(page.getByTestId("customer-portal-compare-open-lead-2")).toBeVisible();
+  await expect(page.getByRole("dialog")).toContainText("Not Selected");
+  await expect(page.getByRole("dialog")).toContainText("Another contractor was selected for this project.");
   await page.getByRole("button", { name: "Close modal" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
