@@ -93,7 +93,55 @@ const draws = [
   },
 ];
 
-async function mockDashboard(page) {
+const bidRows = [
+  {
+    bid_id: "lead-201",
+    project_title: "Kitchen Remodel",
+    customer_name: "Taylor Contractor",
+    project_class: "residential",
+    project_class_label: "Residential",
+    status: "submitted",
+    status_label: "Submitted",
+    status_group: "open",
+    next_action: { key: "review_bid", label: "Review Bid", target: "" },
+  },
+  {
+    bid_id: "intake-202",
+    project_title: "Office Suite Renovation",
+    customer_name: "Morgan Commercial",
+    project_class: "commercial",
+    project_class_label: "Commercial",
+    status: "under_review",
+    status_label: "Under Review",
+    status_group: "under_review",
+    next_action: { key: "review_bid", label: "Review Bid", target: "" },
+  },
+  {
+    bid_id: "lead-203",
+    project_title: "Retail Buildout",
+    customer_name: "Avery Awarded",
+    project_class: "commercial",
+    project_class_label: "Commercial",
+    status: "awarded",
+    status_label: "Awarded",
+    status_group: "awarded",
+    next_action: { key: "convert_to_agreement", label: "Convert to Agreement", target: "" },
+  },
+];
+
+async function mockDashboard(page, options = {}) {
+  const bids = options.bidRows ?? bidRows;
+  const bidSummary =
+    options.bidSummary ?? {
+      total_bids: bids.length,
+      open_bids: 1,
+      under_review_bids: 1,
+      awarded_bids: 1,
+      declined_expired_bids: 0,
+      residential_count: 1,
+      commercial_count: 2,
+    };
+
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
   });
@@ -184,6 +232,22 @@ async function mockDashboard(page) {
         filters: {
           project_class: 'all',
           record_type: 'all',
+        },
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor/bids/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: bids,
+        summary: bidSummary,
+        filters: {
+          status: 'all',
+          project_class: 'all',
+          search: '',
         },
       }),
     });
@@ -377,6 +441,14 @@ test('contractor dashboard reflects draw-request payment pipeline and actions', 
   await expect(page.getByTestId('dashboard-payout-summary')).toContainText('$150.00');
   await expect(page.getByTestId('dashboard-payout-row-71')).toContainText('Kitchen Remodel Agreement');
   await expect(page.getByTestId('dashboard-payout-row-72')).toContainText('Office Renovation');
+  await expect(page.getByTestId('dashboard-bids-summary')).toBeVisible();
+  await expect(page.getByTestId('dashboard-bids-summary')).toContainText('Open Bids');
+  await expect(page.getByTestId('dashboard-bids-summary')).toContainText('Under Review');
+  await expect(page.getByTestId('dashboard-bids-summary')).toContainText('Awarded');
+  await expect(page.getByTestId('dashboard-bids-recent-table')).toBeVisible();
+  await expect(page.getByTestId('dashboard-bids-row-lead-201')).toContainText('Kitchen Remodel');
+  await expect(page.getByTestId('dashboard-bids-row-intake-202')).toContainText('Office Suite Renovation');
+  await expect(page.getByTestId('dashboard-bids-row-lead-203')).toContainText('Convert to Agreement');
   await expect(page.getByTestId('dashboard-money-awaiting-customer')).toContainText('Awaiting Customer Approval');
   await expect(page.getByTestId('dashboard-money-approved')).toContainText('Payment Pending');
   await expect(page.getByTestId('dashboard-payment-records-table').getByText('Issues / Disputes')).toBeVisible();
@@ -391,4 +463,36 @@ test('contractor dashboard reflects draw-request payment pipeline and actions', 
   await page.getByRole('button', { name: 'Release Funds' }).click();
   await expect(page.getByText('Escrow funds marked as released.')).toBeVisible();
   await expect(page.getByTestId('dashboard-payment-records-table').getByText('Paid')).toHaveCount(3);
+});
+
+test('contractor dashboard view-all bids shortcut routes to the unified bids workspace', async ({ page }) => {
+  await mockDashboard(page);
+
+  await page.goto('/app', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('dashboard-bids-view-all')).toBeVisible();
+  await page.getByTestId('dashboard-bids-view-all').click();
+  await expect(page).toHaveURL(/\/app\/bids$/);
+});
+
+test('contractor dashboard shows a clean empty bids snapshot when there are no bids', async ({ page }) => {
+  await mockDashboard(page, {
+    bidRows: [],
+    bidSummary: {
+      total_bids: 0,
+      open_bids: 0,
+      under_review_bids: 0,
+      awarded_bids: 0,
+      declined_expired_bids: 0,
+      residential_count: 0,
+      commercial_count: 0,
+    },
+  });
+
+  await page.goto('/app', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('dashboard-bids-summary')).toBeVisible();
+  await expect(page.getByTestId('dashboard-bids-summary')).toContainText('0');
+  await expect(page.getByTestId('dashboard-bids-summary')).toContainText('No bids yet');
+  await expect(page.getByTestId('dashboard-bids-recent-table')).toHaveCount(0);
 });

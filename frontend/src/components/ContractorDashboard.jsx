@@ -1043,6 +1043,9 @@ export default function ContractorDashboard() {
   const [payoutHistoryLoading, setPayoutHistoryLoading] = useState(true);
   const [payoutHistorySummary, setPayoutHistorySummary] = useState(null);
   const [payoutHistoryRecent, setPayoutHistoryRecent] = useState([]);
+  const [bidsSnapshotLoading, setBidsSnapshotLoading] = useState(true);
+  const [bidsSnapshotSummary, setBidsSnapshotSummary] = useState(null);
+  const [bidsSnapshotRecent, setBidsSnapshotRecent] = useState([]);
 
   const [showExpenseModal, setShowExpenseModal] = useState(false);
 
@@ -1208,6 +1211,34 @@ export default function ContractorDashboard() {
     };
 
     loadPayoutHistory();
+    return () => {
+      mounted = false;
+    };
+  }, [authReady, isAuthed, who, isEmployee]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadBidsSnapshot = async () => {
+      if (!authReady || !isAuthed || !who || isEmployee) return;
+      setBidsSnapshotLoading(true);
+      try {
+        const { data } = await api.get("/projects/contractor/bids/");
+        if (!mounted) return;
+        const rows = Array.isArray(data?.results) ? data.results : [];
+        setBidsSnapshotSummary(data?.summary || null);
+        setBidsSnapshotRecent(rows.slice(0, 4));
+      } catch (err) {
+        if (!mounted) return;
+        console.error("Failed to load bids snapshot:", err);
+        setBidsSnapshotSummary(null);
+        setBidsSnapshotRecent([]);
+      } finally {
+        if (mounted) setBidsSnapshotLoading(false);
+      }
+    };
+
+    loadBidsSnapshot();
     return () => {
       mounted = false;
     };
@@ -2579,6 +2610,105 @@ export default function ContractorDashboard() {
                           </td>
                           <td className="py-3 pr-3 text-slate-700">{row.record_type_label}</td>
                           <td className="py-3 font-semibold text-slate-900">{currency(row.net_payout)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </DashboardCard>
+          </DashboardSection>
+
+          <DashboardSection
+            title="Bids Snapshot"
+            subtitle="A compact look at bid activity before it becomes an agreement."
+          >
+            <DashboardCard
+              testId="dashboard-bids-summary"
+              tone="subtle"
+              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)] md:p-5"
+            >
+              <div className="grid gap-3 md:grid-cols-4">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Open Bids</div>
+                  <div className="mt-2 text-2xl font-extrabold text-slate-900">
+                    {Number(bidsSnapshotSummary?.open_bids || 0).toLocaleString()}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">Draft + Submitted</div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    Under Review
+                  </div>
+                  <div className="mt-2 text-2xl font-extrabold text-slate-900">
+                    {Number(bidsSnapshotSummary?.under_review_bids || 0).toLocaleString()}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">Active bid conversations</div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Awarded</div>
+                  <div className="mt-2 text-2xl font-extrabold text-slate-900">
+                    {Number(bidsSnapshotSummary?.awarded_bids || 0).toLocaleString()}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">Ready to convert or open</div>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                    Declined / Expired
+                  </div>
+                  <div className="mt-2 text-2xl font-extrabold text-slate-900">
+                    {Number(bidsSnapshotSummary?.declined_expired_bids || 0).toLocaleString()}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">Closed opportunities</div>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Recent Bids</div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    {bidsSnapshotLoading
+                      ? "Loading bids snapshot..."
+                      : bidsSnapshotRecent.length
+                        ? `${bidsSnapshotRecent.length} recent bid${bidsSnapshotRecent.length === 1 ? "" : "s"}`
+                        : "No bids yet. New bid activity will appear here once it lands."}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate("/app/bids")}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  data-testid="dashboard-bids-view-all"
+                >
+                  View all bids
+                </button>
+              </div>
+
+              {bidsSnapshotRecent.length > 0 ? (
+                <div className="mt-4 overflow-x-auto" data-testid="dashboard-bids-recent-table">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <th className="py-3 pr-3">Project</th>
+                        <th className="py-3 pr-3">Class</th>
+                        <th className="py-3 pr-3">Status</th>
+                        <th className="py-3">Next Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bidsSnapshotRecent.map((row) => (
+                        <tr
+                          key={row.bid_id || row.id}
+                          data-testid={`dashboard-bids-row-${row.bid_id || row.id}`}
+                          className="border-b border-slate-100 last:border-b-0"
+                        >
+                          <td className="py-3 pr-3">
+                            <div className="font-semibold text-slate-900">{row.project_title || row.project_name || "Untitled Bid"}</div>
+                            <div className="mt-1 text-xs text-slate-500">{row.customer_name || "Unknown Customer"}</div>
+                          </td>
+                          <td className="py-3 pr-3 text-slate-700">{row.project_class_label || row.project_class || "Residential"}</td>
+                          <td className="py-3 pr-3 text-slate-700">{row.status_label || row.status || "Submitted"}</td>
+                          <td className="py-3 text-slate-700">{row.next_action?.label || "View details"}</td>
                         </tr>
                       ))}
                     </tbody>
