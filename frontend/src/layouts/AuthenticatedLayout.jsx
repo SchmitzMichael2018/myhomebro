@@ -8,6 +8,7 @@ import Sidebar from "../components/Sidebar.jsx";
 import ErrorBoundary from "../components/ErrorBoundary.jsx";
 import MobileSidebarShell from "../components/MobileSidebarShell.jsx";
 import { AssistantDockProvider } from "../components/AssistantDock.jsx";
+import NotificationBell from "../components/NotificationBell.jsx";
 
 const AUTH_LAYOUT_DEBUG_PREFIX = "[AuthenticatedLayoutDebug]";
 let authenticatedLayoutInstanceSeq = 0;
@@ -40,6 +41,11 @@ export default function AuthenticatedLayout() {
   return (
     <MobileSidebarShell sidebar={<Sidebar variant="plain" />}>
       <AssistantDockProvider>
+        <div className="pointer-events-none fixed right-4 top-4 z-40">
+          <div className="pointer-events-auto">
+            <NotificationBell />
+          </div>
+        </div>
         <div
           style={
             isDashboardRoute
