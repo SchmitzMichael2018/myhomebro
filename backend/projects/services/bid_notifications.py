@@ -8,6 +8,7 @@ from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 
 from projects.models import Notification, PublicContractorLead
+from projects.services.sms_service import normalize_phone_to_e164, send_compliant_sms
 
 
 def _safe_text(value) -> str:
@@ -132,6 +133,55 @@ def _mark_customer_confirmation_sent(agreement) -> None:
         pass
 
 
+def _customer_confirmation_sms_cache_key(agreement) -> str:
+    return f"mhb:bid_customer_confirmation_sms_sent:agreement:{getattr(agreement, 'id', '')}"
+
+
+def _customer_confirmation_sms_already_sent(agreement) -> bool:
+    try:
+        return bool(cache.get(_customer_confirmation_sms_cache_key(agreement)))
+    except Exception:
+        return False
+
+
+def _mark_customer_confirmation_sms_sent(agreement) -> None:
+    try:
+        cache.set(_customer_confirmation_sms_cache_key(agreement), True, timeout=60 * 60 * 24 * 365)
+    except Exception:
+        pass
+
+
+def _agreement_customer_phone(agreement) -> str:
+    homeowner = getattr(agreement, "homeowner", None)
+    if homeowner and _safe_text(getattr(homeowner, "phone_number", "")):
+        return normalize_phone_to_e164(getattr(homeowner, "phone_number", ""))
+    project = getattr(agreement, "project", None)
+    project_homeowner = getattr(project, "homeowner", None) if project is not None else None
+    if project_homeowner and _safe_text(getattr(project_homeowner, "phone_number", "")):
+        return normalize_phone_to_e164(getattr(project_homeowner, "phone_number", ""))
+    return ""
+
+
+def _contractor_phone(lead: PublicContractorLead) -> str:
+    contractor = getattr(lead, "contractor", None)
+    return normalize_phone_to_e164(getattr(contractor, "phone", "") if contractor is not None else "")
+
+
+def _send_bid_outcome_sms(*, recipient_phone: str, body: str, agreement, dedupe_key: str) -> None:
+    if not recipient_phone or not body:
+        return
+    try:
+        send_compliant_sms(
+            recipient_phone,
+            body,
+            related_object=agreement,
+            category="customer_care",
+            dedupe_key=dedupe_key,
+        )
+    except Exception:
+        pass
+
+
 def _send_customer_confirmation_email(*, agreement, lead: PublicContractorLead | None = None) -> bool:
     recipient_email = _agreement_customer_email(agreement)
     if not recipient_email:
@@ -186,6 +236,51 @@ def _send_customer_confirmation_email(*, agreement, lead: PublicContractorLead |
     return True
 
 
+def _send_customer_confirmation_sms(*, agreement, lead: PublicContractorLead | None = None) -> bool:
+    if _customer_confirmation_sms_already_sent(agreement):
+        return False
+
+    recipient_phone = _agreement_customer_phone(agreement)
+    if not recipient_phone:
+        return False
+
+    agreement_token = getattr(agreement, "homeowner_access_token", None)
+    agreement_url = ""
+    if agreement_token:
+        agreement_url = _absolute_frontend_url(f"/agreements/magic/{agreement_token}")
+    if not agreement_url:
+        agreement_url = _absolute_frontend_url("/app/bids")
+
+    project_title = _agreement_project_title(agreement, lead=lead)
+    contractor = getattr(agreement, "contractor", None)
+    contractor_name = (
+        _safe_text(getattr(contractor, "business_name", ""))
+        or _safe_text(getattr(contractor, "name", ""))
+        or _safe_text(getattr(contractor, "email", ""))
+        or "Your contractor"
+    )
+
+    customer_name = _agreement_customer_name(agreement)
+    body = (
+        f"Hi {customer_name}. You selected {contractor_name} for {project_title} on MyHomeBro. "
+        f"Open Agreement: {agreement_url}"
+    )
+    try:
+        result = send_compliant_sms(
+            recipient_phone,
+            body,
+            related_object=agreement,
+            category="customer_care",
+            dedupe_key=f"bid_customer_confirmation:{getattr(agreement, 'id', '')}",
+        )
+        if result.get("ok"):
+            _mark_customer_confirmation_sms_sent(agreement)
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def create_bid_awarded_notification(*, lead: PublicContractorLead, agreement) -> Notification | None:
     contractor = getattr(lead, "contractor", None)
     if contractor is None:
@@ -204,8 +299,9 @@ def create_bid_awarded_notification(*, lead: PublicContractorLead, agreement) ->
         },
     )
     if created:
+        project_title = _bid_project_title(lead, agreement)
+        agreement_url = _absolute_frontend_url(f"/app/agreements/{getattr(agreement, 'id', '')}")
         try:
-            project_title = _bid_project_title(lead, agreement)
             _send_bid_outcome_email(
                 recipient_email=_safe_text(getattr(contractor, "email", "")),
                 subject="Your bid was selected on MyHomeBro",
@@ -213,9 +309,18 @@ def create_bid_awarded_notification(*, lead: PublicContractorLead, agreement) ->
                 context={
                     "contractor_name": _contractor_name(lead),
                     "project_title": project_title,
-                    "agreement_url": _absolute_frontend_url(f"/app/agreements/{getattr(agreement, 'id', '')}"),
+                    "agreement_url": agreement_url,
                     "site_name": "MyHomeBro",
                 },
+            )
+        except Exception:
+            pass
+        try:
+            _send_bid_outcome_sms(
+                recipient_phone=_contractor_phone(lead),
+                body=f"Your bid was selected for {project_title} on MyHomeBro. Open Agreement: {agreement_url}",
+                agreement=agreement,
+                dedupe_key=f"bid_awarded:{getattr(agreement, 'id', '')}:{getattr(lead, 'id', '')}",
             )
         except Exception:
             pass
@@ -240,8 +345,8 @@ def create_bid_not_selected_notification(*, lead: PublicContractorLead, agreemen
         },
     )
     if created:
+        project_title = _bid_project_title(lead, agreement)
         try:
-            project_title = _bid_project_title(lead, agreement)
             _send_bid_outcome_email(
                 recipient_email=_safe_text(getattr(contractor, "email", "")),
                 subject="Your bid was not selected on MyHomeBro",
@@ -252,6 +357,18 @@ def create_bid_not_selected_notification(*, lead: PublicContractorLead, agreemen
                     "bids_url": _absolute_frontend_url("/app/bids"),
                     "site_name": "MyHomeBro",
                 },
+            )
+        except Exception:
+            pass
+        try:
+            _send_bid_outcome_sms(
+                recipient_phone=_contractor_phone(lead),
+                body=(
+                    f"Another contractor was selected for {project_title} on MyHomeBro. "
+                    f"View Bids: {_absolute_frontend_url('/app/bids')}"
+                ),
+                agreement=agreement,
+                dedupe_key=f"bid_not_selected:{getattr(agreement, 'id', '')}:{getattr(lead, 'id', '')}",
             )
         except Exception:
             pass
@@ -274,6 +391,10 @@ def create_bid_outcome_notifications(
             notifications.append(notification)
     try:
         _send_customer_confirmation_email(agreement=agreement, lead=accepted_lead)
+    except Exception:
+        pass
+    try:
+        _send_customer_confirmation_sms(agreement=agreement, lead=accepted_lead)
     except Exception:
         pass
     return notifications

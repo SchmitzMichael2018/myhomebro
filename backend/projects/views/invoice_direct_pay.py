@@ -10,6 +10,7 @@ from rest_framework import status
 from rest_framework.exceptions import PermissionDenied
 
 from projects.models import Invoice
+from projects.services.activity_feed import create_activity_event
 from projects.services.contractor_onboarding import build_stripe_requirement_payload
 from projects.services.direct_pay import create_direct_pay_checkout_for_invoice
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
@@ -145,6 +146,23 @@ def invoice_create_direct_pay_link(request, pk: int):
         checkout_url = create_direct_pay_checkout_for_invoice(invoice)
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        create_activity_event(
+            contractor=contractor,
+            agreement=agreement,
+            event_type="direct_pay_link_ready",
+            title="Direct pay link ready",
+            summary="The customer can now review the direct pay link.",
+            severity="success",
+            related_label=getattr(invoice, "milestone_title_snapshot", "") or getattr(invoice, "invoice_number", "") or "Invoice",
+            icon_hint="payment",
+            navigation_target=f"/app/invoices/{invoice.id}",
+            metadata={"invoice_id": invoice.id, "agreement_id": agreement.id},
+            dedupe_key=f"direct_pay_link_ready:{invoice.id}",
+        )
+    except Exception:
+        pass
 
     # Safety: if invoice became paid somehow, capture pricing + recompute completion
     try:

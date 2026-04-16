@@ -203,7 +203,7 @@ def validate_twilio_webhook_request(request) -> bool:
         return True
 
 
-def send_sms(to: str, body: str) -> bool:
+def send_sms(to: str, body: str, *, dedupe_key: str = "") -> bool:
     """
     Send a single SMS. Returns True on success.
     If Twilio is not configured, returns False.
@@ -211,11 +211,11 @@ def send_sms(to: str, body: str) -> bool:
     """
     from projects.services.sms_service import send_compliant_sms
 
-    result = send_compliant_sms(to, body, category="customer_care")
+    result = send_compliant_sms(to, body, category="customer_care", dedupe_key=dedupe_key)
     return bool(result.get("ok"))
 
 
-def sms_link_to_parties(agreement, *, link_url: str, note: str = "") -> int:
+def sms_link_to_parties(agreement, *, link_url: str, note: str = "", dedupe_key: str = "") -> int:
     """
     Sends a short message with a link to both parties if phone numbers are present.
     Returns count of successfully queued messages.
@@ -265,7 +265,7 @@ def sms_link_to_parties(agreement, *, link_url: str, note: str = "") -> int:
     msg = f"MyHomeBro: {note} {link_url}".strip()
     ok_count = 0
     for n in final_numbers:
-        if send_sms(n, msg):
+        if send_sms(n, msg, dedupe_key=dedupe_key):
             ok_count += 1
 
     logger.info(

@@ -15,6 +15,7 @@ from projects.services.sms import (
     upsert_sms_consent_status,
     validate_twilio_webhook_request,
 )
+from projects.services.sms_service import handle_inbound_sms
 
 logger = logging.getLogger(__name__)
 
@@ -56,14 +57,12 @@ def sms_webhook(request):
         message_sid = (request.POST.get("MessageSid", "") or "").strip()
 
         branch = classify_inbound_keyword(raw_body)
-        response_text = DEFAULT_RESPONSE
-
-        if branch == SMSConsentStatus.KEYWORD_OPT_OUT:
-            response_text = OPT_OUT_RESPONSE
-        elif branch == SMSConsentStatus.KEYWORD_HELP:
-            response_text = HELP_RESPONSE
-        elif branch == SMSConsentStatus.KEYWORD_OPT_IN:
-            response_text = OPT_IN_RESPONSE
+        inbound_payload = handle_inbound_sms(
+            from_phone=from_number,
+            body=raw_body,
+            message_sid=message_sid,
+        )
+        response_text = inbound_payload.get("message") or DEFAULT_RESPONSE
 
         upsert_sms_consent_status(
             phone_number=from_number,

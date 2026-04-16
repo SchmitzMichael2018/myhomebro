@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+import hashlib
 from typing import Any
 
 from django.conf import settings
+from django.core.cache import cache
 from django.utils import timezone
 
 from projects.models import Agreement, Contractor, ContractorActivityEvent, Homeowner, Invoice, Milestone
@@ -68,6 +70,12 @@ def _messaging_service_sid() -> str:
 def _activity_preview(body: str) -> str:
     text = str(body or "").strip()
     return text[:120]
+
+
+def _sms_dedupe_cache_key(*, phone_number_e164: str, dedupe_key: str) -> str:
+    raw = f"{phone_number_e164}|{dedupe_key}".strip()
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest() if raw else ""
+    return f"mhb:sms_dedupe:{digest}" if digest else ""
 
 
 def _resolve_related_context(related_object=None) -> dict[str, Any]:
@@ -266,7 +274,14 @@ def set_sms_opt_out(
     return consent
 
 
-def send_compliant_sms(to_phone, body, *, related_object=None, category="customer_care") -> dict[str, Any]:
+def send_compliant_sms(
+    to_phone,
+    body,
+    *,
+    related_object=None,
+    category="customer_care",
+    dedupe_key: str = "",
+) -> dict[str, Any]:
     text = str(body or "").strip()
     normalized_phone = normalize_phone_to_e164(to_phone)
     related = _resolve_related_context(related_object)
@@ -288,6 +303,15 @@ def send_compliant_sms(to_phone, body, *, related_object=None, category="custome
     if not normalized_phone or not text:
         result["blocked"] = True
         result["detail"] = "Phone number and message body are required."
+    elif dedupe_key:
+        cache_key = _sms_dedupe_cache_key(phone_number_e164=normalized_phone, dedupe_key=dedupe_key)
+        try:
+            if cache_key and cache.get(cache_key):
+                result["blocked"] = True
+                result["status"] = "duplicate"
+                result["detail"] = "Duplicate SMS suppressed."
+        except Exception:
+            pass
     elif consent is None:
         result["blocked"] = True
         result["detail"] = "No SMS consent is on file for this phone number."
@@ -309,6 +333,7 @@ def send_compliant_sms(to_phone, body, *, related_object=None, category="custome
                 "phone": normalized_phone,
                 "message_preview": _activity_preview(text),
                 "category": category,
+                "dedupe_key": dedupe_key,
             },
         )
         return result
@@ -337,6 +362,13 @@ def send_compliant_sms(to_phone, body, *, related_object=None, category="custome
         )
         sid = str(getattr(message, "sid", "") or "")
         result.update({"ok": True, "blocked": False, "status": "sent", "detail": "SMS queued.", "twilio_sid": sid})
+        if dedupe_key:
+            try:
+                cache_key = _sms_dedupe_cache_key(phone_number_e164=normalized_phone, dedupe_key=dedupe_key)
+                if cache_key:
+                    cache.set(cache_key, True, timeout=60 * 60 * 24 * 365)
+            except Exception:
+                pass
         _log_sms_activity(
             event_type="sms_sent",
             title="SMS sent",
@@ -351,6 +383,7 @@ def send_compliant_sms(to_phone, body, *, related_object=None, category="custome
                 "twilio_sid": sid,
                 "category": category,
                 "delivery_status": str(getattr(message, "status", "") or ""),
+                "dedupe_key": dedupe_key,
             },
             navigation_target=f"/app/agreements/{agreement.id}" if agreement is not None else "",
             dedupe_key=f"sms_sent:{sid}" if sid else "",
@@ -381,6 +414,7 @@ def send_compliant_sms(to_phone, body, *, related_object=None, category="custome
             "message_preview": _activity_preview(text),
             "category": category,
             "twilio_sid": result["twilio_sid"],
+            "dedupe_key": dedupe_key,
         },
     )
     return result

@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core import signing
+from django.core.cache import cache
 from django.core.management import call_command
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -2507,49 +2508,49 @@ class SMSWebhookTests(TestCase):
         response = self._post_sms("STOP")
         self.assertXmlResponseContains(
             response,
-            "MyHomeBro: You have been unsubscribed from SMS notifications. Reply START to re-subscribe. Reply HELP for help.",
+            "MyHomeBro: You have been unsubscribed from SMS notifications. Reply START to opt back in.",
         )
 
     def test_stopall_response(self):
         response = self._post_sms(" STOPALL ")
         self.assertXmlResponseContains(
             response,
-            "MyHomeBro: You have been unsubscribed from SMS notifications. Reply START to re-subscribe. Reply HELP for help.",
+            "MyHomeBro: You have been unsubscribed from SMS notifications. Reply START to opt back in.",
         )
 
     def test_help_response(self):
         response = self._post_sms("HELP")
         self.assertXmlResponseContains(
             response,
-            "MyHomeBro alerts: project updates, payments, and messages. Msg frequency varies. Reply STOP to opt out. Reply START to opt back in. Help: support@myhomebro.com",
+            "MyHomeBro alerts: project updates, payments, and customer-care messages only. Reply STOP to opt out or START to opt back in. Help: support@myhomebro.com",
         )
 
     def test_info_response(self):
         response = self._post_sms(" info ")
         self.assertXmlResponseContains(
             response,
-            "MyHomeBro alerts: project updates, payments, and messages. Msg frequency varies. Reply STOP to opt out. Reply START to opt back in. Help: support@myhomebro.com",
+            "MyHomeBro alerts: project updates, payments, and customer-care messages only. Reply STOP to opt out or START to opt back in. Help: support@myhomebro.com",
         )
 
     def test_start_response(self):
         response = self._post_sms("START")
         self.assertXmlResponseContains(
             response,
-            "MyHomeBro: You have been re-subscribed to SMS notifications.",
+            "MyHomeBro: SMS notifications are enabled again.",
         )
 
     def test_unstop_response(self):
         response = self._post_sms("UNSTOP")
         self.assertXmlResponseContains(
             response,
-            "MyHomeBro: You have been re-subscribed to SMS notifications.",
+            "MyHomeBro: SMS notifications are enabled again.",
         )
 
     def test_default_response(self):
         response = self._post_sms("Can you send the next update?")
         self.assertXmlResponseContains(
             response,
-            "MyHomeBro: Message received. For help, reply HELP. Reply STOP to opt out.",
+            "MyHomeBro alerts: project updates, payments, and customer-care messages only. Reply STOP to opt out or START to opt back in. Help: support@myhomebro.com",
         )
 
     def test_non_post_safe_response(self):
@@ -2575,7 +2576,7 @@ class SMSWebhookTests(TestCase):
         response = self._post_sms("STOP", message_sid="SM-stop")
         self.assertXmlResponseContains(
             response,
-            "MyHomeBro: You have been unsubscribed from SMS notifications. Reply START to re-subscribe. Reply HELP for help.",
+            "MyHomeBro: You have been unsubscribed from SMS notifications. Reply START to opt back in.",
         )
 
         consent = SMSConsentStatus.objects.get(phone_number="+12105551234")
@@ -2584,6 +2585,10 @@ class SMSWebhookTests(TestCase):
         self.assertEqual(consent.last_keyword_type, SMSConsentStatus.KEYWORD_OPT_OUT)
         self.assertEqual(consent.last_inbound_body, "STOP")
         self.assertIsNotNone(consent.opted_out_at)
+
+        durable = SMSConsent.objects.get(phone_number_e164="+12105551234")
+        self.assertTrue(durable.opted_out)
+        self.assertFalse(durable.can_send_sms)
 
     def test_opt_in_persistence_updates_local_consent_state(self):
         SMSConsentStatus.objects.create(
@@ -2595,7 +2600,7 @@ class SMSWebhookTests(TestCase):
         response = self._post_sms("START", message_sid="SM-start")
         self.assertXmlResponseContains(
             response,
-            "MyHomeBro: You have been re-subscribed to SMS notifications.",
+            "MyHomeBro: SMS notifications are enabled again.",
         )
 
         consent = SMSConsentStatus.objects.get(phone_number="+12105551234")
@@ -2604,6 +2609,10 @@ class SMSWebhookTests(TestCase):
         self.assertEqual(consent.last_keyword_type, SMSConsentStatus.KEYWORD_OPT_IN)
         self.assertEqual(consent.last_inbound_body, "START")
         self.assertIsNotNone(consent.opted_in_at)
+
+        durable = SMSConsent.objects.get(phone_number_e164="+12105551234")
+        self.assertTrue(durable.can_send_sms)
+        self.assertFalse(durable.opted_out)
 
 
 class SMSComplianceTests(TestCase):
@@ -2893,6 +2902,7 @@ class SMSComplianceTests(TestCase):
 
 class SMSAutomationTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.pdf_task_patcher = patch(
             "projects.signals.task_generate_full_agreement_pdf.delay",
             return_value=None,
@@ -2963,6 +2973,74 @@ class SMSAutomationTests(TestCase):
         self.assertEqual(
             SMSAutomationDecision.objects.latest("id").template_key,
             "payment_released_contractor",
+        )
+
+    def test_direct_pay_link_ready_emits_sms_for_opted_in_homeowner(self):
+        set_sms_opt_in(
+            phone_number=self.homeowner.phone_number,
+            homeowner=self.homeowner,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        fake_message = SimpleNamespace(sid="SM-DIRECT", status="queued")
+        fake_client = SimpleNamespace(messages=SimpleNamespace(create=lambda **kwargs: fake_message))
+
+        with patch("projects.services.sms_service._twilio_ready", return_value=True), patch(
+            "projects.services.sms_service._twilio_client",
+            return_value=fake_client,
+        ):
+            create_activity_event(
+                contractor=self.contractor,
+                agreement=self.agreement,
+                event_type="direct_pay_link_ready",
+                title="Direct pay link ready",
+                summary="Direct pay link created.",
+                dedupe_key="direct_pay_link_ready:test",
+            )
+
+        self.assertTrue(
+            ContractorActivityEvent.objects.filter(
+                contractor=self.contractor,
+                event_type="sms_sent",
+                metadata__twilio_sid="SM-DIRECT",
+            ).exists()
+        )
+        self.assertEqual(
+            SMSAutomationDecision.objects.latest("id").template_key,
+            "direct_pay_link_ready_homeowner",
+        )
+
+    def test_agreement_fully_signed_emits_sms_for_opted_in_contractor(self):
+        set_sms_opt_in(
+            phone_number=self.contractor.phone,
+            contractor=self.contractor,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        fake_message = SimpleNamespace(sid="SM-SIGNED", status="queued")
+        fake_client = SimpleNamespace(messages=SimpleNamespace(create=lambda **kwargs: fake_message))
+
+        with patch("projects.services.sms_service._twilio_ready", return_value=True), patch(
+            "projects.services.sms_service._twilio_client",
+            return_value=fake_client,
+        ):
+            create_activity_event(
+                contractor=self.contractor,
+                agreement=self.agreement,
+                event_type="agreement_fully_signed",
+                title="Agreement fully signed",
+                summary="Both parties signed the agreement.",
+                dedupe_key="agreement_fully_signed:test",
+            )
+
+        self.assertTrue(
+            ContractorActivityEvent.objects.filter(
+                contractor=self.contractor,
+                event_type="sms_sent",
+                metadata__twilio_sid="SM-SIGNED",
+            ).exists()
+        )
+        self.assertEqual(
+            SMSAutomationDecision.objects.latest("id").template_key,
+            "agreement_fully_signed_contractor",
         )
 
     def test_missing_consent_suppresses_sms(self):
@@ -10145,6 +10223,7 @@ class RecurringMaintenanceTests(TestCase):
 
 class CustomerPortalAccessTests(TestCase):
     def setUp(self):
+        cache.clear()
         User = get_user_model()
         self.contractor_user = User.objects.create_user(
             email="builder@example.com",
@@ -10475,12 +10554,46 @@ class CustomerPortalAccessTests(TestCase):
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
     def test_customer_portal_comparison_accepts_bid_and_reuses_agreement(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
-        response = self.client.post(f"/api/projects/customer-portal/{token}/bids/lead-{self.comparison_lead_one.id}/accept/")
+        self.contractor.phone = "+12105550001"
+        self.contractor.save(update_fields=["phone"])
+        self.other_contractor.phone = "+12105550003"
+        self.other_contractor.save(update_fields=["phone"])
+        self.customer_homeowner.phone_number = "+12105550002"
+        self.customer_homeowner.save(update_fields=["phone_number"])
+        set_sms_opt_in(
+            phone_number=self.contractor.phone,
+            contractor=self.contractor,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        set_sms_opt_in(
+            phone_number=self.other_contractor.phone,
+            contractor=self.other_contractor,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        set_sms_opt_in(
+            phone_number=self.customer_homeowner.phone_number,
+            homeowner=self.customer_homeowner,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+
+        fake_client = SimpleNamespace(
+            messages=SimpleNamespace(
+                create=lambda **kwargs: SimpleNamespace(sid=f"SM-{kwargs.get('to', 'unknown')}", status="queued")
+            )
+        )
+        with patch("projects.services.sms_service._twilio_ready", return_value=True), patch(
+            "projects.services.sms_service._twilio_client",
+            return_value=fake_client,
+        ):
+            response = self.client.post(
+                f"/api/projects/customer-portal/{token}/bids/lead-{self.comparison_lead_one.id}/accept/"
+            )
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data["ok"])
         self.assertTrue(response.data["created"])
-        self.assertIsNotNone(response.data["agreement_id"])
+        agreement_id = response.data["agreement_id"]
+        self.assertIsNotNone(agreement_id)
         self.assertTrue(response.data["detail_url"].startswith("/agreements/magic/"))
         self.assertTrue(response.data["portal"]["summary"]["active_agreements"] >= 2)
 
@@ -10523,6 +10636,10 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(mail.outbox[2].to, [self.customer_email])
         self.assertIn("Open Agreement", mail.outbox[2].body)
         self.assertIn("/agreements/magic/", mail.outbox[2].body)
+        self.assertEqual(
+            ContractorActivityEvent.objects.filter(event_type="sms_sent", agreement_id=agreement_id).count(),
+            3,
+        )
         self.assertNotIn(
             "unrelated-bid-notify@example.com",
             [recipient for message in mail.outbox for recipient in message.to],
@@ -10585,6 +10702,105 @@ class CustomerPortalAccessTests(TestCase):
             1,
         )
         self.assertEqual(len(mail.outbox), 3)
+        self.assertEqual(
+            ContractorActivityEvent.objects.filter(event_type="sms_sent", agreement_id=response.data["agreement_id"]).count(),
+            3,
+        )
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_customer_portal_bid_accept_respects_sms_opt_outs(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        self.contractor.phone = "+12105550001"
+        self.contractor.save(update_fields=["phone"])
+        self.other_contractor.phone = "+12105550003"
+        self.other_contractor.save(update_fields=["phone"])
+        self.customer_homeowner.phone_number = "+12105550002"
+        self.customer_homeowner.save(update_fields=["phone_number"])
+        set_sms_opt_out(
+            phone_number=self.contractor.phone,
+            contractor=self.contractor,
+            source=SMSConsent.OPT_OUT_SOURCE_API,
+        )
+        set_sms_opt_out(
+            phone_number=self.customer_homeowner.phone_number,
+            homeowner=self.customer_homeowner,
+            source=SMSConsent.OPT_OUT_SOURCE_API,
+        )
+        set_sms_opt_in(
+            phone_number=self.other_contractor.phone,
+            contractor=self.other_contractor,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+
+        fake_client = SimpleNamespace(
+            messages=SimpleNamespace(
+                create=lambda **kwargs: SimpleNamespace(sid=f"SM-{kwargs.get('to', 'unknown')}", status="queued")
+            )
+        )
+        with patch("projects.services.sms_service._twilio_ready", return_value=True), patch(
+            "projects.services.sms_service._twilio_client",
+            return_value=fake_client,
+        ):
+            response = self.client.post(
+                f"/api/projects/customer-portal/{token}/bids/lead-{self.comparison_lead_one.id}/accept/"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["ok"])
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_customer_portal_bid_accept_continues_when_sms_delivery_fails(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        self.contractor.phone = "+12105550001"
+        self.contractor.save(update_fields=["phone"])
+        self.other_contractor.phone = "+12105550003"
+        self.other_contractor.save(update_fields=["phone"])
+        self.customer_homeowner.phone_number = "+12105550002"
+        self.customer_homeowner.save(update_fields=["phone_number"])
+        set_sms_opt_in(
+            phone_number=self.contractor.phone,
+            contractor=self.contractor,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        set_sms_opt_in(
+            phone_number=self.other_contractor.phone,
+            contractor=self.other_contractor,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        set_sms_opt_in(
+            phone_number=self.customer_homeowner.phone_number,
+            homeowner=self.customer_homeowner,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+
+        class FailingMessages:
+            @staticmethod
+            def create(**kwargs):
+                raise RuntimeError("twilio unavailable")
+
+        fake_client = SimpleNamespace(messages=FailingMessages())
+        with patch("projects.services.sms_service._twilio_ready", return_value=True), patch(
+            "projects.services.sms_service._twilio_client",
+            return_value=fake_client,
+        ):
+            response = self.client.post(
+                f"/api/projects/customer-portal/{token}/bids/lead-{self.comparison_lead_one.id}/accept/"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["ok"])
+        self.assertEqual(
+            Notification.objects.filter(
+                contractor=self.contractor,
+                public_lead=self.comparison_lead_one,
+                event_type=Notification.EVENT_BID_AWARDED,
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            ContractorActivityEvent.objects.filter(event_type="sms_failed", agreement_id=response.data["agreement_id"]).count(),
+            3,
+        )
 
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
     def test_customer_portal_bid_accept_continues_when_email_delivery_fails(self):

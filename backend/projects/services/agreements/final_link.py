@@ -78,6 +78,7 @@ def send_final_link_for_agreement(ag: Agreement, *, force_send: bool = False) ->
     view_url = f"{domain}/public-sign/{token}?mode=final"
 
     should_send_email = force_send or (not _final_email_already_sent_for_version(ag))
+    sms_dedupe_key = "" if force_send else f"final_agreement_link:{ag.id}:pdfv:{int(getattr(ag, 'pdf_version', 0) or 0)}"
 
     if should_send_email:
         try:
@@ -93,6 +94,7 @@ def send_final_link_for_agreement(ag: Agreement, *, force_send: bool = False) ->
             ag,
             link_url=view_url,
             note="Here is a copy of your final signed MyHomeBro agreement.",
+            dedupe_key=sms_dedupe_key,
         )
         print(f"send_final_link_for_agreement SMS sent count: {sms_sent}", file=sys.stderr)
     except Exception as e:

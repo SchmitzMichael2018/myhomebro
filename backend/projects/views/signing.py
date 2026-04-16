@@ -17,6 +17,7 @@ from projects.serializers.signing import (
     AgreementPreviewSerializer,
     AgreementReviewedSerializer,
 )
+from projects.services.activity_feed import create_activity_event
 from projects.services.pdf import build_agreement_pdf_bytes, attach_pdf_to_agreement
 from projects.services.mailer import email_signed_agreement
 from projects.services.sms import sms_link_to_parties  # safe: no-op if not configured
@@ -261,6 +262,7 @@ class AgreementSigningViewSet(viewsets.ViewSet):
         signer_name = payload.get("signer_name")
         signer_role = (payload.get("signer_role") or "").lower()
         signature_text = payload.get("signature_text", "") or ""
+        was_fully_signed = bool(getattr(ag, "signed_by_contractor", False) and getattr(ag, "signed_by_homeowner", False))
 
         # Capture IP and User-Agent for audit purposes
         ip = _client_ip(request)
@@ -382,9 +384,29 @@ class AgreementSigningViewSet(viewsets.ViewSet):
         try:
             base = getattr(settings, "FRONTEND_URL", None) or getattr(settings, "SITE_URL", None) or ""
             link = f"{base.rstrip('/')}/agreements/{ag.id}" if base else f"/agreements/{ag.id}"
-            sms_link_to_parties(ag, link_url=link, note="Signed. View your PDF:")
+            sms_link_to_parties(ag, link_url=link, note="Signed. View your PDF:", dedupe_key=f"agreement_signed_link:{ag.id}:{new_version}")
         except Exception:
             pass
+
+        is_fully_signed = bool(getattr(ag, "signed_by_contractor", False) and getattr(ag, "signed_by_homeowner", False))
+        if not was_fully_signed and is_fully_signed:
+            try:
+                create_activity_event(
+                    contractor=getattr(ag, "contractor", None),
+                    actor_user=request.user,
+                    agreement=ag,
+                    event_type="agreement_fully_signed",
+                    title="Agreement fully signed",
+                    summary="Both parties signed the agreement.",
+                    severity="success",
+                    related_label=getattr(ag, "title", "") or "Agreement",
+                    icon_hint="check",
+                    navigation_target=f"/app/agreements/{ag.id}",
+                    metadata={"agreement_id": ag.id, "version": new_version},
+                    dedupe_key=f"agreement_fully_signed:{ag.id}",
+                )
+            except Exception:
+                pass
 
         # Return updated agreement so frontend can immediately show "Signed ✅"
         return response.Response(

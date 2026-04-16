@@ -34,6 +34,7 @@ def send_signature_request_to_homeowner(ag: Agreement) -> Dict[str, Any]:
             ag,
             link_url=sign_url,
             note="Please review and sign your agreement.",
+            dedupe_key=f"agreement_signature_request:{ag.pk}",
         )
     except Exception:
         logger.exception("Failed to send signing invite SMS for agreement %s", ag.pk)
