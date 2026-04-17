@@ -1294,144 +1294,253 @@ export default function PublicIntakeWizard() {
     }
     if (currentStep === 3) {
       return (
-        <div className="rounded-xl border bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">Project Details</h2>
-          <p className="mt-1 text-sm text-gray-600">Add the project location and job-site details.</p>
-          <div className="mt-4 rounded-lg border bg-slate-50 p-4">
-            <div className="mb-2 text-sm font-medium text-gray-900">Customer Address</div>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="md:col-span-2">
-                <label className="mb-1 block text-sm font-medium">Customer Address Line 1</label>
-                <input
-                  data-testid="public-intake-customer-address-line1"
-                  className="w-full rounded border px-3 py-2 text-sm"
-                  value={form.customer_address_line1}
-                  onChange={(e) => setField("customer_address_line1", e.target.value)}
-                  placeholder="123 Main St"
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label className="mb-1 block text-sm font-medium">Customer Address Line 2</label>
-                <input
-                  className="w-full rounded border px-3 py-2 text-sm"
-                  value={form.customer_address_line2}
-                  onChange={(e) => setField("customer_address_line2", e.target.value)}
-                  placeholder="Apt, Suite, etc."
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">City</label>
-                <input
-                  data-testid="public-intake-customer-city"
-                  className="w-full rounded border px-3 py-2 text-sm"
-                  value={form.customer_city}
-                  onChange={(e) => setField("customer_city", e.target.value)}
-                  placeholder="City"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">State</label>
-                <input
-                  data-testid="public-intake-customer-state"
-                  className="w-full rounded border px-3 py-2 text-sm"
-                  value={form.customer_state}
-                  onChange={(e) => setField("customer_state", e.target.value)}
-                  placeholder="State"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">ZIP / Postal Code</label>
-                <input
-                  data-testid="public-intake-customer-postal-code"
-                  className="w-full rounded border px-3 py-2 text-sm"
-                  value={form.customer_postal_code}
-                  onChange={(e) => setField("customer_postal_code", e.target.value)}
-                  placeholder="ZIP / Postal code"
-                />
-              </div>
+        <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10" data-testid="public-intake-project-details-step">
+          <div className="max-w-3xl">
+            <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+              Refine the plan
             </div>
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight text-gray-900">Project Details</h2>
+            <p className="mt-2 text-base text-slate-600">
+              Add the project location and any details that help turn the plan into a clear agreement.
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              Keep going at the pace that feels right. You can adjust these details later if needed.
+            </p>
           </div>
-          <div className="mt-4">
-            <div className="mb-2 text-sm font-medium text-gray-900">Project Class</div>
-            <div className="flex flex-wrap gap-3">
-              {[{ value: "residential", label: "Residential" }, { value: "commercial", label: "Commercial" }].map((opt) => (
-                <label key={opt.value} className="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm">
-                  <input type="radio" name="project_class" checked={form.project_class === opt.value} onChange={() => setField("project_class", opt.value)} />
-                  {opt.label}
-                </label>
-              ))}
-            </div>
+
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+              <div className="text-sm font-semibold text-gray-900">Customer Address</div>
+              <p className="mt-1 text-sm text-slate-600">Where should the project be tied to in your records?</p>
+              <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="md:col-span-2">
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Address line 1</label>
+                  <input
+                    data-testid="public-intake-customer-address-line1"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                    value={form.customer_address_line1}
+                    onChange={(e) => setField("customer_address_line1", e.target.value)}
+                    placeholder="123 Main St"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Address line 2</label>
+                  <input
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                    value={form.customer_address_line2}
+                    onChange={(e) => setField("customer_address_line2", e.target.value)}
+                    placeholder="Apt, Suite, etc."
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">City</label>
+                  <input
+                    data-testid="public-intake-customer-city"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                    value={form.customer_city}
+                    onChange={(e) => setField("customer_city", e.target.value)}
+                    placeholder="City"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">State</label>
+                  <input
+                    data-testid="public-intake-customer-state"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                    value={form.customer_state}
+                    onChange={(e) => setField("customer_state", e.target.value)}
+                    placeholder="State"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">ZIP / Postal Code</label>
+                  <input
+                    data-testid="public-intake-customer-postal-code"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                    value={form.customer_postal_code}
+                    onChange={(e) => setField("customer_postal_code", e.target.value)}
+                    placeholder="ZIP / Postal code"
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+              <div className="text-sm font-semibold text-gray-900">Project Class</div>
+              <p className="mt-1 text-sm text-slate-600">This helps organize the plan and any follow-up steps.</p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                {[{ value: "residential", label: "Residential" }, { value: "commercial", label: "Commercial" }].map((opt) => (
+                  <label
+                    key={opt.value}
+                    className={`flex cursor-pointer items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-medium shadow-sm transition ${
+                      form.project_class === opt.value
+                        ? "border-indigo-500 bg-indigo-50 text-indigo-800"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="project_class"
+                      checked={form.project_class === opt.value}
+                      onChange={() => setField("project_class", opt.value)}
+                    />
+                    {opt.label}
+                  </label>
+                ))}
+              </div>
+              <label className="mt-5 flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700 shadow-sm">
+                <input
+                  type="checkbox"
+                  checked={form.same_as_customer_address}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setForm((prev) =>
+                      checked
+                        ? copyCustomerAddressToProject({ ...prev, same_as_customer_address: true })
+                        : { ...prev, same_as_customer_address: false }
+                    );
+                  }}
+                  className="mt-1"
+                />
+                <span>
+                  <span className="font-medium text-gray-900">Project address is the same as my customer/home address</span>
+                  <span className="mt-1 block text-xs text-slate-500">
+                    Use this when the job site and contact address are the same.
+                  </span>
+                </span>
+              </label>
+            </section>
+
+            {!form.same_as_customer_address ? (
+              <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm lg:col-span-2">
+                <div className="text-sm font-semibold text-gray-900">Project Address</div>
+                <p className="mt-1 text-sm text-slate-600">Where is the work actually happening?</p>
+                <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="md:col-span-2">
+                    <label className="mb-1 block text-sm font-medium text-gray-900">Address line 1</label>
+                    <input
+                      data-testid="public-intake-project-address-line1"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                      value={form.project_address_line1}
+                      onChange={(e) => setField("project_address_line1", e.target.value)}
+                      placeholder="Project street address"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="mb-1 block text-sm font-medium text-gray-900">Address line 2</label>
+                    <input
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                      value={form.project_address_line2}
+                      onChange={(e) => setField("project_address_line2", e.target.value)}
+                      placeholder="Apartment, suite, unit, etc."
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-900">City</label>
+                    <input
+                      data-testid="public-intake-project-city"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                      value={form.project_city}
+                      onChange={(e) => setField("project_city", e.target.value)}
+                      placeholder="City"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-900">State</label>
+                    <input
+                      data-testid="public-intake-project-state"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                      value={form.project_state}
+                      onChange={(e) => setField("project_state", e.target.value)}
+                      placeholder="State"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-900">ZIP / Postal Code</label>
+                    <input
+                      data-testid="public-intake-project-postal-code"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                      value={form.project_postal_code}
+                      onChange={(e) => setField("project_postal_code", e.target.value)}
+                      placeholder="ZIP / Postal code"
+                    />
+                  </div>
+                </div>
+              </section>
+            ) : (
+              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
+                <div className="text-sm font-semibold text-gray-900">Project Address</div>
+                <p className="mt-1 text-sm text-slate-600">This job will use your customer/home address for the project record.</p>
+                <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
+                  <div className="font-medium text-gray-900">Address preview</div>
+                  <div className="mt-2 whitespace-pre-line">
+                    {[form.project_address_line1, form.project_address_line2, [form.project_city, form.project_state, form.project_postal_code].filter(Boolean).join(", ")]
+                      .filter(Boolean)
+                      .join("\n") || "No address entered yet."}
+                  </div>
+                </div>
+              </section>
+            )}
           </div>
-          <label className="mt-4 flex items-center gap-2 text-sm text-gray-700">
-            <input
-              type="checkbox"
-              checked={form.same_as_customer_address}
-              onChange={(e) => {
-                const checked = e.target.checked;
-                setForm((prev) =>
-                  checked
-                    ? copyCustomerAddressToProject({ ...prev, same_as_customer_address: true })
-                    : { ...prev, same_as_customer_address: false }
-                );
-              }}
-            />
-            Project address is the same as my home/customer address
-          </label>
-          {!form.same_as_customer_address ? (
-            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="md:col-span-2">
-                <label className="mb-1 block text-sm font-medium">Project Address Line 1</label>
-                <input data-testid="public-intake-project-address-line1" className="w-full rounded border px-3 py-2 text-sm" value={form.project_address_line1} onChange={(e) => setField("project_address_line1", e.target.value)} placeholder="Project street address" />
-              </div>
-              <div className="md:col-span-2">
-                <label className="mb-1 block text-sm font-medium">Project Address Line 2</label>
-                <input className="w-full rounded border px-3 py-2 text-sm" value={form.project_address_line2} onChange={(e) => setField("project_address_line2", e.target.value)} placeholder="Apartment, suite, unit, etc." />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">City</label>
-                <input data-testid="public-intake-project-city" className="w-full rounded border px-3 py-2 text-sm" value={form.project_city} onChange={(e) => setField("project_city", e.target.value)} placeholder="City" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">State</label>
-                <input data-testid="public-intake-project-state" className="w-full rounded border px-3 py-2 text-sm" value={form.project_state} onChange={(e) => setField("project_state", e.target.value)} placeholder="State" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium">ZIP / Postal Code</label>
-                <input data-testid="public-intake-project-postal-code" className="w-full rounded border px-3 py-2 text-sm" value={form.project_postal_code} onChange={(e) => setField("project_postal_code", e.target.value)} placeholder="ZIP / Postal code" />
-              </div>
-            </div>
-          ) : (
-            <div className="mt-4 rounded-lg border bg-slate-50 p-3 text-sm text-gray-700">
-              <div className="font-medium text-gray-900">Project address will use your customer/home address</div>
-              <div className="mt-2 whitespace-pre-line">{[form.project_address_line1, form.project_address_line2, [form.project_city, form.project_state, form.project_postal_code].filter(Boolean).join(", ")].filter(Boolean).join("\n") || "No address entered yet."}</div>
-            </div>
-          )}
         </div>
       );
     }
 
     if (currentStep === 4) {
       return (
-        <div className="rounded-xl border bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">Contact Info</h2>
-          <p className="mt-1 text-sm text-gray-600">Confirm the customer contact details so the project can move forward.</p>
-          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium">Full Name</label>
-              <input className="w-full rounded border px-3 py-2 text-sm" value={form.customer_name} onChange={(e) => setField("customer_name", e.target.value)} placeholder="Your full name" />
+        <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10" data-testid="public-intake-contact-step">
+          <div className="max-w-3xl">
+            <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+              Stay in touch
             </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium">Email</label>
-              <input className="w-full rounded border px-3 py-2 text-sm" value={form.customer_email} onChange={(e) => setField("customer_email", e.target.value)} placeholder="you@example.com" />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium">Phone</label>
-              <input className="w-full rounded border px-3 py-2 text-sm" value={form.customer_phone} onChange={(e) => setField("customer_phone", e.target.value)} placeholder="(555) 555-5555" />
-            </div>
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight text-gray-900">Contact Info</h2>
+            <p className="mt-2 text-base text-slate-600">Where should we send updates about your project?</p>
+            <p className="mt-1 text-sm text-slate-500">
+              We use this information to keep the project moving and send any important updates.
+            </p>
           </div>
-          <div className="mt-4 rounded-lg border bg-slate-50 p-3 text-sm text-gray-700">
-            <div className="font-medium text-gray-900">Address review</div>
-            <div className="mt-2 whitespace-pre-line">{summaryAddress || "No project address entered yet."}</div>
+
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm lg:col-span-2">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="md:col-span-2">
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Full name</label>
+                  <input
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                    value={form.customer_name}
+                    onChange={(e) => setField("customer_name", e.target.value)}
+                    placeholder="Your full name"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Email</label>
+                  <input
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                    value={form.customer_email}
+                    onChange={(e) => setField("customer_email", e.target.value)}
+                    placeholder="you@example.com"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Phone</label>
+                  <input
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                    value={form.customer_phone}
+                    onChange={(e) => setField("customer_phone", e.target.value)}
+                    placeholder="(555) 555-5555"
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm lg:col-span-2">
+              <div className="text-sm font-semibold text-gray-900">Project Location</div>
+              <p className="mt-1 text-sm text-slate-600">This helps us keep your project tied to the right address.</p>
+              <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-4 text-sm text-slate-700">
+                <div className="font-medium text-gray-900">Address review</div>
+                <div className="mt-2 whitespace-pre-line">{summaryAddress || "No project address entered yet."}</div>
+              </div>
+            </section>
           </div>
         </div>
       );
@@ -1439,127 +1548,227 @@ export default function PublicIntakeWizard() {
 
     if (currentStep === 5) {
       return (
-        <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-6 shadow-sm" data-testid="public-intake-branching-section">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">How would you like to proceed?</h2>
-              <p className="mt-1 text-sm text-gray-600">Choose whether you want to work with one contractor or get multiple quotes from contractors.</p>
+        <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10" data-testid="public-intake-branching-section">
+          <div className="max-w-3xl">
+            <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+              Choose your path
             </div>
-            {branchResult?.post_submit_flow ? (
-              <div className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-indigo-700">Selected: {branchResult.post_submit_flow === "multi_contractor" ? "Get Multiple Quotes" : "Work with One Contractor"}</div>
-            ) : null}
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight text-gray-900">How would you like to proceed?</h2>
+            <p className="mt-2 text-base text-slate-600">
+              Choose the option that feels right for this project. You can still adjust it before sending anything forward.
+            </p>
           </div>
-          <div className="mt-4 flex flex-wrap gap-3">
-            <button type="button" onClick={() => setBranchMode("single_contractor")} className={`rounded-lg border px-3 py-2 text-sm font-semibold ${branchMode === "single_contractor" ? "border-indigo-500 bg-indigo-600 text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`} data-testid="public-intake-branch-single">Work with one contractor</button>
-            <button type="button" onClick={() => setBranchMode("multi_contractor")} className={`rounded-lg border px-3 py-2 text-sm font-semibold ${branchMode === "multi_contractor" ? "border-indigo-500 bg-indigo-600 text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`} data-testid="public-intake-branch-multi">Get multiple quotes</button>
-          </div>
-          {branchMode === "single_contractor" ? (
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-900">Contractor Name</label>
-                <input className="w-full rounded border px-3 py-2 text-sm" value={singleContractor.name} onChange={(e) => setSingleContractor((prev) => ({ ...prev, name: e.target.value }))} placeholder="Contractor name" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-900">Contractor Email</label>
-                <input className="w-full rounded border px-3 py-2 text-sm" value={singleContractor.email} onChange={(e) => setSingleContractor((prev) => ({ ...prev, email: e.target.value }))} placeholder="contractor@example.com" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-900">Contractor Phone</label>
-                <input className="w-full rounded border px-3 py-2 text-sm" value={singleContractor.phone} onChange={(e) => setSingleContractor((prev) => ({ ...prev, phone: e.target.value }))} placeholder="(555) 555-5555" />
-              </div>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-900">Message</label>
-                <input className="w-full rounded border px-3 py-2 text-sm" value={branchMessage} onChange={(e) => setBranchMessage(e.target.value)} placeholder="Optional note for the contractor" />
-              </div>
+
+          {branchResult?.post_submit_flow ? (
+            <div className="mt-5 inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
+              Selected: {branchResult.post_submit_flow === "multi_contractor" ? "Get Multiple Quotes" : "Work with One Contractor"}
             </div>
-          ) : (
-            <div className="mt-5 space-y-3">
-              {branchContacts.map((contact, index) => (
-                <div key={`contractor-${index}`} className="rounded-lg border border-slate-200 bg-white p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-semibold text-gray-900">Contractor {index + 1}</div>
-                    {branchContacts.length > 1 ? (
-                      <button type="button" className="text-xs font-semibold text-rose-700 hover:underline" onClick={() => setBranchContacts((prev) => prev.filter((_, i) => i !== index))}>Remove</button>
-                    ) : null}
-                  </div>
-                  <div className="mt-3 grid gap-3 md:grid-cols-3">
-                    <input className="rounded border px-3 py-2 text-sm" value={contact.name} onChange={(e) => setBranchContacts((prev) => prev.map((item, i) => (i === index ? { ...item, name: e.target.value } : item)))} placeholder="Name" />
-                    <input className="rounded border px-3 py-2 text-sm" value={contact.email} onChange={(e) => setBranchContacts((prev) => prev.map((item, i) => (i === index ? { ...item, email: e.target.value } : item)))} placeholder="Email" />
-                    <input className="rounded border px-3 py-2 text-sm" value={contact.phone} onChange={(e) => setBranchContacts((prev) => prev.map((item, i) => (i === index ? { ...item, phone: e.target.value } : item)))} placeholder="Phone" />
-                  </div>
+          ) : null}
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setBranchMode("single_contractor")}
+              data-testid="public-intake-branch-single"
+              className={`rounded-2xl border p-5 text-left shadow-sm transition ${
+                branchMode === "single_contractor"
+                  ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-100"
+                  : "border-slate-200 bg-slate-50 hover:bg-white"
+              }`}
+            >
+              <div className="text-base font-semibold text-gray-900">Work with one contractor</div>
+              <p className="mt-2 text-sm text-slate-600">
+                Best when you already know who you want to work with and want to keep the process simple.
+              </p>
+            </button>
+            <button
+              type="button"
+              onClick={() => setBranchMode("multi_contractor")}
+              data-testid="public-intake-branch-multi"
+              className={`rounded-2xl border p-5 text-left shadow-sm transition ${
+                branchMode === "multi_contractor"
+                  ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-100"
+                  : "border-slate-200 bg-slate-50 hover:bg-white"
+              }`}
+            >
+              <div className="text-base font-semibold text-gray-900">Get multiple quotes</div>
+              <p className="mt-2 text-sm text-slate-600">
+                Best when you want to compare a few contractors before deciding who to move forward with.
+              </p>
+            </button>
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+            {branchMode === "single_contractor" ? (
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="md:col-span-2">
+                  <div className="text-sm font-semibold text-gray-900">Invite one contractor</div>
+                  <p className="mt-1 text-sm text-slate-600">We&apos;ll prepare the next step for a single contractor review.</p>
                 </div>
-              ))}
-              <button type="button" className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={() => setBranchContacts((prev) => [...prev, { name: "", email: "", phone: "" }])}>Add another contractor</button>
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-900">Message for invited contractors</label>
-                <textarea className="w-full rounded border px-3 py-2 text-sm" rows={3} value={branchMessage} onChange={(e) => setBranchMessage(e.target.value)} placeholder="Optional note shared with each invited contractor" />
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Contractor name</label>
+                  <input className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" value={singleContractor.name} onChange={(e) => setSingleContractor((prev) => ({ ...prev, name: e.target.value }))} placeholder="Contractor name" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Contractor email</label>
+                  <input className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" value={singleContractor.email} onChange={(e) => setSingleContractor((prev) => ({ ...prev, email: e.target.value }))} placeholder="contractor@example.com" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Contractor phone</label>
+                  <input className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" value={singleContractor.phone} onChange={(e) => setSingleContractor((prev) => ({ ...prev, phone: e.target.value }))} placeholder="(555) 555-5555" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Optional note</label>
+                  <input className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" value={branchMessage} onChange={(e) => setBranchMessage(e.target.value)} placeholder="Optional note for the contractor" />
+                </div>
               </div>
-            </div>
-          )}
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-            <div className="text-sm text-gray-600">{branchResult?.branch_invites?.length ? `${branchResult.branch_invites.length} invite${branchResult.branch_invites.length === 1 ? "" : "s"} ready for the next step.` : "You can switch paths before sending invites."}</div>
+            ) : (
+              <div className="space-y-4">
+                <div className="md:col-span-2">
+                  <div className="text-sm font-semibold text-gray-900">Invite multiple contractors</div>
+                  <p className="mt-1 text-sm text-slate-600">Add the contractors you want to compare before choosing who to work with.</p>
+                </div>
+                <div className="space-y-4">
+                  {branchContacts.map((contact, index) => (
+                    <div key={`contractor-${index}`} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-semibold text-gray-900">Contractor {index + 1}</div>
+                        {branchContacts.length > 1 ? (
+                          <button type="button" className="text-xs font-semibold text-rose-700 hover:underline" onClick={() => setBranchContacts((prev) => prev.filter((_, i) => i !== index))}>Remove</button>
+                        ) : null}
+                      </div>
+                      <div className="mt-3 grid gap-3 md:grid-cols-3">
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" value={contact.name} onChange={(e) => setBranchContacts((prev) => prev.map((item, i) => (i === index ? { ...item, name: e.target.value } : item)))} placeholder="Name" />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" value={contact.email} onChange={(e) => setBranchContacts((prev) => prev.map((item, i) => (i === index ? { ...item, email: e.target.value } : item)))} placeholder="Email" />
+                        <input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" value={contact.phone} onChange={(e) => setBranchContacts((prev) => prev.map((item, i) => (i === index ? { ...item, phone: e.target.value } : item)))} placeholder="Phone" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={() => setBranchContacts((prev) => [...prev, { name: "", email: "", phone: "" }])}>Add another contractor</button>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Message for invited contractors</label>
+                  <textarea className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" rows={3} value={branchMessage} onChange={(e) => setBranchMessage(e.target.value)} placeholder="Optional note shared with each invited contractor" />
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-5 text-sm text-slate-600">
+            {branchResult?.branch_invites?.length ? `${branchResult.branch_invites.length} invite${branchResult.branch_invites.length === 1 ? "" : "s"} ready for the next step.` : "You can switch paths before sending invites."}
           </div>
         </div>
       );
     }
     return (
-      <div className="rounded-xl border bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900">Review + Confirm</h2>
-        <p className="mt-1 text-sm text-gray-600">Review the full project summary before sending it forward.</p>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <div className="rounded-lg border bg-slate-50 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Project</div>
-            <div className="mt-2 text-sm font-semibold text-slate-900">{form.ai_project_title || "Untitled project"}</div>
-            <div className="mt-1 text-sm text-slate-700">{form.ai_project_type || "Project type not set"}</div>
-            <div className="mt-2 whitespace-pre-line text-sm text-slate-600">{form.ai_description || form.accomplishment_text}</div>
+      <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10" data-testid="public-intake-review-step">
+        <div className="max-w-3xl">
+          <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+            Final review
           </div>
-          <div className="rounded-lg border bg-slate-50 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Timeline / Budget</div>
-            <div className="mt-2 text-sm text-slate-700">Timeline: {form.ai_project_timeline_days || "Not set"} days</div>
-            <div className="mt-1 text-sm text-slate-700">Budget: {form.ai_project_budget ? `$${Number(form.ai_project_budget).toLocaleString()}` : "Not set"}</div>
-            <div className="mt-2 text-sm text-slate-700">
-              Measurements: {form.measurement_handling || "Not set"}
-            </div>
-          </div>
-          <div className="rounded-lg border bg-slate-50 p-4 md:col-span-2">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Milestones</div>
-            <div className="mt-2 space-y-2">
-              {(form.ai_milestones || []).map((milestone, index) => (
-                <div key={`review-milestone-${index}`} className="rounded border bg-white px-3 py-2 text-sm">
-                  <div className="font-semibold text-slate-900">{milestone.title || `Milestone ${index + 1}`}</div>
-                  <div className="mt-1 text-slate-600">{milestone.description || "No description provided."}</div>
+          <h2 className="mt-3 text-2xl font-semibold tracking-tight text-gray-900">Review + Confirm</h2>
+          <p className="mt-2 text-base text-slate-600">Take one last look before we send your project forward.</p>
+          <p className="mt-1 text-sm text-slate-500">
+            This is your chance to confirm the details we&apos;ve gathered so far.
+          </p>
+        </div>
+
+        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+          <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+            <div className="text-sm font-semibold text-gray-900">Project Plan</div>
+            <div className="mt-4 space-y-3">
+              <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Project</div>
+                <div className="mt-1 text-sm font-semibold text-slate-900">{form.ai_project_title || "Untitled project"}</div>
+                <div className="mt-1 text-sm text-slate-700">{form.ai_project_type || "Project type not set"}</div>
+                <div className="mt-2 whitespace-pre-line text-sm text-slate-600">{form.ai_description || form.accomplishment_text}</div>
+              </div>
+              <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Timeline and budget</div>
+                <div className="mt-1 text-sm text-slate-700">Timeline: {form.ai_project_timeline_days || "Not set"} days</div>
+                <div className="mt-1 text-sm text-slate-700">Budget: {form.ai_project_budget ? `$${Number(form.ai_project_budget).toLocaleString()}` : "Not set"}</div>
+                <div className="mt-1 text-sm text-slate-700">
+                  Measurements: {form.measurement_handling || "Not set"}
                 </div>
-              ))}
+              </div>
             </div>
-          </div>
-          <div className="rounded-lg border bg-slate-50 p-4 md:col-span-2">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Clarification Summary</div>
-            <div className="mt-2 space-y-1 text-sm text-slate-700">
-              {Object.entries(form.ai_clarification_answers || {}).length ? (
-                Object.entries(form.ai_clarification_answers || {}).map(([key, value]) => (
-                  <div key={key}>
-                    <span className="font-semibold text-slate-900">{key.replace(/_/g, " ")}:</span> {String(value)}
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+            <div className="text-sm font-semibold text-gray-900">Customer and Location</div>
+            <div className="mt-4 space-y-3">
+              <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Customer</div>
+                <div className="mt-1 text-sm text-slate-700">{form.customer_name || "No name yet"}</div>
+                <div className="mt-1 text-sm text-slate-700">{form.customer_email || "No email yet"}</div>
+                <div className="mt-1 text-sm text-slate-700">{form.customer_phone || "No phone yet"}</div>
+              </div>
+              <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Location</div>
+                <div className="mt-1 whitespace-pre-line text-sm text-slate-700">{summaryAddress || "No project address entered yet."}</div>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm lg:col-span-2">
+            <div className="text-sm font-semibold text-gray-900">Milestones and Notes</div>
+            <div className="mt-4 grid gap-4 lg:grid-cols-2">
+              <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Milestones</div>
+                <div className="mt-3 space-y-3">
+                  {(form.ai_milestones || []).length ? (
+                    (form.ai_milestones || []).map((milestone, index) => (
+                      <div key={`review-milestone-${index}`} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                        <div className="text-sm font-semibold text-slate-900">{milestone.title || `Milestone ${index + 1}`}</div>
+                        <div className="mt-1 text-sm text-slate-600">{milestone.description || "No description provided."}</div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-sm text-slate-600">No milestones yet.</div>
+                  )}
+                </div>
+              </div>
+              <div className="rounded-2xl bg-white px-4 py-3 shadow-sm">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Clarification Summary</div>
+                <div className="mt-3 space-y-2 text-sm text-slate-700">
+                  {Object.entries(form.ai_clarification_answers || {}).length ? (
+                    Object.entries(form.ai_clarification_answers || {})
+                      .filter(([, value]) => String(value || "").trim())
+                      .slice(0, 6)
+                      .map(([key, value]) => (
+                        <div key={key} className="rounded-xl bg-slate-50 px-3 py-2">
+                          <span className="font-semibold text-slate-900">
+                            {getFriendlyClarificationLabel(clarificationQuestions.find((question) => question?.key === key) || { key })}:
+                          </span>{" "}
+                          {String(value)}
+                        </div>
+                      ))
+                  ) : (
+                    <div className="text-slate-600">No clarification answers provided.</div>
+                  )}
+                </div>
+                {Array.isArray(form.clarification_photos) && form.clarification_photos.length ? (
+                  <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                    {form.clarification_photos.length} photo{form.clarification_photos.length === 1 ? "" : "s"} attached.
                   </div>
-                ))
-              ) : (
-                <div>No clarification answers provided.</div>
-              )}
+                ) : null}
+              </div>
             </div>
-            {Array.isArray(form.clarification_photos) && form.clarification_photos.length ? (
-              <div className="mt-3 text-sm text-slate-600">{form.clarification_photos.length} photo{form.clarification_photos.length === 1 ? "" : "s"} attached.</div>
-            ) : null}
-          </div>
-          <div className="rounded-lg border bg-slate-50 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Customer</div>
-            <div className="mt-2 text-sm text-slate-700">{form.customer_name || "No name yet"}</div>
-            <div className="mt-1 text-sm text-slate-700">{form.customer_email || "No email yet"}</div>
-            <div className="mt-1 text-sm text-slate-700">{form.customer_phone || "No phone yet"}</div>
-          </div>
-          <div className="rounded-lg border bg-slate-50 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Next Step</div>
-            <div className="mt-2 text-sm text-slate-700">{branchMode === "multi_contractor" ? "Get multiple quotes" : "Work with one contractor"}</div>
-            <div className="mt-1 text-sm text-slate-700">{branchResult?.branch_invites?.length ? `${branchResult.branch_invites.length} invite${branchResult.branch_invites.length === 1 ? "" : "s"} prepared` : "No contractor invites saved yet"}</div>
-          </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm lg:col-span-2">
+            <div className="text-sm font-semibold text-gray-900">Next Step</div>
+            <div className="mt-3 rounded-2xl bg-white px-4 py-3 shadow-sm">
+              <div className="text-sm text-slate-700">
+                {branchMode === "multi_contractor" ? "Get multiple quotes" : "Work with one contractor"}
+              </div>
+              <div className="mt-1 text-sm text-slate-700">
+                {branchResult?.branch_invites?.length
+                  ? `${branchResult.branch_invites.length} invite${branchResult.branch_invites.length === 1 ? "" : "s"} prepared`
+                  : "No contractor invites saved yet"}
+              </div>
+            </div>
+          </section>
         </div>
       </div>
     );
@@ -1611,6 +1820,16 @@ export default function PublicIntakeWizard() {
                 className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
               >
                 Continue to Project Details
+              </button>
+            ) : currentStep === 4 ? (
+              <button
+                type="button"
+                onClick={handleNext}
+                disabled={saving || branchSubmitting}
+                data-testid="public-intake-contact-continue"
+                className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+              >
+                Continue
               </button>
             ) : currentStep === 1 ? (
               <div className="text-xs text-gray-500">Use the question card above to continue your clarification.</div>
