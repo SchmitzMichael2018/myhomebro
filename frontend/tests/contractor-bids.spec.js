@@ -723,6 +723,151 @@ test("contractor bids workspace lead helpers support create bid handoff", async 
     });
   });
 
+  let agreement = {
+    id: 901,
+    agreement_id: 901,
+    project_title: "Bathroom Remodel",
+    title: "Bathroom Remodel",
+    description: "",
+    homeowner: 1,
+    source_lead: 6,
+    status: "draft",
+    project_type: "Bathroom Remodel",
+    project_subtype: "Primary Bath",
+    payment_mode: "escrow",
+  };
+
+  await page.route("**/api/projects/homeowners**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        results: [{ id: 1, company_name: "New Lead Customer", full_name: "New Lead Customer" }],
+      }),
+    });
+  });
+
+  await page.route("**/api/projects/project-types/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        results: [{ id: 1, value: "Bathroom Remodel", label: "Bathroom Remodel", owner_type: "system" }],
+      }),
+    });
+  });
+
+  await page.route("**/api/projects/project-subtypes/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        results: [{ id: 11, value: "Primary Bath", label: "Primary Bath", owner_type: "system", project_type: "Bathroom Remodel" }],
+      }),
+    });
+  });
+
+  await page.route("**/api/projects/templates/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route("**/api/projects/contractors/me/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: 7,
+        ai: { access: "included", enabled: true, unlimited: true },
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/901\/?(\?.*)?$/, async (route) => {
+    const request = route.request();
+    if (request.method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(agreement),
+      });
+      return;
+    }
+    if (request.method() === "PATCH") {
+      const payload = request.postDataJSON();
+      agreement = { ...agreement, ...payload };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(agreement),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.route("**/api/projects/contractor/public-leads/6/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: 6,
+        source: "lead",
+        full_name: "New Lead Customer",
+        email: "lead-customer@example.com",
+        phone: "",
+        project_address: "123 Main St",
+        city: "Austin",
+        state: "TX",
+        zip_code: "78701",
+        project_type: "Bathroom Remodel",
+        project_description: "Update the primary bath with new finishes and fixtures.",
+        preferred_timeline: "Within the next month",
+        budget_text: "$18,000 - $24,000",
+        status: "ready_for_review",
+        internal_notes: "",
+        ai_analysis: {
+          request_snapshot: {
+            project_title: "Bathroom Remodel",
+            project_type: "Bathroom Remodel",
+            project_subtype: "Primary Bath",
+            refined_description: "Update the primary bath with new finishes and fixtures.",
+            location: "123 Main St, Austin, TX 78701",
+            measurement_handling: "site_visit_required",
+            budget: "$18,000 - $24,000",
+            timeline: "Within the next month",
+            photo_count: 2,
+            request_path_label: "Multi-Quote Request",
+            request_signals: ["Guided Intake", "Photos", "Budget Provided", "Timeline Provided"],
+            milestones: ["Site measurement and layout review", "Finalize finishes and fixtures"],
+            clarification_summary: [
+              { key: "measurement_handling", label: "Measurements", value: "Site visit required" },
+            ],
+          },
+        },
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/milestones\/?.*$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/attachments\/?.*$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
   await page.goto("/app/bids", { waitUntil: "domcontentloaded" });
   await page.getByTestId("lead-row-action-lead-6").click();
   await expect(page.getByTestId("response-prep-section")).toBeVisible();
@@ -732,6 +877,20 @@ test("contractor bids workspace lead helpers support create bid handoff", async 
 
   await page.getByTestId("create-bid-action").click();
   await expect(page).toHaveURL("/app/agreements/901/wizard?step=1");
+  await expect(page.getByTestId("proposal-draft-section")).toBeVisible();
+  await expect(page.getByTestId("proposal-draft-title")).toContainText("Proposal Draft");
+  await expect(page.getByTestId("lead-context-summary")).toContainText("Bathroom Remodel");
+  await expect(page.getByTestId("lead-context-summary")).toContainText("Budget");
+  await expect(page.getByTestId("proposal-draft-textarea")).toHaveValue(
+    /Thanks for sharing the details for Bathroom Remodel/
+  );
+
+  await page.getByTestId("proposal-draft-textarea").fill("Custom contractor note");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByTestId("generate-draft-button").click();
+  await expect(page.getByTestId("proposal-draft-textarea")).toHaveValue(
+    /Thanks for sharing the details for Bathroom Remodel/
+  );
 });
 
 test("contractor bids workspace can save a lead for follow-up and reopen it", async ({ page }) => {

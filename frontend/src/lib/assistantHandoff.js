@@ -50,6 +50,7 @@ export function getAssistantHandoff(locationState) {
 
 export function buildAssistantHandoffSignature(handoff) {
   return JSON.stringify({
+    context: safeObject(handoff?.context),
     prefillFields: safeObject(handoff?.prefillFields),
     draftPayload: safeObject(handoff?.draftPayload),
     wizardStepTarget: handoff?.wizardStepTarget ?? null,

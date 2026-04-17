@@ -23,6 +23,7 @@ import {
   getSubtypeClarificationQuestions,
   pickClarificationAnswers,
 } from "../lib/subtypeClarifications.js";
+import { buildLeadProposalDraft, leadSummaryFromRow } from "../lib/leadProposalDraft";
 
 import {
   safeTrim,
@@ -276,6 +277,15 @@ function resolveOptionFromRawValue(rawValue, options = []) {
         normalizeTaxonomyText(optionLabel) === normalizedRaw
       );
     }) || null
+  );
+}
+
+function LeadContextField({ label, value }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</div>
+      <div className="mt-1 text-sm font-medium text-slate-900">{value || "â€”"}</div>
+    </div>
   );
 }
 
@@ -610,6 +620,8 @@ export default function Step1Details({
   assistantPredictiveInsights = [],
   assistantProposedActions = [],
   assistantConfirmationRequiredActions = [],
+  assistantLeadContext = {},
+  assistantDraftPayload = {},
   aiHighlightKeys = {},
   isAiAssistantActive = false,
   aiSetupRequest = null,
@@ -685,6 +697,46 @@ export default function Step1Details({
 
   const hasAiSectionHighlight = (...keys) =>
     keys.some((key) => Boolean(aiHighlightKeys?.[key]));
+  const [leadDetailFallback, setLeadDetailFallback] = useState(null);
+  const [leadDetailFallbackLoading, setLeadDetailFallbackLoading] = useState(false);
+  const leadProposalContext = useMemo(() => {
+    if (assistantLeadContext?.lead_summary) return assistantLeadContext.lead_summary;
+    if (leadDetailFallback) return leadSummaryFromRow(leadDetailFallback);
+    if (!assistantDraftPayload || typeof assistantDraftPayload !== "object") return {};
+    return {
+      project_title: assistantDraftPayload.project_title || assistantDraftPayload.project_summary || "",
+      project_type: assistantDraftPayload.project_type || "",
+      project_subtype: assistantDraftPayload.project_subtype || "",
+      project_description: assistantDraftPayload.description || assistantDraftPayload.project_summary || "",
+      project_address: assistantDraftPayload.project_address || "",
+      city: assistantDraftPayload.city || "",
+      state: assistantDraftPayload.state || "",
+      zip_code: assistantDraftPayload.postal_code || "",
+      budget_text: assistantDraftPayload.budget || "",
+      preferred_timeline: assistantDraftPayload.timeline || "",
+      measurement_handling: assistantDraftPayload.measurement_handling || "",
+      request_snapshot: assistantDraftPayload.request_snapshot || {},
+    };
+  }, [assistantDraftPayload, assistantLeadContext, leadDetailFallback]);
+  const leadProposalSnapshot = useMemo(
+    () =>
+      assistantLeadContext?.request_snapshot ||
+      assistantDraftPayload?.request_snapshot ||
+      leadDetailFallback?.ai_analysis?.request_snapshot ||
+      leadProposalContext?.request_snapshot ||
+      {},
+    [assistantDraftPayload, assistantLeadContext, leadProposalContext, leadDetailFallback]
+  );
+  const leadProposalDraft = useMemo(
+    () => buildLeadProposalDraft({ leadSummary: leadProposalContext, requestSnapshot: leadProposalSnapshot }),
+    [leadProposalContext, leadProposalSnapshot]
+  );
+  const hasLeadProposalContext = Boolean(
+    assistantLeadContext?.lead_id ||
+      assistantDraftPayload?.lead_id ||
+      leadDetailFallback?.id ||
+      safeTrim(assistantDraftPayload?.description)
+  );
   const projectDetailsSectionRef = useRef(null);
   const projectDetailsPulseTimerRef = useRef(null);
 
@@ -741,6 +793,37 @@ export default function Step1Details({
       if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    const sourceLeadId = agreement?.source_lead || agreement?.source_lead_id || "";
+    const hasLeadAssistantContext =
+      Boolean(assistantLeadContext?.lead_id) || Boolean(assistantDraftPayload?.lead_id);
+    if (!sourceLeadId || hasLeadAssistantContext) return;
+    let cancelled = false;
+
+    async function loadSourceLead() {
+      setLeadDetailFallbackLoading(true);
+      try {
+        const { data } = await api.get(`/projects/contractor/public-leads/${sourceLeadId}/`);
+        if (!cancelled) {
+          setLeadDetailFallback(data || null);
+        }
+      } catch {
+        if (!cancelled) {
+          setLeadDetailFallback(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLeadDetailFallbackLoading(false);
+        }
+      }
+    }
+
+    loadSourceLead();
+    return () => {
+      cancelled = true;
+    };
+  }, [agreement?.source_lead, agreement?.source_lead_id, assistantDraftPayload?.lead_id, assistantLeadContext?.lead_id]);
 
   const isNewAgreement = !agreementId;
 
@@ -1278,6 +1361,45 @@ export default function Step1Details({
 
     await patchAgreement({ description: nextDescription }, { silent: true });
     setAiPreview("");
+  }
+
+  async function handleGenerateLeadProposalDraft() {
+    if (locked || !hasLeadProposalContext) return;
+
+    const nextDraft = safeTrim(leadProposalDraft?.text);
+    if (!nextDraft) return;
+
+    const currentDraft = safeTrim(dLocal.description);
+    if (currentDraft && currentDraft !== nextDraft) {
+      const confirmed = window.confirm(
+        "Replace the current proposal draft with a draft based on this lead?"
+      );
+      if (!confirmed) return;
+    }
+
+    const nextTitle = safeTrim(leadProposalDraft?.title) || safeTrim(dLocal.project_title);
+    setDLocal((s) => ({
+      ...s,
+      project_title: nextTitle || s.project_title || "",
+      description: nextDraft,
+    }));
+
+    if (!isNewAgreement) {
+      writeCache({
+        ...(nextTitle ? { project_title: nextTitle } : {}),
+        description: nextDraft,
+      });
+    }
+
+    if (agreementId) {
+      await patchAgreement(
+        {
+          ...(nextTitle ? { project_title: nextTitle, title: nextTitle } : {}),
+          description: nextDraft,
+        },
+        { silent: true }
+      );
+    }
   }
 
   const paymentStructure = normalizePaymentStructure(dLocal?.payment_structure);
@@ -3459,6 +3581,66 @@ export default function Step1Details({
               ) : null}
 
               <div>
+                {hasLeadProposalContext ? (
+                  <div
+                    data-testid="proposal-draft-section"
+                    className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div
+                          data-testid="proposal-draft-title"
+                          className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500"
+                        >
+                          Proposal Draft
+                        </div>
+                        <div className="mt-1 text-sm text-slate-600">
+                          Start with a draft based on the project details, then edit anything you want.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleGenerateLeadProposalDraft}
+                        disabled={locked}
+                        data-testid="generate-draft-button"
+                        className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                        >
+                        Generate Draft
+                      </button>
+                    </div>
+                    {leadDetailFallbackLoading && !assistantLeadContext?.lead_id ? (
+                      <div className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                        Loading project details from the lead review...
+                      </div>
+                    ) : null}
+
+                    <div
+                      data-testid="lead-context-summary"
+                      className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+                    >
+                      <LeadContextField
+                        label="Project"
+                        value={leadProposalDraft?.summary?.projectTitle || dLocal.project_title || "-"}
+                      />
+                      <LeadContextField
+                        label="Project Type"
+                        value={leadProposalDraft?.summary?.projectType || dLocal.project_type || "-"}
+                      />
+                      <LeadContextField
+                        label="Area"
+                        value={leadProposalDraft?.summary?.projectSubtype || dLocal.project_subtype || "-"}
+                      />
+                      <LeadContextField label="Location" value={leadProposalDraft?.summary?.location || "-"} />
+                      <LeadContextField label="Timing" value={leadProposalDraft?.summary?.timeline || "-"} />
+                      <LeadContextField label="Budget" value={leadProposalDraft?.summary?.budget || "-"} />
+                    </div>
+
+                    <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                      This draft is a starting point. Review and edit it before sending.
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="mb-1 flex items-center gap-2">
                   <label className="block text-sm font-medium text-slate-900">Project Title</label>
                   {getAiSuggestedIndicator("project_title") ? (
@@ -3486,25 +3668,34 @@ export default function Step1Details({
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-900">
-                  Scope of Work / Description
+                  {hasLeadProposalContext ? "Proposal Draft" : "Scope of Work / Description"}
                 </label>
                 <div className="mb-2 text-xs leading-5 text-slate-600">
-                  Describe what is included so the customer understands the job clearly and milestone planning stays accurate.
+                  {hasLeadProposalContext
+                    ? "Use this as the first version of your bid response. Edit anything you want before continuing."
+                    : "Describe what is included so the customer understands the job clearly and milestone planning stays accurate."}
                 </div>
 
                 <textarea
+                  data-testid="proposal-draft-textarea"
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
-                  rows={6}
+                  rows={8}
                   name="description"
                   value={dLocal.description || ""}
                   onChange={locked ? undefined : handleStep1LocalChange}
-                  placeholder="Example: Remove existing materials, prepare surfaces, install new materials, complete finish work, and clean the job site..."
+                  placeholder={
+                    hasLeadProposalContext
+                      ? "Start with a lead-based draft, then refine the scope before moving on."
+                      : "Example: Remove existing materials, prepare surfaces, install new materials, complete finish work, and clean the job site..."
+                  }
                   disabled={locked}
                 />
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs text-slate-600">
-                    {startMode === "ai"
+                    {hasLeadProposalContext
+                      ? "Based on project details from the lead review."
+                      : startMode === "ai"
                       ? "Use AI to draft the first version, then refine the scope here."
                       : "AI can turn a rough idea into a clearer, stronger scope when you want help."}
                   </div>
@@ -3531,6 +3722,12 @@ export default function Step1Details({
                     </button>
                   </div>
                 </div>
+
+                {hasLeadProposalContext ? (
+                  <div className="mt-2 text-[11px] text-slate-500">
+                    The draft references the project title, scope, clarifications, photos, timing, and budget signals that are already available.
+                  </div>
+                ) : null}
 
                 <div className="mt-3 flex w-full flex-wrap gap-2">
                   <button

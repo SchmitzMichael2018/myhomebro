@@ -4,6 +4,7 @@ import { ArrowRight, ClipboardList, Copy, ExternalLink, X } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api from "../api";
+import { buildLeadAgreementAssistantState } from "../lib/leadProposalDraft";
 
 function fmtDate(value) {
   if (!value) return "-";
@@ -614,7 +615,11 @@ export default function ContractorBidsPage() {
       const target =
         data?.wizard_url || data?.detail_url || (data?.agreement_id ? `/app/agreements/${data.agreement_id}` : "");
       if (target) {
-        navigate(target);
+        const assistantState =
+          sourceKind === "lead" || sourceKind === "intake"
+            ? buildLeadAgreementAssistantState(row, { currentRoute: "/app/bids" })
+            : null;
+        navigate(target, assistantState ? { state: assistantState } : undefined);
         return;
       }
       toast.success("Agreement created.");

@@ -1590,6 +1590,8 @@ export default function AgreementWizard() {
             assistantPredictiveInsights={assistantHandoff.predictiveInsights}
             assistantProposedActions={assistantHandoff.proposedActions}
             assistantConfirmationRequiredActions={assistantHandoff.confirmationRequiredActions}
+            assistantLeadContext={assistantHandoff.context}
+            assistantDraftPayload={assistantHandoff.draftPayload}
             aiHighlightKeys={step1AiHighlights}
             isAiAssistantActive={isAssistantDockOpen}
             aiSetupRequest={step1AiSetupRequest}
