@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Optional
 
 from projects.models import ContractorPublicProfile, PublicContractorLead
@@ -47,6 +48,16 @@ def _project_address_from_intake(intake) -> str:
     return ", ".join([part for part in parts if part])
 
 
+def _format_budget(amount) -> str:
+    try:
+        if amount in (None, "", False):
+            return ""
+        value = amount if isinstance(amount, Decimal) else Decimal(str(amount))
+        return f"${value:,.2f}"
+    except Exception:
+        return ""
+
+
 def sync_public_lead_from_project_intake(intake, *, status_override=None):
     contractor = getattr(intake, "contractor", None)
     if contractor is None:
@@ -71,8 +82,12 @@ def sync_public_lead_from_project_intake(intake, *, status_override=None):
         "zip_code": (intake.project_postal_code or "").strip(),
         "project_type": (getattr(intake, "ai_project_type", "") or "").strip(),
         "project_description": (intake.accomplishment_text or "").strip(),
-        "preferred_timeline": "",
-        "budget_text": "",
+        "preferred_timeline": (
+            f"{int(getattr(intake, 'ai_project_timeline_days', 0) or 0)} days"
+            if getattr(intake, "ai_project_timeline_days", None)
+            else ""
+        ),
+        "budget_text": _format_budget(getattr(intake, "ai_project_budget", None)),
         "status": status_override or PublicContractorLead.STATUS_NEW,
     }
 

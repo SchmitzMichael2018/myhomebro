@@ -43,6 +43,15 @@ class PublicIntakeView(APIView):
         "project_state",
         "project_postal_code",
         "accomplishment_text",
+        "ai_project_title",
+        "ai_project_type",
+        "ai_project_subtype",
+        "ai_description",
+        "ai_project_timeline_days",
+        "ai_project_budget",
+        "ai_milestones",
+        "ai_clarification_questions",
+        "ai_analysis_payload",
     }
 
     BRANCH_CHOICES = {"single_contractor", "multi_contractor"}
@@ -105,6 +114,15 @@ class PublicIntakeView(APIView):
             "project_postal_code": intake.project_postal_code,
 
             "accomplishment_text": intake.accomplishment_text,
+            "ai_project_title": intake.ai_project_title,
+            "ai_project_type": intake.ai_project_type,
+            "ai_project_subtype": intake.ai_project_subtype,
+            "ai_description": intake.ai_description,
+            "ai_project_timeline_days": intake.ai_project_timeline_days,
+            "ai_project_budget": str(intake.ai_project_budget) if intake.ai_project_budget is not None else None,
+            "ai_milestones": intake.ai_milestones,
+            "ai_clarification_questions": intake.ai_clarification_questions,
+            "ai_analysis_payload": intake.ai_analysis_payload,
             "post_submit_flow": intake.post_submit_flow,
             "post_submit_flow_selected_at": intake.post_submit_flow_selected_at.isoformat()
             if intake.post_submit_flow_selected_at
@@ -124,6 +142,20 @@ class PublicIntakeView(APIView):
 
         changed = []
         has_intake_field_updates = any(field in request.data for field in self.SAFE_FIELDS)
+        has_ai_updates = any(
+            field in request.data
+            for field in {
+                "ai_project_title",
+                "ai_project_type",
+                "ai_project_subtype",
+                "ai_description",
+                "ai_project_timeline_days",
+                "ai_project_budget",
+                "ai_milestones",
+                "ai_clarification_questions",
+                "ai_analysis_payload",
+            }
+        )
 
         for field in self.SAFE_FIELDS:
             if field in request.data:
@@ -245,13 +277,22 @@ class PublicIntakeView(APIView):
                     "post_submit_flow": intake.post_submit_flow,
                     "branch_invites": branch_invites,
                     "completed_at": intake.completed_at.isoformat() if intake.completed_at else None,
+                    "ai_project_title": intake.ai_project_title,
+                    "ai_project_type": intake.ai_project_type,
+                    "ai_project_subtype": intake.ai_project_subtype,
+                    "ai_description": intake.ai_description,
+                    "ai_project_timeline_days": intake.ai_project_timeline_days,
+                    "ai_project_budget": str(intake.ai_project_budget) if intake.ai_project_budget is not None else None,
+                    "ai_milestones": intake.ai_milestones,
+                    "ai_clarification_questions": intake.ai_clarification_questions,
+                    "ai_analysis_payload": intake.ai_analysis_payload,
                 },
                 status=status.HTTP_200_OK,
             )
 
         accomplishment = (intake.accomplishment_text or "").strip()
 
-        if accomplishment:
+        if accomplishment and not has_ai_updates:
             intake.completed_at = timezone.now()
             changed.append("completed_at")
 
@@ -260,12 +301,14 @@ class PublicIntakeView(APIView):
             intake.status = "submitted"
             changed.append("status")
 
-        if accomplishment:
+        if accomplishment and not has_ai_updates:
             result = analyze_project_intake(intake=intake)
             intake.ai_project_title = result.get("project_title", "")
             intake.ai_project_type = result.get("project_type", "")
             intake.ai_project_subtype = result.get("project_subtype", "")
             intake.ai_description = result.get("description", "")
+            intake.ai_project_timeline_days = result.get("project_timeline_days")
+            intake.ai_project_budget = result.get("project_budget")
             intake.ai_recommended_template_id = result.get("template_id")
             intake.ai_recommendation_confidence = result.get("confidence", "none")
             intake.ai_recommendation_reason = result.get("reason", "")
@@ -279,6 +322,8 @@ class PublicIntakeView(APIView):
                     "ai_project_type",
                     "ai_project_subtype",
                     "ai_description",
+                    "ai_project_timeline_days",
+                    "ai_project_budget",
                     "ai_recommended_template_id",
                     "ai_recommendation_confidence",
                     "ai_recommendation_reason",
@@ -307,6 +352,15 @@ class PublicIntakeView(APIView):
                 "post_submit_flow": intake.post_submit_flow,
                 "branch_invites": branch_invites,
                 "completed_at": intake.completed_at.isoformat() if intake.completed_at else None,
+                "ai_project_title": intake.ai_project_title,
+                "ai_project_type": intake.ai_project_type,
+                "ai_project_subtype": intake.ai_project_subtype,
+                "ai_description": intake.ai_description,
+                "ai_project_timeline_days": intake.ai_project_timeline_days,
+                "ai_project_budget": str(intake.ai_project_budget) if intake.ai_project_budget is not None else None,
+                "ai_milestones": intake.ai_milestones,
+                "ai_clarification_questions": intake.ai_clarification_questions,
+                "ai_analysis_payload": intake.ai_analysis_payload,
             },
             status=status.HTTP_200_OK,
         )

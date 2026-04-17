@@ -58,6 +58,8 @@ class ProjectIntakeViewSet(viewsets.ModelViewSet):
         intake.ai_project_type = result.get("project_type", "")
         intake.ai_project_subtype = result.get("project_subtype", "")
         intake.ai_description = result.get("description", "")
+        intake.ai_project_timeline_days = result.get("project_timeline_days")
+        intake.ai_project_budget = result.get("project_budget")
         intake.ai_recommended_template_id = result.get("template_id")
         intake.ai_recommendation_confidence = result.get("confidence", "none")
         intake.ai_recommendation_reason = result.get("reason", "")
@@ -72,6 +74,8 @@ class ProjectIntakeViewSet(viewsets.ModelViewSet):
                 "ai_project_type",
                 "ai_project_subtype",
                 "ai_description",
+                "ai_project_timeline_days",
+                "ai_project_budget",
                 "ai_recommended_template_id",
                 "ai_recommendation_confidence",
                 "ai_recommendation_reason",

@@ -141,6 +141,8 @@ class ProjectIntake(models.Model):
     ai_project_type = models.CharField(max_length=120, blank=True, default="")
     ai_project_subtype = models.CharField(max_length=120, blank=True, default="")
     ai_description = models.TextField(blank=True, default="")
+    ai_project_timeline_days = models.PositiveIntegerField(null=True, blank=True)
+    ai_project_budget = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
 
     ai_recommended_template_id = models.IntegerField(null=True, blank=True)
     ai_recommendation_confidence = models.CharField(max_length=20, blank=True, default="none")

@@ -33,22 +33,31 @@ test("landing page drives into intake and public intake shows branching choices 
           token: "landing-token",
           status: "draft",
           contractor_name: "Your contractor",
-          customer_name: "",
-          customer_email: "",
-          customer_phone: "",
-          customer_address_line1: "",
+          customer_name: "Branch Prospect",
+          customer_email: "branch@example.com",
+          customer_phone: "555-444-2222",
+          customer_address_line1: "500 Bid Lane",
           customer_address_line2: "",
-          customer_city: "",
-          customer_state: "",
-          customer_postal_code: "",
+          customer_city: "Austin",
+          customer_state: "TX",
+          customer_postal_code: "78701",
           same_as_customer_address: true,
           project_class: "residential",
-          project_address_line1: "",
+          project_address_line1: "500 Bid Lane",
           project_address_line2: "",
-          project_city: "",
-          project_state: "",
-          project_postal_code: "",
+          project_city: "Austin",
+          project_state: "TX",
+          project_postal_code: "78701",
           accomplishment_text: "",
+          ai_project_title: "",
+          ai_project_type: "",
+          ai_project_subtype: "",
+          ai_description: "",
+          ai_project_timeline_days: null,
+          ai_project_budget: null,
+          ai_milestones: [],
+          ai_clarification_questions: [],
+          ai_analysis_payload: {},
           post_submit_flow: "",
           post_submit_flow_selected_at: null,
           submitted_at: null,
@@ -69,6 +78,18 @@ test("landing page drives into intake and public intake shows branching choices 
         id: 501,
         status: "submitted",
         lead_id: 88,
+        ai_project_title: "Commercial Scope Request",
+        ai_project_type: "Commercial",
+        ai_project_subtype: "General Commercial",
+        ai_description: "Structured commercial scope summary.",
+        ai_project_timeline_days: 10,
+        ai_project_budget: "5000.00",
+        ai_milestones: [
+          { title: "Preparation", description: "Prepare site and confirm scope." },
+          { title: "Core Work", description: "Complete the requested work." },
+        ],
+        ai_clarification_questions: [],
+        ai_analysis_payload: {},
         post_submit_flow: body.branch_flow || "",
         branch_invites:
           body.branch_flow === "multi_contractor"
@@ -95,16 +116,9 @@ test("landing page drives into intake and public intake shows branching choices 
   await expect(page).toHaveURL(/\/start-project\/landing-token$/);
   await expect(page.getByText("Project Intake", { exact: true })).toBeVisible();
 
-  await page.getByPlaceholder("Your full name").fill("Branch Prospect");
-  await page.getByPlaceholder("you@example.com").fill("branch@example.com");
-  await page.getByTestId("public-intake-customer-address-line1").fill("500 Bid Lane");
-  await page.getByTestId("public-intake-customer-city").fill("Austin");
-  await page.getByTestId("public-intake-customer-state").fill("TX");
-  await page.getByTestId("public-intake-customer-postal-code").fill("78701");
-  await page.getByLabel("Commercial").check();
   await page.getByTestId("public-intake-accomplishment-text").fill("Need a bid-ready commercial scope.");
-  await page.getByTestId("public-intake-submit-button").click();
-
+  await page.getByTestId("public-intake-generate-structure").click();
+  await page.getByRole("button", { name: "Choose Path" }).click();
   await expect(page.getByTestId("public-intake-branching-section")).toBeVisible();
   await expect(page.getByTestId("public-intake-branching-section")).toContainText("How would you like to proceed?");
   await expect(page.getByTestId("public-intake-branch-single")).toHaveText("Work with one contractor");

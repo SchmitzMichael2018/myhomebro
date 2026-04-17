@@ -44,6 +44,8 @@ class ProjectIntakeSerializer(serializers.ModelSerializer):
             "ai_project_type",
             "ai_project_subtype",
             "ai_description",
+            "ai_project_timeline_days",
+            "ai_project_budget",
             "ai_recommended_template_id",
             "ai_recommendation_confidence",
             "ai_recommendation_reason",
@@ -82,5 +84,7 @@ class ProjectIntakeAnalyzeResponseSerializer(serializers.Serializer):
     project_type = serializers.CharField(required=False, allow_blank=True)
     project_subtype = serializers.CharField(required=False, allow_blank=True)
     description = serializers.CharField(required=False, allow_blank=True)
+    project_timeline_days = serializers.IntegerField(required=False, allow_null=True)
+    project_budget = serializers.DecimalField(required=False, max_digits=12, decimal_places=2, allow_null=True)
     milestones = serializers.ListField(child=serializers.DictField(), required=False)
     clarification_questions = serializers.ListField(child=serializers.DictField(), required=False)

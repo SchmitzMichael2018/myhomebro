@@ -667,13 +667,16 @@ test('landing-source intake and public-profile intake land in the same contracto
   await page.getByRole('button', { name: 'Submit Project Request' }).click();
 
   await page.goto('/start-project/landing-token', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('public-intake-accomplishment-text').fill(
+    'Landing page intake request.'
+  );
+  await page.getByTestId('public-intake-generate-structure').click();
+  await page.getByRole('button', { name: 'Project Details' }).click();
   await page.getByTestId('public-intake-customer-address-line1').fill('100 Landing Way');
   await page.getByTestId('public-intake-customer-city').fill('Austin');
   await page.getByTestId('public-intake-customer-state').fill('TX');
   await page.getByTestId('public-intake-customer-postal-code').fill('78701');
-  await page.getByTestId('public-intake-accomplishment-text').fill(
-    'Landing page intake request.'
-  );
+  await page.getByRole('button', { name: 'Review + Confirm' }).click();
   await page.getByTestId('public-intake-submit-button').click();
 
   await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
@@ -683,7 +686,7 @@ test('landing-source intake and public-profile intake land in the same contracto
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Public Profile');
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Landing Page');
 
-  await page.getByRole('button', { name: 'Landing Prospect' }).click();
+  await page.getByRole('button', { name: 'Landing Prospect' }).first().click();
   await page.getByRole('button', { name: 'Accept Lead' }).click();
   await page.getByRole('button', { name: 'Analyze Intake with AI' }).click();
   await page.getByRole('button', { name: 'Create AI-Assisted Agreement' }).click();
@@ -1106,13 +1109,16 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
   );
 
   await page.goto('/start-project/manual-token', { waitUntil: 'domcontentloaded' });
+  await page
+    .getByTestId('public-intake-accomplishment-text')
+    .fill('Convert the garage into a finished office and laundry room.');
+  await page.getByTestId('public-intake-generate-structure').click();
+  await page.getByRole('button', { name: 'Project Details' }).click();
   await page.getByTestId('public-intake-customer-address-line1').fill('400 Field Visit Rd');
   await page.getByTestId('public-intake-customer-city').fill('Austin');
   await page.getByTestId('public-intake-customer-state').fill('TX');
   await page.getByTestId('public-intake-customer-postal-code').fill('78706');
-  await page
-    .getByTestId('public-intake-accomplishment-text')
-    .fill('Convert the garage into a finished office and laundry room.');
+  await page.getByRole('button', { name: 'Review + Confirm' }).click();
   await page.getByTestId('public-intake-submit-button').click();
 
   await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
@@ -1533,13 +1539,16 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
   await page.getByTestId('intake-send-to-customer').click();
 
   await page.goto('/start-project/contractor-sent-token', { waitUntil: 'domcontentloaded' });
+  await page
+    .getByTestId('public-intake-accomplishment-text')
+    .fill('Complete a bathroom remodel with updated tile and fixtures.');
+  await page.getByTestId('public-intake-generate-structure').click();
+  await page.getByRole('button', { name: 'Project Details' }).click();
   await page.getByTestId('public-intake-customer-address-line1').fill('300 Scope St');
   await page.getByTestId('public-intake-customer-city').fill('Austin');
   await page.getByTestId('public-intake-customer-state').fill('TX');
   await page.getByTestId('public-intake-customer-postal-code').fill('78705');
-  await page
-    .getByTestId('public-intake-accomplishment-text')
-    .fill('Complete a bathroom remodel with updated tile and fixtures.');
+  await page.getByRole('button', { name: 'Review + Confirm' }).click();
   await page.getByTestId('public-intake-submit-button').click();
 
   await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });

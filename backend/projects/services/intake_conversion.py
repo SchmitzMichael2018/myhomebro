@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from datetime import timedelta
 from typing import Any
 
 from django.db import transaction
@@ -25,6 +26,15 @@ def _to_decimal(value: Any) -> Decimal:
         return Decimal(str(value))
     except Exception:
         return Decimal("0.00")
+
+
+def _to_int(value: Any) -> int:
+    try:
+        if value in (None, "", False):
+            return 0
+        return int(value)
+    except Exception:
+        return 0
 
 
 def _ensure_homeowner_from_intake(intake: ProjectIntake) -> Homeowner:
@@ -173,6 +183,10 @@ def convert_intake_to_agreement(
         payment_mode="escrow",
         status="draft",
         project_class=project_class,
+        total_cost=_to_decimal(getattr(intake, "ai_project_budget", None) or 0),
+        total_time_estimate=timedelta(days=_to_int(getattr(intake, "ai_project_timeline_days", None)) or 0)
+        if _to_int(getattr(intake, "ai_project_timeline_days", None))
+        else None,
     )
 
     template_id = template_id_override if template_id_override else (

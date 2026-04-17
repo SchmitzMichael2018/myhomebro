@@ -159,6 +159,8 @@ def _build_lead_analysis_payload(lead):
         "project_subtype": result.get("project_subtype", ""),
         "suggested_title": result.get("project_title", ""),
         "suggested_description": result.get("description", ""),
+        "project_timeline_days": result.get("project_timeline_days"),
+        "project_budget": str(result.get("project_budget")) if result.get("project_budget") is not None else None,
         "clarifications_needed": result.get("clarification_questions", []),
         "milestone_outline": result.get("milestones", []),
         "recommended_templates": suggested_templates,

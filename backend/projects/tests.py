@@ -1336,6 +1336,45 @@ class ContractorPublicPresenceApiTests(TestCase):
         rows = bids_response.json()["results"]
         self.assertTrue(any(row["source_kind"] == "intake" and row["source_id"] == intake.id for row in rows))
 
+    def test_structured_public_intake_fields_feed_agreement_conversion(self):
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            initiated_by="homeowner",
+            status="analyzed",
+            customer_name="Structure Prospect",
+            customer_email="structure@example.com",
+            customer_phone="555-444-0000",
+            project_address_line1="123 Structure St",
+            project_city="Austin",
+            project_state="TX",
+            project_postal_code="78701",
+            accomplishment_text="Need a structured kitchen remodel.",
+            ai_project_title="Kitchen Remodel",
+            ai_project_type="Remodel",
+            ai_project_subtype="Kitchen Remodel",
+            ai_description="Structured kitchen remodel scope.",
+            ai_project_timeline_days=21,
+            ai_project_budget=Decimal("25000.00"),
+            ai_milestones=[
+                {"title": "Preparation", "description": "Prepare the kitchen for work."},
+                {"title": "Build", "description": "Complete the remodel work."},
+            ],
+        )
+
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.post(
+            f"/api/projects/intakes/{intake.id}/convert-to-agreement/",
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        agreement = Agreement.objects.get(pk=response.json()["agreement_id"])
+        self.assertEqual(agreement.total_cost, Decimal("25000.00"))
+        self.assertEqual(agreement.total_time_estimate, timedelta(days=21))
+        intake.refresh_from_db()
+        self.assertEqual(intake.agreement_id, agreement.id)
+
     @patch("projects.services.intake_public.send_postmark_template_email", return_value=None)
     def test_contractor_sent_intake_completes_into_unified_ready_for_review_lead(self, _send_email):
         self.client.force_authenticate(user=self.contractor_user)

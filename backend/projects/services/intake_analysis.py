@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 from django.db.models import Q
@@ -340,6 +341,46 @@ def _generate_default_clarifications(project_type: str, project_subtype: str) ->
     ]
 
 
+def _estimate_timeline_days(project_type: str, project_subtype: str, accomplishment: str) -> int:
+    text = " ".join([project_type, project_subtype, accomplishment]).lower()
+    mapping = [
+        (["roof"], 7),
+        (["bathroom"], 14),
+        (["kitchen"], 21),
+        (["floor", "flooring"], 5),
+        (["paint", "painting"], 3),
+        (["drywall"], 4),
+        (["electrical"], 4),
+        (["plumbing"], 4),
+        (["landscap"], 5),
+        (["deck", "patio"], 10),
+    ]
+    for keywords, days in mapping:
+        if any(keyword in text for keyword in keywords):
+            return days
+    return 10
+
+
+def _estimate_budget(project_type: str, project_subtype: str, accomplishment: str) -> Decimal:
+    text = " ".join([project_type, project_subtype, accomplishment]).lower()
+    mapping = [
+        (["roof"], Decimal("12000.00")),
+        (["bathroom"], Decimal("18000.00")),
+        (["kitchen"], Decimal("25000.00")),
+        (["floor", "flooring"], Decimal("8000.00")),
+        (["paint", "painting"], Decimal("4500.00")),
+        (["drywall"], Decimal("3500.00")),
+        (["electrical"], Decimal("5500.00")),
+        (["plumbing"], Decimal("6000.00")),
+        (["landscap"], Decimal("7000.00")),
+        (["deck", "patio"], Decimal("10000.00")),
+    ]
+    for keywords, budget in mapping:
+        if any(keyword in text for keyword in keywords):
+            return budget
+    return Decimal("5000.00")
+
+
 def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
     accomplishment = _safe_str(intake.accomplishment_text)
 
@@ -356,6 +397,16 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
             project_type=_safe_str(template.project_type),
             project_subtype=_safe_str(template.project_subtype),
         )
+        timeline_days = _estimate_timeline_days(
+            _safe_str(template.project_type),
+            _safe_str(template.project_subtype),
+            accomplishment,
+        )
+        budget = _estimate_budget(
+            _safe_str(template.project_type),
+            _safe_str(template.project_subtype),
+            accomplishment,
+        )
 
         return {
             "project_title": project_title,
@@ -371,6 +422,8 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
             "project_type": _safe_str(template.project_type),
             "project_subtype": _safe_str(template.project_subtype),
             "description": _safe_str(template.description) or accomplishment,
+            "project_timeline_days": timeline_days,
+            "project_budget": str(budget),
             "milestones": _template_milestones_payload(template),
             "clarification_questions": _template_clarification_payload(template),
         }
@@ -381,6 +434,8 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
         project_type=project_type,
         project_subtype=project_subtype,
     )
+    timeline_days = _estimate_timeline_days(project_type, project_subtype, accomplishment)
+    budget = _estimate_budget(project_type, project_subtype, accomplishment)
 
     description = accomplishment or f"{project_subtype} project."
 
@@ -398,6 +453,8 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
         "project_type": project_type,
         "project_subtype": project_subtype,
         "description": description,
+        "project_timeline_days": timeline_days,
+        "project_budget": str(budget),
         "milestones": _generate_default_milestones(project_type, project_subtype, accomplishment),
         "clarification_questions": _generate_default_clarifications(project_type, project_subtype),
     }
