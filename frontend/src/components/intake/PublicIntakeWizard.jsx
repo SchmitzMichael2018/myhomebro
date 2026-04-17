@@ -601,7 +601,7 @@ export default function PublicIntakeWizard() {
       const isTextareaQuestion = (activeClarificationQuestion?.inputType || activeClarificationQuestion?.type) === "textarea";
 
       return (
-        <div className="rounded-xl border bg-white p-6 shadow-sm">
+        <div className="rounded-xl border bg-white p-6 shadow-sm" data-testid="public-intake-clarification-step">
           <h2 className="text-lg font-semibold text-gray-900">AI Clarifications</h2>
           <p className="mt-1 text-sm text-gray-600">
             Answer a few quick questions to make the agreement-ready scope more accurate.
@@ -649,7 +649,10 @@ export default function PublicIntakeWizard() {
 
             {questionCount ? (
               <div className="mt-4">
-                <div className="mb-3 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <div
+                  className="mb-3 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                  data-testid="public-intake-clarification-progress"
+                >
                   <span>
                     Question {questionNumber} of {questionCount}
                   </span>
@@ -663,7 +666,7 @@ export default function PublicIntakeWizard() {
                   <div className="inline-flex rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
                     AI prompt
                   </div>
-                  <div className="mt-3 text-base font-semibold text-gray-900">
+                  <div className="mt-3 text-base font-semibold text-gray-900" data-testid="public-intake-clarification-prompt">
                     {activeClarificationQuestion?.label || activeClarificationQuestion?.question || "Clarification question"}
                   </div>
                   {activeClarificationQuestion?.help ? (
@@ -671,7 +674,7 @@ export default function PublicIntakeWizard() {
                   ) : null}
                   <div className="mt-3 text-xs text-slate-500">You can skip anything you&apos;re unsure about.</div>
 
-                  <div className="mt-4">
+                  <div className="mt-4" data-testid="public-intake-clarification-answer-controls">
                     {isChoiceQuestion ? (
                       <div className="flex flex-wrap gap-2">
                         {options.map((opt) => (
@@ -682,6 +685,10 @@ export default function PublicIntakeWizard() {
                               if (!activeClarificationQuestion?.key) return;
                               setClarificationAnswer(activeClarificationQuestion.key, opt);
                             }}
+                            data-testid={`public-intake-clarification-option-${activeClarificationQuestion?.key || "question"}-${String(opt)
+                              .toLowerCase()
+                              .replace(/[^a-z0-9]+/g, "-")
+                              .replace(/^-+|-+$/g, "")}`}
                             className={`rounded-full border px-3 py-2 text-sm font-semibold ${
                               String(activeClarificationAnswer) === String(opt)
                                 ? "border-indigo-500 bg-indigo-600 text-white"
@@ -702,6 +709,7 @@ export default function PublicIntakeWizard() {
                           setClarificationAnswer(activeClarificationQuestion.key, e.target.value);
                         }}
                         placeholder="Type a short answer or skip this question"
+                        data-testid="public-intake-clarification-answer-input"
                       />
                     ) : (
                       <input
@@ -712,6 +720,7 @@ export default function PublicIntakeWizard() {
                           setClarificationAnswer(activeClarificationQuestion.key, e.target.value);
                         }}
                         placeholder="Type a short answer or skip this question"
+                        data-testid="public-intake-clarification-answer-input"
                       />
                     )}
                   </div>
@@ -721,6 +730,7 @@ export default function PublicIntakeWizard() {
                       <button
                         type="button"
                         onClick={handleBack}
+                        data-testid="public-intake-clarification-back"
                         className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
                       >
                         Back
@@ -728,6 +738,7 @@ export default function PublicIntakeWizard() {
                       <button
                         type="button"
                         onClick={() => handleClarificationAdvance({ skip: true })}
+                        data-testid="public-intake-clarification-skip"
                         className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                       >
                         Skip
@@ -737,6 +748,7 @@ export default function PublicIntakeWizard() {
                     <button
                       type="button"
                       onClick={() => handleClarificationAdvance()}
+                      data-testid="public-intake-clarification-next"
                       className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
                     >
                       {isLastQuestion ? "Continue" : "Next"}
@@ -746,7 +758,17 @@ export default function PublicIntakeWizard() {
               </div>
             ) : (
               <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-                No clarification questions are needed for this project. You can continue.
+                <div>No clarification questions are needed for this project.</div>
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => handleClarificationAdvance()}
+                    data-testid="public-intake-clarification-next"
+                    className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+                  >
+                    Continue
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -1152,7 +1174,7 @@ export default function PublicIntakeWizard() {
             ) : currentStep === 6 ? (
               <button data-testid="public-intake-submit-button" type="button" onClick={handleConfirm} disabled={saving || branchSubmitting || !canFinish} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{saving ? "Submitting..." : "Submit Intake"}</button>
             ) : currentStep === 1 ? (
-              <button type="button" onClick={() => handleClarificationAdvance()} disabled={saving || branchSubmitting} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{clarificationQuestions.length && currentQuestionIndex < clarificationQuestions.length - 1 ? "Next" : "Continue"}</button>
+              <div className="text-xs text-gray-500">Use the question card above to continue your clarification.</div>
             ) : currentStep === 0 ? (
               <div className="text-xs text-gray-500">Use the button above to begin shaping your plan.</div>
             ) : (

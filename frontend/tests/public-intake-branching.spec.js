@@ -124,7 +124,7 @@ test("landing page drives into intake and public intake shows branching choices 
 
   await page.getByTestId("public-intake-accomplishment-text").fill("Need a bid-ready commercial scope.");
   await page.getByTestId("public-intake-generate-structure").click();
-  await page.getByRole("button", { name: "Continue" }).first().click();
+  await page.getByTestId("public-intake-clarification-next").click();
   await page.getByRole("button", { name: "Choose Path" }).click();
   await expect(page.getByTestId("public-intake-branching-section")).toBeVisible();
   await expect(page.getByTestId("public-intake-branching-section")).toContainText("How would you like to proceed?");
