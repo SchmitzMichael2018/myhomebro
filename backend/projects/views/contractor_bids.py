@@ -96,6 +96,8 @@ def _contractor_status_label(status: str) -> str:
 
 def _contractor_status_note(status: str) -> str:
     normalized = _safe_text(status).lower()
+    if normalized == "follow_up":
+        return "This lead is saved for later review."
     if normalized == "expired":
         return "Another contractor was selected for this project."
     if normalized == "declined":
@@ -315,6 +317,8 @@ def _workspace_stage(status: str, source_kind: str) -> str:
     normalized_status = _safe_text(status).lower()
     if normalized_status in {"declined", "expired"}:
         return "closed"
+    if normalized_status == "follow_up":
+        return "follow_up"
     if _safe_text(source_kind).lower() == "lead" and normalized_status in {"draft", "submitted"}:
         return "new_lead"
     return "active_bid"
@@ -324,6 +328,8 @@ def _workspace_stage_label(stage: str) -> str:
     normalized = _safe_text(stage).lower()
     if normalized == "new_lead":
         return "New Lead"
+    if normalized == "follow_up":
+        return "Follow-Up"
     if normalized == "closed":
         return "Closed / Archived"
     return "Active Bid"
@@ -412,6 +418,7 @@ def _bid_row_from_lead(lead, request=None) -> dict:
         "bid_amount": format_money(bid_amount) if bid_amount is not None else None,
         "bid_amount_label": _format_bid_amount(bid_amount),
         "submitted_at": _format_date(submitted_at),
+        "updated_at": _format_date(getattr(lead, "updated_at", None)),
         "status": status,
         "status_label": _contractor_status_label(status),
         "status_group": bid_status_group(status),
@@ -503,6 +510,7 @@ def _bid_row_from_intake(intake, request=None) -> dict:
         "bid_amount": format_money(bid_amount) if bid_amount is not None else None,
         "bid_amount_label": _format_bid_amount(bid_amount),
         "submitted_at": _format_date(submitted_at),
+        "updated_at": _format_date(getattr(intake, "updated_at", None)),
         "status": status,
         "status_label": _contractor_status_label(status),
         "status_group": bid_status_group(status),
@@ -616,6 +624,7 @@ class ContractorBidsView(APIView):
 
         summary = {
             "total_bids": len(filtered_rows),
+            "follow_up_leads": sum(1 for row in filtered_rows if row.get("workspace_stage") == "follow_up"),
             "open_bids": sum(1 for row in filtered_rows if row.get("status_group") == "open"),
             "under_review_bids": sum(1 for row in filtered_rows if row.get("status_group") == "under_review"),
             "awarded_bids": sum(1 for row in filtered_rows if row.get("status_group") == "awarded"),

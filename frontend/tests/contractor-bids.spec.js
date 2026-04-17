@@ -369,29 +369,151 @@ const bidRows = [
     },
     next_action: { key: "review_bid", label: "Review Request", target: "" },
   },
+  {
+    bid_id: "lead-8",
+    source_kind: "lead",
+    source_kind_label: "Lead",
+    workspace_stage: "follow_up",
+    workspace_stage_label: "Follow-Up",
+    source_id: 8,
+    source_reference: "Lead #8",
+    project_title: "Patio Repair Follow-Up",
+    customer_name: "Saved Customer",
+    customer_email: "saved@example.com",
+    customer_phone: "",
+    location: "Round Rock, TX",
+    project_class: "residential",
+    project_class_label: "Residential",
+    project_type: "Patio Repair",
+    project_subtype: "Flagstone Patio",
+    bid_amount: null,
+    bid_amount_label: "-",
+    submitted_at: "2026-04-07T15:20:00Z",
+    status: "follow_up",
+    status_label: "Follow-Up",
+    status_group: "follow_up",
+    linked_agreement_id: null,
+    linked_agreement_label: "",
+    linked_agreement_reference: "",
+    linked_agreement_url: "",
+    notes: "Saved for later review.",
+    timeline: "14 days",
+    budget_text: "$9,500.00",
+    milestone_preview: ["Clean-up", "Reset Stone"],
+    request_signals: ["Guided Intake", "Budget Provided", "Timeline Provided"],
+    request_snapshot: {
+      project_title: "Patio Repair Follow-Up",
+      project_type: "Patio Repair",
+      project_subtype: "Flagstone Patio",
+      refined_description: "Saved for later review.",
+      location: "Round Rock, TX",
+      request_path_label: "Project request",
+      measurement_handling: "Not sure",
+      timeline: "14 days",
+      budget: "$9,500.00",
+      clarification_summary: [],
+      clarification_count: 0,
+      photo_count: 0,
+      photos: [],
+      milestones: ["Clean-up", "Reset Stone"],
+      request_signals: ["Guided Intake", "Budget Provided", "Timeline Provided"],
+    },
+    next_action: { key: "review_bid", label: "Review Lead", target: "" },
+    status_note: "This lead is saved for later review.",
+  },
 ];
 
-function buildPayload() {
+function buildSummary(rows) {
   return {
-    results: bidRows,
-    summary: {
-      total_bids: bidRows.length,
-      new_leads: 2,
-      active_bids: 4,
-      closed: 1,
-      open_bids: 2,
-      under_review_bids: 1,
-      awarded_bids: 2,
-      declined_expired_bids: 1,
-      residential_count: 3,
-      commercial_count: 3,
-    },
+    total_bids: rows.length,
+    new_leads: rows.filter((row) => row.workspace_stage === "new_lead").length,
+    follow_up_leads: rows.filter((row) => row.workspace_stage === "follow_up").length,
+    active_bids: rows.filter((row) => row.workspace_stage === "active_bid").length,
+    closed: rows.filter((row) => row.workspace_stage === "closed").length,
+    open_bids: rows.filter((row) => row.status_group === "open").length,
+    under_review_bids: rows.filter((row) => row.status_group === "under_review").length,
+    awarded_bids: rows.filter((row) => row.status_group === "awarded").length,
+    declined_expired_bids: rows.filter((row) => row.status_group === "declined_expired").length,
+    residential_count: rows.filter((row) => row.project_class === "residential").length,
+    commercial_count: rows.filter((row) => row.project_class === "commercial").length,
+  };
+}
+
+function buildPayload(rows = bidRows) {
+  return {
+    results: rows,
+    summary: buildSummary(rows),
     filters: {
       status: "all",
       project_class: "all",
       search: "",
     },
   };
+}
+
+function cloneBidRows() {
+  return JSON.parse(JSON.stringify(bidRows));
+}
+
+function applyLeadStatus(rows, leadId, status) {
+  const row = rows.find((entry) => String(entry.source_id) === String(leadId) && entry.source_kind === "lead");
+  if (!row) return null;
+
+  const normalizedStatus =
+    status === "new"
+      ? "submitted"
+      : status === "ready_for_review"
+        ? "under_review"
+        : status === "accepted"
+          ? "awarded"
+          : status;
+  row.status = normalizedStatus;
+  row.status_label =
+    normalizedStatus === "follow_up"
+      ? "Follow-Up"
+      : normalizedStatus === "under_review"
+        ? "Under Review"
+      : normalizedStatus === "submitted"
+          ? "Submitted"
+          : normalizedStatus === "awarded"
+            ? "Awarded"
+            : normalizedStatus;
+  row.status_group =
+    normalizedStatus === "follow_up"
+      ? "follow_up"
+      : normalizedStatus === "under_review"
+        ? "under_review"
+        : normalizedStatus === "awarded"
+          ? "awarded"
+          : normalizedStatus === "submitted"
+            ? "submitted"
+          : row.status_group;
+  row.workspace_stage =
+    normalizedStatus === "follow_up"
+      ? "follow_up"
+      : normalizedStatus === "under_review" || normalizedStatus === "awarded"
+        ? "active_bid"
+      : normalizedStatus === "submitted"
+          ? "new_lead"
+          : row.workspace_stage;
+  row.workspace_stage_label =
+    row.workspace_stage === "follow_up"
+      ? "Follow-Up"
+      : row.workspace_stage === "new_lead"
+        ? "New Lead"
+        : row.workspace_stage === "closed"
+          ? "Closed / Archived"
+          : "Active Bid";
+  row.status_note = normalizedStatus === "follow_up" ? "This lead is saved for later review." : "";
+  row.next_action =
+    normalizedStatus === "follow_up"
+      ? { key: "review_bid", label: "Review Lead", target: "" }
+      : normalizedStatus === "submitted"
+        ? { key: "review_bid", label: "Review Request", target: "" }
+        : normalizedStatus === "under_review"
+          ? { key: "review_bid", label: "Review Bid", target: "" }
+          : row.next_action;
+  return row;
 }
 
 test("contractor bids workspace renders, filters, opens details, and converts awarded rows", async ({
@@ -447,12 +569,14 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await page.goto("/app/bids", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("contractor-bids-title")).toBeVisible();
   await expect(page.getByTestId("leads-tab-new")).toContainText("2");
+  await expect(page.getByTestId("leads-tab-follow-up")).toContainText("1");
   await expect(page.getByTestId("leads-tab-active")).toContainText("4");
   await expect(page.getByTestId("leads-tab-closed")).toContainText("Closed / Archived");
   await expect(page.getByTestId("bids-summary-new-leads")).toContainText("2");
+  await expect(page.getByTestId("bids-summary-follow-up")).toContainText("1");
   await expect(page.getByTestId("bids-summary-active-bids")).toContainText("4");
   await expect(page.getByTestId("bids-summary-closed")).toContainText("1");
-  await expect(page.getByTestId("bids-summary-total")).toContainText("7");
+  await expect(page.getByTestId("bids-summary-total")).toContainText("8");
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("New Lead");
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("Guided Intake");
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("Photos");
@@ -484,11 +608,23 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("request-signals-section")).toContainText("Multi-Quote Request");
   await expect(page.getByTestId("suggested-next-step-section")).toContainText("ready for a bid decision");
   await expect(page.getByTestId("create-bid-action")).toContainText("Create Bid");
+  await expect(page.getByTestId("follow-up-action-button")).toContainText("Save for Later");
   await expect(page.getByTestId("lead-detail-secondary-action")).toContainText("Copy Reference");
   await page.getByRole("button", { name: "Close bid details" }).click();
   await expect(page.getByTestId("bids-detail-drawer")).toHaveCount(0);
 
   await page.getByTestId("workspace-filter-all").click();
+
+  await page.getByTestId("leads-tab-follow-up").click();
+  await expect(page.getByTestId("lead-row-lead-8")).toContainText("Follow-Up");
+  await expect(page.getByTestId("lead-stage-lead-8")).toContainText("Follow-Up");
+  await expect(page.getByTestId("lead-row-action-lead-8")).toContainText("Review Lead");
+  await page.getByTestId("lead-row-action-lead-8").click();
+  await expect(page.getByTestId("follow-up-state-note")).toContainText("saved for later review");
+  await expect(page.getByTestId("resume-review-action")).toContainText("Resume Review");
+  await expect(page.getByTestId("create-bid-action")).toContainText("Create Bid");
+  await page.getByRole("button", { name: "Close bid details" }).click();
+  await expect(page.getByTestId("bids-detail-drawer")).toHaveCount(0);
 
   await page.getByTestId("leads-tab-active").click();
   await expect(page.getByTestId("lead-row-intake-2")).toContainText("Active Bid");
@@ -585,6 +721,140 @@ test("contractor bids workspace lead helpers support create bid handoff", async 
 
   await page.getByTestId("create-bid-action").click();
   await expect(page).toHaveURL("/app/agreements/901/wizard?step=1");
+});
+
+test("contractor bids workspace can save a lead for follow-up and reopen it", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("access", "playwright-access-token");
+  });
+
+  const workspaceRows = cloneBidRows();
+
+  await page.route("**/api/projects/whoami/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: 7,
+        type: "contractor",
+        role: "contractor_owner",
+        email: "playwright@myhomebro.local",
+      }),
+    });
+  });
+
+  await page.route("**/api/projects/contractor/bids/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(buildPayload(workspaceRows)),
+    });
+  });
+
+  await page.route("**/api/projects/contractor/public-leads/6/**", async (route) => {
+    if (route.request().method() !== "PATCH") {
+      await route.fallback();
+      return;
+    }
+
+    const body = route.request().postDataJSON?.() || {};
+    applyLeadStatus(workspaceRows, 6, body.status);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: 6,
+        status: body.status,
+        internal_notes: "",
+      }),
+    });
+  });
+
+  await page.goto("/app/bids", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("lead-row-action-lead-6").click();
+  await expect(page.getByTestId("lead-detail-container")).toBeVisible();
+  await page.getByTestId("follow-up-action-button").click();
+  await expect(page.getByTestId("leads-tab-follow-up")).toContainText("2");
+  await expect(page.getByTestId("lead-row-lead-6")).toContainText("Follow-Up");
+  await page.getByRole("button", { name: "Close bid details" }).click();
+  await expect(page.getByTestId("bids-detail-drawer")).toHaveCount(0);
+
+  await page.getByTestId("leads-tab-follow-up").click();
+  await page.getByTestId("lead-row-action-lead-6").click();
+  await expect(page.getByTestId("follow-up-state-note")).toContainText("saved for later review");
+  await page.getByTestId("resume-review-action").click();
+  await expect(page.getByTestId("leads-tab-new")).toContainText("2");
+  await expect(page.getByTestId("lead-row-lead-6")).toContainText("New Lead");
+});
+
+test("contractor bids workspace can create a bid from a follow-up lead", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("access", "playwright-access-token");
+  });
+
+  const workspaceRows = cloneBidRows();
+
+  await page.route("**/api/projects/whoami/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: 7,
+        type: "contractor",
+        role: "contractor_owner",
+        email: "playwright@myhomebro.local",
+      }),
+    });
+  });
+
+  await page.route("**/api/projects/contractor/bids/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(buildPayload(workspaceRows)),
+    });
+  });
+
+  await page.route("**/api/projects/contractor/public-leads/8/**", async (route) => {
+    if (route.request().method() === "PATCH") {
+      const body = route.request().postDataJSON?.() || {};
+      applyLeadStatus(workspaceRows, 8, body.status);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: 8,
+          status: body.status,
+          internal_notes: "",
+        }),
+      });
+      return;
+    }
+
+    if (route.request().method() === "POST") {
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          agreement_id: 902,
+          detail_url: "/app/agreements/902",
+          wizard_url: "/app/agreements/902/wizard?step=1",
+          created: true,
+        }),
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+
+  await page.goto("/app/bids", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("leads-tab-follow-up").click();
+  await page.getByTestId("lead-row-action-lead-8").click();
+  await expect(page.getByTestId("follow-up-state-note")).toContainText("saved for later review");
+  await expect(page.getByTestId("create-bid-action")).toContainText("Create Bid");
+  await page.getByTestId("create-bid-action").click();
+  await expect(page).toHaveURL("/app/agreements/902/wizard?step=1");
 });
 
 test("contractor bids workspace shows a friendly empty state", async ({ page }) => {

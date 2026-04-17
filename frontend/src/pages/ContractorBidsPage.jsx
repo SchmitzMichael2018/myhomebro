@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, ClipboardList, Copy, ExternalLink, X } from "lucide-react";
 import toast from "react-hot-toast";
@@ -42,6 +42,7 @@ function statusTone(status) {
   const normalized = normalize(status);
   if (normalized === "awarded") return "border-emerald-200 bg-emerald-50 text-emerald-800";
   if (normalized === "under_review") return "border-amber-200 bg-amber-50 text-amber-800";
+  if (normalized === "follow_up") return "border-amber-200 bg-amber-50 text-amber-800";
   if (normalized === "declined" || normalized === "expired") return "border-rose-200 bg-rose-50 text-rose-800";
   if (normalized === "draft" || normalized === "submitted") return "border-slate-200 bg-slate-50 text-slate-700";
   return "border-slate-200 bg-slate-50 text-slate-700";
@@ -81,12 +82,14 @@ function workspaceStageFromRow(row) {
 
 function workspaceStageLabel(stage) {
   if (stage === "new_lead") return "New Lead";
+  if (stage === "follow_up") return "Follow-Up";
   if (stage === "closed") return "Closed / Archived";
   return "Active Bid";
 }
 
 function workspaceStageTone(stage) {
   if (stage === "new_lead") return "border-blue-200 bg-blue-50 text-blue-700";
+  if (stage === "follow_up") return "border-amber-200 bg-amber-50 text-amber-700";
   if (stage === "active_bid") return "border-indigo-200 bg-indigo-50 text-indigo-700";
   return "border-slate-200 bg-slate-100 text-slate-600";
 }
@@ -153,6 +156,9 @@ function requestAttentionRank(row) {
   const statusGroup = normalize(row?.status_group);
   const status = normalize(row?.status);
 
+  if (stage === "follow_up") {
+    return 0;
+  }
   if (stage === "new_lead") {
     return Math.max(0, 6 - requestCompletenessScore(row));
   }
@@ -287,6 +293,7 @@ function buildCreateBidContext({ snapshot, signals }) {
 
 export default function ContractorBidsPage() {
   const navigate = useNavigate();
+  const mountedRef = useRef(true);
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [selectedRow, setSelectedRow] = useState(null);
@@ -300,28 +307,34 @@ export default function ContractorBidsPage() {
   const [copiedRefId, setCopiedRefId] = useState("");
 
   useEffect(() => {
-    let active = true;
-
-    async function load() {
-      try {
-        setLoading(true);
-        const { data } = await api.get("/projects/contractor/bids/");
-        if (!active) return;
-        setRows(Array.isArray(data?.results) ? data.results : []);
-      } catch (err) {
-        if (!active) return;
-        console.error(err);
-        toast.error(err?.response?.data?.detail || "Failed to load bids.");
-        setRows([]);
-      } finally {
-        if (active) setLoading(false);
-      }
-    }
-
-    load();
     return () => {
-      active = false;
+      mountedRef.current = false;
     };
+  }, []);
+
+  const loadWorkspace = async ({ keepSelectedBidId = "" } = {}) => {
+    try {
+      setLoading(true);
+      const { data } = await api.get("/projects/contractor/bids/");
+      if (!mountedRef.current) return;
+      const nextRows = Array.isArray(data?.results) ? data.results : [];
+      setRows(nextRows);
+      if (keepSelectedBidId) {
+        const nextSelected = nextRows.find((row) => String(row.bid_id) === String(keepSelectedBidId));
+        setSelectedRow(nextSelected || null);
+      }
+    } catch (err) {
+      if (!mountedRef.current) return;
+      console.error(err);
+      toast.error(err?.response?.data?.detail || "Failed to load bids.");
+      setRows([]);
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadWorkspace();
   }, []);
 
   const visibleRows = useMemo(() => {
@@ -354,6 +367,7 @@ export default function ContractorBidsPage() {
   const summary = useMemo(() => {
     const counts = {
       new_leads: 0,
+      follow_up_leads: 0,
       active_bids: 0,
       closed: 0,
     };
@@ -361,6 +375,7 @@ export default function ContractorBidsPage() {
     for (const row of rows) {
       const stage = workspaceStageFromRow(row);
       if (stage === "new_lead") counts.new_leads += 1;
+      else if (stage === "follow_up") counts.follow_up_leads += 1;
       else if (stage === "closed") counts.closed += 1;
       else counts.active_bids += 1;
     }
@@ -368,16 +383,31 @@ export default function ContractorBidsPage() {
     return counts;
   }, [rows]);
 
-  const activeStageLabel = activeWorkspaceTab === "new_lead" ? "New Leads" : activeWorkspaceTab === "closed" ? "Closed / Archived" : "Active Bids";
-  const activeStageNoun = activeWorkspaceTab === "new_lead" ? "lead" : activeWorkspaceTab === "closed" ? "opportunity" : "bid";
+  const activeStageLabel =
+    activeWorkspaceTab === "new_lead"
+      ? "New Leads"
+      : activeWorkspaceTab === "follow_up"
+        ? "Follow-Up"
+        : activeWorkspaceTab === "closed"
+          ? "Closed / Archived"
+          : "Active Bids";
+  const activeStageNoun =
+    activeWorkspaceTab === "new_lead"
+      ? "lead"
+      : activeWorkspaceTab === "follow_up"
+        ? "follow-up lead"
+        : activeWorkspaceTab === "closed"
+          ? "opportunity"
+          : "bid";
   const sortOptions = useMemo(() => {
     const isLeadView = activeWorkspaceTab === "new_lead";
+    const isFollowUpView = activeWorkspaceTab === "follow_up";
     const isClosedView = activeWorkspaceTab === "closed";
     return [
       { key: "recommended", label: "Recommended" },
       { key: "newest", label: "Newest First" },
       { key: "most_complete", label: "Most Complete" },
-      { key: "needs_attention", label: isLeadView ? "Needs Response" : "Needs Follow-up" },
+      { key: "needs_attention", label: isLeadView ? "Needs Response" : isFollowUpView ? "Needs Follow-Up" : "Needs Follow-up" },
       { key: "highest_value", label: isClosedView ? "Highest Value" : "Highest Value" },
     ];
   }, [activeWorkspaceTab]);
@@ -389,17 +419,26 @@ export default function ContractorBidsPage() {
       { key: "timeline_provided", label: "Timeline Provided" },
       { key: "clarifications_included", label: "Clarifications Included" },
       { key: "multi_quote", label: "Multi-Quote" },
-      { key: "needs_attention", label: activeWorkspaceTab === "new_lead" ? "Needs Response" : "Needs Attention" },
+      {
+        key: "needs_attention",
+        label:
+          activeWorkspaceTab === "new_lead"
+            ? "Needs Response"
+            : activeWorkspaceTab === "follow_up"
+              ? "Needs Follow-Up"
+              : "Needs Attention",
+      },
     ],
     [activeWorkspaceTab]
   );
   const workspaceTabs = useMemo(
     () => [
       { key: "new_lead", label: "New Leads", count: summary.new_leads, testId: "leads-tab-new" },
+      { key: "follow_up", label: "Follow-Up", count: summary.follow_up_leads, testId: "leads-tab-follow-up" },
       { key: "active_bid", label: "Active Bids", count: summary.active_bids, testId: "leads-tab-active" },
       { key: "closed", label: "Closed / Archived", count: summary.closed, testId: "leads-tab-closed" },
     ],
-    [summary.active_bids, summary.closed, summary.new_leads]
+    [summary.active_bids, summary.closed, summary.follow_up_leads, summary.new_leads]
   );
   const activeSortLabel = sortOptions.find((option) => option.key === sortBy)?.label || "Recommended";
   const activeFilterLabel = requestFilterOptions.find((option) => option.key === requestFilter)?.label || "All";
@@ -428,7 +467,7 @@ export default function ContractorBidsPage() {
     [selectedSnapshot, selectedSignals]
   );
   const selectedPrimaryActionLabel =
-    selectedStage === "new_lead"
+    selectedStage === "new_lead" || selectedStage === "follow_up"
       ? "Create Bid"
       : normalize(selectedRow?.next_action?.key) === "open_agreement" && selectedRow?.linked_agreement_url
         ? "Open Agreement"
@@ -436,6 +475,8 @@ export default function ContractorBidsPage() {
   const selectedPrimaryActionHint =
     selectedStage === "new_lead"
       ? "This starts the existing bid workflow for the reviewed request."
+      : selectedStage === "follow_up"
+        ? "This lead is saved for later. Create your bid when you're ready."
       : selectedStage === "closed"
         ? "This opportunity is closed, but you can still review the history."
         : "Continue the current bid workflow from here.";
@@ -443,6 +484,7 @@ export default function ContractorBidsPage() {
   const rowPrimaryActionLabel = (row) => {
     const stage = workspaceStageFromRow(row);
     if (stage === "new_lead") return "Review Request";
+    if (stage === "follow_up") return "Review Lead";
     if (stage === "closed") return "View Details";
     if (normalize(row?.next_action?.key) === "open_agreement" && row?.linked_agreement_url) return "Open Agreement";
     return row?.next_action?.label || "View Details";
@@ -467,6 +509,26 @@ export default function ContractorBidsPage() {
     }
   };
 
+  const patchLeadStatus = async (row, status, { keepSelected = false, nextWorkspaceTab = "" } = {}) => {
+    if (!row?.source_id) return null;
+    setActionBusyId(String(row.bid_id));
+    try {
+      const { data } = await api.patch(`/projects/contractor/public-leads/${row.source_id}/`, { status });
+      toast.success(status === "follow_up" ? "Lead saved for follow-up." : status === "new" ? "Lead moved back to New Leads." : "Lead updated.");
+      await loadWorkspace({ keepSelectedBidId: keepSelected ? String(row.bid_id) : "" });
+      if (nextWorkspaceTab) {
+        setActiveWorkspaceTab(nextWorkspaceTab);
+      }
+      return data;
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || "Could not update this lead.");
+      return null;
+    } finally {
+      setActionBusyId("");
+    }
+  };
+
   const runAction = async (row) => {
     if (!row) return;
     if (normalize(row.next_action?.key) === "open_agreement" && row.linked_agreement_url) {
@@ -485,6 +547,14 @@ export default function ContractorBidsPage() {
 
     setActionBusyId(String(row.bid_id));
     try {
+      if (sourceKind === "lead" && workspaceStageFromRow(row) === "follow_up") {
+        const followUpResponse = await api.patch(`/projects/contractor/public-leads/${sourceId}/`, {
+          status: "ready_for_review",
+        });
+        if (!followUpResponse?.data) {
+          throw new Error("Could not promote this follow-up lead.");
+        }
+      }
       const endpoint =
         sourceKind === "lead"
           ? `/projects/contractor/public-leads/${sourceId}/create-agreement/`
@@ -509,6 +579,10 @@ export default function ContractorBidsPage() {
     if (!row) return;
     const stage = workspaceStageFromRow(row);
     if (stage === "new_lead") {
+      setSelectedRow(row);
+      return;
+    }
+    if (stage === "follow_up") {
       setSelectedRow(row);
       return;
     }
@@ -539,8 +613,14 @@ export default function ContractorBidsPage() {
         </button>
       </div>
 
-      <section className="grid gap-4 md:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-5">
         <SummaryCard label="New Leads" value={String(summary.new_leads)} tone="slate" testId="bids-summary-new-leads" />
+        <SummaryCard
+          label="Follow-Up"
+          value={String(summary.follow_up_leads)}
+          tone="amber"
+          testId="bids-summary-follow-up"
+        />
         <SummaryCard
           label="Active Bids"
           value={String(summary.active_bids)}
@@ -627,6 +707,7 @@ export default function ContractorBidsPage() {
                 <option value="all">All</option>
                 <option value="draft">Draft</option>
                 <option value="submitted">Submitted</option>
+                <option value="follow_up">Follow-Up</option>
                 <option value="under_review">Under Review</option>
                 <option value="awarded">Awarded</option>
                 <option value="declined">Declined</option>
@@ -708,7 +789,11 @@ export default function ContractorBidsPage() {
                     key={`${row.source_kind}-${row.bid_id}`}
                     data-testid={`lead-row-${row.bid_id}`}
                     className={`cursor-pointer border-b border-slate-100 align-top hover:bg-slate-50 ${
-                      workspaceStageFromRow(row) === "new_lead" ? "bg-blue-50/30" : ""
+                      workspaceStageFromRow(row) === "new_lead"
+                        ? "bg-blue-50/30"
+                        : workspaceStageFromRow(row) === "follow_up"
+                          ? "bg-amber-50/40"
+                          : ""
                     }`}
                     role="button"
                     tabIndex={0}
@@ -725,6 +810,7 @@ export default function ContractorBidsPage() {
                       <div className="mt-1 text-xs text-slate-500">{row.source_reference}</div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         <span
+                          data-testid={`lead-stage-${row.bid_id}`}
                           className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${workspaceStageTone(
                             workspaceStageFromRow(row)
                           )}`}
@@ -845,6 +931,14 @@ export default function ContractorBidsPage() {
                 {outcomeNote ? (
                   <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                     {outcomeNote}
+                  </div>
+                ) : null}
+                {selectedStage === "follow_up" ? (
+                  <div
+                    data-testid="follow-up-state-note"
+                    className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+                  >
+                    This lead is saved for later review. Resume it when you are ready or create your bid now.
                   </div>
                 ) : null}
               </SectionCard>
@@ -993,13 +1087,15 @@ export default function ContractorBidsPage() {
                 <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
                   {selectedStage === "new_lead"
                     ? "This request is ready for a bid decision. Review the details, then create your bid when you're ready."
+                    : selectedStage === "follow_up"
+                      ? "This lead is saved for later. Resume it when you are ready or create your bid now."
                     : selectedStage === "closed"
                       ? "This opportunity is closed for now, but the record stays here for reference."
                       : selectedRow.next_action?.label || "Continue the existing bid workflow."}
                 </div>
                 <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4" data-testid="lead-action-section">
                   <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Lead Actions</div>
-                  {selectedStage === "new_lead" ? (
+                  {(selectedStage === "new_lead" || selectedStage === "follow_up") ? (
                     <div
                       className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"
                       data-testid="create-bid-context-note"
@@ -1023,13 +1119,39 @@ export default function ContractorBidsPage() {
                         type="button"
                         onClick={() => runAction(selectedRow)}
                         disabled={actionBusyId === String(selectedRow.bid_id)}
-                        data-testid={selectedStage === "new_lead" ? "create-bid-action" : "lead-detail-primary-action"}
+                        data-testid={
+                          selectedStage === "new_lead" || selectedStage === "follow_up"
+                            ? "create-bid-action"
+                            : "lead-detail-primary-action"
+                        }
                         className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-60"
                       >
                         {actionBusyId === String(selectedRow.bid_id) ? "Working..." : selectedPrimaryActionLabel}
                         <ExternalLink size={14} />
                       </button>
                     )}
+                    {selectedStage === "new_lead" ? (
+                      <button
+                        type="button"
+                        onClick={() => patchLeadStatus(selectedRow, "follow_up", { keepSelected: true, nextWorkspaceTab: "follow_up" })}
+                        disabled={actionBusyId === String(selectedRow.bid_id)}
+                        data-testid="follow-up-action-button"
+                        className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                      >
+                        Save for Later
+                      </button>
+                    ) : null}
+                    {selectedStage === "follow_up" ? (
+                      <button
+                        type="button"
+                        onClick={() => patchLeadStatus(selectedRow, "new", { keepSelected: true, nextWorkspaceTab: "new_lead" })}
+                        disabled={actionBusyId === String(selectedRow.bid_id)}
+                        data-testid="resume-review-action"
+                        className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                      >
+                        Resume Review
+                      </button>
+                    ) : null}
                     {selectedRow?.source_reference ? (
                       <button
                         type="button"

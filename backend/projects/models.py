@@ -483,6 +483,7 @@ class PublicContractorLead(models.Model):
     STATUS_NEW = "new"
     STATUS_PENDING_CUSTOMER_RESPONSE = "pending_customer_response"
     STATUS_READY_FOR_REVIEW = "ready_for_review"
+    STATUS_FOLLOW_UP = "follow_up"
     STATUS_ACCEPTED = "accepted"
     STATUS_REJECTED = "rejected"
     STATUS_CONTACTED = "contacted"
@@ -493,6 +494,7 @@ class PublicContractorLead(models.Model):
         (STATUS_NEW, "New"),
         (STATUS_PENDING_CUSTOMER_RESPONSE, "Pending Customer Response"),
         (STATUS_READY_FOR_REVIEW, "Ready for Review"),
+        (STATUS_FOLLOW_UP, "Follow-Up"),
         (STATUS_ACCEPTED, "Accepted"),
         (STATUS_REJECTED, "Rejected"),
         (STATUS_CONTACTED, "Contacted"),

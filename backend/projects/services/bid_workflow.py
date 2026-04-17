@@ -73,6 +73,8 @@ def normalize_bid_status(*, raw_status: Any = "", has_agreement: bool = False, r
         return "declined"
     if status in {PublicContractorLead.STATUS_CLOSED, PublicContractorLead.STATUS_ARCHIVED}:
         return "expired"
+    if status in {getattr(PublicContractorLead, "STATUS_FOLLOW_UP", "follow_up")}:
+        return "follow_up"
     if status in {
         PublicContractorLead.STATUS_READY_FOR_REVIEW,
         PublicContractorLead.STATUS_CONTACTED,
@@ -98,6 +100,7 @@ def bid_status_label(status: str) -> str:
     return {
         "draft": "Draft",
         "submitted": "Submitted",
+        "follow_up": "Follow-Up",
         "under_review": "Under Review",
         "awarded": "Awarded",
         "declined": "Declined",
@@ -109,6 +112,8 @@ def bid_status_group(status: str) -> str:
     normalized = _safe_text(status).lower()
     if normalized in {"draft", "submitted"}:
         return "open"
+    if normalized == "follow_up":
+        return "follow_up"
     if normalized == "under_review":
         return "under_review"
     if normalized == "awarded":

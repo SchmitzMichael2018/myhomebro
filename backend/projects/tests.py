@@ -2289,6 +2289,61 @@ class ContractorBidsWorkspaceTests(TestCase):
         self.assertEqual(rows[0]["next_action"]["key"], "open_agreement")
         self.assertEqual(payload["summary"]["awarded_bids"], 1)
 
+    def test_contractor_can_save_follow_up_lead_and_reopen_it(self):
+        lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            full_name="Follow Up Lead",
+            email="followup@example.com",
+            project_type="Patio Repair",
+            project_description="Flagstone patio needs a follow-up review.",
+            status=PublicContractorLead.STATUS_NEW,
+        )
+        self.client.force_authenticate(user=self.contractor_user)
+
+        save_response = self.client.patch(
+            f"/api/projects/contractor/public-leads/{lead.id}/",
+            {"status": PublicContractorLead.STATUS_FOLLOW_UP},
+            format="json",
+        )
+        self.assertEqual(save_response.status_code, 200)
+        lead.refresh_from_db()
+        self.assertEqual(lead.status, PublicContractorLead.STATUS_FOLLOW_UP)
+
+        follow_up_workspace = self.client.get("/api/projects/contractor/bids/")
+        self.assertEqual(follow_up_workspace.status_code, 200)
+        follow_up_payload = follow_up_workspace.json()
+        follow_up_row = next(
+            row
+            for row in follow_up_payload["results"]
+            if row["source_kind"] == "lead" and row["source_id"] == lead.id
+        )
+        self.assertEqual(follow_up_row["workspace_stage"], "follow_up")
+        self.assertEqual(follow_up_row["workspace_stage_label"], "Follow-Up")
+        self.assertEqual(follow_up_row["status_label"], "Follow-Up")
+        self.assertEqual(follow_up_row["status_note"], "This lead is saved for later review.")
+        self.assertEqual(follow_up_payload["summary"]["follow_up_leads"], 1)
+
+        reopen_response = self.client.patch(
+            f"/api/projects/contractor/public-leads/{lead.id}/",
+            {"status": PublicContractorLead.STATUS_NEW},
+            format="json",
+        )
+        self.assertEqual(reopen_response.status_code, 200)
+        lead.refresh_from_db()
+        self.assertEqual(lead.status, PublicContractorLead.STATUS_NEW)
+
+        reopened_workspace = self.client.get("/api/projects/contractor/bids/")
+        self.assertEqual(reopened_workspace.status_code, 200)
+        reopened_payload = reopened_workspace.json()
+        reopened_row = next(
+            row
+            for row in reopened_payload["results"]
+            if row["source_kind"] == "lead" and row["source_id"] == lead.id
+        )
+        self.assertEqual(reopened_row["workspace_stage"], "new_lead")
+        self.assertEqual(reopened_payload["summary"]["follow_up_leads"], 0)
+
     def test_agreement_linking_syncs_both_sides(self):
         self.linked_commercial_lead.refresh_from_db()
         self.linked_commercial_intake.refresh_from_db()
