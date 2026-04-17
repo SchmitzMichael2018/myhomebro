@@ -291,6 +291,53 @@ function buildCreateBidContext({ snapshot, signals }) {
   return "Review the request details and create your bid when you’re ready.";
 }
 
+function buildResponseTemplates({ snapshot, signals }) {
+  const signalSet = new Set((Array.isArray(signals) ? signals : []).map(normalize));
+  const templates = [];
+  const timeline = (snapshot?.timeline || "").trim();
+  const budget = (snapshot?.budget || "").trim();
+
+  templates.push({
+    key: "general",
+    label: "General Response",
+    text: "Thanks for sharing your project details. I’ve reviewed your request and would be happy to take a closer look and provide an estimate.",
+  });
+
+  if ((snapshot?.photo_count || 0) > 0 || signalSet.has("photos")) {
+    templates.push({
+      key: "photos",
+      label: "With Photos",
+      text: "I reviewed the photos you provided and have a good understanding of the project. I can help confirm details and next steps.",
+    });
+  }
+
+  if (timeline || signalSet.has("timeline provided")) {
+    templates.push({
+      key: "timeline",
+      label: "With Timeline",
+      text: `I see you're looking to complete this within ${timeline || "your requested timeline"}. I can check availability and outline next steps.`,
+    });
+  }
+
+  if (budget || signalSet.has("budget provided")) {
+    templates.push({
+      key: "budget",
+      label: "With Budget",
+      text: "Based on your budget guidance, I can help suggest options that fit your goals.",
+    });
+  }
+
+  if (normalize(snapshot?.measurement_handling) === "site visit required") {
+    templates.push({
+      key: "measurements",
+      label: "With Measurements",
+      text: "I may want to verify measurements on site before final pricing so I can make sure the scope is accurate.",
+    });
+  }
+
+  return templates.slice(0, 4);
+}
+
 export default function ContractorBidsPage() {
   const navigate = useNavigate();
   const mountedRef = useRef(true);
@@ -461,6 +508,10 @@ export default function ContractorBidsPage() {
   const selectedResponseStarter = useMemo(
     () => buildResponseStarter({ snapshot: selectedSnapshot, signals: selectedSignals, stage: selectedStage }),
     [selectedSnapshot, selectedSignals, selectedStage]
+  );
+  const selectedResponseTemplates = useMemo(
+    () => buildResponseTemplates({ snapshot: selectedSnapshot, signals: selectedSignals }),
+    [selectedSnapshot, selectedSignals]
   );
   const selectedCreateBidContext = useMemo(
     () => buildCreateBidContext({ snapshot: selectedSnapshot, signals: selectedSignals }),
@@ -1054,6 +1105,43 @@ export default function ContractorBidsPage() {
                       <Copy size={14} />
                       Copy Starter
                     </button>
+                  </div>
+                </SectionCard>
+              ) : null}
+
+              {selectedStage !== "closed" && selectedResponseTemplates.length ? (
+                <SectionCard
+                  title="Quick Response Templates"
+                  testId="response-templates-section"
+                  subtitle="Short starting points you can copy into a response or bid note."
+                >
+                  <div className="space-y-3">
+                    {selectedResponseTemplates.map((template) => {
+                      const copyId = `${selectedRow.bid_id}-template-${template.key}`;
+                      return (
+                        <div
+                          key={template.key}
+                          data-testid={`response-template-${template.key}`}
+                          className="rounded-xl border border-slate-200 bg-white px-4 py-3"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <div className="text-sm font-semibold text-slate-900">{template.label}</div>
+                              <p className="mt-2 text-sm text-slate-700">{template.text}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => copyReference(template.text, copyId)}
+                              className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                              data-testid={`response-template-copy-${template.key}`}
+                            >
+                              <Copy size={14} />
+                              {copiedRefId === copyId ? "Copied" : "Copy"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </SectionCard>
               ) : null}

@@ -521,6 +521,12 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
 }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "playwright-access-token");
+    Object.defineProperty(navigator, "clipboard", {
+      value: {
+        writeText: async () => {},
+      },
+      configurable: true,
+    });
   });
 
   const consoleErrors = [];
@@ -607,6 +613,11 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("project-phases-section")).toContainText("Demolition");
   await expect(page.getByTestId("request-signals-section")).toContainText("Multi-Quote Request");
   await expect(page.getByTestId("suggested-next-step-section")).toContainText("ready for a bid decision");
+  await expect(page.getByTestId("response-templates-section")).toBeVisible();
+  await expect(page.getByTestId("response-template-general")).toContainText("General Response");
+  await expect(page.getByTestId("response-template-photos")).toContainText("With Photos");
+  await page.getByTestId("response-template-copy-general").click();
+  await expect(page.getByTestId("response-template-copy-general")).toContainText("Copied");
   await expect(page.getByTestId("create-bid-action")).toContainText("Create Bid");
   await expect(page.getByTestId("follow-up-action-button")).toContainText("Save for Later");
   await expect(page.getByTestId("lead-detail-secondary-action")).toContainText("Copy Reference");
