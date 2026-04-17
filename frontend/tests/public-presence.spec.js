@@ -691,8 +691,9 @@ test('landing-source intake and public-profile intake land in the same contracto
   await expect(page.getByTestId('public-intake-project-snapshot')).toBeVisible();
   await expect(page.getByTestId('public-intake-project-snapshot-title')).toContainText('Project Snapshot');
   await page.getByTestId('public-intake-project-snapshot-continue').click();
-  await expect(page.getByRole('heading', { name: 'AI Structured Output' })).toBeVisible();
-  await page.getByRole('button', { name: 'Continue' }).first().click();
+  await expect(page.getByTestId('public-intake-structured-output-step')).toBeVisible();
+  await expect(page.getByTestId('public-intake-structured-output-title')).toContainText('Your Project Plan');
+  await page.getByTestId('public-intake-structured-continue').click();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('public-intake-customer-address-line1')).toBeVisible();
   await page.getByTestId('public-intake-customer-address-line1').fill('100 Landing Way');
@@ -1164,8 +1165,8 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
   await page.getByTestId('public-intake-clarification-next').click();
   await expect(page.getByTestId('public-intake-project-snapshot')).toBeVisible();
   await page.getByTestId('public-intake-project-snapshot-continue').click();
-  await expect(page.getByRole('heading', { name: 'AI Structured Output' })).toBeVisible();
-  await page.getByRole('button', { name: 'Continue' }).first().click();
+  await expect(page.getByTestId('public-intake-structured-output-step')).toBeVisible();
+  await page.getByTestId('public-intake-structured-continue').click();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('public-intake-customer-address-line1')).toBeVisible();
   await page.getByTestId('public-intake-customer-address-line1').fill('400 Field Visit Rd');
@@ -1601,8 +1602,8 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
   await page.getByTestId('public-intake-clarification-next').click();
   await expect(page.getByTestId('public-intake-project-snapshot')).toBeVisible();
   await page.getByTestId('public-intake-project-snapshot-continue').click();
-  await expect(page.getByRole('heading', { name: 'AI Structured Output' })).toBeVisible();
-  await page.getByRole('button', { name: 'Continue' }).first().click();
+  await expect(page.getByTestId('public-intake-structured-output-step')).toBeVisible();
+  await page.getByTestId('public-intake-structured-continue').click();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
   await expect(page.getByTestId('public-intake-customer-address-line1')).toBeVisible();
   await page.getByTestId('public-intake-customer-address-line1').fill('300 Scope St');

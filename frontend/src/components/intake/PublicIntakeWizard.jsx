@@ -1101,59 +1101,193 @@ export default function PublicIntakeWizard() {
     }
 
     if (currentStep === 2) {
+      const milestones = Array.isArray(form.ai_milestones) ? form.ai_milestones : [];
+      const measurementOptions = [
+        { value: "provided", label: "Provided" },
+        { value: "site_visit_required", label: "Site visit required" },
+        { value: "not_sure", label: "Not sure" },
+      ];
       return (
-        <div className="rounded-xl border bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">AI Structured Output</h2>
-          <p className="mt-1 text-sm text-gray-600">
-            Review the draft structure. You can accept it as-is or refine it before moving on.
-          </p>
-          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-900">Project Title</label>
-              <input className="w-full rounded border px-3 py-2 text-sm" value={form.ai_project_title} onChange={(e) => setField("ai_project_title", e.target.value)} placeholder="Suggested project title" />
+        <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10" data-testid="public-intake-structured-output-step">
+          <div className="max-w-3xl">
+            <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+              AI Project Plan
             </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-900">Project Type</label>
-              <input className="w-full rounded border px-3 py-2 text-sm" value={form.ai_project_type} onChange={(e) => setField("ai_project_type", e.target.value)} placeholder="Repair, Remodel, Installation..." />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-900">Project Subtype</label>
-              <input className="w-full rounded border px-3 py-2 text-sm" value={form.ai_project_subtype} onChange={(e) => setField("ai_project_subtype", e.target.value)} placeholder="Bathroom Remodel, Roof Repair..." />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-900">Timeline</label>
-              <input className="w-full rounded border px-3 py-2 text-sm" value={form.ai_project_timeline_days} onChange={(e) => setField("ai_project_timeline_days", e.target.value)} placeholder="10" />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-gray-900">Budget</label>
-              <input className="w-full rounded border px-3 py-2 text-sm" value={form.ai_project_budget} onChange={(e) => setField("ai_project_budget", e.target.value)} placeholder="5000" />
-            </div>
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight text-gray-900" data-testid="public-intake-structured-output-title">
+              Your Project Plan
+            </h2>
+            <p className="mt-2 text-base text-slate-600">
+              Here&apos;s the structured project outline we created from your description and answers. You can review and adjust anything before continuing.
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              Your contractor will still review and confirm the final details.
+            </p>
           </div>
-          <div className="mt-4">
-            <label className="mb-1 block text-sm font-medium text-gray-900">Structured Scope</label>
-            <textarea className="w-full rounded border px-3 py-2 text-sm" rows={6} value={form.ai_description} onChange={(e) => setField("ai_description", e.target.value)} placeholder="Short, agreement-ready scope summary" />
-          </div>
-          <div className="mt-5">
-            <div className="flex items-center justify-between gap-3">
-              <label className="block text-sm font-medium text-gray-900">Milestones</label>
-              <button type="button" className="text-xs font-semibold text-indigo-700 hover:underline" onClick={() => setForm((prev) => ({ ...prev, ai_milestones: [...(prev.ai_milestones || []), emptyMilestone((prev.ai_milestones || []).length)], }))}>Add milestone</button>
-            </div>
-            <div className="mt-3 space-y-3">
-              {(form.ai_milestones || []).map((milestone, index) => (
-                <div key={`milestone-${index}`} className="rounded-lg border bg-slate-50 p-4">
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div>
-                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">Title</label>
-                      <input className="w-full rounded border px-3 py-2 text-sm" value={milestone.title || ""} onChange={(e) => setMilestone(index, "title", e.target.value)} placeholder={`Milestone ${index + 1}`} />
-                    </div>
-                    <div className="md:col-span-2">
-                      <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">Description</label>
-                      <textarea className="w-full rounded border px-3 py-2 text-sm" rows={3} value={milestone.description || ""} onChange={(e) => setMilestone(index, "description", e.target.value)} placeholder="Short milestone description" />
-                    </div>
+
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm" data-testid="public-intake-structured-section-project-details">
+              <div className="text-sm font-semibold text-gray-900">Project Details</div>
+              <div className="mt-4 grid grid-cols-1 gap-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-900">Project Title</label>
+                  <input
+                    data-testid="public-intake-structured-project-title"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                    value={form.ai_project_title}
+                    onChange={(e) => setField("ai_project_title", e.target.value)}
+                    placeholder="Suggested project title"
+                  />
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-900">Project Type</label>
+                    <input
+                      data-testid="public-intake-structured-project-type"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                      value={form.ai_project_type}
+                      onChange={(e) => setField("ai_project_type", e.target.value)}
+                      placeholder="Repair, Remodel, Installation..."
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-900">Area / Subtype</label>
+                    <input
+                      data-testid="public-intake-structured-project-subtype"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                      value={form.ai_project_subtype}
+                      onChange={(e) => setField("ai_project_subtype", e.target.value)}
+                      placeholder="Bathroom remodel, roof repair..."
+                    />
                   </div>
                 </div>
-              ))}
-            </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-900">Timeline</label>
+                    <input
+                      data-testid="public-intake-structured-project-timeline"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                      value={form.ai_project_timeline_days}
+                      onChange={(e) => setField("ai_project_timeline_days", e.target.value)}
+                      placeholder="10"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-sm font-medium text-gray-900">Budget</label>
+                    <input
+                      data-testid="public-intake-structured-project-budget"
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                      value={form.ai_project_budget}
+                      onChange={(e) => setField("ai_project_budget", e.target.value)}
+                      placeholder="5000"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-900">Measurements handling</label>
+                  <div className="flex flex-wrap gap-2">
+                    {measurementOptions.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setField("measurement_handling", opt.value)}
+                        className={`rounded-full border px-3 py-2 text-sm font-semibold ${
+                          form.measurement_handling === opt.value
+                            ? "border-indigo-500 bg-indigo-600 text-white"
+                            : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                        }`}
+                        data-testid={`public-intake-structured-measurement-${opt.value}`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm" data-testid="public-intake-structured-section-scope">
+              <div className="text-sm font-semibold text-gray-900">Refined Description</div>
+              <p className="mt-1 text-sm text-slate-600">
+                Keep this short and clear. It will help guide the agreement and scope review.
+              </p>
+              <textarea
+                data-testid="public-intake-structured-description"
+                className="mt-4 w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                rows={10}
+                value={form.ai_description}
+                onChange={(e) => setField("ai_description", e.target.value)}
+                placeholder="Short, agreement-ready scope summary"
+              />
+              <div className="mt-3 text-xs text-slate-500">
+                You can refine this anytime before submitting.
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm lg:col-span-2" data-testid="public-intake-structured-section-milestones">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-gray-900">Milestones / Project Phases</div>
+                  <p className="mt-1 text-sm text-slate-600">These help turn the project into a clear plan of work.</p>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  onClick={() =>
+                    setForm((prev) => ({
+                      ...prev,
+                      ai_milestones: [...(prev.ai_milestones || []), emptyMilestone((prev.ai_milestones || []).length)],
+                    }))
+                  }
+                >
+                  Add milestone
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-4">
+                {milestones.length ? (
+                  milestones.map((milestone, index) => (
+                    <div
+                      key={`milestone-${index}`}
+                      className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                      data-testid={`public-intake-structured-milestone-${index}`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Milestone {index + 1}
+                        </div>
+                      </div>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <div>
+                          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">Title</label>
+                          <input
+                            data-testid={`public-intake-structured-milestone-${index}-title`}
+                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                            value={milestone.title || ""}
+                            onChange={(e) => setMilestone(index, "title", e.target.value)}
+                            placeholder={`Milestone ${index + 1}`}
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">Description</label>
+                          <textarea
+                            data-testid={`public-intake-structured-milestone-${index}-description`}
+                            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                            rows={3}
+                            value={milestone.description || ""}
+                            onChange={(e) => setMilestone(index, "description", e.target.value)}
+                            placeholder="Short milestone description"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-5 text-sm text-slate-600">
+                    No milestones yet. Add a few to help organize the plan.
+                  </div>
+                )}
+              </div>
+            </section>
           </div>
         </div>
       );
@@ -1453,13 +1587,31 @@ export default function PublicIntakeWizard() {
         {renderStep()}
 
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <button type="button" onClick={handleBack} disabled={currentStep === 0 || saving || branchSubmitting} className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60">Back</button>
+          <button
+            type="button"
+            onClick={handleBack}
+            disabled={currentStep === 0 || saving || branchSubmitting}
+            data-testid={currentStep === 2 ? "public-intake-structured-back" : undefined}
+            className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+          >
+            Back
+          </button>
 
         <div className="flex flex-wrap items-center gap-3">
             {currentStep === 5 ? (
               <button type="button" onClick={handleBranchSubmit} disabled={branchSubmitting || saving} data-testid="public-intake-branch-submit" className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{branchSubmitting ? "Saving..." : "Save next step"}</button>
             ) : currentStep === 6 ? (
               <button data-testid="public-intake-submit-button" type="button" onClick={handleConfirm} disabled={saving || branchSubmitting || !canFinish} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{saving ? "Submitting..." : "Submit Intake"}</button>
+            ) : currentStep === 2 ? (
+              <button
+                type="button"
+                onClick={handleNext}
+                disabled={saving || branchSubmitting}
+                data-testid="public-intake-structured-continue"
+                className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+              >
+                Continue to Project Details
+              </button>
             ) : currentStep === 1 ? (
               <div className="text-xs text-gray-500">Use the question card above to continue your clarification.</div>
             ) : currentStep === 0 ? (
