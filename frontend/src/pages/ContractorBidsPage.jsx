@@ -101,12 +101,134 @@ function signalTone(signal) {
   return "border-slate-200 bg-white text-slate-700";
 }
 
+function toTimestamp(value) {
+  if (!value) return 0;
+  const stamp = Date.parse(value);
+  return Number.isFinite(stamp) ? stamp : 0;
+}
+
+function moneyToNumber(value) {
+  const text = normalize(value).replace(/[^0-9.-]/g, "");
+  if (!text) return 0;
+  const amount = Number.parseFloat(text);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function prioritizeSignals(signals) {
+  const items = Array.isArray(signals) ? signals : [];
+  const priority = [
+    "Guided Intake",
+    "Clarifications Answered",
+    "Photos",
+    "Budget Provided",
+    "Timeline Provided",
+    "Measurements Noted",
+    "Multi-Quote Request",
+  ];
+  return [...items].sort((left, right) => {
+    const leftIndex = priority.indexOf(left);
+    const rightIndex = priority.indexOf(right);
+    const safeLeft = leftIndex === -1 ? priority.length + 1 : leftIndex;
+    const safeRight = rightIndex === -1 ? priority.length + 1 : rightIndex;
+    if (safeLeft !== safeRight) return safeLeft - safeRight;
+    return normalize(left).localeCompare(normalize(right));
+  });
+}
+
+function requestCompletenessScore(row) {
+  const snapshot = row?.request_snapshot || {};
+  const signals = new Set((Array.isArray(row?.request_signals) ? row.request_signals : []).map(normalize));
+  let score = 0;
+  if ((snapshot.photo_count || 0) > 0 || signals.has("photos")) score += 2;
+  if (snapshot.budget || normalize(row?.bid_amount_label) !== "-" || signals.has("budget provided")) score += 2;
+  if (snapshot.timeline || signals.has("timeline provided")) score += 1;
+  if ((snapshot.clarification_count || 0) > 0 || signals.has("clarifications answered")) score += 2;
+  if (snapshot.guided_intake_completed || signals.has("guided intake")) score += 1;
+  if (normalize(snapshot.request_path_label) === "multi-quote request" || signals.has("multi-quote request")) score += 1;
+  return score;
+}
+
+function requestAttentionRank(row) {
+  const stage = workspaceStageFromRow(row);
+  const statusGroup = normalize(row?.status_group);
+  const status = normalize(row?.status);
+
+  if (stage === "new_lead") {
+    return Math.max(0, 6 - requestCompletenessScore(row));
+  }
+
+  if (statusGroup === "under_review" || status === "under_review" || status === "draft" || status === "open" || status === "submitted") {
+    return 0;
+  }
+  if (statusGroup === "awarded" || status === "awarded") {
+    return 1;
+  }
+  return 2;
+}
+
+function requestMatchesFilter(row, filter) {
+  if (filter === "all") return true;
+  const snapshot = row?.request_snapshot || {};
+  const signals = new Set((Array.isArray(row?.request_signals) ? row.request_signals : []).map(normalize));
+  const hasPhotos = (snapshot.photo_count || 0) > 0 || signals.has("photos");
+  const hasBudget = Boolean(snapshot.budget || normalize(row?.bid_amount_label) !== "-" || signals.has("budget provided"));
+  const hasTimeline = Boolean(snapshot.timeline || signals.has("timeline provided"));
+  const hasClarifications = (snapshot.clarification_count || 0) > 0 || signals.has("clarifications answered");
+  const isMultiQuote = normalize(snapshot.request_path_label) === "multi-quote request" || signals.has("multi-quote request");
+  const needsAttention = workspaceStageFromRow(row) === "new_lead" ? requestCompletenessScore(row) < 4 : requestAttentionRank(row) === 0;
+
+  if (filter === "has_photos") return hasPhotos;
+  if (filter === "budget_provided") return hasBudget;
+  if (filter === "timeline_provided") return hasTimeline;
+  if (filter === "clarifications_included") return hasClarifications;
+  if (filter === "multi_quote") return isMultiQuote;
+  if (filter === "needs_attention") return needsAttention;
+  return true;
+}
+
+function sortWorkspaceRows(rows, sortBy, stage) {
+  const list = [...rows];
+  list.sort((left, right) => {
+    const leftSubmitted = toTimestamp(left?.submitted_at);
+    const rightSubmitted = toTimestamp(right?.submitted_at);
+    const leftValue = moneyToNumber(left?.bid_amount || left?.request_snapshot?.budget || left?.bid_amount_label);
+    const rightValue = moneyToNumber(right?.bid_amount || right?.request_snapshot?.budget || right?.bid_amount_label);
+    const leftCompleteness = requestCompletenessScore(left);
+    const rightCompleteness = requestCompletenessScore(right);
+    const leftAttention = requestAttentionRank(left);
+    const rightAttention = requestAttentionRank(right);
+
+    const compareNewest = rightSubmitted - leftSubmitted;
+    const compareValue = rightValue - leftValue;
+    const compareCompleteness = rightCompleteness - leftCompleteness;
+    const compareAttention = leftAttention - rightAttention;
+
+    if (sortBy === "newest") return compareNewest || compareCompleteness || compareValue;
+    if (sortBy === "most_complete") return compareCompleteness || compareNewest || compareValue;
+    if (sortBy === "highest_value") return compareValue || compareNewest || compareCompleteness;
+    if (sortBy === "needs_attention") {
+      if (stage === "new_lead") return compareCompleteness * -1 || compareNewest || compareValue;
+      return compareAttention || compareNewest || compareValue;
+    }
+    if (stage === "new_lead") {
+      return compareNewest || compareCompleteness || compareValue;
+    }
+    if (stage === "closed") {
+      return compareNewest || compareValue || compareCompleteness;
+    }
+    return compareAttention || compareNewest || compareValue;
+  });
+  return list;
+}
+
 export default function ContractorBidsPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [selectedRow, setSelectedRow] = useState(null);
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState("new_lead");
+  const [sortBy, setSortBy] = useState("recommended");
+  const [requestFilter, setRequestFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [projectClassFilter, setProjectClassFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -138,11 +260,12 @@ export default function ContractorBidsPage() {
     };
   }, []);
 
-  const filteredRows = useMemo(() => {
+  const visibleRows = useMemo(() => {
     const q = normalize(search);
-    return rows.filter((row) => {
+    const scopedRows = rows.filter((row) => {
       const workspaceStage = workspaceStageFromRow(row);
       if (activeWorkspaceTab !== "all" && workspaceStage !== activeWorkspaceTab) return false;
+      if (!requestMatchesFilter(row, requestFilter)) return false;
       if (statusFilter !== "all" && normalize(row.status) !== statusFilter) return false;
       if (projectClassFilter !== "all" && normalize(row.project_class) !== projectClassFilter) return false;
       if (!q) return true;
@@ -161,7 +284,8 @@ export default function ContractorBidsPage() {
         .join(" ")
         .includes(q);
     });
-  }, [rows, search, statusFilter, projectClassFilter, activeWorkspaceTab]);
+    return sortWorkspaceRows(scopedRows, sortBy, activeWorkspaceTab);
+  }, [rows, search, statusFilter, projectClassFilter, activeWorkspaceTab, requestFilter, sortBy]);
 
   const summary = useMemo(() => {
     const counts = {
@@ -182,6 +306,29 @@ export default function ContractorBidsPage() {
 
   const activeStageLabel = activeWorkspaceTab === "new_lead" ? "New Leads" : activeWorkspaceTab === "closed" ? "Closed / Archived" : "Active Bids";
   const activeStageNoun = activeWorkspaceTab === "new_lead" ? "lead" : activeWorkspaceTab === "closed" ? "opportunity" : "bid";
+  const sortOptions = useMemo(() => {
+    const isLeadView = activeWorkspaceTab === "new_lead";
+    const isClosedView = activeWorkspaceTab === "closed";
+    return [
+      { key: "recommended", label: "Recommended" },
+      { key: "newest", label: "Newest First" },
+      { key: "most_complete", label: "Most Complete" },
+      { key: "needs_attention", label: isLeadView ? "Needs Response" : "Needs Follow-up" },
+      { key: "highest_value", label: isClosedView ? "Highest Value" : "Highest Value" },
+    ];
+  }, [activeWorkspaceTab]);
+  const requestFilterOptions = useMemo(
+    () => [
+      { key: "all", label: "All" },
+      { key: "has_photos", label: "Has Photos" },
+      { key: "budget_provided", label: "Budget Provided" },
+      { key: "timeline_provided", label: "Timeline Provided" },
+      { key: "clarifications_included", label: "Clarifications Included" },
+      { key: "multi_quote", label: "Multi-Quote" },
+      { key: "needs_attention", label: activeWorkspaceTab === "new_lead" ? "Needs Response" : "Needs Attention" },
+    ],
+    [activeWorkspaceTab]
+  );
   const workspaceTabs = useMemo(
     () => [
       { key: "new_lead", label: "New Leads", count: summary.new_leads, testId: "leads-tab-new" },
@@ -190,6 +337,8 @@ export default function ContractorBidsPage() {
     ],
     [summary.active_bids, summary.closed, summary.new_leads]
   );
+  const activeSortLabel = sortOptions.find((option) => option.key === sortBy)?.label || "Recommended";
+  const activeFilterLabel = requestFilterOptions.find((option) => option.key === requestFilter)?.label || "All";
 
   const outcomeNote =
     normalize(selectedRow?.status_label) === "not selected"
@@ -198,7 +347,7 @@ export default function ContractorBidsPage() {
 
   const selectedStage = workspaceStageFromRow(selectedRow);
   const selectedSnapshot = selectedRow?.request_snapshot || {};
-  const selectedSignals = Array.isArray(selectedRow?.request_signals) ? selectedRow.request_signals : [];
+  const selectedSignals = prioritizeSignals(selectedRow?.request_signals);
   const selectedPhotos = Array.isArray(selectedSnapshot?.photos) ? selectedSnapshot.photos : [];
   const selectedMilestones = Array.isArray(selectedSnapshot?.milestones) ? selectedSnapshot.milestones : [];
   const selectedClarifications = Array.isArray(selectedSnapshot?.clarification_summary) ? selectedSnapshot.clarification_summary : [];
@@ -332,7 +481,7 @@ export default function ContractorBidsPage() {
             <div className="mt-1 text-sm text-slate-500">
               {loading
                 ? "Loading opportunity workspace..."
-                : `${filteredRows.length} ${activeStageNoun}${filteredRows.length === 1 ? "" : "s"}`}
+                : `${visibleRows.length} ${activeStageNoun}${visibleRows.length === 1 ? "" : "s"} · ${activeSortLabel} · ${activeFilterLabel}`}
             </div>
           </div>
 
@@ -358,38 +507,56 @@ export default function ContractorBidsPage() {
           </div>
         </div>
 
-        <div className="mt-5 flex flex-wrap gap-3">
-          <label className="text-sm font-medium text-slate-700">
-            All / Residential / Commercial
-            <select
-              data-testid="bids-filter-project-class"
-              value={projectClassFilter}
-              onChange={(event) => setProjectClassFilter(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 sm:w-48"
-            >
-              <option value="all">All</option>
-              <option value="residential">Residential</option>
-              <option value="commercial">Commercial</option>
-            </select>
-          </label>
+        <div className="mt-5 grid gap-3 lg:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="text-sm font-medium text-slate-700">
+              Sort by
+              <select
+                data-testid="workspace-sort-control"
+                value={sortBy}
+                onChange={(event) => setSortBy(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              >
+                {sortOptions.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label className="text-sm font-medium text-slate-700">
-            Status
-            <select
-              data-testid="bids-filter-status"
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 sm:w-48"
-            >
-              <option value="all">All</option>
-              <option value="draft">Draft</option>
-              <option value="submitted">Submitted</option>
-              <option value="under_review">Under Review</option>
-              <option value="awarded">Awarded</option>
-              <option value="declined">Declined</option>
-              <option value="expired">Not Selected</option>
-            </select>
-          </label>
+            <label className="text-sm font-medium text-slate-700">
+              Project class
+              <select
+                data-testid="bids-filter-project-class"
+                value={projectClassFilter}
+                onChange={(event) => setProjectClassFilter(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              >
+                <option value="all">All</option>
+                <option value="residential">Residential</option>
+                <option value="commercial">Commercial</option>
+              </select>
+            </label>
+
+            <label className="text-sm font-medium text-slate-700">
+              Status
+              <select
+                data-testid="bids-filter-status"
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              >
+                <option value="all">All</option>
+                <option value="draft">Draft</option>
+                <option value="submitted">Submitted</option>
+                <option value="under_review">Under Review</option>
+                <option value="awarded">Awarded</option>
+                <option value="declined">Declined</option>
+                <option value="expired">Not Selected</option>
+              </select>
+            </label>
+          </div>
 
           <label className="text-sm font-medium text-slate-700">
             Search
@@ -399,9 +566,30 @@ export default function ContractorBidsPage() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Project, customer, or signal"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 sm:w-64"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
             />
           </label>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2" data-testid="workspace-filter-chips">
+          {requestFilterOptions.map((option) => {
+            const active = requestFilter === option.key;
+            return (
+              <button
+                key={option.key}
+                type="button"
+                data-testid={`workspace-filter-${option.key}`}
+                onClick={() => setRequestFilter(option.key)}
+                className={`inline-flex items-center rounded-full border px-3 py-2 text-sm font-semibold transition ${
+                  active
+                    ? "border-slate-900 bg-slate-900 text-white shadow-sm"
+                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          })}
         </div>
 
         <div className="mt-3 text-xs text-slate-500">
@@ -414,7 +602,7 @@ export default function ContractorBidsPage() {
 
         {loading ? (
           <div className="mt-5 text-sm text-slate-500">Loading opportunity workspace...</div>
-        ) : filteredRows.length === 0 ? (
+        ) : visibleRows.length === 0 ? (
           <div
             data-testid="bids-empty"
             className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600"
@@ -438,7 +626,7 @@ export default function ContractorBidsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredRows.map((row) => (
+                {visibleRows.map((row) => (
                   <tr
                     key={`${row.source_kind}-${row.bid_id}`}
                     data-testid={`lead-row-${row.bid_id}`}
@@ -478,7 +666,7 @@ export default function ContractorBidsPage() {
                     <td className="px-3 py-3">
                       <div className="flex flex-wrap gap-2">
                         {Array.isArray(row.request_signals) && row.request_signals.length ? (
-                          row.request_signals.slice(0, 4).map((signal) => (
+                          prioritizeSignals(row.request_signals).slice(0, 4).map((signal) => (
                             <span
                               key={`${row.bid_id}-${signal}`}
                               className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${signalTone(signal)}`}

@@ -318,6 +318,57 @@ const bidRows = [
     },
     next_action: { key: "review_bid", label: "Review Request", target: "" },
   },
+  {
+    bid_id: "lead-7",
+    source_kind: "lead",
+    source_kind_label: "Lead",
+    workspace_stage: "new_lead",
+    workspace_stage_label: "New Lead",
+    source_id: 7,
+    source_reference: "Lead #7",
+    project_title: "Guest Bath Refresh",
+    customer_name: "Need More Info",
+    customer_email: "guestbath@example.com",
+    customer_phone: "",
+    location: "Round Rock, TX",
+    project_class: "residential",
+    project_class_label: "Residential",
+    project_type: "Bathroom Remodel",
+    project_subtype: "Guest Bath",
+    bid_amount: null,
+    bid_amount_label: "-",
+    submitted_at: "2026-04-08T15:20:00Z",
+    status: "submitted",
+    status_label: "Submitted",
+    status_group: "open",
+    linked_agreement_id: null,
+    linked_agreement_label: "",
+    linked_agreement_reference: "",
+    linked_agreement_url: "",
+    notes: "Need a quote for a guest bath refresh.",
+    timeline: "",
+    budget_text: "",
+    milestone_preview: [],
+    request_signals: ["Guided Intake"],
+    request_snapshot: {
+      project_title: "Guest Bath Refresh",
+      project_type: "Bathroom Remodel",
+      project_subtype: "Guest Bath",
+      refined_description: "Need a quote for a guest bath refresh.",
+      location: "Round Rock, TX",
+      request_path_label: "Project request",
+      measurement_handling: "",
+      timeline: "",
+      budget: "",
+      clarification_summary: [],
+      clarification_count: 0,
+      photo_count: 0,
+      photos: [],
+      milestones: [],
+      request_signals: ["Guided Intake"],
+    },
+    next_action: { key: "review_bid", label: "Review Request", target: "" },
+  },
 ];
 
 function buildPayload() {
@@ -325,7 +376,7 @@ function buildPayload() {
     results: bidRows,
     summary: {
       total_bids: bidRows.length,
-      new_leads: 1,
+      new_leads: 2,
       active_bids: 4,
       closed: 1,
       open_bids: 2,
@@ -395,18 +446,30 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
 
   await page.goto("/app/bids", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("contractor-bids-title")).toBeVisible();
-  await expect(page.getByTestId("leads-tab-new")).toContainText("1");
+  await expect(page.getByTestId("leads-tab-new")).toContainText("2");
   await expect(page.getByTestId("leads-tab-active")).toContainText("4");
   await expect(page.getByTestId("leads-tab-closed")).toContainText("Closed / Archived");
-  await expect(page.getByTestId("bids-summary-new-leads")).toContainText("1");
+  await expect(page.getByTestId("bids-summary-new-leads")).toContainText("2");
   await expect(page.getByTestId("bids-summary-active-bids")).toContainText("4");
   await expect(page.getByTestId("bids-summary-closed")).toContainText("1");
-  await expect(page.getByTestId("bids-summary-total")).toContainText("6");
+  await expect(page.getByTestId("bids-summary-total")).toContainText("7");
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("New Lead");
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("Guided Intake");
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("Photos");
   await expect(page.getByTestId("lead-row-action-lead-6")).toContainText("Review Request");
+  await expect(page.locator('tr[data-testid^="lead-row-"]')).toHaveCount(2);
+  await expect(page.locator('tr[data-testid^="lead-row-"]').nth(0)).toContainText("Bathroom Remodel");
+  await expect(page.locator('tr[data-testid^="lead-row-"]').nth(1)).toContainText("Guest Bath Refresh");
   expect(authHeader).toContain("Bearer ");
+
+  await page.getByTestId("workspace-sort-control").selectOption("needs_attention");
+  await expect(page.locator('tr[data-testid^="lead-row-"]').nth(0)).toContainText("Guest Bath Refresh");
+  await expect(page.locator('tr[data-testid^="lead-row-"]').nth(1)).toContainText("Bathroom Remodel");
+
+  await page.getByTestId("workspace-sort-control").selectOption("recommended");
+  await page.getByTestId("workspace-filter-has_photos").click();
+  await expect(page.locator('tr[data-testid^="lead-row-"]')).toHaveCount(1);
+  await expect(page.getByTestId("lead-row-lead-6")).toBeVisible();
 
   await page.getByTestId("lead-row-action-lead-6").click();
   await expect(page.getByTestId("lead-detail-container")).toBeVisible();
@@ -419,6 +482,8 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("lead-detail-primary-action")).toContainText("Review and Respond");
   await page.getByRole("button", { name: "Close bid details" }).click();
   await expect(page.getByTestId("bids-detail-drawer")).toHaveCount(0);
+
+  await page.getByTestId("workspace-filter-all").click();
 
   await page.getByTestId("leads-tab-active").click();
   await expect(page.getByTestId("lead-row-intake-2")).toContainText("Active Bid");
