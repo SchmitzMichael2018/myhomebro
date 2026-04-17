@@ -709,6 +709,15 @@ export default function PublicIntakeWizard() {
 
     return rows;
   }, [form.clarification_photos, projectSummaryRows]);
+  const confidenceMessage = useMemo(() => {
+    if (currentStep >= 6) return "Almost ready to send to contractors.";
+    if (currentStep === 5) return "You are choosing the path that feels right.";
+    if (currentStep === 4) return "A few details now will help the next step feel easy.";
+    if (currentStep === 3) return "You are refining the details that shape the plan.";
+    if (currentStep === 2) return "Your project is taking shape.";
+    if (currentStep === 1) return "A little more detail helps contractors understand your project.";
+    return "Start with your idea and we will help shape the rest.";
+  }, [currentStep]);
   const renderStep = () => {
     if (currentStep === 0) {
       return (
@@ -831,6 +840,7 @@ export default function PublicIntakeWizard() {
               <p className="mt-1 text-sm text-gray-600">
                 Answer a few quick questions to make the agreement-ready scope more accurate.
               </p>
+              <p className="mt-1 text-sm text-slate-500">Your contractor will still confirm details.</p>
 
               <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
                 <label className="mb-2 block text-sm font-medium text-gray-900">Measurement handling</label>
@@ -1119,6 +1129,7 @@ export default function PublicIntakeWizard() {
             <p className="mt-2 text-base text-slate-600">
               Here&apos;s the structured project outline we created from your description and answers. You can review and adjust anything before continuing.
             </p>
+            <p className="mt-1 text-sm text-slate-500">You can edit anything before continuing.</p>
             <p className="mt-1 text-sm text-slate-500">
               Your contractor will still review and confirm the final details.
             </p>
@@ -1661,19 +1672,40 @@ export default function PublicIntakeWizard() {
       );
     }
     return (
-      <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10" data-testid="public-intake-review-step">
-        <div className="max-w-3xl">
-          <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
-            Final review
+        <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10" data-testid="public-intake-review-step">
+          <div className="max-w-3xl">
+            <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+              Final review
+            </div>
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight text-gray-900">Review + Confirm</h2>
+            <p className="mt-2 text-base text-slate-600">Take one last look before we send your project forward.</p>
+            <p className="mt-1 text-sm text-slate-500">
+              This is your chance to confirm the details we&apos;ve gathered so far.
+            </p>
+            <p className="mt-1 text-sm text-slate-500">
+              You&apos;re not committing to work yet - this just helps contractors understand your project.
+            </p>
           </div>
-          <h2 className="mt-3 text-2xl font-semibold tracking-tight text-gray-900">Review + Confirm</h2>
-          <p className="mt-2 text-base text-slate-600">Take one last look before we send your project forward.</p>
-          <p className="mt-1 text-sm text-slate-500">
-            This is your chance to confirm the details we&apos;ve gathered so far.
-          </p>
-        </div>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+            <div className="text-sm font-semibold text-gray-900">What happens next?</div>
+            <ul className="mt-3 space-y-2 text-sm text-slate-700">
+              <li className="flex gap-2">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" />
+                <span>Contractor reviews your request</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" />
+                <span>They may ask follow-up questions if needed</span>
+              </li>
+              <li className="flex gap-2">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-500" />
+                <span>You decide how you want to proceed</span>
+              </li>
+            </ul>
+          </section>
+
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
           <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
             <div className="text-sm font-semibold text-gray-900">Project Plan</div>
             <div className="mt-4 space-y-3">
@@ -1783,6 +1815,7 @@ export default function PublicIntakeWizard() {
               Project intake
             </div>
             <div className="mt-3 text-2xl font-semibold tracking-tight text-gray-900">Project Intake</div>
+            <div className="mt-2 text-sm font-medium text-indigo-700">{confidenceMessage}</div>
             <div className="mt-2 text-sm text-slate-600">
               {contractorName} has asked you to complete a project intake so they can prepare your agreement.
             </div>
