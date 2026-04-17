@@ -221,6 +221,70 @@ function sortWorkspaceRows(rows, sortBy, stage) {
   return list;
 }
 
+function buildBidPrepItems({ snapshot, signals, stage }) {
+  const items = [];
+  const signalSet = new Set((Array.isArray(signals) ? signals : []).map(normalize));
+  const photoCount = Number(snapshot?.photo_count || 0);
+  const measurementValue = normalize(snapshot?.measurement_handling);
+  const clarificationCount = Number(snapshot?.clarification_count || 0);
+  const hasBudget = Boolean(snapshot?.budget);
+  const hasTimeline = Boolean(snapshot?.timeline);
+
+  if (photoCount > 0 || signalSet.has("photos")) items.push("Review the photos before you price the work.");
+  if (measurementValue === "site visit required") items.push("Verify measurements on site before final pricing.");
+  else if (measurementValue === "provided") items.push("Check the provided measurements against the scope.");
+  if (hasBudget) items.push("Use the budget guidance as a starting point.");
+  if (hasTimeline) items.push("Confirm the requested timing and your availability.");
+  if (clarificationCount > 0 || signalSet.has("clarifications answered")) items.push("Review the clarifications already captured.");
+  if (normalize(snapshot?.request_path_label) === "multi-quote request" || signalSet.has("multi-quote request")) {
+    items.push("This customer is comparing options, so keep your first response clear and useful.");
+  }
+
+  if (stage === "new_lead" && items.length === 0) {
+    items.push("Confirm the scope, measurements, and timing before you respond.");
+  }
+
+  return items.slice(0, 4);
+}
+
+function buildResponseStarter({ snapshot, signals, stage }) {
+  if (stage === "closed") return "";
+  const signalSet = new Set((Array.isArray(signals) ? signals : []).map(normalize));
+  const parts = ["Thanks for sharing the project details."];
+
+  if ((snapshot?.photo_count || 0) > 0 || signalSet.has("photos")) {
+    parts.push("I reviewed the photos and will confirm the scope before I price the work.");
+  } else {
+    parts.push("I’ll review the scope and follow up if anything needs clarification.");
+  }
+
+  if (normalize(snapshot?.measurement_handling) === "site visit required") {
+    parts.push("I may want to verify measurements on site before final pricing.");
+  } else if (normalize(snapshot?.measurement_handling) === "provided") {
+    parts.push("I’ll check the provided measurements against the work requested.");
+  }
+
+  if (snapshot?.timeline || signalSet.has("timeline provided")) {
+    parts.push("I’ll also confirm timing and availability.");
+  }
+
+  if (normalize(snapshot?.request_path_label) === "multi-quote request" || signalSet.has("multi-quote request")) {
+    parts.push("It looks like the customer is comparing options, so I’ll keep the response clear and practical.");
+  }
+
+  return parts.join(" ");
+}
+
+function buildCreateBidContext({ snapshot, signals }) {
+  const signalSet = new Set((Array.isArray(signals) ? signals : []).map(normalize));
+  if ((snapshot?.photo_count || 0) > 0 || signalSet.has("photos")) return "Photos are available to review.";
+  if (normalize(snapshot?.measurement_handling) === "site visit required") return "Measurements may still need verification.";
+  if (snapshot?.budget || signalSet.has("budget provided")) return "Budget guidance is available.";
+  if (snapshot?.timeline || signalSet.has("timeline provided")) return "Timing guidance is available.";
+  if ((snapshot?.clarification_count || 0) > 0 || signalSet.has("clarifications answered")) return "Clarified details are available.";
+  return "Review the request details and create your bid when you’re ready.";
+}
+
 export default function ContractorBidsPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -351,6 +415,18 @@ export default function ContractorBidsPage() {
   const selectedPhotos = Array.isArray(selectedSnapshot?.photos) ? selectedSnapshot.photos : [];
   const selectedMilestones = Array.isArray(selectedSnapshot?.milestones) ? selectedSnapshot.milestones : [];
   const selectedClarifications = Array.isArray(selectedSnapshot?.clarification_summary) ? selectedSnapshot.clarification_summary : [];
+  const selectedBidPrepItems = useMemo(
+    () => buildBidPrepItems({ snapshot: selectedSnapshot, signals: selectedSignals, stage: selectedStage }),
+    [selectedSnapshot, selectedSignals, selectedStage]
+  );
+  const selectedResponseStarter = useMemo(
+    () => buildResponseStarter({ snapshot: selectedSnapshot, signals: selectedSignals, stage: selectedStage }),
+    [selectedSnapshot, selectedSignals, selectedStage]
+  );
+  const selectedCreateBidContext = useMemo(
+    () => buildCreateBidContext({ snapshot: selectedSnapshot, signals: selectedSignals }),
+    [selectedSnapshot, selectedSignals]
+  );
   const selectedPrimaryActionLabel =
     selectedStage === "new_lead"
       ? "Create Bid"
@@ -849,6 +925,45 @@ export default function ContractorBidsPage() {
                 )}
               </SectionCard>
 
+              {selectedStage !== "closed" && selectedBidPrepItems.length ? (
+                <SectionCard
+                  title="Before You Respond"
+                  testId="response-prep-section"
+                  subtitle="A short checklist to help you prepare a useful bid."
+                >
+                  <ul className="space-y-2 text-sm text-slate-700">
+                    {selectedBidPrepItems.map((item) => (
+                      <li key={item} className="flex items-start gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                        <span className="mt-1 h-2 w-2 rounded-full bg-slate-400" />
+                        <span>{item}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </SectionCard>
+              ) : null}
+
+              {selectedStage !== "closed" && selectedResponseStarter ? (
+                <SectionCard
+                  title="Suggested First Response"
+                  testId="response-starter-section"
+                  subtitle="This is a helper, not a sent message."
+                >
+                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                    {selectedResponseStarter}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => copyReference(selectedResponseStarter, `${selectedRow.bid_id}-starter`)}
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      <Copy size={14} />
+                      Copy Starter
+                    </button>
+                  </div>
+                </SectionCard>
+              ) : null}
+
               <SectionCard
                 title="Request Signals"
                 testId="request-signals-section"
@@ -884,6 +999,14 @@ export default function ContractorBidsPage() {
                 </div>
                 <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4" data-testid="lead-action-section">
                   <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Lead Actions</div>
+                  {selectedStage === "new_lead" ? (
+                    <div
+                      className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"
+                      data-testid="create-bid-context-note"
+                    >
+                      {selectedCreateBidContext}
+                    </div>
+                  ) : null}
                   <div className="mt-3 flex flex-wrap gap-3">
                     {selectedStage === "closed" && !selectedCanOpenAgreement ? null : selectedCanOpenAgreement ? (
                       <button
@@ -900,7 +1023,7 @@ export default function ContractorBidsPage() {
                         type="button"
                         onClick={() => runAction(selectedRow)}
                         disabled={actionBusyId === String(selectedRow.bid_id)}
-                        data-testid="lead-detail-primary-action"
+                        data-testid={selectedStage === "new_lead" ? "create-bid-action" : "lead-detail-primary-action"}
                         className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-60"
                       >
                         {actionBusyId === String(selectedRow.bid_id) ? "Working..." : selectedPrimaryActionLabel}

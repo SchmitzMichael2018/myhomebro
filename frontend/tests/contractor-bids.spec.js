@@ -474,13 +474,16 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await page.getByTestId("lead-row-action-lead-6").click();
   await expect(page.getByTestId("lead-detail-container")).toBeVisible();
   await expect(page.getByTestId("lead-action-section")).toBeVisible();
+  await expect(page.getByTestId("response-prep-section")).toBeVisible();
+  await expect(page.getByTestId("response-starter-section")).toBeVisible();
+  await expect(page.getByTestId("create-bid-context-note")).toContainText("Photos are available to review");
   await expect(page.getByTestId("lead-overview")).toContainText("Project Title");
   await expect(page.getByTestId("project-snapshot")).toContainText("Refined Description");
   await expect(page.getByTestId("photos-section")).toContainText("Shower area");
   await expect(page.getByTestId("project-phases-section")).toContainText("Demolition");
   await expect(page.getByTestId("request-signals-section")).toContainText("Multi-Quote Request");
   await expect(page.getByTestId("suggested-next-step-section")).toContainText("ready for a bid decision");
-  await expect(page.getByTestId("lead-detail-primary-action")).toContainText("Create Bid");
+  await expect(page.getByTestId("create-bid-action")).toContainText("Create Bid");
   await expect(page.getByTestId("lead-detail-secondary-action")).toContainText("Copy Reference");
   await page.getByRole("button", { name: "Close bid details" }).click();
   await expect(page.getByTestId("bids-detail-drawer")).toHaveCount(0);
@@ -532,6 +535,56 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await page.screenshot({ path: "test-results/contractor-bids.png", fullPage: true });
 
   expect(consoleErrors.filter((msg) => msg.includes("Failed to load bids"))).toHaveLength(0);
+});
+
+test("contractor bids workspace lead helpers support create bid handoff", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("access", "playwright-access-token");
+  });
+
+  await page.route("**/api/projects/whoami/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: 7,
+        type: "contractor",
+        role: "contractor_owner",
+        email: "playwright@myhomebro.local",
+      }),
+    });
+  });
+
+  await page.route("**/api/projects/contractor/bids/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(buildPayload()),
+    });
+  });
+
+  await page.route("**/api/projects/contractor/public-leads/6/create-agreement/**", async (route) => {
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        agreement_id: 901,
+        detail_url: "/app/agreements/901",
+        wizard_url: "/app/agreements/901/wizard?step=1",
+        created: true,
+      }),
+    });
+  });
+
+  await page.goto("/app/bids", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("lead-row-action-lead-6").click();
+  await expect(page.getByTestId("response-prep-section")).toBeVisible();
+  await expect(page.getByTestId("response-starter-section")).toBeVisible();
+  await expect(page.getByTestId("create-bid-context-note")).toBeVisible();
+  await expect(page.getByTestId("create-bid-action")).toBeVisible();
+
+  await page.getByTestId("create-bid-action").click();
+  await expect(page).toHaveURL("/app/agreements/901/wizard?step=1");
 });
 
 test("contractor bids workspace shows a friendly empty state", async ({ page }) => {
