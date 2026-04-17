@@ -149,6 +149,90 @@ class AgreementOutcomeMilestoneSnapshot(models.Model):
         return f"OutcomeMilestoneSnapshot(snapshot={self.snapshot_id}, order={self.sort_order})"
 
 
+class AgreementProposalSnapshot(models.Model):
+    """
+    Append-only proposal snapshot used to learn from contractor-written bids.
+
+    Draft snapshots are captured when an agreement is created. Final snapshots
+    are captured when an agreement reaches a successful final outcome. Future
+    proposal drafting can read from the successful final snapshots and fall back
+    to deterministic generation when there is not enough data.
+    """
+
+    class Stage(models.TextChoices):
+        DRAFT_CREATED = "draft_created", "Draft Created"
+        FINALIZED = "finalized", "Finalized"
+
+    agreement = models.ForeignKey(
+        "projects.Agreement",
+        on_delete=models.CASCADE,
+        related_name="proposal_snapshots",
+    )
+    contractor = models.ForeignKey(
+        "projects.Contractor",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="proposal_snapshots",
+    )
+    source_lead = models.ForeignKey(
+        "projects.PublicContractorLead",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="proposal_snapshots",
+    )
+    template = models.ForeignKey(
+        "projects.ProjectTemplate",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="proposal_snapshots",
+    )
+
+    stage = models.CharField(max_length=24, choices=Stage.choices, db_index=True)
+    is_successful = models.BooleanField(default=False, db_index=True)
+    success_reason = models.CharField(max_length=255, blank=True, default="")
+
+    project_title = models.CharField(max_length=255, blank=True, default="")
+    project_type = models.CharField(max_length=120, blank=True, default="", db_index=True)
+    project_subtype = models.CharField(max_length=120, blank=True, default="")
+    proposal_text = models.TextField(blank=True, default="")
+
+    budget_text = models.CharField(max_length=255, blank=True, default="")
+    timeline_text = models.CharField(max_length=255, blank=True, default="")
+    measurement_handling = models.CharField(max_length=80, blank=True, default="")
+    photo_count = models.PositiveIntegerField(default=0)
+    request_path_label = models.CharField(max_length=120, blank=True, default="")
+
+    request_signals = models.JSONField(default=list, blank=True)
+    clarification_summary = models.JSONField(default=list, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    agreement_status = models.CharField(max_length=32, blank=True, default="", db_index=True)
+
+    snapshot_created_at = models.DateTimeField(auto_now_add=True)
+    snapshot_updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-snapshot_created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agreement", "stage"],
+                name="uniq_agreement_proposal_snapshot_stage",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["stage", "is_successful", "project_type", "project_subtype"]),
+            models.Index(fields=["project_type", "project_subtype", "is_successful"]),
+            models.Index(fields=["contractor", "stage"]),
+            models.Index(fields=["source_lead"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"ProposalSnapshot(agreement={self.agreement_id}, stage={self.stage}, success={self.is_successful})"
+
+
 class ProjectBenchmarkAggregate(models.Model):
     class Scope(models.TextChoices):
         GLOBAL = "global", "Global"

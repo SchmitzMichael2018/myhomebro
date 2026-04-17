@@ -955,7 +955,14 @@ def on_agreement_completed(agreement: Agreement | int) -> AgreementOutcomeSnapsh
     Canonical learning hook for completed agreements.
     Safe to call repeatedly; snapshot updates in place and aggregates refresh.
     """
-    return capture_agreement_outcome_snapshot(agreement)
+    snapshot = capture_agreement_outcome_snapshot(agreement)
+    try:
+        from projects.services.proposal_learning import capture_agreement_proposal_snapshot
+
+        capture_agreement_proposal_snapshot(agreement, stage="finalized")
+    except Exception:
+        pass
+    return snapshot
 
 
 def backfill_completed_agreement_snapshots(*, agreement_ids: list[int] | None = None) -> int:
@@ -978,6 +985,6 @@ def backfill_completed_agreement_snapshots(*, agreement_ids: list[int] | None = 
 
     count = 0
     for agreement in queryset.iterator():
-        capture_agreement_outcome_snapshot(agreement)
+        on_agreement_completed(agreement)
         count += 1
     return count

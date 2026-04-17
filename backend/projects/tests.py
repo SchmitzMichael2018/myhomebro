@@ -31,6 +31,7 @@ from projects.models import (
     AgreementProjectClass,
     AgreementOutcomeMilestoneSnapshot,
     AgreementOutcomeSnapshot,
+    AgreementProposalSnapshot,
     Contractor,
     ContractorActivityEvent,
     ContractorActivationEvent,
@@ -83,6 +84,11 @@ from projects.services.project_learning import (
     rebuild_milestone_benchmarks,
     rebuild_project_benchmarks,
 )
+from projects.services.proposal_learning import (
+    build_proposal_draft,
+    capture_agreement_proposal_snapshot,
+)
+from projects.services.agreements.create import create_agreement_from_validated
 from projects.services.agreement_fee_allocation import refresh_agreement_fee_allocations
 from projects.services.benchmark_resolution import resolve_seed_benchmark_defaults
 from projects.services.compliance import (
@@ -8667,6 +8673,43 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertEqual(snapshot.change_order_count, 0)
         self.assertEqual(snapshot.milestones.count(), 2)
 
+        proposal_snapshot = AgreementProposalSnapshot.objects.get(
+            agreement=agreement,
+            stage=AgreementProposalSnapshot.Stage.FINALIZED,
+        )
+        self.assertTrue(proposal_snapshot.is_successful)
+        self.assertEqual(proposal_snapshot.project_type, "Remodel")
+        self.assertIn("Kitchen Remodel", proposal_snapshot.project_title)
+
+    def test_proposal_snapshot_is_captured_when_agreement_is_created(self):
+        payload = {
+            "project": self.project,
+            "contractor": self.contractor,
+            "homeowner": self.homeowner,
+            "project_title": "Kitchen Remodel",
+            "description": "Replace the cabinets, countertops, and backsplash.",
+            "project_class": "residential",
+            "project_type": "Remodel",
+            "project_subtype": "Kitchen Remodel",
+            "payment_mode": "direct",
+            "total_cost": Decimal("12000.00"),
+            "project_address_city": "Austin",
+            "project_address_state": "TX",
+            "project_postal_code": "78701",
+        }
+
+        with self.captureOnCommitCallbacks(execute=True):
+            agreement = create_agreement_from_validated(payload)
+
+        snapshot = AgreementProposalSnapshot.objects.get(
+            agreement=agreement,
+            stage=AgreementProposalSnapshot.Stage.DRAFT_CREATED,
+        )
+        self.assertFalse(snapshot.is_successful)
+        self.assertIn("Replace the cabinets", snapshot.proposal_text)
+        self.assertEqual(snapshot.project_type, "Remodel")
+        self.assertEqual(snapshot.project_subtype, "Kitchen Remodel")
+
     def test_snapshot_capture_is_idempotent_for_repeated_completion(self):
         agreement = self._create_completed_agreement(status=ProjectStatus.COMPLETED)
 
@@ -8680,6 +8723,50 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertEqual(second_snapshot.id, first_snapshot.id)
         self.assertEqual(second_snapshot.snapshot_created_at, snapshot_created_at)
         self.assertEqual(second_snapshot.final_paid_amount, Decimal("12000.00"))
+
+    def test_successful_proposals_seed_learning_templates_and_fallback_still_works(self):
+        first = self._create_completed_agreement(status=ProjectStatus.COMPLETED)
+        second = self._create_completed_agreement(
+            status=ProjectStatus.COMPLETED,
+            total_cost=Decimal("14000.00"),
+            estimated_amounts=[Decimal("3500.00"), Decimal("7000.00")],
+        )
+
+        capture_agreement_outcome_snapshot(first)
+        capture_agreement_outcome_snapshot(second)
+        capture_agreement_proposal_snapshot(first, stage=AgreementProposalSnapshot.Stage.FINALIZED)
+        capture_agreement_proposal_snapshot(second, stage=AgreementProposalSnapshot.Stage.FINALIZED)
+
+        learned_draft = build_proposal_draft(
+            contractor=self.contractor,
+            project_title="Kitchen Remodel",
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            description="Replace the cabinets, countertops, and backsplash.",
+            budget_text="$12,000 - $14,000",
+            timeline_text="About 3 weeks",
+            measurement_handling="site_visit_required",
+            photo_count=2,
+            request_path_label="Multi-Quote Request",
+            request_signals=["Guided Intake", "Photos", "Budget Provided"],
+            clarification_summary=[
+                {"key": "measurements", "label": "Measurements", "value": "Site visit required"}
+            ],
+        )
+
+        self.assertTrue(learned_draft["learning"]["based_on_successful_projects"])
+        self.assertGreaterEqual(learned_draft["learning"]["sample_size"], 2)
+        self.assertIn("similar successful projects", learned_draft["text"])
+
+        fallback_draft = build_proposal_draft(
+            contractor=self.contractor,
+            project_title="Patio Repair",
+            project_type="Repair",
+            project_subtype="General Repair",
+            description="Fix cracked concrete and refresh the patio surface.",
+        )
+        self.assertFalse(fallback_draft["learning"]["based_on_successful_projects"])
+        self.assertIn("Thanks for sharing the details", fallback_draft["text"])
 
     def test_non_completed_or_cancelled_agreements_are_excluded_from_benchmarks(self):
         agreement = self._create_completed_agreement(status=ProjectStatus.CANCELLED)

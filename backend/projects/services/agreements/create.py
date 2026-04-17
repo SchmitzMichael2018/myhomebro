@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from django.db import transaction
+
 from projects.models import Agreement
 
 
@@ -134,5 +136,12 @@ def create_agreement_from_validated(validated: Dict[str, Any]) -> Agreement:
     ag.save()
 
     _hydrate_project_title_from_payload(ag, original)
+
+    try:
+        from projects.services.proposal_learning import capture_agreement_proposal_snapshot
+
+        transaction.on_commit(lambda: capture_agreement_proposal_snapshot(int(ag.id), stage="draft_created"))
+    except Exception:
+        pass
 
     return ag

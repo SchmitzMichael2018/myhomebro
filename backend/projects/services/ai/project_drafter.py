@@ -12,6 +12,7 @@ from django.db.models import Q
 
 from projects.models import Agreement, Contractor
 from projects.models_templates import ProjectTemplate
+from projects.services.proposal_learning import build_proposal_draft
 
 
 PROJECT_TYPE_HINTS: dict[str, list[str]] = {
@@ -788,6 +789,15 @@ def draft_project_structure(
         description=description,
     )
 
+    proposal_draft = build_proposal_draft(
+        agreement=agreement,
+        contractor=contractor,
+        project_title=project_title,
+        project_type=project_type,
+        project_subtype=project_subtype,
+        description=description,
+    )
+
     openai_data = _openai_refine_scope(
         project_title=project_title,
         description=description,
@@ -877,6 +887,18 @@ def draft_project_structure(
         "template_reason": template_reason,
         "milestones": milestones,
         "clarifications": clarifications,
+        "proposal_draft": proposal_draft,
+        "proposal_learning": proposal_draft.get("learning") or {
+            "template_name": "",
+            "sample_size": 0,
+            "learned_opening": "",
+            "learned_close": "",
+            "highlights": [],
+            "based_on_successful_projects": False,
+        },
+        "used_successful_learning": bool(
+            (proposal_draft.get("learning") or {}).get("based_on_successful_projects")
+        ),
         "pricing_summary": {
             "estimated_total_low": float(pricing_summary["estimated_total_low"]),
             "estimated_total_high": float(pricing_summary["estimated_total_high"]),

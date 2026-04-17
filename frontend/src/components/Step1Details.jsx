@@ -1135,6 +1135,7 @@ export default function Step1Details({
   const [aiBusy, setAiBusy] = useState(false);
   const [aiErr, setAiErr] = useState("");
   const [aiPreview, setAiPreview] = useState("");
+  const [proposalLearningNote, setProposalLearningNote] = useState("");
 
   const [aiCredits, setAiCredits] = useState({
     loading: true,
@@ -1366,39 +1367,100 @@ export default function Step1Details({
   async function handleGenerateLeadProposalDraft() {
     if (locked || !hasLeadProposalContext) return;
 
-    const nextDraft = safeTrim(leadProposalDraft?.text);
-    if (!nextDraft) return;
+    setProposalLearningNote("");
 
     const currentDraft = safeTrim(dLocal.description);
-    if (currentDraft && currentDraft !== nextDraft) {
-      const confirmed = window.confirm(
-        "Replace the current proposal draft with a draft based on this lead?"
-      );
-      if (!confirmed) return;
-    }
-
-    const nextTitle = safeTrim(leadProposalDraft?.title) || safeTrim(dLocal.project_title);
-    setDLocal((s) => ({
-      ...s,
-      project_title: nextTitle || s.project_title || "",
-      description: nextDraft,
-    }));
-
-    if (!isNewAgreement) {
-      writeCache({
-        ...(nextTitle ? { project_title: nextTitle } : {}),
-        description: nextDraft,
+    try {
+      const { data } = await api.post("/projects/agreements/ai/draft/", {
+        agreement_id: agreementId || null,
+        project_title: dLocal.project_title || "",
+        description: dLocal.description || "",
+        project_type: dLocal.project_type || "",
+        project_subtype: dLocal.project_subtype || "",
       });
-    }
 
-    if (agreementId) {
-      await patchAgreement(
-        {
-          ...(nextTitle ? { project_title: nextTitle, title: nextTitle } : {}),
+      const draftPayload = data?.proposal_draft || {};
+      const nextDraft = safeTrim(draftPayload.text || data?.normalized_description || "");
+      if (!nextDraft) {
+        throw new Error("Could not build a proposal draft.");
+      }
+
+      if (currentDraft && currentDraft !== nextDraft) {
+        const confirmed = window.confirm(
+          "Replace the current proposal draft with a draft based on this lead?"
+        );
+        if (!confirmed) return;
+      }
+
+      const nextTitle = safeTrim(draftPayload.title || data?.project_title || dLocal.project_title);
+      setDLocal((s) => ({
+        ...s,
+        project_title: nextTitle || s.project_title || "",
+        description: nextDraft,
+      }));
+
+      if (!isNewAgreement) {
+        writeCache({
+          ...(nextTitle ? { project_title: nextTitle } : {}),
           description: nextDraft,
-        },
-        { silent: true }
-      );
+        });
+      }
+
+      if (agreementId) {
+        await patchAgreement(
+          {
+            ...(nextTitle ? { project_title: nextTitle, title: nextTitle } : {}),
+            description: nextDraft,
+          },
+          { silent: true }
+        );
+      }
+
+      if (data?.used_successful_learning) {
+        const templateName = safeTrim(data?.proposal_learning?.template_name);
+        const sampleSize = Number(data?.proposal_learning?.sample_size || 0);
+        setProposalLearningNote(
+          templateName
+            ? `Based on similar successful projects${sampleSize ? ` (${sampleSize})` : ""}.`
+            : "Based on similar successful projects."
+        );
+      }
+    } catch (error) {
+      const fallbackDraft = safeTrim(leadProposalDraft?.text);
+      if (!fallbackDraft) {
+        throw error;
+      }
+
+      if (currentDraft && currentDraft !== fallbackDraft) {
+        const confirmed = window.confirm(
+          "Replace the current proposal draft with a draft based on this lead?"
+        );
+        if (!confirmed) return;
+      }
+
+      const nextTitle = safeTrim(leadProposalDraft?.title) || safeTrim(dLocal.project_title);
+      setDLocal((s) => ({
+        ...s,
+        project_title: nextTitle || s.project_title || "",
+        description: fallbackDraft,
+      }));
+
+      if (!isNewAgreement) {
+        writeCache({
+          ...(nextTitle ? { project_title: nextTitle } : {}),
+          description: fallbackDraft,
+        });
+      }
+
+      if (agreementId) {
+        await patchAgreement(
+          {
+            ...(nextTitle ? { project_title: nextTitle, title: nextTitle } : {}),
+            description: fallbackDraft,
+          },
+          { silent: true }
+        );
+      }
     }
   }
 
@@ -3604,10 +3666,18 @@ export default function Step1Details({
                         disabled={locked}
                         data-testid="generate-draft-button"
                         className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                        >
+                      >
                         Generate Draft
                       </button>
                     </div>
+                    {proposalLearningNote ? (
+                      <div
+                        data-testid="proposal-learning-note"
+                        className="mt-3 inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800"
+                      >
+                        {proposalLearningNote}
+                      </div>
+                    ) : null}
                     {leadDetailFallbackLoading && !assistantLeadContext?.lead_id ? (
                       <div className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
                         Loading project details from the lead review...

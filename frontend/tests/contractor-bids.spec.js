@@ -809,6 +809,35 @@ test("contractor bids workspace lead helpers support create bid handoff", async 
     await route.fallback();
   });
 
+  await page.route("**/api/projects/agreements/ai/draft/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        detail: "OK",
+        agreement_id: 901,
+        project_title: "Bathroom Remodel",
+        project_type: "Remodel",
+        project_subtype: "Primary Bath",
+        normalized_description:
+          "Thanks for sharing the details for Bathroom Remodel. I reviewed similar successful projects and put together a starting proposal draft you can edit before sending.",
+        proposal_draft: {
+          title: "Bathroom Remodel",
+          text: "Thanks for sharing the details for Bathroom Remodel.\nI reviewed similar successful projects and put together a starting proposal draft you can edit before sending.\n\nScope understanding\n- Scope focus: Remodel - Primary Bath.\n- Project summary: Update the primary bath with new finishes and fixtures.\n- 2 photos attached, which helps confirm the scope.\n- Request type: Multi-Quote Request.\n- Helpful signals: Guided Intake, Photos, Budget Provided, Timeline Provided.\n- Clarifications already captured: Measurements.\n\nImportant confirmation points\n- Measurements may need a site visit before final pricing.\n- Budget guidance was shared: $18,000 - $24,000.\n- Timing guidance: Within the next month.\n- Similar successful bids often confirmed verify measurements, review photos, confirm materials up front.\n\nClose\nIf this looks right, I’m happy to review the next steps and refine the bid with you.",
+        },
+        proposal_learning: {
+          template_name: "Bathroom Remodel successful template",
+          sample_size: 2,
+          learned_opening: "Thanks for sharing the details for Bathroom Remodel.",
+          learned_close: "If this looks right, I’m happy to review the next steps and refine the bid with you.",
+          highlights: ["verify measurements", "review photos", "confirm materials"],
+          based_on_successful_projects: true,
+        },
+        used_successful_learning: true,
+      }),
+    });
+  });
+
   await page.route("**/api/projects/contractor/public-leads/6/", async (route) => {
     await route.fulfill({
       status: 200,
@@ -888,6 +917,7 @@ test("contractor bids workspace lead helpers support create bid handoff", async 
   await page.getByTestId("proposal-draft-textarea").fill("Custom contractor note");
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByTestId("generate-draft-button").click();
+  await expect(page.getByTestId("proposal-learning-note")).toContainText("Based on similar successful projects");
   await expect(page.getByTestId("proposal-draft-textarea")).toHaveValue(
     /Thanks for sharing the details for Bathroom Remodel/
   );
