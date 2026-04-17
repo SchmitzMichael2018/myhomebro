@@ -44,7 +44,7 @@ const NAV_HINTS = {
   "/app/milestones": "Track active work and what's ready to invoice",
   "/app/subcontractors": "Manage your team, subcontractors, and assignments",
   "/app/public-presence": "Showcase your work and build trust with customers",
-  "/app/bids": "Track incoming bids before they turn into agreements",
+  "/app/bids": "Review new leads and active bids in one place",
   "/app/customer-records": "See requests, bids, agreements, and payments in one place",
   "/app/assignments": "Track work assigned to you and your team",
   "/app/team-schedule": "View upcoming work, deadlines, and project timelines",
@@ -347,7 +347,7 @@ export default function Sidebar({ variant = "desktop" }) {
         <Item to={`${APP_BASE}/business`} label="Business Dashboard" icon={Gauge} />
         <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} />
         <Item to={`${APP_BASE}/agreements`} label="Agreements" icon={FileSignature} />
-        <Item to={`${APP_BASE}/bids`} label="Bids" icon={ClipboardList} />
+        <Item to={`${APP_BASE}/bids`} label="Leads & Bids" icon={ClipboardList} />
         <Item to={`${APP_BASE}/templates`} label="Templates" icon={ClipboardList} />
         <Item to={`${APP_BASE}/milestones`} label="Milestones" icon={SquareKanban} />
         <Item to={`${APP_BASE}/subcontractors`} label="Subcontractors" icon={Wrench} />

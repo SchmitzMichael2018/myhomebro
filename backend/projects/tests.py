@@ -71,7 +71,7 @@ from projects.models import AgreementWarranty
 from projects.models_attachments import AgreementAttachment
 from projects.models_templates import ProjectTemplate, SeedBenchmarkProfile
 from projects.models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent, SMSConsentStatus
-from projects.models_project_intake import ProjectIntake
+from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from projects.models_subcontractor import (
     SubcontractorInvitation,
     SubcontractorInvitationStatus,
@@ -2032,7 +2032,19 @@ class ContractorBidsWorkspaceTests(TestCase):
             accomplishment_text="Tenant buildout for a retail storefront",
             ai_project_type="Commercial",
             ai_project_subtype="Tenant Improvement",
+            ai_project_title="Retail Storefront Buildout",
             ai_description="Commercial tenant improvement with multiple phases.",
+            ai_project_timeline_days=30,
+            ai_project_budget=Decimal("27500.00"),
+            measurement_handling="site_visit_required",
+            ai_clarification_questions=[
+                {"key": "materials", "label": "Materials", "question": "Who supplies the materials?"},
+                {"key": "start_timing", "label": "Timing", "question": "When should the work start?"},
+            ],
+            ai_clarification_answers={
+                "materials": "Customer",
+                "start_timing": "Next month",
+            },
             ai_milestones=[
                 {"title": "Demo Phase"},
                 {"title": "Buildout Phase"},
@@ -2044,6 +2056,74 @@ class ContractorBidsWorkspaceTests(TestCase):
                 ],
                 "estimate_preview": {"suggested_total_price": "27500.00"},
             },
+        )
+        ProjectIntakeClarificationPhoto.objects.create(
+            project_intake=self.commercial_under_review,
+            image=SimpleUploadedFile("photo.jpg", b"filecontent", content_type="image/jpeg"),
+            original_name="front-room.jpg",
+            caption="Front room view",
+        )
+
+        self.new_public_lead = PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            full_name="New Lead Customer",
+            email="newlead@example.com",
+            project_type="Bathroom Remodel",
+            project_description="Replace shower tile and vanity.",
+            city="Austin",
+            state="TX",
+            status=PublicContractorLead.STATUS_NEW,
+            accepted_at=None,
+        )
+        self.new_public_intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            public_lead=self.new_public_lead,
+            initiated_by="homeowner",
+            status="submitted",
+            lead_source="landing_page",
+            share_token="bids-new-public-token",
+            customer_name="New Lead Customer",
+            customer_email="newlead@example.com",
+            project_city="Austin",
+            project_state="TX",
+            accomplishment_text="Replace shower tile and vanity.",
+            ai_project_title="Bathroom Remodel",
+            ai_project_type="Bathroom Remodel",
+            ai_project_subtype="Primary Bath",
+            ai_description="Replace shower tile and vanity.",
+            ai_project_timeline_days=21,
+            ai_project_budget=Decimal("18500.00"),
+            measurement_handling="provided",
+            post_submit_flow="multi_contractor",
+            ai_clarification_questions=[
+                {"key": "materials", "label": "Materials", "question": "Who will supply the materials?"},
+                {"key": "layout", "label": "Layout", "question": "Any layout changes?"},
+            ],
+            ai_clarification_answers={
+                "materials": "Contractor",
+                "layout": "No layout changes",
+            },
+            ai_milestones=[
+                {"title": "Demolition"},
+                {"title": "Tile and Fixtures"},
+            ],
+            ai_analysis_payload={
+                "milestones": [
+                    {"title": "Demolition"},
+                    {"title": "Tile and Fixtures"},
+                ],
+                "estimate_preview": {"suggested_total_price": "18500.00"},
+                "suggested_title": "Bathroom Remodel",
+                "suggested_description": "Replace shower tile and vanity.",
+            },
+        )
+        ProjectIntakeClarificationPhoto.objects.create(
+            project_intake=self.new_public_intake,
+            image=SimpleUploadedFile("bathroom.jpg", b"filecontent", content_type="image/jpeg"),
+            original_name="bathroom.jpg",
+            caption="Shower area",
         )
 
         self.residential_awarded_lead = PublicContractorLead.objects.create(
@@ -2119,15 +2199,20 @@ class ContractorBidsWorkspaceTests(TestCase):
         payload = response.json()
         rows = payload["results"]
 
-        self.assertEqual(len(rows), 6)
+        self.assertEqual(len(rows), 7)
         summary = payload["summary"]
-        self.assertEqual(summary["open_bids"], 1)
+        self.assertEqual(summary["open_bids"], 2)
         self.assertEqual(summary["under_review_bids"], 1)
         self.assertEqual(summary["awarded_bids"], 2)
         self.assertEqual(summary["declined_expired_bids"], 2)
-        self.assertEqual(summary["residential_count"], 2)
+        self.assertEqual(summary["residential_count"], 3)
         self.assertEqual(summary["commercial_count"], 4)
 
+        new_public_lead = next(
+            row
+            for row in rows
+            if row["source_kind"] == "lead" and row["source_id"] == self.new_public_lead.id
+        )
         residential_awarded = next(
             row
             for row in rows
@@ -2149,23 +2234,39 @@ class ContractorBidsWorkspaceTests(TestCase):
             if row["source_kind"] == "lead" and row["source_id"] == self.commercial_not_selected_lead.id
         )
 
+        self.assertEqual(new_public_lead["workspace_stage"], "new_lead")
+        self.assertEqual(new_public_lead["workspace_stage_label"], "New Lead")
+        self.assertEqual(new_public_lead["request_path_label"], "Multi-quote request")
+        self.assertEqual(new_public_lead["location"], "Austin, TX")
+        self.assertEqual(new_public_lead["request_snapshot"]["photo_count"], 1)
+        self.assertEqual(new_public_lead["request_snapshot"]["clarification_count"], 2)
+        self.assertIn("Guided Intake", new_public_lead["request_signals"])
+        self.assertIn("Photos", new_public_lead["request_signals"])
+        self.assertIn("Multi-Quote Request", new_public_lead["request_signals"])
+
         self.assertEqual(residential_awarded["status"], "awarded")
         self.assertEqual(residential_awarded["next_action"]["key"], "convert_to_agreement")
         self.assertEqual(residential_awarded["project_class"], "residential")
         self.assertEqual(residential_awarded["bid_amount_label"], "$12,000.00")
+        self.assertEqual(residential_awarded["workspace_stage"], "active_bid")
 
         self.assertEqual(commercial_under_review["status"], "under_review")
         self.assertEqual(commercial_under_review["project_class"], "commercial")
         self.assertEqual(commercial_under_review["bid_amount_label"], "$27,500.00")
         self.assertEqual(commercial_under_review["milestone_preview"], ["Demo Phase", "Buildout Phase"])
+        self.assertEqual(commercial_under_review["request_snapshot"]["photo_count"], 1)
+        self.assertEqual(commercial_under_review["request_snapshot"]["measurement_handling"], "Site visit required")
+        self.assertIn("Budget Provided", commercial_under_review["request_signals"])
 
         self.assertEqual(linked_awarded["status"], "awarded")
         self.assertEqual(linked_awarded["next_action"]["key"], "open_agreement")
         self.assertEqual(linked_awarded["linked_agreement_id"], self.linked_agreement.id)
         self.assertEqual(linked_awarded["project_class"], "commercial")
+        self.assertEqual(linked_awarded["workspace_stage"], "active_bid")
         self.assertEqual(not_selected["status"], "expired")
         self.assertEqual(not_selected["status_label"], "Not Selected")
         self.assertEqual(not_selected["status_note"], "Another contractor was selected for this project.")
+        self.assertEqual(not_selected["workspace_stage"], "closed")
 
         other_client = APIClient()
         other_client.force_authenticate(user=self.other_plain_user)
