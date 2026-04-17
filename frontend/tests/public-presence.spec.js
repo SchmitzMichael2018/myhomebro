@@ -686,6 +686,7 @@ test('landing-source intake and public-profile intake land in the same contracto
   await expect(page.getByTestId('public-intake-generate-structure')).toBeEnabled();
   await page.getByTestId('public-intake-generate-structure').click();
   await expect(page.getByTestId('public-intake-project-summary')).toBeVisible();
+  await expect(page.getByTestId('public-intake-clarification-photo-section')).toBeVisible();
   await page.getByTestId('public-intake-clarification-next').click();
   await expect(page.getByRole('heading', { name: 'AI Structured Output' })).toBeVisible();
   await page.getByRole('button', { name: 'Continue' }).first().click();

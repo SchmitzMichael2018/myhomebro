@@ -888,13 +888,21 @@ export default function PublicIntakeWizard() {
                 )}
               </div>
 
-              <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-gray-900">Optional photos</div>
-                    <div className="text-xs text-gray-500">Add a reference photo or two to help shape scope and agreement details.</div>
+              <div
+                className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-gradient-to-b from-white to-slate-50 p-5 shadow-sm"
+                data-testid="public-intake-clarification-photo-section"
+              >
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-1">
+                    <div className="text-sm font-semibold text-gray-900">Add Photos (Optional)</div>
+                    <div className="text-xs text-slate-500">
+                      Photos can help your contractor understand the project faster.
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      You can continue without photos if you prefer.
+                    </div>
                   </div>
-                  <label className="cursor-pointer rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                  <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700">
                     {clarificationUploading ? "Uploading..." : "Upload photo(s)"}
                     <input
                       type="file"
@@ -907,21 +915,45 @@ export default function PublicIntakeWizard() {
                     />
                   </label>
                 </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {(form.clarification_photos || []).length ? (
-                    form.clarification_photos.map((photo) => (
-                      <div key={photo.id || photo.image_url} className="overflow-hidden rounded-lg border bg-slate-50">
-                        {photo.image_url ? (
-                          <img src={photo.image_url} alt={photo.caption || photo.original_name || "Project photo"} className="h-32 w-full object-cover" />
-                        ) : null}
-                        <div className="px-3 py-2 text-xs text-slate-600">
-                          <div className="font-semibold text-slate-900">{photo.caption || photo.original_name || "Photo"}</div>
+                <div className="mt-4 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
+                  <div className="rounded-xl bg-white/80 px-3 py-2">Wide shot of the room or area</div>
+                  <div className="rounded-xl bg-white/80 px-3 py-2">Close-up of the issue</div>
+                  <div className="rounded-xl bg-white/80 px-3 py-2">Inspiration photos</div>
+                  <div className="rounded-xl bg-white/80 px-3 py-2">Measurements or sketches if available</div>
+                </div>
+                <div className="mt-5" data-testid="public-intake-clarification-uploaded-files">
+                  <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Uploaded photos</div>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {(form.clarification_photos || []).length ? (
+                      form.clarification_photos.map((photo) => (
+                        <div key={photo.id || photo.image_url} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                          <div className="bg-slate-100">
+                            {photo.image_url ? (
+                              <img
+                                src={photo.image_url}
+                                alt={photo.caption || photo.original_name || "Project photo"}
+                                className="h-32 w-full object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-32 items-center justify-center text-xs text-slate-500">
+                                Preview unavailable
+                              </div>
+                            )}
+                          </div>
+                          <div className="px-3 py-2">
+                            <div className="text-sm font-semibold text-slate-900">
+                              {photo.caption || photo.original_name || "Photo"}
+                            </div>
+                            <div className="mt-1 text-xs text-slate-500">Uploaded and saved</div>
+                          </div>
                         </div>
+                      ))
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-slate-200 bg-white/70 px-4 py-5 text-sm text-slate-500">
+                        No photos uploaded yet.
                       </div>
-                    ))
-                  ) : (
-                    <div className="text-sm text-slate-500">No photos uploaded yet.</div>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
