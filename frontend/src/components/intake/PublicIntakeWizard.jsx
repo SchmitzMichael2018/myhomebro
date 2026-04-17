@@ -100,7 +100,6 @@ export default function PublicIntakeWizard() {
   const [currentStep, setCurrentStep] = useState(0);
   const [contractorName, setContractorName] = useState("Your contractor");
   const [statusText, setStatusText] = useState("");
-  const [submittedAtLeastOnce, setSubmittedAtLeastOnce] = useState(false);
   const [branchMode, setBranchMode] = useState("single_contractor");
   const [branchSubmitting, setBranchSubmitting] = useState(false);
   const [branchResult, setBranchResult] = useState(null);
@@ -372,7 +371,6 @@ export default function PublicIntakeWizard() {
 
       const { data } = await api.patch("/projects/public-intake/", payload);
       setStatusText(data?.status || "submitted");
-      setSubmittedAtLeastOnce(true);
       hydrateFromResponse(data);
       if (showToast) toast.success("Your intake has been saved.");
       return data;
@@ -563,31 +561,31 @@ export default function PublicIntakeWizard() {
   const renderStep = () => {
     if (currentStep === 0) {
       return (
-        <div className="rounded-xl border bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900">Project Idea</h2>
-          <p className="mt-1 text-sm text-gray-600">
-            Describe the project in plain language. We&apos;ll shape it into a structured plan next.
+        <div className="rounded-3xl border border-white/70 bg-white/95 p-8 shadow-2xl shadow-black/10 backdrop-blur">
+          <h2 className="text-2xl font-semibold tracking-tight text-gray-900">Project Idea</h2>
+          <p className="mt-2 text-base text-gray-600">
+            Tell us what you&apos;d like to get done. We&apos;ll help organize it into a clear project plan.
           </p>
           <textarea
             data-testid="public-intake-accomplishment-text"
-            className="mt-4 w-full rounded border px-3 py-2 text-sm"
-            rows={7}
+            className="mt-5 w-full rounded-2xl border border-slate-200 px-4 py-4 text-base shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+            rows={10}
             value={form.accomplishment_text}
             onChange={(e) => setField("accomplishment_text", e.target.value)}
-            placeholder="Example: We have a roof leak over the garage and want the damaged area repaired and flashing inspected."
+            placeholder="Describe what you want to get done. For example: replace kitchen cabinets, fix a roof leak, or remodel a bathroom."
           />
-          <div className="mt-5 flex items-center justify-between gap-3">
-            <div className="text-sm text-gray-600">
-              Keep it simple. AI will help organize the scope after this step.
-            </div>
+          <div className="mt-3 text-sm text-slate-500">
+            You don&apos;t need to be perfect - just describe it in your own words.
+          </div>
+          <div className="mt-6 flex items-center justify-end gap-3">
             <button
               type="button"
               data-testid="public-intake-generate-structure"
               onClick={handleGenerateStructure}
               disabled={saving || !canGenerateStructure}
-              className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+              className="rounded-full bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700 disabled:opacity-60"
             >
-              {saving ? "Generating..." : "Generate project structure"}
+              {saving ? "Generating..." : "Generate My Project Plan"}
             </button>
           </div>
         </div>
@@ -1148,16 +1146,17 @@ export default function PublicIntakeWizard() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <button type="button" onClick={handleBack} disabled={currentStep === 0 || saving || branchSubmitting} className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60">Back</button>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="text-xs text-gray-500">{submittedAtLeastOnce ? "Progress saved." : "Nothing has been submitted yet."}</div>
+        <div className="flex flex-wrap items-center gap-3">
             {currentStep === 5 ? (
               <button type="button" onClick={handleBranchSubmit} disabled={branchSubmitting || saving} data-testid="public-intake-branch-submit" className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{branchSubmitting ? "Saving..." : "Save next step"}</button>
             ) : currentStep === 6 ? (
               <button data-testid="public-intake-submit-button" type="button" onClick={handleConfirm} disabled={saving || branchSubmitting || !canFinish} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{saving ? "Submitting..." : "Submit Intake"}</button>
             ) : currentStep === 1 ? (
               <button type="button" onClick={() => handleClarificationAdvance()} disabled={saving || branchSubmitting} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{clarificationQuestions.length && currentQuestionIndex < clarificationQuestions.length - 1 ? "Next" : "Continue"}</button>
+            ) : currentStep === 0 ? (
+              <div className="text-xs text-gray-500">Use the button above to begin shaping your plan.</div>
             ) : (
-              <button type="button" onClick={handleNext} disabled={saving || branchSubmitting || (currentStep === 0 && !canGenerateStructure)} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{currentStep === 0 ? (saving ? "Generating..." : "Generate project structure") : "Continue"}</button>
+              <button type="button" onClick={handleNext} disabled={saving || branchSubmitting || (currentStep === 0 && !canGenerateStructure)} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">Continue</button>
             )}
           </div>
         </div>
