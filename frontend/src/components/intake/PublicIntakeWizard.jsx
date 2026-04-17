@@ -37,8 +37,77 @@ function moneyValue(value) {
   return String(value);
 }
 
+function toTestIdSegment(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "row";
+}
+
 function emptyClarificationAnswers() {
   return {};
+}
+
+function summarizeTextValue(value, maxLength = 120) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 1)).trim()}…`;
+}
+
+function getFriendlyMeasurementLabel(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  const map = {
+    provided: "Provided",
+    site_visit_required: "Site visit required",
+    not_sure: "Not sure",
+  };
+  return map[normalized] || summarizeTextValue(normalized, 60);
+}
+
+function getFriendlyTimelineLabel(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  const cleaned = normalized.replace(/[^\d.]/g, "");
+  if (!cleaned) return summarizeTextValue(normalized, 60);
+  const days = Number(cleaned);
+  if (!Number.isFinite(days)) return summarizeTextValue(normalized, 60);
+  const rounded = Math.max(0, Math.round(days));
+  return `${rounded} day${rounded === 1 ? "" : "s"}`;
+}
+
+function getFriendlyBudgetLabel(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized) return "";
+  const cleaned = normalized.replace(/[^0-9.]/g, "");
+  if (!cleaned) return summarizeTextValue(normalized, 60);
+  const amount = Number(cleaned);
+  if (!Number.isFinite(amount)) return summarizeTextValue(normalized, 60);
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+function getFriendlyClarificationLabel(question) {
+  const text = [question?.label, question?.question, question?.key].filter(Boolean).join(" ").toLowerCase();
+  if (/(material|materials|suppl|who provides)/.test(text)) return "Materials";
+  if (/(measure|measurement|dimension|size)/.test(text)) return "Measurements";
+  if (/(timeline|timeframe|schedule|when|start)/.test(text)) return "Timing";
+  if (/(layout|wall|floor plan|space|room|area)/.test(text)) return "Layout";
+  if (/(scope|detail|depth|extent)/.test(text)) return "Scope";
+  return summarizeTextValue(question?.label || question?.question || question?.key || "", 60);
+}
+
+function getMainGoalSummary(title, description) {
+  const normalizedTitle = summarizeTextValue(title, 120);
+  if (normalizedTitle) return normalizedTitle;
+  const normalizedDescription = summarizeTextValue(description, 120);
+  if (!normalizedDescription) return "";
+  const firstSentence = normalizedDescription.split(/[.!?]\s+/)[0] || normalizedDescription;
+  return summarizeTextValue(firstSentence, 120);
 }
 
 const blankForm = {
@@ -558,6 +627,50 @@ export default function PublicIntakeWizard() {
   ]
     .filter(Boolean)
     .join("\n");
+  const projectSummaryRows = useMemo(() => {
+    const rows = [];
+    const seenKeys = new Set();
+    const seenLabels = new Set();
+    const addRow = (key, label, value) => {
+      const normalized = summarizeTextValue(value, 140);
+      if (!normalized) return;
+      const rowKey = toTestIdSegment(key || label);
+      const rowLabel = summarizeTextValue(label, 60);
+      if (seenKeys.has(rowKey) || seenLabels.has(rowLabel)) return;
+      seenKeys.add(rowKey);
+      seenLabels.add(rowLabel);
+      rows.push({ key: rowKey, label: rowLabel, value: normalized });
+    };
+
+    addRow("project-type", "Project Type", form.ai_project_type);
+    addRow("area", "Area", form.ai_project_subtype);
+    addRow("main-goal", "Main Goal", getMainGoalSummary(form.ai_project_title, form.ai_description));
+    addRow("measurements", "Measurements", getFriendlyMeasurementLabel(form.measurement_handling));
+    addRow("timing", "Timing", getFriendlyTimelineLabel(form.ai_project_timeline_days));
+    addRow("budget", "Budget", getFriendlyBudgetLabel(form.ai_project_budget));
+
+    (clarificationQuestions || []).forEach((question) => {
+      const key = question?.key || "";
+      if (!key) return;
+      const rawAnswer = form.ai_clarification_answers?.[key];
+      const answer = summarizeTextValue(Array.isArray(rawAnswer) ? rawAnswer.join(", ") : rawAnswer, 140);
+      if (!answer) return;
+      const label = getFriendlyClarificationLabel(question);
+      addRow(`clarification-${key}`, label, answer);
+    });
+
+    return rows;
+  }, [
+    clarificationQuestions,
+    form.ai_clarification_answers,
+    form.ai_description,
+    form.ai_project_budget,
+    form.ai_project_subtype,
+    form.ai_project_title,
+    form.ai_project_timeline_days,
+    form.ai_project_type,
+    form.measurement_handling,
+  ]);
   const renderStep = () => {
     if (currentStep === 0) {
       return (
@@ -601,213 +714,245 @@ export default function PublicIntakeWizard() {
       const isTextareaQuestion = (activeClarificationQuestion?.inputType || activeClarificationQuestion?.type) === "textarea";
 
       return (
-        <div className="rounded-xl border bg-white p-6 shadow-sm" data-testid="public-intake-clarification-step">
-          <h2 className="text-lg font-semibold text-gray-900">AI Clarifications</h2>
-          <p className="mt-1 text-sm text-gray-600">
-            Answer a few quick questions to make the agreement-ready scope more accurate.
-          </p>
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.8fr)] items-start">
+          <div className="space-y-4">
+            <div className="rounded-xl border bg-white p-6 shadow-sm" data-testid="public-intake-clarification-step">
+              <h2 className="text-lg font-semibold text-gray-900">AI Clarifications</h2>
+              <p className="mt-1 text-sm text-gray-600">
+                Answer a few quick questions to make the agreement-ready scope more accurate.
+              </p>
 
-          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <label className="mb-2 block text-sm font-medium text-gray-900">Measurement handling</label>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { value: "provided", label: "Provided" },
-                { value: "site_visit_required", label: "Site visit required" },
-                { value: "not_sure", label: "Not sure" },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  type="button"
-                  onClick={() => setField("measurement_handling", opt.value)}
-                  className={`rounded-full border px-3 py-2 text-sm font-semibold ${
-                    form.measurement_handling === opt.value
-                      ? "border-indigo-500 bg-indigo-600 text-white"
-                      : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                  }`}
-                  data-testid={`public-intake-measurement-${opt.value}`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-gray-900">Clarification questions</div>
-                <div className="text-xs text-gray-500">Short answers are fine. These update the structured output automatically.</div>
-              </div>
-              <button
-                type="button"
-                className="text-xs font-semibold text-indigo-700 hover:underline"
-                onClick={() => setForm((prev) => ({ ...prev, ai_clarification_answers: emptyClarificationAnswers() }))}
-              >
-                Clear answers
-              </button>
-            </div>
-
-            {questionCount ? (
-              <div className="mt-4">
-                <div
-                  className="mb-3 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                  data-testid="public-intake-clarification-progress"
-                >
-                  <span>
-                    Question {questionNumber} of {questionCount}
-                  </span>
-                  <span>{activeClarificationAnswer ? "Answer saved" : "Optional"}</span>
-                </div>
-
-                <div
-                  className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-4 shadow-sm"
-                  data-testid={`public-intake-clarification-${activeClarificationQuestion?.key || "question"}`}
-                >
-                  <div className="inline-flex rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
-                    AI prompt
-                  </div>
-                  <div className="mt-3 text-base font-semibold text-gray-900" data-testid="public-intake-clarification-prompt">
-                    {activeClarificationQuestion?.label || activeClarificationQuestion?.question || "Clarification question"}
-                  </div>
-                  {activeClarificationQuestion?.help ? (
-                    <div className="mt-2 text-sm text-slate-600">{activeClarificationQuestion.help}</div>
-                  ) : null}
-                  <div className="mt-3 text-xs text-slate-500">You can skip anything you&apos;re unsure about.</div>
-
-                  <div className="mt-4" data-testid="public-intake-clarification-answer-controls">
-                    {isChoiceQuestion ? (
-                      <div className="flex flex-wrap gap-2">
-                        {options.map((opt) => (
-                          <button
-                            key={String(opt)}
-                            type="button"
-                            onClick={() => {
-                              if (!activeClarificationQuestion?.key) return;
-                              setClarificationAnswer(activeClarificationQuestion.key, opt);
-                            }}
-                            data-testid={`public-intake-clarification-option-${activeClarificationQuestion?.key || "question"}-${String(opt)
-                              .toLowerCase()
-                              .replace(/[^a-z0-9]+/g, "-")
-                              .replace(/^-+|-+$/g, "")}`}
-                            className={`rounded-full border px-3 py-2 text-sm font-semibold ${
-                              String(activeClarificationAnswer) === String(opt)
-                                ? "border-indigo-500 bg-indigo-600 text-white"
-                                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                            }`}
-                          >
-                            {String(opt)}
-                          </button>
-                        ))}
-                      </div>
-                    ) : isTextareaQuestion ? (
-                      <textarea
-                        rows={4}
-                        className="w-full rounded border px-3 py-2 text-sm"
-                        value={activeClarificationAnswer}
-                        onChange={(e) => {
-                          if (!activeClarificationQuestion?.key) return;
-                          setClarificationAnswer(activeClarificationQuestion.key, e.target.value);
-                        }}
-                        placeholder="Type a short answer or skip this question"
-                        data-testid="public-intake-clarification-answer-input"
-                      />
-                    ) : (
-                      <input
-                        className="w-full rounded border px-3 py-2 text-sm"
-                        value={activeClarificationAnswer}
-                        onChange={(e) => {
-                          if (!activeClarificationQuestion?.key) return;
-                          setClarificationAnswer(activeClarificationQuestion.key, e.target.value);
-                        }}
-                        placeholder="Type a short answer or skip this question"
-                        data-testid="public-intake-clarification-answer-input"
-                      />
-                    )}
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={handleBack}
-                        data-testid="public-intake-clarification-back"
-                        className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                      >
-                        Back
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleClarificationAdvance({ skip: true })}
-                        data-testid="public-intake-clarification-skip"
-                        className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                      >
-                        Skip
-                      </button>
-                    </div>
-
+              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <label className="mb-2 block text-sm font-medium text-gray-900">Measurement handling</label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { value: "provided", label: "Provided" },
+                    { value: "site_visit_required", label: "Site visit required" },
+                    { value: "not_sure", label: "Not sure" },
+                  ].map((opt) => (
                     <button
+                      key={opt.value}
                       type="button"
-                      onClick={() => handleClarificationAdvance()}
-                      data-testid="public-intake-clarification-next"
-                      className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+                      onClick={() => setField("measurement_handling", opt.value)}
+                      className={`rounded-full border px-3 py-2 text-sm font-semibold ${
+                        form.measurement_handling === opt.value
+                          ? "border-indigo-500 bg-indigo-600 text-white"
+                          : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                      }`}
+                      data-testid={`public-intake-measurement-${opt.value}`}
                     >
-                      {isLastQuestion ? "Continue" : "Next"}
+                      {opt.label}
                     </button>
-                  </div>
+                  ))}
                 </div>
               </div>
-            ) : (
-              <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-                <div>No clarification questions are needed for this project.</div>
-                <div className="mt-4 flex justify-end">
+
+              <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">Clarification questions</div>
+                    <div className="text-xs text-gray-500">Short answers are fine. These update the structured output automatically.</div>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => handleClarificationAdvance()}
-                    data-testid="public-intake-clarification-next"
-                    className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+                    className="text-xs font-semibold text-indigo-700 hover:underline"
+                    onClick={() => setForm((prev) => ({ ...prev, ai_clarification_answers: emptyClarificationAnswers() }))}
                   >
-                    Continue
+                    Clear answers
                   </button>
                 </div>
-              </div>
-            )}
-          </div>
 
-          <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-gray-900">Optional photos</div>
-                <div className="text-xs text-gray-500">Add a reference photo or two to help shape scope and agreement details.</div>
-              </div>
-              <label className="cursor-pointer rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                {clarificationUploading ? "Uploading..." : "Upload photo(s)"}
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => uploadClarificationPhotos(e.target.files)}
-                  disabled={clarificationUploading}
-                  data-testid="public-intake-clarification-photo-upload"
-                />
-              </label>
-            </div>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {(form.clarification_photos || []).length ? (
-                form.clarification_photos.map((photo) => (
-                  <div key={photo.id || photo.image_url} className="overflow-hidden rounded-lg border bg-slate-50">
-                    {photo.image_url ? (
-                      <img src={photo.image_url} alt={photo.caption || photo.original_name || "Project photo"} className="h-32 w-full object-cover" />
-                    ) : null}
-                    <div className="px-3 py-2 text-xs text-slate-600">
-                      <div className="font-semibold text-slate-900">{photo.caption || photo.original_name || "Photo"}</div>
+                {questionCount ? (
+                  <div className="mt-4">
+                    <div
+                      className="mb-3 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                      data-testid="public-intake-clarification-progress"
+                    >
+                      <span>
+                        Question {questionNumber} of {questionCount}
+                      </span>
+                      <span>{activeClarificationAnswer ? "Answer saved" : "Optional"}</span>
+                    </div>
+
+                    <div
+                      className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-4 shadow-sm"
+                      data-testid={`public-intake-clarification-${activeClarificationQuestion?.key || "question"}`}
+                    >
+                      <div className="inline-flex rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+                        AI prompt
+                      </div>
+                      <div className="mt-3 text-base font-semibold text-gray-900" data-testid="public-intake-clarification-prompt">
+                        {activeClarificationQuestion?.label || activeClarificationQuestion?.question || "Clarification question"}
+                      </div>
+                      {activeClarificationQuestion?.help ? (
+                        <div className="mt-2 text-sm text-slate-600">{activeClarificationQuestion.help}</div>
+                      ) : null}
+                      <div className="mt-3 text-xs text-slate-500">You can skip anything you&apos;re unsure about.</div>
+
+                      <div className="mt-4" data-testid="public-intake-clarification-answer-controls">
+                        {isChoiceQuestion ? (
+                          <div className="flex flex-wrap gap-2">
+                            {options.map((opt) => (
+                              <button
+                                key={String(opt)}
+                                type="button"
+                                onClick={() => {
+                                  if (!activeClarificationQuestion?.key) return;
+                                  setClarificationAnswer(activeClarificationQuestion.key, opt);
+                                }}
+                                data-testid={`public-intake-clarification-option-${activeClarificationQuestion?.key || "question"}-${String(opt)
+                                  .toLowerCase()
+                                  .replace(/[^a-z0-9]+/g, "-")
+                                  .replace(/^-+|-+$/g, "")}`}
+                                className={`rounded-full border px-3 py-2 text-sm font-semibold ${
+                                  String(activeClarificationAnswer) === String(opt)
+                                    ? "border-indigo-500 bg-indigo-600 text-white"
+                                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                                }`}
+                              >
+                                {String(opt)}
+                              </button>
+                            ))}
+                          </div>
+                        ) : isTextareaQuestion ? (
+                          <textarea
+                            rows={4}
+                            className="w-full rounded border px-3 py-2 text-sm"
+                            value={activeClarificationAnswer}
+                            onChange={(e) => {
+                              if (!activeClarificationQuestion?.key) return;
+                              setClarificationAnswer(activeClarificationQuestion.key, e.target.value);
+                            }}
+                            placeholder="Type a short answer or skip this question"
+                            data-testid="public-intake-clarification-answer-input"
+                          />
+                        ) : (
+                          <input
+                            className="w-full rounded border px-3 py-2 text-sm"
+                            value={activeClarificationAnswer}
+                            onChange={(e) => {
+                              if (!activeClarificationQuestion?.key) return;
+                              setClarificationAnswer(activeClarificationQuestion.key, e.target.value);
+                            }}
+                            placeholder="Type a short answer or skip this question"
+                            data-testid="public-intake-clarification-answer-input"
+                          />
+                        )}
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={handleBack}
+                            data-testid="public-intake-clarification-back"
+                            className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                          >
+                            Back
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleClarificationAdvance({ skip: true })}
+                            data-testid="public-intake-clarification-skip"
+                            className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            Skip
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleClarificationAdvance()}
+                          data-testid="public-intake-clarification-next"
+                          className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+                        >
+                          {isLastQuestion ? "Continue" : "Next"}
+                        </button>
+                      </div>
                     </div>
                   </div>
-                ))
-              ) : (
-                <div className="text-sm text-slate-500">No photos uploaded yet.</div>
-              )}
+                ) : (
+                  <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+                    <div>No clarification questions are needed for this project.</div>
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => handleClarificationAdvance()}
+                        data-testid="public-intake-clarification-next"
+                        className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+                      >
+                        Continue
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">Optional photos</div>
+                    <div className="text-xs text-gray-500">Add a reference photo or two to help shape scope and agreement details.</div>
+                  </div>
+                  <label className="cursor-pointer rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                    {clarificationUploading ? "Uploading..." : "Upload photo(s)"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => uploadClarificationPhotos(e.target.files)}
+                      disabled={clarificationUploading}
+                      data-testid="public-intake-clarification-photo-upload"
+                    />
+                  </label>
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {(form.clarification_photos || []).length ? (
+                    form.clarification_photos.map((photo) => (
+                      <div key={photo.id || photo.image_url} className="overflow-hidden rounded-lg border bg-slate-50">
+                        {photo.image_url ? (
+                          <img src={photo.image_url} alt={photo.caption || photo.original_name || "Project photo"} className="h-32 w-full object-cover" />
+                        ) : null}
+                        <div className="px-3 py-2 text-xs text-slate-600">
+                          <div className="font-semibold text-slate-900">{photo.caption || photo.original_name || "Photo"}</div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-sm text-slate-500">No photos uploaded yet.</div>
+                  )}
+                </div>
+              </div>
             </div>
+
+            <aside className="self-start lg:sticky lg:top-6">
+              <div
+                className="rounded-2xl border border-white/70 bg-white p-6 shadow-xl shadow-black/10"
+                data-testid="public-intake-project-summary"
+              >
+                <div className="text-lg font-semibold tracking-tight text-gray-900" data-testid="public-intake-project-summary-title">
+                  Your Project So Far
+                </div>
+                <p className="mt-2 text-sm text-slate-600">Your contractor will review and confirm details.</p>
+                <div className="mt-5">
+                  {projectSummaryRows.length ? (
+                    <dl className="space-y-3">
+                      {projectSummaryRows.map((row) => (
+                        <div key={row.key} data-testid={`public-intake-project-summary-row-${row.key}`} className="rounded-xl bg-slate-50 px-4 py-3">
+                          <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{row.label}</dt>
+                          <dd className="mt-1 text-sm font-medium leading-6 text-slate-900">{row.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+                      Keep answering questions to see your project come into focus.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </aside>
           </div>
         </div>
       );

@@ -683,7 +683,9 @@ test('landing-source intake and public-profile intake land in the same contracto
   await page.getByTestId('public-intake-accomplishment-text').fill(
     'Landing page intake request.'
   );
+  await expect(page.getByTestId('public-intake-generate-structure')).toBeEnabled();
   await page.getByTestId('public-intake-generate-structure').click();
+  await expect(page.getByTestId('public-intake-project-summary')).toBeVisible();
   await page.getByTestId('public-intake-clarification-next').click();
   await expect(page.getByRole('heading', { name: 'AI Structured Output' })).toBeVisible();
   await page.getByRole('button', { name: 'Continue' }).first().click();
@@ -1153,6 +1155,7 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
   await page
     .getByTestId('public-intake-accomplishment-text')
     .fill('Convert the garage into a finished office and laundry room.');
+  await expect(page.getByTestId('public-intake-generate-structure')).toBeEnabled();
   await page.getByTestId('public-intake-generate-structure').click();
   await page.getByTestId('public-intake-clarification-next').click();
   await expect(page.getByRole('heading', { name: 'AI Structured Output' })).toBeVisible();
@@ -1587,6 +1590,7 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
   await page
     .getByTestId('public-intake-accomplishment-text')
     .fill('Complete a bathroom remodel with updated tile and fixtures.');
+  await expect(page.getByTestId('public-intake-generate-structure')).toBeEnabled();
   await page.getByTestId('public-intake-generate-structure').click();
   await page.getByTestId('public-intake-clarification-next').click();
   await expect(page.getByRole('heading', { name: 'AI Structured Output' })).toBeVisible();
