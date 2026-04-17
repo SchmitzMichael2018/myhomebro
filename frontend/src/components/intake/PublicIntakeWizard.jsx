@@ -174,6 +174,7 @@ export default function PublicIntakeWizard() {
   const [branchResult, setBranchResult] = useState(null);
   const [clarificationUploading, setClarificationUploading] = useState(false);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [clarificationSnapshotMode, setClarificationSnapshotMode] = useState(false);
   const [branchContacts, setBranchContacts] = useState([
     { name: "", email: "", phone: "" },
     { name: "", email: "", phone: "" },
@@ -460,6 +461,7 @@ export default function PublicIntakeWizard() {
     const data = await saveIntake({ showToast: false, allowBranch: false });
     if (!data) return;
     setCurrentQuestionIndex(0);
+    setClarificationSnapshotMode(false);
     setCurrentStep(1);
     toast.success("Project structure generated.");
   }
@@ -487,10 +489,11 @@ export default function PublicIntakeWizard() {
     if (!saved) return;
 
     if (!clarificationQuestions.length || currentQuestionIndex >= clarificationQuestions.length - 1) {
-      setCurrentStep(2);
+      setClarificationSnapshotMode(true);
       return;
     }
 
+    setClarificationSnapshotMode(false);
     setCurrentQuestionIndex((prev) => Math.min(prev + 1, clarificationQuestions.length - 1));
   }
 
@@ -514,6 +517,13 @@ export default function PublicIntakeWizard() {
 
   function handleBack() {
     if (currentStep === 1) {
+      if (clarificationSnapshotMode) {
+        setClarificationSnapshotMode(false);
+        if (clarificationQuestions.length) {
+          setCurrentQuestionIndex((prev) => Math.min(prev, clarificationQuestions.length - 1));
+        }
+        return;
+      }
       if (currentQuestionIndex > 0) {
         setCurrentQuestionIndex((prev) => Math.max(prev - 1, 0));
       } else {
@@ -671,6 +681,34 @@ export default function PublicIntakeWizard() {
     form.ai_project_type,
     form.measurement_handling,
   ]);
+  const projectSnapshotRows = useMemo(() => {
+    const rows = [];
+    const seenLabels = new Set();
+    const addRow = (label, value) => {
+      const normalized = summarizeTextValue(value, 140);
+      const rowLabel = summarizeTextValue(label, 60);
+      if (!normalized || seenLabels.has(rowLabel)) return;
+      seenLabels.add(rowLabel);
+      rows.push({ label: rowLabel, value: normalized });
+    };
+
+    projectSummaryRows
+      .filter((row) => !String(row.key || "").startsWith("clarification-"))
+      .slice(0, 6)
+      .forEach((row) => addRow(row.label, row.value));
+
+    projectSummaryRows
+      .filter((row) => String(row.key || "").startsWith("clarification-"))
+      .slice(0, 3)
+      .forEach((row) => addRow(row.label, row.value));
+
+    const photoCount = Array.isArray(form.clarification_photos) ? form.clarification_photos.length : 0;
+    if (photoCount > 0) {
+      addRow("Photos", `${photoCount} photo${photoCount === 1 ? "" : "s"} attached`);
+    }
+
+    return rows;
+  }, [form.clarification_photos, projectSummaryRows]);
   const renderStep = () => {
     if (currentStep === 0) {
       return (
@@ -712,6 +750,78 @@ export default function PublicIntakeWizard() {
       const options = Array.isArray(activeClarificationQuestion?.options) ? activeClarificationQuestion.options : [];
       const isChoiceQuestion = options.length > 0;
       const isTextareaQuestion = (activeClarificationQuestion?.inputType || activeClarificationQuestion?.type) === "textarea";
+
+      if (clarificationSnapshotMode) {
+        return (
+          <div
+            className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10"
+            data-testid="public-intake-project-snapshot"
+          >
+            <div className="max-w-3xl">
+              <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+                Project Snapshot
+              </div>
+              <div className="mt-3 text-2xl font-semibold tracking-tight text-gray-900" data-testid="public-intake-project-snapshot-title">
+                Project Snapshot
+              </div>
+              <p className="mt-2 text-base text-slate-600">
+                Here&apos;s the clearer starting point we&apos;ve built from your answers.
+              </p>
+              <p className="mt-1 text-sm text-slate-500">
+                Your contractor will still review and confirm the final scope.
+              </p>
+
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                {projectSnapshotRows.length ? (
+                  projectSnapshotRows.map((row) => (
+                    <div
+                      key={row.label}
+                      data-testid={`public-intake-project-snapshot-row-${toTestIdSegment(row.label)}`}
+                      className="rounded-xl bg-slate-50 px-4 py-3"
+                    >
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        {row.label}
+                      </div>
+                      <div className="mt-1 text-sm font-medium leading-6 text-slate-900">{row.value}</div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+                    We&apos;ve captured the project details you shared so far.
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setClarificationSnapshotMode(false);
+                    if (questionCount) {
+                      setCurrentQuestionIndex(Math.min(Math.max(currentQuestionIndex, 0), questionCount - 1));
+                    }
+                  }}
+                  data-testid="public-intake-project-snapshot-back"
+                  className="rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Back to Clarifications
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setClarificationSnapshotMode(false);
+                    setCurrentStep(2);
+                  }}
+                  data-testid="public-intake-project-snapshot-continue"
+                  className="rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700"
+                >
+                  Continue to Project Summary
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
 
       return (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.8fr)] items-start">
@@ -866,7 +976,7 @@ export default function PublicIntakeWizard() {
                           data-testid="public-intake-clarification-next"
                           className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
                         >
-                          {isLastQuestion ? "Continue" : "Next"}
+                          {isLastQuestion ? "Review Project Snapshot" : "Next"}
                         </button>
                       </div>
                     </div>

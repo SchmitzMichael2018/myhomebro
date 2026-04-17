@@ -128,7 +128,9 @@ test("landing page drives into intake and public intake shows branching choices 
   await expect(page.getByTestId("public-intake-project-summary")).toBeVisible();
   await expect(page.getByTestId("public-intake-project-summary-title")).toContainText("Your Project So Far");
   await page.getByTestId("public-intake-clarification-next").click();
-  await expect(page.getByTestId("public-intake-clarification-photo-section")).toBeVisible();
+  await expect(page.getByTestId("public-intake-project-snapshot")).toBeVisible();
+  await expect(page.getByTestId("public-intake-project-snapshot-title")).toContainText("Project Snapshot");
+  await page.getByTestId("public-intake-project-snapshot-continue").click();
   await page.getByRole("button", { name: "Choose Path" }).click();
   await expect(page.getByTestId("public-intake-branching-section")).toBeVisible();
   await expect(page.getByTestId("public-intake-branching-section")).toContainText("How would you like to proceed?");

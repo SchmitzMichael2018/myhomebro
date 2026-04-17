@@ -688,6 +688,9 @@ test('landing-source intake and public-profile intake land in the same contracto
   await expect(page.getByTestId('public-intake-project-summary')).toBeVisible();
   await expect(page.getByTestId('public-intake-clarification-photo-section')).toBeVisible();
   await page.getByTestId('public-intake-clarification-next').click();
+  await expect(page.getByTestId('public-intake-project-snapshot')).toBeVisible();
+  await expect(page.getByTestId('public-intake-project-snapshot-title')).toContainText('Project Snapshot');
+  await page.getByTestId('public-intake-project-snapshot-continue').click();
   await expect(page.getByRole('heading', { name: 'AI Structured Output' })).toBeVisible();
   await page.getByRole('button', { name: 'Continue' }).first().click();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
@@ -1159,6 +1162,8 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
   await expect(page.getByTestId('public-intake-generate-structure')).toBeEnabled();
   await page.getByTestId('public-intake-generate-structure').click();
   await page.getByTestId('public-intake-clarification-next').click();
+  await expect(page.getByTestId('public-intake-project-snapshot')).toBeVisible();
+  await page.getByTestId('public-intake-project-snapshot-continue').click();
   await expect(page.getByRole('heading', { name: 'AI Structured Output' })).toBeVisible();
   await page.getByRole('button', { name: 'Continue' }).first().click();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
@@ -1594,6 +1599,8 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
   await expect(page.getByTestId('public-intake-generate-structure')).toBeEnabled();
   await page.getByTestId('public-intake-generate-structure').click();
   await page.getByTestId('public-intake-clarification-next').click();
+  await expect(page.getByTestId('public-intake-project-snapshot')).toBeVisible();
+  await page.getByTestId('public-intake-project-snapshot-continue').click();
   await expect(page.getByRole('heading', { name: 'AI Structured Output' })).toBeVisible();
   await page.getByRole('button', { name: 'Continue' }).first().click();
   await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
