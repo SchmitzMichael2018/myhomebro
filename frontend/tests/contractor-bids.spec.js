@@ -473,13 +473,15 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
 
   await page.getByTestId("lead-row-action-lead-6").click();
   await expect(page.getByTestId("lead-detail-container")).toBeVisible();
+  await expect(page.getByTestId("lead-action-section")).toBeVisible();
   await expect(page.getByTestId("lead-overview")).toContainText("Project Title");
   await expect(page.getByTestId("project-snapshot")).toContainText("Refined Description");
   await expect(page.getByTestId("photos-section")).toContainText("Shower area");
   await expect(page.getByTestId("project-phases-section")).toContainText("Demolition");
   await expect(page.getByTestId("request-signals-section")).toContainText("Multi-Quote Request");
-  await expect(page.getByTestId("suggested-next-step-section")).toContainText("Review the request");
-  await expect(page.getByTestId("lead-detail-primary-action")).toContainText("Review and Respond");
+  await expect(page.getByTestId("suggested-next-step-section")).toContainText("ready for a bid decision");
+  await expect(page.getByTestId("lead-detail-primary-action")).toContainText("Create Bid");
+  await expect(page.getByTestId("lead-detail-secondary-action")).toContainText("Copy Reference");
   await page.getByRole("button", { name: "Close bid details" }).click();
   await expect(page.getByTestId("bids-detail-drawer")).toHaveCount(0);
 
@@ -502,6 +504,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await page.getByTestId("leads-tab-active").click();
   await page.getByTestId("lead-row-lead-5").click();
   await expect(page.getByTestId("lead-detail-container")).toBeVisible();
+  await expect(page.getByTestId("lead-action-section")).toBeVisible();
   await expect(page.getByTestId("lead-overview")).toContainText("Project Title");
   await expect(page.getByTestId("project-snapshot")).toContainText("Refined Description");
   await expect(page.getByTestId("project-snapshot")).toContainText("Budget");
@@ -509,6 +512,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("project-phases-section")).toContainText("Demo Phase");
   await expect(page.getByTestId("request-signals-section")).toContainText("Photos");
   await expect(page.getByTestId("lead-detail-primary-action")).toContainText("Open Agreement");
+  await expect(page.getByTestId("lead-detail-secondary-action")).toContainText("Copy Reference");
   await page.getByRole("button", { name: "Close bid details" }).click();
   await expect(page.getByTestId("bids-detail-drawer")).toHaveCount(0);
 

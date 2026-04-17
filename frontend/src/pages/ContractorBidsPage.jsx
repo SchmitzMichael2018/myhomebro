@@ -353,16 +353,17 @@ export default function ContractorBidsPage() {
   const selectedClarifications = Array.isArray(selectedSnapshot?.clarification_summary) ? selectedSnapshot.clarification_summary : [];
   const selectedPrimaryActionLabel =
     selectedStage === "new_lead"
-      ? "Review and Respond"
+      ? "Create Bid"
       : normalize(selectedRow?.next_action?.key) === "open_agreement" && selectedRow?.linked_agreement_url
         ? "Open Agreement"
         : selectedRow?.next_action?.label || "View Details";
   const selectedPrimaryActionHint =
     selectedStage === "new_lead"
-      ? "Review the request, then start the existing bid workflow when you are ready."
+      ? "This starts the existing bid workflow for the reviewed request."
       : selectedStage === "closed"
         ? "This opportunity is closed, but you can still review the history."
         : "Continue the current bid workflow from here.";
+  const selectedCanOpenAgreement = normalize(selectedRow?.next_action?.key) === "open_agreement" && selectedRow?.linked_agreement_url;
   const rowPrimaryActionLabel = (row) => {
     const stage = workspaceStageFromRow(row);
     if (stage === "new_lead") return "Review Request";
@@ -876,38 +877,50 @@ export default function ContractorBidsPage() {
               >
                 <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
                   {selectedStage === "new_lead"
-                    ? "Review the request, ask follow-up questions if needed, and start the existing bid workflow when it looks right."
+                    ? "This request is ready for a bid decision. Review the details, then create your bid when you're ready."
                     : selectedStage === "closed"
                       ? "This opportunity is closed for now, but the record stays here for reference."
                       : selectedRow.next_action?.label || "Continue the existing bid workflow."}
                 </div>
-                <div className="mt-4 flex flex-wrap gap-3">
-                  {selectedStage === "closed" && !(
-                    normalize(selectedRow?.next_action?.key) === "open_agreement" && selectedRow?.linked_agreement_url
-                  ) ? null : normalize(selectedRow?.next_action?.key) === "open_agreement" && selectedRow?.linked_agreement_url ? (
-                    <button
-                      type="button"
-                      onClick={() => navigate(selectedRow.linked_agreement_url)}
-                      data-testid="lead-detail-primary-action"
-                      className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-                    >
-                      {selectedPrimaryActionLabel}
-                      <ExternalLink size={14} />
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleRowPrimaryAction(selectedRow)}
-                      disabled={actionBusyId === String(selectedRow.bid_id)}
-                      data-testid="lead-detail-primary-action"
-                      className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
-                    >
-                      {actionBusyId === String(selectedRow.bid_id) ? "Working..." : selectedPrimaryActionLabel}
-                      <ExternalLink size={14} />
-                    </button>
-                  )}
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4" data-testid="lead-action-section">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Lead Actions</div>
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    {selectedStage === "closed" && !selectedCanOpenAgreement ? null : selectedCanOpenAgreement ? (
+                      <button
+                        type="button"
+                        onClick={() => navigate(selectedRow.linked_agreement_url)}
+                        data-testid="lead-detail-primary-action"
+                        className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+                      >
+                        {selectedPrimaryActionLabel}
+                        <ExternalLink size={14} />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => runAction(selectedRow)}
+                        disabled={actionBusyId === String(selectedRow.bid_id)}
+                        data-testid="lead-detail-primary-action"
+                        className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-60"
+                      >
+                        {actionBusyId === String(selectedRow.bid_id) ? "Working..." : selectedPrimaryActionLabel}
+                        <ExternalLink size={14} />
+                      </button>
+                    )}
+                    {selectedRow?.source_reference ? (
+                      <button
+                        type="button"
+                        onClick={() => copyReference(selectedRow.source_reference, selectedRow.bid_id)}
+                        data-testid="lead-detail-secondary-action"
+                        className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        <Copy size={14} />
+                        {copiedRefId === String(selectedRow.bid_id) ? "Copied" : "Copy Reference"}
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="mt-3 text-xs text-slate-500">{selectedPrimaryActionHint}</div>
                 </div>
-                <div className="mt-2 text-xs text-slate-500">{selectedPrimaryActionHint}</div>
               </SectionCard>
 
               <SectionCard title="Internal Notes" testId="lead-notes-section">
