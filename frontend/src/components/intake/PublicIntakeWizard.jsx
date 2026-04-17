@@ -105,6 +105,7 @@ export default function PublicIntakeWizard() {
   const [branchSubmitting, setBranchSubmitting] = useState(false);
   const [branchResult, setBranchResult] = useState(null);
   const [clarificationUploading, setClarificationUploading] = useState(false);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [branchContacts, setBranchContacts] = useState([
     { name: "", email: "", phone: "" },
     { name: "", email: "", phone: "" },
@@ -117,8 +118,8 @@ export default function PublicIntakeWizard() {
     "Project Idea",
     "AI Clarifications",
     "AI Structured Output",
-    "Contact Info",
     "Project Details",
+    "Contact Info",
     "Choose Path",
     "Review + Confirm",
   ];
@@ -183,6 +184,19 @@ export default function PublicIntakeWizard() {
           clarification_photos: Array.isArray(data?.clarification_photos) ? data.clarification_photos : [],
         });
 
+        const clarificationQuestions = Array.isArray(data?.ai_clarification_questions)
+          ? data.ai_clarification_questions
+          : [];
+        const clarificationAnswers =
+          data?.ai_clarification_answers && typeof data.ai_clarification_answers === "object"
+            ? data.ai_clarification_answers
+            : {};
+        const firstUnansweredIndex = clarificationQuestions.findIndex((question) => {
+          const key = question?.key || "";
+          if (!key) return true;
+          return !String(clarificationAnswers?.[key] ?? "").trim();
+        });
+
         const hasStructuredOutput = !!(
           data?.ai_project_title ||
           data?.ai_project_type ||
@@ -198,11 +212,14 @@ export default function PublicIntakeWizard() {
             ? 6
             : data?.post_submit_flow
               ? 5
-              : hasClarificationAnswers
+                : hasClarificationAnswers
                 ? 2
                 : hasStructuredOutput || hasClarifications
                   ? 1
                   : 0
+        );
+        setCurrentQuestionIndex(
+          clarificationQuestions.length ? (firstUnansweredIndex >= 0 ? firstUnansweredIndex : 0) : 0
         );
         setLoaded(true);
       } catch (e) {
@@ -255,6 +272,27 @@ export default function PublicIntakeWizard() {
     );
   }, [form]);
 
+  const clarificationQuestions = useMemo(
+    () => (Array.isArray(form.ai_clarification_questions) ? form.ai_clarification_questions.slice(0, 6) : []),
+    [form.ai_clarification_questions]
+  );
+
+  const activeClarificationQuestion = clarificationQuestions[currentQuestionIndex] || null;
+  const activeClarificationAnswer = activeClarificationQuestion?.key
+    ? form.ai_clarification_answers?.[activeClarificationQuestion.key] ?? ""
+    : "";
+
+  useEffect(() => {
+    if (currentStep !== 1) return;
+    if (!clarificationQuestions.length) {
+      if (currentQuestionIndex !== 0) setCurrentQuestionIndex(0);
+      return;
+    }
+    if (currentQuestionIndex > clarificationQuestions.length - 1) {
+      setCurrentQuestionIndex(clarificationQuestions.length - 1);
+    }
+  }, [currentStep, clarificationQuestions.length, currentQuestionIndex]);
+
   function setField(name, value) {
     setForm((prev) => ({ ...prev, [name]: value }));
   }
@@ -301,6 +339,7 @@ export default function PublicIntakeWizard() {
     contractors = null,
     branchMessageOverride = null,
     allowBranch = true,
+    formOverrides = null,
   } = {}) {
     if (!token) {
       toast.error("Missing intake token.");
@@ -309,10 +348,15 @@ export default function PublicIntakeWizard() {
 
     try {
       setSaving(true);
-      const effectiveForm = getEffectiveProjectForm(form);
+      const mergedForm = formOverrides ? { ...form, ...formOverrides } : form;
+      const effectiveForm = getEffectiveProjectForm(mergedForm);
       const payload = { token, ...effectiveForm };
       payload.measurement_handling = form.measurement_handling || "";
       payload.ai_clarification_answers = form.ai_clarification_answers || {};
+
+      if (formOverrides?.ai_clarification_answers) {
+        payload.ai_clarification_answers = formOverrides.ai_clarification_answers;
+      }
 
       if (allowBranch && branchFlow) {
         payload.branch_flow = branchFlow;
@@ -348,8 +392,39 @@ export default function PublicIntakeWizard() {
 
     const data = await saveIntake({ showToast: false, allowBranch: false });
     if (!data) return;
+    setCurrentQuestionIndex(0);
     setCurrentStep(1);
     toast.success("Project structure generated.");
+  }
+
+  async function handleClarificationAdvance({ skip = false } = {}) {
+    if (currentStep !== 1) return;
+
+    const currentQuestion = clarificationQuestions[currentQuestionIndex] || null;
+    const questionKey = currentQuestion?.key || "";
+    const formOverrides =
+      skip && questionKey
+        ? {
+            ai_clarification_answers: {
+              ...(form.ai_clarification_answers || {}),
+              [questionKey]: "",
+            },
+          }
+        : null;
+
+    const saved = await saveIntake({
+      showToast: false,
+      allowBranch: false,
+      formOverrides,
+    });
+    if (!saved) return;
+
+    if (!clarificationQuestions.length || currentQuestionIndex >= clarificationQuestions.length - 1) {
+      setCurrentStep(2);
+      return;
+    }
+
+    setCurrentQuestionIndex((prev) => Math.min(prev + 1, clarificationQuestions.length - 1));
   }
 
   async function handleNext() {
@@ -358,9 +433,7 @@ export default function PublicIntakeWizard() {
       return;
     }
     if (currentStep === 1) {
-      const saved = await saveIntake({ showToast: false, allowBranch: false });
-      if (!saved) return;
-      setCurrentStep(2);
+      await handleClarificationAdvance();
       return;
     }
     if (currentStep === 6) {
@@ -373,6 +446,14 @@ export default function PublicIntakeWizard() {
   }
 
   function handleBack() {
+    if (currentStep === 1) {
+      if (currentQuestionIndex > 0) {
+        setCurrentQuestionIndex((prev) => Math.max(prev - 1, 0));
+      } else {
+        setCurrentStep(0);
+      }
+      return;
+    }
     if (currentStep > 0) setCurrentStep((prev) => prev - 1);
   }
 
@@ -514,12 +595,18 @@ export default function PublicIntakeWizard() {
     }
 
     if (currentStep === 1) {
-      const questions = Array.isArray(form.ai_clarification_questions) ? form.ai_clarification_questions.slice(0, 6) : [];
+      const questionCount = clarificationQuestions.length;
+      const questionNumber = questionCount ? Math.min(currentQuestionIndex + 1, questionCount) : 0;
+      const isLastQuestion = questionCount === 0 || currentQuestionIndex >= questionCount - 1;
+      const options = Array.isArray(activeClarificationQuestion?.options) ? activeClarificationQuestion.options : [];
+      const isChoiceQuestion = options.length > 0;
+      const isTextareaQuestion = (activeClarificationQuestion?.inputType || activeClarificationQuestion?.type) === "textarea";
+
       return (
         <div className="rounded-xl border bg-white p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900">AI Clarifications</h2>
           <p className="mt-1 text-sm text-gray-600">
-            Answer a few quick questions to make the agreement-ready scope more accurate. You can skip any question.
+            Answer a few quick questions to make the agreement-ready scope more accurate.
           </p>
 
           <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -548,7 +635,7 @@ export default function PublicIntakeWizard() {
           </div>
 
           <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
-            <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-gray-900">Clarification questions</div>
                 <div className="text-xs text-gray-500">Short answers are fine. These update the structured output automatically.</div>
@@ -561,59 +648,109 @@ export default function PublicIntakeWizard() {
                 Clear answers
               </button>
             </div>
-            <div className="space-y-3">
-              {questions.length ? questions.map((question, index) => {
-                const key = question?.key || `q-${index}`;
-                const answer = form.ai_clarification_answers?.[key] ?? "";
-                const isRadio = (question?.inputType || question?.type) === "radio";
-                const options = Array.isArray(question?.options) ? question.options : [];
-                return (
-                  <div key={key} className="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid={`public-intake-clarification-${key}`}>
-                    <div className="text-sm font-semibold text-gray-900">{question?.label || question?.question || key}</div>
-                    {question?.help ? <div className="mt-1 text-xs text-gray-500">{question.help}</div> : null}
-                    <div className="mt-3">
-                      {isRadio ? (
-                        <div className="flex flex-wrap gap-2">
-                          {options.map((opt) => (
-                            <button
-                              key={String(opt)}
-                              type="button"
-                              onClick={() => setClarificationAnswer(key, opt)}
-                              className={`rounded-full border px-3 py-2 text-sm font-semibold ${
-                                String(answer) === String(opt)
-                                  ? "border-indigo-500 bg-indigo-600 text-white"
-                                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                              }`}
-                            >
-                              {String(opt)}
-                            </button>
-                          ))}
-                          <button
-                            type="button"
-                            onClick={() => setClarificationAnswer(key, "")}
-                            className="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                          >
-                            Skip
-                          </button>
-                        </div>
-                      ) : (
-                        <textarea
-                          rows={3}
-                          className="w-full rounded border px-3 py-2 text-sm"
-                          value={answer}
-                          onChange={(e) => setClarificationAnswer(key, e.target.value)}
-                          placeholder="Type a short answer or skip this question"
-                        />
-                      )}
-                    </div>
-                  </div>
-                );
-              }) : (
-                <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-                  No clarification questions are needed for this project. You can continue.
+
+            {questionCount ? (
+              <div className="mt-4">
+                <div className="mb-3 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <span>
+                    Question {questionNumber} of {questionCount}
+                  </span>
+                  <span>{activeClarificationAnswer ? "Answer saved" : "Optional"}</span>
                 </div>
-              )}
-            </div>
+
+                <div
+                  className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-4 shadow-sm"
+                  data-testid={`public-intake-clarification-${activeClarificationQuestion?.key || "question"}`}
+                >
+                  <div className="inline-flex rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+                    AI prompt
+                  </div>
+                  <div className="mt-3 text-base font-semibold text-gray-900">
+                    {activeClarificationQuestion?.label || activeClarificationQuestion?.question || "Clarification question"}
+                  </div>
+                  {activeClarificationQuestion?.help ? (
+                    <div className="mt-2 text-sm text-slate-600">{activeClarificationQuestion.help}</div>
+                  ) : null}
+                  <div className="mt-3 text-xs text-slate-500">You can skip anything you&apos;re unsure about.</div>
+
+                  <div className="mt-4">
+                    {isChoiceQuestion ? (
+                      <div className="flex flex-wrap gap-2">
+                        {options.map((opt) => (
+                          <button
+                            key={String(opt)}
+                            type="button"
+                            onClick={() => {
+                              if (!activeClarificationQuestion?.key) return;
+                              setClarificationAnswer(activeClarificationQuestion.key, opt);
+                            }}
+                            className={`rounded-full border px-3 py-2 text-sm font-semibold ${
+                              String(activeClarificationAnswer) === String(opt)
+                                ? "border-indigo-500 bg-indigo-600 text-white"
+                                : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                            }`}
+                          >
+                            {String(opt)}
+                          </button>
+                        ))}
+                      </div>
+                    ) : isTextareaQuestion ? (
+                      <textarea
+                        rows={4}
+                        className="w-full rounded border px-3 py-2 text-sm"
+                        value={activeClarificationAnswer}
+                        onChange={(e) => {
+                          if (!activeClarificationQuestion?.key) return;
+                          setClarificationAnswer(activeClarificationQuestion.key, e.target.value);
+                        }}
+                        placeholder="Type a short answer or skip this question"
+                      />
+                    ) : (
+                      <input
+                        className="w-full rounded border px-3 py-2 text-sm"
+                        value={activeClarificationAnswer}
+                        onChange={(e) => {
+                          if (!activeClarificationQuestion?.key) return;
+                          setClarificationAnswer(activeClarificationQuestion.key, e.target.value);
+                        }}
+                        placeholder="Type a short answer or skip this question"
+                      />
+                    )}
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={handleBack}
+                        className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                      >
+                        Back
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleClarificationAdvance({ skip: true })}
+                        className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        Skip
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleClarificationAdvance()}
+                      className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+                    >
+                      {isLastQuestion ? "Continue" : "Next"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+                No clarification questions are needed for this project. You can continue.
+              </div>
+            )}
           </div>
 
           <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
@@ -651,11 +788,6 @@ export default function PublicIntakeWizard() {
                 <div className="text-sm text-slate-500">No photos uploaded yet.</div>
               )}
             </div>
-          </div>
-
-          <div className="mt-5 flex items-center justify-between gap-3">
-            <button type="button" onClick={() => setCurrentStep(0)} className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Back</button>
-            <button type="button" onClick={handleNext} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">Continue</button>
           </div>
         </div>
       );
@@ -993,8 +1125,8 @@ export default function PublicIntakeWizard() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-8">
-      <div className="mx-auto max-w-5xl space-y-6">
+    <div className="w-full">
+      <div className="space-y-6">
         <div className="rounded-xl border bg-white p-6 shadow-sm">
           <div className="text-2xl font-bold text-gray-900">Project Intake</div>
           <div className="mt-2 text-sm text-gray-600">{contractorName} has asked you to complete a project intake so they can prepare your agreement.</div>
@@ -1022,6 +1154,8 @@ export default function PublicIntakeWizard() {
               <button type="button" onClick={handleBranchSubmit} disabled={branchSubmitting || saving} data-testid="public-intake-branch-submit" className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{branchSubmitting ? "Saving..." : "Save next step"}</button>
             ) : currentStep === 6 ? (
               <button data-testid="public-intake-submit-button" type="button" onClick={handleConfirm} disabled={saving || branchSubmitting || !canFinish} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{saving ? "Submitting..." : "Submit Intake"}</button>
+            ) : currentStep === 1 ? (
+              <button type="button" onClick={() => handleClarificationAdvance()} disabled={saving || branchSubmitting} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{clarificationQuestions.length && currentQuestionIndex < clarificationQuestions.length - 1 ? "Next" : "Continue"}</button>
             ) : (
               <button type="button" onClick={handleNext} disabled={saving || branchSubmitting || (currentStep === 0 && !canGenerateStructure)} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{currentStep === 0 ? (saving ? "Generating..." : "Generate project structure") : "Continue"}</button>
             )}
