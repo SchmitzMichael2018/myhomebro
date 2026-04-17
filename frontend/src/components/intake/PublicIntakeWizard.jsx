@@ -1777,13 +1777,24 @@ export default function PublicIntakeWizard() {
   return (
     <div className="w-full">
       <div className="space-y-6">
-        <div className="rounded-xl border bg-white p-6 shadow-sm">
-          <div className="text-2xl font-bold text-gray-900">Project Intake</div>
-          <div className="mt-2 text-sm text-gray-600">{contractorName} has asked you to complete a project intake so they can prepare your agreement.</div>
-          {statusText ? <div className="mt-3 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Status: {statusText}</div> : null}
+        <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-2xl shadow-black/10">
+          <div className="max-w-3xl">
+            <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+              Project intake
+            </div>
+            <div className="mt-3 text-2xl font-semibold tracking-tight text-gray-900">Project Intake</div>
+            <div className="mt-2 text-sm text-slate-600">
+              {contractorName} has asked you to complete a project intake so they can prepare your agreement.
+            </div>
+            {statusText ? (
+              <div className="mt-3 inline-flex rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                Status: {statusText}
+              </div>
+            ) : null}
+          </div>
         </div>
 
-        <div className="rounded-xl border bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border border-white/70 bg-white p-4 shadow-2xl shadow-black/10">
           <div className="flex flex-wrap gap-2">
             {stepLabels.map((label, index) => (
               <button key={label} type="button" onClick={() => setCurrentStep(index)}>
@@ -1795,22 +1806,22 @@ export default function PublicIntakeWizard() {
 
         {renderStep()}
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col gap-3 rounded-2xl border border-white/70 bg-white p-4 shadow-xl shadow-black/10 sm:flex-row sm:items-center sm:justify-between">
           <button
             type="button"
             onClick={handleBack}
             disabled={currentStep === 0 || saving || branchSubmitting}
             data-testid={currentStep === 2 ? "public-intake-structured-back" : undefined}
-            className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
           >
             Back
           </button>
 
         <div className="flex flex-wrap items-center gap-3">
             {currentStep === 5 ? (
-              <button type="button" onClick={handleBranchSubmit} disabled={branchSubmitting || saving} data-testid="public-intake-branch-submit" className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{branchSubmitting ? "Saving..." : "Save next step"}</button>
+              <button type="button" onClick={handleBranchSubmit} disabled={branchSubmitting || saving} data-testid="public-intake-branch-submit" className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{branchSubmitting ? "Saving..." : "Save and Review"}</button>
             ) : currentStep === 6 ? (
-              <button data-testid="public-intake-submit-button" type="button" onClick={handleConfirm} disabled={saving || branchSubmitting || !canFinish} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{saving ? "Submitting..." : "Submit Intake"}</button>
+              <button data-testid="public-intake-submit-button" type="button" onClick={handleConfirm} disabled={saving || branchSubmitting || !canFinish} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{saving ? "Submitting..." : "Submit Project Plan"}</button>
             ) : currentStep === 2 ? (
               <button
                 type="button"
@@ -1829,7 +1840,7 @@ export default function PublicIntakeWizard() {
                 data-testid="public-intake-contact-continue"
                 className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
               >
-                Continue
+                Continue to Choose Path
               </button>
             ) : currentStep === 1 ? (
               <div className="text-xs text-gray-500">Use the question card above to continue your clarification.</div>
@@ -1841,8 +1852,10 @@ export default function PublicIntakeWizard() {
           </div>
         </div>
 
-        <div className="rounded-xl border bg-white p-6 shadow-sm">
-          <div className="text-sm text-gray-600">Once you submit this intake, your contractor can review it and prepare the agreement.</div>
+        <div className="rounded-2xl border border-white/70 bg-white p-6 shadow-xl shadow-black/10">
+          <div className="text-sm text-slate-600">
+            Once you submit this project plan, your contractor can review it and prepare the agreement.
+          </div>
         </div>
       </div>
     </div>

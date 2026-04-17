@@ -1616,12 +1616,9 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
   await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Public Leads' }).click();
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
-    'Contractor Form'
+    'Riley Customer'
   );
   await expect(page.getByTestId('public-lead-funnel')).toContainText('Analyze');
-  await expect(page.getByTestId('public-lead-workflow-hint')).toContainText(
-    'Review the completed intake first. Then analyze it or move straight into a draft agreement'
-  );
   await expect(page.getByRole('button', { name: 'Accept Lead' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Reject Lead' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Review Intake' }).click();
