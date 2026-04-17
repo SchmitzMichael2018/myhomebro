@@ -1,9 +1,11 @@
 from __future__ import annotations
+import base64
 import json
 from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
+import tempfile
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -99,6 +101,7 @@ from projects.services.activity_feed import (
 from projects.services.direct_pay import create_direct_pay_checkout_for_invoice
 from projects.services.draw_requests import finalize_draw_paid, release_escrow_draw
 from projects.services.estimation_engine import build_project_estimate, _clarification_signature_from_answers
+from projects.services.intake_analysis import analyze_project_intake
 from projects.services.intake_conversion import convert_intake_to_agreement
 from projects.services.regions import build_normalized_region_key
 from projects.services.template_apply import apply_template_to_agreement, save_agreement_as_template
@@ -1356,6 +1359,14 @@ class ContractorPublicPresenceApiTests(TestCase):
             ai_description="Structured kitchen remodel scope.",
             ai_project_timeline_days=21,
             ai_project_budget=Decimal("25000.00"),
+            measurement_handling="site_visit_required",
+            ai_clarification_questions=[
+                {"key": "measurement_handling", "label": "How should measurements be handled before work starts?"},
+            ],
+            ai_clarification_answers={
+                "measurement_handling": "site_visit_required",
+                "materials_responsibility": "Contractor",
+            },
             ai_milestones=[
                 {"title": "Preparation", "description": "Prepare the kitchen for work."},
                 {"title": "Build", "description": "Complete the remodel work."},
@@ -1372,8 +1383,69 @@ class ContractorPublicPresenceApiTests(TestCase):
         agreement = Agreement.objects.get(pk=response.json()["agreement_id"])
         self.assertEqual(agreement.total_cost, Decimal("25000.00"))
         self.assertEqual(agreement.total_time_estimate, timedelta(days=21))
+        self.assertTrue(hasattr(agreement, "ai_scope"))
+        self.assertEqual(agreement.ai_scope.answers.get("measurement_handling"), "site_visit_required")
+        self.assertEqual(agreement.ai_scope.answers.get("materials_responsibility"), "Contractor")
         intake.refresh_from_db()
         self.assertEqual(intake.agreement_id, agreement.id)
+
+    def test_public_intake_analysis_returns_clarification_questions_and_answers(self):
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            initiated_by="homeowner",
+            status="submitted",
+            customer_name="Clarify Prospect",
+            accomplishment_text="Need a bathroom remodel with updated tile.",
+            measurement_handling="site_visit_required",
+            ai_clarification_answers={
+                "scope_depth": "Full bathroom",
+                "layout_changes": "Yes, minor changes",
+                "materials_responsibility": "Split",
+            },
+        )
+
+        result = analyze_project_intake(intake=intake)
+        keys = {row.get("key") for row in result.get("clarification_questions", [])}
+        self.assertTrue({"scope_depth", "layout_changes", "materials_responsibility", "timeline_clarity", "measurement_handling"}.issubset(keys))
+        self.assertEqual(result.get("measurement_handling"), "site_visit_required")
+        self.assertIn("Clarifications and assumptions", result.get("description", ""))
+        self.assertIn("site visit", " ".join(result.get("clarification_assumptions", [])))
+
+    @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+    def test_public_intake_photo_upload_creates_photo(self):
+        start_response = self.client.post(
+            "/api/projects/public-intake/start/",
+            {
+                "contractor_slug": self.profile.slug,
+                "source": "landing_page",
+                "customer_name": "Photo Prospect",
+                "customer_email": "photo@example.com",
+            },
+            format="json",
+        )
+        token = start_response.json()["token"]
+
+        upload = self.client.post(
+            f"/api/projects/public-intake/photos/?token={token}",
+            {
+                "photo": SimpleUploadedFile(
+                    "clarification.png",
+                    base64.b64decode(
+                        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jXGkAAAAASUVORK5CYII="
+                    ),
+                    content_type="image/png",
+                ),
+                "caption": "Reference photo",
+            },
+            format="multipart",
+        )
+        self.assertEqual(upload.status_code, 201)
+        intake = ProjectIntake.objects.get(share_token=token)
+        self.assertEqual(intake.clarification_photos.count(), 1)
+        photo = intake.clarification_photos.first()
+        self.assertEqual(photo.caption, "Reference photo")
+        self.assertTrue(photo.image.name)
 
     @patch("projects.services.intake_public.send_postmark_template_email", return_value=None)
     def test_contractor_sent_intake_completes_into_unified_ready_for_review_lead(self, _send_email):

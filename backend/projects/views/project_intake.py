@@ -60,11 +60,13 @@ class ProjectIntakeViewSet(viewsets.ModelViewSet):
         intake.ai_description = result.get("description", "")
         intake.ai_project_timeline_days = result.get("project_timeline_days")
         intake.ai_project_budget = result.get("project_budget")
+        intake.measurement_handling = result.get("measurement_handling", intake.measurement_handling)
         intake.ai_recommended_template_id = result.get("template_id")
         intake.ai_recommendation_confidence = result.get("confidence", "none")
         intake.ai_recommendation_reason = result.get("reason", "")
         intake.ai_milestones = result.get("milestones", [])
         intake.ai_clarification_questions = result.get("clarification_questions", [])
+        intake.ai_clarification_answers = result.get("clarification_answers", intake.ai_clarification_answers)
         intake.ai_analysis_payload = result
         intake.status = "analyzed"
         intake.analyzed_at = timezone.now()
@@ -76,11 +78,13 @@ class ProjectIntakeViewSet(viewsets.ModelViewSet):
                 "ai_description",
                 "ai_project_timeline_days",
                 "ai_project_budget",
+                "measurement_handling",
                 "ai_recommended_template_id",
                 "ai_recommendation_confidence",
                 "ai_recommendation_reason",
                 "ai_milestones",
                 "ai_clarification_questions",
+                "ai_clarification_answers",
                 "ai_analysis_payload",
                 "status",
                 "analyzed_at",

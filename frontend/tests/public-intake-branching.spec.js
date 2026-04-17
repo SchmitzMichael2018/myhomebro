@@ -56,7 +56,10 @@ test("landing page drives into intake and public intake shows branching choices 
           ai_project_timeline_days: null,
           ai_project_budget: null,
           ai_milestones: [],
+          measurement_handling: "",
           ai_clarification_questions: [],
+          ai_clarification_answers: {},
+          clarification_photos: [],
           ai_analysis_payload: {},
           post_submit_flow: "",
           post_submit_flow_selected_at: null,
@@ -84,11 +87,14 @@ test("landing page drives into intake and public intake shows branching choices 
         ai_description: "Structured commercial scope summary.",
         ai_project_timeline_days: 10,
         ai_project_budget: "5000.00",
+        measurement_handling: "site_visit_required",
         ai_milestones: [
           { title: "Preparation", description: "Prepare site and confirm scope." },
           { title: "Core Work", description: "Complete the requested work." },
         ],
         ai_clarification_questions: [],
+        ai_clarification_answers: { measurement_handling: "site_visit_required" },
+        clarification_photos: [],
         ai_analysis_payload: {},
         post_submit_flow: body.branch_flow || "",
         branch_invites:
@@ -118,6 +124,7 @@ test("landing page drives into intake and public intake shows branching choices 
 
   await page.getByTestId("public-intake-accomplishment-text").fill("Need a bid-ready commercial scope.");
   await page.getByTestId("public-intake-generate-structure").click();
+  await page.getByRole("button", { name: "Continue" }).first().click();
   await page.getByRole("button", { name: "Choose Path" }).click();
   await expect(page.getByTestId("public-intake-branching-section")).toBeVisible();
   await expect(page.getByTestId("public-intake-branching-section")).toContainText("How would you like to proceed?");
@@ -134,10 +141,13 @@ test("landing page drives into intake and public intake shows branching choices 
   await multiBranch.getByPlaceholder("Phone").nth(1).fill("555-202-0002");
   await page.getByTestId("public-intake-branch-submit").click();
 
-  await expect(page.getByTestId("public-intake-branching-section")).toContainText("2 invites");
+  await expect(page.getByRole("heading", { name: "Review + Confirm" })).toBeVisible();
+  await expect(page.getByText("2 invites prepared")).toBeVisible();
   await expect(page.getByText("Get Multiple Quotes").first()).toBeVisible();
   expect(branchRequests.some((body) => body.branch_flow === "multi_contractor")).toBeTruthy();
 
+  await page.getByRole("button", { name: "Choose Path" }).click();
+  await expect(page.getByTestId("public-intake-branching-section")).toBeVisible();
   await page.getByTestId("public-intake-branch-single").click();
   const singleBranch = page.getByTestId("public-intake-branching-section");
   await singleBranch.getByPlaceholder("Contractor name").fill("Prime Builder");
@@ -145,6 +155,7 @@ test("landing page drives into intake and public intake shows branching choices 
   await singleBranch.getByPlaceholder("(555) 555-5555").fill("555-303-0003");
   await page.getByTestId("public-intake-branch-submit").click();
 
-  await expect(page.getByTestId("public-intake-branching-section")).toContainText("1 invite");
+  await expect(page.getByRole("heading", { name: "Review + Confirm" })).toBeVisible();
+  await expect(page.getByText("1 invite prepared")).toBeVisible();
   expect(branchRequests.some((body) => body.branch_flow === "single_contractor")).toBeTruthy();
 });

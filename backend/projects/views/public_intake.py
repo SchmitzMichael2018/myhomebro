@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from django.utils import timezone
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from projects.models_invite import ContractorInvite
-from projects.models_project_intake import ProjectIntake
+from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from projects.models import PublicContractorLead
 from projects.services.intake_analysis import analyze_project_intake
 from projects.services.invites_delivery import build_invite_url
@@ -49,10 +50,32 @@ class PublicIntakeView(APIView):
         "ai_description",
         "ai_project_timeline_days",
         "ai_project_budget",
+        "measurement_handling",
         "ai_milestones",
         "ai_clarification_questions",
+        "ai_clarification_answers",
         "ai_analysis_payload",
     }
+
+    def _serialize_photos(self, request, intake):
+        out = []
+        for photo in intake.clarification_photos.all().order_by("-uploaded_at", "-id"):
+            image_url = ""
+            try:
+                if getattr(photo, "image", None):
+                    image_url = request.build_absolute_uri(photo.image.url)
+            except Exception:
+                image_url = ""
+            out.append(
+                {
+                    "id": photo.id,
+                    "caption": photo.caption,
+                    "original_name": photo.original_name,
+                    "image_url": image_url,
+                    "uploaded_at": photo.uploaded_at.isoformat() if photo.uploaded_at else None,
+                }
+            )
+        return out
 
     BRANCH_CHOICES = {"single_contractor", "multi_contractor"}
 
@@ -120,9 +143,12 @@ class PublicIntakeView(APIView):
             "ai_description": intake.ai_description,
             "ai_project_timeline_days": intake.ai_project_timeline_days,
             "ai_project_budget": str(intake.ai_project_budget) if intake.ai_project_budget is not None else None,
+            "measurement_handling": intake.measurement_handling,
             "ai_milestones": intake.ai_milestones,
             "ai_clarification_questions": intake.ai_clarification_questions,
+            "ai_clarification_answers": intake.ai_clarification_answers,
             "ai_analysis_payload": intake.ai_analysis_payload,
+            "clarification_photos": self._serialize_photos(request, intake),
             "post_submit_flow": intake.post_submit_flow,
             "post_submit_flow_selected_at": intake.post_submit_flow_selected_at.isoformat()
             if intake.post_submit_flow_selected_at
@@ -151,8 +177,10 @@ class PublicIntakeView(APIView):
                 "ai_description",
                 "ai_project_timeline_days",
                 "ai_project_budget",
+                "measurement_handling",
                 "ai_milestones",
                 "ai_clarification_questions",
+                "ai_clarification_answers",
                 "ai_analysis_payload",
             }
         )
@@ -283,16 +311,32 @@ class PublicIntakeView(APIView):
                     "ai_description": intake.ai_description,
                     "ai_project_timeline_days": intake.ai_project_timeline_days,
                     "ai_project_budget": str(intake.ai_project_budget) if intake.ai_project_budget is not None else None,
+                    "measurement_handling": intake.measurement_handling,
                     "ai_milestones": intake.ai_milestones,
                     "ai_clarification_questions": intake.ai_clarification_questions,
+                    "ai_clarification_answers": intake.ai_clarification_answers,
                     "ai_analysis_payload": intake.ai_analysis_payload,
+                    "clarification_photos": self._serialize_photos(request, intake),
                 },
                 status=status.HTTP_200_OK,
             )
 
         accomplishment = (intake.accomplishment_text or "").strip()
+        has_structured_output_edits = any(
+            field in request.data
+            for field in {
+                "ai_project_title",
+                "ai_project_type",
+                "ai_project_subtype",
+                "ai_description",
+                "ai_project_timeline_days",
+                "ai_project_budget",
+                "ai_milestones",
+            }
+        )
+        has_clarification_edits = any(field in request.data for field in {"measurement_handling", "ai_clarification_answers"})
 
-        if accomplishment and not has_ai_updates:
+        if accomplishment and not has_structured_output_edits and (has_clarification_edits or not has_ai_updates):
             intake.completed_at = timezone.now()
             changed.append("completed_at")
 
@@ -301,7 +345,7 @@ class PublicIntakeView(APIView):
             intake.status = "submitted"
             changed.append("status")
 
-        if accomplishment and not has_ai_updates:
+        if accomplishment and not has_structured_output_edits and (has_clarification_edits or not has_ai_updates):
             result = analyze_project_intake(intake=intake)
             intake.ai_project_title = result.get("project_title", "")
             intake.ai_project_type = result.get("project_type", "")
@@ -309,11 +353,13 @@ class PublicIntakeView(APIView):
             intake.ai_description = result.get("description", "")
             intake.ai_project_timeline_days = result.get("project_timeline_days")
             intake.ai_project_budget = result.get("project_budget")
+            intake.measurement_handling = result.get("measurement_handling", intake.measurement_handling)
             intake.ai_recommended_template_id = result.get("template_id")
             intake.ai_recommendation_confidence = result.get("confidence", "none")
             intake.ai_recommendation_reason = result.get("reason", "")
             intake.ai_milestones = result.get("milestones", [])
             intake.ai_clarification_questions = result.get("clarification_questions", [])
+            intake.ai_clarification_answers = result.get("clarification_answers", intake.ai_clarification_answers)
             intake.ai_analysis_payload = result
             intake.analyzed_at = timezone.now()
             changed.extend(
@@ -324,11 +370,13 @@ class PublicIntakeView(APIView):
                     "ai_description",
                     "ai_project_timeline_days",
                     "ai_project_budget",
+                    "measurement_handling",
                     "ai_recommended_template_id",
                     "ai_recommendation_confidence",
                     "ai_recommendation_reason",
                     "ai_milestones",
                     "ai_clarification_questions",
+                    "ai_clarification_answers",
                     "ai_analysis_payload",
                     "analyzed_at",
                 ]
@@ -358,9 +406,75 @@ class PublicIntakeView(APIView):
                 "ai_description": intake.ai_description,
                 "ai_project_timeline_days": intake.ai_project_timeline_days,
                 "ai_project_budget": str(intake.ai_project_budget) if intake.ai_project_budget is not None else None,
+                "measurement_handling": intake.measurement_handling,
                 "ai_milestones": intake.ai_milestones,
                 "ai_clarification_questions": intake.ai_clarification_questions,
+                "ai_clarification_answers": intake.ai_clarification_answers,
                 "ai_analysis_payload": intake.ai_analysis_payload,
+                "clarification_photos": self._serialize_photos(request, intake),
             },
             status=status.HTTP_200_OK,
+        )
+
+
+class PublicIntakeClarificationPhotoUploadView(APIView):
+    permission_classes = []
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def _get_intake(self, request):
+        token = (request.query_params.get("token") or request.data.get("token") or "").strip()
+        if not token:
+            return None, Response({"detail": "Missing intake token."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            intake = ProjectIntake.objects.get(share_token=token)
+        except ProjectIntake.DoesNotExist:
+            return None, Response({"detail": "Intake link not found."}, status=status.HTTP_404_NOT_FOUND)
+        return intake, None
+
+    def _serialize_photo(self, request, photo):
+        image_url = ""
+        try:
+            if getattr(photo, "image", None):
+                image_url = request.build_absolute_uri(photo.image.url)
+        except Exception:
+            image_url = ""
+        return {
+            "id": photo.id,
+            "caption": photo.caption,
+            "original_name": photo.original_name,
+            "image_url": image_url,
+            "uploaded_at": photo.uploaded_at.isoformat() if photo.uploaded_at else None,
+        }
+
+    def post(self, request, *args, **kwargs):
+        intake, error_response = self._get_intake(request)
+        if error_response:
+            return error_response
+
+        uploaded_files = request.FILES.getlist("files") or request.FILES.getlist("photos")
+        single = request.FILES.get("file") or request.FILES.get("photo")
+        if single is not None:
+            uploaded_files.append(single)
+
+        if not uploaded_files:
+            return Response({"detail": "No image provided."}, status=status.HTTP_400_BAD_REQUEST)
+
+        caption = (request.data.get("caption") or "").strip()
+        created = []
+        for file_obj in uploaded_files:
+            created.append(
+                ProjectIntakeClarificationPhoto.objects.create(
+                    project_intake=intake,
+                    image=file_obj,
+                    original_name=getattr(file_obj, "name", "") or "",
+                    caption=caption,
+                )
+            )
+
+        return Response(
+            {
+                "detail": "Photo uploaded successfully.",
+                "photos": [self._serialize_photo(request, photo) for photo in created],
+            },
+            status=status.HTTP_201_CREATED,
         )

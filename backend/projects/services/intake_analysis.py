@@ -381,8 +381,216 @@ def _estimate_budget(project_type: str, project_subtype: str, accomplishment: st
     return Decimal("5000.00")
 
 
+def _project_label(project_type: str, project_subtype: str, accomplishment: str) -> str:
+    for value in (project_subtype, project_type, accomplishment):
+        text = _safe_str(value)
+        if text:
+            return text.split(",")[0].strip()
+    return "project"
+
+
+def _clarification_questions(project_type: str, project_subtype: str, accomplishment: str) -> list[dict[str, Any]]:
+    label = _project_label(project_type, project_subtype, accomplishment)
+    label_lower = label.lower()
+
+    scope_label = f"How much of the {label_lower} should be included?"
+    if "roof" in label_lower:
+        scope_label = "What roof areas and repairs should be included?"
+    elif "bathroom" in label_lower:
+        scope_label = "Which bathroom areas are included in the scope?"
+    elif "kitchen" in label_lower:
+        scope_label = "Which kitchen areas are included in the scope?"
+
+    layout_label = "Are any layout changes, moves, or reconfiguration included?"
+    if "roof" in label_lower:
+        layout_label = "Are any structural changes, decking changes, or rework included?"
+    elif "floor" in label_lower:
+        layout_label = "Are any transitions, leveling, or subfloor changes included?"
+
+    materials_label = "Who is responsible for supplying the materials?"
+    if "paint" in label_lower:
+        materials_label = "Who supplies paint, trim, and related materials?"
+    elif "electrical" in label_lower or "plumbing" in label_lower:
+        materials_label = "Who supplies fixtures, devices, or specialty materials?"
+
+    timeline_label = "How clear is the timeline for this project?"
+    measurement_label = "How should measurements be handled before work starts?"
+
+    return [
+        {
+            "key": "scope_depth",
+            "label": scope_label,
+            "question": scope_label,
+            "type": "text",
+            "inputType": "textarea",
+            "required": False,
+            "help": "A short answer is fine.",
+            "options": [],
+            "source": "analysis",
+        },
+        {
+            "key": "layout_changes",
+            "label": layout_label,
+            "question": layout_label,
+            "type": "select",
+            "inputType": "radio",
+            "required": False,
+            "help": "This helps us decide whether extra layout or verification steps are needed.",
+            "options": ["No", "Some changes", "Yes, major changes", "Not sure"],
+            "source": "analysis",
+        },
+        {
+            "key": "materials_responsibility",
+            "label": materials_label,
+            "question": materials_label,
+            "type": "select",
+            "inputType": "radio",
+            "required": False,
+            "help": "Materials responsibility affects schedule and agreement wording.",
+            "options": ["Contractor", "Customer", "Split", "Not sure"],
+            "source": "analysis",
+        },
+        {
+            "key": "timeline_clarity",
+            "label": timeline_label,
+            "question": timeline_label,
+            "type": "select",
+            "inputType": "radio",
+            "required": False,
+            "help": "If the timing is flexible, we can keep the agreement wording lighter.",
+            "options": ["Flexible", "Target date", "Fixed deadline", "Not sure"],
+            "source": "analysis",
+        },
+        {
+            "key": "measurement_handling",
+            "label": measurement_label,
+            "question": measurement_label,
+            "type": "select",
+            "inputType": "radio",
+            "required": False,
+            "help": "Measurements can come from the customer, a site visit, or be confirmed later.",
+            "options": ["provided", "site_visit_required", "not_sure"],
+            "source": "analysis",
+        },
+    ]
+
+
+def _clarification_answers_map(intake: ProjectIntake) -> dict[str, Any]:
+    raw = getattr(intake, "ai_clarification_answers", None)
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, list):
+        out: dict[str, Any] = {}
+        for row in raw:
+            if not isinstance(row, dict):
+                continue
+            key = _safe_str(row.get("key"))
+            if not key:
+                continue
+            out[key] = row.get("answer")
+        return out
+    return {}
+
+
+def _format_answer(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    return _safe_str(value)
+
+
+def _measurement_display(value: Any) -> str:
+    mapping = {
+        "provided": "provided by the customer",
+        "site_visit_required": "confirmed during a site visit",
+        "not_sure": "not yet clear",
+    }
+    return mapping.get(_safe_str(value), _safe_str(value))
+
+
+def _refine_description(base_description: str, answers: dict[str, Any]) -> tuple[str, list[str]]:
+    description = _safe_str(base_description).strip()
+    assumptions: list[str] = []
+
+    scope_depth = _format_answer(answers.get("scope_depth"))
+    if scope_depth:
+        assumptions.append(f"Scope depth: {scope_depth}.")
+
+    layout_changes = _format_answer(answers.get("layout_changes"))
+    if layout_changes:
+        assumptions.append(f"Layout changes: {layout_changes}.")
+
+    materials = _format_answer(answers.get("materials_responsibility"))
+    if materials:
+        assumptions.append(f"Materials responsibility: {materials}.")
+
+    timeline = _format_answer(answers.get("timeline_clarity"))
+    if timeline:
+        assumptions.append(f"Timeline clarity: {timeline}.")
+
+    measurement = _measurement_display(answers.get("measurement_handling"))
+    if measurement:
+        assumptions.append(f"Measurements: {measurement}.")
+
+    clarification_lines = [line for line in assumptions if line]
+    if clarification_lines:
+        clarification_block = "Clarifications and assumptions: " + " ".join(clarification_lines)
+        if description:
+            description = f"{description}\n\n{clarification_block}"
+        else:
+            description = clarification_block
+
+    return description, assumptions
+
+
+def _refine_milestones(milestones: list[dict[str, Any]], answers: dict[str, Any]) -> list[dict[str, Any]]:
+    out = [dict(row) for row in milestones or []]
+    if not out:
+        return out
+
+    measurement = _safe_str(answers.get("measurement_handling"))
+    layout_changes = _safe_str(answers.get("layout_changes"))
+    materials = _safe_str(answers.get("materials_responsibility"))
+
+    verification_bits: list[str] = []
+    if measurement == "site_visit_required":
+        verification_bits.append("site visit measurement verification")
+    elif measurement == "not_sure":
+        verification_bits.append("measurement verification")
+
+    if layout_changes and layout_changes.lower() not in {"no", "not sure"}:
+        verification_bits.append("layout confirmation")
+
+    if materials:
+        verification_bits.append(f"materials responsibility: {materials.lower()}")
+
+    if verification_bits:
+        first = out[0]
+        base_title = _safe_str(first.get("title")) or "Preparation"
+        base_description = _safe_str(first.get("description"))
+        note = f"Confirm {', '.join(verification_bits)} before the main work begins."
+        first["title"] = base_title if "verification" in base_title.lower() else "Site Verification and Setup"
+        first["description"] = f"{base_description} {note}".strip()
+        out[0] = first
+
+    return out
+
+
 def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
     accomplishment = _safe_str(intake.accomplishment_text)
+    clarification_questions = _clarification_questions(
+        _safe_str(getattr(intake, "ai_project_type", "")),
+        _safe_str(getattr(intake, "ai_project_subtype", "")),
+        accomplishment,
+    )
+    clarification_answers = _clarification_answers_map(intake)
+    measurement_handling = _safe_str(getattr(intake, "measurement_handling", "")) or _safe_str(
+        clarification_answers.get("measurement_handling", "")
+    )
+    if measurement_handling:
+        clarification_answers = dict(clarification_answers)
+        clarification_answers.setdefault("measurement_handling", measurement_handling)
 
     template, confidence, reason, score, template_matches = _recommend_template(intake)
     match_quality = _match_quality(score)
@@ -407,6 +615,10 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
             _safe_str(template.project_subtype),
             accomplishment,
         )
+        description = _safe_str(template.description) or accomplishment
+        refined_description, assumptions = _refine_description(description, clarification_answers)
+        milestones = _template_milestones_payload(template)
+        milestones = _refine_milestones(milestones, clarification_answers)
 
         return {
             "project_title": project_title,
@@ -421,11 +633,14 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
             "fallback_options": fallback_options,
             "project_type": _safe_str(template.project_type),
             "project_subtype": _safe_str(template.project_subtype),
-            "description": _safe_str(template.description) or accomplishment,
+            "description": refined_description,
             "project_timeline_days": timeline_days,
             "project_budget": str(budget),
-            "milestones": _template_milestones_payload(template),
-            "clarification_questions": _template_clarification_payload(template),
+            "milestones": milestones,
+            "clarification_questions": clarification_questions,
+            "clarification_answers": clarification_answers,
+            "clarification_assumptions": assumptions,
+            "measurement_handling": measurement_handling,
         }
 
     project_type, project_subtype = _infer_type_and_subtype(accomplishment)
@@ -438,6 +653,9 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
     budget = _estimate_budget(project_type, project_subtype, accomplishment)
 
     description = accomplishment or f"{project_subtype} project."
+    description, assumptions = _refine_description(description, clarification_answers)
+    milestones = _generate_default_milestones(project_type, project_subtype, accomplishment)
+    milestones = _refine_milestones(milestones, clarification_answers)
 
     return {
         "project_title": project_title,
@@ -455,6 +673,9 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
         "description": description,
         "project_timeline_days": timeline_days,
         "project_budget": str(budget),
-        "milestones": _generate_default_milestones(project_type, project_subtype, accomplishment),
-        "clarification_questions": _generate_default_clarifications(project_type, project_subtype),
+        "milestones": milestones,
+        "clarification_questions": clarification_questions,
+        "clarification_answers": clarification_answers,
+        "clarification_assumptions": assumptions,
+        "measurement_handling": measurement_handling,
     }

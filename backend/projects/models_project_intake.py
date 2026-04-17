@@ -5,6 +5,8 @@ from __future__ import annotations
 import secrets
 
 from django.db import models
+from django.utils import timezone
+from django.utils.text import slugify
 
 
 class ProjectIntake(models.Model):
@@ -143,6 +145,17 @@ class ProjectIntake(models.Model):
     ai_description = models.TextField(blank=True, default="")
     ai_project_timeline_days = models.PositiveIntegerField(null=True, blank=True)
     ai_project_budget = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    measurement_handling = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        choices=[
+            ("", "Unselected"),
+            ("provided", "Provided"),
+            ("site_visit_required", "Site Visit Required"),
+            ("not_sure", "Not Sure"),
+        ],
+    )
 
     ai_recommended_template_id = models.IntegerField(null=True, blank=True)
     ai_recommendation_confidence = models.CharField(max_length=20, blank=True, default="none")
@@ -150,6 +163,7 @@ class ProjectIntake(models.Model):
 
     ai_milestones = models.JSONField(default=list, blank=True)
     ai_clarification_questions = models.JSONField(default=list, blank=True)
+    ai_clarification_answers = models.JSONField(default=dict, blank=True)
     ai_analysis_payload = models.JSONField(default=dict, blank=True)
 
     # Public intake send/share flow
@@ -204,3 +218,34 @@ class ProjectIntake(models.Model):
             ),
         ]
         return "\n".join([p for p in parts if p])
+
+
+def project_intake_clarification_photo_upload_to(instance, filename):
+    base, dot, ext = filename.rpartition(".")
+    ext = (ext or "").lower()
+    safe = slugify(base or "photo")
+    ts = timezone.now().strftime("%Y%m%d%H%M%S")
+    intake_id = getattr(instance, "project_intake_id", None) or "unassigned"
+    return (
+        f"project_intakes/{intake_id}/clarifications/{ts}_{safe}.{ext}"
+        if ext
+        else f"project_intakes/{intake_id}/clarifications/{ts}_{safe}"
+    )
+
+
+class ProjectIntakeClarificationPhoto(models.Model):
+    project_intake = models.ForeignKey(
+        ProjectIntake,
+        on_delete=models.CASCADE,
+        related_name="clarification_photos",
+    )
+    image = models.ImageField(upload_to=project_intake_clarification_photo_upload_to)
+    original_name = models.CharField(max_length=255, blank=True, default="")
+    caption = models.CharField(max_length=255, blank=True, default="")
+    uploaded_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ["-uploaded_at", "-id"]
+
+    def __str__(self):
+        return f"ProjectIntakePhoto #{self.pk} for intake {self.project_intake_id}"

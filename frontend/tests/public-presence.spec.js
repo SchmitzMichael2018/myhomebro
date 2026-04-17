@@ -627,6 +627,17 @@ test('landing-source intake and public-profile intake land in the same contracto
           project_state: '',
           project_postal_code: '',
           accomplishment_text: '',
+          measurement_handling: '',
+          ai_project_title: '',
+          ai_project_type: '',
+          ai_project_subtype: '',
+          ai_description: '',
+          ai_project_timeline_days: null,
+          ai_project_budget: null,
+          ai_milestones: [],
+          ai_clarification_questions: [],
+          ai_clarification_answers: {},
+          clarification_photos: [],
         }),
       });
       return;
@@ -655,6 +666,8 @@ test('landing-source intake and public-profile intake land in the same contracto
         id: 501,
         status: 'submitted',
         lead_id: state.leads[0].id,
+        measurement_handling: body.measurement_handling || '',
+        ai_clarification_answers: body.ai_clarification_answers || {},
         completed_at: '2026-03-25T11:35:00Z',
       }),
     });
@@ -671,7 +684,11 @@ test('landing-source intake and public-profile intake land in the same contracto
     'Landing page intake request.'
   );
   await page.getByTestId('public-intake-generate-structure').click();
-  await page.getByRole('button', { name: 'Project Details' }).click();
+  await page.getByRole('button', { name: 'Continue' }).first().click();
+  await expect(page.getByRole('heading', { name: 'AI Structured Output' })).toBeVisible();
+  await page.getByRole('button', { name: 'Continue' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('public-intake-customer-address-line1')).toBeVisible();
   await page.getByTestId('public-intake-customer-address-line1').fill('100 Landing Way');
   await page.getByTestId('public-intake-customer-city').fill('Austin');
   await page.getByTestId('public-intake-customer-state').fill('TX');
@@ -1012,6 +1029,17 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
         project_state: 'TX',
         project_postal_code: '78706',
         accomplishment_text: 'Convert the garage into a finished office and laundry room.',
+        measurement_handling: '',
+        ai_project_title: '',
+        ai_project_type: '',
+        ai_project_subtype: '',
+        ai_description: '',
+        ai_project_timeline_days: null,
+        ai_project_budget: null,
+        ai_milestones: [],
+        ai_clarification_questions: [],
+        ai_clarification_answers: {},
+        clarification_photos: [],
         ai_analysis_payload: {},
       }),
     });
@@ -1043,6 +1071,17 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
           project_state: '',
           project_postal_code: '',
           accomplishment_text: '',
+          measurement_handling: '',
+          ai_project_title: '',
+          ai_project_type: '',
+          ai_project_subtype: '',
+          ai_description: '',
+          ai_project_timeline_days: null,
+          ai_project_budget: null,
+          ai_milestones: [],
+          ai_clarification_questions: [],
+          ai_clarification_answers: {},
+          clarification_photos: [],
           submitted_at: null,
           sent_at: '2026-03-26T11:10:00Z',
           completed_at: null,
@@ -1073,6 +1112,8 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
         id: 801,
         status: 'submitted',
         lead_id: 900,
+        measurement_handling: body.measurement_handling || '',
+        ai_clarification_answers: body.ai_clarification_answers || {},
         completed_at: '2026-03-26T12:00:00Z',
       }),
     });
@@ -1113,7 +1154,11 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
     .getByTestId('public-intake-accomplishment-text')
     .fill('Convert the garage into a finished office and laundry room.');
   await page.getByTestId('public-intake-generate-structure').click();
-  await page.getByRole('button', { name: 'Project Details' }).click();
+  await page.getByRole('button', { name: 'Continue' }).first().click();
+  await expect(page.getByRole('heading', { name: 'AI Structured Output' })).toBeVisible();
+  await page.getByRole('button', { name: 'Continue' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('public-intake-customer-address-line1')).toBeVisible();
   await page.getByTestId('public-intake-customer-address-line1').fill('400 Field Visit Rd');
   await page.getByTestId('public-intake-customer-city').fill('Austin');
   await page.getByTestId('public-intake-customer-state').fill('TX');
@@ -1543,7 +1588,11 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
     .getByTestId('public-intake-accomplishment-text')
     .fill('Complete a bathroom remodel with updated tile and fixtures.');
   await page.getByTestId('public-intake-generate-structure').click();
-  await page.getByRole('button', { name: 'Project Details' }).click();
+  await page.getByRole('button', { name: 'Continue' }).first().click();
+  await expect(page.getByRole('heading', { name: 'AI Structured Output' })).toBeVisible();
+  await page.getByRole('button', { name: 'Continue' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Project Details' })).toBeVisible();
+  await expect(page.getByTestId('public-intake-customer-address-line1')).toBeVisible();
   await page.getByTestId('public-intake-customer-address-line1').fill('300 Scope St');
   await page.getByTestId('public-intake-customer-city').fill('Austin');
   await page.getByTestId('public-intake-customer-state').fill('TX');
@@ -1554,8 +1603,9 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
   await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Public Leads' }).click();
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
-    'Contractor Form'
+    'Riley Customer'
   );
+  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Ready for Review');
   await expect(page.getByTestId('public-lead-funnel')).toContainText('Analyze');
   await expect(page.getByTestId('public-lead-workflow-hint')).toContainText(
     'Review the completed intake first. Then analyze it or move straight into a draft agreement'

@@ -132,11 +132,14 @@ def _ensure_homeowner_for_lead(lead):
 
 
 def _build_lead_analysis_payload(lead):
+    source_intake = getattr(lead, "source_intake", None)
     intake_like = SimpleNamespace(
         contractor=lead.contractor,
         accomplishment_text=_lead_scope_text(lead),
         ai_project_type="",
         ai_project_subtype="",
+        measurement_handling=getattr(source_intake, "measurement_handling", ""),
+        ai_clarification_answers=getattr(source_intake, "ai_clarification_answers", {}) or {},
     )
     result = analyze_project_intake(intake=intake_like)
     suggested_templates = list(result.get("template_matches") or [])

@@ -37,6 +37,10 @@ function moneyValue(value) {
   return String(value);
 }
 
+function emptyClarificationAnswers() {
+  return {};
+}
+
 const blankForm = {
   customer_name: "",
   customer_email: "",
@@ -60,9 +64,12 @@ const blankForm = {
   ai_description: "",
   ai_project_timeline_days: "",
   ai_project_budget: "",
+  measurement_handling: "",
   ai_milestones: [emptyMilestone(0), emptyMilestone(1), emptyMilestone(2)],
   ai_clarification_questions: [],
+  ai_clarification_answers: emptyClarificationAnswers(),
   ai_analysis_payload: {},
+  clarification_photos: [],
 };
 
 function StepPill({ active, complete, label, index }) {
@@ -97,6 +104,7 @@ export default function PublicIntakeWizard() {
   const [branchMode, setBranchMode] = useState("single_contractor");
   const [branchSubmitting, setBranchSubmitting] = useState(false);
   const [branchResult, setBranchResult] = useState(null);
+  const [clarificationUploading, setClarificationUploading] = useState(false);
   const [branchContacts, setBranchContacts] = useState([
     { name: "", email: "", phone: "" },
     { name: "", email: "", phone: "" },
@@ -107,9 +115,10 @@ export default function PublicIntakeWizard() {
 
   const stepLabels = [
     "Project Idea",
+    "AI Clarifications",
     "AI Structured Output",
-    "Project Details",
     "Contact Info",
+    "Project Details",
     "Choose Path",
     "Review + Confirm",
   ];
@@ -164,11 +173,14 @@ export default function PublicIntakeWizard() {
           ai_description: data?.ai_description || "",
           ai_project_timeline_days: data?.ai_project_timeline_days ?? "",
           ai_project_budget: moneyValue(data?.ai_project_budget),
+          measurement_handling: data?.measurement_handling || "",
           ai_milestones: normalizeMilestones(data?.ai_milestones),
           ai_clarification_questions: Array.isArray(data?.ai_clarification_questions)
             ? data.ai_clarification_questions
             : [],
+          ai_clarification_answers: data?.ai_clarification_answers || {},
           ai_analysis_payload: data?.ai_analysis_payload || {},
+          clarification_photos: Array.isArray(data?.clarification_photos) ? data.clarification_photos : [],
         });
 
         const hasStructuredOutput = !!(
@@ -177,7 +189,21 @@ export default function PublicIntakeWizard() {
           data?.ai_description ||
           (Array.isArray(data?.ai_milestones) && data.ai_milestones.length)
         );
-        setCurrentStep(data?.post_submit_flow ? 4 : hasStructuredOutput ? 1 : 0);
+        const hasClarifications =
+          Array.isArray(data?.ai_clarification_questions) && data.ai_clarification_questions.length > 0;
+        const hasClarificationAnswers =
+          data?.ai_clarification_answers && Object.keys(data.ai_clarification_answers || {}).length > 0;
+        setCurrentStep(
+          data?.post_submit_flow_selected_at
+            ? 6
+            : data?.post_submit_flow
+              ? 5
+              : hasClarificationAnswers
+                ? 2
+                : hasStructuredOutput || hasClarifications
+                  ? 1
+                  : 0
+        );
         setLoaded(true);
       } catch (e) {
         toast.error(e?.response?.data?.detail || "Could not load intake form.");
@@ -255,11 +281,17 @@ export default function PublicIntakeWizard() {
         data?.ai_project_budget !== undefined && data?.ai_project_budget !== null
           ? String(data.ai_project_budget)
           : prev.ai_project_budget,
+      measurement_handling: data?.measurement_handling ?? prev.measurement_handling,
       ai_milestones: normalizeMilestones(data?.ai_milestones ?? prev.ai_milestones),
       ai_clarification_questions: Array.isArray(data?.ai_clarification_questions)
         ? data.ai_clarification_questions
         : prev.ai_clarification_questions,
+      ai_clarification_answers:
+        data?.ai_clarification_answers && typeof data.ai_clarification_answers === "object"
+          ? data.ai_clarification_answers
+          : prev.ai_clarification_answers,
       ai_analysis_payload: data?.ai_analysis_payload || prev.ai_analysis_payload,
+      clarification_photos: Array.isArray(data?.clarification_photos) ? data.clarification_photos : prev.clarification_photos,
     }));
   }
 
@@ -279,6 +311,8 @@ export default function PublicIntakeWizard() {
       setSaving(true);
       const effectiveForm = getEffectiveProjectForm(form);
       const payload = { token, ...effectiveForm };
+      payload.measurement_handling = form.measurement_handling || "";
+      payload.ai_clarification_answers = form.ai_clarification_answers || {};
 
       if (allowBranch && branchFlow) {
         payload.branch_flow = branchFlow;
@@ -323,7 +357,13 @@ export default function PublicIntakeWizard() {
       await handleGenerateStructure();
       return;
     }
-    if (currentStep === 5) {
+    if (currentStep === 1) {
+      const saved = await saveIntake({ showToast: false, allowBranch: false });
+      if (!saved) return;
+      setCurrentStep(2);
+      return;
+    }
+    if (currentStep === 6) {
       await handleConfirm();
       return;
     }
@@ -343,6 +383,40 @@ export default function PublicIntakeWizard() {
       next[index] = { ...next[index], [field]: value };
       return { ...prev, ai_milestones: next };
     });
+  }
+
+  function setClarificationAnswer(key, value) {
+    setForm((prev) => ({
+      ...prev,
+      ai_clarification_answers: {
+        ...(prev.ai_clarification_answers || {}),
+        [key]: value,
+      },
+    }));
+  }
+
+  async function uploadClarificationPhotos(files) {
+    const items = Array.from(files || []).filter(Boolean);
+    if (!items.length) return;
+    try {
+      setClarificationUploading(true);
+      for (const file of items) {
+        const fd = new FormData();
+        fd.append("token", token);
+        fd.append("photo", file);
+        const { data } = await api.post("/projects/public-intake/photos/", fd);
+        const created = Array.isArray(data?.photos) ? data.photos : [];
+        setForm((prev) => ({
+          ...prev,
+          clarification_photos: [...created, ...(prev.clarification_photos || [])],
+        }));
+      }
+      toast.success("Photo uploaded.");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || "Could not upload photo.");
+    } finally {
+      setClarificationUploading(false);
+    }
   }
 
   async function handleBranchSubmit() {
@@ -372,6 +446,7 @@ export default function PublicIntakeWizard() {
             ? `Created ${data.branch_invites.length} contractor invite${data.branch_invites.length === 1 ? "" : "s"}.`
             : "Saved your next-step choice."
         );
+        setCurrentStep(6);
       }
       return data;
     } catch (e) {
@@ -439,6 +514,154 @@ export default function PublicIntakeWizard() {
     }
 
     if (currentStep === 1) {
+      const questions = Array.isArray(form.ai_clarification_questions) ? form.ai_clarification_questions.slice(0, 6) : [];
+      return (
+        <div className="rounded-xl border bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-gray-900">AI Clarifications</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            Answer a few quick questions to make the agreement-ready scope more accurate. You can skip any question.
+          </p>
+
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <label className="mb-2 block text-sm font-medium text-gray-900">Measurement handling</label>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { value: "provided", label: "Provided" },
+                { value: "site_visit_required", label: "Site visit required" },
+                { value: "not_sure", label: "Not sure" },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setField("measurement_handling", opt.value)}
+                  className={`rounded-full border px-3 py-2 text-sm font-semibold ${
+                    form.measurement_handling === opt.value
+                      ? "border-indigo-500 bg-indigo-600 text-white"
+                      : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                  data-testid={`public-intake-measurement-${opt.value}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-gray-900">Clarification questions</div>
+                <div className="text-xs text-gray-500">Short answers are fine. These update the structured output automatically.</div>
+              </div>
+              <button
+                type="button"
+                className="text-xs font-semibold text-indigo-700 hover:underline"
+                onClick={() => setForm((prev) => ({ ...prev, ai_clarification_answers: emptyClarificationAnswers() }))}
+              >
+                Clear answers
+              </button>
+            </div>
+            <div className="space-y-3">
+              {questions.length ? questions.map((question, index) => {
+                const key = question?.key || `q-${index}`;
+                const answer = form.ai_clarification_answers?.[key] ?? "";
+                const isRadio = (question?.inputType || question?.type) === "radio";
+                const options = Array.isArray(question?.options) ? question.options : [];
+                return (
+                  <div key={key} className="rounded-lg border border-slate-200 bg-slate-50 p-4" data-testid={`public-intake-clarification-${key}`}>
+                    <div className="text-sm font-semibold text-gray-900">{question?.label || question?.question || key}</div>
+                    {question?.help ? <div className="mt-1 text-xs text-gray-500">{question.help}</div> : null}
+                    <div className="mt-3">
+                      {isRadio ? (
+                        <div className="flex flex-wrap gap-2">
+                          {options.map((opt) => (
+                            <button
+                              key={String(opt)}
+                              type="button"
+                              onClick={() => setClarificationAnswer(key, opt)}
+                              className={`rounded-full border px-3 py-2 text-sm font-semibold ${
+                                String(answer) === String(opt)
+                                  ? "border-indigo-500 bg-indigo-600 text-white"
+                                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                              }`}
+                            >
+                              {String(opt)}
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => setClarificationAnswer(key, "")}
+                            className="rounded-full border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            Skip
+                          </button>
+                        </div>
+                      ) : (
+                        <textarea
+                          rows={3}
+                          className="w-full rounded border px-3 py-2 text-sm"
+                          value={answer}
+                          onChange={(e) => setClarificationAnswer(key, e.target.value)}
+                          placeholder="Type a short answer or skip this question"
+                        />
+                      )}
+                    </div>
+                  </div>
+                );
+              }) : (
+                <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+                  No clarification questions are needed for this project. You can continue.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-gray-900">Optional photos</div>
+                <div className="text-xs text-gray-500">Add a reference photo or two to help shape scope and agreement details.</div>
+              </div>
+              <label className="cursor-pointer rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                {clarificationUploading ? "Uploading..." : "Upload photo(s)"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => uploadClarificationPhotos(e.target.files)}
+                  disabled={clarificationUploading}
+                  data-testid="public-intake-clarification-photo-upload"
+                />
+              </label>
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {(form.clarification_photos || []).length ? (
+                form.clarification_photos.map((photo) => (
+                  <div key={photo.id || photo.image_url} className="overflow-hidden rounded-lg border bg-slate-50">
+                    {photo.image_url ? (
+                      <img src={photo.image_url} alt={photo.caption || photo.original_name || "Project photo"} className="h-32 w-full object-cover" />
+                    ) : null}
+                    <div className="px-3 py-2 text-xs text-slate-600">
+                      <div className="font-semibold text-slate-900">{photo.caption || photo.original_name || "Photo"}</div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-sm text-slate-500">No photos uploaded yet.</div>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-5 flex items-center justify-between gap-3">
+            <button type="button" onClick={() => setCurrentStep(0)} className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">Back</button>
+            <button type="button" onClick={handleNext} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700">Continue</button>
+          </div>
+        </div>
+      );
+    }
+
+    if (currentStep === 2) {
       return (
         <div className="rounded-xl border bg-white p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900">AI Structured Output</h2>
@@ -448,75 +671,33 @@ export default function PublicIntakeWizard() {
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-900">Project Title</label>
-              <input
-                className="w-full rounded border px-3 py-2 text-sm"
-                value={form.ai_project_title}
-                onChange={(e) => setField("ai_project_title", e.target.value)}
-                placeholder="Suggested project title"
-              />
+              <input className="w-full rounded border px-3 py-2 text-sm" value={form.ai_project_title} onChange={(e) => setField("ai_project_title", e.target.value)} placeholder="Suggested project title" />
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-900">Project Type</label>
-              <input
-                className="w-full rounded border px-3 py-2 text-sm"
-                value={form.ai_project_type}
-                onChange={(e) => setField("ai_project_type", e.target.value)}
-                placeholder="Repair, Remodel, Installation..."
-              />
+              <input className="w-full rounded border px-3 py-2 text-sm" value={form.ai_project_type} onChange={(e) => setField("ai_project_type", e.target.value)} placeholder="Repair, Remodel, Installation..." />
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-900">Project Subtype</label>
-              <input
-                className="w-full rounded border px-3 py-2 text-sm"
-                value={form.ai_project_subtype}
-                onChange={(e) => setField("ai_project_subtype", e.target.value)}
-                placeholder="Bathroom Remodel, Roof Repair..."
-              />
+              <input className="w-full rounded border px-3 py-2 text-sm" value={form.ai_project_subtype} onChange={(e) => setField("ai_project_subtype", e.target.value)} placeholder="Bathroom Remodel, Roof Repair..." />
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-900">Timeline</label>
-              <input
-                className="w-full rounded border px-3 py-2 text-sm"
-                value={form.ai_project_timeline_days}
-                onChange={(e) => setField("ai_project_timeline_days", e.target.value)}
-                placeholder="10"
-              />
+              <input className="w-full rounded border px-3 py-2 text-sm" value={form.ai_project_timeline_days} onChange={(e) => setField("ai_project_timeline_days", e.target.value)} placeholder="10" />
             </div>
             <div>
               <label className="mb-1 block text-sm font-medium text-gray-900">Budget</label>
-              <input
-                className="w-full rounded border px-3 py-2 text-sm"
-                value={form.ai_project_budget}
-                onChange={(e) => setField("ai_project_budget", e.target.value)}
-                placeholder="5000"
-              />
+              <input className="w-full rounded border px-3 py-2 text-sm" value={form.ai_project_budget} onChange={(e) => setField("ai_project_budget", e.target.value)} placeholder="5000" />
             </div>
           </div>
           <div className="mt-4">
             <label className="mb-1 block text-sm font-medium text-gray-900">Structured Scope</label>
-            <textarea
-              className="w-full rounded border px-3 py-2 text-sm"
-              rows={6}
-              value={form.ai_description}
-              onChange={(e) => setField("ai_description", e.target.value)}
-              placeholder="Short, agreement-ready scope summary"
-            />
+            <textarea className="w-full rounded border px-3 py-2 text-sm" rows={6} value={form.ai_description} onChange={(e) => setField("ai_description", e.target.value)} placeholder="Short, agreement-ready scope summary" />
           </div>
           <div className="mt-5">
             <div className="flex items-center justify-between gap-3">
               <label className="block text-sm font-medium text-gray-900">Milestones</label>
-              <button
-                type="button"
-                className="text-xs font-semibold text-indigo-700 hover:underline"
-                onClick={() =>
-                  setForm((prev) => ({
-                    ...prev,
-                    ai_milestones: [...(prev.ai_milestones || []), emptyMilestone((prev.ai_milestones || []).length)],
-                  }))
-                }
-              >
-                Add milestone
-              </button>
+              <button type="button" className="text-xs font-semibold text-indigo-700 hover:underline" onClick={() => setForm((prev) => ({ ...prev, ai_milestones: [...(prev.ai_milestones || []), emptyMilestone((prev.ai_milestones || []).length)], }))}>Add milestone</button>
             </div>
             <div className="mt-3 space-y-3">
               {(form.ai_milestones || []).map((milestone, index) => (
@@ -524,22 +705,11 @@ export default function PublicIntakeWizard() {
                   <div className="grid gap-3 md:grid-cols-2">
                     <div>
                       <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">Title</label>
-                      <input
-                        className="w-full rounded border px-3 py-2 text-sm"
-                        value={milestone.title || ""}
-                        onChange={(e) => setMilestone(index, "title", e.target.value)}
-                        placeholder={`Milestone ${index + 1}`}
-                      />
+                      <input className="w-full rounded border px-3 py-2 text-sm" value={milestone.title || ""} onChange={(e) => setMilestone(index, "title", e.target.value)} placeholder={`Milestone ${index + 1}`} />
                     </div>
                     <div className="md:col-span-2">
                       <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-600">Description</label>
-                      <textarea
-                        className="w-full rounded border px-3 py-2 text-sm"
-                        rows={3}
-                        value={milestone.description || ""}
-                        onChange={(e) => setMilestone(index, "description", e.target.value)}
-                        placeholder="Short milestone description"
-                      />
+                      <textarea className="w-full rounded border px-3 py-2 text-sm" rows={3} value={milestone.description || ""} onChange={(e) => setMilestone(index, "description", e.target.value)} placeholder="Short milestone description" />
                     </div>
                   </div>
                 </div>
@@ -549,7 +719,7 @@ export default function PublicIntakeWizard() {
         </div>
       );
     }
-    if (currentStep === 2) {
+    if (currentStep === 3) {
       return (
         <div className="rounded-xl border bg-white p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900">Project Details</h2>
@@ -667,7 +837,7 @@ export default function PublicIntakeWizard() {
       );
     }
 
-    if (currentStep === 3) {
+    if (currentStep === 4) {
       return (
         <div className="rounded-xl border bg-white p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900">Contact Info</h2>
@@ -694,7 +864,7 @@ export default function PublicIntakeWizard() {
       );
     }
 
-    if (currentStep === 4) {
+    if (currentStep === 5) {
       return (
         <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-6 shadow-sm" data-testid="public-intake-branching-section">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -774,6 +944,9 @@ export default function PublicIntakeWizard() {
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Timeline / Budget</div>
             <div className="mt-2 text-sm text-slate-700">Timeline: {form.ai_project_timeline_days || "Not set"} days</div>
             <div className="mt-1 text-sm text-slate-700">Budget: {form.ai_project_budget ? `$${Number(form.ai_project_budget).toLocaleString()}` : "Not set"}</div>
+            <div className="mt-2 text-sm text-slate-700">
+              Measurements: {form.measurement_handling || "Not set"}
+            </div>
           </div>
           <div className="rounded-lg border bg-slate-50 p-4 md:col-span-2">
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Milestones</div>
@@ -785,6 +958,23 @@ export default function PublicIntakeWizard() {
                 </div>
               ))}
             </div>
+          </div>
+          <div className="rounded-lg border bg-slate-50 p-4 md:col-span-2">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Clarification Summary</div>
+            <div className="mt-2 space-y-1 text-sm text-slate-700">
+              {Object.entries(form.ai_clarification_answers || {}).length ? (
+                Object.entries(form.ai_clarification_answers || {}).map(([key, value]) => (
+                  <div key={key}>
+                    <span className="font-semibold text-slate-900">{key.replace(/_/g, " ")}:</span> {String(value)}
+                  </div>
+                ))
+              ) : (
+                <div>No clarification answers provided.</div>
+              )}
+            </div>
+            {Array.isArray(form.clarification_photos) && form.clarification_photos.length ? (
+              <div className="mt-3 text-sm text-slate-600">{form.clarification_photos.length} photo{form.clarification_photos.length === 1 ? "" : "s"} attached.</div>
+            ) : null}
           </div>
           <div className="rounded-lg border bg-slate-50 p-4">
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Customer</div>
@@ -828,9 +1018,9 @@ export default function PublicIntakeWizard() {
 
           <div className="flex flex-wrap items-center gap-3">
             <div className="text-xs text-gray-500">{submittedAtLeastOnce ? "Progress saved." : "Nothing has been submitted yet."}</div>
-            {currentStep === 4 ? (
+            {currentStep === 5 ? (
               <button type="button" onClick={handleBranchSubmit} disabled={branchSubmitting || saving} data-testid="public-intake-branch-submit" className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{branchSubmitting ? "Saving..." : "Save next step"}</button>
-            ) : currentStep === 5 ? (
+            ) : currentStep === 6 ? (
               <button data-testid="public-intake-submit-button" type="button" onClick={handleConfirm} disabled={saving || branchSubmitting || !canFinish} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{saving ? "Submitting..." : "Submit Intake"}</button>
             ) : (
               <button type="button" onClick={handleNext} disabled={saving || branchSubmitting || (currentStep === 0 && !canGenerateStructure)} className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">{currentStep === 0 ? (saving ? "Generating..." : "Generate project structure") : "Continue"}</button>

@@ -8,6 +8,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from projects.models import Agreement, Homeowner, Milestone, Project
+from projects.models_ai_scope import AgreementAIScope
 from projects.models_project_intake import ProjectIntake
 from projects.models_templates import ProjectTemplate
 from projects.services.bid_workflow import infer_project_class, sync_bid_agreement_links
@@ -209,5 +210,12 @@ def convert_intake_to_agreement(
 
     if getattr(intake, "public_lead", None) is not None:
         sync_bid_agreement_links(agreement=agreement, lead=intake.public_lead, intake=intake)
+
+    scope_obj, _created = AgreementAIScope.objects.get_or_create(agreement=agreement)
+    scope_obj.questions = list(getattr(intake, "ai_clarification_questions", []) or [])
+    scope_obj.answers = dict(getattr(intake, "ai_clarification_answers", {}) or {})
+    if getattr(intake, "measurement_handling", ""):
+        scope_obj.answers.setdefault("measurement_handling", _safe_str(getattr(intake, "measurement_handling", "")))
+    scope_obj.save(update_fields=["questions", "answers", "updated_at"])
 
     return agreement

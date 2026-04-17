@@ -46,11 +46,13 @@ class ProjectIntakeSerializer(serializers.ModelSerializer):
             "ai_description",
             "ai_project_timeline_days",
             "ai_project_budget",
+            "measurement_handling",
             "ai_recommended_template_id",
             "ai_recommendation_confidence",
             "ai_recommendation_reason",
             "ai_milestones",
             "ai_clarification_questions",
+            "ai_clarification_answers",
             "ai_analysis_payload",
 
             "customer_address_display",
@@ -88,3 +90,14 @@ class ProjectIntakeAnalyzeResponseSerializer(serializers.Serializer):
     project_budget = serializers.DecimalField(required=False, max_digits=12, decimal_places=2, allow_null=True)
     milestones = serializers.ListField(child=serializers.DictField(), required=False)
     clarification_questions = serializers.ListField(child=serializers.DictField(), required=False)
+    clarification_answers = serializers.DictField(required=False)
+    clarification_assumptions = serializers.ListField(child=serializers.CharField(), required=False)
+    measurement_handling = serializers.ChoiceField(
+        choices=[
+            ("provided", "Provided"),
+            ("site_visit_required", "Site Visit Required"),
+            ("not_sure", "Not Sure"),
+        ],
+        required=False,
+        allow_blank=True,
+    )
