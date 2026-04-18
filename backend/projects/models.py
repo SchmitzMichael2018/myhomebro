@@ -287,6 +287,14 @@ class Contractor(models.Model):
         return bool(self.first_project_started_at or self.first_agreement_created_at)
 
 
+class ProposalTone(models.TextChoices):
+    PROFESSIONAL = "professional", "Professional"
+    FRIENDLY = "friendly", "Friendly"
+    STRAIGHTFORWARD = "straightforward", "Straightforward"
+    PREMIUM = "premium", "Premium"
+    WARM_CONSULTATIVE = "warm_and_consultative", "Warm and Consultative"
+
+
 class ContractorActivationEvent(models.Model):
     contractor = models.ForeignKey(
         Contractor,
@@ -404,6 +412,9 @@ class ContractorPublicProfile(models.Model):
     business_name_public = models.CharField(max_length=255, blank=True, default="")
     tagline = models.CharField(max_length=255, blank=True, default="")
     bio = models.TextField(blank=True, default="")
+    proposal_tone = models.CharField(max_length=32, choices=ProposalTone.choices, blank=True, default="")
+    preferred_signoff = models.CharField(max_length=120, blank=True, default="")
+    brand_primary_color = models.CharField(max_length=32, blank=True, default="")
     logo = models.ImageField(upload_to=contractor_public_asset_upload_to, null=True, blank=True)
     cover_image = models.ImageField(upload_to=contractor_public_asset_upload_to, null=True, blank=True)
     city = models.CharField(max_length=120, blank=True, default="")

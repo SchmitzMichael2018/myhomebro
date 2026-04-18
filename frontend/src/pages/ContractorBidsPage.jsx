@@ -353,6 +353,7 @@ export default function ContractorBidsPage() {
   const [search, setSearch] = useState("");
   const [actionBusyId, setActionBusyId] = useState("");
   const [copiedRefId, setCopiedRefId] = useState("");
+  const [contractorBrandVoice, setContractorBrandVoice] = useState({});
 
   useEffect(() => {
     return () => {
@@ -363,10 +364,14 @@ export default function ContractorBidsPage() {
   const loadWorkspace = async ({ keepSelectedBidId = "" } = {}) => {
     try {
       setLoading(true);
-      const { data } = await api.get("/projects/contractor/bids/");
+      const [{ data }, meResponse] = await Promise.all([
+        api.get("/projects/contractor/bids/"),
+        api.get("/projects/contractors/me/").catch(() => ({ data: {} })),
+      ]);
       if (!mountedRef.current) return;
       const nextRows = Array.isArray(data?.results) ? data.results : [];
       setRows(nextRows);
+      setContractorBrandVoice(meResponse?.data?.public_profile || {});
       if (keepSelectedBidId) {
         const nextSelected = nextRows.find((row) => String(row.bid_id) === String(keepSelectedBidId));
         setSelectedRow(nextSelected || null);
@@ -376,6 +381,7 @@ export default function ContractorBidsPage() {
       console.error(err);
       toast.error(err?.response?.data?.detail || "Failed to load bids.");
       setRows([]);
+      setContractorBrandVoice({});
     } finally {
       if (mountedRef.current) setLoading(false);
     }
@@ -617,7 +623,7 @@ export default function ContractorBidsPage() {
       if (target) {
         const assistantState =
           sourceKind === "lead" || sourceKind === "intake"
-            ? buildLeadAgreementAssistantState(row, { currentRoute: "/app/bids" })
+            ? buildLeadAgreementAssistantState(row, { currentRoute: "/app/bids", brandVoice: contractorBrandVoice })
             : null;
         navigate(target, assistantState ? { state: assistantState } : undefined);
         return;

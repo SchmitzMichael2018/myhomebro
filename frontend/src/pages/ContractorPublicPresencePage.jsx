@@ -178,6 +178,9 @@ const defaultProfile = {
   business_name_public: '',
   tagline: '',
   bio: '',
+  proposal_tone: '',
+  preferred_signoff: '',
+  brand_primary_color: '',
   city: '',
   state: '',
   service_area_text: '',
@@ -199,6 +202,15 @@ const defaultProfile = {
   logo_url: '',
   cover_image_url: '',
 };
+
+const PROPOSAL_TONE_OPTIONS = [
+  ['', 'Choose a tone'],
+  ['professional', 'Professional'],
+  ['friendly', 'Friendly'],
+  ['straightforward', 'Straightforward'],
+  ['premium', 'Premium'],
+  ['warm_and_consultative', 'Warm and Consultative'],
+];
 
 export default function ContractorPublicPresencePage() {
   const location = useLocation();
@@ -365,6 +377,9 @@ export default function ContractorPublicPresencePage() {
         'business_name_public',
         'tagline',
         'bio',
+        'proposal_tone',
+        'preferred_signoff',
+        'brand_primary_color',
         'city',
         'state',
         'service_area_text',
@@ -776,19 +791,62 @@ export default function ContractorPublicPresencePage() {
                   className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
                   placeholder="Public slug"
                 />
-                <input
-                  value={profile.tagline || ''}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, tagline: e.target.value }))}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
-                  placeholder="Tagline"
-                />
-                <textarea
-                  value={profile.bio || ''}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, bio: e.target.value }))}
-                  rows={5}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
-                  placeholder="About your business"
-                />
+              </div>
+
+              <div
+                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+                data-testid="brand-voice-profile-section"
+              >
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Brand &amp; Voice</div>
+                  <p className="mt-1 text-sm text-slate-600">
+                    These preferences help shape how proposal drafts sound and appear.
+                  </p>
+                </div>
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <input
+                    value={profile.tagline || ''}
+                    onChange={(e) => setProfile((prev) => ({ ...prev, tagline: e.target.value }))}
+                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                    placeholder="Tagline"
+                  />
+                  <select
+                    data-testid="proposal-tone-selector"
+                    value={profile.proposal_tone || ''}
+                    onChange={(e) => setProfile((prev) => ({ ...prev, proposal_tone: e.target.value }))}
+                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                  >
+                    {PROPOSAL_TONE_OPTIONS.map(([value, label]) => (
+                      <option key={value || 'default'} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                  <textarea
+                    value={profile.bio || ''}
+                    onChange={(e) => setProfile((prev) => ({ ...prev, bio: e.target.value }))}
+                    rows={4}
+                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
+                    placeholder="Short company intro"
+                  />
+                  <input
+                    data-testid="preferred-signoff-input"
+                    value={profile.preferred_signoff || ''}
+                    onChange={(e) => setProfile((prev) => ({ ...prev, preferred_signoff: e.target.value }))}
+                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                    placeholder="Preferred signoff"
+                  />
+                  <input
+                    data-testid="brand-primary-color-input"
+                    value={profile.brand_primary_color || ''}
+                    onChange={(e) => setProfile((prev) => ({ ...prev, brand_primary_color: e.target.value }))}
+                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                    placeholder="Brand primary color"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
                 <input
                   value={profile.city || ''}
                   onChange={(e) => setProfile((prev) => ({ ...prev, city: e.target.value }))}

@@ -90,6 +90,20 @@ def _proposal_snapshot_payload(
     photo_count = int(source_snapshot.get("photo_count") or 0)
     request_path_label = _first_non_empty(source_snapshot.get("request_path_label"))
 
+    brand_voice = _brand_voice_payload(contractor=getattr(agreement, "contractor", None))
+    brand_tagline = _safe_text(brand_voice.get("brand_tagline"))
+    short_company_intro = _safe_text(brand_voice.get("short_company_intro"))
+    proposal_tone = _safe_text(brand_voice.get("proposal_tone"))
+    preferred_signoff = _safe_text(brand_voice.get("preferred_signoff"))
+    brand_primary_color = _safe_text(brand_voice.get("brand_primary_color"))
+    brand_voice_applied = bool(
+        _safe_text(brand_tagline)
+        or _safe_text(short_company_intro)
+        or _safe_text(proposal_tone)
+        or _safe_text(preferred_signoff)
+        or _safe_text(brand_primary_color)
+    )
+
     return {
         "agreement": agreement,
         "contractor": getattr(agreement, "contractor", None),
@@ -277,6 +291,49 @@ def build_successful_proposal_template(
     }
 
 
+def _brand_voice_payload(*, contractor=None, brand_voice: dict[str, Any] | None = None) -> dict[str, Any]:
+    source: dict[str, Any] = {}
+    if isinstance(brand_voice, dict):
+        source = brand_voice
+    else:
+        public_profile = getattr(contractor, "public_profile", None) if contractor is not None else None
+        if public_profile is not None:
+            source = {
+                "business_display_name": getattr(public_profile, "business_name_public", "") or "",
+                "brand_tagline": getattr(public_profile, "tagline", "") or "",
+                "short_company_intro": getattr(public_profile, "bio", "") or "",
+                "proposal_tone": getattr(public_profile, "proposal_tone", "") or "",
+                "preferred_signoff": getattr(public_profile, "preferred_signoff", "") or "",
+                "brand_primary_color": getattr(public_profile, "brand_primary_color", "") or "",
+            }
+
+    return {
+        "business_display_name": _first_non_empty(
+            source.get("business_display_name"),
+            source.get("business_name_public"),
+            source.get("business_name"),
+            getattr(contractor, "business_name", ""),
+        ),
+        "brand_tagline": _first_non_empty(source.get("brand_tagline"), source.get("tagline")),
+        "short_company_intro": _first_non_empty(source.get("short_company_intro"), source.get("bio")),
+        "proposal_tone": _first_non_empty(source.get("proposal_tone")),
+        "preferred_signoff": _first_non_empty(source.get("preferred_signoff")),
+        "brand_primary_color": _first_non_empty(source.get("brand_primary_color")),
+    }
+
+
+def _brand_tone_phrase(proposal_tone: str) -> str:
+    tone = _safe_text(proposal_tone).lower()
+    mapping = {
+        "professional": "professional",
+        "friendly": "friendly",
+        "straightforward": "straightforward",
+        "premium": "polished",
+        "warm_and_consultative": "warm and consultative",
+    }
+    return mapping.get(tone, "")
+
+
 def build_proposal_draft(
     *,
     agreement: Agreement | None = None,
@@ -291,6 +348,7 @@ def build_proposal_draft(
     photo_count: int = 0,
     request_path_label: str = "",
     clarification_summary: Iterable[dict[str, Any]] | None = None,
+    brand_voice: dict[str, Any] | None = None,
     contractor=None,
 ) -> dict[str, Any]:
     source_title = _first_non_empty(
@@ -301,6 +359,20 @@ def build_proposal_draft(
     source_type = _first_non_empty(project_type, getattr(agreement, "project_type", ""))
     source_subtype = _first_non_empty(project_subtype, getattr(agreement, "project_subtype", ""))
     source_description = _first_non_empty(description, getattr(agreement, "description", ""))
+    brand_voice_payload = _brand_voice_payload(
+        contractor=contractor or getattr(agreement, "contractor", None),
+        brand_voice=brand_voice,
+    )
+    business_display_name = _safe_text(brand_voice_payload.get("business_display_name"))
+    brand_tagline = _safe_text(brand_voice_payload.get("brand_tagline"))
+    short_company_intro = _safe_text(brand_voice_payload.get("short_company_intro"))
+    proposal_tone = _safe_text(brand_voice_payload.get("proposal_tone"))
+    preferred_signoff = _safe_text(brand_voice_payload.get("preferred_signoff"))
+    brand_primary_color = _safe_text(brand_voice_payload.get("brand_primary_color"))
+    tone_phrase = _brand_tone_phrase(proposal_tone)
+    brand_voice_applied = bool(
+        brand_tagline or short_company_intro or proposal_tone or preferred_signoff or brand_primary_color
+    )
 
     template = build_successful_proposal_template(
         contractor=contractor or getattr(agreement, "contractor", None),
@@ -314,11 +386,26 @@ def build_proposal_draft(
         if template and template.get("learned_opening")
         else f"Thanks for sharing the details for {source_title}."
     )
-    review_line = (
-        "I reviewed similar successful projects and put together a starting proposal draft you can edit before sending."
-        if template
-        else "I reviewed the request and put together a starting proposal draft you can edit before sending."
-    )
+    brand_intro_bits = []
+    if business_display_name and brand_tagline:
+        brand_intro_bits.append(f"{business_display_name} - {brand_tagline}.")
+    elif business_display_name:
+        brand_intro_bits.append(f"{business_display_name} is ready to help review the scope and next steps.")
+    elif short_company_intro:
+        brand_intro_bits.append(short_company_intro)
+    if brand_intro_bits:
+        intro_line = " ".join([intro_line, *brand_intro_bits]).strip()
+
+    if template:
+        review_line = (
+            "I reviewed similar successful projects and put together a starting proposal draft you can edit before sending."
+        )
+    elif tone_phrase:
+        review_line = (
+            f"I reviewed the request and put together a starting proposal draft in a {tone_phrase} style you can edit before sending."
+        )
+    else:
+        review_line = "I reviewed the request and put together a starting proposal draft you can edit before sending."
 
     scope_lines: list[str] = []
     if source_type or source_subtype:
@@ -378,6 +465,8 @@ def build_proposal_draft(
         else "If this looks right, I’m happy to review the next steps and refine the bid with you."
     )
 
+    signoff_line = preferred_signoff or (f"Best, {business_display_name}" if business_display_name else "")
+
     text = "\n".join(
         [
             "Opening",
@@ -392,6 +481,7 @@ def build_proposal_draft(
             "",
             "Close",
             close_line,
+            *([signoff_line] if signoff_line else []),
         ]
     ).strip()
 
@@ -412,6 +502,9 @@ def build_proposal_draft(
             "clarificationCount": len([row for row in (clarification_summary or []) if _safe_text((row or {}).get("value"))]),
             "learningTemplateName": template["template_name"] if template else "",
             "basedOnSuccessfulProjects": bool(template),
+            "brandVoiceApplied": brand_voice_applied,
+            "brandBusinessName": business_display_name,
+            "brandTone": proposal_tone,
         },
         "learning": template or {
             "template_name": "",

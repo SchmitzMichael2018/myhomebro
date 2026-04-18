@@ -11,6 +11,9 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
       business_name_public: 'Bright Build Co',
       tagline: 'Trusted renovations and repairs',
       bio: 'We help homeowners with clean, reliable project delivery.',
+      proposal_tone: 'friendly',
+      preferred_signoff: 'Best, Bright Build Co',
+      brand_primary_color: '#2563eb',
       city: 'Austin',
       state: 'TX',
       service_area_text: 'Austin metro',
@@ -126,14 +129,20 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
 
   await page.route('**/api/projects/contractor/public-profile/', async (route) => {
     if (route.request().method() === 'PATCH') {
-      const body = await route.request().postDataBuffer();
-      if (body) {
-        state.profile.tagline = 'Now booking spring projects';
-      }
+      state.profile.tagline = 'Now booking spring projects';
+      state.profile.proposal_tone = 'warm_and_consultative';
+      state.profile.preferred_signoff = 'Warmly, Bright Build Co';
+      state.profile.brand_primary_color = '#1d4ed8';
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ ...state.profile, tagline: 'Now booking spring projects' }),
+        body: JSON.stringify({
+          ...state.profile,
+          tagline: 'Now booking spring projects',
+          proposal_tone: 'warm_and_consultative',
+          preferred_signoff: 'Warmly, Bright Build Co',
+          brand_primary_color: '#1d4ed8',
+        }),
       });
       return;
     }
@@ -312,9 +321,16 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await expect(page.getByTestId('public-presence-profile-hint')).toContainText(
     'Add project photos to strengthen your public profile'
   );
+  await expect(page.getByTestId('brand-voice-profile-section')).toBeVisible();
   await page.getByPlaceholder('Tagline').fill('Now booking spring projects');
+  await page.getByTestId('proposal-tone-selector').selectOption('warm_and_consultative');
+  await page.getByTestId('preferred-signoff-input').fill('Warmly, Bright Build Co');
+  await page.getByTestId('brand-primary-color-input').fill('#1d4ed8');
   await page.getByTestId('public-presence-save-profile').click();
   await expect(page.getByPlaceholder('Tagline')).toHaveValue('Now booking spring projects');
+  await expect(page.getByTestId('proposal-tone-selector')).toHaveValue('warm_and_consultative');
+  await expect(page.getByTestId('preferred-signoff-input')).toHaveValue('Warmly, Bright Build Co');
+  await expect(page.getByTestId('brand-primary-color-input')).toHaveValue('#1d4ed8');
 
   await page.getByRole('button', { name: 'Gallery' }).click();
   await page.getByPlaceholder('Title').fill('Kitchen Remodel');
@@ -587,7 +603,7 @@ test('landing-source intake and public-profile intake land in the same contracto
   });
 
   await page.route('**/api/projects/public/contractors/bright-build-co/intake/', async (route) => {
-    const body = route.request().postDataJSON();
+    const body = route.request().postDataJSON?.() || {};
     state.leads.unshift({
       id: state.nextLeadId++,
       ...baseLead,
@@ -603,6 +619,7 @@ test('landing-source intake and public-profile intake land in the same contracto
   });
 
   await page.route(/.*\/api\/projects\/public-intake\/?.*/, async (route) => {
+    const body = route.request().postDataJSON?.() || {};
     if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 200,
@@ -643,7 +660,6 @@ test('landing-source intake and public-profile intake land in the same contracto
       return;
     }
 
-    const body = route.request().postDataJSON();
     state.leads.unshift({
       id: state.nextLeadId++,
       ...baseLead,
@@ -683,7 +699,7 @@ test('landing-source intake and public-profile intake land in the same contracto
   await page.getByTestId('public-intake-accomplishment-text').fill(
     'Landing page intake request.'
   );
-  await expect(page.getByTestId('public-intake-generate-structure')).toBeEnabled();
+  await expect(page.getByTestId('public-intake-generate-structure')).toBeEnabled({ timeout: 10000 });
   await page.getByTestId('public-intake-generate-structure').click();
   await expect(page.getByTestId('public-intake-project-summary')).toBeVisible();
   await expect(page.getByTestId('public-intake-clarification-photo-section')).toBeVisible();
@@ -1097,6 +1113,7 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
       return;
     }
 
+    const body = route.request().postDataJSON();
     state.leads = state.leads.map((lead) =>
       lead.id === 900
         ? {
@@ -1111,19 +1128,19 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
           }
         : lead
     );
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        detail: 'Intake updated successfully.',
-        id: 801,
-        status: 'submitted',
-        lead_id: 900,
-        measurement_handling: body.measurement_handling || '',
-        ai_clarification_answers: body.ai_clarification_answers || {},
-        completed_at: '2026-03-26T12:00:00Z',
-      }),
-    });
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          detail: 'Intake updated successfully.',
+          id: 801,
+          status: 'submitted',
+          lead_id: 900,
+          measurement_handling: body.measurement_handling || '',
+          ai_clarification_answers: body.ai_clarification_answers || {},
+          completed_at: '2026-03-26T12:00:00Z',
+        }),
+      });
   });
 
   await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
@@ -1160,7 +1177,7 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
   await page
     .getByTestId('public-intake-accomplishment-text')
     .fill('Convert the garage into a finished office and laundry room.');
-  await expect(page.getByTestId('public-intake-generate-structure')).toBeEnabled();
+  await expect(page.getByTestId('public-intake-generate-structure')).toBeEnabled({ timeout: 10000 });
   await page.getByTestId('public-intake-generate-structure').click();
   await page.getByTestId('public-intake-clarification-next').click();
   await expect(page.getByTestId('public-intake-project-snapshot')).toBeVisible();

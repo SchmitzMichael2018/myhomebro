@@ -823,7 +823,7 @@ test("contractor bids workspace lead helpers support create bid handoff", async 
           "Thanks for sharing the details for Bathroom Remodel. I reviewed similar successful projects and put together a starting proposal draft you can edit before sending.",
         proposal_draft: {
           title: "Bathroom Remodel",
-          text: "Thanks for sharing the details for Bathroom Remodel.\nI reviewed similar successful projects and put together a starting proposal draft you can edit before sending.\n\nScope understanding\n- Scope focus: Remodel - Primary Bath.\n- Project summary: Update the primary bath with new finishes and fixtures.\n- 2 photos attached, which helps confirm the scope.\n- Request type: Multi-Quote Request.\n- Helpful signals: Guided Intake, Photos, Budget Provided, Timeline Provided.\n- Clarifications already captured: Measurements.\n\nImportant confirmation points\n- Measurements may need a site visit before final pricing.\n- Budget guidance was shared: $18,000 - $24,000.\n- Timing guidance: Within the next month.\n- Similar successful bids often confirmed verify measurements, review photos, confirm materials up front.\n\nClose\nIf this looks right, I’m happy to review the next steps and refine the bid with you.",
+          text: "Thanks for sharing the details for Bathroom Remodel. Bright Build Co - Trusted renovations and repairs.\nI reviewed similar successful projects and put together a starting proposal draft you can edit before sending.\n\nScope understanding\n- Scope focus: Remodel - Primary Bath.\n- Project summary: Update the primary bath with new finishes and fixtures.\n- 2 photos attached, which helps confirm the scope.\n- Request type: Multi-Quote Request.\n- Helpful signals: Guided Intake, Photos, Budget Provided, Timeline Provided.\n- Clarifications already captured: Measurements.\n\nImportant confirmation points\n- Measurements may need a site visit before final pricing.\n- Budget guidance was shared: $18,000 - $24,000.\n- Timing guidance: Within the next month.\n- Similar successful bids often confirmed verify measurements, review photos, confirm materials up front.\n\nClose\nIf this looks right, I’m happy to review the next steps and refine the bid with you.\nBest, Bright Build Co",
         },
         proposal_learning: {
           template_name: "Bathroom Remodel successful template",
@@ -834,6 +834,7 @@ test("contractor bids workspace lead helpers support create bid handoff", async 
           based_on_successful_projects: true,
         },
         used_successful_learning: true,
+        used_brand_voice: true,
       }),
     });
   });
@@ -906,18 +907,20 @@ test("contractor bids workspace lead helpers support create bid handoff", async 
 
   await page.getByTestId("create-bid-action").click();
   await expect(page).toHaveURL("/app/agreements/901/wizard?step=1");
-  await expect(page.getByTestId("proposal-draft-section")).toBeVisible();
+  const proposalDraftField = page.getByRole("textbox").first();
+  await expect(proposalDraftField).toBeVisible({ timeout: 10000 });
   await expect(page.getByTestId("proposal-draft-title")).toContainText("Proposal Draft");
   await expect(page.getByTestId("lead-context-summary")).toContainText("Bathroom Remodel");
   await expect(page.getByTestId("lead-context-summary")).toContainText("Budget");
-  await expect(page.getByTestId("proposal-draft-textarea")).toHaveValue(
+  await expect(proposalDraftField).toHaveValue(
     /Thanks for sharing the details for Bathroom Remodel/
   );
 
-  await page.getByTestId("proposal-draft-textarea").fill("Custom contractor note");
+  await proposalDraftField.fill("Custom contractor note");
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByTestId("generate-draft-button").click();
   await expect(page.getByTestId("proposal-learning-note")).toContainText("Based on similar successful projects");
+  await expect(page.getByTestId("proposal-brand-note")).toContainText("Personalized using your profile preferences");
   await expect(page.getByTestId("proposal-learning-context-toggle")).toBeVisible();
   await page.getByTestId("proposal-learning-context-toggle").click();
   await expect(page.getByTestId("proposal-learning-context")).toContainText(
@@ -1023,6 +1026,7 @@ test("contractor bids workspace keeps learning signals hidden when fallback draf
           text: "Thanks for sharing the details for Bathroom Remodel.\nI reviewed the request and put together a starting proposal draft you can edit before sending.\n\nScope understanding\n- Scope focus: Remodel - Primary Bath.\n- Project summary: Update the primary bath with new finishes and fixtures.\n\nImportant confirmation points\n- Measurements may need a site visit before final pricing.\n- Budget guidance was shared: $18,000 - $24,000.\n- Timing guidance: Within the next month.\n\nClose\nIf this looks right, I’m happy to review the next steps and refine the bid with you.",
         },
         used_successful_learning: false,
+        used_brand_voice: false,
       }),
     });
   });
@@ -1089,10 +1093,11 @@ test("contractor bids workspace keeps learning signals hidden when fallback draf
   await page.goto("/app/bids", { waitUntil: "domcontentloaded" });
   await page.getByTestId("lead-row-action-lead-6").click();
   await page.getByTestId("create-bid-action").click();
-  await expect(page.getByTestId("proposal-draft-section")).toBeVisible();
+  await expect(page.getByRole("textbox").first()).toBeVisible({ timeout: 10000 });
   await page.getByTestId("generate-draft-button").click();
   await expect(page.getByTestId("proposal-learning-note")).toHaveCount(0);
   await expect(page.getByTestId("proposal-learning-context-toggle")).toHaveCount(0);
+  await expect(page.getByTestId("proposal-brand-note")).toHaveCount(0);
 });
 
 test("contractor bids workspace can save a lead for follow-up and reopen it", async ({ page }) => {

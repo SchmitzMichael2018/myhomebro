@@ -728,8 +728,13 @@ export default function Step1Details({
     [assistantDraftPayload, assistantLeadContext, leadProposalContext, leadDetailFallback]
   );
   const leadProposalDraft = useMemo(
-    () => buildLeadProposalDraft({ leadSummary: leadProposalContext, requestSnapshot: leadProposalSnapshot }),
-    [leadProposalContext, leadProposalSnapshot]
+    () =>
+      buildLeadProposalDraft({
+        leadSummary: leadProposalContext,
+        requestSnapshot: leadProposalSnapshot,
+        brandVoice: contractorBrandVoice,
+      }),
+    [contractorBrandVoice, leadProposalContext, leadProposalSnapshot]
   );
   const hasLeadProposalContext = Boolean(
     assistantLeadContext?.lead_id ||
@@ -1137,6 +1142,8 @@ export default function Step1Details({
   const [aiPreview, setAiPreview] = useState("");
   const [proposalLearningNote, setProposalLearningNote] = useState("");
   const [proposalLearningContextOpen, setProposalLearningContextOpen] = useState(false);
+  const [proposalBrandNote, setProposalBrandNote] = useState("");
+  const [contractorBrandVoice, setContractorBrandVoice] = useState({});
 
   const [aiCredits, setAiCredits] = useState({
     loading: true,
@@ -1151,8 +1158,10 @@ export default function Step1Details({
       const { data } = await api.get("/projects/contractors/me/");
       const c = extractAiCredits(data || {});
       setAiCredits({ loading: false, ...c });
+      setContractorBrandVoice(data?.public_profile || {});
     } catch {
       setAiCredits((s) => ({ ...s, loading: false }));
+      setContractorBrandVoice({});
     }
   };
 
@@ -1369,6 +1378,7 @@ export default function Step1Details({
     if (locked || !hasLeadProposalContext) return;
 
     setProposalLearningNote("");
+    setProposalBrandNote("");
     setProposalLearningContextOpen(false);
 
     const currentDraft = safeTrim(dLocal.description);
@@ -1422,6 +1432,9 @@ export default function Step1Details({
         setProposalLearningNote("Based on similar successful projects");
         setProposalLearningContextOpen(false);
       }
+      if (data?.used_brand_voice) {
+        setProposalBrandNote("Personalized using your profile preferences");
+      }
     } catch (error) {
       const fallbackDraft = safeTrim(leadProposalDraft?.text);
       if (!fallbackDraft) {
@@ -1457,6 +1470,9 @@ export default function Step1Details({
           },
           { silent: true }
         );
+      }
+      if (leadProposalDraft?.summary?.brandVoiceApplied) {
+        setProposalBrandNote("Personalized using your profile preferences");
       }
     }
   }
@@ -3692,6 +3708,14 @@ export default function Step1Details({
                             </div>
                           ) : null}
                         </div>
+                      </div>
+                    ) : null}
+                    {proposalBrandNote ? (
+                      <div
+                        data-testid="proposal-brand-note"
+                        className="mt-3 inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-800"
+                      >
+                        {proposalBrandNote}
                       </div>
                     ) : null}
                     {leadDetailFallbackLoading && !assistantLeadContext?.lead_id ? (

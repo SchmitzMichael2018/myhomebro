@@ -1068,6 +1068,30 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(lead.public_profile_id, self.profile.id)
         self.assertEqual(lead.source, PublicContractorLead.SOURCE_PUBLIC_PROFILE)
 
+    def test_public_profile_persists_brand_voice_fields(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.patch(
+            "/api/projects/contractor/public-profile/",
+            {
+                "proposal_tone": "warm_and_consultative",
+                "preferred_signoff": "Warmly, Bright Build Co",
+                "brand_primary_color": "#1d4ed8",
+                "tagline": "Trusted renovations and repairs",
+                "bio": "We help homeowners with clean, reliable project delivery.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["proposal_tone"], "warm_and_consultative")
+        self.assertEqual(response.json()["preferred_signoff"], "Warmly, Bright Build Co")
+        self.assertEqual(response.json()["brand_primary_color"], "#1d4ed8")
+
+        profile = ContractorPublicProfile.objects.get(contractor=self.contractor)
+        self.assertEqual(profile.proposal_tone, "warm_and_consultative")
+        self.assertEqual(profile.preferred_signoff, "Warmly, Bright Build Co")
+        self.assertEqual(profile.brand_primary_color, "#1d4ed8")
+
     def test_qr_public_profile_intake_preserves_qr_source(self):
         response = self.client.post(
             f"/api/projects/public/contractors/{self.profile.slug}/intake/",
@@ -8767,6 +8791,39 @@ class ProjectLearningFoundationTests(TestCase):
         )
         self.assertFalse(fallback_draft["learning"]["based_on_successful_projects"])
         self.assertIn("Thanks for sharing the details", fallback_draft["text"])
+
+    def test_brand_voice_personalizes_proposal_draft_without_breaking_fallback(self):
+        ContractorPublicProfile.objects.create(
+            contractor=self.contractor,
+            business_name_public="Bright Build Co",
+            tagline="Trusted renovations and repairs",
+            bio="We keep projects clear and practical.",
+            proposal_tone="friendly",
+            preferred_signoff="Warmly, Bright Build Co",
+            brand_primary_color="#1d4ed8",
+        )
+
+        branded_draft = build_proposal_draft(
+            contractor=self.contractor,
+            project_title="Custom Project",
+            project_type="Custom",
+            project_subtype="Custom Scope",
+            description="Install trim and update the entry hallway.",
+        )
+
+        self.assertTrue(branded_draft["summary"]["brandVoiceApplied"])
+        self.assertIn("Bright Build Co", branded_draft["text"])
+        self.assertIn("friendly style", branded_draft["text"])
+        self.assertIn("Warmly, Bright Build Co", branded_draft["text"])
+
+        fallback_draft = build_proposal_draft(
+            project_title="Basic Project",
+            project_type="Custom",
+            project_subtype="General",
+            description="Simple scope with no profile preferences.",
+        )
+        self.assertFalse(fallback_draft["summary"]["brandVoiceApplied"])
+        self.assertNotIn("Warmly, Bright Build Co", fallback_draft["text"])
 
     def test_non_completed_or_cancelled_agreements_are_excluded_from_benchmarks(self):
         agreement = self._create_completed_agreement(status=ProjectStatus.CANCELLED)

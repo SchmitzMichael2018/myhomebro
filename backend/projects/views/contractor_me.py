@@ -241,6 +241,20 @@ class ContractorMeView(APIView):
             "ai": ai_summary,
         }
 
+        public_profile = getattr(c, "public_profile", None)
+        if public_profile is not None:
+            payload["public_profile"] = {
+                "business_name_public": getattr(public_profile, "business_name_public", "") or "",
+                "tagline": getattr(public_profile, "tagline", "") or "",
+                "bio": getattr(public_profile, "bio", "") or "",
+                "proposal_tone": getattr(public_profile, "proposal_tone", "") or "",
+                "preferred_signoff": getattr(public_profile, "preferred_signoff", "") or "",
+                "brand_primary_color": getattr(public_profile, "brand_primary_color", "") or "",
+                "logo_url": _safe_url(getattr(public_profile, "logo", None)),
+            }
+        else:
+            payload["public_profile"] = None
+
         if u:
             fn, ln = getattr(u, "first_name", ""), getattr(u, "last_name", "")
             payload.update(

@@ -57,7 +57,32 @@ function leadSummaryFromRow(row = {}) {
 
 export { leadSummaryFromRow };
 
-export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {} } = {}) {
+function normalizeBrandVoice(brandVoice = {}) {
+  return {
+    business_display_name: safeText(
+      brandVoice.business_display_name || brandVoice.business_name_public || brandVoice.business_name
+    ),
+    brand_tagline: safeText(brandVoice.brand_tagline || brandVoice.tagline),
+    short_company_intro: safeText(brandVoice.short_company_intro || brandVoice.bio),
+    proposal_tone: safeText(brandVoice.proposal_tone),
+    preferred_signoff: safeText(brandVoice.preferred_signoff),
+    brand_primary_color: safeText(brandVoice.brand_primary_color),
+  };
+}
+
+function tonePhrase(tone) {
+  const normalized = safeText(tone).toLowerCase();
+  const mapping = {
+    professional: "professional",
+    friendly: "friendly",
+    straightforward: "straightforward",
+    premium: "polished",
+    warm_and_consultative: "warm and consultative",
+  };
+  return mapping[normalized] || "";
+}
+
+export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {}, brandVoice = {} } = {}) {
   const summary = leadSummary || {};
   const snapshot = requestSnapshot || summary.request_snapshot || {};
 
@@ -75,11 +100,30 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {} 
   const photoCount = Number(snapshot.photo_count || 0);
   const requestSignals = Array.isArray(snapshot.request_signals) ? snapshot.request_signals : [];
   const materialsStatus = safeText(snapshot.materials_status || "");
+  const brand = normalizeBrandVoice(brandVoice);
+  const brandTonePhrase = tonePhrase(brand.proposal_tone);
+  const brandVoiceApplied = Boolean(
+    brand.brand_tagline ||
+      brand.short_company_intro ||
+      brand.proposal_tone ||
+      brand.preferred_signoff ||
+      brand.brand_primary_color
+  );
 
   const introParts = [
     `Thanks for sharing the details for ${projectTitle}.`,
     "I reviewed the request and put together a starting proposal draft you can edit before sending.",
   ];
+  if (brand.business_display_name && brand.brand_tagline) {
+    introParts.push(`${brand.business_display_name} - ${brand.brand_tagline}.`);
+  } else if (brand.business_display_name) {
+    introParts.push(`${brand.business_display_name} is ready to help review the scope and next steps.`);
+  } else if (brand.short_company_intro) {
+    introParts.push(brand.short_company_intro);
+  }
+  if (brandTonePhrase) {
+    introParts[1] = `I reviewed the request and put together a starting proposal draft in a ${brandTonePhrase} style you can edit before sending.`;
+  }
 
   const scopeBullets = [];
   if (projectType || projectSubtype) {
@@ -137,6 +181,8 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {} 
   const close =
     "If this looks right, I’m happy to review the next steps and refine the bid with you.";
 
+  const signoff = brand.preferred_signoff || (brand.business_display_name ? `Best, ${brand.business_display_name}` : "");
+
   const text = [
     "Opening",
     sentenceList(introParts),
@@ -149,6 +195,7 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {} 
     "",
     "Close",
     close,
+    ...(signoff ? [signoff] : []),
   ].join("\n");
 
   return {
@@ -169,14 +216,24 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {} 
       milestones: milestones.slice(0, 4),
       materialsStatus,
       clarificationCount: clarificationSummary.length,
+      brandVoiceApplied,
+      brandBusinessName: brand.business_display_name,
+      brandTone: brand.proposal_tone,
     },
   };
 }
 
-export function buildLeadAgreementAssistantState(row = {}, { currentRoute = "/app/bids" } = {}) {
+export function buildLeadAgreementAssistantState(
+  row = {},
+  { currentRoute = "/app/bids", brandVoice = {} } = {}
+) {
   const summary = leadSummaryFromRow(row);
   const snapshot = summary.request_snapshot || {};
-  const proposalDraft = buildLeadProposalDraft({ leadSummary: summary, requestSnapshot: snapshot });
+  const proposalDraft = buildLeadProposalDraft({
+    leadSummary: summary,
+    requestSnapshot: snapshot,
+    brandVoice,
+  });
 
   const projectTitle = safeText(proposalDraft.title || summary.project_title || row.project_title || "");
   const requestPath = safeText(snapshot.request_path_label || "");

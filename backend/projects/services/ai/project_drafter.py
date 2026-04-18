@@ -899,6 +899,7 @@ def draft_project_structure(
         "used_successful_learning": bool(
             (proposal_draft.get("learning") or {}).get("based_on_successful_projects")
         ),
+        "used_brand_voice": bool((proposal_draft.get("summary") or {}).get("brandVoiceApplied")),
         "pricing_summary": {
             "estimated_total_low": float(pricing_summary["estimated_total_low"]),
             "estimated_total_high": float(pricing_summary["estimated_total_high"]),
