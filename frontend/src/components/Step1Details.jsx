@@ -1136,6 +1136,7 @@ export default function Step1Details({
   const [aiErr, setAiErr] = useState("");
   const [aiPreview, setAiPreview] = useState("");
   const [proposalLearningNote, setProposalLearningNote] = useState("");
+  const [proposalLearningContextOpen, setProposalLearningContextOpen] = useState(false);
 
   const [aiCredits, setAiCredits] = useState({
     loading: true,
@@ -1368,6 +1369,7 @@ export default function Step1Details({
     if (locked || !hasLeadProposalContext) return;
 
     setProposalLearningNote("");
+    setProposalLearningContextOpen(false);
 
     const currentDraft = safeTrim(dLocal.description);
     try {
@@ -1417,13 +1419,8 @@ export default function Step1Details({
       }
 
       if (data?.used_successful_learning) {
-        const templateName = safeTrim(data?.proposal_learning?.template_name);
-        const sampleSize = Number(data?.proposal_learning?.sample_size || 0);
-        setProposalLearningNote(
-          templateName
-            ? `Based on similar successful projects${sampleSize ? ` (${sampleSize})` : ""}.`
-            : "Based on similar successful projects."
-        );
+        setProposalLearningNote("Based on similar successful projects");
+        setProposalLearningContextOpen(false);
       }
     } catch (error) {
       const fallbackDraft = safeTrim(leadProposalDraft?.text);
@@ -3671,11 +3668,30 @@ export default function Step1Details({
                       </button>
                     </div>
                     {proposalLearningNote ? (
-                      <div
-                        data-testid="proposal-learning-note"
-                        className="mt-3 inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800"
-                      >
-                        {proposalLearningNote}
+                      <div className="mt-3 space-y-2">
+                        <div
+                          data-testid="proposal-learning-note"
+                          className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800"
+                        >
+                          {proposalLearningNote}
+                        </div>
+                        <div data-testid="proposal-learning-context" className="rounded-xl border border-emerald-100 bg-white px-4 py-3">
+                          <button
+                            type="button"
+                            data-testid="proposal-learning-context-toggle"
+                            aria-expanded={proposalLearningContextOpen}
+                            onClick={() => setProposalLearningContextOpen((open) => !open)}
+                            className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 hover:text-emerald-900"
+                          >
+                            <span>What this means</span>
+                            <span aria-hidden="true">{proposalLearningContextOpen ? "−" : "+"}</span>
+                          </button>
+                          {proposalLearningContextOpen ? (
+                            <div className="mt-2 text-sm leading-6 text-slate-600">
+                              This draft includes patterns that have worked well in similar completed projects. You can edit anything before sending.
+                            </div>
+                          ) : null}
+                        </div>
                       </div>
                     ) : null}
                     {leadDetailFallbackLoading && !assistantLeadContext?.lead_id ? (
