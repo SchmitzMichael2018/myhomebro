@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
+
 from django.utils import timezone
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework import status
@@ -14,6 +16,14 @@ from projects.models import PublicContractorLead
 from projects.services.intake_analysis import analyze_project_intake
 from projects.services.invites_delivery import build_invite_url
 from projects.services.public_lead_pipeline import sync_public_lead_from_project_intake
+
+
+def blank_to_none(value):
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    return value
 
 
 class PublicIntakeView(APIView):
@@ -166,6 +176,7 @@ class PublicIntakeView(APIView):
         if error_response:
             return error_response
 
+        optional_numeric_errors = {}
         changed = []
         has_intake_field_updates = any(field in request.data for field in self.SAFE_FIELDS)
         has_ai_updates = any(
@@ -197,8 +208,33 @@ class PublicIntakeView(APIView):
                     setattr(intake, field, value)
                     changed.append(field)
                     continue
-                setattr(intake, field, request.data.get(field))
+                raw_value = request.data.get(field)
+                if field == "ai_project_timeline_days":
+                    normalized_value = blank_to_none(raw_value)
+                    if normalized_value is None:
+                        setattr(intake, field, None)
+                    else:
+                        try:
+                            setattr(intake, field, int(normalized_value))
+                        except (TypeError, ValueError):
+                            optional_numeric_errors[field] = ["Enter a whole number."]
+                            continue
+                elif field == "ai_project_budget":
+                    normalized_value = blank_to_none(raw_value)
+                    if normalized_value is None:
+                        setattr(intake, field, None)
+                    else:
+                        try:
+                            setattr(intake, field, Decimal(str(normalized_value)))
+                        except (InvalidOperation, TypeError, ValueError):
+                            optional_numeric_errors[field] = ["Enter a valid amount."]
+                            continue
+                else:
+                    setattr(intake, field, raw_value)
                 changed.append(field)
+
+        if optional_numeric_errors:
+            return Response(optional_numeric_errors, status=status.HTTP_400_BAD_REQUEST)
 
         branch_flow = (request.data.get("branch_flow") or "").strip().lower()
 

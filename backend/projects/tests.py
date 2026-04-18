@@ -1149,6 +1149,114 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(lead.project_address, "100 Landing Way")
         self.assertEqual(lead.project_description, "Need a remodel estimate from the landing page.")
 
+    def test_public_intake_accepts_blank_optional_numeric_fields(self):
+        start_response = self.client.post(
+            "/api/projects/public-intake/start/",
+            {
+                "contractor_slug": self.profile.slug,
+                "source": "landing_page",
+                "customer_name": "Blank Numeric Prospect",
+                "customer_email": "blank-numeric@example.com",
+                "customer_phone": "555-111-2222",
+            },
+            format="json",
+        )
+        self.assertEqual(start_response.status_code, 201)
+        token = start_response.json()["token"]
+
+        patch_response = self.client.patch(
+            f"/api/projects/public-intake/?token={token}",
+            {
+                "customer_name": "Blank Numeric Prospect",
+                "customer_email": "blank-numeric@example.com",
+                "customer_phone": "555-111-2222",
+                "project_address_line1": "200 Blank St",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+                "accomplishment_text": "Need a project plan with blank optional numeric fields.",
+                "ai_project_timeline_days": "",
+                "ai_project_budget": "",
+            },
+            format="json",
+        )
+
+        self.assertEqual(patch_response.status_code, 200)
+        intake = ProjectIntake.objects.get(share_token=token)
+        self.assertIsNone(intake.ai_project_timeline_days)
+        self.assertIsNone(intake.ai_project_budget)
+
+    def test_public_intake_accepts_valid_optional_numeric_fields(self):
+        start_response = self.client.post(
+            "/api/projects/public-intake/start/",
+            {
+                "contractor_slug": self.profile.slug,
+                "source": "landing_page",
+                "customer_name": "Valid Numeric Prospect",
+                "customer_email": "valid-numeric@example.com",
+                "customer_phone": "555-222-3333",
+            },
+            format="json",
+        )
+        self.assertEqual(start_response.status_code, 201)
+        token = start_response.json()["token"]
+
+        patch_response = self.client.patch(
+            f"/api/projects/public-intake/?token={token}",
+            {
+                "customer_name": "Valid Numeric Prospect",
+                "customer_email": "valid-numeric@example.com",
+                "customer_phone": "555-222-3333",
+                "project_address_line1": "201 Numeric St",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+                "accomplishment_text": "Need a project plan with valid numeric fields.",
+                "ai_project_timeline_days": "14",
+                "ai_project_budget": "2500.00",
+            },
+            format="json",
+        )
+
+        self.assertEqual(patch_response.status_code, 200)
+        intake = ProjectIntake.objects.get(share_token=token)
+        self.assertEqual(intake.ai_project_timeline_days, 14)
+        self.assertEqual(intake.ai_project_budget, Decimal("2500.00"))
+
+    def test_public_intake_rejects_invalid_optional_numeric_fields(self):
+        start_response = self.client.post(
+            "/api/projects/public-intake/start/",
+            {
+                "contractor_slug": self.profile.slug,
+                "source": "landing_page",
+                "customer_name": "Invalid Numeric Prospect",
+                "customer_email": "invalid-numeric@example.com",
+                "customer_phone": "555-333-4444",
+            },
+            format="json",
+        )
+        self.assertEqual(start_response.status_code, 201)
+        token = start_response.json()["token"]
+
+        patch_response = self.client.patch(
+            f"/api/projects/public-intake/?token={token}",
+            {
+                "customer_name": "Invalid Numeric Prospect",
+                "customer_email": "invalid-numeric@example.com",
+                "customer_phone": "555-333-4444",
+                "project_address_line1": "202 Invalid St",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+                "accomplishment_text": "Need a project plan with invalid numeric fields.",
+                "ai_project_timeline_days": "abc",
+            },
+            format="json",
+        )
+
+        self.assertEqual(patch_response.status_code, 400)
+        self.assertIn("ai_project_timeline_days", patch_response.json())
+
     def test_landing_and_public_profile_intakes_appear_in_same_contractor_lead_flow(self):
         self.client.post(
             f"/api/projects/public/contractors/{self.profile.slug}/intake/",

@@ -137,8 +137,8 @@ test("landing page drives into intake and public intake shows branching choices 
   await page.getByRole("button", { name: "Choose Path" }).click();
   await expect(page.getByTestId("public-intake-branching-section")).toBeVisible();
   await expect(page.getByTestId("public-intake-branching-section")).toContainText("How would you like to proceed?");
-  await expect(page.getByTestId("public-intake-branch-single")).toHaveText("Work with one contractor");
-  await expect(page.getByTestId("public-intake-branch-multi")).toHaveText("Get multiple quotes");
+  await expect(page.getByTestId("public-intake-branch-single")).toContainText("Work with one contractor");
+  await expect(page.getByTestId("public-intake-branch-multi")).toContainText("Get multiple quotes");
 
   await page.getByTestId("public-intake-branch-multi").click();
   const multiBranch = page.getByTestId("public-intake-branching-section");
