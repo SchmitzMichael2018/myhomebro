@@ -699,6 +699,10 @@ export default function Step1Details({
     keys.some((key) => Boolean(aiHighlightKeys?.[key]));
   const [leadDetailFallback, setLeadDetailFallback] = useState(null);
   const [leadDetailFallbackLoading, setLeadDetailFallbackLoading] = useState(false);
+  const [proposalLearningNote, setProposalLearningNote] = useState("");
+  const [proposalLearningContextOpen, setProposalLearningContextOpen] = useState(false);
+  const [proposalBrandNote, setProposalBrandNote] = useState("");
+  const [contractorBrandVoice, setContractorBrandVoice] = useState({});
   const leadProposalContext = useMemo(() => {
     if (assistantLeadContext?.lead_summary) return assistantLeadContext.lead_summary;
     if (leadDetailFallback) return leadSummaryFromRow(leadDetailFallback);
@@ -1140,10 +1144,6 @@ export default function Step1Details({
   const [aiBusy, setAiBusy] = useState(false);
   const [aiErr, setAiErr] = useState("");
   const [aiPreview, setAiPreview] = useState("");
-  const [proposalLearningNote, setProposalLearningNote] = useState("");
-  const [proposalLearningContextOpen, setProposalLearningContextOpen] = useState(false);
-  const [proposalBrandNote, setProposalBrandNote] = useState("");
-  const [contractorBrandVoice, setContractorBrandVoice] = useState({});
 
   const [aiCredits, setAiCredits] = useState({
     loading: true,
@@ -3656,100 +3656,100 @@ export default function Step1Details({
               ) : null}
 
               <div>
-                {hasLeadProposalContext ? (
-                  <div
-                    data-testid="proposal-draft-section"
-                    className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div
-                          data-testid="proposal-draft-title"
-                          className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500"
-                        >
-                          Proposal Draft
-                        </div>
-                        <div className="mt-1 text-sm text-slate-600">
-                          Start with a draft based on the project details, then edit anything you want.
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleGenerateLeadProposalDraft}
-                        disabled={locked}
-                        data-testid="generate-draft-button"
-                        className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                      >
-                        Generate Draft
-                      </button>
-                    </div>
-                    {proposalLearningNote ? (
-                      <div className="mt-3 space-y-2">
-                        <div
-                          data-testid="proposal-learning-note"
-                          className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800"
-                        >
-                          {proposalLearningNote}
-                        </div>
-                        <div data-testid="proposal-learning-context" className="rounded-xl border border-emerald-100 bg-white px-4 py-3">
-                          <button
-                            type="button"
-                            data-testid="proposal-learning-context-toggle"
-                            aria-expanded={proposalLearningContextOpen}
-                            onClick={() => setProposalLearningContextOpen((open) => !open)}
-                            className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 hover:text-emerald-900"
-                          >
-                            <span>What this means</span>
-                            <span aria-hidden="true">{proposalLearningContextOpen ? "−" : "+"}</span>
-                          </button>
-                          {proposalLearningContextOpen ? (
-                            <div className="mt-2 text-sm leading-6 text-slate-600">
-                              This draft includes patterns that have worked well in similar completed projects. You can edit anything before sending.
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-                    ) : null}
-                    {proposalBrandNote ? (
+                <div
+                  data-testid="proposal-draft-section"
+                  className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
                       <div
-                        data-testid="proposal-brand-note"
-                        className="mt-3 inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-800"
+                        data-testid="proposal-draft-title"
+                        className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500"
                       >
-                        {proposalBrandNote}
+                        {hasLeadProposalContext ? "Proposal Draft" : "Scope of Work / Description"}
                       </div>
-                    ) : null}
-                    {leadDetailFallbackLoading && !assistantLeadContext?.lead_id ? (
-                      <div className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-                        Loading project details from the lead review...
+                      <div className="mt-1 text-sm text-slate-600">
+                        {hasLeadProposalContext
+                          ? "Start with a draft based on the project details, then edit anything you want."
+                          : "Start with a simple draft now, then refine it as details become available."}
                       </div>
-                    ) : null}
-
-                    <div
-                      data-testid="lead-context-summary"
-                      className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleGenerateLeadProposalDraft}
+                      disabled={locked}
+                      data-testid="generate-draft-button"
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                     >
-                      <LeadContextField
-                        label="Project"
-                        value={leadProposalDraft?.summary?.projectTitle || dLocal.project_title || "-"}
-                      />
-                      <LeadContextField
-                        label="Project Type"
-                        value={leadProposalDraft?.summary?.projectType || dLocal.project_type || "-"}
-                      />
-                      <LeadContextField
-                        label="Area"
-                        value={leadProposalDraft?.summary?.projectSubtype || dLocal.project_subtype || "-"}
-                      />
-                      <LeadContextField label="Location" value={leadProposalDraft?.summary?.location || "-"} />
-                      <LeadContextField label="Timing" value={leadProposalDraft?.summary?.timeline || "-"} />
-                      <LeadContextField label="Budget" value={leadProposalDraft?.summary?.budget || "-"} />
-                    </div>
-
-                    <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                      This draft is a starting point. Review and edit it before sending.
-                    </div>
+                      Generate Draft
+                    </button>
                   </div>
-                ) : null}
+                  {proposalLearningNote ? (
+                    <div className="mt-3 space-y-2">
+                      <div
+                        data-testid="proposal-learning-note"
+                        className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800"
+                      >
+                        {proposalLearningNote}
+                      </div>
+                      <div data-testid="proposal-learning-context" className="rounded-xl border border-emerald-100 bg-white px-4 py-3">
+                        <button
+                          type="button"
+                          data-testid="proposal-learning-context-toggle"
+                          aria-expanded={proposalLearningContextOpen}
+                          onClick={() => setProposalLearningContextOpen((open) => !open)}
+                          className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 hover:text-emerald-900"
+                        >
+                          <span>What this means</span>
+                          <span aria-hidden="true">{proposalLearningContextOpen ? "-" : "+"}</span>
+                        </button>
+                        {proposalLearningContextOpen ? (
+                          <div className="mt-2 text-sm leading-6 text-slate-600">
+                            This draft includes patterns that have worked well in similar completed projects. You can edit anything before sending.
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                  {proposalBrandNote ? (
+                    <div
+                      data-testid="proposal-brand-note"
+                      className="mt-3 inline-flex rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-800"
+                    >
+                      {proposalBrandNote}
+                    </div>
+                  ) : null}
+                  {leadDetailFallbackLoading && !assistantLeadContext?.lead_id ? (
+                    <div className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
+                      Loading project details from the lead review...
+                    </div>
+                  ) : null}
+
+                  <div
+                    data-testid="lead-context-summary"
+                    className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+                  >
+                    <LeadContextField
+                      label="Project"
+                      value={leadProposalDraft?.summary?.projectTitle || dLocal.project_title || "-"}
+                    />
+                    <LeadContextField
+                      label="Project Type"
+                      value={leadProposalDraft?.summary?.projectType || dLocal.project_type || "-"}
+                    />
+                    <LeadContextField
+                      label="Area"
+                      value={leadProposalDraft?.summary?.projectSubtype || dLocal.project_subtype || "-"}
+                    />
+                    <LeadContextField label="Location" value={leadProposalDraft?.summary?.location || "-"} />
+                    <LeadContextField label="Timing" value={leadProposalDraft?.summary?.timeline || "-"} />
+                    <LeadContextField label="Budget" value={leadProposalDraft?.summary?.budget || "-"} />
+                  </div>
+
+                  <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                    This draft is a starting point. Review and edit it before sending.
+                  </div>
+                </div>
 
                 <div className="mb-1 flex items-center gap-2">
                   <label className="block text-sm font-medium text-slate-900">Project Title</label>

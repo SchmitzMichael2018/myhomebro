@@ -907,7 +907,7 @@ test("contractor bids workspace lead helpers support create bid handoff", async 
 
   await page.getByTestId("create-bid-action").click();
   await expect(page).toHaveURL("/app/agreements/901/wizard?step=1");
-  const proposalDraftField = page.getByRole("textbox").first();
+  const proposalDraftField = page.getByTestId("proposal-draft-textarea");
   await expect(proposalDraftField).toBeVisible({ timeout: 10000 });
   await expect(page.getByTestId("proposal-draft-title")).toContainText("Proposal Draft");
   await expect(page.getByTestId("lead-context-summary")).toContainText("Bathroom Remodel");
@@ -1093,7 +1093,7 @@ test("contractor bids workspace keeps learning signals hidden when fallback draf
   await page.goto("/app/bids", { waitUntil: "domcontentloaded" });
   await page.getByTestId("lead-row-action-lead-6").click();
   await page.getByTestId("create-bid-action").click();
-  await expect(page.getByRole("textbox").first()).toBeVisible({ timeout: 10000 });
+  await expect(page.getByTestId("proposal-draft-textarea")).toBeVisible({ timeout: 10000 });
   await page.getByTestId("generate-draft-button").click();
   await expect(page.getByTestId("proposal-learning-note")).toHaveCount(0);
   await expect(page.getByTestId("proposal-learning-context-toggle")).toHaveCount(0);
