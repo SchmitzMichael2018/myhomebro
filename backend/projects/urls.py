@@ -48,7 +48,11 @@ from .views.magic_invoice import (
 )
 from .views.magic_invoice_pdf import MagicInvoicePDFView
 
-from .views.public_intake import PublicIntakeClarificationPhotoUploadView, PublicIntakeView
+from .views.public_intake import (
+    PublicIntakeClarificationPhotoUploadView,
+    PublicIntakeDescriptionImproveView,
+    PublicIntakeView,
+)
 from .views.public_intake_start import PublicIntakeStartView
 from .views.project_intake import ProjectIntakeViewSet
 
@@ -518,6 +522,7 @@ urlpatterns = [
     # Public Intake
     # -------------------------------------------------
     path("public-intake/", PublicIntakeView.as_view()),
+    path("public-intake/improve-description/", PublicIntakeDescriptionImproveView.as_view()),
     path("public-intake/photos/", PublicIntakeClarificationPhotoUploadView.as_view()),
     path("public-intake/start/", PublicIntakeStartView.as_view()),
 

@@ -9,7 +9,7 @@ test("landing page drives into intake and public intake shows branching choices 
     const requestUrl = route.request().url();
     const method = route.request().method();
 
-    if (requestUrl.endsWith("/start/") && method === "POST") {
+  if (requestUrl.endsWith("/start/") && method === "POST") {
       await route.fulfill({
         status: 201,
         contentType: "application/json",
@@ -21,10 +21,25 @@ test("landing page drives into intake and public intake shows branching choices 
           public_url: "http://localhost:5173/start-project/landing-token",
         }),
       });
-      return;
-    }
+    return;
+  }
 
-    if (route.request().method() === "GET") {
+  if (requestUrl.includes("/improve-description/") && method === "POST") {
+    const body = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        detail: "Description improved.",
+        description: "We will replace the kitchen cabinets, confirm the layout, and review finish choices before starting.",
+        source: "ai",
+        current_description: body.current_description || "",
+      }),
+    });
+    return;
+  }
+
+  if (route.request().method() === "GET") {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -167,4 +182,144 @@ test("landing page drives into intake and public intake shows branching choices 
   await expect(page.getByRole("heading", { name: "Review + Confirm" })).toBeVisible();
   await expect(page.getByText("1 invite prepared")).toBeVisible();
   expect(branchRequests.some((body) => body.branch_flow === "single_contractor")).toBeTruthy();
+});
+
+test("public intake description helper refines the project idea before generating the plan", async ({
+  page,
+}) => {
+  await page.route("**/api/projects/public-intake/**", async (route) => {
+    const requestUrl = route.request().url();
+    const method = route.request().method();
+
+    if (requestUrl.endsWith("/start/") && method === "POST") {
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          intake_id: 502,
+          token: "landing-token-refine",
+          status: "draft",
+          public_url: "http://localhost:5173/start-project/landing-token-refine",
+        }),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/improve-description/") && method === "POST") {
+      const body = route.request().postDataJSON();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          detail: "Description improved.",
+          description: "We will replace the kitchen cabinets, confirm the layout, and review finish choices before starting.",
+          source: "ai",
+          current_description: body.current_description || "",
+        }),
+      });
+      return;
+    }
+
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: 502,
+          token: "landing-token-refine",
+          status: "draft",
+          contractor_name: "Your contractor",
+          customer_name: "Refine Prospect",
+          customer_email: "refine@example.com",
+          customer_phone: "555-444-1111",
+          customer_address_line1: "200 Refine St",
+          customer_address_line2: "",
+          customer_city: "Austin",
+          customer_state: "TX",
+          customer_postal_code: "78701",
+          same_as_customer_address: true,
+          project_class: "residential",
+          project_address_line1: "200 Refine St",
+          project_address_line2: "",
+          project_city: "Austin",
+          project_state: "TX",
+          project_postal_code: "78701",
+          accomplishment_text: "",
+          ai_project_title: "",
+          ai_project_type: "",
+          ai_project_subtype: "",
+          ai_description: "",
+          ai_project_timeline_days: null,
+          ai_project_budget: null,
+          ai_milestones: [],
+          measurement_handling: "",
+          ai_clarification_questions: [],
+          ai_clarification_answers: {},
+          clarification_photos: [],
+          ai_analysis_payload: {},
+          post_submit_flow: "",
+          post_submit_flow_selected_at: null,
+          submitted_at: null,
+          sent_at: null,
+          completed_at: null,
+        }),
+      });
+      return;
+    }
+
+    const body = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        detail: "Intake updated successfully.",
+        id: 502,
+        status: "submitted",
+        lead_id: 99,
+        ai_project_title: "Commercial Scope Request",
+        ai_project_type: "Commercial",
+        ai_project_subtype: "General Commercial",
+        ai_description: "Structured commercial scope summary.",
+        ai_project_timeline_days: 10,
+        ai_project_budget: "5000.00",
+        measurement_handling: "site_visit_required",
+        ai_milestones: [],
+        ai_clarification_questions: [],
+        ai_clarification_answers: {},
+        clarification_photos: [],
+        ai_analysis_payload: {},
+        post_submit_flow: body.branch_flow || "",
+        branch_invites: [],
+        completed_at: "2026-04-15T16:00:00Z",
+      }),
+    });
+  });
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("landing-start-project-intake-button").click();
+  await expect(page).toHaveURL(/\/start-project\/landing-token-refine$/);
+  await page.getByTestId("public-intake-accomplishment-text").fill("Need to replace kitchen cabinets");
+  await expect(page.getByTestId("public-intake-improve-description-button")).toBeVisible();
+  await page.getByTestId("public-intake-improve-description-button").click();
+  await expect(page.getByTestId("public-intake-description-refinement-card")).toBeVisible();
+  await expect(page.getByTestId("public-intake-description-refined-textarea")).toHaveValue(
+    "We will replace the kitchen cabinets, confirm the layout, and review finish choices before starting."
+  );
+
+  await page.getByTestId("public-intake-description-keep-original").click();
+  await expect(page.getByTestId("public-intake-description-refinement-card")).toHaveCount(0);
+  await expect(page.getByTestId("public-intake-accomplishment-text")).toHaveValue("Need to replace kitchen cabinets");
+
+  await page.getByTestId("public-intake-improve-description-button").click();
+  await page.getByTestId("public-intake-description-refined-textarea").fill(
+    "We will replace the kitchen cabinets, confirm the layout, and review finish choices before starting."
+  );
+  await page.getByTestId("public-intake-description-use-version").click();
+  await expect(page.getByTestId("public-intake-accomplishment-text")).toHaveValue(
+    "We will replace the kitchen cabinets, confirm the layout, and review finish choices before starting."
+  );
+
+  await page.getByTestId("public-intake-generate-structure").click();
+  await expect(page.getByTestId("public-intake-project-summary")).toBeVisible();
 });

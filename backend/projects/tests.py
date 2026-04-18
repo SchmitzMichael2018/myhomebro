@@ -1257,6 +1257,66 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(patch_response.status_code, 400)
         self.assertIn("ai_project_timeline_days", patch_response.json())
 
+    def test_public_intake_improve_description_uses_ai_when_available(self):
+        start_response = self.client.post(
+            "/api/projects/public-intake/start/",
+            {
+                "contractor_slug": self.profile.slug,
+                "source": "landing_page",
+                "customer_name": "Refine AI Prospect",
+                "customer_email": "refine-ai@example.com",
+                "customer_phone": "555-444-5555",
+            },
+            format="json",
+        )
+        self.assertEqual(start_response.status_code, 201)
+        token = start_response.json()["token"]
+
+        with patch(
+            "projects.views.public_intake.generate_or_improve_description",
+            return_value={"description": "Clearer project description.", "_mode": "improve", "_model": "test-model"},
+        ):
+            response = self.client.post(
+                f"/api/projects/public-intake/improve-description/?token={token}",
+                {"current_description": "Need a clearer project plan."},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["description"], "Clearer project description.")
+        self.assertEqual(payload["source"], "ai")
+
+    def test_public_intake_improve_description_falls_back_without_ai(self):
+        start_response = self.client.post(
+            "/api/projects/public-intake/start/",
+            {
+                "contractor_slug": self.profile.slug,
+                "source": "landing_page",
+                "customer_name": "Refine Fallback Prospect",
+                "customer_email": "refine-fallback@example.com",
+                "customer_phone": "555-666-7777",
+            },
+            format="json",
+        )
+        self.assertEqual(start_response.status_code, 201)
+        token = start_response.json()["token"]
+
+        with patch(
+            "projects.views.public_intake.generate_or_improve_description",
+            side_effect=RuntimeError("OpenAI unavailable"),
+        ):
+            response = self.client.post(
+                f"/api/projects/public-intake/improve-description/?token={token}",
+                {"current_description": "need to replace kitchen cabinets"},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["description"], "Replace kitchen cabinets.")
+        self.assertEqual(payload["source"], "fallback")
+
     def test_landing_and_public_profile_intakes_appear_in_same_contractor_lead_flow(self):
         self.client.post(
             f"/api/projects/public/contractors/{self.profile.slug}/intake/",

@@ -181,6 +181,12 @@ export default function PublicIntakeWizard() {
   ]);
   const [singleContractor, setSingleContractor] = useState({ name: "", email: "", phone: "" });
   const [branchMessage, setBranchMessage] = useState("");
+  const [descriptionRefinement, setDescriptionRefinement] = useState({
+    status: "idle",
+    original: "",
+    suggestion: "",
+    source: "",
+  });
   const [form, setForm] = useState(blankForm);
 
   const stepLabels = [
@@ -366,6 +372,18 @@ export default function PublicIntakeWizard() {
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
+  function handleAccomplishmentChange(value) {
+    setForm((prev) => ({ ...prev, accomplishment_text: value }));
+    if (descriptionRefinement.status === "ready") {
+      setDescriptionRefinement({
+        status: "idle",
+        original: "",
+        suggestion: "",
+        source: "",
+      });
+    }
+  }
+
   function hydrateFromResponse(data) {
     if (!data) return;
     setStatusText(data?.status || statusText);
@@ -464,6 +482,67 @@ export default function PublicIntakeWizard() {
     setClarificationSnapshotMode(false);
     setCurrentStep(1);
     toast.success("Project structure generated.");
+  }
+
+  async function handleImproveDescription() {
+    const currentDescription = String(form.accomplishment_text || "").trim();
+    if (!currentDescription) {
+      toast.error("Please add a project description first.");
+      return;
+    }
+
+    try {
+      setDescriptionRefinement((prev) => ({
+        ...prev,
+        status: "loading",
+        original: currentDescription,
+        source: "",
+      }));
+      const { data } = await api.post("/projects/public-intake/improve-description/", {
+        token,
+        current_description: currentDescription,
+      });
+      const refined = String(data?.description || "").trim();
+      if (!refined) {
+        throw new Error("No refined description returned.");
+      }
+      setDescriptionRefinement({
+        status: "ready",
+        original: currentDescription,
+        suggestion: refined,
+        source: String(data?.source || "").trim(),
+      });
+      toast.success("Description improved.");
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || e?.message || "Could not improve the description.");
+      setDescriptionRefinement({
+        status: "idle",
+        original: "",
+        suggestion: "",
+        source: "",
+      });
+    }
+  }
+
+  function acceptDescriptionSuggestion() {
+    if (descriptionRefinement.status !== "ready") return;
+    setField("accomplishment_text", descriptionRefinement.suggestion);
+    setDescriptionRefinement({
+      status: "idle",
+      original: "",
+      suggestion: "",
+      source: "",
+    });
+  }
+
+  function keepOriginalDescription() {
+    if (descriptionRefinement.status !== "ready") return;
+    setDescriptionRefinement({
+      status: "idle",
+      original: "",
+      suggestion: "",
+      source: "",
+    });
   }
 
   async function handleClarificationAdvance({ skip = false } = {}) {
@@ -731,12 +810,80 @@ export default function PublicIntakeWizard() {
             className="mt-5 w-full rounded-2xl border border-slate-200 px-4 py-4 text-base shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
             rows={10}
             value={form.accomplishment_text}
-            onChange={(e) => setField("accomplishment_text", e.target.value)}
+            onChange={(e) => handleAccomplishmentChange(e.target.value)}
             placeholder="Describe what you want to get done. For example: replace kitchen cabinets, fix a roof leak, or remodel a bathroom."
           />
           <div className="mt-3 text-sm text-slate-500">
             You don&apos;t need to be perfect - just describe it in your own words.
           </div>
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4" data-testid="public-intake-description-help">
+            <div className="text-sm font-semibold text-slate-900">Want help describing your project?</div>
+            <p className="mt-1 text-sm text-slate-600">
+              We can help make your description a little clearer before you generate the project plan.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                data-testid="public-intake-improve-description-button"
+                onClick={handleImproveDescription}
+                disabled={saving || !String(form.accomplishment_text || "").trim() || descriptionRefinement.status === "loading"}
+                className="rounded-full border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {descriptionRefinement.status === "loading" ? "Improving..." : "Improve my description"}
+              </button>
+              <span className="text-sm text-slate-500">This is optional. You can keep your original wording if you prefer.</span>
+            </div>
+          </div>
+          {descriptionRefinement.status === "ready" ? (
+            <div
+              className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4 shadow-sm"
+              data-testid="public-intake-description-refinement-card"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-indigo-900">Suggested version</div>
+                  <p className="mt-1 text-sm text-indigo-800">
+                    {descriptionRefinement.source === "ai"
+                      ? "Here&apos;s a clearer version based on your description."
+                      : "Here&apos;s a cleaner version based on what you wrote."}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    data-testid="public-intake-description-use-version"
+                    onClick={acceptDescriptionSuggestion}
+                    className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
+                  >
+                    Use this version
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="public-intake-description-keep-original"
+                    onClick={keepOriginalDescription}
+                    className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                  >
+                    Keep my original
+                  </button>
+                </div>
+              </div>
+              <textarea
+                data-testid="public-intake-description-refined-textarea"
+                className="mt-4 w-full rounded-2xl border border-indigo-200 bg-white px-4 py-4 text-base shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                rows={8}
+                value={descriptionRefinement.suggestion}
+                onChange={(e) =>
+                  setDescriptionRefinement((prev) => ({
+                    ...prev,
+                    suggestion: e.target.value,
+                  }))
+                }
+              />
+              <div className="mt-2 text-xs text-indigo-700">
+                Review and edit this suggestion before using it.
+              </div>
+            </div>
+          ) : null}
           <div className="mt-6 flex items-center justify-end gap-3">
             <button
               type="button"

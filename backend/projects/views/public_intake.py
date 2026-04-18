@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+import re
 
 from django.utils import timezone
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -13,6 +14,7 @@ from rest_framework.views import APIView
 from projects.models_invite import ContractorInvite
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from projects.models import PublicContractorLead
+from projects.ai.agreement_description_writer import generate_or_improve_description
 from projects.services.intake_analysis import analyze_project_intake
 from projects.services.invites_delivery import build_invite_url
 from projects.services.public_lead_pipeline import sync_public_lead_from_project_intake
@@ -24,6 +26,41 @@ def blank_to_none(value):
     if isinstance(value, str) and not value.strip():
         return None
     return value
+
+
+def _deterministic_refine_description(description: str) -> str:
+    text = re.sub(r"\s+", " ", str(description or "")).strip()
+    if not text:
+        return ""
+
+    leading_patterns = [
+        r"^(?:i\s+)?(?:am\s+)?looking to\s+",
+        r"^(?:i\s+)?(?:am\s+)?wanting to\s+",
+        r"^(?:we\s+)?need to\s+",
+        r"^(?:i\s+)?need to\s+",
+        r"^(?:i\s+)?want to\s+",
+        r"^(?:we\s+)?want to\s+",
+        r"^(?:would\s+like\s+to)\s+",
+        r"^(?:hoping to)\s+",
+        r"^(?:looking for)\s+",
+        r"^(?:help with)\s+",
+        r"^(?:project is)\s+",
+    ]
+    cleaned = text
+    for pattern in leading_patterns:
+        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
+
+    cleaned = cleaned.strip(" -:;,.")
+    if not cleaned:
+        cleaned = text
+
+    if cleaned and cleaned[0].islower():
+        cleaned = cleaned[0].upper() + cleaned[1:]
+
+    if cleaned and cleaned[-1] not in ".!?":
+        cleaned += "."
+
+    return cleaned
 
 
 class PublicIntakeView(APIView):
@@ -467,6 +504,7 @@ class PublicIntakeClarificationPhotoUploadView(APIView):
             return None, Response({"detail": "Intake link not found."}, status=status.HTTP_404_NOT_FOUND)
         return intake, None
 
+
     def _serialize_photo(self, request, photo):
         image_url = ""
         try:
@@ -513,4 +551,62 @@ class PublicIntakeClarificationPhotoUploadView(APIView):
                 "photos": [self._serialize_photo(request, photo) for photo in created],
             },
             status=status.HTTP_201_CREATED,
+        )
+
+
+class PublicIntakeDescriptionImproveView(APIView):
+    permission_classes = []
+
+    def _get_intake(self, request):
+        token = (request.query_params.get("token") or request.data.get("token") or "").strip()
+        if not token:
+            return None, Response({"detail": "Missing intake token."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            intake = ProjectIntake.objects.select_related("contractor", "homeowner").get(share_token=token)
+        except ProjectIntake.DoesNotExist:
+            return None, Response({"detail": "Intake link not found."}, status=status.HTTP_404_NOT_FOUND)
+        return intake, None
+
+    def post(self, request, *args, **kwargs):
+        intake, error_response = self._get_intake(request)
+        if error_response:
+            return error_response
+
+        current_description = (
+            request.data.get("current_description")
+            or request.data.get("accomplishment_text")
+            or intake.accomplishment_text
+            or ""
+        ).strip()
+        if not current_description:
+            return Response(
+                {"detail": "Add a project description first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            out = generate_or_improve_description(
+                mode="improve",
+                project_title=intake.ai_project_title or "",
+                project_type=intake.ai_project_type or "",
+                project_subtype=intake.ai_project_subtype or "",
+                current_description=current_description,
+            )
+            description = (out.get("description") or "").strip()
+            source = "ai"
+        except Exception:
+            description = _deterministic_refine_description(current_description)
+            source = "fallback"
+
+        if not description:
+            description = _deterministic_refine_description(current_description)
+            source = "fallback"
+
+        return Response(
+            {
+                "detail": "Description improved.",
+                "description": description,
+                "source": source,
+            },
+            status=status.HTTP_200_OK,
         )
