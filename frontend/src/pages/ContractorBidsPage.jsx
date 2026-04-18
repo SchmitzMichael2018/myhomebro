@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 
 import api from "../api";
 import { buildLeadAgreementAssistantState } from "../lib/leadProposalDraft";
+import { buildProjectIntelligenceGuidance } from "../lib/projectIntelligence";
 
 function fmtDate(value) {
   if (!value) return "-";
@@ -228,7 +229,7 @@ function sortWorkspaceRows(rows, sortBy, stage) {
   return list;
 }
 
-function buildBidPrepItems({ snapshot, signals, stage }) {
+function buildBidPrepItems({ snapshot, signals, stage, projectIntelligence }) {
   const items = [];
   const signalSet = new Set((Array.isArray(signals) ? signals : []).map(normalize));
   const photoCount = Number(snapshot?.photo_count || 0);
@@ -237,6 +238,11 @@ function buildBidPrepItems({ snapshot, signals, stage }) {
   const hasBudget = Boolean(snapshot?.budget);
   const hasTimeline = Boolean(snapshot?.timeline);
 
+  if (projectIntelligence?.prepItems?.length) {
+    for (const item of projectIntelligence.prepItems) {
+      if (item && !items.includes(item)) items.push(item);
+    }
+  }
   if (photoCount > 0 || signalSet.has("photos")) items.push("Review the photos before you price the work.");
   if (measurementValue === "site visit required") items.push("Verify measurements on site before final pricing.");
   else if (measurementValue === "provided") items.push("Check the provided measurements against the scope.");
@@ -251,13 +257,13 @@ function buildBidPrepItems({ snapshot, signals, stage }) {
     items.push("Confirm the scope, measurements, and timing before you respond.");
   }
 
-  return items.slice(0, 4);
+  return Array.from(new Set(items)).slice(0, 4);
 }
 
-function buildResponseStarter({ snapshot, signals, stage }) {
+function buildResponseStarter({ snapshot, signals, stage, projectIntelligence }) {
   if (stage === "closed") return "";
   const signalSet = new Set((Array.isArray(signals) ? signals : []).map(normalize));
-  const parts = ["Thanks for sharing the project details."];
+  const parts = [projectIntelligence?.responseStarter || "Thanks for sharing the project details."];
 
   if ((snapshot?.photo_count || 0) > 0 || signalSet.has("photos")) {
     parts.push("I reviewed the photos and will confirm the scope before I price the work.");
@@ -282,13 +288,18 @@ function buildResponseStarter({ snapshot, signals, stage }) {
   return parts.join(" ");
 }
 
-function buildCreateBidContext({ snapshot, signals }) {
+function buildCreateBidContext({ snapshot, signals, projectIntelligence }) {
   const signalSet = new Set((Array.isArray(signals) ? signals : []).map(normalize));
-  if ((snapshot?.photo_count || 0) > 0 || signalSet.has("photos")) return "Photos are available to review.";
-  if (normalize(snapshot?.measurement_handling) === "site visit required") return "Measurements may still need verification.";
-  if (snapshot?.budget || signalSet.has("budget provided")) return "Budget guidance is available.";
-  if (snapshot?.timeline || signalSet.has("timeline provided")) return "Timing guidance is available.";
-  if ((snapshot?.clarification_count || 0) > 0 || signalSet.has("clarifications answered")) return "Clarified details are available.";
+  const parts = [];
+  if (projectIntelligence?.createBidContext) {
+    parts.push(projectIntelligence.createBidContext);
+  }
+  if ((snapshot?.photo_count || 0) > 0 || signalSet.has("photos")) parts.push("Photos are available to review.");
+  if (normalize(snapshot?.measurement_handling) === "site visit required") parts.push("Measurements may still need verification.");
+  if (snapshot?.budget || signalSet.has("budget provided")) parts.push("Budget guidance is available.");
+  if (snapshot?.timeline || signalSet.has("timeline provided")) parts.push("Timing guidance is available.");
+  if ((snapshot?.clarification_count || 0) > 0 || signalSet.has("clarifications answered")) parts.push("Clarified details are available.");
+  if (parts.length) return parts.join(" ");
   return "Review the request details and create your bid when you’re ready.";
 }
 
@@ -504,26 +515,54 @@ export default function ContractorBidsPage() {
 
   const selectedStage = workspaceStageFromRow(selectedRow);
   const selectedSnapshot = selectedRow?.request_snapshot || {};
+  const selectedProjectIntelligence = useMemo(
+    () =>
+      buildProjectIntelligenceGuidance({
+        projectTitle: selectedSnapshot.project_title || selectedRow?.project_title || "",
+        projectType: selectedSnapshot.project_type || selectedRow?.project_type || "",
+        projectSubtype: selectedSnapshot.project_subtype || selectedRow?.project_subtype || "",
+        description: selectedSnapshot.refined_description || selectedRow?.notes || selectedRow?.project_description || "",
+      }),
+    [selectedRow?.notes, selectedRow?.project_description, selectedRow?.project_subtype, selectedRow?.project_title, selectedRow?.project_type, selectedSnapshot]
+  );
   const selectedSignals = prioritizeSignals(selectedRow?.request_signals);
   const selectedPhotos = Array.isArray(selectedSnapshot?.photos) ? selectedSnapshot.photos : [];
   const selectedMilestones = Array.isArray(selectedSnapshot?.milestones) ? selectedSnapshot.milestones : [];
   const selectedClarifications = Array.isArray(selectedSnapshot?.clarification_summary) ? selectedSnapshot.clarification_summary : [];
   const selectedBidPrepItems = useMemo(
-    () => buildBidPrepItems({ snapshot: selectedSnapshot, signals: selectedSignals, stage: selectedStage }),
-    [selectedSnapshot, selectedSignals, selectedStage]
+    () =>
+      buildBidPrepItems({
+        snapshot: selectedSnapshot,
+        signals: selectedSignals,
+        stage: selectedStage,
+        projectIntelligence: selectedProjectIntelligence,
+      }),
+    [selectedProjectIntelligence, selectedSnapshot, selectedSignals, selectedStage]
   );
   const selectedResponseStarter = useMemo(
-    () => buildResponseStarter({ snapshot: selectedSnapshot, signals: selectedSignals, stage: selectedStage }),
-    [selectedSnapshot, selectedSignals, selectedStage]
+    () =>
+      buildResponseStarter({
+        snapshot: selectedSnapshot,
+        signals: selectedSignals,
+        stage: selectedStage,
+        projectIntelligence: selectedProjectIntelligence,
+      }),
+    [selectedProjectIntelligence, selectedSnapshot, selectedSignals, selectedStage]
   );
   const selectedResponseTemplates = useMemo(
     () => buildResponseTemplates({ snapshot: selectedSnapshot, signals: selectedSignals }),
     [selectedSnapshot, selectedSignals]
   );
   const selectedCreateBidContext = useMemo(
-    () => buildCreateBidContext({ snapshot: selectedSnapshot, signals: selectedSignals }),
-    [selectedSnapshot, selectedSignals]
+    () =>
+      buildCreateBidContext({
+        snapshot: selectedSnapshot,
+        signals: selectedSignals,
+        projectIntelligence: selectedProjectIntelligence,
+      }),
+    [selectedProjectIntelligence, selectedSnapshot, selectedSignals]
   );
+  const selectedProjectTypeCue = selectedProjectIntelligence?.familyCueLabel || "";
   const selectedPrimaryActionLabel =
     selectedStage === "new_lead" || selectedStage === "follow_up"
       ? "Create Bid"
@@ -990,6 +1029,14 @@ export default function ContractorBidsPage() {
                 <div className="mt-4 text-xs text-slate-500">
                   Source: {selectedRow.source_kind_label || "Lead"} · Submitted: {fmtDate(selectedRow.submitted_at)} · Agreement: {selectedRow.linked_agreement_reference || "-"}
                 </div>
+                {selectedProjectTypeCue ? (
+                  <div
+                    data-testid="project-type-cue"
+                    className="mt-4 inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800"
+                  >
+                    {selectedProjectTypeCue}
+                  </div>
+                ) : null}
                 {outcomeNote ? (
                   <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                     {outcomeNote}

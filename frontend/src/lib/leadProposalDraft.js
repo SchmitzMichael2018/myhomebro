@@ -1,3 +1,5 @@
+import { buildProjectIntelligenceGuidance } from "./projectIntelligence";
+
 function safeText(value) {
   return String(value || "").trim();
 }
@@ -82,6 +84,12 @@ function tonePhrase(tone) {
   return mapping[normalized] || "";
 }
 
+function familyLabelText(familyLabel) {
+  const label = safeText(familyLabel);
+  if (!label) return "";
+  return label;
+}
+
 export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {}, brandVoice = {} } = {}) {
   const summary = leadSummary || {};
   const snapshot = requestSnapshot || summary.request_snapshot || {};
@@ -109,6 +117,13 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {},
       brand.preferred_signoff ||
       brand.brand_primary_color
   );
+  const projectIntelligence = buildProjectIntelligenceGuidance({
+    projectTitle,
+    projectType,
+    projectSubtype,
+    description: refinedDescription,
+  });
+  const projectFamilyApplied = !projectIntelligence.isGeneric;
 
   const introParts = [
     `Thanks for sharing the details for ${projectTitle}.`,
@@ -160,6 +175,9 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {},
   }
 
   const confirmationBullets = [];
+  if (projectFamilyApplied && projectIntelligence.draftFocusLine) {
+    confirmationBullets.push(projectIntelligence.draftFocusLine);
+  }
   confirmationBullets.push(formatMeasurementLine(measurementHandling));
   if (materialsStatus) {
     confirmationBullets.push(`Materials note: ${materialsStatus}.`);
@@ -219,6 +237,10 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {},
       brandVoiceApplied,
       brandBusinessName: brand.business_display_name,
       brandTone: brand.proposal_tone,
+      projectFamilyKey: projectIntelligence.familyKey,
+      projectFamilyLabel: projectIntelligence.isGeneric ? "" : safeText(projectIntelligence.familyCueLabel || familyLabelText(projectIntelligence.familyLabel)),
+      projectFamilyNote: projectIntelligence.isGeneric ? "" : projectIntelligence.draftFocusLine,
+      projectFamilyApplied,
     },
   };
 }
@@ -250,6 +272,8 @@ export function buildLeadAgreementAssistantState(
       lead_id: row?.source_id || row?.id || null,
       lead_summary: summary,
       request_snapshot: snapshot,
+      project_family_key: proposalDraft.summary.projectFamilyKey || "",
+      project_family_label: proposalDraft.summary.projectFamilyLabel || "",
     },
     assistantPrefill: {
       full_name: safeText(row.customer_name || row.full_name || ""),
@@ -286,6 +310,8 @@ export function buildLeadAgreementAssistantState(
       clarification_count: Number(snapshot.clarification_count || 0),
       request_signals: Array.isArray(snapshot.request_signals) ? snapshot.request_signals : [],
       request_snapshot: snapshot,
+      project_family_key: proposalDraft.summary.projectFamilyKey || "",
+      project_family_label: proposalDraft.summary.projectFamilyLabel || "",
     },
   };
 }

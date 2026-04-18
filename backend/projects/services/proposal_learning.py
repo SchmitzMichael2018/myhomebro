@@ -10,6 +10,7 @@ from django.db import transaction
 
 from projects.models import Agreement, ProjectStatus
 from projects.models_learning import AgreementOutcomeSnapshot, AgreementProposalSnapshot
+from projects.services.project_intelligence import build_project_intelligence_context
 
 
 def _safe_text(value: Any) -> str:
@@ -103,6 +104,14 @@ def _proposal_snapshot_payload(
         or _safe_text(preferred_signoff)
         or _safe_text(brand_primary_color)
     )
+    project_intelligence = build_project_intelligence_context(
+        project_title=project_title,
+        project_type=project_type,
+        project_subtype=project_subtype,
+        description=description,
+    )
+    project_family_key = _safe_text(project_intelligence.get("family_key"))
+    project_family_label = _safe_text(project_intelligence.get("family_cue_label") or project_intelligence.get("family_label"))
 
     return {
         "agreement": agreement,
@@ -128,6 +137,8 @@ def _proposal_snapshot_payload(
             "final_agreed_total_amount": _safe_text(getattr(agreement, "total_cost", "")),
             "completed_date": _safe_text(getattr(agreement, "completed_at", "")),
             "source_stage": stage,
+            "project_family_key": project_family_key,
+            "project_family_label": project_family_label,
         },
         "agreement_status": _safe_text(getattr(agreement, "status", "")),
     }
@@ -373,6 +384,16 @@ def build_proposal_draft(
     brand_voice_applied = bool(
         brand_tagline or short_company_intro or proposal_tone or preferred_signoff or brand_primary_color
     )
+    project_intelligence = build_project_intelligence_context(
+        project_title=source_title,
+        project_type=source_type,
+        project_subtype=source_subtype,
+        description=source_description,
+    )
+    project_family_key = _safe_text(project_intelligence.get("family_key"))
+    project_family_label = _safe_text(project_intelligence.get("family_cue_label") or project_intelligence.get("family_label"))
+    project_family_note = _safe_text(project_intelligence.get("draft_focus_line"))
+    project_family_applied = bool(project_family_key and project_family_key != "general")
 
     template = build_successful_proposal_template(
         contractor=contractor or getattr(agreement, "contractor", None),
@@ -437,6 +458,8 @@ def build_proposal_draft(
         scope_lines.append("Review the project details and confirm the scope before sending.")
 
     confirmation_lines = []
+    if project_family_applied and project_family_note:
+        confirmation_lines.append(project_family_note)
     confirmation_lines.append(
         "Measurements may need a site visit before final pricing."
         if measurement_handling == "site_visit_required"
@@ -505,6 +528,10 @@ def build_proposal_draft(
             "brandVoiceApplied": brand_voice_applied,
             "brandBusinessName": business_display_name,
             "brandTone": proposal_tone,
+            "projectFamilyKey": project_family_key,
+            "projectFamilyLabel": project_family_label if project_family_applied else "",
+            "projectFamilyNote": project_family_note if project_family_applied else "",
+            "projectFamilyApplied": project_family_applied,
         },
         "learning": template or {
             "template_name": "",

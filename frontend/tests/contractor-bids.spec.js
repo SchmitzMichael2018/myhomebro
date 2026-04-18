@@ -609,6 +609,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("create-bid-context-note")).toContainText("Photos are available to review");
   await expect(page.getByTestId("lead-overview")).toContainText("Project Title");
   await expect(page.getByTestId("project-snapshot")).toContainText("Refined Description");
+  await expect(page.getByTestId("project-type-cue")).toContainText("Bathroom remodel-focused review");
   await expect(page.getByTestId("photos-section")).toContainText("Shower area");
   await expect(page.getByTestId("project-phases-section")).toContainText("Demolition");
   await expect(page.getByTestId("request-signals-section")).toContainText("Multi-Quote Request");
@@ -618,6 +619,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("response-template-photos")).toContainText("With Photos");
   await page.getByTestId("response-template-copy-general").click();
   await expect(page.getByTestId("response-template-copy-general")).toContainText("Copied");
+  await expect(page.getByTestId("create-bid-context-note")).toContainText("Bathroom remodels are clearer");
   await expect(page.getByTestId("create-bid-action")).toContainText("Create Bid");
   await expect(page.getByTestId("follow-up-action-button")).toContainText("Save for Later");
   await expect(page.getByTestId("lead-detail-secondary-action")).toContainText("Copy Reference");
@@ -912,6 +914,7 @@ test("contractor bids workspace lead helpers support create bid handoff", async 
   await expect(page.getByTestId("proposal-draft-title")).toContainText("Proposal Draft");
   await expect(page.getByTestId("lead-context-summary")).toContainText("Bathroom Remodel");
   await expect(page.getByTestId("lead-context-summary")).toContainText("Budget");
+  await expect(page.getByTestId("proposal-project-family-cue")).toContainText("Bathroom remodel-focused review");
   await expect(proposalDraftField).toHaveValue(
     /Thanks for sharing the details for Bathroom Remodel/
   );

@@ -88,6 +88,7 @@ from projects.services.proposal_learning import (
     build_proposal_draft,
     capture_agreement_proposal_snapshot,
 )
+from projects.services.project_intelligence import build_project_intelligence_context
 from projects.services.agreements.create import create_agreement_from_validated
 from projects.services.agreement_fee_allocation import refresh_agreement_fee_allocations
 from projects.services.benchmark_resolution import resolve_seed_benchmark_defaults
@@ -8781,6 +8782,8 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertTrue(learned_draft["learning"]["based_on_successful_projects"])
         self.assertGreaterEqual(learned_draft["learning"]["sample_size"], 2)
         self.assertIn("similar successful projects", learned_draft["text"])
+        self.assertEqual(learned_draft["summary"]["projectFamilyKey"], "kitchen_remodel")
+        self.assertIn("Kitchen remodels benefit from", learned_draft["text"])
 
         fallback_draft = build_proposal_draft(
             contractor=self.contractor,
@@ -8791,6 +8794,28 @@ class ProjectLearningFoundationTests(TestCase):
         )
         self.assertFalse(fallback_draft["learning"]["based_on_successful_projects"])
         self.assertIn("Thanks for sharing the details", fallback_draft["text"])
+
+    def test_project_intelligence_context_matches_common_categories_and_falls_back_gracefully(self):
+        roofing = build_project_intelligence_context(
+            project_title="Roof Repair",
+            project_type="Roofing",
+            project_subtype="Roof Replacement",
+            description="Replace shingles and flashing after a leak.",
+        )
+        self.assertEqual(roofing["family_key"], "roofing")
+        self.assertIn("Roofing-focused review", roofing["family_cue_label"])
+        self.assertTrue(roofing["prep_items"])
+        self.assertIn("leak location", roofing["prep_items"][0].lower())
+
+        generic = build_project_intelligence_context(
+            project_title="Custom Scope",
+            project_type="Custom",
+            project_subtype="Unique",
+            description="Specialized work with no obvious family match.",
+        )
+        self.assertEqual(generic["family_key"], "general")
+        self.assertFalse(generic["family_cue_label"])
+        self.assertTrue(generic["is_generic"])
 
     def test_brand_voice_personalizes_proposal_draft_without_breaking_fallback(self):
         ContractorPublicProfile.objects.create(
@@ -8824,6 +8849,53 @@ class ProjectLearningFoundationTests(TestCase):
         )
         self.assertFalse(fallback_draft["summary"]["brandVoiceApplied"])
         self.assertNotIn("Warmly, Bright Build Co", fallback_draft["text"])
+
+    def test_project_type_shaping_coexists_with_learning_and_brand_voice(self):
+        first = self._create_completed_agreement(status=ProjectStatus.COMPLETED)
+        second = self._create_completed_agreement(
+            status=ProjectStatus.COMPLETED,
+            total_cost=Decimal("14000.00"),
+            estimated_amounts=[Decimal("3500.00"), Decimal("7000.00")],
+        )
+
+        capture_agreement_outcome_snapshot(first)
+        capture_agreement_outcome_snapshot(second)
+        capture_agreement_proposal_snapshot(first, stage=AgreementProposalSnapshot.Stage.FINALIZED)
+        capture_agreement_proposal_snapshot(second, stage=AgreementProposalSnapshot.Stage.FINALIZED)
+
+        ContractorPublicProfile.objects.create(
+            contractor=self.contractor,
+            business_name_public="Bright Build Co",
+            tagline="Trusted renovations and repairs",
+            bio="We keep projects clear and practical.",
+            proposal_tone="friendly",
+            preferred_signoff="Warmly, Bright Build Co",
+            brand_primary_color="#1d4ed8",
+        )
+
+        draft = build_proposal_draft(
+            contractor=self.contractor,
+            project_title="Kitchen Remodel",
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            description="Replace the cabinets, countertops, and backsplash.",
+            budget_text="$12,000 - $14,000",
+            timeline_text="About 3 weeks",
+            measurement_handling="site_visit_required",
+            photo_count=2,
+            request_path_label="Multi-Quote Request",
+            request_signals=["Guided Intake", "Photos", "Budget Provided"],
+            clarification_summary=[
+                {"key": "measurements", "label": "Measurements", "value": "Site visit required"}
+            ],
+        )
+
+        self.assertTrue(draft["learning"]["based_on_successful_projects"])
+        self.assertTrue(draft["summary"]["brandVoiceApplied"])
+        self.assertEqual(draft["summary"]["projectFamilyKey"], "kitchen_remodel")
+        self.assertIn("Kitchen remodels benefit from", draft["text"])
+        self.assertIn("similar successful projects", draft["text"])
+        self.assertIn("Warmly, Bright Build Co", draft["text"])
 
     def test_non_completed_or_cancelled_agreements_are_excluded_from_benchmarks(self):
         agreement = self._create_completed_agreement(status=ProjectStatus.CANCELLED)

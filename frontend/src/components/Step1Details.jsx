@@ -3719,6 +3719,14 @@ export default function Step1Details({
                       {proposalBrandNote}
                     </div>
                   ) : null}
+                  {leadProposalDraft?.summary?.projectFamilyLabel ? (
+                    <div
+                      data-testid="proposal-project-family-cue"
+                      className="mt-3 inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800"
+                    >
+                      {leadProposalDraft.summary.projectFamilyLabel}
+                    </div>
+                  ) : null}
                   {leadDetailFallbackLoading && !assistantLeadContext?.lead_id ? (
                     <div className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
                       Loading project details from the lead review...
