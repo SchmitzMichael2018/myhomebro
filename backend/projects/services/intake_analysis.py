@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from decimal import Decimal
+import re
 from typing import Any
 
 from django.db.models import Q
 
 from projects.models_templates import ProjectTemplate
 from projects.models_project_intake import ProjectIntake
+from projects.services.project_intelligence import build_project_intelligence_context
 
 
 def _safe_str(value: Any) -> str:
@@ -389,90 +391,249 @@ def _project_label(project_type: str, project_subtype: str, accomplishment: str)
     return "project"
 
 
-def _clarification_questions(project_type: str, project_subtype: str, accomplishment: str) -> list[dict[str, Any]]:
-    label = _project_label(project_type, project_subtype, accomplishment)
-    label_lower = label.lower()
+def _clarification_text(*parts: Any) -> str:
+    return " ".join(_safe_str(part) for part in parts if _safe_str(part)).lower()
 
-    scope_label = f"How much of the {label_lower} should be included?"
-    if "roof" in label_lower:
-        scope_label = "What roof areas and repairs should be included?"
-    elif "bathroom" in label_lower:
-        scope_label = "Which bathroom areas are included in the scope?"
-    elif "kitchen" in label_lower:
-        scope_label = "Which kitchen areas are included in the scope?"
 
-    layout_label = "Are any layout changes, moves, or reconfiguration included?"
-    if "roof" in label_lower:
-        layout_label = "Are any structural changes, decking changes, or rework included?"
-    elif "floor" in label_lower:
-        layout_label = "Are any transitions, leveling, or subfloor changes included?"
+def _contains_any(text: str, needles: list[str]) -> bool:
+    return any(needle in text for needle in needles if needle)
 
-    materials_label = "Who is responsible for supplying the materials?"
-    if "paint" in label_lower:
-        materials_label = "Who supplies paint, trim, and related materials?"
-    elif "electrical" in label_lower or "plumbing" in label_lower:
-        materials_label = "Who supplies fixtures, devices, or specialty materials?"
 
-    timeline_label = "How clear is the timeline for this project?"
-    measurement_label = "How should measurements be handled before work starts?"
+def _clarification_item(
+    key: str,
+    label: str,
+    *,
+    question: str | None = None,
+    qtype: str = "select",
+    input_type: str = "radio",
+    help_text: str = "",
+    options: list[Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "key": key,
+        "label": label,
+        "question": question or label,
+        "type": qtype,
+        "inputType": input_type,
+        "required": False,
+        "help": help_text,
+        "options": list(options or []),
+        "source": "analysis",
+    }
 
-    return [
-        {
-            "key": "scope_depth",
-            "label": scope_label,
-            "question": scope_label,
-            "type": "text",
-            "inputType": "textarea",
-            "required": False,
-            "help": "A short answer is fine.",
-            "options": [],
-            "source": "analysis",
-        },
-        {
-            "key": "layout_changes",
-            "label": layout_label,
-            "question": layout_label,
-            "type": "select",
-            "inputType": "radio",
-            "required": False,
-            "help": "This helps us decide whether extra layout or verification steps are needed.",
-            "options": ["No", "Some changes", "Yes, major changes", "Not sure"],
-            "source": "analysis",
-        },
-        {
-            "key": "materials_responsibility",
-            "label": materials_label,
-            "question": materials_label,
-            "type": "select",
-            "inputType": "radio",
-            "required": False,
-            "help": "Materials responsibility affects schedule and agreement wording.",
-            "options": ["Contractor", "Customer", "Split", "Not sure"],
-            "source": "analysis",
-        },
-        {
-            "key": "timeline_clarity",
-            "label": timeline_label,
-            "question": timeline_label,
-            "type": "select",
-            "inputType": "radio",
-            "required": False,
-            "help": "If the timing is flexible, we can keep the agreement wording lighter.",
-            "options": ["Flexible", "Target date", "Fixed deadline", "Not sure"],
-            "source": "analysis",
-        },
-        {
-            "key": "measurement_handling",
-            "label": measurement_label,
-            "question": measurement_label,
-            "type": "select",
-            "inputType": "radio",
-            "required": False,
-            "help": "Measurements can come from the customer, a site visit, or be confirmed later.",
-            "options": ["provided", "site_visit_required", "not_sure"],
-            "source": "analysis",
-        },
-    ]
+
+def _clarification_flags(text: str) -> dict[str, bool]:
+    return {
+        "scope_kind": _contains_any(text, ["repair", "replacement", "replace", "remodel", "install", "installation", "new install", "new installation"]),
+        "materials_ready": _contains_any(text, ["selected", "picked out", "on site", "already purchased", "owner supplied", "materials ready", "ready to go"]),
+        "damage_urgency": _contains_any(text, ["leak", "damage", "mold", "water", "urgent", "emergency", "broken", "storm", "rot", "sagging", "backed up", "no power"]),
+        "layout_changes": _contains_any(text, ["layout", "move", "reconfigure", "relocate", "wall move", "fixture move", "open up"]),
+        "demo_removal": _contains_any(text, ["demo", "demolition", "remove", "tear out", "take out", "remove existing", "old", "existing", "gut"]),
+        "inspection": _contains_any(text, ["inspect", "inspection", "site visit", "quote", "estimate", "before final pricing", "before pricing", "assess", "look at"]),
+        "quantity_detail": bool(re.search(r"\b\d+\b", text))
+        or _contains_any(text, ["one area", "multiple areas", "multiple", "several", "whole house", "whole home", "all rooms", "entire", "one bathroom", "multiple bathrooms", "one room", "multiple rooms"]),
+        "interior_exterior": _contains_any(text, ["interior", "exterior"]),
+        "related_work": _contains_any(text, ["countertop", "countertops", "backsplash", "appliance", "trim", "weatherproof", "panel", "outlet", "switch", "lighting", "fixture", "tile", "paint", "shower", "vanity"]),
+        "access": _contains_any(text, ["access", "shutoff", "occupied", "tight space", "crawlspace", "attic", "ladder"]),
+        "subfloor": _contains_any(text, ["subfloor", "underlayment", "leveling", "sagging floor"]),
+        "task_list": _contains_any(text, ["task", "tasks", "punch list", "odd jobs", "list", "items"]),
+    }
+
+
+def _clarification_target_count(text: str, family_key: str, photo_count: int = 0) -> int:
+    flags = _clarification_flags(text)
+    ambiguity = 0
+    if len(text) < 25:
+        ambiguity += 2
+    elif len(text) < 60:
+        ambiguity += 1
+    if _contains_any(text, ["help", "need help", "some work", "project", "quote", "estimate", "not sure", "something", "fix something", "need work", "general"]):
+        ambiguity += 1
+    if family_key == "general":
+        ambiguity += 1
+    if not flags["scope_kind"]:
+        ambiguity += 1
+    if not flags["quantity_detail"]:
+        ambiguity += 1
+
+    detail = sum(
+        1
+        for value in [
+            flags["scope_kind"],
+            flags["materials_ready"],
+            flags["damage_urgency"],
+            flags["layout_changes"],
+            flags["demo_removal"],
+            flags["inspection"],
+            flags["quantity_detail"],
+            flags["related_work"],
+            flags["access"],
+            flags["subfloor"],
+        ]
+        if value
+    )
+    if photo_count > 0:
+        detail += 1
+
+    if detail >= 3 and ambiguity <= 1:
+        return 0
+    if ambiguity >= 4:
+        return 4
+    if ambiguity >= 2:
+        return 3
+    return 2
+
+
+def _clarification_questions(project_type: str, project_subtype: str, accomplishment: str, photo_count: int = 0) -> list[dict[str, Any]]:
+    text = _clarification_text(project_type, project_subtype, accomplishment)
+    family_context = build_project_intelligence_context(
+        project_title="",
+        project_type=project_type,
+        project_subtype=project_subtype,
+        description=accomplishment,
+    )
+    family_key = _safe_str(family_context.get("family_key")) or "general"
+    family_label = _safe_str(family_context.get("family_label") or family_context.get("family_cue_label"))
+    flags = _clarification_flags(text)
+    target_count = _clarification_target_count(text, family_key, photo_count=photo_count)
+    if target_count <= 0:
+        return []
+
+    questions: list[dict[str, Any]] = []
+
+    def add(item: dict[str, Any]) -> None:
+        key = _safe_str(item.get("key"))
+        if not key or any(existing.get("key") == key for existing in questions):
+            return
+        questions.append(item)
+
+    if family_key == "roofing":
+        if not flags["scope_kind"]:
+            add(_clarification_item("scope_kind", "Is this a repair, leak issue, or full roof replacement?", options=["Repair", "Leak issue", "Full replacement", "Not sure"], help_text="This helps contractors understand the level of work involved."))
+        if not flags["damage_urgency"]:
+            add(_clarification_item("damage_urgency", "Have you noticed active leaks or interior water damage?", options=["Yes", "No", "Not sure"], help_text="This helps the contractor understand how urgent the work may be."))
+        if not flags["quantity_detail"]:
+            add(_clarification_item("area_count", "Is the issue affecting one area or multiple areas of the roof?", options=["One area", "Multiple areas", "Not sure"], help_text="This helps narrow the scope quickly."))
+        if not flags["inspection"]:
+            add(_clarification_item("inspection_before_pricing", "Would you like the contractor to inspect before final pricing?", options=["Yes", "No", "Not sure"], help_text="A roof inspection can help confirm the scope before final pricing."))
+
+    elif family_key == "bathroom_remodel":
+        if not flags["scope_kind"]:
+            add(_clarification_item("scope_kind", "Is this a full remodel or a smaller update/repair?", options=["Full remodel", "Smaller update/repair", "Not sure"], help_text="This helps contractors understand how broad the project is."))
+        if not flags["quantity_detail"]:
+            add(_clarification_item("area_count", "Is the work for one bathroom or multiple bathrooms?", options=["One bathroom", "Multiple bathrooms", "Not sure"], help_text="This helps size the job correctly."))
+        if not flags["layout_changes"]:
+            add(_clarification_item("layout_changes", "Are any layout changes or fixture moves planned?", options=["No changes", "Some changes", "Major changes", "Not sure"], help_text="This helps the contractor know whether extra coordination may be needed."))
+        if not flags["materials_ready"]:
+            add(_clarification_item("materials_ready", "Do you already have fixtures or materials picked out?", options=["Already selected", "Not yet", "Not sure"], help_text="Selections can affect pricing and lead time."))
+
+    elif family_key == "kitchen_remodel":
+        if not flags["demo_removal"]:
+            add(_clarification_item("demo_removal", "Are you installing new cabinets only, or removing old cabinets too?", options=["New cabinets only", "Remove old cabinets too", "Not sure"], help_text="This helps the contractor understand the scope more accurately."))
+        if not flags["materials_ready"]:
+            add(_clarification_item("materials_ready", "Do you already have the cabinets or materials on site?", options=["Already on site", "Already selected", "Not yet", "Not sure"], help_text="This can change the schedule and pricing."))
+        if not flags["related_work"]:
+            add(_clarification_item("related_work", "Will countertops, backsplash, or other related work be part of this project?", options=["Yes", "No", "Not sure"], help_text="This helps define the full scope of the kitchen work."))
+        if not flags["layout_changes"]:
+            add(_clarification_item("layout_changes", "Will any layout changes or appliance moves be part of the project?", options=["No changes", "Some changes", "Major changes", "Not sure"], help_text="This helps the contractor understand whether planning work may be needed."))
+
+    elif family_key == "flooring":
+        if not flags["quantity_detail"]:
+            add(_clarification_item("area_count", "Which rooms or areas are included?", qtype="text", input_type="textarea", help_text="This helps contractors understand how much flooring is involved."))
+        if not flags["demo_removal"]:
+            add(_clarification_item("demo_removal", "Will old flooring need to be removed?", options=["Yes", "No", "Not sure"], help_text="Removal work can change the schedule and bid."))
+        if not flags["materials_ready"]:
+            add(_clarification_item("materials_ready", "Have you chosen the flooring material yet?", options=["Already selected", "Not yet", "Not sure"], help_text="Material selection helps contractors understand the project better."))
+        if not flags["subfloor"]:
+            add(_clarification_item("subfloor_condition", "Does the subfloor need repair or review?", options=["Yes", "No", "Not sure"], help_text="This can affect the final scope and pricing."))
+
+    elif family_key == "painting":
+        if not flags["interior_exterior"]:
+            add(_clarification_item("interior_exterior", "Is this interior or exterior work?", options=["Interior", "Exterior", "Both", "Not sure"], help_text="This helps the contractor frame the project correctly."))
+        if not flags["quantity_detail"]:
+            add(_clarification_item("area_count", "Are multiple rooms or surfaces included?", options=["One area", "Multiple areas", "Not sure"], help_text="This helps contractors understand the size of the painting project."))
+        if not flags["demo_removal"]:
+            add(_clarification_item("prep_scope", "Will prep, patching, or repairs be needed?", options=["Yes", "No", "Not sure"], help_text="Preparation can change the time and cost of the job."))
+        if not flags["materials_ready"]:
+            add(_clarification_item("materials_ready", "Are paint colors or finish levels already chosen?", options=["Already selected", "Not yet", "Not sure"], help_text="Selections help the contractor understand what is included."))
+
+    elif family_key == "electrical":
+        if not flags["scope_kind"]:
+            add(_clarification_item("scope_kind", "Is this a repair, troubleshooting issue, or new install?", options=["Repair", "Troubleshooting", "New install", "Not sure"], help_text="This helps the contractor understand the kind of electrical work involved."))
+        if not flags["related_work"]:
+            add(_clarification_item("affected_system", "Which area is affected: panel, outlets, switches, or lighting?", options=["Panel", "Outlets", "Switches", "Lighting", "Not sure"], help_text="This helps narrow the scope and the safety review."))
+        if not flags["damage_urgency"]:
+            add(_clarification_item("damage_urgency", "Are there any safety concerns or recurring issues?", options=["Yes", "No", "Not sure"], help_text="This helps the contractor know if the work needs quicker attention."))
+        if not flags["inspection"]:
+            add(_clarification_item("inspection_before_pricing", "Would you like the contractor to inspect before final pricing?", options=["Yes", "No", "Not sure"], help_text="Electrical work is often clearer after a quick review."))
+
+    elif family_key == "plumbing":
+        if not flags["scope_kind"]:
+            add(_clarification_item("scope_kind", "Is this a repair, leak issue, or replacement?", options=["Repair", "Leak issue", "Replacement", "Not sure"], help_text="This helps the contractor understand the starting point."))
+        if not flags["related_work"]:
+            add(_clarification_item("affected_fixture", "Which fixture or line is affected?", options=["Sink", "Toilet", "Shower/tub", "Pipe/line", "Not sure"], help_text="This helps narrow the plumbing scope quickly."))
+        if not flags["access"]:
+            add(_clarification_item("access_conditions", "Is there easy access to the problem area?", options=["Easy access", "Somewhat limited", "Difficult", "Not sure"], help_text="Access can affect how the contractor prepares for the job."))
+        if not flags["inspection"]:
+            add(_clarification_item("inspection_before_pricing", "Would you like an inspection before final pricing?", options=["Yes", "No", "Not sure"], help_text="A quick review can help confirm the scope before pricing."))
+
+    elif family_key == "exterior_siding":
+        if not flags["quantity_detail"]:
+            add(_clarification_item("area_count", "Which exterior areas are included?", qtype="text", input_type="textarea", help_text="This helps contractors understand the size of the exterior project."))
+        if not flags["scope_kind"]:
+            add(_clarification_item("scope_kind", "Is this repair, replacement, or repainting?", options=["Repair", "Replacement", "Repainting", "Not sure"], help_text="This helps the contractor understand the kind of exterior work involved."))
+        if not flags["damage_urgency"]:
+            add(_clarification_item("damage_urgency", "Any water damage, rot, or weather exposure to note?", options=["Yes", "No", "Not sure"], help_text="This helps the contractor understand what may need extra attention."))
+        if not flags["inspection"]:
+            add(_clarification_item("inspection_before_pricing", "Would you like the contractor to inspect before final pricing?", options=["Yes", "No", "Not sure"], help_text="Exterior work is often clearer after a quick on-site review."))
+
+    elif family_key == "windows_doors":
+        if not flags["quantity_detail"]:
+            add(_clarification_item("area_count", "How many openings are involved?", qtype="text", input_type="textarea", help_text="This helps contractors understand the size of the job."))
+        if not flags["scope_kind"]:
+            add(_clarification_item("scope_kind", "Is this repair or replacement?", options=["Repair", "Replacement", "Not sure"], help_text="This helps the contractor understand the type of work needed."))
+        if not flags["materials_ready"]:
+            add(_clarification_item("materials_ready", "Are trim or weatherproofing details already known?", options=["Yes", "No", "Not sure"], help_text="This helps the contractor estimate more accurately."))
+        if not flags["inspection"]:
+            add(_clarification_item("inspection_before_pricing", "Would you like the contractor to inspect before final pricing?", options=["Yes", "No", "Not sure"], help_text="Window and door work is often clearer after a quick review."))
+
+    elif family_key == "handyman":
+        if not flags["task_list"]:
+            add(_clarification_item("task_list", "What are the main tasks you want done?", qtype="text", input_type="textarea", help_text="A quick list helps contractors understand the work better."))
+        if not flags["quantity_detail"]:
+            add(_clarification_item("area_count", "Is this one item or several?", options=["One item", "Several items", "Not sure"], help_text="This helps size the project correctly."))
+        if not flags["materials_ready"]:
+            add(_clarification_item("materials_ready", "Are materials already selected or on site?", options=["Already selected", "Already on site", "Not yet", "Not sure"], help_text="That can change the timeline and scope."))
+        if not flags["related_work"]:
+            add(_clarification_item("specialty_trade", "Is there anything that may need a specialty trade?", options=["Yes", "No", "Not sure"], help_text="This helps the contractor plan the work."))
+
+    else:
+        if not flags["scope_kind"]:
+            add(_clarification_item("scope_kind", "Is this a repair, replacement, remodel, or new installation?", options=["Repair", "Replacement", "Remodel", "New installation", "Not sure"], help_text="This helps contractors understand the starting point of the project."))
+        if not flags["quantity_detail"]:
+            add(_clarification_item("area_count", "Is this for one area or multiple areas?", options=["One area", "Multiple areas", "Not sure"], help_text="This helps contractors understand the size of the job."))
+        if not flags["materials_ready"]:
+            add(_clarification_item("materials_ready", "Are materials already selected or on site?", options=["Already selected", "Already on site", "Not yet", "Not sure"], help_text="This can affect timing and pricing."))
+        if not flags["inspection"]:
+            add(_clarification_item("inspection_before_pricing", "Would you like the contractor to inspect before final pricing?", options=["Yes", "No", "Not sure"], help_text="A site visit can help confirm the scope when details are still flexible."))
+        if not flags["damage_urgency"]:
+            add(_clarification_item("damage_urgency", "Is there any active damage or urgency the contractor should know about?", options=["Yes", "No", "Not sure"], help_text="This helps the contractor understand whether the project needs priority attention."))
+
+    if len(questions) < 2:
+        fallback = [
+            _clarification_item("scope_kind", "Is this a repair, replacement, remodel, or new installation?", options=["Repair", "Replacement", "Remodel", "New installation", "Not sure"], help_text="This helps contractors understand the starting point of the project."),
+            _clarification_item("area_count", "Is this for one area or multiple areas?", options=["One area", "Multiple areas", "Not sure"], help_text="This helps contractors understand the size of the job."),
+            _clarification_item("materials_ready", "Are materials already selected or on site?", options=["Already selected", "Already on site", "Not yet", "Not sure"], help_text="This can affect timing and pricing."),
+            _clarification_item("inspection_before_pricing", "Would you like the contractor to inspect before final pricing?", options=["Yes", "No", "Not sure"], help_text="A site visit can help confirm the scope when details are still flexible."),
+        ]
+        for item in fallback:
+            if len(questions) >= target_count:
+                break
+            if any(existing.get("key") == item["key"] for existing in questions):
+                continue
+            questions.append(item)
+
+    return questions[:target_count]
 
 
 def _clarification_answers_map(intake: ProjectIntake) -> dict[str, Any]:
@@ -579,10 +740,16 @@ def _refine_milestones(milestones: list[dict[str, Any]], answers: dict[str, Any]
 
 def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
     accomplishment = _safe_str(intake.accomplishment_text)
+    photo_count = 0
+    try:
+        photo_count = int(getattr(getattr(intake, "clarification_photos", None), "count", lambda: 0)() or 0)
+    except Exception:
+        photo_count = 0
     clarification_questions = _clarification_questions(
         _safe_str(getattr(intake, "ai_project_type", "")),
         _safe_str(getattr(intake, "ai_project_subtype", "")),
         accomplishment,
+        photo_count=photo_count,
     )
     clarification_answers = _clarification_answers_map(intake)
     measurement_handling = _safe_str(getattr(intake, "measurement_handling", "")) or _safe_str(

@@ -1595,21 +1595,57 @@ class ContractorPublicPresenceApiTests(TestCase):
             initiated_by="homeowner",
             status="submitted",
             customer_name="Clarify Prospect",
-            accomplishment_text="Need a bathroom remodel with updated tile.",
-            measurement_handling="site_visit_required",
+            accomplishment_text="Need help with my bathroom.",
             ai_clarification_answers={
-                "scope_depth": "Full bathroom",
-                "layout_changes": "Yes, minor changes",
-                "materials_responsibility": "Split",
+                "scope_kind": "Full remodel",
+                "area_count": "One bathroom",
+                "layout_changes": "Some changes",
+                "materials_ready": "Already selected",
             },
         )
 
         result = analyze_project_intake(intake=intake)
         keys = {row.get("key") for row in result.get("clarification_questions", [])}
-        self.assertTrue({"scope_depth", "layout_changes", "materials_responsibility", "timeline_clarity", "measurement_handling"}.issubset(keys))
-        self.assertEqual(result.get("measurement_handling"), "site_visit_required")
+        self.assertTrue({"scope_kind", "area_count", "layout_changes", "materials_ready"}.issubset(keys))
+        self.assertLessEqual(len(keys), 4)
+        self.assertNotIn("measurement_handling", keys)
         self.assertIn("Clarifications and assumptions", result.get("description", ""))
-        self.assertIn("site visit", " ".join(result.get("clarification_assumptions", [])))
+        self.assertIn("Layout changes", " ".join(result.get("clarification_assumptions", [])))
+
+    def test_public_intake_analysis_skips_questions_for_already_clear_description(self):
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            initiated_by="homeowner",
+            status="submitted",
+            customer_name="Clear Prospect",
+            accomplishment_text=(
+                "Replace the existing kitchen cabinets with shaker cabinets, install quartz countertops, keep the current "
+                "layout, and the cabinets are already on site."
+            ),
+        )
+
+        result = analyze_project_intake(intake=intake)
+        questions = result.get("clarification_questions", [])
+        self.assertEqual(questions, [])
+
+    def test_public_intake_analysis_uses_generic_fallback_for_vague_requests(self):
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            initiated_by="homeowner",
+            status="submitted",
+            customer_name="Generic Prospect",
+            accomplishment_text="Need help with my project.",
+        )
+
+        result = analyze_project_intake(intake=intake)
+        questions = result.get("clarification_questions", [])
+        keys = [row.get("key") for row in questions]
+        self.assertGreaterEqual(len(questions), 2)
+        self.assertLessEqual(len(questions), 4)
+        self.assertIn("scope_kind", keys)
+        self.assertIn("inspection_before_pricing", keys)
 
     @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
     def test_public_intake_photo_upload_creates_photo(self):

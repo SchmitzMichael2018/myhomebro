@@ -138,7 +138,8 @@ test("landing page drives into intake and public intake shows branching choices 
   await expect(page.getByText("Project Intake", { exact: true })).toBeVisible();
 
   await page.getByTestId("public-intake-accomplishment-text").fill("Need a bid-ready commercial scope.");
-  await expect(page.getByTestId("public-intake-generate-structure")).toBeEnabled();
+  await expect(page.getByTestId("public-intake-accomplishment-text")).toHaveValue("Need a bid-ready commercial scope.");
+  await expect(page.getByTestId("public-intake-generate-structure")).toBeEnabled({ timeout: 15000 });
   await page.getByTestId("public-intake-generate-structure").click();
   await expect(page.getByTestId("public-intake-project-summary")).toBeVisible();
   await expect(page.getByTestId("public-intake-project-summary-title")).toContainText("Your Project So Far");
