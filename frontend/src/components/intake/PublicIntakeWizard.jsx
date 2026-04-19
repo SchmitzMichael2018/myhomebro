@@ -978,13 +978,13 @@ export default function PublicIntakeWizard() {
       }
 
       return (
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.28fr)_minmax(300px,0.72fr)]">
           <div className="space-y-5">
-            <div className="rounded-3xl border border-white/70 bg-white p-8 shadow-2xl shadow-black/10" data-testid="public-intake-clarification-step">
+            <div className="rounded-3xl border border-white/70 bg-white p-7 shadow-2xl shadow-black/10" data-testid="public-intake-clarification-step">
               <div className="max-w-2xl">
                 <h2 className="text-2xl font-semibold tracking-tight text-gray-900">Refine Your Project</h2>
                 <p className="mt-2 text-base text-gray-600">
-                  A few quick details make your request more accurate and easier for your contractor to review.
+                  A few quick details make your request clearer, faster to review, and easier to price accurately.
                 </p>
                 <p className="mt-1 text-sm text-slate-500">Your contractor will verify measurements before work begins.</p>
               </div>
@@ -994,11 +994,12 @@ export default function PublicIntakeWizard() {
                   <div className="space-y-1">
                     <div className="text-sm font-semibold text-gray-900">Add Photos (Optional)</div>
                     <div className="text-xs text-slate-500">
-                      Photos can help your contractor understand the project faster and spot details that matter.
+                      Photos help contractors understand the project faster and estimate with more confidence.
                     </div>
                     <div className="text-xs text-slate-500">
                       Helpful examples: wide shot, close-up, inspiration photo, or measurements/sketches if available.
                     </div>
+                    <div className="text-xs text-slate-500">Even one clear photo can be useful.</div>
                   </div>
                   <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700">
                     {clarificationUploading ? "Uploading..." : "Upload photo(s)"}
@@ -1059,9 +1060,9 @@ export default function PublicIntakeWizard() {
                 <div className="mt-6">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <div className="text-sm font-semibold text-gray-900">A few quick questions</div>
+                      <div className="text-sm font-semibold text-gray-900">Quick questions</div>
                       <div className="text-xs text-gray-500">
-                        Short answers are fine. These update the structured output automatically.
+                        Short answers are enough. We use them to tighten the project plan.
                       </div>
                     </div>
                     <button
@@ -1188,13 +1189,16 @@ export default function PublicIntakeWizard() {
 
           <aside className="self-start lg:sticky lg:top-6">
             <div
-              className="rounded-3xl border border-white/70 bg-white p-6 shadow-xl shadow-black/10"
+              className="rounded-3xl border border-white/70 bg-white p-5 shadow-xl shadow-black/10"
               data-testid="public-intake-project-summary"
             >
+              <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+                Helpful guidance
+              </div>
               <div className="text-lg font-semibold tracking-tight text-gray-900" data-testid="public-intake-project-summary-title">
                 Your Project So Far
               </div>
-              <p className="mt-2 text-sm text-slate-600">Your contractor will review and confirm details.</p>
+              <p className="mt-2 text-sm text-slate-600">Your contractor will review and confirm details before final pricing.</p>
               <div className="mt-5">
                 {projectSummaryRows.length ? (
                   <dl className="space-y-3">
@@ -1215,9 +1219,9 @@ export default function PublicIntakeWizard() {
               <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="text-sm font-semibold text-slate-900">What happens next</div>
                 <ul className="mt-3 space-y-2 text-sm text-slate-600">
-                  <li>• Your contractor reviews the details you share here.</li>
-                  <li>• They may ask follow-up questions before final pricing.</li>
-                  <li>• You decide how you want to move forward.</li>
+                  <li>• Your contractor reviews what you&apos;ve shared.</li>
+                  <li>• They may confirm a few details before pricing.</li>
+                  <li>• You stay in control of the next step.</li>
                 </ul>
               </div>
 

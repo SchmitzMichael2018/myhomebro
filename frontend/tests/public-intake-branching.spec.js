@@ -305,6 +305,7 @@ test("public intake description helper refines the project idea before generatin
   await expect(page).toHaveURL(/\/start-project\/landing-token-refine$/);
   await page.getByTestId("public-intake-accomplishment-text").fill("Need to replace kitchen cabinets");
   await expect(page.getByTestId("public-intake-improve-description-button")).toBeVisible();
+  await expect(page.getByTestId("public-intake-improve-description-button")).toBeEnabled();
   await page.getByTestId("public-intake-improve-description-button").click();
   await expect(page.getByTestId("public-intake-description-refinement-card")).toBeVisible();
   await expect(page.getByTestId("public-intake-description-refined-textarea")).toHaveValue(
@@ -315,6 +316,7 @@ test("public intake description helper refines the project idea before generatin
   await expect(page.getByTestId("public-intake-description-refinement-card")).toHaveCount(0);
   await expect(page.getByTestId("public-intake-accomplishment-text")).toHaveValue("Need to replace kitchen cabinets");
 
+  await expect(page.getByTestId("public-intake-improve-description-button")).toBeEnabled();
   await page.getByTestId("public-intake-improve-description-button").click();
   await page.getByTestId("public-intake-description-refined-textarea").fill(
     "We will replace the kitchen cabinets, confirm the layout, and review finish choices before starting."
