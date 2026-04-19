@@ -191,7 +191,7 @@ export default function PublicIntakeWizard() {
 
   const stepLabels = [
     "Project Idea",
-    "AI Clarifications",
+    "Refine Your Project",
     "AI Structured Output",
     "Project Details",
     "Contact Info",
@@ -734,7 +734,6 @@ export default function PublicIntakeWizard() {
     addRow("project-type", "Project Type", form.ai_project_type);
     addRow("area", "Area", form.ai_project_subtype);
     addRow("main-goal", "Main Goal", getMainGoalSummary(form.ai_project_title, form.ai_description));
-    addRow("measurements", "Measurements", getFriendlyMeasurementLabel(form.measurement_handling));
     addRow("timing", "Timing", getFriendlyTimelineLabel(form.ai_project_timeline_days));
     addRow("budget", "Budget", getFriendlyBudgetLabel(form.ai_project_budget));
 
@@ -758,7 +757,6 @@ export default function PublicIntakeWizard() {
     form.ai_project_title,
     form.ai_project_timeline_days,
     form.ai_project_type,
-    form.measurement_handling,
   ]);
   const projectSnapshotRows = useMemo(() => {
     const rows = [];
@@ -794,7 +792,7 @@ export default function PublicIntakeWizard() {
     if (currentStep === 4) return "A few details now will help the next step feel easy.";
     if (currentStep === 3) return "You are refining the details that shape the plan.";
     if (currentStep === 2) return "Your project is taking shape.";
-    if (currentStep === 1) return "A little more detail helps contractors understand your project.";
+    if (currentStep === 1) return "Refine the details so your contractor can review the request more clearly.";
     return "Start with your idea and we will help shape the rest.";
   }, [currentStep]);
   const renderStep = () => {
@@ -980,193 +978,26 @@ export default function PublicIntakeWizard() {
       }
 
       return (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.8fr)] items-start">
-          <div className="space-y-4">
-            <div className="rounded-xl border bg-white p-6 shadow-sm" data-testid="public-intake-clarification-step">
-              <h2 className="text-lg font-semibold text-gray-900">AI Clarifications</h2>
-              <p className="mt-1 text-sm text-gray-600">
-                Answer a few quick questions to make the agreement-ready scope more accurate.
-              </p>
-              <p className="mt-1 text-sm text-slate-500">Your contractor will still confirm details.</p>
-
-              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <label className="mb-2 block text-sm font-medium text-gray-900">Measurement handling</label>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    { value: "provided", label: "Provided" },
-                    { value: "site_visit_required", label: "Site visit required" },
-                    { value: "not_sure", label: "Not sure" },
-                  ].map((opt) => (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setField("measurement_handling", opt.value)}
-                      className={`rounded-full border px-3 py-2 text-sm font-semibold ${
-                        form.measurement_handling === opt.value
-                          ? "border-indigo-500 bg-indigo-600 text-white"
-                          : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                      }`}
-                      data-testid={`public-intake-measurement-${opt.value}`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+          <div className="space-y-5">
+            <div className="rounded-3xl border border-white/70 bg-white p-8 shadow-2xl shadow-black/10" data-testid="public-intake-clarification-step">
+              <div className="max-w-2xl">
+                <h2 className="text-2xl font-semibold tracking-tight text-gray-900">Refine Your Project</h2>
+                <p className="mt-2 text-base text-gray-600">
+                  A few quick details make your request more accurate and easier for your contractor to review.
+                </p>
+                <p className="mt-1 text-sm text-slate-500">Your contractor will verify measurements before work begins.</p>
               </div>
 
-              <div className="mt-4 rounded-lg border border-slate-200 bg-white p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-gray-900">Clarification questions</div>
-                    <div className="text-xs text-gray-500">Short answers are fine. These update the structured output automatically.</div>
-                  </div>
-                  <button
-                    type="button"
-                    className="text-xs font-semibold text-indigo-700 hover:underline"
-                    onClick={() => setForm((prev) => ({ ...prev, ai_clarification_answers: emptyClarificationAnswers() }))}
-                  >
-                    Clear answers
-                  </button>
-                </div>
-
-                {questionCount ? (
-                  <div className="mt-4">
-                    <div
-                      className="mb-3 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500"
-                      data-testid="public-intake-clarification-progress"
-                    >
-                      <span>
-                        Question {questionNumber} of {questionCount}
-                      </span>
-                      <span>{activeClarificationAnswer ? "Answer saved" : "Optional"}</span>
-                    </div>
-
-                    <div
-                      className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-4 shadow-sm"
-                      data-testid={`public-intake-clarification-${activeClarificationQuestion?.key || "question"}`}
-                    >
-                      <div className="inline-flex rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
-                        AI prompt
-                      </div>
-                      <div className="mt-3 text-base font-semibold text-gray-900" data-testid="public-intake-clarification-prompt">
-                        {activeClarificationQuestion?.label || activeClarificationQuestion?.question || "Clarification question"}
-                      </div>
-                      {activeClarificationQuestion?.help ? (
-                        <div className="mt-2 text-sm text-slate-600">{activeClarificationQuestion.help}</div>
-                      ) : null}
-                      <div className="mt-3 text-xs text-slate-500">You can skip anything you&apos;re unsure about.</div>
-
-                      <div className="mt-4" data-testid="public-intake-clarification-answer-controls">
-                        {isChoiceQuestion ? (
-                          <div className="flex flex-wrap gap-2">
-                            {options.map((opt) => (
-                              <button
-                                key={String(opt)}
-                                type="button"
-                                onClick={() => {
-                                  if (!activeClarificationQuestion?.key) return;
-                                  setClarificationAnswer(activeClarificationQuestion.key, opt);
-                                }}
-                                data-testid={`public-intake-clarification-option-${activeClarificationQuestion?.key || "question"}-${String(opt)
-                                  .toLowerCase()
-                                  .replace(/[^a-z0-9]+/g, "-")
-                                  .replace(/^-+|-+$/g, "")}`}
-                                className={`rounded-full border px-3 py-2 text-sm font-semibold ${
-                                  String(activeClarificationAnswer) === String(opt)
-                                    ? "border-indigo-500 bg-indigo-600 text-white"
-                                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
-                                }`}
-                              >
-                                {String(opt)}
-                              </button>
-                            ))}
-                          </div>
-                        ) : isTextareaQuestion ? (
-                          <textarea
-                            rows={4}
-                            className="w-full rounded border px-3 py-2 text-sm"
-                            value={activeClarificationAnswer}
-                            onChange={(e) => {
-                              if (!activeClarificationQuestion?.key) return;
-                              setClarificationAnswer(activeClarificationQuestion.key, e.target.value);
-                            }}
-                            placeholder="Type a short answer or skip this question"
-                            data-testid="public-intake-clarification-answer-input"
-                          />
-                        ) : (
-                          <input
-                            className="w-full rounded border px-3 py-2 text-sm"
-                            value={activeClarificationAnswer}
-                            onChange={(e) => {
-                              if (!activeClarificationQuestion?.key) return;
-                              setClarificationAnswer(activeClarificationQuestion.key, e.target.value);
-                            }}
-                            placeholder="Type a short answer or skip this question"
-                            data-testid="public-intake-clarification-answer-input"
-                          />
-                        )}
-                      </div>
-
-                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={handleBack}
-                            data-testid="public-intake-clarification-back"
-                            className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                          >
-                            Back
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleClarificationAdvance({ skip: true })}
-                            data-testid="public-intake-clarification-skip"
-                            className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                          >
-                            Skip
-                          </button>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => handleClarificationAdvance()}
-                          data-testid="public-intake-clarification-next"
-                          className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
-                        >
-                          {isLastQuestion ? "Review Project Snapshot" : "Next"}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-                    <div>No clarification questions are needed for this project.</div>
-                    <div className="mt-4 flex justify-end">
-                      <button
-                        type="button"
-                        onClick={() => handleClarificationAdvance()}
-                        data-testid="public-intake-clarification-next"
-                        className="rounded bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
-                      >
-                        Continue
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div
-                className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-gradient-to-b from-white to-slate-50 p-5 shadow-sm"
-                data-testid="public-intake-clarification-photo-section"
-              >
+              <div className="mt-6 rounded-2xl border border-dashed border-slate-200 bg-gradient-to-b from-slate-50 to-white p-5 shadow-sm" data-testid="public-intake-clarification-photo-section">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div className="space-y-1">
                     <div className="text-sm font-semibold text-gray-900">Add Photos (Optional)</div>
                     <div className="text-xs text-slate-500">
-                      Photos can help your contractor understand the project faster.
+                      Photos can help your contractor understand the project faster and spot details that matter.
                     </div>
                     <div className="text-xs text-slate-500">
-                      You can continue without photos if you prefer.
+                      Helpful examples: wide shot, close-up, inspiration photo, or measurements/sketches if available.
                     </div>
                   </div>
                   <label className="inline-flex cursor-pointer items-center justify-center rounded-full bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-indigo-600/20 transition hover:bg-indigo-700">
@@ -1223,36 +1054,190 @@ export default function PublicIntakeWizard() {
                   </div>
                 </div>
               </div>
-            </div>
 
-            <aside className="self-start lg:sticky lg:top-6">
-              <div
-                className="rounded-2xl border border-white/70 bg-white p-6 shadow-xl shadow-black/10"
-                data-testid="public-intake-project-summary"
-              >
-                <div className="text-lg font-semibold tracking-tight text-gray-900" data-testid="public-intake-project-summary-title">
-                  Your Project So Far
-                </div>
-                <p className="mt-2 text-sm text-slate-600">Your contractor will review and confirm details.</p>
-                <div className="mt-5">
-                  {projectSummaryRows.length ? (
-                    <dl className="space-y-3">
-                      {projectSummaryRows.map((row) => (
-                        <div key={row.key} data-testid={`public-intake-project-summary-row-${row.key}`} className="rounded-xl bg-slate-50 px-4 py-3">
-                          <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{row.label}</dt>
-                          <dd className="mt-1 text-sm font-medium leading-6 text-slate-900">{row.value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-                      Keep answering questions to see your project come into focus.
+              {questionCount ? (
+                <div className="mt-6">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">A few quick questions</div>
+                      <div className="text-xs text-gray-500">
+                        Short answers are fine. These update the structured output automatically.
+                      </div>
                     </div>
-                  )}
+                    <button
+                      type="button"
+                      className="text-xs font-semibold text-indigo-700 hover:underline"
+                      onClick={() => setForm((prev) => ({ ...prev, ai_clarification_answers: emptyClarificationAnswers() }))}
+                    >
+                      Clear answers
+                    </button>
+                  </div>
+
+                  <div className="mt-4">
+                    <div
+                      className="mb-3 flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-wide text-slate-500"
+                      data-testid="public-intake-clarification-progress"
+                    >
+                      <span>
+                        Question {questionNumber} of {questionCount}
+                      </span>
+                      <span>{activeClarificationAnswer ? "Answer saved" : "Optional"}</span>
+                    </div>
+
+                    <div
+                      className="rounded-2xl border border-indigo-100 bg-indigo-50/70 p-5 shadow-sm"
+                      data-testid={`public-intake-clarification-${activeClarificationQuestion?.key || "question"}`}
+                    >
+                      <div className="inline-flex rounded-full bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+                        AI prompt
+                      </div>
+                      <div className="mt-3 text-base font-semibold text-gray-900" data-testid="public-intake-clarification-prompt">
+                        {activeClarificationQuestion?.label || activeClarificationQuestion?.question || "Clarification question"}
+                      </div>
+                      {activeClarificationQuestion?.help ? (
+                        <div className="mt-2 text-sm text-slate-600">{activeClarificationQuestion.help}</div>
+                      ) : null}
+                      <div className="mt-3 text-xs text-slate-500">You can skip anything you&apos;re unsure about.</div>
+
+                      <div className="mt-4" data-testid="public-intake-clarification-answer-controls">
+                        {isChoiceQuestion ? (
+                          <div className="flex flex-wrap gap-2">
+                            {options.map((opt) => (
+                              <button
+                                key={String(opt)}
+                                type="button"
+                                onClick={() => {
+                                  if (!activeClarificationQuestion?.key) return;
+                                  setClarificationAnswer(activeClarificationQuestion.key, opt);
+                                }}
+                                data-testid={`public-intake-clarification-option-${activeClarificationQuestion?.key || "question"}-${String(opt)
+                                  .toLowerCase()
+                                  .replace(/[^a-z0-9]+/g, "-")
+                                  .replace(/^-+|-+$/g, "")}`}
+                                className={`rounded-full border px-3 py-2 text-sm font-semibold ${
+                                  String(activeClarificationAnswer) === String(opt)
+                                    ? "border-indigo-500 bg-indigo-600 text-white"
+                                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                                }`}
+                              >
+                                {String(opt)}
+                              </button>
+                            ))}
+                          </div>
+                        ) : isTextareaQuestion ? (
+                          <textarea
+                            rows={4}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                            value={activeClarificationAnswer}
+                            onChange={(e) => {
+                              if (!activeClarificationQuestion?.key) return;
+                              setClarificationAnswer(activeClarificationQuestion.key, e.target.value);
+                            }}
+                            placeholder="Type a short answer or skip this question"
+                            data-testid="public-intake-clarification-answer-input"
+                          />
+                        ) : (
+                          <input
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                            value={activeClarificationAnswer}
+                            onChange={(e) => {
+                              if (!activeClarificationQuestion?.key) return;
+                              setClarificationAnswer(activeClarificationQuestion.key, e.target.value);
+                            }}
+                            placeholder="Type a short answer or skip this question"
+                            data-testid="public-intake-clarification-answer-input"
+                          />
+                        )}
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={handleBack}
+                            data-testid="public-intake-clarification-back"
+                            className="rounded-full border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                          >
+                            Back
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleClarificationAdvance({ skip: true })}
+                            data-testid="public-intake-clarification-skip"
+                            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            Skip
+                          </button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleClarificationAdvance()}
+                          data-testid="public-intake-clarification-next"
+                          className="rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700"
+                        >
+                          {isLastQuestion ? "Review Project Snapshot" : "Next"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </aside>
+              ) : null}
+            </div>
           </div>
+
+          <aside className="self-start lg:sticky lg:top-6">
+            <div
+              className="rounded-3xl border border-white/70 bg-white p-6 shadow-xl shadow-black/10"
+              data-testid="public-intake-project-summary"
+            >
+              <div className="text-lg font-semibold tracking-tight text-gray-900" data-testid="public-intake-project-summary-title">
+                Your Project So Far
+              </div>
+              <p className="mt-2 text-sm text-slate-600">Your contractor will review and confirm details.</p>
+              <div className="mt-5">
+                {projectSummaryRows.length ? (
+                  <dl className="space-y-3">
+                    {projectSummaryRows.map((row) => (
+                      <div key={row.key} data-testid={`public-intake-project-summary-row-${row.key}`} className="rounded-xl bg-slate-50 px-4 py-3">
+                        <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{row.label}</dt>
+                        <dd className="mt-1 text-sm font-medium leading-6 text-slate-900">{row.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+                    Keep answering questions to see your project come into focus.
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="text-sm font-semibold text-slate-900">What happens next</div>
+                <ul className="mt-3 space-y-2 text-sm text-slate-600">
+                  <li>• Your contractor reviews the details you share here.</li>
+                  <li>• They may ask follow-up questions before final pricing.</li>
+                  <li>• You decide how you want to move forward.</li>
+                </ul>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="text-sm font-semibold text-slate-900">Measurements</div>
+                <p className="mt-2 text-sm text-slate-600">Your contractor will verify measurements before work begins.</p>
+              </div>
+
+              {!questionCount ? (
+                <button
+                  type="button"
+                  onClick={() => handleClarificationAdvance()}
+                  data-testid="public-intake-clarification-next"
+                  className="mt-5 w-full rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700"
+                >
+                  Continue to Project Snapshot
+                </button>
+              ) : null}
+            </div>
+          </aside>
         </div>
       );
     }

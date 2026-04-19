@@ -142,6 +142,10 @@ test("landing page drives into intake and public intake shows branching choices 
   await page.getByTestId("public-intake-generate-structure").click();
   await expect(page.getByTestId("public-intake-project-summary")).toBeVisible();
   await expect(page.getByTestId("public-intake-project-summary-title")).toContainText("Your Project So Far");
+  await expect(page.getByText("Refine Your Project", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("public-intake-clarification-photo-section")).toBeVisible();
+  await expect(page.getByTestId("public-intake-measurement-provided")).toHaveCount(0);
+  await expect(page.getByText("No clarification questions are needed for this project.")).toHaveCount(0);
   await page.getByTestId("public-intake-clarification-next").click();
   await expect(page.getByTestId("public-intake-project-snapshot")).toBeVisible();
   await expect(page.getByTestId("public-intake-project-snapshot-title")).toContainText("Project Snapshot");
