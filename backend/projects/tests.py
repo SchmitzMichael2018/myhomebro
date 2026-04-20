@@ -92,6 +92,7 @@ from projects.services.project_intelligence import (
     build_project_intelligence_context,
     build_project_setup_recommendation,
 )
+from projects.services.project_plan_suggestions import build_project_plan_suggestion
 from projects.services.agreements.create import create_agreement_from_validated
 from projects.services.agreement_fee_allocation import refresh_agreement_fee_allocations
 from projects.services.benchmark_resolution import resolve_seed_benchmark_defaults
@@ -9139,6 +9140,74 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertEqual(recommendation["suggested_template_label"], "Kitchen Cabinet Install Template")
         self.assertFalse(recommendation["strong_template_match"])
 
+    def test_project_plan_recommendation_builds_kitchen_install_plan(self):
+        plan = build_project_plan_suggestion(
+            project_title="Need kitchen cabinets installed",
+            project_type="Kitchen Remodel",
+            project_subtype="Primary Kitchen",
+            description="Remove old cabinets, install new cabinets already on site, and include backsplash work.",
+            project_scope_summary="Kitchen cabinet installation request involving removal of existing cabinets and backsplash work.",
+            clarification_answers={
+                "materials": "Already on site",
+                "inspection_requested": "Yes",
+            },
+            photo_count=2,
+            suggested_total_price="6250.00",
+            suggested_price_low="5000.00",
+            suggested_price_high="7500.00",
+            suggested_duration_days=5,
+            suggested_duration_low=3,
+            suggested_duration_high=6,
+            confidence_level="medium",
+            confidence_reasoning="Moderate because the project type and scope are clear.",
+            learned_benchmark_used=True,
+            seeded_benchmark_used=True,
+            benchmark_source="seeded_plus_learned",
+            benchmark_match_scope="template_linked_profile",
+            template_name="Kitchen Remodel Starter",
+            selected_template_id=55,
+        )
+
+        self.assertEqual(plan["project_family_key"], "kitchen_remodel")
+        self.assertEqual(plan["recommended_project_type"], "Kitchen Cabinet Installation")
+        self.assertEqual(plan["suggested_workflow"], "Install + removal")
+        self.assertEqual(plan["suggested_budget_low"], "5000.00")
+        self.assertEqual(plan["suggested_budget_high"], "7500.00")
+        self.assertIn("specific enough", plan["confidence_reasoning"].lower())
+        self.assertTrue(plan["milestones"])
+        self.assertAlmostEqual(sum(row["allocation_percent"] for row in plan["milestones"]), 1.0, places=2)
+        self.assertIn("learning_key", plan["learning_ready"])
+        self.assertIn("deterministic_first", plan["source_metadata"]["recommendation_basis"])
+
+    def test_project_plan_recommendation_falls_back_for_general_projects(self):
+        plan = build_project_plan_suggestion(
+            project_title="Need help around the house",
+            project_type="Custom",
+            project_subtype="General",
+            description="Need help with a few different small tasks.",
+            project_scope_summary="Small mixed repair tasks with no clear specialty trade.",
+            clarification_answers={},
+            photo_count=0,
+            suggested_total_price=None,
+            suggested_price_low=None,
+            suggested_price_high=None,
+            suggested_duration_days=None,
+            suggested_duration_low=None,
+            suggested_duration_high=None,
+            confidence_level="low",
+            confidence_reasoning="Limited details available.",
+            learned_benchmark_used=False,
+            seeded_benchmark_used=False,
+            benchmark_source="none",
+            benchmark_match_scope="none",
+        )
+
+        self.assertEqual(plan["project_family_key"], "general")
+        self.assertEqual(plan["confidence_level"], "low")
+        self.assertEqual(plan["suggested_workflow"], "General project review")
+        self.assertNotEqual(plan["suggested_budget_high"], "0.00")
+        self.assertTrue(plan["milestones"])
+
     def test_brand_voice_personalizes_proposal_draft_without_breaking_fallback(self):
         ContractorPublicProfile.objects.create(
             contractor=self.contractor,
@@ -10129,6 +10198,7 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         self.assertIn("suggested_price_low", data)
         self.assertIn("suggested_duration_days", data)
         self.assertIn("milestone_suggestions", data)
+        self.assertIn("suggested_plan", data)
         self.assertIn("confidence_level", data)
         self.assertIn("confidence_reasoning", data)
         self.assertIn("source_metadata", data)

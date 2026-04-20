@@ -197,6 +197,7 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
           suggested_amount: '5300.00',
           suggested_duration_days: 3,
           suggested_order: 1,
+          allocation_percent: 0.21,
           source: 'existing_milestone',
           source_note: 'Demolition increased the first milestone.',
         },
@@ -206,10 +207,70 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
           suggested_amount: '20000.00',
           suggested_duration_days: 9,
           suggested_order: 2,
+          allocation_percent: 0.79,
           source: 'existing_milestone',
           source_note: 'Premium finish selections increased install cost.',
         },
       ],
+      suggested_plan: {
+        project_family_key: 'kitchen_remodel',
+        project_family_label: 'Kitchen Remodel',
+        project_scope_summary: 'Kitchen remodel with upgraded finishes and fixtures.',
+        recommended_project_type: 'Kitchen Remodel',
+        recommended_project_subtype: 'Kitchen Remodel',
+        suggested_workflow: 'Install + removal',
+        suggested_template_label: 'Kitchen Remodel Template',
+        recommended_template_name: 'Kitchen Remodel Starter',
+        suggested_budget_low: '22770.00',
+        suggested_budget_high: '27830.00',
+        suggested_duration_low_days: 10,
+        suggested_duration_high_days: 13,
+        suggested_budget_center: '25300.00',
+        suggested_duration_days: 12,
+        confidence_level: 'medium',
+        confidence_reasoning: 'Project type and clarifications provide a practical starting plan.',
+        milestones: [
+          {
+            order: 1,
+            title: 'Demo and Prep',
+            allocation_percent: 0.21,
+            suggested_duration_days: 3,
+            suggested_amount_low: '4772.70',
+            suggested_amount_high: '5844.30',
+            note: 'Protect work area and demo existing finishes.',
+          },
+          {
+            order: 2,
+            title: 'Install and Finish',
+            allocation_percent: 0.79,
+            suggested_duration_days: 9,
+            suggested_amount_low: '17997.30',
+            suggested_amount_high: '21985.70',
+            note: 'Install cabinets, finishes, and fixtures.',
+          },
+        ],
+        flags: {
+          materials_ready: true,
+          inspection_requested: false,
+          urgent_or_damage: false,
+          multi_area: false,
+          one_area: true,
+        },
+        learning_ready: {
+          learning_key: 'kitchen_remodel:install_removal:Remodel:Kitchen Remodel:2:no_photos:seeded',
+          benchmark_source: 'seeded_plus_learned',
+          benchmark_match_scope: 'template_linked_profile',
+          seeded_benchmark_used: true,
+          learned_benchmark_used: true,
+          clarification_count: 2,
+          photo_count: 0,
+        },
+        source_metadata: {
+          family_key: 'kitchen_remodel',
+          scope_mode: 'install_removal',
+          recommendation_basis: 'deterministic_first',
+        },
+      },
       price_adjustments: [
         { label: 'Finish level', amount: '2800.00', reason: 'Premium finish selections were provided.' },
         { label: 'Demolition', amount: '1500.00', reason: 'Demolition was included.' },
@@ -243,6 +304,14 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   });
 
   await expect(page.getByTestId('step2-estimate-panel')).toBeVisible();
+  await expect(page.getByTestId('step2-suggested-plan-card')).toBeVisible();
+  await expect(page.getByTestId('step2-suggested-plan-type')).toContainText('Kitchen Remodel');
+  await expect(page.getByTestId('step2-suggested-plan-workflow')).toContainText('Install + removal');
+  await expect(page.getByTestId('step2-suggested-plan-template')).toContainText('Kitchen Remodel Starter');
+  await expect(page.getByTestId('step2-suggested-plan-confidence')).toContainText('Moderate');
+  await expect(page.getByTestId('step2-suggested-plan-budget')).toContainText('$22,770.00');
+  await expect(page.getByTestId('step2-suggested-plan-duration')).toContainText('10 days');
+  await expect(page.getByTestId('step2-apply-suggested-plan')).toBeVisible();
   await expect(page.getByTestId('step2-estimate-total')).toContainText('$22,770.00');
   await expect(page.getByTestId('step2-estimate-total')).toContainText('$27,830.00');
   await expect(page.getByTestId('step2-estimate-duration')).toContainText('10 days');
@@ -301,6 +370,7 @@ test('step 2 estimate fallback messaging renders for template-only low-confidenc
           suggested_amount: '5000.00',
           suggested_duration_days: 2,
           suggested_order: 1,
+          allocation_percent: 0.28,
           source: 'existing_milestone',
         },
         {
@@ -309,9 +379,69 @@ test('step 2 estimate fallback messaging renders for template-only low-confidenc
           suggested_amount: '13000.00',
           suggested_duration_days: 7,
           suggested_order: 2,
+          allocation_percent: 0.72,
           source: 'existing_milestone',
         },
       ],
+      suggested_plan: {
+        project_family_key: 'kitchen_remodel',
+        project_family_label: 'Kitchen Remodel',
+        project_scope_summary: 'Kitchen remodel with upgraded finishes.',
+        recommended_project_type: 'Kitchen Remodel',
+        recommended_project_subtype: 'Kitchen Remodel',
+        suggested_workflow: 'Remodel workflow',
+        suggested_template_label: 'Kitchen Remodel Template',
+        recommended_template_name: 'Kitchen Remodel Starter',
+        suggested_budget_low: '15300.00',
+        suggested_budget_high: '20700.00',
+        suggested_duration_low_days: 7,
+        suggested_duration_high_days: 11,
+        suggested_budget_center: '18000.00',
+        suggested_duration_days: 9,
+        confidence_level: 'low',
+        confidence_reasoning: 'The plan stays broad because the project details are still somewhat general.',
+        milestones: [
+          {
+            order: 1,
+            title: 'Demo and Prep',
+            allocation_percent: 0.28,
+            suggested_duration_days: 2,
+            suggested_amount_low: '4284.00',
+            suggested_amount_high: '5796.00',
+            note: 'Protect the space and remove existing finishes.',
+          },
+          {
+            order: 2,
+            title: 'Install and Finish',
+            allocation_percent: 0.72,
+            suggested_duration_days: 7,
+            suggested_amount_low: '11016.00',
+            suggested_amount_high: '14904.00',
+            note: 'Complete the core installation and finish work.',
+          },
+        ],
+        flags: {
+          materials_ready: false,
+          inspection_requested: false,
+          urgent_or_damage: false,
+          multi_area: false,
+          one_area: true,
+        },
+        learning_ready: {
+          learning_key: 'kitchen_remodel:remodel:Remodel:Kitchen Remodel:1:no_photos:seeded',
+          benchmark_source: 'seeded_only',
+          benchmark_match_scope: 'template_linked_profile',
+          seeded_benchmark_used: true,
+          learned_benchmark_used: false,
+          clarification_count: 1,
+          photo_count: 0,
+        },
+        source_metadata: {
+          family_key: 'kitchen_remodel',
+          scope_mode: 'remodel',
+          recommendation_basis: 'deterministic_first',
+        },
+      },
       price_adjustments: [],
       timeline_adjustments: [],
       explanation_lines: ['Started from seeded benchmark `template_linked_profile` for `Remodel`.'],
@@ -338,6 +468,8 @@ test('step 2 estimate fallback messaging renders for template-only low-confidenc
   });
 
   await expect(page.getByTestId('step2-estimate-panel')).toBeVisible();
+  await expect(page.getByTestId('step2-suggested-plan-card')).toBeVisible();
+  await expect(page.getByTestId('step2-suggested-plan-confidence')).toContainText('Preliminary');
   await expect(
     page.getByText(
       'No strong learned benchmark is available yet, so this estimate is leaning on template baseline guidance.'

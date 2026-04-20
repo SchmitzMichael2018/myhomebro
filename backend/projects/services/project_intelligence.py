@@ -340,6 +340,10 @@ def _infer_scope_mode(text: str, family_key: str) -> str:
     return "general"
 
 
+def infer_project_scope_mode(*, text: str, family_key: str) -> str:
+    return _infer_scope_mode(text, family_key)
+
+
 def build_project_setup_recommendation(
     *,
     project_title: str = "",
@@ -358,7 +362,7 @@ def build_project_setup_recommendation(
     family_key = family.get("key", "general")
     family_label = family.get("label", "General project review")
     scope_text = _normalize(" ".join([project_title, project_type, project_subtype, description]))
-    scope_mode = _infer_scope_mode(scope_text, family_key)
+    scope_mode = infer_project_scope_mode(text=scope_text, family_key=family_key)
 
     recommended_project_type = project_type or family_label
     recommended_project_subtype = project_subtype or family_label
@@ -499,6 +503,7 @@ def build_project_setup_recommendation(
         "recommendation_note": recommendation_note,
         "strong_template_match": is_strong_template_match,
     }
+
 
 
 def infer_project_intelligence(*, project_title: str = "", project_type: str = "", project_subtype: str = "", description: str = "") -> dict[str, Any]:

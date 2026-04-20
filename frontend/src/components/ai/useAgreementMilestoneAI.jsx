@@ -391,6 +391,10 @@ function normalizeEstimatePreview(data) {
     confidence_level: safeStr(source?.confidence_level),
     confidence_reasoning: safeStr(source?.confidence_reasoning),
     structured_result_version: safeStr(source?.structured_result_version),
+    suggested_plan:
+      source?.suggested_plan && typeof source.suggested_plan === "object"
+        ? source.suggested_plan
+        : null,
     source_metadata:
       source?.source_metadata && typeof source.source_metadata === "object"
         ? source.source_metadata

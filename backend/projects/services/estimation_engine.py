@@ -12,6 +12,7 @@ from projects.models import Agreement, AgreementAIScope, Milestone, ProjectBench
 from projects.models_templates import SeedBenchmarkProfile
 from projects.services.benchmark_resolution import resolve_seed_benchmark_defaults
 from projects.services.regions import build_normalized_region_key
+from projects.services.project_plan_suggestions import build_project_plan_suggestion
 
 
 STRUCTURED_RESULT_VERSION = "2026-03-26-estimator-v1"
@@ -706,6 +707,7 @@ def _build_milestone_suggestions(
         duration_share = max(duration_share, 1)
         running_total += price_share
         running_days += duration_share
+        allocation_percent = float(row_weight / total_weight) if total_weight > 0 else 0.0
         suggestions.append(
             {
                 "milestone_id": row.get("milestone_id"),
@@ -715,6 +717,7 @@ def _build_milestone_suggestions(
                 "suggested_amount": str(price_share),
                 "suggested_duration_days": duration_share,
                 "suggested_order": idx + 1,
+                "allocation_percent": allocation_percent,
                 "source": row.get("source") or "estimator",
                 "source_note": "Suggested values are editable and based on template, benchmark, and clarification context.",
             }
@@ -853,6 +856,23 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
     suggested_duration_low = max(int(round(suggested_duration_days * (1 - float(range_spread)))), 1) if suggested_duration_days else 0
     suggested_duration_high = max(int(round(suggested_duration_days * (1 + float(range_spread)))), suggested_duration_low) if suggested_duration_days else 0
 
+    confidence_level, confidence_reasoning = _confidence_level(
+        seeded_defaults=seeded_defaults,
+        learned_decision=learned_decision,
+        clarification_answers=clarification_answers,
+    )
+
+    source_lead_ai = getattr(getattr(agreement, "source_lead", None), "ai_analysis", None) or {}
+    request_snapshot = source_lead_ai.get("request_snapshot") if isinstance(source_lead_ai, dict) else {}
+    if not isinstance(request_snapshot, dict):
+        request_snapshot = {}
+    project_scope_summary = (
+        _safe_text(request_snapshot.get("project_scope_summary"))
+        or _safe_text(request_snapshot.get("refined_description"))
+        or _safe_text(getattr(agreement, "description", ""))
+    )
+    photo_count = _safe_int(request_snapshot.get("photo_count"), 0)
+
     milestone_suggestions = _build_milestone_suggestions(
         existing_milestones=_existing_milestones(agreement),
         seeded_defaults=list(seeded_defaults.get("milestone_defaults") or []),
@@ -860,10 +880,28 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
         suggested_duration_days=max(suggested_duration_days, 1),
         clarification_answers=clarification_answers,
     )
-    confidence_level, confidence_reasoning = _confidence_level(
-        seeded_defaults=seeded_defaults,
-        learned_decision=learned_decision,
+    suggested_plan = build_project_plan_suggestion(
+        project_title=getattr(getattr(agreement, "project", None), "title", "") or "",
+        project_type=getattr(agreement, "project_type", "") or "",
+        project_subtype=getattr(agreement, "project_subtype", "") or "",
+        description=getattr(agreement, "description", "") or "",
+        project_scope_summary=project_scope_summary,
         clarification_answers=clarification_answers,
+        photo_count=photo_count,
+        suggested_total_price=suggested_total_price,
+        suggested_price_low=suggested_price_low,
+        suggested_price_high=suggested_price_high,
+        suggested_duration_days=suggested_duration_days,
+        suggested_duration_low=suggested_duration_low,
+        suggested_duration_high=suggested_duration_high,
+        confidence_level=confidence_level,
+        confidence_reasoning=confidence_reasoning,
+        learned_benchmark_used=bool(learned_decision.aggregate is not None and learned_weight > 0),
+        seeded_benchmark_used=bool(seeded_defaults.get("benchmark_profile_id")),
+        benchmark_source=benchmark_source,
+        benchmark_match_scope=seeded_defaults.get("match_scope") or "none",
+        template_name=_template_label(agreement),
+        selected_template_id=getattr(agreement, "selected_template_id", None),
     )
 
     return {
@@ -875,6 +913,7 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
         "suggested_duration_high": suggested_duration_high,
         "suggested_milestones": milestone_suggestions,
         "milestone_suggestions": milestone_suggestions,
+        "suggested_plan": suggested_plan,
         "price_adjustments": price_adjustments,
         "timeline_adjustments": timeline_adjustments,
         "explanation_lines": explanation_lines,

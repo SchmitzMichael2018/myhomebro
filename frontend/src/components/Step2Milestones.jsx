@@ -1534,6 +1534,15 @@ export default function Step2Milestones({
       variabilityMessage: explainRangeVariability(estimatePreview),
     };
   }, [estimatePreview]);
+  const suggestedPlan = useMemo(() => {
+    const plan = estimatePreview?.suggested_plan;
+    if (!plan || typeof plan !== "object") return null;
+    const milestones = Array.isArray(plan?.milestones) ? plan.milestones : [];
+    return {
+      ...plan,
+      milestones,
+    };
+  }, [estimatePreview]);
   const estimateGuidanceByMilestone = useMemo(() => {
     const rows = Array.isArray(effectiveMilestones) ? effectiveMilestones : [];
     if (!rows.length) return new Map();
@@ -3065,6 +3074,119 @@ export default function Step2Milestones({
             </div>
           </div>
         </div>
+      ) : null}
+
+      {suggestedPlan ? (
+        <section
+          className="rounded-2xl border border-emerald-200 bg-emerald-50/60 shadow-sm"
+          data-testid="step2-suggested-plan-card"
+        >
+          <div className="px-4 py-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="max-w-3xl">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-sm font-semibold text-emerald-950">Suggested Plan</div>
+                  <span className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                    Based on the project details provided
+                  </span>
+                </div>
+                <div className="mt-1 text-sm text-emerald-950/80">
+                  {suggestedPlan?.project_family_label || "Project review"} and the current agreement details shape this recommended starting plan.
+                </div>
+                <div className="mt-2 grid grid-cols-1 gap-2 text-xs text-emerald-950/80 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-xl border border-emerald-200 bg-white px-3 py-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Project type</div>
+                    <div className="mt-1 font-semibold text-slate-900" data-testid="step2-suggested-plan-type">
+                      {suggestedPlan?.recommended_project_type || suggestedPlan?.project_family_label || "General project review"}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-emerald-200 bg-white px-3 py-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Workflow</div>
+                    <div className="mt-1 font-semibold text-slate-900" data-testid="step2-suggested-plan-workflow">
+                      {suggestedPlan?.suggested_workflow || "General project review"}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-emerald-200 bg-white px-3 py-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Template</div>
+                    <div className="mt-1 font-semibold text-slate-900" data-testid="step2-suggested-plan-template">
+                      {suggestedPlan?.recommended_template_name || suggestedPlan?.suggested_template_label || "Suggested template"}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-emerald-200 bg-white px-3 py-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Confidence</div>
+                    <div className="mt-1 font-semibold text-slate-900" data-testid="step2-suggested-plan-confidence">
+                      {formatEstimateConfidence(suggestedPlan?.confidence_level) || "Advisory"}
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div className="rounded-xl border border-emerald-200 bg-white px-3 py-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Suggested budget</div>
+                    <div className="mt-1 text-base font-semibold text-slate-900" data-testid="step2-suggested-plan-budget">
+                      {formatCurrency(suggestedPlan?.suggested_budget_low)} – {formatCurrency(suggestedPlan?.suggested_budget_high)}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600">
+                      Centered around {formatCurrency(suggestedPlan?.suggested_budget_center || estimatePreview?.suggested_total_price)}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-emerald-200 bg-white px-3 py-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Suggested duration</div>
+                    <div className="mt-1 text-base font-semibold text-slate-900" data-testid="step2-suggested-plan-duration">
+                      {formatDurationDays(suggestedPlan?.suggested_duration_low_days)} – {formatDurationDays(suggestedPlan?.suggested_duration_high_days)}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600">
+                      {suggestedPlan?.suggested_duration_days
+                        ? `Typical pace: ${formatDurationDays(suggestedPlan.suggested_duration_days)}`
+                        : "Plan timing stays editable."}
+                    </div>
+                  </div>
+                </div>
+                {suggestedPlan?.confidence_reasoning ? (
+                  <div className="mt-3 rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs text-slate-700">
+                    {suggestedPlan.confidence_reasoning}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    applyEstimateSuggestedAmounts();
+                    applyEstimateSuggestedTimeline();
+                  }}
+                  disabled={milestonesLocked}
+                  className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+                  data-testid="step2-apply-suggested-plan"
+                >
+                  Use Suggested Plan
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-emerald-200 bg-white px-4 py-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Milestone allocation</div>
+              <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {Array.isArray(suggestedPlan?.milestones) && suggestedPlan.milestones.length ? (
+                  suggestedPlan.milestones.map((row) => (
+                    <div key={`${row.order || row.title}`} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                      <div className="text-sm font-semibold text-slate-900">{row.title}</div>
+                      <div className="mt-1 text-xs text-slate-600">
+                        Share: <span className="font-semibold text-slate-900">{formatPercent(row.allocation_percent)}</span>
+                      </div>
+                      <div className="mt-1 text-xs text-slate-600">
+                        Duration: <span className="font-semibold text-slate-900">{formatDurationDays(row.suggested_duration_days)}</span>
+                      </div>
+                      {row.note ? <div className="mt-1 text-xs text-slate-600">{row.note}</div> : null}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-sm text-slate-600">Suggested milestone allocation will appear here when the plan is available.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </section>
       ) : null}
 
       {estimatePreview ? (
