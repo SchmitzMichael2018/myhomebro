@@ -209,6 +209,14 @@ def _snapshot_from_intake(*, source_intake, lead=None, analysis=None, request=No
         getattr(source_intake, "measurement_handling", "")
         or clarification_answers.get("measurement_handling", "")
     )
+    project_scope_summary = (
+        _safe_text(analysis.get("project_scope_summary"))
+        or _safe_text(getattr(source_intake, "ai_description", ""))
+        or _safe_text(analysis.get("suggested_description"))
+        or _safe_text(getattr(lead, "project_description", ""))
+    )
+    project_family_key = _safe_text(analysis.get("project_family_key"))
+    project_family_label = _safe_text(analysis.get("project_family_label"))
     budget_value = getattr(source_intake, "ai_project_budget", None) if source_intake else None
     budget_label = (
         f"${Decimal(str(budget_value)).quantize(Decimal('0.01')):,.2f}"
@@ -232,8 +240,7 @@ def _snapshot_from_intake(*, source_intake, lead=None, analysis=None, request=No
     project_type = _safe_text(getattr(source_intake, "ai_project_type", "")) or _safe_text(analysis.get("project_type"))
     project_subtype = _safe_text(getattr(source_intake, "ai_project_subtype", "")) or _safe_text(analysis.get("project_subtype"))
     refined_description = (
-        _safe_text(getattr(source_intake, "ai_description", ""))
-        or _safe_text(analysis.get("suggested_description"))
+        project_scope_summary
         or _safe_text(getattr(lead, "project_description", ""))
     )
     project_address = getattr(source_intake, "project_address_display", "") if source_intake else ""
@@ -280,7 +287,10 @@ def _snapshot_from_intake(*, source_intake, lead=None, analysis=None, request=No
         "project_title": project_title,
         "project_type": project_type,
         "project_subtype": project_subtype,
+        "project_family_key": project_family_key,
+        "project_family_label": project_family_label,
         "refined_description": refined_description,
+        "project_scope_summary": project_scope_summary,
         "location": location,
         "request_path_label": request_path_label,
         "measurement_handling": measurement_handling,
@@ -355,7 +365,8 @@ def _bid_row_from_lead(lead, request=None) -> dict:
         or f"Lead #{lead.id}"
     )
     project_notes = (
-        _safe_text(snapshot.get("refined_description"))
+        _safe_text(snapshot.get("project_scope_summary"))
+        or _safe_text(snapshot.get("refined_description"))
         or _safe_text(analysis.get("suggested_description"))
         or _safe_text(lead.project_description)
         or _safe_text(lead.project_type)
@@ -408,6 +419,8 @@ def _bid_row_from_lead(lead, request=None) -> dict:
         "location": _safe_text(snapshot.get("location")) or _safe_text(lead.city) or _safe_text(lead.project_address),
         "project_type": _safe_text(snapshot.get("project_type")) or _safe_text(lead.project_type),
         "project_subtype": _safe_text(snapshot.get("project_subtype")),
+        "project_family_key": _safe_text(snapshot.get("project_family_key")),
+        "project_family_label": _safe_text(snapshot.get("project_family_label")),
         "request_path_label": _safe_text(snapshot.get("request_path_label")),
         "measurement_handling": _safe_text(snapshot.get("measurement_handling")),
         "photo_count": int(snapshot.get("photo_count") or 0),
@@ -454,7 +467,8 @@ def _bid_row_from_intake(intake, request=None) -> dict:
         or f"Intake #{intake.id}"
     )
     project_notes = (
-        _safe_text(snapshot.get("refined_description"))
+        _safe_text(snapshot.get("project_scope_summary"))
+        or _safe_text(snapshot.get("refined_description"))
         or _safe_text(intake.ai_description)
         or _safe_text(intake.accomplishment_text)
         or _safe_text(intake.ai_project_subtype)
@@ -500,6 +514,8 @@ def _bid_row_from_intake(intake, request=None) -> dict:
         "location": _safe_text(snapshot.get("location")) or _safe_text(intake.project_address_display),
         "project_type": _safe_text(snapshot.get("project_type")) or _safe_text(intake.ai_project_type),
         "project_subtype": _safe_text(snapshot.get("project_subtype")) or _safe_text(intake.ai_project_subtype),
+        "project_family_key": _safe_text(snapshot.get("project_family_key")),
+        "project_family_label": _safe_text(snapshot.get("project_family_label")),
         "request_path_label": _safe_text(snapshot.get("request_path_label")),
         "measurement_handling": _safe_text(snapshot.get("measurement_handling")) or _safe_text(intake.measurement_handling),
         "photo_count": int(snapshot.get("photo_count") or 0),

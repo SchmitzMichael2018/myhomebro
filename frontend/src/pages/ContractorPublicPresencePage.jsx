@@ -1163,7 +1163,12 @@ export default function ContractorPublicPresencePage() {
                         Accepted: {fmtDateTime(selectedLead.accepted_at)}
                       </div>
                     ) : null}
-                    <div className="mt-4 text-sm text-slate-700">{selectedLead.project_description || 'No project description provided.'}</div>
+                    <div className="mt-4 text-sm text-slate-700">
+                      {selectedLead.ai_analysis?.project_scope_summary ||
+                        selectedLead.ai_analysis?.suggested_description ||
+                        selectedLead.project_description ||
+                        'No project description provided.'}
+                    </div>
                     {selectedLead.ai_analysis?.suggested_title ? (
                       <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4">
                         <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
@@ -1183,6 +1188,11 @@ export default function ContractorPublicPresencePage() {
                               {selectedLead.ai_analysis.project_subtype}
                             </span>
                           ) : null}
+                          {selectedLead.ai_analysis.project_family_label ? (
+                            <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-sky-700">
+                              {selectedLead.ai_analysis.project_family_label}
+                            </span>
+                          ) : null}
                           {selectedLead.ai_analysis.template_name ? (
                             <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-emerald-700">
                               Template: {selectedLead.ai_analysis.template_name}
@@ -1194,9 +1204,10 @@ export default function ContractorPublicPresencePage() {
                             </span>
                           ) : null}
                         </div>
-                        {selectedLead.ai_analysis.suggested_description ? (
+                        {selectedLead.ai_analysis.project_scope_summary ||
+                        selectedLead.ai_analysis.suggested_description ? (
                           <div className="mt-3 text-sm text-slate-700">
-                            {selectedLead.ai_analysis.suggested_description}
+                            {selectedLead.ai_analysis.project_scope_summary || selectedLead.ai_analysis.suggested_description}
                           </div>
                         ) : null}
                         {selectedLead.ai_analysis.reason ? (

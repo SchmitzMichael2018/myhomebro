@@ -26,7 +26,13 @@ function leadSummaryFromRow(row = {}) {
   const title = safeText(snapshot.project_title || row.project_title || row.project_type || "Project Request");
   const projectType = safeText(snapshot.project_type || row.project_type || "");
   const area = safeText(snapshot.project_subtype || row.project_subtype || "");
-  const description = safeText(snapshot.refined_description || row.notes || row.project_description || "");
+  const scopeSummary = safeText(
+    snapshot.project_scope_summary ||
+      snapshot.refined_description ||
+      row.notes ||
+      row.project_description ||
+      ""
+  );
   const location = safeText(snapshot.location || row.location || row.project_address || "");
   const signals = Array.isArray(snapshot.request_signals)
     ? snapshot.request_signals
@@ -42,7 +48,10 @@ function leadSummaryFromRow(row = {}) {
     project_title: title,
     project_type: projectType,
     project_subtype: area,
-    project_description: description,
+    project_description: scopeSummary,
+    project_scope_summary: scopeSummary,
+    project_family_key: safeText(snapshot.project_family_key || row.project_family_key || ""),
+    project_family_label: safeText(snapshot.project_family_label || row.project_family_label || ""),
     project_address: location,
     city: safeText(row.city || snapshot.city || ""),
     state: safeText(row.state || snapshot.state || ""),
@@ -97,7 +106,14 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {},
   const projectTitle = safeText(snapshot.project_title || summary.project_title || "Project Proposal");
   const projectType = safeText(snapshot.project_type || summary.project_type || "");
   const projectSubtype = safeText(snapshot.project_subtype || summary.project_subtype || "");
-  const refinedDescription = safeText(snapshot.refined_description || summary.project_description || "");
+  const projectScopeSummary = safeText(
+    snapshot.project_scope_summary ||
+      snapshot.refined_description ||
+      summary.project_scope_summary ||
+      summary.project_description ||
+      ""
+  );
+  const refinedDescription = projectScopeSummary;
   const location = safeText(snapshot.location || summary.project_address || "");
   const budget = safeText(snapshot.budget || summary.budget_text || "");
   const timeline = safeText(snapshot.timeline || summary.preferred_timeline || "");
@@ -121,9 +137,9 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {},
     projectTitle,
     projectType,
     projectSubtype,
-    description: refinedDescription,
+    description: projectScopeSummary || refinedDescription,
   });
-  const projectFamilyApplied = !projectIntelligence.isGeneric;
+  const projectFamilyApplied = Boolean(!projectIntelligence.isGeneric || summary.project_family_key);
 
   const introParts = [
     `Thanks for sharing the details for ${projectTitle}.`,
@@ -146,8 +162,8 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {},
       `Scope focus: ${sentenceList([projectType, projectSubtype].filter(Boolean))}.`
     );
   }
-  if (refinedDescription) {
-    scopeBullets.push(`Project summary: ${refinedDescription}`);
+  if (projectScopeSummary) {
+    scopeBullets.push(`Project summary: ${projectScopeSummary}`);
   }
   if (location) {
     scopeBullets.push(`Location: ${location}.`);
@@ -224,6 +240,7 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {},
       projectType,
       projectSubtype,
       refinedDescription,
+      projectScopeSummary,
       location,
       budget,
       timeline,
@@ -237,8 +254,11 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {},
       brandVoiceApplied,
       brandBusinessName: brand.business_display_name,
       brandTone: brand.proposal_tone,
-      projectFamilyKey: projectIntelligence.familyKey,
-      projectFamilyLabel: projectIntelligence.isGeneric ? "" : safeText(projectIntelligence.familyCueLabel || familyLabelText(projectIntelligence.familyLabel)),
+      projectFamilyKey: safeText(summary.project_family_key || projectIntelligence.familyKey),
+      projectFamilyLabel: safeText(
+        summary.project_family_label ||
+          (!projectIntelligence.isGeneric ? projectIntelligence.familyCueLabel || familyLabelText(projectIntelligence.familyLabel) : "")
+      ),
       projectFamilyNote: projectIntelligence.isGeneric ? "" : projectIntelligence.draftFocusLine,
       projectFamilyApplied,
     },
@@ -302,6 +322,7 @@ export function buildLeadAgreementAssistantState(
       project_summary: proposalDraft.text,
       project_type: safeText(summary.project_type || ""),
       project_subtype: safeText(summary.project_subtype || ""),
+      project_scope_summary: safeText(summary.project_scope_summary || summary.project_description || ""),
       measurement_handling: safeText(snapshot.measurement_handling || ""),
       budget: safeText(snapshot.budget || row.budget_text || ""),
       timeline: safeText(snapshot.timeline || row.preferred_timeline || ""),

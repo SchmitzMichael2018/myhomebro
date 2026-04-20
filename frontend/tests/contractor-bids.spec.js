@@ -608,7 +608,8 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("response-starter-section")).toBeVisible();
   await expect(page.getByTestId("create-bid-context-note")).toContainText("Photos are available to review");
   await expect(page.getByTestId("lead-overview")).toContainText("Project Title");
-  await expect(page.getByTestId("project-snapshot")).toContainText("Refined Description");
+  await expect(page.getByTestId("lead-overview")).toContainText("Project Family");
+  await expect(page.getByTestId("project-snapshot")).toContainText("Scope Summary");
   await expect(page.getByTestId("project-type-cue")).toContainText("Bathroom remodel-focused review");
   await expect(page.getByTestId("photos-section")).toContainText("Shower area");
   await expect(page.getByTestId("project-phases-section")).toContainText("Demolition");
@@ -658,7 +659,8 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("lead-detail-container")).toBeVisible();
   await expect(page.getByTestId("lead-action-section")).toBeVisible();
   await expect(page.getByTestId("lead-overview")).toContainText("Project Title");
-  await expect(page.getByTestId("project-snapshot")).toContainText("Refined Description");
+  await expect(page.getByTestId("lead-overview")).toContainText("Project Family");
+  await expect(page.getByTestId("project-snapshot")).toContainText("Scope Summary");
   await expect(page.getByTestId("project-snapshot")).toContainText("Budget");
   await expect(page.getByTestId("photos-section")).toContainText("layout.png");
   await expect(page.getByTestId("project-phases-section")).toContainText("Demo Phase");
@@ -913,6 +915,7 @@ test("contractor bids workspace lead helpers support create bid handoff", async 
   await expect(proposalDraftField).toBeVisible({ timeout: 10000 });
   await expect(page.getByTestId("proposal-draft-title")).toContainText("Proposal Draft");
   await expect(page.getByTestId("lead-context-summary")).toContainText("Bathroom Remodel");
+  await expect(page.getByTestId("lead-context-summary")).toContainText("Scope Summary");
   await expect(page.getByTestId("lead-context-summary")).toContainText("Budget");
   await expect(page.getByTestId("proposal-project-family-cue")).toContainText("Bathroom remodel-focused review");
   await expect(proposalDraftField).toHaveValue(

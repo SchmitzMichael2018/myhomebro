@@ -707,11 +707,19 @@ export default function Step1Details({
     if (assistantLeadContext?.lead_summary) return assistantLeadContext.lead_summary;
     if (leadDetailFallback) return leadSummaryFromRow(leadDetailFallback);
     if (!assistantDraftPayload || typeof assistantDraftPayload !== "object") return {};
+    const scopeSummary =
+      assistantDraftPayload.project_scope_summary ||
+      assistantDraftPayload.description ||
+      assistantDraftPayload.project_summary ||
+      "";
     return {
       project_title: assistantDraftPayload.project_title || assistantDraftPayload.project_summary || "",
       project_type: assistantDraftPayload.project_type || "",
       project_subtype: assistantDraftPayload.project_subtype || "",
-      project_description: assistantDraftPayload.description || assistantDraftPayload.project_summary || "",
+      project_description: scopeSummary,
+      project_scope_summary: scopeSummary,
+      project_family_key: assistantDraftPayload.project_family_key || "",
+      project_family_label: assistantDraftPayload.project_family_label || "",
       project_address: assistantDraftPayload.project_address || "",
       city: assistantDraftPayload.city || "",
       state: assistantDraftPayload.state || "",
@@ -3663,17 +3671,17 @@ export default function Step1Details({
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <div
-                        data-testid="proposal-draft-title"
-                        className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500"
-                      >
-                        {hasLeadProposalContext ? "Proposal Draft" : "Scope of Work / Description"}
-                      </div>
-                      <div className="mt-1 text-sm text-slate-600">
-                        {hasLeadProposalContext
-                          ? "Start with a draft based on the project details, then edit anything you want."
-                          : "Start with a simple draft now, then refine it as details become available."}
-                      </div>
+                      data-testid="proposal-draft-title"
+                      className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500"
+                    >
+                      {hasLeadProposalContext ? "Proposal Draft" : "Scope of Work / Description"}
                     </div>
+                    <div className="mt-1 text-sm text-slate-600">
+                      {hasLeadProposalContext
+                        ? "Start with a draft based on the structured project summary, then edit anything you want."
+                        : "Start with a simple draft now, then refine it as details become available."}
+                    </div>
+                  </div>
                     <button
                       type="button"
                       onClick={handleGenerateLeadProposalDraft}
@@ -3749,6 +3757,10 @@ export default function Step1Details({
                       label="Area"
                       value={leadProposalDraft?.summary?.projectSubtype || dLocal.project_subtype || "-"}
                     />
+                    <LeadContextField
+                      label="Scope Summary"
+                      value={leadProposalDraft?.summary?.projectScopeSummary || leadProposalDraft?.summary?.refinedDescription || dLocal.description || "-"}
+                    />
                     <LeadContextField label="Location" value={leadProposalDraft?.summary?.location || "-"} />
                     <LeadContextField label="Timing" value={leadProposalDraft?.summary?.timeline || "-"} />
                     <LeadContextField label="Budget" value={leadProposalDraft?.summary?.budget || "-"} />
@@ -3812,7 +3824,7 @@ export default function Step1Details({
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs text-slate-600">
                     {hasLeadProposalContext
-                      ? "Based on project details from the lead review."
+                      ? "Based on the structured project summary from the lead review."
                       : startMode === "ai"
                       ? "Use AI to draft the first version, then refine the scope here."
                       : "AI can turn a rough idea into a clearer, stronger scope when you want help."}

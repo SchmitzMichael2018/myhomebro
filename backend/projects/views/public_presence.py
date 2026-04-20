@@ -97,7 +97,9 @@ def _qr_payload(request, profile):
 
 
 def _lead_scope_text(lead) -> str:
+    analysis = getattr(lead, "ai_analysis", {}) or {}
     parts = [
+        (analysis.get("project_scope_summary") or "").strip(),
         (lead.project_type or "").strip(),
         (lead.project_description or "").strip(),
         (lead.preferred_timeline or "").strip(),
@@ -162,6 +164,9 @@ def _build_lead_analysis_payload(lead):
         "project_subtype": result.get("project_subtype", ""),
         "suggested_title": result.get("project_title", ""),
         "suggested_description": result.get("description", ""),
+        "project_scope_summary": result.get("project_scope_summary", ""),
+        "project_family_key": result.get("project_family_key", ""),
+        "project_family_label": result.get("project_family_label", ""),
         "project_timeline_days": result.get("project_timeline_days"),
         "project_budget": str(result.get("project_budget")) if result.get("project_budget") is not None else None,
         "clarifications_needed": result.get("clarification_questions", []),

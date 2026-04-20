@@ -204,6 +204,17 @@ def _extract_agreement_answers(agreement: Agreement | None) -> dict[str, Any]:
     return dict(answers or {}) if isinstance(answers, dict) else {}
 
 
+def _lead_scope_summary(lead: PublicContractorLead | None) -> str:
+    if lead is None:
+        return ""
+    analysis = _safe_dict(getattr(lead, "ai_analysis", {}))
+    return (
+        _safe_text(analysis.get("project_scope_summary"))
+        or _safe_text(analysis.get("suggested_description"))
+        or _safe_text(getattr(lead, "project_description", ""))
+    )
+
+
 def _intent_from_request(normalized_request: dict[str, Any], context: dict[str, Any]) -> str:
     preferred = _safe_text(normalized_request.get("preferred_intent"))
     if preferred:
@@ -402,8 +413,11 @@ def _lead_intake_specialist(runtime: OrchestratorRuntimeContext) -> dict[str, An
             "draft_payload": {
                 "lead_id": lead.id,
                 "customer_name": _safe_text(lead.full_name),
-                "project_summary": _safe_text(lead.project_description),
+                "project_summary": _lead_scope_summary(lead) or _safe_text(lead.project_description),
+                "project_scope_summary": _lead_scope_summary(lead) or _safe_text(lead.project_description),
                 "project_type": _safe_text(lead.project_type),
+                "project_family_key": _safe_text(_safe_dict(getattr(lead, "ai_analysis", {})).get("project_family_key")),
+                "project_family_label": _safe_text(_safe_dict(getattr(lead, "ai_analysis", {})).get("project_family_label")),
             }
         },
         "preview_data": {"lead_id": lead.id, "ai_analysis": ai_analysis},
@@ -442,7 +456,7 @@ def _agreement_builder_specialist(runtime: OrchestratorRuntimeContext) -> dict[s
         }
 
     if agreement is None and lead is not None:
-        project_summary = _safe_text(lead.project_description)
+        project_summary = _lead_scope_summary(lead) or _safe_text(lead.project_description)
         return {
             "routine_name": "agreement_builder",
             "intent": "start_agreement",
@@ -465,9 +479,12 @@ def _agreement_builder_specialist(runtime: OrchestratorRuntimeContext) -> dict[s
                 "prefill_fields": {
                     "customer_name": _safe_text(lead.full_name),
                     "project_summary": project_summary,
+                    "project_scope_summary": project_summary,
                     "project_title": _safe_text(lead.project_type),
                     "project_type": _safe_text(lead.project_type),
                     "project_subtype": _safe_text(_safe_dict(getattr(lead, "ai_analysis", {})).get("project_subtype")),
+                    "project_family_key": _safe_text(_safe_dict(getattr(lead, "ai_analysis", {})).get("project_family_key")),
+                    "project_family_label": _safe_text(_safe_dict(getattr(lead, "ai_analysis", {})).get("project_family_label")),
                 },
                 "draft_payload": {"lead_id": lead.id},
             },
@@ -1189,7 +1206,7 @@ def _build_collected_data(normalized_request: dict[str, Any], runtime: Orchestra
     if runtime.lead is not None:
         data["lead_id"] = runtime.lead.id
         data["customer_name"] = _safe_text(runtime.lead.full_name)
-        data["project_summary"] = _safe_text(runtime.lead.project_description)
+        data["project_summary"] = _lead_scope_summary(runtime.lead) or _safe_text(runtime.lead.project_description)
     if runtime.template is not None:
         data["template_id"] = runtime.template.id
         data["template_name"] = _safe_text(runtime.template.name)

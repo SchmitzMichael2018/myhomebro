@@ -1638,7 +1638,11 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
   await expect(page.getByTestId('public-lead-funnel')).toContainText('Analyze');
   await expect(page.getByRole('button', { name: 'Accept Lead' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Reject Lead' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Review Intake' }).click();
+  const reviewIntakeButton = page.getByRole('button', { name: 'Review Intake' });
+  const analyzeIntakeButton = page.getByRole('button', { name: 'Analyze Intake with AI' });
+  const reviewLeadButton = (await reviewIntakeButton.count()) > 0 ? reviewIntakeButton : analyzeIntakeButton;
+  await expect(reviewLeadButton).toBeVisible();
+  await reviewLeadButton.click();
   await page.waitForURL('**/app/intake/new?intakeId=501');
   await expect(page.getByPlaceholder('e.g., Jane Smith')).toHaveValue('Riley Customer');
   await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });

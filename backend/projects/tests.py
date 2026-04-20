@@ -118,6 +118,7 @@ from projects.services.project_email_reports import (
     build_project_email_report,
     send_project_email_report,
 )
+from projects.services.public_lead_pipeline import sync_public_lead_from_project_intake
 from projects.services.recurring_maintenance import (
     build_recurring_preview,
     ensure_recurring_milestones,
@@ -1666,6 +1667,32 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertIn("no interior water damage reported yet", result.get("description", "").lower())
         self.assertIn("Contractor inspection requested before final pricing", result.get("description", ""))
 
+    def test_public_intake_sync_carries_structured_analysis_into_public_lead(self):
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            initiated_by="homeowner",
+            status="submitted",
+            customer_name="Sync Prospect",
+            accomplishment_text="Need kitchen cabinets installed.",
+            ai_project_type="Installation",
+            ai_project_subtype="Kitchen Cabinet Installation",
+            ai_description="Kitchen cabinet installation request involving removal of existing cabinets and backsplash work.",
+            ai_analysis_payload={
+                "project_scope_summary": "Kitchen cabinet installation request involving removal of existing cabinets and backsplash work.",
+                "project_family_key": "kitchen_remodel",
+                "project_family_label": "Kitchen remodel-focused review",
+                "suggested_description": "Kitchen cabinet installation request involving removal of existing cabinets and backsplash work.",
+            },
+        )
+
+        lead = sync_public_lead_from_project_intake(intake)
+        self.assertIsNotNone(lead)
+        lead.refresh_from_db()
+        self.assertEqual(lead.ai_analysis.get("project_scope_summary"), "Kitchen cabinet installation request involving removal of existing cabinets and backsplash work.")
+        self.assertEqual(lead.ai_analysis.get("project_family_key"), "kitchen_remodel")
+        self.assertEqual(lead.ai_analysis.get("project_family_label"), "Kitchen remodel-focused review")
+
     def test_public_intake_analysis_skips_questions_for_already_clear_description(self):
         intake = ProjectIntake.objects.create(
             contractor=self.contractor,
@@ -2347,6 +2374,9 @@ class ContractorBidsWorkspaceTests(TestCase):
                     {"title": "Buildout Phase"},
                 ],
                 "estimate_preview": {"suggested_total_price": "27500.00"},
+                "project_scope_summary": "Commercial tenant improvement with multiple phases.",
+                "project_family_key": "commercial",
+                "project_family_label": "Commercial / Tenant Improvement",
             },
         )
         ProjectIntakeClarificationPhoto.objects.create(
@@ -2409,6 +2439,9 @@ class ContractorBidsWorkspaceTests(TestCase):
                 "estimate_preview": {"suggested_total_price": "18500.00"},
                 "suggested_title": "Bathroom Remodel",
                 "suggested_description": "Replace shower tile and vanity.",
+                "project_scope_summary": "Bathroom remodel request for the primary bath with shower tile and vanity replacement.",
+                "project_family_key": "bathroom_remodel",
+                "project_family_label": "Bathroom remodel-focused review",
             },
         )
         ProjectIntakeClarificationPhoto.objects.create(
@@ -2532,6 +2565,8 @@ class ContractorBidsWorkspaceTests(TestCase):
         self.assertEqual(new_public_lead["location"], "Austin, TX")
         self.assertEqual(new_public_lead["request_snapshot"]["photo_count"], 1)
         self.assertEqual(new_public_lead["request_snapshot"]["clarification_count"], 2)
+        self.assertEqual(new_public_lead["request_snapshot"]["project_scope_summary"], "Bathroom remodel request for the primary bath with shower tile and vanity replacement.")
+        self.assertEqual(new_public_lead["request_snapshot"]["project_family_label"], "Bathroom remodel-focused review")
         self.assertIn("Guided Intake", new_public_lead["request_signals"])
         self.assertIn("Photos", new_public_lead["request_signals"])
         self.assertIn("Multi-Quote Request", new_public_lead["request_signals"])

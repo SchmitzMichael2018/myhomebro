@@ -231,6 +231,7 @@ function extractTemplateQuery(input) {
 
 function getLeadScopeSummary(leadSummary = {}) {
   return (
+    clean(leadSummary.project_scope_summary) ||
     clean(leadSummary.project_description) ||
     clean(leadSummary.project_type) ||
     clean(leadSummary.project_title)
@@ -325,13 +326,17 @@ function mergeCollectedData(intent, input, previousPlan, context) {
 
 function buildLeadDraftPayload(context, collectedData) {
   const lead = context.lead_summary;
+  const projectSummary = clean(collectedData.project_summary || lead.project_scope_summary || lead.project_description);
   return {
     lead_id: context.lead_id || null,
     homeowner_name: clean(collectedData.customer_name || lead.full_name),
     email: clean(collectedData.email || lead.email),
     phone: clean(collectedData.phone || lead.phone),
     project_title: clean(lead.project_type || collectedData.project_summary),
-    description: clean(collectedData.project_summary || lead.project_description),
+    description: projectSummary,
+    project_scope_summary: projectSummary,
+    project_family_key: clean(lead.project_family_key),
+    project_family_label: clean(lead.project_family_label),
     address_line1: clean(lead.project_address),
     city: clean(lead.city),
     state: clean(lead.state),
@@ -553,7 +558,7 @@ function buildIntentPlan(intent, context, collectedData) {
       ...prefillFields,
       customer_name: clean(collectedData.customer_name || lead.full_name),
       project_title: clean(lead.project_type || agreement.project_title),
-      project_summary: clean(collectedData.project_summary || lead.project_description),
+      project_summary: clean(collectedData.project_summary || lead.project_scope_summary || lead.project_description),
       project_type: clean(lead.project_type || agreement.project_type),
       project_subtype: clean(lead.project_subtype || agreement.project_subtype),
       template_id: context.template_id || lead.ai_analysis?.template_id || null,
@@ -603,7 +608,10 @@ function buildIntentPlan(intent, context, collectedData) {
     };
     prefillFields = {
       project_summary: clean(
-        collectedData.project_summary || agreement.project_summary || lead.project_description
+        collectedData.project_summary ||
+          lead.project_scope_summary ||
+          agreement.project_summary ||
+          lead.project_description
       ),
     };
     suggestedMilestones = buildSuggestedMilestones(prefillFields.project_summary, milestone);
@@ -622,7 +630,10 @@ function buildIntentPlan(intent, context, collectedData) {
     };
     prefillFields = {
       project_summary: clean(
-        collectedData.project_summary || agreement.project_summary || lead.project_description
+        collectedData.project_summary ||
+          lead.project_scope_summary ||
+          agreement.project_summary ||
+          lead.project_description
       ),
     };
     clarificationQuestions = buildClarificationQuestions(prefillFields.project_summary, context);

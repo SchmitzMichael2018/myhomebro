@@ -67,6 +67,7 @@ def sync_public_lead_from_project_intake(intake, *, status_override=None):
         contractor
     )
     lead = getattr(intake, "public_lead", None)
+    analysis = getattr(intake, "ai_analysis_payload", None) or getattr(lead, "ai_analysis", {}) or {}
 
     normalized_source = normalize_public_lead_source(getattr(intake, "lead_source", None))
     payload = {
@@ -88,6 +89,7 @@ def sync_public_lead_from_project_intake(intake, *, status_override=None):
             else ""
         ),
         "budget_text": _format_budget(getattr(intake, "ai_project_budget", None)),
+        "ai_analysis": analysis,
         "status": status_override or PublicContractorLead.STATUS_NEW,
     }
 
@@ -121,7 +123,7 @@ def sync_public_lead_from_project_intake(intake, *, status_override=None):
         ):
             continue
         setattr(lead, key, value)
-    lead.save(
+        lead.save(
         update_fields=[
             "contractor",
             "public_profile",
@@ -137,6 +139,7 @@ def sync_public_lead_from_project_intake(intake, *, status_override=None):
             "project_description",
             "preferred_timeline",
             "budget_text",
+            "ai_analysis",
             "status",
             "updated_at",
         ]

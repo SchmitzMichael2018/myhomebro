@@ -521,7 +521,12 @@ export default function ContractorBidsPage() {
         projectTitle: selectedSnapshot.project_title || selectedRow?.project_title || "",
         projectType: selectedSnapshot.project_type || selectedRow?.project_type || "",
         projectSubtype: selectedSnapshot.project_subtype || selectedRow?.project_subtype || "",
-        description: selectedSnapshot.refined_description || selectedRow?.notes || selectedRow?.project_description || "",
+        description:
+          selectedSnapshot.project_scope_summary ||
+          selectedSnapshot.refined_description ||
+          selectedRow?.notes ||
+          selectedRow?.project_description ||
+          "",
       }),
     [selectedRow?.notes, selectedRow?.project_description, selectedRow?.project_subtype, selectedRow?.project_title, selectedRow?.project_type, selectedSnapshot]
   );
@@ -562,7 +567,7 @@ export default function ContractorBidsPage() {
       }),
     [selectedProjectIntelligence, selectedSnapshot, selectedSignals]
   );
-  const selectedProjectTypeCue = selectedProjectIntelligence?.familyCueLabel || "";
+  const selectedProjectTypeCue = selectedSnapshot.project_family_label || selectedProjectIntelligence?.familyCueLabel || "";
   const selectedPrimaryActionLabel =
     selectedStage === "new_lead" || selectedStage === "follow_up"
       ? "Create Bid"
@@ -1017,6 +1022,7 @@ export default function ContractorBidsPage() {
                   <DetailField label="Project Title" value={selectedRow.project_title} />
                   <DetailField label="Project Type" value={selectedRow.project_type || selectedRow.project_class_label || "-"} />
                   <DetailField label="Area / Subtype" value={selectedRow.project_subtype || "-"} />
+                  <DetailField label="Project Family" value={selectedSnapshot.project_family_label || selectedRow.project_class_label || "-"} />
                   <DetailField label="Location" value={selectedRow.location || "-"} />
                   <DetailField label="Request Path" value={selectedRow.request_path_label || "Project request"} />
                   <DetailField label="Status" value={selectedRow.status_label} />
@@ -1058,7 +1064,7 @@ export default function ContractorBidsPage() {
                 subtitle="Useful project details pulled from the request and the structured intake."
               >
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <DetailField label="Refined Description" value={selectedSnapshot.refined_description || selectedRow.notes || "-"} />
+                  <DetailField label="Scope Summary" value={selectedSnapshot.project_scope_summary || selectedSnapshot.refined_description || selectedRow.notes || "-"} />
                   <DetailField label="Measurements" value={selectedSnapshot.measurement_handling || selectedRow.measurement_handling || "-"} />
                   <DetailField label="Timing" value={selectedSnapshot.timeline || selectedRow.timeline || "-"} />
                   <DetailField label="Budget" value={selectedSnapshot.budget || selectedRow.bid_amount_label || "-"} />
