@@ -9275,6 +9275,8 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertAlmostEqual(sum(row["allocation_percent"] for row in plan["milestones"]), 1.0, places=2)
         self.assertIn("learning_key", plan["learning_ready"])
         self.assertIn("deterministic_first", plan["source_metadata"]["recommendation_basis"])
+        self.assertIn("source_type", plan["source_metadata"]["blended_benchmark"])
+        self.assertIn("confidence", plan["source_metadata"]["blended_benchmark"])
 
     def test_project_plan_recommendation_falls_back_for_general_projects(self):
         plan = build_project_plan_suggestion(

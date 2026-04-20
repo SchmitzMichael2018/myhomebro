@@ -240,6 +240,42 @@ function explainRangeVariability(preview) {
   return "The range stays wider to reflect job-to-job variability, finish choices, and site conditions.";
 }
 
+function formatBenchmarkSourceLabel(sourceType) {
+  const source = safeStr(sourceType).toLowerCase();
+  if (source === "platform_only") return "Platform";
+  if (source === "platform_plus_contractor") return "Blended";
+  if (source === "contractor_only") return "Contractor";
+  return source ? source.replace(/_/g, " ") : "Platform";
+}
+
+function explainPlanBenchmarkSource(plan) {
+  const blended = plan?.source_metadata?.blended_benchmark || {};
+  const sourceType = safeStr(blended?.source_type).toLowerCase();
+  const platformCount = Number(blended?.platform?.sample_size || 0);
+  const contractorCount = Number(blended?.contractor?.sample_size || 0);
+
+  let explanation = "Based on template defaults and current project details.";
+  if (sourceType === "platform_plus_contractor") {
+    explanation = "Based on similar projects on MyHomeBro and your past work.";
+  } else if (sourceType === "contractor_only") {
+    explanation = "Based on your past work for similar projects.";
+  } else if (sourceType === "platform_only") {
+    explanation = "Based on similar projects on MyHomeBro.";
+  }
+
+  const countBits = [];
+  if (platformCount > 0) countBits.push(`${platformCount} platform project${platformCount === 1 ? "" : "s"}`);
+  if (contractorCount > 0) countBits.push(`${contractorCount} of your completed job${contractorCount === 1 ? "" : "s"}`);
+  const countText = countBits.length ? `Based on ${countBits.join(" and ")}.` : "";
+
+  return {
+    sourceType: formatBenchmarkSourceLabel(sourceType),
+    explanation,
+    countText,
+    confidence: formatEstimateConfidence(plan?.confidence_level) || "Advisory",
+  };
+}
+
 function formatRecurringCadence(pattern, interval) {
   const safePattern = safeStr(pattern) || "monthly";
   const safeInterval = Math.max(1, Number(interval || 1) || 1);
@@ -1543,6 +1579,10 @@ export default function Step2Milestones({
       milestones,
     };
   }, [estimatePreview]);
+  const suggestedPlanBenchmarkSource = useMemo(() => {
+    if (!suggestedPlan) return null;
+    return explainPlanBenchmarkSource(suggestedPlan);
+  }, [suggestedPlan]);
   const estimateGuidanceByMilestone = useMemo(() => {
     const rows = Array.isArray(effectiveMilestones) ? effectiveMilestones : [];
     if (!rows.length) return new Map();
@@ -3144,6 +3184,27 @@ export default function Step2Milestones({
                 {suggestedPlan?.confidence_reasoning ? (
                   <div className="mt-3 rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs text-slate-700">
                     {suggestedPlan.confidence_reasoning}
+                  </div>
+                ) : null}
+                {suggestedPlanBenchmarkSource ? (
+                  <div className="mt-3 rounded-xl border border-emerald-200 bg-white px-3 py-3" data-testid="step2-suggested-plan-benchmark-source">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Benchmark source</div>
+                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+                        {suggestedPlanBenchmarkSource.sourceType}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-xs text-slate-700">
+                      {suggestedPlanBenchmarkSource.explanation}
+                    </div>
+                    {suggestedPlanBenchmarkSource.countText ? (
+                      <div className="mt-1 text-xs text-slate-600">
+                        {suggestedPlanBenchmarkSource.countText}
+                      </div>
+                    ) : null}
+                    <div className="mt-2 text-[11px] font-medium text-slate-600">
+                      Confidence: {suggestedPlanBenchmarkSource.confidence}
+                    </div>
                   </div>
                 ) : null}
                 {Array.isArray(suggestedPlan?.explanation_points) && suggestedPlan.explanation_points.length ? (

@@ -274,6 +274,16 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
           family_key: 'kitchen_remodel',
           scope_mode: 'install_removal',
           recommendation_basis: 'deterministic_first',
+          blended_benchmark: {
+            source_type: 'platform_plus_contractor',
+            confidence: 'medium',
+            platform: {
+              sample_size: 82,
+            },
+            contractor: {
+              sample_size: 11,
+            },
+          },
         },
       },
       price_adjustments: [
@@ -314,6 +324,12 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(page.getByTestId('step2-suggested-plan-workflow')).toContainText('Install + removal');
   await expect(page.getByTestId('step2-suggested-plan-template')).toContainText('Kitchen Remodel Starter');
   await expect(page.getByTestId('step2-suggested-plan-confidence')).toContainText('Moderate');
+  await expect(page.getByTestId('step2-suggested-plan-benchmark-source')).toBeVisible();
+  await expect(page.getByTestId('step2-suggested-plan-benchmark-source')).toContainText('Benchmark source');
+  await expect(page.getByTestId('step2-suggested-plan-benchmark-source')).toContainText('Blended');
+  await expect(page.getByTestId('step2-suggested-plan-benchmark-source')).toContainText('Based on similar projects on MyHomeBro and your past work.');
+  await expect(page.getByTestId('step2-suggested-plan-benchmark-source')).toContainText('Based on 82 platform projects and 11 of your completed jobs.');
+  await expect(page.getByTestId('step2-suggested-plan-benchmark-source')).toContainText('Confidence: Moderate confidence');
   await expect(page.getByTestId('step2-suggested-plan-why')).toBeVisible();
   await expect(page.getByTestId('step2-suggested-plan-why')).toContainText('Why this plan');
   await expect(page.getByTestId('step2-suggested-plan-why')).toContainText('Materials or cabinets appear to be on site already.');

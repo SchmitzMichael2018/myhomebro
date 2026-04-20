@@ -503,6 +503,9 @@ def get_blended_benchmark(project_context: dict[str, Any], contractor_id: int | 
         "project_family_key": family_key,
         "scope_mode": scope_mode,
         "template_used": template_used,
+        "platform": {
+            "sample_size": int(getattr(learned_decision.aggregate, "completed_project_count", 0) or 0),
+        },
         "pricing_range": {
             "low": str(blended_price_low),
             "high": str(blended_price_high),
