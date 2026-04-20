@@ -1,4 +1,7 @@
-import { buildProjectIntelligenceGuidance } from "./projectIntelligence";
+import {
+  buildProjectIntelligenceGuidance,
+  buildProjectSetupRecommendation,
+} from "./projectIntelligence";
 
 function safeText(value) {
   return String(value || "").trim();
@@ -39,6 +42,7 @@ function leadSummaryFromRow(row = {}) {
     : Array.isArray(row.request_signals)
     ? row.request_signals
     : [];
+  const recommendedSetup = snapshot.recommended_setup || row?.ai_analysis?.recommended_setup || {};
 
   return {
     source: safeText(row.source_kind || row.source_kind_label || "lead"),
@@ -62,6 +66,7 @@ function leadSummaryFromRow(row = {}) {
     ai_analysis: row.ai_analysis || null,
     internal_notes: safeText(row.internal_notes || ""),
     request_snapshot: snapshot,
+    recommended_setup: recommendedSetup,
     request_signals: signals,
   };
 }
@@ -138,6 +143,24 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {},
     projectType,
     projectSubtype,
     description: projectScopeSummary || refinedDescription,
+  });
+  const projectSetupRecommendation = buildProjectSetupRecommendation({
+    projectTitle,
+    projectType: projectType || projectIntelligence.familyLabel,
+    projectSubtype: projectSubtype || projectIntelligence.familyLabel,
+    description: projectScopeSummary || refinedDescription,
+    templateId:
+      summary?.recommended_setup?.recommended_template_id ??
+      snapshot?.recommended_setup?.recommended_template_id ??
+      snapshot?.template_id ??
+      summary?.ai_analysis?.template_id ??
+      null,
+    templateName:
+      summary?.recommended_setup?.recommended_template_name ??
+      snapshot?.recommended_setup?.recommended_template_name ??
+      snapshot?.template_name ??
+      summary?.ai_analysis?.template_name ??
+      "",
   });
   const projectFamilyApplied = Boolean(!projectIntelligence.isGeneric || summary.project_family_key);
 
@@ -261,6 +284,7 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {},
       ),
       projectFamilyNote: projectIntelligence.isGeneric ? "" : projectIntelligence.draftFocusLine,
       projectFamilyApplied,
+      recommendedSetup: projectSetupRecommendation,
     },
   };
 }
@@ -276,6 +300,18 @@ export function buildLeadAgreementAssistantState(
     requestSnapshot: snapshot,
     brandVoice,
   });
+  const recommendedTemplateId =
+    proposalDraft.summary.recommendedSetup?.recommendedTemplateId ||
+    snapshot?.recommended_setup?.recommended_template_id ||
+    snapshot?.template_id ||
+    summary?.ai_analysis?.template_id ||
+    null;
+  const recommendedTemplateName =
+    proposalDraft.summary.recommendedSetup?.recommendedTemplateName ||
+    snapshot?.recommended_setup?.recommended_template_name ||
+    snapshot?.template_name ||
+    summary?.ai_analysis?.template_name ||
+    "";
 
   const projectTitle = safeText(proposalDraft.title || summary.project_title || row.project_title || "");
   const requestPath = safeText(snapshot.request_path_label || "");
@@ -294,6 +330,7 @@ export function buildLeadAgreementAssistantState(
       request_snapshot: snapshot,
       project_family_key: proposalDraft.summary.projectFamilyKey || "",
       project_family_label: proposalDraft.summary.projectFamilyLabel || "",
+      recommended_setup: proposalDraft.summary.recommendedSetup || {},
     },
     assistantPrefill: {
       full_name: safeText(row.customer_name || row.full_name || ""),
@@ -309,6 +346,8 @@ export function buildLeadAgreementAssistantState(
       project_summary: proposalDraft.text,
       project_type: safeText(summary.project_type || ""),
       project_subtype: safeText(summary.project_subtype || ""),
+      selected_template_id: recommendedTemplateId,
+      selected_template_name_snapshot: recommendedTemplateName,
       request_path_label: requestPath,
     },
     assistantDraftPayload: {
@@ -323,6 +362,8 @@ export function buildLeadAgreementAssistantState(
       project_type: safeText(summary.project_type || ""),
       project_subtype: safeText(summary.project_subtype || ""),
       project_scope_summary: safeText(summary.project_scope_summary || summary.project_description || ""),
+      selected_template_id: recommendedTemplateId,
+      selected_template_name_snapshot: recommendedTemplateName,
       measurement_handling: safeText(snapshot.measurement_handling || ""),
       budget: safeText(snapshot.budget || row.budget_text || ""),
       timeline: safeText(snapshot.timeline || row.preferred_timeline || ""),
@@ -333,6 +374,7 @@ export function buildLeadAgreementAssistantState(
       request_snapshot: snapshot,
       project_family_key: proposalDraft.summary.projectFamilyKey || "",
       project_family_label: proposalDraft.summary.projectFamilyLabel || "",
+      recommended_setup: proposalDraft.summary.recommendedSetup || {},
     },
   };
 }

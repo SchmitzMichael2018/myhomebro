@@ -1654,6 +1654,8 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
   await expect(page.getByTestId('public-lead-workflow-hint')).toContainText(
     'Review the completed intake, confirm the AI summary, and create the draft agreement'
   );
+  await expect(page.getByTestId('recommended-setup-section')).toContainText('Recommended Setup');
+  await expect(page.getByTestId('recommended-setup-section')).toContainText('Workflow');
   await page.getByRole('button', { name: 'Create AI-Assisted Agreement' }).click();
   await page.waitForURL('**/app/agreements/901/wizard?step=1');
 });

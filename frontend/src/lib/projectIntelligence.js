@@ -6,6 +6,14 @@ function normalize(value) {
   return safeText(value).toLowerCase().replace(/&/g, " and ").replace(/\s+/g, " ").trim();
 }
 
+function containsAny(text, needles = []) {
+  const haystack = normalize(text);
+  return needles.some((needle) => {
+    const normalized = normalize(needle);
+    return normalized && haystack.includes(normalized);
+  });
+}
+
 const PROJECT_TYPE_FAMILIES = [
   {
     key: "roofing",
@@ -356,5 +364,265 @@ export function buildProjectIntelligenceGuidance(input = {}) {
     createBidContext: safeText(family.createBidContext),
     draftFocusLine: safeText(family.draftFocusLine),
     isGeneric: Boolean(family.isGeneric),
+  };
+}
+
+function inferScopeMode(text, familyKey) {
+  const normalized = normalize(text);
+
+  if (familyKey === "roofing") {
+    if (containsAny(normalized, ["replacement", "replace", "full replacement", "tear off", "tear-off"])) {
+      return "replacement";
+    }
+    return "repair";
+  }
+
+  if (familyKey === "bathroom_remodel") {
+    if (containsAny(normalized, ["repair", "update", "refresh", "fix", "small"])) {
+      return "repair";
+    }
+    return "remodel";
+  }
+
+  if (familyKey === "kitchen_remodel") {
+    if (
+      containsAny(normalized, ["cabinet", "cabinetry"]) &&
+      containsAny(normalized, ["install", "installation", "remove", "removal", "replace", "replacement"])
+    ) {
+      return "install_removal";
+    }
+    if (containsAny(normalized, ["remodel", "layout", "countertop", "backsplash", "appliance", "island"])) {
+      return "remodel";
+    }
+    return "install";
+  }
+
+  if (familyKey === "flooring") return "install";
+  if (familyKey === "painting") {
+    if (normalized.includes("exterior") && normalized.includes("interior")) return "interior_exterior";
+    if (normalized.includes("exterior")) return "exterior";
+    return "interior";
+  }
+  if (familyKey === "electrical" || familyKey === "plumbing") {
+    if (containsAny(normalized, ["install", "installation", "new"])) return "install";
+    return "repair";
+  }
+  if (familyKey === "exterior_siding") {
+    if (containsAny(normalized, ["replacement", "replace", "new"])) return "replacement";
+    return "repair";
+  }
+  if (familyKey === "windows_doors") {
+    if (containsAny(normalized, ["repair", "fix", "adjust"])) return "repair";
+    return "replacement";
+  }
+  return "general";
+}
+
+export function buildProjectSetupRecommendation({
+  projectTitle = "",
+  projectType = "",
+  projectSubtype = "",
+  description = "",
+  templateId = null,
+  templateName = "",
+} = {}) {
+  const family = inferProjectIntelligence({
+    projectTitle,
+    projectType,
+    projectSubtype,
+    description,
+  });
+  const scopeText = normalize([projectTitle, projectType, projectSubtype, description].filter(Boolean).join(" "));
+  const scopeMode = inferScopeMode(scopeText, family.key);
+
+  let recommendedProjectType = projectType || family.label;
+  let recommendedProjectSubtype = projectSubtype || family.label;
+  let suggestedWorkflow = family.cueLabel || "General project review";
+  let suggestedTemplateLabel = "";
+  let recommendationNote = family.draftFocusLine || "Review the project details before you finalize the setup.";
+
+  if (family.key === "roofing") {
+    if (scopeMode === "replacement") {
+      recommendedProjectType = "Roof Replacement";
+      recommendedProjectSubtype = "Roof Replacement";
+      suggestedWorkflow = "Replacement workflow";
+      suggestedTemplateLabel = "Roof Replacement Template";
+      recommendationNote =
+        "Roof replacement jobs are clearer when the roof condition, weather exposure, and scope boundary are confirmed.";
+    } else {
+      recommendedProjectType = "Roof Repair";
+      recommendedProjectSubtype = "Roof Repair";
+      suggestedWorkflow = "Repair + inspection";
+      suggestedTemplateLabel = "Roof Repair Template";
+      recommendationNote =
+        "Roof repairs are clearer when the leak location, affected areas, and inspection needs are confirmed.";
+    }
+  } else if (family.key === "bathroom_remodel") {
+    if (scopeMode === "repair") {
+      recommendedProjectType = "Bathroom Repair";
+      recommendedProjectSubtype = "Bathroom Repair";
+      suggestedWorkflow = "Repair / refresh workflow";
+      suggestedTemplateLabel = "Bathroom Repair Template";
+      recommendationNote =
+        "Bathroom repair work is clearer when the fixture, finish, and any plumbing or layout changes are confirmed.";
+    } else {
+      recommendedProjectType = "Bathroom Remodel";
+      recommendedProjectSubtype = "Bathroom Remodel";
+      suggestedWorkflow = "Remodel workflow";
+      suggestedTemplateLabel = "Bathroom Remodel Template";
+      recommendationNote =
+        "Bathroom remodels benefit from confirming layout changes, fixtures, and finish selections before pricing.";
+    }
+  } else if (family.key === "kitchen_remodel") {
+    if (scopeMode === "install_removal") {
+      recommendedProjectType = "Kitchen Cabinet Installation";
+      recommendedProjectSubtype = "Kitchen Cabinet Installation";
+      suggestedWorkflow = "Install + removal";
+      suggestedTemplateLabel = "Kitchen Cabinet Install Template";
+      recommendationNote =
+        "Kitchen cabinet projects are clearer when cabinet removal, installation, and related finish work are defined up front.";
+    } else {
+      recommendedProjectType = "Kitchen Remodel";
+      recommendedProjectSubtype = "Kitchen Remodel";
+      suggestedWorkflow = "Remodel workflow";
+      suggestedTemplateLabel = "Kitchen Remodel Template";
+      recommendationNote =
+        "Kitchen remodels benefit from confirming cabinets, countertops, layout changes, and related work before final pricing.";
+    }
+  } else if (family.key === "flooring") {
+    recommendedProjectType = "Flooring Installation";
+    recommendedProjectSubtype = "Flooring Installation";
+    suggestedWorkflow = "Install workflow";
+    suggestedTemplateLabel = "Flooring Installation Template";
+    recommendationNote =
+      "Flooring jobs are clearer when square footage, subfloor condition, and any removal or prep needs are confirmed.";
+  } else if (family.key === "painting") {
+    if (scopeMode === "exterior") {
+      recommendedProjectType = "Exterior Painting";
+      recommendedProjectSubtype = "Exterior Painting";
+      suggestedWorkflow = "Prep + paint workflow";
+      suggestedTemplateLabel = "Exterior Painting Template";
+      recommendationNote =
+        "Exterior painting is clearer when the surfaces, prep work, and weather exposure are confirmed.";
+    } else {
+      recommendedProjectType = "Interior Painting";
+      recommendedProjectSubtype = "Interior Painting";
+      suggestedWorkflow = "Prep + paint workflow";
+      suggestedTemplateLabel = "Painting Template";
+      recommendationNote =
+        "Painting jobs benefit from confirming the rooms or surfaces included and any prep or repair needs.";
+    }
+  } else if (family.key === "electrical") {
+    if (scopeMode === "install") {
+      recommendedProjectType = "Electrical Installation";
+      recommendedProjectSubtype = "Electrical Installation";
+      suggestedWorkflow = "Install workflow";
+      suggestedTemplateLabel = "Electrical Installation Template";
+      recommendationNote =
+        "Electrical installs are clearer when the affected circuits, fixtures, and access are confirmed.";
+    } else {
+      recommendedProjectType = "Electrical Repair";
+      recommendedProjectSubtype = "Electrical Repair";
+      suggestedWorkflow = "Troubleshooting workflow";
+      suggestedTemplateLabel = "Electrical Repair Template";
+      recommendationNote =
+        "Electrical repair work is clearer when the affected circuit, panel, or fixture is confirmed.";
+    }
+  } else if (family.key === "plumbing") {
+    if (scopeMode === "install") {
+      recommendedProjectType = "Plumbing Installation";
+      recommendedProjectSubtype = "Plumbing Installation";
+      suggestedWorkflow = "Install workflow";
+      suggestedTemplateLabel = "Plumbing Installation Template";
+      recommendationNote =
+        "Plumbing installs are clearer when the fixture, line, and access needs are confirmed.";
+    } else {
+      recommendedProjectType = "Plumbing Repair";
+      recommendedProjectSubtype = "Plumbing Repair";
+      suggestedWorkflow = "Troubleshooting workflow";
+      suggestedTemplateLabel = "Plumbing Repair Template";
+      recommendationNote =
+        "Plumbing repairs are clearer when the affected fixture, leak area, and access are confirmed.";
+    }
+  } else if (family.key === "exterior_siding") {
+    if (scopeMode === "replacement") {
+      recommendedProjectType = "Exterior / Siding Replacement";
+      recommendedProjectSubtype = "Exterior / Siding Replacement";
+      suggestedWorkflow = "Replacement workflow";
+      suggestedTemplateLabel = "Exterior / Siding Replacement Template";
+      recommendationNote =
+        "Exterior replacement work is clearer when the affected elevations, trim, and weather exposure are confirmed.";
+    } else {
+      recommendedProjectType = "Exterior / Siding Repair";
+      recommendedProjectSubtype = "Exterior / Siding Repair";
+      suggestedWorkflow = "Repair workflow";
+      suggestedTemplateLabel = "Exterior / Siding Repair Template";
+      recommendationNote =
+        "Exterior repair work is clearer when the affected elevations, trim, and protection needs are confirmed.";
+    }
+  } else if (family.key === "windows_doors") {
+    if (scopeMode === "repair") {
+      recommendedProjectType = "Window / Door Repair";
+      recommendedProjectSubtype = "Window / Door Repair";
+      suggestedWorkflow = "Repair workflow";
+      suggestedTemplateLabel = "Window / Door Repair Template";
+      recommendationNote =
+        "Window and door repairs are clearer when the openings, trim, and access details are confirmed.";
+    } else {
+      recommendedProjectType = "Windows / Doors Installation";
+      recommendedProjectSubtype = "Windows / Doors Installation";
+      suggestedWorkflow = "Replacement workflow";
+      suggestedTemplateLabel = "Windows / Doors Installation Template";
+      recommendationNote =
+        "Window and door installs are clearer when the openings, sizes, and weatherproofing needs are confirmed.";
+    }
+  } else if (family.key === "handyman") {
+    recommendedProjectType = "General Repair";
+    recommendedProjectSubtype = "General Repair";
+    suggestedWorkflow = "General repair workflow";
+    suggestedTemplateLabel = "General Repair Template";
+    recommendationNote =
+      "General repair work is clearer when the task list, materials, and specialty trade needs are confirmed.";
+  }
+
+  const recommendedTemplateId = templateId == null || templateId === "" ? null : templateId;
+  const recommendedTemplateName = safeText(templateName) || suggestedTemplateLabel;
+
+  return {
+    projectFamilyKey: family.key,
+    projectFamilyLabel: family.label,
+    recommendedProjectType,
+    recommendedProjectSubtype,
+    suggestedWorkflow,
+    suggestedTemplateLabel,
+    recommendedTemplateId,
+    recommendedTemplateName,
+    recommendationNote,
+    strongTemplateMatch: Boolean(recommendedTemplateId),
+  };
+}
+
+export function normalizeProjectSetupRecommendation(recommendation = {}) {
+  const value = recommendation || {};
+  return {
+    projectFamilyKey: safeText(value.projectFamilyKey || value.project_family_key || ""),
+    projectFamilyLabel: safeText(value.projectFamilyLabel || value.project_family_label || ""),
+    recommendedProjectType: safeText(
+      value.recommendedProjectType || value.recommended_project_type || ""
+    ),
+    recommendedProjectSubtype: safeText(
+      value.recommendedProjectSubtype || value.recommended_project_subtype || ""
+    ),
+    suggestedWorkflow: safeText(value.suggestedWorkflow || value.suggested_workflow || ""),
+    suggestedTemplateLabel: safeText(
+      value.suggestedTemplateLabel || value.suggested_template_label || ""
+    ),
+    recommendedTemplateId:
+      value.recommendedTemplateId ?? value.recommended_template_id ?? null,
+    recommendedTemplateName: safeText(
+      value.recommendedTemplateName || value.recommended_template_name || ""
+    ),
+    recommendationNote: safeText(value.recommendationNote || value.recommendation_note || ""),
+    strongTemplateMatch: Boolean(value.strongTemplateMatch ?? value.strong_template_match ?? false),
   };
 }

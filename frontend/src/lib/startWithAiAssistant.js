@@ -231,6 +231,7 @@ function extractTemplateQuery(input) {
 
 function getLeadScopeSummary(leadSummary = {}) {
   return (
+    clean(leadSummary.recommended_setup?.project_scope_summary) ||
     clean(leadSummary.project_scope_summary) ||
     clean(leadSummary.project_description) ||
     clean(leadSummary.project_type) ||
@@ -260,6 +261,21 @@ function buildContextCollectedData(context) {
   if (clean(lead.phone)) data.phone = clean(lead.phone);
   if (clean(lead.full_name)) data.customer_name = clean(lead.full_name);
   if (clean(getLeadScopeSummary(lead))) data.project_summary = clean(getLeadScopeSummary(lead));
+  if (lead.recommended_setup && typeof lead.recommended_setup === "object") {
+    data.recommended_setup = { ...lead.recommended_setup };
+    if (clean(lead.recommended_setup.recommended_project_type)) {
+      data.project_type = clean(lead.recommended_setup.recommended_project_type);
+    }
+    if (clean(lead.recommended_setup.recommended_project_subtype)) {
+      data.project_subtype = clean(lead.recommended_setup.recommended_project_subtype);
+    }
+    if (clean(lead.recommended_setup.recommended_template_id)) {
+      data.template_id = lead.recommended_setup.recommended_template_id;
+    }
+    if (clean(lead.recommended_setup.recommended_template_name) && !data.template_query) {
+      data.template_query = clean(lead.recommended_setup.recommended_template_name);
+    }
+  }
   if (clean(agreement.customer_name || agreement.homeowner_name)) {
     data.customer_name = clean(agreement.customer_name || agreement.homeowner_name);
   }
@@ -302,6 +318,15 @@ function mergeCollectedData(intent, input, previousPlan, context) {
   if (intent === "start_agreement") {
     if (name) next.customer_name = name;
     if (projectSummary) next.project_summary = projectSummary;
+    if (next.recommended_setup?.recommended_project_type) {
+      next.project_type = clean(next.recommended_setup.recommended_project_type);
+    }
+    if (next.recommended_setup?.recommended_project_subtype) {
+      next.project_subtype = clean(next.recommended_setup.recommended_project_subtype);
+    }
+    if (next.recommended_setup?.recommended_template_id) {
+      next.template_id = next.recommended_setup.recommended_template_id;
+    }
   }
   if (intent === "apply_template") {
     if (templateQuery) next.template_query = templateQuery;
@@ -327,16 +352,24 @@ function mergeCollectedData(intent, input, previousPlan, context) {
 function buildLeadDraftPayload(context, collectedData) {
   const lead = context.lead_summary;
   const projectSummary = clean(collectedData.project_summary || lead.project_scope_summary || lead.project_description);
+  const recommendedSetup = lead.recommended_setup || {};
+  const recommendedTemplateId =
+    recommendedSetup.recommended_template_id || lead.ai_analysis?.template_id || null;
   return {
     lead_id: context.lead_id || null,
     homeowner_name: clean(collectedData.customer_name || lead.full_name),
     email: clean(collectedData.email || lead.email),
     phone: clean(collectedData.phone || lead.phone),
-    project_title: clean(lead.project_type || collectedData.project_summary),
+    project_title: clean(recommendedSetup.recommended_project_type || lead.project_type || collectedData.project_summary),
     description: projectSummary,
     project_scope_summary: projectSummary,
     project_family_key: clean(lead.project_family_key),
     project_family_label: clean(lead.project_family_label),
+    recommended_setup: { ...recommendedSetup },
+    selected_template_id: recommendedTemplateId,
+    selected_template_name_snapshot: clean(
+      recommendedSetup.recommended_template_name || lead.ai_analysis?.template_name || ""
+    ),
     address_line1: clean(lead.project_address),
     city: clean(lead.city),
     state: clean(lead.state),

@@ -8,7 +8,10 @@ from django.db.models import Q
 
 from projects.models_templates import ProjectTemplate
 from projects.models_project_intake import ProjectIntake
-from projects.services.project_intelligence import build_project_intelligence_context
+from projects.services.project_intelligence import (
+    build_project_intelligence_context,
+    build_project_setup_recommendation,
+)
 
 
 def _safe_str(value: Any) -> str:
@@ -1179,6 +1182,14 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
         assumptions = _clarification_assumptions_from_answers(clarification_answers)
         milestones = _template_milestones_payload(template)
         milestones = _refine_milestones(milestones, clarification_answers)
+        recommended_setup = build_project_setup_recommendation(
+            project_title=project_title,
+            project_type=classification["project_type"],
+            project_subtype=classification["project_subtype"],
+            description=refined_description,
+            template_id=template.id,
+            template_name=_safe_str(template.name),
+        )
 
         return {
             "project_title": project_title,
@@ -1197,6 +1208,7 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
             "project_family_label": classification["family_label"],
             "project_scope_summary": refined_description,
             "description": refined_description,
+            "recommended_setup": recommended_setup,
             "project_timeline_days": timeline_days,
             "project_budget": str(budget),
             "milestones": milestones,
@@ -1225,6 +1237,12 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
     assumptions = _clarification_assumptions_from_answers(clarification_answers)
     milestones = _generate_default_milestones(project_type, project_subtype, accomplishment)
     milestones = _refine_milestones(milestones, clarification_answers)
+    recommended_setup = build_project_setup_recommendation(
+        project_title=project_title,
+        project_type=project_type,
+        project_subtype=project_subtype,
+        description=description,
+    )
 
     return {
         "project_title": project_title,
@@ -1243,6 +1261,7 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
         "project_family_label": classification["family_label"],
         "project_scope_summary": description,
         "description": description,
+        "recommended_setup": recommended_setup,
         "project_timeline_days": timeline_days,
         "project_budget": str(budget),
         "milestones": milestones,

@@ -88,7 +88,10 @@ from projects.services.proposal_learning import (
     build_proposal_draft,
     capture_agreement_proposal_snapshot,
 )
-from projects.services.project_intelligence import build_project_intelligence_context
+from projects.services.project_intelligence import (
+    build_project_intelligence_context,
+    build_project_setup_recommendation,
+)
 from projects.services.agreements.create import create_agreement_from_validated
 from projects.services.agreement_fee_allocation import refresh_agreement_fee_allocations
 from projects.services.benchmark_resolution import resolve_seed_benchmark_defaults
@@ -1641,6 +1644,9 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertIn("removal of existing cabinets", result.get("description", ""))
         self.assertIn("installation of new cabinets already on site", result.get("description", ""))
         self.assertIn("related backsplash work", result.get("description", ""))
+        self.assertEqual(result.get("recommended_setup", {}).get("recommended_project_type"), "Kitchen Cabinet Installation")
+        self.assertEqual(result.get("recommended_setup", {}).get("suggested_workflow"), "Install + removal")
+        self.assertEqual(result.get("recommended_setup", {}).get("recommended_template_name"), "Kitchen Cabinet Install Template")
 
     def test_public_intake_analysis_builds_roof_repair_summary_from_answers(self):
         intake = ProjectIntake.objects.create(
@@ -1666,6 +1672,9 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertIn("one section", result.get("description", "").lower())
         self.assertIn("no interior water damage reported yet", result.get("description", "").lower())
         self.assertIn("Contractor inspection requested before final pricing", result.get("description", ""))
+        self.assertEqual(result.get("recommended_setup", {}).get("recommended_project_type"), "Roof Repair")
+        self.assertEqual(result.get("recommended_setup", {}).get("suggested_workflow"), "Repair + inspection")
+        self.assertEqual(result.get("recommended_setup", {}).get("recommended_template_name"), "Roof Repair Template")
 
     def test_public_intake_sync_carries_structured_analysis_into_public_lead(self):
         intake = ProjectIntake.objects.create(
@@ -1730,6 +1739,8 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(result.get("project_type"), "Repair")
         self.assertEqual(result.get("project_subtype"), "General Repair")
         self.assertIn("General repair request", result.get("description", ""))
+        self.assertEqual(result.get("recommended_setup", {}).get("recommended_project_type"), "General Repair")
+        self.assertEqual(result.get("recommended_setup", {}).get("suggested_workflow"), "General repair workflow")
 
     @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
     def test_public_intake_photo_upload_creates_photo(self):
@@ -9112,6 +9123,21 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertEqual(generic["family_key"], "general")
         self.assertFalse(generic["family_cue_label"])
         self.assertTrue(generic["is_generic"])
+
+    def test_project_setup_recommendation_maps_kitchen_install_scope(self):
+        recommendation = build_project_setup_recommendation(
+            project_title="Need kitchen cabinets installed",
+            project_type="Kitchen Remodel",
+            project_subtype="Primary Kitchen",
+            description="Remove old cabinets, install new cabinets already on site, and include backsplash work.",
+        )
+
+        self.assertEqual(recommendation["project_family_key"], "kitchen_remodel")
+        self.assertEqual(recommendation["recommended_project_type"], "Kitchen Cabinet Installation")
+        self.assertEqual(recommendation["recommended_project_subtype"], "Kitchen Cabinet Installation")
+        self.assertEqual(recommendation["suggested_workflow"], "Install + removal")
+        self.assertEqual(recommendation["suggested_template_label"], "Kitchen Cabinet Install Template")
+        self.assertFalse(recommendation["strong_template_match"])
 
     def test_brand_voice_personalizes_proposal_draft_without_breaking_fallback(self):
         ContractorPublicProfile.objects.create(

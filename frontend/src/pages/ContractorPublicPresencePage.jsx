@@ -10,6 +10,10 @@ import {
   buildAssistantHandoffSignature,
   getAssistantHandoff,
 } from '../lib/assistantHandoff.js';
+import {
+  buildProjectSetupRecommendation,
+  normalizeProjectSetupRecommendation,
+} from '../lib/projectIntelligence.js';
 import { getPublicLeadHint, getPublicPresenceHint } from '../lib/workflowHints.js';
 
 const TABS = [
@@ -289,6 +293,36 @@ export default function ContractorPublicPresencePage() {
     }),
     [selectedLead]
   );
+  const selectedLeadRecommendedSetup = useMemo(() => {
+    const baseRecommendation = buildProjectSetupRecommendation({
+      projectTitle:
+        selectedLead?.ai_analysis?.project_title ||
+        selectedLead?.project_type ||
+        selectedLead?.full_name ||
+        '',
+      projectType: selectedLead?.ai_analysis?.project_type || selectedLead?.project_type || '',
+      projectSubtype: selectedLead?.ai_analysis?.project_subtype || '',
+      description:
+        selectedLead?.ai_analysis?.project_scope_summary ||
+        selectedLead?.ai_analysis?.refined_description ||
+        selectedLead?.project_description ||
+        '',
+      templateId:
+        selectedLead?.ai_analysis?.recommended_template_id ||
+        selectedLead?.ai_analysis?.template_id ||
+        null,
+      templateName: selectedLead?.ai_analysis?.template_name || '',
+    });
+    const backendRecommendation = normalizeProjectSetupRecommendation(
+      selectedLead?.ai_analysis?.recommended_setup || {}
+    );
+    return {
+      ...baseRecommendation,
+      ...backendRecommendation,
+      strongTemplateMatch:
+        backendRecommendation.strongTemplateMatch || baseRecommendation.strongTemplateMatch,
+    };
+  }, [selectedLead]);
 
   async function loadAll() {
     try {
@@ -1240,6 +1274,48 @@ export default function ContractorPublicPresencePage() {
                           </div>
                           <div>
                             Milestones: {Array.isArray(selectedLead.ai_analysis.milestone_outline) ? selectedLead.ai_analysis.milestone_outline.length : 0}
+                          </div>
+                        </div>
+                        <div
+                          data-testid="recommended-setup-section"
+                          className="mt-4 rounded-2xl border border-sky-200 bg-sky-50/70 p-4"
+                        >
+                          <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">
+                            Recommended Setup
+                          </div>
+                          <div className="mt-2 text-sm font-semibold text-slate-900">
+                            {selectedLeadRecommendedSetup.recommendedProjectType ||
+                              'Recommended project setup'}
+                          </div>
+                          <div className="mt-1 text-sm text-slate-700">
+                            Based on the project details provided. Use this as a starting point and adjust it in the agreement flow.
+                          </div>
+                          <div className="mt-3 grid gap-2 md:grid-cols-3 text-xs text-slate-700">
+                            <div className="rounded-xl border border-white/80 bg-white/80 px-3 py-2">
+                              <div className="font-semibold text-slate-900">Workflow</div>
+                              <div className="mt-1">{selectedLeadRecommendedSetup.suggestedWorkflow || 'General project review'}</div>
+                            </div>
+                            <div className="rounded-xl border border-white/80 bg-white/80 px-3 py-2">
+                              <div className="font-semibold text-slate-900">Template</div>
+                              <div className="mt-1">
+                                {selectedLeadRecommendedSetup.suggestedTemplateLabel ||
+                                  selectedLeadRecommendedSetup.recommendedTemplateName ||
+                                  'General project template'}
+                              </div>
+                            </div>
+                            <div className="rounded-xl border border-white/80 bg-white/80 px-3 py-2">
+                              <div className="font-semibold text-slate-900">Project Type</div>
+                              <div className="mt-1">
+                                {selectedLeadRecommendedSetup.recommendedProjectType ||
+                                  selectedLeadRecommendedSetup.projectFamilyLabel ||
+                                  selectedLead.project_type ||
+                                  '-'}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-3 rounded-xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-slate-700">
+                            {selectedLeadRecommendedSetup.recommendationNote ||
+                              'This is a suggested setup. You can still choose a different path when you create the bid.'}
                           </div>
                         </div>
                       </div>

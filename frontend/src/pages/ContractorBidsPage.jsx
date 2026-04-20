@@ -5,7 +5,11 @@ import toast from "react-hot-toast";
 
 import api from "../api";
 import { buildLeadAgreementAssistantState } from "../lib/leadProposalDraft";
-import { buildProjectIntelligenceGuidance } from "../lib/projectIntelligence";
+import {
+  buildProjectIntelligenceGuidance,
+  buildProjectSetupRecommendation,
+  normalizeProjectSetupRecommendation,
+} from "../lib/projectIntelligence";
 
 function fmtDate(value) {
   if (!value) return "-";
@@ -529,6 +533,38 @@ export default function ContractorBidsPage() {
           "",
       }),
     [selectedRow?.notes, selectedRow?.project_description, selectedRow?.project_subtype, selectedRow?.project_title, selectedRow?.project_type, selectedSnapshot]
+  );
+  const selectedProjectSetup = useMemo(
+    () => {
+      const baseRecommendation = buildProjectSetupRecommendation({
+        projectTitle: selectedSnapshot.project_title || selectedRow?.project_title || "",
+        projectType: selectedSnapshot.project_type || selectedRow?.project_type || "",
+        projectSubtype: selectedSnapshot.project_subtype || selectedRow?.project_subtype || "",
+        description:
+          selectedSnapshot.project_scope_summary ||
+          selectedSnapshot.refined_description ||
+          selectedRow?.notes ||
+          selectedRow?.project_description ||
+          "",
+      });
+      const backendRecommendation = normalizeProjectSetupRecommendation(
+        selectedSnapshot?.recommended_setup || selectedRow?.ai_analysis?.recommended_setup || {}
+      );
+      return {
+        ...baseRecommendation,
+        ...backendRecommendation,
+        strongTemplateMatch:
+          backendRecommendation.strongTemplateMatch || baseRecommendation.strongTemplateMatch,
+      };
+    },
+    [
+      selectedRow?.ai_analysis?.recommended_setup,
+      selectedRow?.project_description,
+      selectedRow?.project_subtype,
+      selectedRow?.project_title,
+      selectedRow?.project_type,
+      selectedSnapshot,
+    ]
   );
   const selectedSignals = prioritizeSignals(selectedRow?.request_signals);
   const selectedPhotos = Array.isArray(selectedSnapshot?.photos) ? selectedSnapshot.photos : [];
@@ -1081,6 +1117,43 @@ export default function ContractorBidsPage() {
                     </div>
                   </div>
                 ) : null}
+              </SectionCard>
+
+              <SectionCard
+                title="Recommended Setup"
+                testId="recommended-setup-section"
+                subtitle="A suggested starting point based on the project details provided."
+              >
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <DetailField
+                    label="Project Type"
+                    value={
+                      selectedProjectSetup.recommendedProjectType ||
+                      selectedProjectSetup.projectFamilyLabel ||
+                      selectedRow.project_type ||
+                      "-"
+                    }
+                  />
+                  <DetailField
+                    label="Workflow"
+                    value={selectedProjectSetup.suggestedWorkflow || "General project review"}
+                  />
+                  <DetailField
+                    label="Template"
+                    value={
+                      selectedProjectSetup.suggestedTemplateLabel ||
+                      selectedProjectSetup.recommendedTemplateName ||
+                      "General project template"
+                    }
+                  />
+                </div>
+                <div
+                  data-testid="recommended-setup-note"
+                  className="mt-3 rounded-xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-slate-700"
+                >
+                  {selectedProjectSetup.recommendationNote ||
+                    "This is a suggested setup. You can still choose a different path when you create the bid."}
+                </div>
               </SectionCard>
 
               <SectionCard

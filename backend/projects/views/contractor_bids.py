@@ -283,12 +283,14 @@ def _snapshot_from_intake(*, source_intake, lead=None, analysis=None, request=No
     request_path_label = _request_path_label(source_intake)
     clarification_count = len([row for row in clarification_summary if row.get("value")])
     project_phases = _milestone_preview(analysis.get("milestones") or getattr(source_intake, "ai_milestones", []) or [])
+    recommended_setup = analysis.get("recommended_setup") or {}
     snapshot = {
         "project_title": project_title,
         "project_type": project_type,
         "project_subtype": project_subtype,
         "project_family_key": project_family_key,
         "project_family_label": project_family_label,
+        "recommended_setup": recommended_setup,
         "refined_description": refined_description,
         "project_scope_summary": project_scope_summary,
         "location": location,

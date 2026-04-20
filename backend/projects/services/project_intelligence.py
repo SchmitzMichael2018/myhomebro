@@ -11,6 +11,11 @@ def _normalize(value: Any) -> str:
     return " ".join(_safe_text(value).lower().replace("&", " and ").split())
 
 
+def _contains_any(text: str, needles: list[str]) -> bool:
+    haystack = _normalize(text)
+    return any(_normalize(needle) and _normalize(needle) in haystack for needle in needles)
+
+
 PROJECT_TYPE_FAMILIES: list[dict[str, Any]] = [
     {
         "key": "roofing",
@@ -283,6 +288,217 @@ GENERIC_PROJECT_INTELLIGENCE = {
     "create_bid_context": "Review the request details and create your bid when you’re ready.",
     "draft_focus_line": "Review the project details and confirm the scope before final pricing.",
 }
+
+
+def _infer_scope_mode(text: str, family_key: str) -> str:
+    normalized = _normalize(text)
+
+    if family_key == "roofing":
+        if _contains_any(normalized, ["replacement", "replace", "full replacement", "tear off", "tear-off"]):
+            return "replacement"
+        return "repair"
+
+    if family_key == "bathroom_remodel":
+        if _contains_any(normalized, ["repair", "update", "refresh", "fix", "small"]):
+            return "repair"
+        return "remodel"
+
+    if family_key == "kitchen_remodel":
+        if _contains_any(normalized, ["cabinet", "cabinetry"]) and _contains_any(
+            normalized, ["install", "installation", "remove", "removal", "replace", "replacement"]
+        ):
+            return "install_removal"
+        if _contains_any(normalized, ["remodel", "layout", "countertop", "backsplash", "appliance", "island"]):
+            return "remodel"
+        return "install"
+
+    if family_key == "flooring":
+        return "install"
+
+    if family_key == "painting":
+        if "exterior" in normalized and "interior" in normalized:
+            return "interior_exterior"
+        if "exterior" in normalized:
+            return "exterior"
+        return "interior"
+
+    if family_key in {"electrical", "plumbing"}:
+        if _contains_any(normalized, ["install", "installation", "new"]):
+            return "install"
+        return "repair"
+
+    if family_key == "exterior_siding":
+        if _contains_any(normalized, ["replacement", "replace", "new"]):
+            return "replacement"
+        return "repair"
+
+    if family_key == "windows_doors":
+        if _contains_any(normalized, ["repair", "fix", "adjust"]):
+            return "repair"
+        return "replacement"
+
+    return "general"
+
+
+def build_project_setup_recommendation(
+    *,
+    project_title: str = "",
+    project_type: str = "",
+    project_subtype: str = "",
+    description: str = "",
+    template_id: Any = None,
+    template_name: str = "",
+) -> dict[str, Any]:
+    family = infer_project_intelligence(
+        project_title=project_title,
+        project_type=project_type,
+        project_subtype=project_subtype,
+        description=description,
+    )
+    family_key = family.get("key", "general")
+    family_label = family.get("label", "General project review")
+    scope_text = _normalize(" ".join([project_title, project_type, project_subtype, description]))
+    scope_mode = _infer_scope_mode(scope_text, family_key)
+
+    recommended_project_type = project_type or family_label
+    recommended_project_subtype = project_subtype or family_label
+    suggested_workflow = family.get("cue_label") or "General project review"
+    suggested_template_label = ""
+    recommendation_note = family.get("draft_focus_line", "") or "Review the project details before you finalize the setup."
+
+    if family_key == "roofing":
+        if scope_mode == "replacement":
+            recommended_project_type = "Roof Replacement"
+            recommended_project_subtype = "Roof Replacement"
+            suggested_workflow = "Replacement workflow"
+            suggested_template_label = "Roof Replacement Template"
+            recommendation_note = "Roof replacement jobs are clearer when the roof condition, weather exposure, and scope boundary are confirmed."
+        else:
+            recommended_project_type = "Roof Repair"
+            recommended_project_subtype = "Roof Repair"
+            suggested_workflow = "Repair + inspection"
+            suggested_template_label = "Roof Repair Template"
+            recommendation_note = "Roof repairs are clearer when the leak location, affected areas, and inspection needs are confirmed."
+    elif family_key == "bathroom_remodel":
+        if scope_mode == "repair":
+            recommended_project_type = "Bathroom Repair"
+            recommended_project_subtype = "Bathroom Repair"
+            suggested_workflow = "Repair / refresh workflow"
+            suggested_template_label = "Bathroom Repair Template"
+            recommendation_note = "Bathroom repair work is clearer when the fixture, finish, and any plumbing or layout changes are confirmed."
+        else:
+            recommended_project_type = "Bathroom Remodel"
+            recommended_project_subtype = "Bathroom Remodel"
+            suggested_workflow = "Remodel workflow"
+            suggested_template_label = "Bathroom Remodel Template"
+            recommendation_note = "Bathroom remodels benefit from confirming layout changes, fixtures, and finish selections before pricing."
+    elif family_key == "kitchen_remodel":
+        if scope_mode == "install_removal":
+            recommended_project_type = "Kitchen Cabinet Installation"
+            recommended_project_subtype = "Kitchen Cabinet Installation"
+            suggested_workflow = "Install + removal"
+            suggested_template_label = "Kitchen Cabinet Install Template"
+            recommendation_note = "Kitchen cabinet projects are clearer when cabinet removal, installation, and related finish work are defined up front."
+        else:
+            recommended_project_type = "Kitchen Remodel"
+            recommended_project_subtype = "Kitchen Remodel"
+            suggested_workflow = "Remodel workflow"
+            suggested_template_label = "Kitchen Remodel Template"
+            recommendation_note = "Kitchen remodels benefit from confirming cabinets, countertops, layout changes, and related work before final pricing."
+    elif family_key == "flooring":
+        recommended_project_type = "Flooring Installation"
+        recommended_project_subtype = "Flooring Installation"
+        suggested_workflow = "Install workflow"
+        suggested_template_label = "Flooring Installation Template"
+        recommendation_note = "Flooring jobs are clearer when square footage, subfloor condition, and any removal or prep needs are confirmed."
+    elif family_key == "painting":
+        if scope_mode == "exterior":
+            recommended_project_type = "Exterior Painting"
+            recommended_project_subtype = "Exterior Painting"
+            suggested_workflow = "Prep + paint workflow"
+            suggested_template_label = "Exterior Painting Template"
+            recommendation_note = "Exterior painting is clearer when the surfaces, prep work, and weather exposure are confirmed."
+        else:
+            recommended_project_type = "Interior Painting"
+            recommended_project_subtype = "Interior Painting"
+            suggested_workflow = "Prep + paint workflow"
+            suggested_template_label = "Painting Template"
+            recommendation_note = "Painting jobs benefit from confirming the rooms or surfaces included and any prep or repair needs."
+    elif family_key == "electrical":
+        if scope_mode == "install":
+            recommended_project_type = "Electrical Installation"
+            recommended_project_subtype = "Electrical Installation"
+            suggested_workflow = "Install workflow"
+            suggested_template_label = "Electrical Installation Template"
+            recommendation_note = "Electrical installs are clearer when the affected circuits, fixtures, and access are confirmed."
+        else:
+            recommended_project_type = "Electrical Repair"
+            recommended_project_subtype = "Electrical Repair"
+            suggested_workflow = "Troubleshooting workflow"
+            suggested_template_label = "Electrical Repair Template"
+            recommendation_note = "Electrical repair work is clearer when the affected circuit, panel, or fixture is confirmed."
+    elif family_key == "plumbing":
+        if scope_mode == "install":
+            recommended_project_type = "Plumbing Installation"
+            recommended_project_subtype = "Plumbing Installation"
+            suggested_workflow = "Install workflow"
+            suggested_template_label = "Plumbing Installation Template"
+            recommendation_note = "Plumbing installs are clearer when the fixture, line, and access needs are confirmed."
+        else:
+            recommended_project_type = "Plumbing Repair"
+            recommended_project_subtype = "Plumbing Repair"
+            suggested_workflow = "Troubleshooting workflow"
+            suggested_template_label = "Plumbing Repair Template"
+            recommendation_note = "Plumbing repairs are clearer when the affected fixture, leak area, and access are confirmed."
+    elif family_key == "exterior_siding":
+        if scope_mode == "replacement":
+            recommended_project_type = "Exterior / Siding Replacement"
+            recommended_project_subtype = "Exterior / Siding Replacement"
+            suggested_workflow = "Replacement workflow"
+            suggested_template_label = "Exterior / Siding Replacement Template"
+            recommendation_note = "Exterior replacement work is clearer when the affected elevations, trim, and weather exposure are confirmed."
+        else:
+            recommended_project_type = "Exterior / Siding Repair"
+            recommended_project_subtype = "Exterior / Siding Repair"
+            suggested_workflow = "Repair workflow"
+            suggested_template_label = "Exterior / Siding Repair Template"
+            recommendation_note = "Exterior repair work is clearer when the affected elevations, trim, and protection needs are confirmed."
+    elif family_key == "windows_doors":
+        if scope_mode == "repair":
+            recommended_project_type = "Window / Door Repair"
+            recommended_project_subtype = "Window / Door Repair"
+            suggested_workflow = "Repair workflow"
+            suggested_template_label = "Window / Door Repair Template"
+            recommendation_note = "Window and door repairs are clearer when the openings, trim, and access details are confirmed."
+        else:
+            recommended_project_type = "Windows / Doors Installation"
+            recommended_project_subtype = "Windows / Doors Installation"
+            suggested_workflow = "Replacement workflow"
+            suggested_template_label = "Windows / Doors Installation Template"
+            recommendation_note = "Window and door installs are clearer when the openings, sizes, and weatherproofing needs are confirmed."
+    elif family_key == "handyman":
+        recommended_project_type = "General Repair"
+        recommended_project_subtype = "General Repair"
+        suggested_workflow = "General repair workflow"
+        suggested_template_label = "General Repair Template"
+        recommendation_note = "General repair work is clearer when the task list, materials, and specialty trade needs are confirmed."
+
+    recommended_template_id = None if template_id in (None, "") else template_id
+    recommended_template_name = _safe_text(template_name) or suggested_template_label
+    is_strong_template_match = bool(recommended_template_id)
+
+    return {
+        "project_family_key": family_key,
+        "project_family_label": family_label,
+        "recommended_project_type": recommended_project_type,
+        "recommended_project_subtype": recommended_project_subtype,
+        "suggested_workflow": suggested_workflow,
+        "suggested_template_label": suggested_template_label,
+        "recommended_template_id": recommended_template_id,
+        "recommended_template_name": recommended_template_name,
+        "recommendation_note": recommendation_note,
+        "strong_template_match": is_strong_template_match,
+    }
 
 
 def infer_project_intelligence(*, project_title: str = "", project_type: str = "", project_subtype: str = "", description: str = "") -> dict[str, Any]:

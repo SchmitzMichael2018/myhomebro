@@ -24,6 +24,10 @@ import {
   pickClarificationAnswers,
 } from "../lib/subtypeClarifications.js";
 import { buildLeadProposalDraft, leadSummaryFromRow } from "../lib/leadProposalDraft";
+import {
+  buildProjectSetupRecommendation,
+  normalizeProjectSetupRecommendation,
+} from "../lib/projectIntelligence";
 
 import {
   safeTrim,
@@ -748,6 +752,49 @@ export default function Step1Details({
       }),
     [contractorBrandVoice, leadProposalContext, leadProposalSnapshot]
   );
+  const recommendedProjectSetup = useMemo(() => {
+    const draftRecommendation = normalizeProjectSetupRecommendation(
+      leadProposalDraft?.summary?.recommendedSetup || {}
+    );
+    const payloadRecommendation = normalizeProjectSetupRecommendation(
+      assistantDraftPayload?.recommended_setup || {}
+    );
+    const explicitRecommendation = {
+      ...draftRecommendation,
+      ...payloadRecommendation,
+    };
+
+    if (
+      explicitRecommendation?.recommendedProjectType ||
+      explicitRecommendation?.recommendedTemplateId ||
+      explicitRecommendation?.suggestedWorkflow ||
+      explicitRecommendation?.recommendationNote
+    ) {
+      return explicitRecommendation;
+    }
+
+    return buildProjectSetupRecommendation({
+      projectTitle: leadProposalContext?.project_title || assistantDraftPayload?.project_title || "",
+      projectType: leadProposalContext?.project_type || assistantDraftPayload?.project_type || "",
+      projectSubtype:
+        leadProposalContext?.project_subtype || assistantDraftPayload?.project_subtype || "",
+      description:
+        leadProposalContext?.project_scope_summary ||
+        leadProposalContext?.project_description ||
+        assistantDraftPayload?.project_scope_summary ||
+        assistantDraftPayload?.description ||
+        "",
+      templateId:
+        assistantDraftPayload?.selected_template_id ||
+        assistantDraftPayload?.template_id ||
+        draftRecommendation?.recommendedTemplateId ||
+        null,
+      templateName:
+        assistantDraftPayload?.selected_template_name_snapshot ||
+        draftRecommendation?.recommendedTemplateName ||
+        "",
+    });
+  }, [assistantDraftPayload, leadProposalContext, leadProposalDraft?.summary?.recommendedSetup]);
   const hasLeadProposalContext = Boolean(
     assistantLeadContext?.lead_id ||
       assistantDraftPayload?.lead_id ||
@@ -1725,6 +1772,35 @@ export default function Step1Details({
     onTemplateApplied,
     refreshAgreement,
   });
+
+  useEffect(() => {
+    const nextRecommendedTemplateId = safeTrim(
+      recommendedProjectSetup?.recommendedTemplateId || assistantDraftPayload?.selected_template_id || ""
+    );
+    if (!nextRecommendedTemplateId || selectedTemplateId) return;
+    const matchedTemplate = (filteredTemplates || []).find(
+      (template) => String(template?.id || "") === String(nextRecommendedTemplateId)
+    );
+    if (!matchedTemplate) return;
+    if (
+      !recommendedProjectSetup?.strongTemplateMatch &&
+      !assistantDraftPayload?.selected_template_id
+    ) {
+      return;
+    }
+    setSelectedTemplateId(String(nextRecommendedTemplateId));
+    if (matchedTemplate?.name) {
+      setTemplateSearch(matchedTemplate.name);
+    }
+  }, [
+    assistantDraftPayload?.selected_template_id,
+    filteredTemplates,
+    recommendedProjectSetup?.recommendedTemplateId,
+    recommendedProjectSetup?.strongTemplateMatch,
+    selectedTemplateId,
+    setSelectedTemplateId,
+    setTemplateSearch,
+  ]);
 
   useEffect(() => {
     setDismissedAiTemplateRecommendation(false);
@@ -3218,6 +3294,72 @@ export default function Step1Details({
               >
                 View template options
               </button>
+            </div>
+          </section>
+        ) : null}
+
+        {hasLeadProposalContext && recommendedProjectSetup ? (
+          <section
+            data-testid="recommended-setup-card"
+            className="rounded-2xl border border-sky-200 bg-sky-50/70 p-5 shadow-sm"
+          >
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div className="max-w-3xl">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
+                  Recommended Setup
+                </div>
+                <div data-testid="recommended-setup-title" className="mt-1 text-base font-semibold text-slate-900">
+                  {recommendedProjectSetup.recommendedProjectType || "Recommended project setup"}
+                </div>
+                <div className="mt-1 text-sm text-slate-700">
+                  Based on the project details provided. You can use this as a starting point and edit anything below.
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <LeadContextField
+                    label="Suggested Workflow"
+                    value={recommendedProjectSetup.suggestedWorkflow || "-"}
+                  />
+                  <LeadContextField
+                    label="Suggested Template"
+                    value={
+                      recommendedProjectSetup.suggestedTemplateLabel ||
+                      recommendedProjectSetup.recommendedTemplateName ||
+                      "General project template"
+                    }
+                  />
+                  <LeadContextField
+                    label="Project Type"
+                    value={
+                      recommendedProjectSetup.recommendedProjectType ||
+                      recommendedProjectSetup.projectFamilyLabel ||
+                      "-"
+                    }
+                  />
+                </div>
+                <div
+                  data-testid="recommended-setup-note"
+                  className="mt-3 rounded-xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-slate-700"
+                >
+                  {recommendedProjectSetup.recommendationNote ||
+                    "Review the setup and keep editing before you continue."}
+                </div>
+              </div>
+              {recommendedProjectSetup.strongTemplateMatch && recommendedProjectSetup.recommendedTemplateId ? (
+                <button
+                  type="button"
+                  data-testid="recommended-setup-use-button"
+                  onClick={() => {
+                    setSelectedTemplateId(String(recommendedProjectSetup.recommendedTemplateId));
+                    if (recommendedProjectSetup.recommendedTemplateName) {
+                      setTemplateSearch(recommendedProjectSetup.recommendedTemplateName);
+                    }
+                    activateStartMode("template", { committed: true, source: "user" });
+                  }}
+                  className="inline-flex shrink-0 items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                >
+                  Use this
+                </button>
+              ) : null}
             </div>
           </section>
         ) : null}

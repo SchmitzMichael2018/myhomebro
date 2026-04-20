@@ -167,6 +167,7 @@ def _build_lead_analysis_payload(lead):
         "project_scope_summary": result.get("project_scope_summary", ""),
         "project_family_key": result.get("project_family_key", ""),
         "project_family_label": result.get("project_family_label", ""),
+        "recommended_setup": result.get("recommended_setup", {}),
         "project_timeline_days": result.get("project_timeline_days"),
         "project_budget": str(result.get("project_budget")) if result.get("project_budget") is not None else None,
         "clarifications_needed": result.get("clarification_questions", []),
