@@ -16,6 +16,7 @@ from projects.models import ProjectBenchmarkAggregate
 from projects.models_learning import ContractorBenchmarkAggregate, ProjectOutcomeSnapshot
 from projects.services.benchmark_resolution import resolve_seed_benchmark_defaults
 from projects.services.project_intelligence import infer_project_intelligence, infer_project_scope_mode
+from projects.services.regional_benchmarks import resolve_regional_benchmark
 from projects.services.regions import build_normalized_region_key
 
 
@@ -354,6 +355,33 @@ def _blend_numeric_ranges(
     return _money(low), _money(high)
 
 
+def _blend_with_candidate(
+    *,
+    current_low: Decimal,
+    current_high: Decimal,
+    current_center: Decimal,
+    candidate_low: Decimal,
+    candidate_high: Decimal,
+    candidate_center: Decimal,
+    weight: Decimal,
+) -> tuple[Decimal, Decimal, Decimal]:
+    if weight <= 0 or candidate_center <= 0:
+        return current_low, current_high, current_center
+    if current_center <= 0:
+        blended_center = candidate_center
+    else:
+        blended_center = _money((current_center * (Decimal("1.00") - weight)) + (candidate_center * weight))
+    low, high = _blend_numeric_ranges(
+        platform_low=current_low,
+        platform_high=current_high,
+        contractor_low=candidate_low,
+        contractor_high=candidate_high,
+        contractor_weight=weight,
+        center=blended_center,
+    )
+    return low, high, blended_center
+
+
 def get_blended_benchmark(project_context: dict[str, Any], contractor_id: int | None) -> dict[str, Any]:
     context = dict(project_context or {})
     family_key, scope_mode, template_used = _project_context_key(context)
@@ -368,19 +396,46 @@ def get_blended_benchmark(project_context: dict[str, Any], contractor_id: int | 
     learned_decision = platform["learned_decision"]
 
     platform_price_center = platform["price_center"]
-    platform_duration_center = platform["duration_center"]
+    platform_duration_center = Decimal(str(platform["duration_center"])) if platform["duration_center"] else Decimal("0.00")
     platform_price_low = _safe_decimal(seed_defaults.get("price_range", {}).get("low"), Decimal("0.00")) or Decimal("0.00")
     platform_price_high = _safe_decimal(seed_defaults.get("price_range", {}).get("high"), Decimal("0.00")) or Decimal("0.00")
     platform_duration_low = _safe_int(seed_defaults.get("duration_range", {}).get("low"), 0)
     platform_duration_high = _safe_int(seed_defaults.get("duration_range", {}).get("high"), 0)
 
+    regional_decision = resolve_regional_benchmark(
+        {
+            "project_family_key": family_key,
+            "project_type": context.get("project_type", ""),
+            "project_subtype": context.get("project_subtype", ""),
+            "project_scope_summary": context.get("project_scope_summary", ""),
+            "description": context.get("description", ""),
+            "scope_mode": scope_mode,
+            "template_used": template_used or context.get("template_name", ""),
+            "region_state": context.get("region_state", ""),
+            "region_city": context.get("region_city", ""),
+            "region_country": context.get("region_country", "US"),
+        }
+    )
+    regional_weight = _safe_decimal(regional_decision.get("learned_weight"), Decimal("0.00")) or Decimal("0.00")
+    regional_aggregate = regional_decision.get("aggregate")
+    regional_price_center = _safe_decimal(regional_decision.get("learned_price"), Decimal("0.00")) or Decimal("0.00")
+    regional_price_low = _safe_decimal(getattr(regional_aggregate, "p25_project_value", None), Decimal("0.00")) if regional_aggregate else Decimal("0.00")
+    regional_price_high = _safe_decimal(getattr(regional_aggregate, "p75_project_value", None), Decimal("0.00")) if regional_aggregate else Decimal("0.00")
+    regional_duration_center = Decimal(str(_safe_int(regional_decision.get("learned_duration_days"), 0))) if _safe_int(regional_decision.get("learned_duration_days"), 0) else Decimal("0.00")
+    regional_duration_low = Decimal(str(_safe_int(getattr(regional_aggregate, "p25_duration_days", None), 0))) if regional_aggregate else Decimal("0.00")
+    regional_duration_high = Decimal(str(_safe_int(getattr(regional_aggregate, "p75_duration_days", None), 0))) if regional_aggregate else Decimal("0.00")
+    regional_milestone_count = _safe_decimal(regional_decision.get("learned_milestone_count"), Decimal("0.00")) or Decimal("0.00")
+    regional_sample_size = int(regional_decision.get("sample_size") or 0)
+    regional_reason = _safe_text(regional_decision.get("reasoning"))
+    regional_confidence = _safe_text(regional_decision.get("confidence")) or "low"
+
     contractor_weight = Decimal("0.00")
     contractor_price_center = Decimal("0.00")
-    contractor_duration_center = 0
+    contractor_duration_center = Decimal("0.00")
     contractor_price_low = Decimal("0.00")
     contractor_price_high = Decimal("0.00")
-    contractor_duration_low = 0
-    contractor_duration_high = 0
+    contractor_duration_low = Decimal("0.00")
+    contractor_duration_high = Decimal("0.00")
     contractor_milestone_count = Decimal("0.00")
     contractor_confidence = "low"
     contractor_reason = ""
@@ -393,9 +448,9 @@ def get_blended_benchmark(project_context: dict[str, Any], contractor_id: int | 
         contractor_price_center = _safe_decimal(contractor_aggregate.p50_project_value, Decimal("0.00")) or _safe_decimal(contractor_aggregate.avg_project_value, Decimal("0.00")) or Decimal("0.00")
         contractor_price_low = _safe_decimal(contractor_aggregate.p25_project_value, Decimal("0.00")) or contractor_price_center
         contractor_price_high = _safe_decimal(contractor_aggregate.p75_project_value, Decimal("0.00")) or contractor_price_center
-        contractor_duration_center = _safe_int(contractor_aggregate.p50_duration_days, 0) or _safe_int(contractor_aggregate.avg_duration_days, 0)
-        contractor_duration_low = _safe_int(contractor_aggregate.p25_duration_days, 0) or contractor_duration_center
-        contractor_duration_high = _safe_int(contractor_aggregate.p75_duration_days, 0) or contractor_duration_center
+        contractor_duration_center = Decimal(str(_safe_int(contractor_aggregate.p50_duration_days, 0) or _safe_int(contractor_aggregate.avg_duration_days, 0)))
+        contractor_duration_low = Decimal(str(_safe_int(contractor_aggregate.p25_duration_days, 0) or int(contractor_duration_center or 0)))
+        contractor_duration_high = Decimal(str(_safe_int(contractor_aggregate.p75_duration_days, 0) or int(contractor_duration_center or 0)))
         contractor_milestone_count = _safe_decimal(contractor_aggregate.avg_milestone_count, Decimal("0.00")) or Decimal("0.00")
         contractor_dispute_rate = _safe_decimal(contractor_aggregate.dispute_rate, Decimal("0.00")) or Decimal("0.00")
         contractor_amendment_rate = _safe_decimal(contractor_aggregate.amendment_rate, Decimal("0.00")) or Decimal("0.00")
@@ -422,80 +477,117 @@ def get_blended_benchmark(project_context: dict[str, Any], contractor_id: int | 
         else:
             contractor_reason = "Contractor history exists but is too noisy or sparse to dominate the recommendation."
 
-    platform_weight = Decimal("1.00") - contractor_weight
-    if contractor_aggregate is None:
-        source_type = "platform_only"
-    elif contractor_weight <= Decimal("0.00"):
-        source_type = "platform_only"
-    else:
-        source_type = "platform_plus_contractor"
-
     blended_price_center = platform_price_center
     blended_duration_center = platform_duration_center
-    if contractor_weight > 0 and contractor_price_center > 0:
-        blended_price_center = _money((platform_price_center * platform_weight) + (contractor_price_center * contractor_weight)) if platform_price_center > 0 else _money(contractor_price_center)
-    if contractor_weight > 0 and contractor_duration_center > 0:
-        blended_duration_center = max(
-            int(round((platform_duration_center * float(platform_weight)) + (contractor_duration_center * float(contractor_weight)))),
-            1,
-        ) if platform_duration_center > 0 else contractor_duration_center
+    blended_price_low = platform_price_low
+    blended_price_high = platform_price_high
+    blended_duration_low = Decimal(platform_duration_low or 0)
+    blended_duration_high = Decimal(platform_duration_high or 0)
+    blended_milestone_count = _safe_decimal(len(seed_defaults.get("milestone_defaults") or []), Decimal("0.00")) or Decimal("0.00")
+    if blended_milestone_count <= 0:
+        blended_milestone_count = Decimal("4.00")
 
-    blended_price_low, blended_price_high = _blend_numeric_ranges(
-        platform_low=platform_price_low,
-        platform_high=platform_price_high,
-        contractor_low=contractor_price_low,
-        contractor_high=contractor_price_high,
-        contractor_weight=contractor_weight,
-        center=blended_price_center,
-    )
-    blended_duration_low, blended_duration_high = _blend_numeric_ranges(
-        platform_low=Decimal(platform_duration_low or 0),
-        platform_high=Decimal(platform_duration_high or 0),
-        contractor_low=Decimal(contractor_duration_low or 0),
-        contractor_high=Decimal(contractor_duration_high or 0),
-        contractor_weight=contractor_weight,
-        center=Decimal(blended_duration_center or 0),
-    )
+    if regional_weight > 0 and regional_aggregate is not None:
+        blended_price_low, blended_price_high, blended_price_center = _blend_with_candidate(
+            current_low=blended_price_low,
+            current_high=blended_price_high,
+            current_center=blended_price_center,
+            candidate_low=regional_price_low,
+            candidate_high=regional_price_high,
+            candidate_center=regional_price_center,
+            weight=regional_weight,
+        )
+        blended_duration_low, blended_duration_high, blended_duration_center = _blend_with_candidate(
+            current_low=blended_duration_low,
+            current_high=blended_duration_high,
+            current_center=blended_duration_center,
+            candidate_low=regional_duration_low,
+            candidate_high=regional_duration_high,
+            candidate_center=regional_duration_center,
+            weight=regional_weight,
+        )
+        if regional_milestone_count > 0:
+            blended_milestone_count = _money((blended_milestone_count * (Decimal("1.00") - regional_weight)) + (regional_milestone_count * regional_weight))
 
-    platform_milestone_count = _safe_decimal(len(seed_defaults.get("milestone_defaults") or []), Decimal("0.00")) or Decimal("0.00")
-    if platform_milestone_count <= 0:
-        platform_milestone_count = Decimal("4.00")
-    blended_milestone_count = platform_milestone_count
-    if contractor_weight > 0 and contractor_milestone_count > 0:
-        blended_milestone_count = (
-            (platform_milestone_count * platform_weight) + (contractor_milestone_count * contractor_weight)
-        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if contractor_weight > 0 and contractor_aggregate is not None:
+        blended_price_low, blended_price_high, blended_price_center = _blend_with_candidate(
+            current_low=blended_price_low,
+            current_high=blended_price_high,
+            current_center=blended_price_center,
+            candidate_low=contractor_price_low,
+            candidate_high=contractor_price_high,
+            candidate_center=contractor_price_center,
+            weight=contractor_weight,
+        )
+        blended_duration_low, blended_duration_high, blended_duration_center = _blend_with_candidate(
+            current_low=blended_duration_low,
+            current_high=blended_duration_high,
+            current_center=blended_duration_center,
+            candidate_low=contractor_duration_low,
+            candidate_high=contractor_duration_high,
+            candidate_center=contractor_duration_center,
+            weight=contractor_weight,
+        )
+        if contractor_milestone_count > 0:
+            blended_milestone_count = _money((blended_milestone_count * (Decimal("1.00") - contractor_weight)) + (contractor_milestone_count * contractor_weight))
 
-    confidence_score = Decimal("0.00")
-    confidence_bits: list[str] = []
-    if contractor_aggregate is None:
-        confidence_bits.append("No contractor history was available, so platform benchmarks remain in control.")
-    else:
-        confidence_score = contractor_weight
-        confidence_bits.append(contractor_reason)
-        if contractor_dispute_rate > Decimal("0.00"):
-            confidence_bits.append("Historical disputes reduce the contractor-history weight.")
-        if contractor_amendment_rate > Decimal("0.00"):
-            confidence_bits.append("Historical amendments reduce the contractor-history weight.")
-    if learned_decision.aggregate is not None and learned_decision.learned_weight > 0:
-        confidence_bits.append("Platform benchmark learning is also available.")
-    if contractor_weight >= Decimal("0.45"):
+    source_type = "platform"
+    if regional_weight > 0 and contractor_weight > 0:
+        source_type = "blended_all"
+    elif regional_weight > 0:
+        source_type = "blended_platform_regional"
+    elif contractor_weight > 0:
+        source_type = "blended_platform_contractor"
+
+    confidence_candidates = [
+        learned_decision.learned_weight if learned_decision.aggregate is not None else Decimal("0.00"),
+        regional_weight,
+        contractor_weight,
+    ]
+    strongest_weight = max(confidence_candidates)
+    if strongest_weight >= Decimal("0.35"):
         confidence = "high"
-    elif contractor_weight >= Decimal("0.20"):
+    elif strongest_weight >= Decimal("0.15"):
         confidence = "medium"
     elif learned_decision.aggregate is not None and learned_decision.learned_weight > 0:
         confidence = "medium"
     else:
         confidence = "low"
 
-    confidence_reasoning = " ".join(bit for bit in confidence_bits if bit).strip() or "Platform benchmarks are the primary source."
-    benchmark_source = source_type if contractor_aggregate is None else f"{source_type}_blended"
+    confidence_bits: list[str] = []
+    if learned_decision.aggregate is not None and learned_decision.learned_weight > 0:
+        confidence_bits.append("Platform benchmark learning is also available.")
+    if regional_aggregate is not None and regional_weight > 0:
+        confidence_bits.append(
+            f"Regional history from {_safe_text(regional_decision.get('region_label')) or 'this market'} contributes {regional_sample_size} completed project"
+            f"{'' if regional_sample_size == 1 else 's'}."
+        )
+        if _safe_decimal(regional_decision.get("dispute_rate"), Decimal("0.00")) > Decimal("0.00"):
+            confidence_bits.append("Historical disputes reduce the regional influence.")
+        if _safe_decimal(regional_decision.get("amendment_rate"), Decimal("0.00")) > Decimal("0.00"):
+            confidence_bits.append("Historical amendments reduce the regional influence.")
+    if contractor_weight > 0:
+        confidence_bits.append(contractor_reason)
+        if contractor_dispute_rate > Decimal("0.00"):
+            confidence_bits.append("Historical disputes reduce the contractor-history weight.")
+        if contractor_amendment_rate > Decimal("0.00"):
+            confidence_bits.append("Historical amendments reduce the contractor-history weight.")
+    if not confidence_bits:
+        confidence_bits.append("Platform benchmarks remain the primary source.")
+    confidence_reasoning = " ".join(bit for bit in confidence_bits if bit).strip()
+
+    benchmark_source = source_type
+
+    regional_label = _safe_text(regional_decision.get("region_label"))
+    regional_granularity = _safe_text(regional_decision.get("region_granularity"))
+    regional_sample_size_text = int(regional_decision.get("sample_size") or 0)
 
     return {
         "source_type": source_type,
         "benchmark_source": benchmark_source,
         "weights": {
-            "platform": str(platform_weight.quantize(Decimal("0.01"))),
+            "platform": "1.00",
+            "regional": str(regional_weight.quantize(Decimal("0.01"))),
             "contractor": str(contractor_weight.quantize(Decimal("0.01"))),
         },
         "confidence": confidence,
@@ -505,6 +597,26 @@ def get_blended_benchmark(project_context: dict[str, Any], contractor_id: int | 
         "template_used": template_used,
         "platform": {
             "sample_size": int(getattr(learned_decision.aggregate, "completed_project_count", 0) or 0),
+            "seeded_benchmark_profile_id": seed_defaults.get("benchmark_profile_id"),
+            "match_scope": seed_defaults.get("match_scope"),
+            "region_scope_used": seed_defaults.get("region_scope_used"),
+            "benchmark_source": seed_defaults.get("benchmark_source"),
+        },
+        "regional": {
+            "sample_size": regional_sample_size_text,
+            "region_key": _safe_text(regional_decision.get("region_key")),
+            "region_label": regional_label,
+            "region_granularity": regional_granularity,
+            "avg_project_value": str(_safe_decimal(getattr(regional_aggregate, "avg_project_value", None), Decimal("0.00")) if regional_aggregate else Decimal("0.00")),
+            "p50_project_value": str(_safe_decimal(getattr(regional_aggregate, "p50_project_value", None), Decimal("0.00")) if regional_aggregate else Decimal("0.00")),
+            "avg_duration_days": str(_safe_decimal(getattr(regional_aggregate, "avg_duration_days", None), Decimal("0.00")) if regional_aggregate else Decimal("0.00")),
+            "p50_duration_days": str(_safe_decimal(getattr(regional_aggregate, "p50_duration_days", None), Decimal("0.00")) if regional_aggregate else Decimal("0.00")),
+            "avg_milestone_count": str(_safe_decimal(getattr(regional_aggregate, "avg_milestone_count", None), Decimal("0.00")) if regional_aggregate else Decimal("0.00")),
+            "dispute_rate": str(_safe_decimal(getattr(regional_aggregate, "dispute_rate", None), Decimal("0.00")) if regional_aggregate else Decimal("0.00")),
+            "amendment_rate": str(_safe_decimal(getattr(regional_aggregate, "amendment_rate", None), Decimal("0.00")) if regional_aggregate else Decimal("0.00")),
+            "confidence": regional_confidence,
+            "weight": str(regional_weight.quantize(Decimal("0.01"))),
+            "reasoning": regional_reason,
         },
         "pricing_range": {
             "low": str(blended_price_low),
@@ -530,11 +642,8 @@ def get_blended_benchmark(project_context: dict[str, Any], contractor_id: int | 
             "avg_milestone_count": str(_safe_decimal(contractor_aggregate.avg_milestone_count, Decimal("0.00")) if contractor_aggregate else Decimal("0.00")),
             "dispute_rate": str(contractor_dispute_rate.quantize(Decimal("0.01"))) if contractor_aggregate else "0.00",
             "amendment_rate": str(contractor_amendment_rate.quantize(Decimal("0.01"))) if contractor_aggregate else "0.00",
-        },
-        "platform": {
-            "seeded_benchmark_profile_id": seed_defaults.get("benchmark_profile_id"),
-            "match_scope": seed_defaults.get("match_scope"),
-            "region_scope_used": seed_defaults.get("region_scope_used"),
-            "benchmark_source": seed_defaults.get("benchmark_source"),
+            "confidence": contractor_confidence,
+            "weight": str(contractor_weight.quantize(Decimal("0.01"))),
+            "reasoning": contractor_reason,
         },
     }

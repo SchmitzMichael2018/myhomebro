@@ -13,6 +13,7 @@ from projects.models_templates import SeedBenchmarkProfile
 from projects.services.benchmark_resolution import resolve_seed_benchmark_defaults
 from projects.services.contractor_benchmarks import get_blended_benchmark
 from projects.services.regions import build_normalized_region_key
+from projects.services.regions import build_region_context
 from projects.services.project_plan_suggestions import build_project_plan_suggestion
 from projects.services.project_quantity import build_quantity_adjustment, build_quantity_context
 
@@ -806,6 +807,11 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
         state=context.get("region_state", ""),
         city=context.get("region_city", ""),
     )
+    region_context = build_region_context(
+        country="US",
+        state=context.get("region_state", ""),
+        city=context.get("region_city", ""),
+    )
     learned_decision = _pick_learned_candidate(agreement=agreement, region_key=region_key)
     learned_weight = learned_decision.learned_weight if learned_decision.aggregate is not None else Decimal("0.00")
     template_weight = TEMPLATE_BLEND_WEIGHT if learned_weight > 0 else Decimal("1.00")
@@ -907,6 +913,7 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
             "clarification_answers": clarification_answers,
             "region_state": getattr(agreement, "project_address_state", "") or "",
             "region_city": getattr(agreement, "project_address_city", "") or "",
+            "region_country": "US",
             "selected_template_id": getattr(agreement, "selected_template_id", None),
             "template_name": _template_label(agreement),
             "template_used": _template_label(agreement),
@@ -1052,6 +1059,7 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
             "template_weight": str(template_weight.quantize(Decimal("0.01"))),
             "learned_clarification_signature": _safe_text(getattr(learned_decision.aggregate, "clarification_signature", "")),
             "region_key_used": region_key,
+            "region_context": region_context,
             "quantity_context": quantity_context,
             "quantity_adjustment": quantity_adjustment,
             "blended_benchmark": blended_benchmark,

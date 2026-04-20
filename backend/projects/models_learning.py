@@ -45,6 +45,9 @@ class ProjectOutcomeSnapshot(models.Model):
     project_family_label = models.CharField(max_length=255, blank=True, default="")
     scope_mode = models.CharField(max_length=64, blank=True, default="", db_index=True)
     template_used = models.CharField(max_length=255, blank=True, default="")
+    region_key = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    region_label = models.CharField(max_length=255, blank=True, default="")
+    region_granularity = models.CharField(max_length=32, blank=True, default="unknown", db_index=True)
 
     original_intelligence_payload = models.JSONField(default=dict, blank=True)
     original_suggested_plan = models.JSONField(default=dict, blank=True)
@@ -67,6 +70,7 @@ class ProjectOutcomeSnapshot(models.Model):
         indexes = [
             models.Index(fields=["project_family_key", "scope_mode"]),
             models.Index(fields=["template_used"]),
+            models.Index(fields=["region_key", "project_family_key", "scope_mode"]),
             models.Index(fields=["completion_status"]),
             models.Index(fields=["contractor"]),
         ]
@@ -118,6 +122,51 @@ class ContractorBenchmarkAggregate(models.Model):
 
     def __str__(self) -> str:
         return f"ContractorBenchmarkAggregate(contractor={self.contractor_id}, family={self.project_family_key})"
+
+
+class RegionalBenchmarkAggregate(models.Model):
+    region_key = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    region_label = models.CharField(max_length=255, blank=True, default="")
+    region_granularity = models.CharField(max_length=32, blank=True, default="unknown", db_index=True)
+
+    project_family_key = models.CharField(max_length=120, blank=True, default="", db_index=True)
+    scope_mode = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    template_used = models.CharField(max_length=255, blank=True, default="", db_index=True)
+
+    sample_size = models.PositiveIntegerField(default=0)
+
+    avg_project_value = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    p25_project_value = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    p50_project_value = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    p75_project_value = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+
+    avg_duration_days = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    p25_duration_days = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    p50_duration_days = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    p75_duration_days = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+
+    avg_milestone_count = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    dispute_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    amendment_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+
+    last_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-last_updated", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["region_key", "project_family_key", "scope_mode", "template_used"],
+                name="uniq_regional_benchmark_scope_dimensions",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["region_key", "project_family_key", "scope_mode"]),
+            models.Index(fields=["region_key", "template_used"]),
+            models.Index(fields=["region_granularity"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"RegionalBenchmarkAggregate(region={self.region_key}, family={self.project_family_key})"
 
 
 class AgreementOutcomeSnapshot(models.Model):

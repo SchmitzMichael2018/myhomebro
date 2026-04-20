@@ -60,6 +60,7 @@ from projects.models import (
     Notification,
     Project,
     ProjectBenchmarkAggregate,
+    RegionalBenchmarkAggregate,
     ProjectEmailReportLog,
     ProjectStatus,
     PublicContractorLead,
@@ -91,6 +92,7 @@ from projects.services.contractor_benchmarks import (
     get_blended_benchmark,
     rebuild_contractor_benchmark_aggregates,
 )
+from projects.services.regional_benchmarks import rebuild_regional_benchmark_aggregates
 from projects.services.proposal_learning import (
     build_proposal_draft,
     capture_agreement_proposal_snapshot,
@@ -8871,6 +8873,16 @@ class ProjectLearningFoundationTests(TestCase):
             project_subtype="Kitchen Remodel",
             estimated_days=21,
         )
+        self.other_contractor_user = user_model.objects.create_user(
+            email="learning-other-contractor@example.com",
+            password="testpass123",
+        )
+        self.other_contractor = Contractor.objects.create(
+            user=self.other_contractor_user,
+            business_name="Learning Other Contractor",
+            city="Miami",
+            state="FL",
+        )
 
     def _create_completed_agreement(
         self,
@@ -9037,6 +9049,51 @@ class ProjectLearningFoundationTests(TestCase):
         )
         return snapshot
 
+    def _seed_regional_outcome_snapshot(
+        self,
+        *,
+        region_state: str = "TX",
+        region_city: str = "Austin",
+        template_used: str = "Kitchen Remodel Template",
+        total_project_value: Decimal = Decimal("6500.00"),
+        actual_duration_days: int = 5,
+        milestone_count: int = 4,
+        dispute_flag: bool = False,
+        amendment_count: int = 0,
+    ):
+        agreement = self._create_completed_agreement(
+            total_cost=total_project_value,
+            actual_total=total_project_value,
+            status=ProjectStatus.COMPLETED,
+            use_template=True,
+        )
+        snapshot = ProjectOutcomeSnapshot.objects.create(
+            agreement=agreement,
+            contractor=None,
+            source_lead=None,
+            template=agreement.selected_template,
+            project_family_key="kitchen_remodel",
+            project_family_label="Kitchen Remodel",
+            scope_mode="install_removal",
+            template_used=template_used,
+            region_key=build_normalized_region_key(country="US", state=region_state, city=region_city),
+            region_label=f"{region_city}, {region_state}",
+            region_granularity="city" if region_city and region_state else "state" if region_state else "unknown",
+            original_intelligence_payload={},
+            original_suggested_plan={},
+            final_project_state={},
+            final_milestones=[],
+            total_project_value=total_project_value,
+            estimated_value_range={"low": str(total_project_value * Decimal("0.90")), "high": str(total_project_value * Decimal("1.10"))},
+            actual_duration_days=actual_duration_days,
+            estimated_duration_range={"low": max(actual_duration_days - 1, 1), "high": actual_duration_days + 1},
+            milestone_count=milestone_count,
+            dispute_flag=dispute_flag,
+            amendment_count=amendment_count,
+            completion_status=ProjectStatus.COMPLETED,
+        )
+        return snapshot
+
     def test_snapshot_creation_when_agreement_becomes_completed(self):
         agreement = self._create_completed_agreement()
 
@@ -9081,6 +9138,9 @@ class ProjectLearningFoundationTests(TestCase):
         snapshot = ProjectOutcomeSnapshot.objects.get(agreement=agreement)
         self.assertEqual(snapshot.project_family_key, "kitchen_remodel")
         self.assertEqual(snapshot.project_family_label, "Kitchen Remodel")
+        self.assertEqual(snapshot.region_key, "US-TX-AUSTIN")
+        self.assertEqual(snapshot.region_label, "Austin, TX")
+        self.assertEqual(snapshot.region_granularity, "city")
         self.assertEqual(snapshot.template_used, self.template.name)
         self.assertEqual(snapshot.total_project_value, Decimal("12000.00"))
         self.assertEqual(snapshot.milestone_count, 2)
@@ -9247,6 +9307,8 @@ class ProjectLearningFoundationTests(TestCase):
                 "inspection_requested": "Yes",
             },
             photo_count=2,
+            region_state="TX",
+            region_city="Austin",
             suggested_total_price="6250.00",
             suggested_price_low="5000.00",
             suggested_price_high="7500.00",
@@ -9277,6 +9339,7 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertIn("deterministic_first", plan["source_metadata"]["recommendation_basis"])
         self.assertIn("source_type", plan["source_metadata"]["blended_benchmark"])
         self.assertIn("confidence", plan["source_metadata"]["blended_benchmark"])
+        self.assertIn("regional", plan["source_metadata"]["blended_benchmark"])
 
     def test_project_plan_recommendation_falls_back_for_general_projects(self):
         plan = build_project_plan_suggestion(
@@ -9299,6 +9362,8 @@ class ProjectLearningFoundationTests(TestCase):
             seeded_benchmark_used=False,
             benchmark_source="none",
             benchmark_match_scope="none",
+            region_state="",
+            region_city="",
         )
 
         self.assertEqual(plan["project_family_key"], "general")
@@ -9334,6 +9399,8 @@ class ProjectLearningFoundationTests(TestCase):
             benchmark_match_scope="template_linked_profile",
             template_name="Kitchen Remodel Starter",
             selected_template_id=55,
+            region_state="TX",
+            region_city="Austin",
         )
 
         small_plan = build_project_plan_suggestion(
@@ -9397,6 +9464,8 @@ class ProjectLearningFoundationTests(TestCase):
             seeded_benchmark_used=False,
             benchmark_source="none",
             benchmark_match_scope="none",
+            region_state="",
+            region_city="",
         )
 
         self.assertEqual(plan["source_metadata"]["quantity_adjustment"]["applied"], False)
@@ -9437,11 +9506,14 @@ class ProjectLearningFoundationTests(TestCase):
             "template_name": "Kitchen Remodel Template",
             "template_used": "Kitchen Remodel Template",
             "scope_mode": "install_removal",
+            "region_state": "TX",
+            "region_city": "Austin",
         }
 
         platform_only = get_blended_benchmark(context, self.contractor.id)
-        self.assertEqual(platform_only["source_type"], "platform_only")
+        self.assertEqual(platform_only["source_type"], "platform")
         self.assertEqual(platform_only["weights"]["contractor"], "0.00")
+        self.assertEqual(platform_only["weights"]["regional"], "0.00")
 
         small_snapshot = self._seed_contractor_benchmark_snapshot(
             template_used="Kitchen Remodel Template Small",
@@ -9453,7 +9525,8 @@ class ProjectLearningFoundationTests(TestCase):
         small_context = dict(context, template_name="Kitchen Remodel Template Small", template_used="Kitchen Remodel Template Small")
         small = get_blended_benchmark(small_context, self.contractor.id)
         self.assertEqual(small["contractor"]["sample_size"], 1)
-        self.assertEqual(small["source_type"], "platform_plus_contractor")
+        self.assertEqual(small["regional"]["sample_size"], 1)
+        self.assertEqual(small["source_type"], "blended_all")
         self.assertGreater(Decimal(small["weights"]["contractor"]), Decimal("0.00"))
         self.assertLessEqual(Decimal(small["weights"]["contractor"]), Decimal("0.20"))
         self.assertEqual(
@@ -9479,7 +9552,8 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertEqual(strong["contractor"]["sample_size"], 7)
         self.assertGreater(Decimal(strong["weights"]["contractor"]), Decimal(small["weights"]["contractor"]))
         self.assertGreater(Decimal(strong["weights"]["contractor"]), Decimal("0.40"))
-        self.assertEqual(strong["source_type"], "platform_plus_contractor")
+        self.assertGreater(Decimal(strong["weights"]["regional"]), Decimal("0.00"))
+        self.assertEqual(strong["source_type"], "blended_all")
 
         self.assertGreater(Decimal(strong["pricing_range"]["high"]), Decimal(strong["pricing_range"]["low"]))
         self.assertGreater(strong["duration_range"]["high"], strong["duration_range"]["low"])
@@ -9495,6 +9569,8 @@ class ProjectLearningFoundationTests(TestCase):
             "template_name": "Kitchen Remodel Template Clean",
             "template_used": "Kitchen Remodel Template Clean",
             "scope_mode": "install_removal",
+            "region_state": "TX",
+            "region_city": "Austin",
         }
         noisy_context = dict(clean_context, template_name="Kitchen Remodel Template Noisy", template_used="Kitchen Remodel Template Noisy")
 
@@ -9522,11 +9598,168 @@ class ProjectLearningFoundationTests(TestCase):
 
         self.assertEqual(clean["contractor"]["sample_size"], 8)
         self.assertEqual(noisy["contractor"]["sample_size"], 8)
-        self.assertEqual(clean["source_type"], "platform_plus_contractor")
-        self.assertEqual(noisy["source_type"], "platform_plus_contractor")
+        self.assertEqual(clean["source_type"], "blended_all")
+        self.assertEqual(noisy["source_type"], "blended_all")
         self.assertGreater(Decimal(clean["weights"]["contractor"]), Decimal(noisy["weights"]["contractor"]))
         self.assertLess(Decimal(noisy["weights"]["contractor"]), Decimal(clean["weights"]["contractor"]))
         self.assertLess(Decimal(noisy["weights"]["contractor"]), Decimal("0.40"))
+
+    def test_regional_benchmark_aggregate_builds_from_outcome_snapshots(self):
+        for idx in range(5):
+            self._seed_regional_outcome_snapshot(
+                region_state="TX",
+                region_city="Austin",
+                template_used="Kitchen Remodel Template Austin",
+                total_project_value=Decimal("6400.00") + Decimal(str(idx * 120)),
+                actual_duration_days=5 + (idx % 2),
+                milestone_count=4,
+            )
+        created = rebuild_regional_benchmark_aggregates()
+
+        self.assertGreater(created, 0)
+        aggregate = RegionalBenchmarkAggregate.objects.get(
+            region_key="US-TX-AUSTIN",
+            project_family_key="kitchen_remodel",
+            scope_mode="install_removal",
+            template_used="Kitchen Remodel Template Austin",
+        )
+        self.assertEqual(aggregate.sample_size, 5)
+        self.assertEqual(aggregate.region_label, "Austin, TX")
+        self.assertEqual(aggregate.region_granularity, "city")
+        self.assertGreater(Decimal(aggregate.p50_project_value), Decimal("0.00"))
+
+    def test_blended_benchmark_uses_regional_data_when_contractor_history_missing(self):
+        for idx in range(6):
+            self._seed_regional_outcome_snapshot(
+                region_state="TX",
+                region_city="Austin",
+                template_used="Kitchen Remodel Template Regional",
+                total_project_value=Decimal("7000.00") + Decimal(str(idx * 80)),
+                actual_duration_days=5 + (idx % 2),
+                milestone_count=4,
+            )
+        rebuild_regional_benchmark_aggregates()
+
+        context = {
+            "project_family_key": "kitchen_remodel",
+            "project_type": "Remodel",
+            "project_subtype": "Kitchen Cabinet Installation",
+            "project_scope_summary": "Kitchen cabinet installation request involving removal of existing cabinets and backsplash work.",
+            "template_name": "Kitchen Remodel Template Regional",
+            "template_used": "Kitchen Remodel Template Regional",
+            "scope_mode": "install_removal",
+            "region_state": "TX",
+            "region_city": "Austin",
+        }
+
+        benchmark = get_blended_benchmark(context, self.other_contractor.id)
+        self.assertEqual(benchmark["source_type"], "blended_platform_regional")
+        self.assertEqual(benchmark["contractor"]["sample_size"], 0)
+        self.assertGreater(Decimal(benchmark["weights"]["regional"]), Decimal("0.00"))
+        self.assertEqual(benchmark["regional"]["sample_size"], 6)
+
+    def test_high_dispute_regional_history_reduces_weight(self):
+        for idx in range(6):
+            self._seed_regional_outcome_snapshot(
+                region_state="TX",
+                region_city="Austin",
+                template_used="Kitchen Remodel Template Clean Region",
+                total_project_value=Decimal("6800.00") + Decimal(str(idx * 90)),
+                actual_duration_days=5,
+                milestone_count=4,
+                dispute_flag=False,
+            )
+        for idx in range(6):
+            self._seed_regional_outcome_snapshot(
+                region_state="FL",
+                region_city="Miami",
+                template_used="Kitchen Remodel Template Noisy Region",
+                total_project_value=Decimal("6800.00") + Decimal(str(idx * 90)),
+                actual_duration_days=5,
+                milestone_count=4,
+                dispute_flag=idx < 4,
+                amendment_count=1 if idx < 4 else 0,
+            )
+        rebuild_regional_benchmark_aggregates()
+
+        clean_context = {
+            "project_family_key": "kitchen_remodel",
+            "project_type": "Remodel",
+            "project_subtype": "Kitchen Cabinet Installation",
+            "project_scope_summary": "Kitchen cabinet installation request involving removal of existing cabinets and backsplash work.",
+            "template_name": "Kitchen Remodel Template Clean Region",
+            "template_used": "Kitchen Remodel Template Clean Region",
+            "scope_mode": "install_removal",
+            "region_state": "TX",
+            "region_city": "Austin",
+        }
+        noisy_context = dict(clean_context, template_name="Kitchen Remodel Template Noisy Region", template_used="Kitchen Remodel Template Noisy Region", region_state="FL", region_city="Miami")
+
+        clean = get_blended_benchmark(clean_context, self.other_contractor.id)
+        noisy = get_blended_benchmark(noisy_context, self.other_contractor.id)
+
+        self.assertGreater(Decimal(clean["weights"]["regional"]), Decimal(noisy["weights"]["regional"]))
+        self.assertLess(Decimal(noisy["weights"]["regional"]), Decimal("0.25"))
+
+    def test_regional_blend_clamps_extreme_outliers(self):
+        SeedBenchmarkProfile.objects.create(
+            benchmark_key="remodel:kitchen_cabinet_installation:tx:austin",
+            benchmark_match_key="remodel:kitchen_cabinet_installation",
+            project_type="Remodel",
+            project_subtype="Kitchen Cabinet Installation",
+            region_state="TX",
+            region_city="Austin",
+            normalized_region_key="US-TX-AUSTIN",
+            base_price_low=Decimal("12000.00"),
+            base_price_high=Decimal("18000.00"),
+            base_duration_days_low=5,
+            base_duration_days_high=8,
+            default_milestone_count=4,
+        )
+        platform = get_blended_benchmark(
+            {
+                "project_family_key": "kitchen_remodel",
+                "project_type": "Remodel",
+                "project_subtype": "Kitchen Cabinet Installation",
+                "project_scope_summary": "Kitchen cabinet installation request involving removal of existing cabinets and backsplash work.",
+                "template_name": "Kitchen Remodel Template Clamp",
+                "template_used": "Kitchen Remodel Template Clamp",
+                "scope_mode": "install_removal",
+                "region_state": "TX",
+                "region_city": "Austin",
+            },
+            self.other_contractor.id,
+        )
+
+        for idx in range(6):
+            self._seed_regional_outcome_snapshot(
+                region_state="TX",
+                region_city="Austin",
+                template_used="Kitchen Remodel Template Clamp",
+                total_project_value=Decimal("100000.00") + Decimal(str(idx * 5000)),
+                actual_duration_days=12 + idx,
+                milestone_count=6,
+            )
+        rebuild_regional_benchmark_aggregates()
+
+        clamped = get_blended_benchmark(
+            {
+                "project_family_key": "kitchen_remodel",
+                "project_type": "Remodel",
+                "project_subtype": "Kitchen Cabinet Installation",
+                "project_scope_summary": "Kitchen cabinet installation request involving removal of existing cabinets and backsplash work.",
+                "template_name": "Kitchen Remodel Template Clamp",
+                "template_used": "Kitchen Remodel Template Clamp",
+                "scope_mode": "install_removal",
+                "region_state": "TX",
+                "region_city": "Austin",
+            },
+            self.other_contractor.id,
+        )
+
+        self.assertEqual(clamped["source_type"], "blended_platform_regional")
+        self.assertLessEqual(Decimal(clamped["pricing_range"]["high"]), Decimal(platform["pricing_range"]["high"]) * Decimal("1.75"))
+        self.assertGreaterEqual(Decimal(clamped["pricing_range"]["low"]), Decimal(platform["pricing_range"]["low"]) * Decimal("0.60"))
 
     def test_project_intelligence_orchestrator_matches_intake_and_agreement_paths(self):
         profile = ContractorPublicProfile.objects.create(
@@ -9543,6 +9776,8 @@ class ProjectLearningFoundationTests(TestCase):
             initiated_by="homeowner",
             status="submitted",
             customer_name="Unified Prospect",
+            project_city="Austin",
+            project_state="TX",
             accomplishment_text="Need kitchen cabinets installed.",
             ai_project_title="Kitchen cabinet install",
             ai_project_type="Installation",
@@ -9574,6 +9809,7 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertEqual(intake_bundle["suggested_plan"]["project_scope_summary"], agreement_bundle["suggested_plan"]["project_scope_summary"])
         self.assertEqual(intake_bundle["suggested_plan"]["recommended_project_type"], agreement_bundle["suggested_plan"]["recommended_project_type"])
         self.assertEqual(intake_bundle["suggested_plan"]["suggested_workflow"], agreement_bundle["suggested_plan"]["suggested_workflow"])
+        self.assertEqual(intake_bundle["normalized_input"]["region_context"], agreement_bundle["normalized_input"]["region_context"])
 
     def test_project_intelligence_orchestrator_uses_template_context(self):
         template = ProjectTemplate.objects.create(

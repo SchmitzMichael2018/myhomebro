@@ -8,6 +8,7 @@ from projects.services.project_intelligence import build_project_intelligence_co
 from projects.services.project_plan_suggestions import build_project_plan_suggestion
 from projects.services.estimation_engine import build_project_estimate
 from projects.services.project_quantity import build_quantity_context
+from projects.services.regions import build_region_context, build_region_context_from_key
 
 
 def _safe_text(value: Any) -> str:
@@ -152,6 +153,33 @@ def _normalize_project_payload(input_payload: Any) -> dict[str, Any]:
             family_key=_safe_text(_safe_dict(source_analysis).get("project_family_key")),
         )
 
+    region_country = _safe_text(payload.get("region_country") or "US") or "US"
+    region_state = _safe_text(payload.get("region_state"))
+    region_city = _safe_text(payload.get("region_city"))
+    if not region_state and intake is not None:
+        region_state = _safe_text(getattr(intake, "project_state", ""))
+    if not region_city and intake is not None:
+        region_city = _safe_text(getattr(intake, "project_city", ""))
+    if not region_state and agreement is not None:
+        region_state = _safe_text(getattr(agreement, "project_address_state", "")) or _safe_text(
+            getattr(getattr(agreement, "project", None), "project_state", "")
+        )
+    if not region_city and agreement is not None:
+        region_city = _safe_text(getattr(agreement, "project_address_city", "")) or _safe_text(
+            getattr(getattr(agreement, "project", None), "project_city", "")
+        )
+    if not region_state and lead is not None:
+        region_state = _safe_text(getattr(lead, "state", ""))
+    if not region_city and lead is not None:
+        region_city = _safe_text(getattr(lead, "city", ""))
+    template_region_key = _safe_text(getattr(template, "normalized_region_key", ""))
+    if template_region_key:
+        template_region = build_region_context_from_key(template_region_key)
+        region_state = region_state or _safe_text(template_region.get("state", ""))
+        region_city = region_city or _safe_text(template_region.get("city", ""))
+        region_country = region_country or _safe_text(template_region.get("country", "")) or "US"
+    region_context = build_region_context(country=region_country, state=region_state, city=region_city)
+
     contractor = payload.get("contractor") or getattr(intake, "contractor", None) or getattr(agreement, "contractor", None) or getattr(lead, "contractor", None)
 
     return {
@@ -171,6 +199,10 @@ def _normalize_project_payload(input_payload: Any) -> dict[str, Any]:
         "project_timeline_days": project_timeline_days,
         "photo_count": photo_count,
         "quantity_context": quantity_context,
+        "region_country": region_country,
+        "region_state": region_state,
+        "region_city": region_city,
+        "region_context": region_context,
         "source_analysis": source_analysis,
         "template_id": payload.get("template_id") or getattr(template, "id", None) or getattr(agreement, "selected_template_id", None) or _safe_dict(source_analysis).get("template_id"),
         "template_name": _safe_text(payload.get("template_name") or getattr(template, "name", "") or _safe_dict(source_analysis).get("template_name")),
@@ -239,6 +271,9 @@ def build_project_intelligence(input_payload: Any) -> dict[str, Any]:
         recommended_template_name=_safe_text(analysis.get("template_name")),
         selected_template_id=analysis.get("template_id"),
         contractor_id=getattr(normalized.get("contractor"), "id", None),
+        region_state=normalized["region_state"],
+        region_city=normalized["region_city"],
+        region_country=normalized["region_country"],
     )
 
     estimate_preview = None
@@ -256,6 +291,10 @@ def build_project_intelligence(input_payload: Any) -> dict[str, Any]:
             "measurement_handling": normalized["measurement_handling"],
             "photo_count": normalized["photo_count"],
             "quantity_context": normalized["quantity_context"],
+            "region_country": normalized["region_country"],
+            "region_state": normalized["region_state"],
+            "region_city": normalized["region_city"],
+            "region_context": normalized["region_context"],
             "template_id": normalized["template_id"],
             "template_name": normalized["template_name"],
         },
@@ -274,5 +313,9 @@ def build_project_intelligence(input_payload: Any) -> dict[str, Any]:
             "project_family_label": analysis.get("project_family_label", ""),
             "template_id": normalized["template_id"],
             "quantity_context": normalized["quantity_context"],
+            "region_country": normalized["region_country"],
+            "region_state": normalized["region_state"],
+            "region_city": normalized["region_city"],
+            "region_context": normalized["region_context"],
         },
     }

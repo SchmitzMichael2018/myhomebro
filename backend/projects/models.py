@@ -2304,6 +2304,7 @@ from .models_learning import (
     AgreementOutcomeSnapshot,
     AgreementOutcomeMilestoneSnapshot,
     AgreementProposalSnapshot,
+    RegionalBenchmarkAggregate,
     MilestoneBenchmarkAggregate,
     ProjectBenchmarkAggregate,
 )  # noqa: E402,F401

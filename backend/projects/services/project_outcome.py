@@ -11,6 +11,7 @@ from django.utils import timezone
 from projects.models import Agreement, InvoiceStatus, ProjectStatus
 from projects.models_learning import ProjectOutcomeSnapshot
 from projects.services.project_intelligence_orchestrator import build_project_intelligence
+from projects.services.regions import build_region_context
 
 
 def _safe_text(value: Any) -> str:
@@ -76,6 +77,22 @@ def _agreement_completed_date(agreement: Agreement) -> date | None:
     if candidate_dates:
         return max(candidate_dates)
     return _date_only(getattr(agreement, "completed_at", None)) or _date_only(getattr(agreement, "updated_at", None))
+
+
+def _agreement_region_context(agreement: Agreement) -> dict[str, str]:
+    project = getattr(agreement, "project", None)
+    source_lead = getattr(agreement, "source_lead", None)
+    city = _safe_text(getattr(agreement, "project_address_city", ""))
+    state = _safe_text(getattr(agreement, "project_address_state", ""))
+    if not city:
+        city = _safe_text(getattr(project, "project_city", ""))
+    if not state:
+        state = _safe_text(getattr(project, "project_state", ""))
+    if not city and source_lead is not None:
+        city = _safe_text(getattr(source_lead, "city", ""))
+    if not state and source_lead is not None:
+        state = _safe_text(getattr(source_lead, "state", ""))
+    return build_region_context(country="US", state=state, city=city)
 
 
 def _milestone_payload(agreement: Agreement, milestone) -> dict[str, Any]:
@@ -184,6 +201,7 @@ def _final_project_state(agreement: Agreement, bundle: dict[str, Any], trigger: 
 def capture_project_outcome_snapshot(agreement: Agreement | int, *, trigger: str = "completed") -> ProjectOutcomeSnapshot:
     if isinstance(agreement, int):
         agreement = Agreement.objects.select_related(
+            "project",
             "contractor",
             "homeowner",
             "selected_template",
@@ -202,6 +220,7 @@ def capture_project_outcome_snapshot(agreement: Agreement | int, *, trigger: str
     suggested_plan = _safe_dict(bundle.get("suggested_plan"))
     source_metadata = _safe_dict(bundle.get("source_metadata"))
     estimate_preview = _safe_dict(bundle.get("estimate_preview"))
+    region_context = _agreement_region_context(agreement)
 
     source_lead = getattr(agreement, "source_lead", None)
     if source_lead is not None:
@@ -226,6 +245,9 @@ def capture_project_outcome_snapshot(agreement: Agreement | int, *, trigger: str
         "project_family_label": _safe_text(suggested_plan.get("project_family_label") or analysis.get("project_family_label")),
         "scope_mode": _safe_text(source_metadata.get("scope_mode") or suggested_plan.get("source_metadata", {}).get("scope_mode")),
         "template_used": template_used,
+        "region_key": _safe_text(region_context.get("region_key")),
+        "region_label": _safe_text(region_context.get("region_label")),
+        "region_granularity": _safe_text(region_context.get("region_granularity")) or "unknown",
         "original_intelligence_payload": bundle,
         "original_suggested_plan": suggested_plan,
         "final_project_state": _final_project_state(agreement, bundle, trigger),
@@ -246,9 +268,11 @@ def capture_project_outcome_snapshot(agreement: Agreement | int, *, trigger: str
     )
     try:
         from projects.services.contractor_benchmarks import rebuild_contractor_benchmark_aggregates
+        from projects.services.regional_benchmarks import rebuild_regional_benchmark_aggregates
 
         if getattr(agreement, "contractor_id", None):
             rebuild_contractor_benchmark_aggregates(contractor_ids=[int(agreement.contractor_id)])
+        rebuild_regional_benchmark_aggregates()
     except Exception:
         pass
     return snapshot

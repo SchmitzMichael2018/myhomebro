@@ -31,6 +31,7 @@ try:
         AgreementOutcomeMilestoneSnapshot,
         MilestoneBenchmarkAggregate,
         ProjectBenchmarkAggregate,
+        RegionalBenchmarkAggregate,
     )
 except Exception:  # pragma: no cover
     Skill = Contractor = Homeowner = Project = Agreement = AgreementWarranty = None
@@ -38,7 +39,7 @@ except Exception:  # pragma: no cover
     Milestone = MilestoneFile = MilestoneComment = None
     PublicContractorLead = None
     Invoice = Expense = AgreementAmendment = None
-    ProjectOutcomeSnapshot = ContractorBenchmarkAggregate = AgreementOutcomeSnapshot = AgreementOutcomeMilestoneSnapshot = MilestoneBenchmarkAggregate = ProjectBenchmarkAggregate = None
+    ProjectOutcomeSnapshot = ContractorBenchmarkAggregate = AgreementOutcomeSnapshot = AgreementOutcomeMilestoneSnapshot = MilestoneBenchmarkAggregate = ProjectBenchmarkAggregate = RegionalBenchmarkAggregate = None
 
 # Optional/independent models (guarded with try so admin doesn’t break)
 try:
@@ -1043,6 +1044,31 @@ if ProjectBenchmarkAggregate is not None:
             "contractor__business_name",
         )
         readonly_fields = ("updated_at",)
+
+
+if RegionalBenchmarkAggregate is not None:
+    @admin.register(RegionalBenchmarkAggregate)
+    class RegionalBenchmarkAggregateAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "region_key",
+            "region_granularity",
+            "project_family_key",
+            "scope_mode",
+            "template_used",
+            "sample_size",
+            "avg_project_value",
+            "avg_duration_days",
+            "last_updated",
+        )
+        list_filter = ("region_granularity", "project_family_key", "scope_mode")
+        search_fields = (
+            "region_key",
+            "region_label",
+            "project_family_key",
+            "template_used",
+        )
+        readonly_fields = ("last_updated",)
 
 
 if MilestoneBenchmarkAggregate is not None:

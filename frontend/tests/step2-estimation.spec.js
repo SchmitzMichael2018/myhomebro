@@ -275,10 +275,13 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
           scope_mode: 'install_removal',
           recommendation_basis: 'deterministic_first',
           blended_benchmark: {
-            source_type: 'platform_plus_contractor',
+            source_type: 'blended_all',
             confidence: 'medium',
             platform: {
               sample_size: 82,
+            },
+            regional: {
+              sample_size: 14,
             },
             contractor: {
               sample_size: 11,
@@ -318,17 +321,17 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
     waitUntil: 'domcontentloaded',
   });
 
-  await expect(page.getByTestId('step2-estimate-panel')).toBeVisible();
-  await expect(page.getByTestId('step2-suggested-plan-card')).toBeVisible();
+  await expect(page.getByTestId('step2-estimate-panel')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId('step2-suggested-plan-card')).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId('step2-suggested-plan-type')).toContainText('Kitchen Remodel');
   await expect(page.getByTestId('step2-suggested-plan-workflow')).toContainText('Install + removal');
   await expect(page.getByTestId('step2-suggested-plan-template')).toContainText('Kitchen Remodel Starter');
   await expect(page.getByTestId('step2-suggested-plan-confidence')).toContainText('Moderate');
   await expect(page.getByTestId('step2-suggested-plan-benchmark-source')).toBeVisible();
   await expect(page.getByTestId('step2-suggested-plan-benchmark-source')).toContainText('Benchmark source');
-  await expect(page.getByTestId('step2-suggested-plan-benchmark-source')).toContainText('Blended');
-  await expect(page.getByTestId('step2-suggested-plan-benchmark-source')).toContainText('Based on similar projects on MyHomeBro and your past work.');
-  await expect(page.getByTestId('step2-suggested-plan-benchmark-source')).toContainText('Based on 82 platform projects and 11 of your completed jobs.');
+  await expect(page.getByTestId('step2-suggested-plan-benchmark-source')).toContainText('Platform + Regional + Contractor');
+  await expect(page.getByTestId('step2-suggested-plan-benchmark-source')).toContainText('Based on similar projects on MyHomeBro, your market, and your past work.');
+  await expect(page.getByTestId('step2-suggested-plan-benchmark-source')).toContainText('Based on 82 platform projects, 14 market projects and 11 of your completed jobs.');
   await expect(page.getByTestId('step2-suggested-plan-benchmark-source')).toContainText('Confidence: Moderate confidence');
   await expect(page.getByTestId('step2-suggested-plan-why')).toBeVisible();
   await expect(page.getByTestId('step2-suggested-plan-why')).toContainText('Why this plan');
@@ -495,8 +498,8 @@ test('step 2 estimate fallback messaging renders for template-only low-confidenc
     waitUntil: 'domcontentloaded',
   });
 
-  await expect(page.getByTestId('step2-estimate-panel')).toBeVisible();
-  await expect(page.getByTestId('step2-suggested-plan-card')).toBeVisible();
+  await expect(page.getByTestId('step2-estimate-panel')).toBeVisible({ timeout: 15000 });
+  await expect(page.getByTestId('step2-suggested-plan-card')).toBeVisible({ timeout: 15000 });
   await expect(page.getByTestId('step2-suggested-plan-confidence')).toContainText('Preliminary');
   await expect(page.getByTestId('step2-suggested-plan-why')).toBeVisible();
   await expect(

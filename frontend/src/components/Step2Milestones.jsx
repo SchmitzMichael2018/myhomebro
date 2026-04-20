@@ -242,9 +242,12 @@ function explainRangeVariability(preview) {
 
 function formatBenchmarkSourceLabel(sourceType) {
   const source = safeStr(sourceType).toLowerCase();
-  if (source === "platform_only") return "Platform";
-  if (source === "platform_plus_contractor") return "Blended";
-  if (source === "contractor_only") return "Contractor";
+  if (source === "platform" || source === "platform_only") return "Platform";
+  if (source === "regional") return "Regional";
+  if (source === "contractor" || source === "contractor_only") return "Contractor";
+  if (source === "blended_platform_regional") return "Platform + Regional";
+  if (source === "blended_platform_contractor" || source === "platform_plus_contractor") return "Platform + Contractor";
+  if (source === "blended_all") return "Platform + Regional + Contractor";
   return source ? source.replace(/_/g, " ") : "Platform";
 }
 
@@ -252,21 +255,35 @@ function explainPlanBenchmarkSource(plan) {
   const blended = plan?.source_metadata?.blended_benchmark || {};
   const sourceType = safeStr(blended?.source_type).toLowerCase();
   const platformCount = Number(blended?.platform?.sample_size || 0);
+  const regionalCount = Number(blended?.regional?.sample_size || 0);
   const contractorCount = Number(blended?.contractor?.sample_size || 0);
 
   let explanation = "Based on template defaults and current project details.";
-  if (sourceType === "platform_plus_contractor") {
+  if (sourceType === "blended_all") {
+    explanation = "Based on similar projects on MyHomeBro, your market, and your past work.";
+  } else if (sourceType === "blended_platform_regional") {
+    explanation = "Based on similar projects on MyHomeBro and your market.";
+  } else if (sourceType === "blended_platform_contractor" || sourceType === "platform_plus_contractor") {
     explanation = "Based on similar projects on MyHomeBro and your past work.";
-  } else if (sourceType === "contractor_only") {
+  } else if (sourceType === "regional") {
+    explanation = "Based on similar projects in your market.";
+  } else if (sourceType === "contractor" || sourceType === "contractor_only") {
     explanation = "Based on your past work for similar projects.";
-  } else if (sourceType === "platform_only") {
+  } else if (sourceType === "platform" || sourceType === "platform_only") {
     explanation = "Based on similar projects on MyHomeBro.";
   }
 
   const countBits = [];
   if (platformCount > 0) countBits.push(`${platformCount} platform project${platformCount === 1 ? "" : "s"}`);
+  if (regionalCount > 0) countBits.push(`${regionalCount} market project${regionalCount === 1 ? "" : "s"}`);
   if (contractorCount > 0) countBits.push(`${contractorCount} of your completed job${contractorCount === 1 ? "" : "s"}`);
-  const countText = countBits.length ? `Based on ${countBits.join(" and ")}.` : "";
+  const countText = countBits.length
+    ? `Based on ${
+        countBits.length === 1
+          ? countBits[0]
+          : `${countBits.slice(0, -1).join(", ")} and ${countBits[countBits.length - 1]}`
+      }.`
+    : "";
 
   return {
     sourceType: formatBenchmarkSourceLabel(sourceType),

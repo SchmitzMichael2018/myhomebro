@@ -10,6 +10,7 @@ from projects.services.project_intelligence import (
 )
 from projects.services.contractor_benchmarks import get_blended_benchmark
 from projects.services.project_quantity import build_quantity_adjustment, build_quantity_context
+from projects.services.regions import build_region_context
 
 
 def _safe_text(value: Any) -> str:
@@ -623,6 +624,9 @@ def build_project_plan_suggestion(
     recommended_template_name: str = "",
     selected_template_id: Any = None,
     contractor_id: Any = None,
+    region_state: str = "",
+    region_city: str = "",
+    region_country: str = "US",
 ) -> dict[str, Any]:
     family = infer_project_intelligence(
         project_title=project_title,
@@ -652,6 +656,9 @@ def build_project_plan_suggestion(
             clarification_answers=clarification_answers,
             family_key=family_key,
         )
+    region_context = build_region_context(country=region_country, state=region_state, city=region_city)
+    if region_context.get("region_granularity") == "unknown":
+        region_context = {}
 
     blended_benchmark = get_blended_benchmark(
         {
@@ -665,6 +672,9 @@ def build_project_plan_suggestion(
             "selected_template_id": selected_template_id,
             "template_used": template_name or recommended_template_name,
             "scope_mode": scope_mode,
+            "region_state": region_state,
+            "region_city": region_city,
+            "region_country": region_country,
         },
         contractor_id=_safe_int(contractor_id, 0) or None,
     )
@@ -909,12 +919,14 @@ def build_project_plan_suggestion(
             "quantity_context": quantity_context,
             "quantity_adjustment": quantity_adjustment,
             "blended_benchmark": blended_benchmark,
+            "region_context": region_context,
         },
         "source_metadata": {
             "family_key": family_key,
             "scope_mode": scope_mode,
             "project_type": _safe_text(project_type),
             "project_subtype": _safe_text(project_subtype),
+            "region_context": region_context,
             "clarification_count": clarification_count,
             "photo_count": int(photo_count or 0),
             "benchmark_source": _safe_text(benchmark_source),
