@@ -220,6 +220,7 @@ def build_project_intelligence(input_payload: Any) -> dict[str, Any]:
         suggested_template_label=_safe_text(_safe_dict(analysis.get("recommended_setup")).get("suggested_template_label")),
         recommended_template_name=_safe_text(analysis.get("template_name")),
         selected_template_id=analysis.get("template_id"),
+        contractor_id=getattr(normalized.get("contractor"), "id", None),
     )
 
     estimate_preview = None

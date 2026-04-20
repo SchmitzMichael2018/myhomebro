@@ -26,6 +26,7 @@ try:
         Expense,
         AgreementAmendment,
         ProjectOutcomeSnapshot,
+        ContractorBenchmarkAggregate,
         AgreementOutcomeSnapshot,
         AgreementOutcomeMilestoneSnapshot,
         MilestoneBenchmarkAggregate,
@@ -37,7 +38,7 @@ except Exception:  # pragma: no cover
     Milestone = MilestoneFile = MilestoneComment = None
     PublicContractorLead = None
     Invoice = Expense = AgreementAmendment = None
-    ProjectOutcomeSnapshot = AgreementOutcomeSnapshot = AgreementOutcomeMilestoneSnapshot = MilestoneBenchmarkAggregate = ProjectBenchmarkAggregate = None
+    ProjectOutcomeSnapshot = ContractorBenchmarkAggregate = AgreementOutcomeSnapshot = AgreementOutcomeMilestoneSnapshot = MilestoneBenchmarkAggregate = ProjectBenchmarkAggregate = None
 
 # Optional/independent models (guarded with try so admin doesn’t break)
 try:
@@ -972,6 +973,32 @@ if ProjectOutcomeSnapshot is not None:
             "template_used",
         )
         readonly_fields = ("created_at",)
+
+
+if ContractorBenchmarkAggregate is not None:
+    @admin.register(ContractorBenchmarkAggregate)
+    class ContractorBenchmarkAggregateAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "contractor",
+            "project_family_key",
+            "scope_mode",
+            "template_used",
+            "sample_size",
+            "avg_project_value",
+            "p50_project_value",
+            "avg_duration_days",
+            "dispute_rate",
+            "amendment_rate",
+            "last_updated",
+        )
+        list_filter = ("project_family_key", "scope_mode", "template_used")
+        search_fields = (
+            "contractor__business_name",
+            "project_family_key",
+            "template_used",
+        )
+        readonly_fields = ("last_updated",)
 
 
 if AgreementOutcomeMilestoneSnapshot is not None:

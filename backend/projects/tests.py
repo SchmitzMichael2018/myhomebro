@@ -56,6 +56,7 @@ from projects.models import (
     MilestonePayoutStatus,
     MaintenanceStatus,
     MilestoneBenchmarkAggregate,
+    ContractorBenchmarkAggregate,
     Notification,
     Project,
     ProjectBenchmarkAggregate,
@@ -86,6 +87,10 @@ from projects.services.project_learning import (
     rebuild_project_benchmarks,
 )
 from projects.services.project_outcome import capture_project_outcome_snapshot
+from projects.services.contractor_benchmarks import (
+    get_blended_benchmark,
+    rebuild_contractor_benchmark_aggregates,
+)
 from projects.services.proposal_learning import (
     build_proposal_draft,
     capture_agreement_proposal_snapshot,
@@ -8985,6 +8990,53 @@ class ProjectLearningFoundationTests(TestCase):
         )
         return agreement
 
+    def _seed_contractor_benchmark_snapshot(
+        self,
+        *,
+        template_used: str,
+        total_project_value: Decimal,
+        actual_duration_days: int,
+        milestone_count: int,
+        dispute_flag: bool = False,
+        amendment_count: int = 0,
+    ):
+        agreement = self._create_completed_agreement(
+            total_cost=total_project_value,
+            actual_total=total_project_value,
+            status=ProjectStatus.COMPLETED,
+            use_template=True,
+        )
+        snapshot = capture_project_outcome_snapshot(agreement)
+        snapshot.project_family_key = "kitchen_remodel"
+        snapshot.project_family_label = "Kitchen Remodel"
+        snapshot.scope_mode = "install_removal"
+        snapshot.template_used = template_used
+        snapshot.total_project_value = total_project_value
+        snapshot.actual_duration_days = actual_duration_days
+        snapshot.milestone_count = milestone_count
+        snapshot.dispute_flag = dispute_flag
+        snapshot.amendment_count = amendment_count
+        snapshot.completion_status = ProjectStatus.COMPLETED
+        snapshot.estimated_value_range = {"low": str(total_project_value * Decimal("0.90")), "high": str(total_project_value * Decimal("1.10"))}
+        snapshot.estimated_duration_range = {"low": max(actual_duration_days - 1, 1), "high": actual_duration_days + 1}
+        snapshot.save(
+            update_fields=[
+                "project_family_key",
+                "project_family_label",
+                "scope_mode",
+                "template_used",
+                "total_project_value",
+                "actual_duration_days",
+                "milestone_count",
+                "dispute_flag",
+                "amendment_count",
+                "completion_status",
+                "estimated_value_range",
+                "estimated_duration_range",
+            ]
+        )
+        return snapshot
+
     def test_snapshot_creation_when_agreement_becomes_completed(self):
         agreement = self._create_completed_agreement()
 
@@ -9253,6 +9305,106 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertNotEqual(plan["suggested_budget_high"], "0.00")
         self.assertTrue(plan["explanation_points"])
         self.assertTrue(plan["milestones"])
+
+    def test_contractor_benchmark_blends_platform_and_history(self):
+        context = {
+            "project_family_key": "kitchen_remodel",
+            "project_type": "Remodel",
+            "project_subtype": "Kitchen Cabinet Installation",
+            "project_scope_summary": "Kitchen cabinet installation request involving removal of existing cabinets and backsplash work.",
+            "template_name": "Kitchen Remodel Template",
+            "template_used": "Kitchen Remodel Template",
+            "scope_mode": "install_removal",
+        }
+
+        platform_only = get_blended_benchmark(context, self.contractor.id)
+        self.assertEqual(platform_only["source_type"], "platform_only")
+        self.assertEqual(platform_only["weights"]["contractor"], "0.00")
+
+        small_snapshot = self._seed_contractor_benchmark_snapshot(
+            template_used="Kitchen Remodel Template Small",
+            total_project_value=Decimal("6200.00"),
+            actual_duration_days=5,
+            milestone_count=4,
+        )
+        rebuild_contractor_benchmark_aggregates(contractor_ids=[self.contractor.id])
+        small_context = dict(context, template_name="Kitchen Remodel Template Small", template_used="Kitchen Remodel Template Small")
+        small = get_blended_benchmark(small_context, self.contractor.id)
+        self.assertEqual(small["contractor"]["sample_size"], 1)
+        self.assertEqual(small["source_type"], "platform_plus_contractor")
+        self.assertGreater(Decimal(small["weights"]["contractor"]), Decimal("0.00"))
+        self.assertLessEqual(Decimal(small["weights"]["contractor"]), Decimal("0.20"))
+        self.assertEqual(
+            ContractorBenchmarkAggregate.objects.get(
+                contractor=self.contractor,
+                project_family_key="kitchen_remodel",
+                scope_mode="install_removal",
+                template_used="Kitchen Remodel Template Small",
+            ).sample_size,
+            1,
+        )
+
+        for idx in range(7):
+            self._seed_contractor_benchmark_snapshot(
+                template_used="Kitchen Remodel Template Strong",
+                total_project_value=Decimal("6200.00") + Decimal(str(idx * 150)),
+                actual_duration_days=5 + (idx % 2),
+                milestone_count=4,
+            )
+        rebuild_contractor_benchmark_aggregates(contractor_ids=[self.contractor.id])
+        strong_context = dict(context, template_name="Kitchen Remodel Template Strong", template_used="Kitchen Remodel Template Strong")
+        strong = get_blended_benchmark(strong_context, self.contractor.id)
+        self.assertEqual(strong["contractor"]["sample_size"], 7)
+        self.assertGreater(Decimal(strong["weights"]["contractor"]), Decimal(small["weights"]["contractor"]))
+        self.assertGreater(Decimal(strong["weights"]["contractor"]), Decimal("0.40"))
+        self.assertEqual(strong["source_type"], "platform_plus_contractor")
+
+        self.assertGreater(Decimal(strong["pricing_range"]["high"]), Decimal(strong["pricing_range"]["low"]))
+        self.assertGreater(strong["duration_range"]["high"], strong["duration_range"]["low"])
+
+        self.assertTrue(small_snapshot.id)
+
+    def test_contractor_benchmark_high_dispute_history_reduces_weight(self):
+        clean_context = {
+            "project_family_key": "kitchen_remodel",
+            "project_type": "Remodel",
+            "project_subtype": "Kitchen Cabinet Installation",
+            "project_scope_summary": "Kitchen cabinet installation request involving removal of existing cabinets and backsplash work.",
+            "template_name": "Kitchen Remodel Template Clean",
+            "template_used": "Kitchen Remodel Template Clean",
+            "scope_mode": "install_removal",
+        }
+        noisy_context = dict(clean_context, template_name="Kitchen Remodel Template Noisy", template_used="Kitchen Remodel Template Noisy")
+
+        for idx in range(8):
+            self._seed_contractor_benchmark_snapshot(
+                template_used="Kitchen Remodel Template Clean",
+                total_project_value=Decimal("6400.00") + Decimal(str(idx * 100)),
+                actual_duration_days=5,
+                milestone_count=4,
+                dispute_flag=False,
+            )
+        for idx in range(8):
+            self._seed_contractor_benchmark_snapshot(
+                template_used="Kitchen Remodel Template Noisy",
+                total_project_value=Decimal("6400.00") + Decimal(str(idx * 100)),
+                actual_duration_days=5,
+                milestone_count=4,
+                dispute_flag=idx < 4,
+                amendment_count=1 if idx < 4 else 0,
+            )
+        rebuild_contractor_benchmark_aggregates(contractor_ids=[self.contractor.id])
+
+        clean = get_blended_benchmark(clean_context, self.contractor.id)
+        noisy = get_blended_benchmark(noisy_context, self.contractor.id)
+
+        self.assertEqual(clean["contractor"]["sample_size"], 8)
+        self.assertEqual(noisy["contractor"]["sample_size"], 8)
+        self.assertEqual(clean["source_type"], "platform_plus_contractor")
+        self.assertEqual(noisy["source_type"], "platform_plus_contractor")
+        self.assertGreater(Decimal(clean["weights"]["contractor"]), Decimal(noisy["weights"]["contractor"]))
+        self.assertLess(Decimal(noisy["weights"]["contractor"]), Decimal(clean["weights"]["contractor"]))
+        self.assertLess(Decimal(noisy["weights"]["contractor"]), Decimal("0.40"))
 
     def test_project_intelligence_orchestrator_matches_intake_and_agreement_paths(self):
         profile = ContractorPublicProfile.objects.create(

@@ -75,6 +75,51 @@ class ProjectOutcomeSnapshot(models.Model):
         return f"ProjectOutcomeSnapshot(agreement={self.agreement_id}, family={self.project_family_key})"
 
 
+class ContractorBenchmarkAggregate(models.Model):
+    contractor = models.ForeignKey(
+        "projects.Contractor",
+        on_delete=models.CASCADE,
+        related_name="contractor_benchmark_aggregates",
+    )
+    project_family_key = models.CharField(max_length=120, blank=True, default="", db_index=True)
+    scope_mode = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    template_used = models.CharField(max_length=255, blank=True, default="", db_index=True)
+
+    sample_size = models.PositiveIntegerField(default=0)
+
+    avg_project_value = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    p25_project_value = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    p50_project_value = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    p75_project_value = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+
+    avg_duration_days = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    p25_duration_days = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    p50_duration_days = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    p75_duration_days = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+
+    avg_milestone_count = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    dispute_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    amendment_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+
+    last_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-last_updated", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["contractor", "project_family_key", "scope_mode", "template_used"],
+                name="uniq_contractor_benchmark_scope_dimensions",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["contractor", "project_family_key", "scope_mode"]),
+            models.Index(fields=["contractor", "template_used"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"ContractorBenchmarkAggregate(contractor={self.contractor_id}, family={self.project_family_key})"
+
+
 class AgreementOutcomeSnapshot(models.Model):
     """
     Normalized completed-project snapshot used as the durable learning layer.

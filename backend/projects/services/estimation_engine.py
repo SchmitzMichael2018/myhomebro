@@ -11,6 +11,7 @@ from django.db.models import Q
 from projects.models import Agreement, AgreementAIScope, Milestone, ProjectBenchmarkAggregate
 from projects.models_templates import SeedBenchmarkProfile
 from projects.services.benchmark_resolution import resolve_seed_benchmark_defaults
+from projects.services.contractor_benchmarks import get_blended_benchmark
 from projects.services.regions import build_normalized_region_key
 from projects.services.project_plan_suggestions import build_project_plan_suggestion
 
@@ -873,6 +874,43 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
     )
     photo_count = _safe_int(request_snapshot.get("photo_count"), 0)
 
+    blended_benchmark = get_blended_benchmark(
+        {
+            "project_family_key": _safe_text(request_snapshot.get("project_family_key"))
+            or _safe_text(getattr(agreement, "project_type", ""))
+            or _safe_text(getattr(agreement, "project_subtype", "")),
+            "project_type": getattr(agreement, "project_type", "") or "",
+            "project_subtype": getattr(agreement, "project_subtype", "") or "",
+            "description": getattr(agreement, "description", "") or "",
+            "project_scope_summary": project_scope_summary,
+            "clarification_answers": clarification_answers,
+            "region_state": getattr(agreement, "project_address_state", "") or "",
+            "region_city": getattr(agreement, "project_address_city", "") or "",
+            "selected_template_id": getattr(agreement, "selected_template_id", None),
+            "template_name": _template_label(agreement),
+            "template_used": _template_label(agreement),
+            "scope_mode": _safe_text(request_snapshot.get("scope_mode")),
+        },
+        contractor_id=getattr(getattr(agreement, "contractor", None), "id", None),
+    )
+    blended_weight = _safe_decimal(blended_benchmark.get("weights", {}).get("contractor"), Decimal("0.00")) or Decimal("0.00")
+    blended_price_center = _safe_decimal(blended_benchmark.get("pricing_range", {}).get("center"), Decimal("0.00")) or Decimal("0.00")
+    blended_duration_center = _safe_int(blended_benchmark.get("duration_range", {}).get("center"), 0)
+    blended_milestone_count = _safe_int(blended_benchmark.get("milestone_count"), 0)
+    if blended_weight > 0:
+        adjust = min(blended_weight, Decimal("0.35"))
+        if blended_price_center > 0:
+            suggested_total_price = _money((suggested_total_price * (Decimal("1.00") - adjust)) + (blended_price_center * adjust))
+            suggested_price_low = _money(suggested_total_price * (Decimal("1.00") - range_spread))
+            suggested_price_high = _money(suggested_total_price * (Decimal("1.00") + range_spread))
+        if blended_duration_center > 0:
+            suggested_duration_days = max(
+                int(round((suggested_duration_days * float(Decimal("1.00") - adjust)) + (blended_duration_center * float(adjust)))),
+                1,
+            )
+            suggested_duration_low = max(int(round(suggested_duration_days * (1 - float(range_spread)))), 1)
+            suggested_duration_high = max(int(round(suggested_duration_days * (1 + float(range_spread)))), suggested_duration_low)
+
     milestone_suggestions = _build_milestone_suggestions(
         existing_milestones=_existing_milestones(agreement),
         seeded_defaults=list(seeded_defaults.get("milestone_defaults") or []),
@@ -902,6 +940,7 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
         benchmark_match_scope=seeded_defaults.get("match_scope") or "none",
         template_name=_template_label(agreement),
         selected_template_id=getattr(agreement, "selected_template_id", None),
+        contractor_id=getattr(getattr(agreement, "contractor", None), "id", None),
     )
 
     return {
@@ -913,6 +952,7 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
         "suggested_duration_high": suggested_duration_high,
         "suggested_milestones": milestone_suggestions,
         "milestone_suggestions": milestone_suggestions,
+        "suggested_milestone_count": blended_milestone_count or len(milestone_suggestions),
         "suggested_plan": suggested_plan,
         "price_adjustments": price_adjustments,
         "timeline_adjustments": timeline_adjustments,
@@ -937,5 +977,6 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
             "template_weight": str(template_weight.quantize(Decimal("0.01"))),
             "learned_clarification_signature": _safe_text(getattr(learned_decision.aggregate, "clarification_signature", "")),
             "region_key_used": region_key,
+            "blended_benchmark": blended_benchmark,
         },
     }

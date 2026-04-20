@@ -8,6 +8,7 @@ from projects.services.project_intelligence import (
     infer_project_intelligence,
     infer_project_scope_mode,
 )
+from projects.services.contractor_benchmarks import get_blended_benchmark
 
 
 def _safe_text(value: Any) -> str:
@@ -611,6 +612,7 @@ def build_project_plan_suggestion(
     suggested_template_label: str = "",
     recommended_template_name: str = "",
     selected_template_id: Any = None,
+    contractor_id: Any = None,
 ) -> dict[str, Any]:
     family = infer_project_intelligence(
         project_title=project_title,
@@ -629,6 +631,26 @@ def build_project_plan_suggestion(
         clarification_answers=clarification_answers,
     )
     scope_mode = infer_project_scope_mode(text=scope_text, family_key=family_key)
+
+    blended_benchmark = get_blended_benchmark(
+        {
+            "project_family_key": family_key,
+            "project_type": project_type,
+            "project_subtype": project_subtype,
+            "description": description,
+            "project_scope_summary": project_scope_summary,
+            "clarification_answers": clarification_answers,
+            "template_name": template_name or recommended_template_name,
+            "selected_template_id": selected_template_id,
+            "template_used": template_name or recommended_template_name,
+            "scope_mode": scope_mode,
+        },
+        contractor_id=_safe_int(contractor_id, 0) or None,
+    )
+    blended_price_center = _safe_decimal(blended_benchmark.get("pricing_range", {}).get("center"), Decimal("0.00")) or Decimal("0.00")
+    blended_duration_center = _safe_int(blended_benchmark.get("duration_range", {}).get("center"), 0)
+    blended_contract_weight = _safe_decimal(blended_benchmark.get("weights", {}).get("contractor"), Decimal("0.00")) or Decimal("0.00")
+    blended_milestone_count = _safe_int(blended_benchmark.get("milestone_count"), 0)
 
     setup = build_project_setup_recommendation(
         project_title=project_title,
@@ -681,6 +703,24 @@ def build_project_plan_suggestion(
         low_high = base.get("duration", (1, 4))
         duration_low = duration_low or _safe_int(low_high[0], 1)
         duration_high = duration_high or _safe_int(low_high[1], max(duration_low, 1))
+
+    blend_adjustment = min(blended_contract_weight, Decimal("0.35"))
+    if blended_price_center > 0:
+        if total_price is None or total_price <= 0:
+            total_price = blended_price_center
+        else:
+            total_price = _safe_decimal(
+                (total_price * (Decimal("1.00") - blend_adjustment)) + (blended_price_center * blend_adjustment),
+                default=total_price,
+            )
+    if blended_duration_center > 0:
+        if total_duration_days <= 0:
+            total_duration_days = blended_duration_center
+        else:
+            total_duration_days = max(
+                int(round((total_duration_days * float(Decimal("1.00") - blend_adjustment)) + (blended_duration_center * float(blend_adjustment)))),
+                1,
+            )
 
     if not confidence_level:
         confidence_level = "medium" if family_key != "general" else "low"
@@ -767,6 +807,10 @@ def build_project_plan_suggestion(
         recommended_project_type=setup_project_type,
         suggested_workflow=setup_workflow,
     )
+    if blended_benchmark.get("source_type") != "platform_only":
+        blended_reason = _safe_text(blended_benchmark.get("confidence_reasoning"))
+        if blended_reason:
+            reason_bits.append(blended_reason)
 
     return {
         "plan_version": 1,
@@ -784,6 +828,7 @@ def build_project_plan_suggestion(
         "suggested_duration_high_days": int(duration_high or 0),
         "suggested_budget_center": str(total_price.quantize(Decimal("0.01"))) if total_price is not None and total_price > 0 else "",
         "suggested_duration_days": int(total_duration_days or max(duration_high or 0, duration_low or 0, 0)),
+        "suggested_milestone_count": blended_milestone_count or len(base_rows),
         "confidence_level": confidence_level,
         "confidence_reasoning": " ".join(reason_bits).strip(),
         "explanation_points": explanation_points,
@@ -803,6 +848,7 @@ def build_project_plan_suggestion(
             "learned_benchmark_used": bool(learned_benchmark_used),
             "clarification_count": clarification_count,
             "photo_count": int(photo_count or 0),
+            "blended_benchmark": blended_benchmark,
         },
         "source_metadata": {
             "family_key": family_key,
@@ -817,5 +863,6 @@ def build_project_plan_suggestion(
             "learned_benchmark_used": bool(learned_benchmark_used),
             "recommendation_basis": "deterministic_first",
             "selected_template_id": selected_template_id,
+            "blended_benchmark": blended_benchmark,
         },
     }

@@ -2300,6 +2300,7 @@ from .models_templates import ProjectTemplate, ProjectTemplateMilestone, SeedBen
 from .models_amendment_request import AmendmentRequest  # noqa: E402,F401
 from .models_learning import (
     ProjectOutcomeSnapshot,
+    ContractorBenchmarkAggregate,
     AgreementOutcomeSnapshot,
     AgreementOutcomeMilestoneSnapshot,
     AgreementProposalSnapshot,

@@ -244,4 +244,11 @@ def capture_project_outcome_snapshot(agreement: Agreement | int, *, trigger: str
         agreement=agreement,
         defaults=payload,
     )
+    try:
+        from projects.services.contractor_benchmarks import rebuild_contractor_benchmark_aggregates
+
+        if getattr(agreement, "contractor_id", None):
+            rebuild_contractor_benchmark_aggregates(contractor_ids=[int(agreement.contractor_id)])
+    except Exception:
+        pass
     return snapshot
