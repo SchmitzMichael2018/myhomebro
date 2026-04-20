@@ -6947,6 +6947,18 @@ class BusinessDashboardInsightsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["insights"], [])
 
+    def test_business_dashboard_includes_contractor_insights_panel(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/business/contractor/summary/?range=30")
+
+        self.assertEqual(response.status_code, 200)
+        contractor_insights = response.json()["contractor_insights"]
+        self.assertIn("summary_cards", contractor_insights)
+        self.assertEqual(len(contractor_insights["summary_cards"]), 4)
+        self.assertIn("comparison_rows", contractor_insights)
+        self.assertTrue(contractor_insights["recommendations"])
+        self.assertIn("source_label", contractor_insights)
+
 
 class BusinessDashboardPerformanceTests(TestCase):
     def setUp(self):

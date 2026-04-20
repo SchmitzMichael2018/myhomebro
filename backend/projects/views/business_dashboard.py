@@ -31,6 +31,7 @@ from projects.models import (
 )
 from projects.models_project_intake import ProjectIntake
 from projects.services.business_insights import build_business_insights
+from projects.services.business_dashboard_insights import build_business_dashboard_contractor_insights
 from projects.views.payout_history import _apply_history_filters, _history_base_queryset, _serialize_payout_row
 
 
@@ -748,6 +749,9 @@ class BusinessDashboardSummaryAPIView(APIView):
                 "avg_completion_days": avg_completion_days,
             },
             "business_performance": _build_business_performance_summary(
+                contractor, start_dt, end_dt
+            ),
+            "contractor_insights": build_business_dashboard_contractor_insights(
                 contractor, start_dt, end_dt
             ),
             "by_category": category_rows,

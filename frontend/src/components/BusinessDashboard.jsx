@@ -8,6 +8,7 @@ import api from "../api";
 import DashboardGrid from "./dashboard/DashboardGrid.jsx";
 import DashboardSection from "./dashboard/DashboardSection.jsx";
 import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
+import ContractorInsightsSection from "./dashboard/ContractorInsightsSection.jsx";
 import {
   ResponsiveContainer,
   BarChart,
@@ -508,6 +509,7 @@ export default function BusinessDashboard() {
   const byCategory = payload?.by_category || [];
   const insights = payload?.insights || [];
   const priorityInsights = insights.slice(0, 3);
+  const contractorInsights = payload?.contractor_insights || null;
   const revenueSeries = payload?.revenue_series || [];
   const feeSeries = payload?.fee_series || [];
   const payoutSeries = payload?.payout_series || [];
@@ -1094,6 +1096,8 @@ export default function BusinessDashboard() {
           ) : null}
         </section>
       </DashboardSection>
+
+      <ContractorInsightsSection insights={contractorInsights} />
 
       <DashboardSection
         title="Deep Dive"
