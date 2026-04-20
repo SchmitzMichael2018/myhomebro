@@ -752,7 +752,10 @@ class BusinessDashboardSummaryAPIView(APIView):
                 contractor, start_dt, end_dt
             ),
             "contractor_insights": build_business_dashboard_contractor_insights(
-                contractor, start_dt, end_dt
+                contractor,
+                start_dt,
+                end_dt,
+                project_family_key=request.query_params.get("project_family_key", ""),
             ),
             "by_category": category_rows,
             "insights": build_business_insights(contractor, start_dt, end_dt),

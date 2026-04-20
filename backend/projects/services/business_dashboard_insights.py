@@ -12,6 +12,7 @@ from projects.services.regions import build_region_context_from_key
 
 
 RELIABLE_STATUSES = {"completed", "payment_released"}
+MIN_FAMILY_SAMPLE_SIZE = 3
 
 
 def _safe_text(value: Any) -> str:
@@ -34,6 +35,116 @@ def _safe_decimal(value: Any, default: Decimal | None = None) -> Decimal | None:
         return Decimal(str(value))
     except Exception:
         return default
+
+
+def _family_key_from_snapshot(snapshot: ProjectOutcomeSnapshot | None) -> str:
+    return _safe_text(getattr(snapshot, "project_family_key", "")) or "general"
+
+
+def _family_label_from_snapshot(snapshot: ProjectOutcomeSnapshot | None, family_key: str) -> str:
+    if snapshot is None:
+        return family_key.replace("_", " ").title()
+    return _safe_text(getattr(snapshot, "project_family_label", "")) or family_key.replace("_", " ").title()
+
+
+def _build_available_family_options(snapshots: list[ProjectOutcomeSnapshot]) -> list[dict[str, Any]]:
+    family_counts = Counter(_family_key_from_snapshot(snapshot) for snapshot in snapshots)
+    family_labels: dict[str, str] = {}
+    for snapshot in snapshots:
+        family_key = _family_key_from_snapshot(snapshot)
+        if family_key not in family_labels:
+            family_labels[family_key] = _family_label_from_snapshot(snapshot, family_key)
+
+    options: list[dict[str, Any]] = [
+        {
+            "key": "all",
+            "label": "All Projects",
+            "count": sum(family_counts.values()),
+        }
+    ]
+    for family_key, count in family_counts.most_common():
+        options.append(
+            {
+                "key": family_key,
+                "label": family_labels.get(family_key, family_key.replace("_", " ").title()),
+                "count": count,
+            }
+        )
+    return options
+
+
+def _resolve_scope_snapshots(
+    snapshots: list[ProjectOutcomeSnapshot],
+    requested_family_key: str,
+) -> tuple[list[ProjectOutcomeSnapshot], dict[str, Any]]:
+    requested = _safe_text(requested_family_key).lower()
+    all_snapshots = list(snapshots)
+    if not all_snapshots:
+        return [], {
+            "selected_family_key": "all",
+            "selected_family_label": "All Projects",
+            "effective_family_key": "general",
+            "effective_family_label": "General Project",
+            "scope_mode": "all_projects",
+            "scope_notice": "",
+        }
+
+    available_options = _build_available_family_options(all_snapshots)
+    family_keys = [option["key"] for option in available_options if option["key"] != "all"]
+    family_map = {
+        option["key"]: option
+        for option in available_options
+        if option["key"] != "all"
+    }
+
+    dominant_snapshot = _focus_snapshot(all_snapshots)
+    dominant_key = _family_key_from_snapshot(dominant_snapshot)
+    dominant_label = _family_label_from_snapshot(dominant_snapshot, dominant_key)
+
+    if requested in {"", "all"}:
+        return all_snapshots, {
+            "selected_family_key": "all",
+            "selected_family_label": "All Projects",
+            "effective_family_key": dominant_key,
+            "effective_family_label": dominant_label,
+            "scope_mode": "all_projects",
+            "scope_notice": "",
+        }
+
+    if requested not in family_keys:
+        return all_snapshots, {
+            "selected_family_key": requested,
+            "selected_family_label": requested.replace("_", " ").title() or "Project Family",
+            "effective_family_key": dominant_key,
+            "effective_family_label": dominant_label,
+            "scope_mode": "fallback_all",
+            "scope_notice": "",
+        }
+
+    family_snapshots = [
+        snapshot for snapshot in all_snapshots if _family_key_from_snapshot(snapshot) == requested
+    ]
+    if len(family_snapshots) >= MIN_FAMILY_SAMPLE_SIZE:
+        selected_option = family_map.get(requested, {})
+        return family_snapshots, {
+            "selected_family_key": requested,
+            "selected_family_label": _safe_text(selected_option.get("label")) or requested.replace("_", " ").title(),
+            "effective_family_key": requested,
+            "effective_family_label": _safe_text(selected_option.get("label")) or requested.replace("_", " ").title(),
+            "scope_mode": "family",
+            "scope_notice": "",
+        }
+
+    selected_option = family_map.get(requested, {})
+    selected_label = _safe_text(selected_option.get("label")) or requested.replace("_", " ").title()
+    return all_snapshots, {
+        "selected_family_key": requested,
+        "selected_family_label": selected_label,
+        "effective_family_key": dominant_key,
+        "effective_family_label": dominant_label,
+        "scope_mode": "fallback_all",
+        "scope_notice": f"Not enough {selected_label.lower()} data in this date range yet, so showing a broader view for now.",
+    }
 
 
 def _project_context_from_snapshot(snapshot: ProjectOutcomeSnapshot) -> dict[str, str]:
@@ -66,11 +177,9 @@ def _project_context_from_snapshot(snapshot: ProjectOutcomeSnapshot) -> dict[str
 def _focus_snapshot(snapshots: list[ProjectOutcomeSnapshot]) -> ProjectOutcomeSnapshot | None:
     if not snapshots:
         return None
-    family_counts = Counter(
-        _safe_text(getattr(snapshot, "project_family_key", "")) or "general" for snapshot in snapshots
-    )
+    family_counts = Counter(_family_key_from_snapshot(snapshot) for snapshot in snapshots)
     dominant_family = family_counts.most_common(1)[0][0]
-    family_snapshots = [snapshot for snapshot in snapshots if (_safe_text(getattr(snapshot, "project_family_key", "")) or "general") == dominant_family]
+    family_snapshots = [snapshot for snapshot in snapshots if _family_key_from_snapshot(snapshot) == dominant_family]
     family_snapshots.sort(key=lambda item: getattr(item, "created_at", timezone.now()), reverse=True)
     return family_snapshots[0] if family_snapshots else snapshots[0]
 
@@ -243,15 +352,27 @@ def _build_recommendations(insights: dict[str, Any]) -> list[str]:
     ]
 
 
-def build_business_dashboard_contractor_insights(contractor, start_dt, end_dt) -> dict[str, Any]:
+def build_business_dashboard_contractor_insights(
+    contractor,
+    start_dt,
+    end_dt,
+    project_family_key: str | None = None,
+) -> dict[str, Any]:
     if contractor is None:
         return {
             "available": False,
             "source_type": "platform",
             "source_label": "Based on similar projects on MyHomeBro.",
             "confidence": "low",
-            "focus_family_key": "general",
-            "focus_family_label": "General Project",
+            "project_family_key": "general",
+            "project_family_label": "General Project",
+            "selected_family_key": "all",
+            "selected_family_label": "All Projects",
+            "effective_family_key": "general",
+            "effective_family_label": "General Project",
+            "scope_mode": "all_projects",
+            "scope_notice": "",
+            "available_families": [{"key": "all", "label": "All Projects", "count": 0}],
             "sample_sizes": {"platform": 0, "regional": 0, "contractor": 0},
             "summary_cards": _build_summary_cards(
                 {
@@ -293,9 +414,11 @@ def build_business_dashboard_contractor_insights(contractor, start_dt, end_dt) -
             ).order_by("-created_at", "-id")[:20]
         )
 
-    focus_snapshot = _focus_snapshot(snapshots)
-    project_family_key = _safe_text(getattr(focus_snapshot, "project_family_key", "")) or "general"
-    project_family_label = _safe_text(getattr(focus_snapshot, "project_family_label", "")) or project_family_key.replace("_", " ").title()
+    available_families = _build_available_family_options(snapshots)
+    effective_snapshots, scope_state = _resolve_scope_snapshots(snapshots, project_family_key)
+    focus_snapshot = _focus_snapshot(effective_snapshots)
+    effective_family_key = _family_key_from_snapshot(focus_snapshot)
+    effective_family_label = _family_label_from_snapshot(focus_snapshot, effective_family_key)
     project_context = _project_context_from_snapshot(focus_snapshot) if focus_snapshot is not None else {
         "project_type": "",
         "project_subtype": "",
@@ -308,19 +431,30 @@ def build_business_dashboard_contractor_insights(contractor, start_dt, end_dt) -
         "region_city": "",
         "region_country": "US",
     }
-    project_context["project_family_label"] = project_family_label
+    project_context["project_family_label"] = effective_family_label
 
     insights = build_contractor_insights(
         contractor_id=getattr(contractor, "id", None),
-        project_family_key=project_family_key,
+        project_family_key=effective_family_key,
         project_context=project_context,
     )
 
     source_type = _safe_text(insights.get("source_type"))
+    selected_family_key = _safe_text(scope_state.get("selected_family_key")) or "all"
+    selected_family_label = _safe_text(scope_state.get("selected_family_label")) or "All Projects"
+    scope_mode = _safe_text(scope_state.get("scope_mode")) or "all_projects"
     result = {
         "available": bool(snapshots),
-        "project_family_key": project_family_key,
-        "project_family_label": project_family_label,
+        "project_family_key": effective_family_key,
+        "project_family_label": effective_family_label,
+        "selected_family_key": selected_family_key,
+        "selected_family_label": selected_family_label,
+        "effective_family_key": effective_family_key,
+        "effective_family_label": effective_family_label,
+        "scope_mode": scope_mode,
+        "scope_label": selected_family_label if selected_family_key != "all" else "All Projects",
+        "scope_notice": _safe_text(scope_state.get("scope_notice")),
+        "available_families": available_families,
         "source_type": source_type,
         "source_label": _source_label(source_type),
         "confidence": _safe_text(insights.get("confidence")),

@@ -490,6 +490,7 @@ export default function BusinessDashboard() {
   const [error, setError] = useState("");
 
   const [payload, setPayload] = useState(null);
+  const [insightFamilyKey, setInsightFamilyKey] = useState("all");
 
   // Included AI + pricing summary
   const [meData, setMeData] = useState(null);
@@ -510,6 +511,7 @@ export default function BusinessDashboard() {
   const insights = payload?.insights || [];
   const priorityInsights = insights.slice(0, 3);
   const contractorInsights = payload?.contractor_insights || null;
+  const availableInsightFamilies = contractorInsights?.available_families || [];
   const revenueSeries = payload?.revenue_series || [];
   const feeSeries = payload?.fee_series || [];
   const payoutSeries = payload?.payout_series || [];
@@ -673,9 +675,13 @@ export default function BusinessDashboard() {
     setLoading(true);
     setError("");
     try {
-      const res = await api.get(
-        `/projects/business/contractor/summary/?range=${encodeURIComponent(range)}`
-      );
+      const params = { range };
+      if (insightFamilyKey && insightFamilyKey !== "all") {
+        params.project_family_key = insightFamilyKey;
+      }
+      const res = await api.get("/projects/business/contractor/summary/", {
+        params,
+      });
       setPayload(res.data);
     } catch (err) {
       console.error("Error loading contractor business dashboard:", err);
@@ -795,7 +801,7 @@ export default function BusinessDashboard() {
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range]);
+  }, [range, insightFamilyKey]);
 
   useEffect(() => {
     closeDrilldown();
@@ -1097,7 +1103,12 @@ export default function BusinessDashboard() {
         </section>
       </DashboardSection>
 
-      <ContractorInsightsSection insights={contractorInsights} />
+      <ContractorInsightsSection
+        insights={contractorInsights}
+        availableFamilies={availableInsightFamilies}
+        selectedFamilyKey={insightFamilyKey}
+        onFamilyChange={setInsightFamilyKey}
+      />
 
       <DashboardSection
         title="Deep Dive"

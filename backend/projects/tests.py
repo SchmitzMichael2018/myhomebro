@@ -6893,6 +6893,67 @@ class BusinessDashboardInsightsTests(TestCase):
         )
         self.client = APIClient()
 
+    def _create_project_outcome_snapshot(
+        self,
+        *,
+        family_key: str,
+        family_label: str,
+        title_suffix: str,
+        total_project_value: str = "10000.00",
+        scope_mode: str = "remodel",
+    ) -> ProjectOutcomeSnapshot:
+        email_token = f"{family_key}-{title_suffix}".lower().replace(" ", "-").replace("/", "-")
+        homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name=f"{family_label} Homeowner {title_suffix}",
+            email=f"{email_token}@example.com",
+        )
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=homeowner,
+            title=f"{family_label} Project {title_suffix}",
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=homeowner,
+            description=f"{family_label} agreement {title_suffix}",
+        )
+        return ProjectOutcomeSnapshot.objects.create(
+            agreement=agreement,
+            contractor=self.contractor,
+            project_family_key=family_key,
+            project_family_label=family_label,
+            scope_mode=scope_mode,
+            template_used="",
+            region_key="US-TX-AUSTIN",
+            region_label="Austin, TX",
+            region_granularity="city",
+            original_intelligence_payload={
+                "analysis": {
+                    "project_scope_summary": f"{family_label} scope {title_suffix}",
+                }
+            },
+            original_suggested_plan={
+                "project_family_key": family_key,
+                "project_family_label": family_label,
+            },
+            final_project_state={
+                "project_scope_summary": f"{family_label} scope {title_suffix}",
+            },
+            final_milestones=[
+                {"title": "Milestone 1", "amount": "2500.00"},
+            ],
+            total_project_value=Decimal(total_project_value),
+            estimated_value_range={"low": "9000.00", "high": "11000.00"},
+            actual_duration_days=5,
+            estimated_duration_range={"low": 4, "high": 6},
+            milestone_count=4,
+            dispute_flag=False,
+            amendment_count=0,
+            completion_status="completed",
+        )
+
     def test_business_dashboard_returns_grounded_insights(self):
         self.client.force_authenticate(user=self.contractor_user)
         response = self.client.get("/api/projects/business/contractor/summary/?range=30")
@@ -6958,6 +7019,83 @@ class BusinessDashboardInsightsTests(TestCase):
         self.assertIn("comparison_rows", contractor_insights)
         self.assertTrue(contractor_insights["recommendations"])
         self.assertIn("source_label", contractor_insights)
+
+    def test_business_dashboard_family_filter_returns_family_specific_insights(self):
+        self._create_project_outcome_snapshot(
+            family_key="kitchen_remodel",
+            family_label="Kitchen Remodel",
+            title_suffix="A",
+            total_project_value="12000.00",
+            scope_mode="remodel",
+        )
+        self._create_project_outcome_snapshot(
+            family_key="kitchen_remodel",
+            family_label="Kitchen Remodel",
+            title_suffix="B",
+            total_project_value="12500.00",
+            scope_mode="remodel",
+        )
+        self._create_project_outcome_snapshot(
+            family_key="kitchen_remodel",
+            family_label="Kitchen Remodel",
+            title_suffix="C",
+            total_project_value="13000.00",
+            scope_mode="remodel",
+        )
+        self._create_project_outcome_snapshot(
+            family_key="roofing",
+            family_label="Roofing",
+            title_suffix="A",
+            total_project_value="8000.00",
+            scope_mode="repair",
+        )
+
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get(
+            "/api/projects/business/contractor/summary/?range=30&project_family_key=kitchen_remodel"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        contractor_insights = response.json()["contractor_insights"]
+        self.assertEqual(contractor_insights["selected_family_key"], "kitchen_remodel")
+        self.assertEqual(contractor_insights["effective_family_key"], "kitchen_remodel")
+        self.assertEqual(contractor_insights["scope_mode"], "family")
+        self.assertTrue(any(option["key"] == "roofing" for option in contractor_insights["available_families"]))
+        self.assertEqual(contractor_insights["available_families"][0]["key"], "all")
+
+    def test_business_dashboard_sparse_family_filter_falls_back_to_broader_scope(self):
+        self._create_project_outcome_snapshot(
+            family_key="kitchen_remodel",
+            family_label="Kitchen Remodel",
+            title_suffix="A",
+            total_project_value="12000.00",
+            scope_mode="remodel",
+        )
+        self._create_project_outcome_snapshot(
+            family_key="kitchen_remodel",
+            family_label="Kitchen Remodel",
+            title_suffix="B",
+            total_project_value="12500.00",
+            scope_mode="remodel",
+        )
+        self._create_project_outcome_snapshot(
+            family_key="roofing",
+            family_label="Roofing",
+            title_suffix="A",
+            total_project_value="8000.00",
+            scope_mode="repair",
+        )
+
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get(
+            "/api/projects/business/contractor/summary/?range=30&project_family_key=roofing"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        contractor_insights = response.json()["contractor_insights"]
+        self.assertEqual(contractor_insights["selected_family_key"], "roofing")
+        self.assertEqual(contractor_insights["scope_mode"], "fallback_all")
+        self.assertIn("broader view", contractor_insights["scope_notice"].lower())
 
 
 class BusinessDashboardPerformanceTests(TestCase):
