@@ -3240,8 +3240,8 @@ export default function Step2Milestones({
                         ? `Based on ${contractorInsights?.sample_sizes?.platform || 0} platform projects, ${contractorInsights?.sample_sizes?.regional || 0} market projects, and ${contractorInsights?.sample_sizes?.contractor || 0} of your completed jobs.`
                         : "Broad guidance only until more completed-job data is available."}
                     </div>
-                    <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
-                      <div className="rounded-lg border border-sky-100 bg-white px-3 py-2">
+                  <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                    <div className="rounded-lg border border-sky-100 bg-white px-3 py-2">
                         <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-700">Pricing vs platform</div>
                         <div className="mt-1 text-sm font-semibold text-slate-900">
                           {safeStr(contractorInsights?.pricing_delta_vs_platform?.direction) === "above"
@@ -3294,6 +3294,33 @@ export default function Step2Milestones({
                         <div className="mt-1 text-xs text-slate-600">{contractorInsights?.dispute_rate_comparison?.explanation}</div>
                       </div>
                     </div>
+                    {Array.isArray(contractorInsights?.suggested_adjustments) && contractorInsights.suggested_adjustments.length ? (
+                      <div className="mt-3 rounded-xl border border-sky-100 bg-white px-3 py-3" data-testid="step2-contractor-insights-adjustments">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-700">Suggested adjustments</div>
+                        <div className="mt-1 text-xs text-slate-600">
+                          Optional ideas based on the same benchmark comparisons.
+                        </div>
+                        <ul className="mt-2 space-y-2 text-xs text-slate-700">
+                          {contractorInsights.suggested_adjustments.slice(0, 3).map((item, index) => (
+                            <li
+                              key={`${item?.suggestion_type || "suggestion"}-${index}`}
+                              className="rounded-lg border border-sky-100 bg-sky-50/60 px-3 py-2"
+                              data-testid="step2-contractor-insights-adjustment-item"
+                            >
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="rounded-full border border-sky-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-700">
+                                  {safeStr(item?.suggestion_type) || "Adjustment"}
+                                </span>
+                                <span className="text-[11px] font-medium text-slate-500">
+                                  {formatEstimateConfidence(item?.suggestion_confidence) || "Optional"}
+                                </span>
+                              </div>
+                              <div className="mt-1">{safeStr(item?.suggestion_text)}</div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
                     {Array.isArray(contractorInsights?.explanation_strings) && contractorInsights.explanation_strings.length ? (
                       <ul className="mt-3 space-y-1 text-xs text-slate-700">
                         {contractorInsights.explanation_strings.slice(0, 3).map((point, index) => (

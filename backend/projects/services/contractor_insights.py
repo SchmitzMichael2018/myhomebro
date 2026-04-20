@@ -88,6 +88,113 @@ def _friendly_confidence(sample_sizes: dict[str, int], regional_bias: Decimal, c
     return "low"
 
 
+def _suggestion_confidence(overall_confidence: str, magnitude: Decimal) -> str:
+    confidence = _safe_text(overall_confidence).lower()
+    if confidence == "high" and magnitude >= Decimal("10"):
+        return "high"
+    if confidence in {"high", "medium"} and magnitude >= Decimal("5"):
+        return "medium"
+    if magnitude >= Decimal("10"):
+        return "medium"
+    return "low"
+
+
+def _build_suggested_adjustments(
+    *,
+    price_delta: Decimal,
+    duration_delta: Decimal,
+    milestone_delta: int,
+    dispute_rate: Decimal,
+    market_dispute_rate: Decimal | None,
+    contractor_amendment_rate: Decimal,
+    regional_sample_size: int,
+    contractor_sample_size: int,
+    confidence: str,
+) -> list[dict[str, str]]:
+    suggestions: list[dict[str, str]] = []
+
+    price_magnitude = abs(price_delta)
+    if price_delta > Decimal("8"):
+        suggestions.append(
+            {
+                "suggestion_type": "pricing",
+                "suggestion_text": "You may want to review pricing for this type of project to stay competitive.",
+                "suggestion_confidence": _suggestion_confidence(confidence, price_magnitude),
+            }
+        )
+    elif price_delta < Decimal("-8"):
+        suggestions.append(
+            {
+                "suggestion_type": "pricing",
+                "suggestion_text": "Your pricing is below the platform average. Make sure it still covers labor, materials, and risk.",
+                "suggestion_confidence": _suggestion_confidence(confidence, price_magnitude),
+            }
+        )
+
+    duration_magnitude = abs(duration_delta)
+    if duration_delta > Decimal("8"):
+        suggestions.append(
+            {
+                "suggestion_type": "duration",
+                "suggestion_text": "Projects like this typically complete faster. Consider tightening your timeline if the scope is straightforward.",
+                "suggestion_confidence": _suggestion_confidence(confidence, duration_magnitude),
+            }
+        )
+    elif duration_delta < Decimal("-8"):
+        suggestions.append(
+            {
+                "suggestion_type": "duration",
+                "suggestion_text": "Your timeline is leaner than peers. Double-check access, finish work, and inspection time before finalizing.",
+                "suggestion_confidence": _suggestion_confidence(confidence, duration_magnitude),
+            }
+        )
+
+    if milestone_delta < 0:
+        suggestions.append(
+            {
+                "suggestion_type": "structure",
+                "suggestion_text": "Adding more milestones may improve clarity and payment flow.",
+                "suggestion_confidence": _suggestion_confidence(confidence, Decimal(str(abs(milestone_delta) * 4))),
+            }
+        )
+    elif milestone_delta > 1:
+        suggestions.append(
+            {
+                "suggestion_type": "structure",
+                "suggestion_text": "You may be using a more detailed milestone structure than peers. Consider whether a few steps can be grouped.",
+                "suggestion_confidence": _suggestion_confidence(confidence, Decimal(str(milestone_delta * 4))),
+            }
+        )
+
+    market_dispute = market_dispute_rate or Decimal("0.00")
+    if market_dispute > Decimal("0.00") and dispute_rate > market_dispute * Decimal("1.20"):
+        suggestions.append(
+            {
+                "suggestion_type": "scope_clarity",
+                "suggestion_text": "Clearer scope notes and exclusions may help reduce disputes and amendments.",
+                "suggestion_confidence": "medium" if confidence != "low" else "low",
+            }
+        )
+    elif contractor_sample_size > 0 and contractor_amendment_rate >= Decimal("0.15"):
+        suggestions.append(
+            {
+                "suggestion_type": "scope_clarity",
+                "suggestion_text": "More detail around selections, exclusions, or follow-up checks may help reduce amendments on similar jobs.",
+                "suggestion_confidence": "medium" if confidence == "high" else "low",
+            }
+        )
+    elif regional_sample_size > 0 and dispute_rate > Decimal("0.00"):
+        suggestions.append(
+            {
+                "suggestion_type": "scope_clarity",
+                "suggestion_text": "A clearer scope summary can help keep similar projects moving smoothly.",
+                "suggestion_confidence": "low",
+            }
+        )
+
+    return suggestions[:3]
+
+
 def build_contractor_insights(
     *,
     contractor_id: int | None,
@@ -107,6 +214,7 @@ def build_contractor_insights(
             "milestone_count_delta": {"value": 0, "direction": "similar", "explanation": "Not enough data to compare yet."},
             "dispute_rate_comparison": {"value": "", "direction": "unknown", "explanation": "Not enough market history to compare dispute patterns yet."},
             "explanation_strings": ["Not enough benchmark history is available yet for this project family."],
+            "suggested_adjustments": [],
         }
 
     contractor = Contractor.objects.filter(pk=contractor_id).first()
@@ -298,4 +406,15 @@ def build_contractor_insights(
             "duration_days": str(regional_duration.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)) if regional_duration > 0 else "0.0",
         },
         "explanation_strings": explanation_strings,
+        "suggested_adjustments": _build_suggested_adjustments(
+            price_delta=price_delta,
+            duration_delta=duration_delta,
+            milestone_delta=milestone_delta,
+            dispute_rate=dispute_rate,
+            market_dispute_rate=market_dispute_rate,
+            contractor_amendment_rate=contractor_amendment_rate,
+            regional_sample_size=regional_sample_size,
+            contractor_sample_size=contractor_sample_size,
+            confidence=confidence,
+        ),
     }

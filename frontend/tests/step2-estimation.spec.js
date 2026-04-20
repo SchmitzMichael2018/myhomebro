@@ -350,6 +350,23 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
           'Your duration is 12.5% longer than the platform average.',
           'Your market history includes 14 completed projects, which helps sharpen the comparison.',
         ],
+        suggested_adjustments: [
+          {
+            suggestion_type: 'pricing',
+            suggestion_text: 'You may want to review pricing for this type of project to stay competitive.',
+            suggestion_confidence: 'medium',
+          },
+          {
+            suggestion_type: 'duration',
+            suggestion_text: 'Projects like this typically complete faster. Consider tightening your timeline if the scope is straightforward.',
+            suggestion_confidence: 'medium',
+          },
+          {
+            suggestion_type: 'scope_clarity',
+            suggestion_text: 'Clearer scope notes and exclusions may help reduce disputes and amendments.',
+            suggestion_confidence: 'medium',
+          },
+        ],
       },
     },
   });
@@ -379,6 +396,12 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(page.getByTestId('step2-contractor-insights-card')).toContainText('More detailed than peers');
   await expect(page.getByTestId('step2-contractor-insights-card')).toContainText('Dispute pattern');
   await expect(page.getByTestId('step2-contractor-insights-card')).toContainText('Below market');
+  await expect(page.getByTestId('step2-contractor-insights-adjustments')).toBeVisible();
+  await expect(page.getByTestId('step2-contractor-insights-adjustments')).toContainText('Suggested adjustments');
+  await expect(page.getByTestId('step2-contractor-insights-adjustments')).toContainText('pricing');
+  await expect(page.getByTestId('step2-contractor-insights-adjustments')).toContainText('duration');
+  await expect(page.getByTestId('step2-contractor-insights-adjustments')).toContainText('scope_clarity');
+  await expect(page.getByTestId('step2-contractor-insights-adjustments')).toContainText('Optional ideas based on the same benchmark comparisons.');
   await expect(page.getByTestId('step2-suggested-plan-why')).toBeVisible();
   await expect(page.getByTestId('step2-suggested-plan-why')).toContainText('Why this plan');
   await expect(page.getByTestId('step2-suggested-plan-why')).toContainText('Materials or cabinets appear to be on site already.');

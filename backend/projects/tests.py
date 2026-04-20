@@ -9766,9 +9766,9 @@ class ProjectLearningFoundationTests(TestCase):
         for idx in range(4):
             self._seed_contractor_benchmark_snapshot(
                 template_used="Kitchen Remodel Template Insight",
-                total_project_value=Decimal("13500.00") + Decimal(str(idx * 250)),
-                actual_duration_days=8 + (idx % 2),
-                milestone_count=5,
+                total_project_value=Decimal("22000.00") + Decimal(str(idx * 450)),
+                actual_duration_days=16 + (idx % 2),
+                milestone_count=7,
                 dispute_flag=False,
                 amendment_count=0,
             )
@@ -9777,9 +9777,9 @@ class ProjectLearningFoundationTests(TestCase):
                 region_state="TX",
                 region_city="Austin",
                 template_used="Kitchen Remodel Template Insight",
-                total_project_value=Decimal("11200.00") + Decimal(str(idx * 120)),
-                actual_duration_days=6 + (idx % 2),
-                milestone_count=4,
+                total_project_value=Decimal("14500.00") + Decimal(str(idx * 150)),
+                actual_duration_days=10 + (idx % 2),
+                milestone_count=5,
             )
         rebuild_contractor_benchmark_aggregates(contractor_ids=[self.contractor.id])
         rebuild_regional_benchmark_aggregates()
@@ -9802,6 +9802,7 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertIn(insights["pricing_delta_vs_platform"]["direction"], {"above", "below", "similar"})
         self.assertIn("platform average", insights["pricing_delta_vs_platform"]["explanation"])
         self.assertTrue(insights["explanation_strings"])
+        self.assertIsInstance(insights["suggested_adjustments"], list)
         self.assertIn(insights["confidence"], {"low", "medium", "high"})
 
     def test_contractor_insights_fall_back_to_platform_without_history(self):
@@ -9821,6 +9822,104 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertEqual(insights["confidence"], "low")
         self.assertEqual(insights["pricing_delta_vs_platform"]["direction"], "similar")
         self.assertGreaterEqual(len(insights["explanation_strings"]), 1)
+        self.assertEqual(insights["suggested_adjustments"], [])
+
+    def test_contractor_insights_suggest_adjustments_from_signals(self):
+        with patch("projects.services.contractor_insights.get_blended_benchmark") as mock_blended, patch(
+            "projects.services.contractor_insights.resolve_regional_benchmark"
+        ) as mock_regional:
+            mock_blended.side_effect = [
+                {
+                    "platform": {"sample_size": 80},
+                    "pricing_range": {"low": "1000.00", "high": "1200.00"},
+                    "duration_range": {"low": "4", "high": "5"},
+                    "milestone_count": 4,
+                },
+                {
+                    "contractor": {"sample_size": 9, "dispute_rate": "0.12", "amendment_rate": "0.18"},
+                    "pricing_range": {"low": "1350.00", "high": "1450.00"},
+                    "duration_range": {"low": "7", "high": "8"},
+                    "milestone_count": 2,
+                },
+            ]
+            mock_regional.return_value = {
+                "region_key": "US-TX-AUSTIN",
+                "region_label": "Austin, TX",
+                "region_granularity": "city",
+                "sample_size": 12,
+                "learned_price": "1185.00",
+                "learned_duration_days": 5,
+                "learned_milestone_count": "4.00",
+                "confidence": "medium",
+                "reasoning": "Regional history from Austin, TX contributes 12 completed projects for this project family.",
+                "dispute_rate": "0.08",
+                "amendment_rate": "0.06",
+            }
+
+            insights = build_contractor_insights(
+                contractor_id=self.contractor.id,
+                project_family_key="kitchen_remodel",
+                project_context={
+                    "project_type": "Remodel",
+                    "project_subtype": "Kitchen Remodel",
+                    "project_scope_summary": "Kitchen cabinet installation request with removal and backsplash work.",
+                    "region_state": "TX",
+                    "region_city": "Austin",
+                },
+            )
+
+        suggestion_types = {item["suggestion_type"] for item in insights["suggested_adjustments"]}
+        self.assertIn("pricing", suggestion_types)
+        self.assertIn("duration", suggestion_types)
+        self.assertIn("structure", suggestion_types)
+        self.assertEqual(len(insights["suggested_adjustments"]), 3)
+
+    def test_contractor_insights_surface_scope_clarity_adjustment_from_quality_signals(self):
+        with patch("projects.services.contractor_insights.get_blended_benchmark") as mock_blended, patch(
+            "projects.services.contractor_insights.resolve_regional_benchmark"
+        ) as mock_regional:
+            mock_blended.side_effect = [
+                {
+                    "platform": {"sample_size": 80},
+                    "pricing_range": {"low": "1000.00", "high": "1200.00"},
+                    "duration_range": {"low": "4", "high": "5"},
+                    "milestone_count": 4,
+                },
+                {
+                    "contractor": {"sample_size": 9, "dispute_rate": "0.30", "amendment_rate": "0.25"},
+                    "pricing_range": {"low": "1000.00", "high": "1200.00"},
+                    "duration_range": {"low": "4", "high": "5"},
+                    "milestone_count": 4,
+                },
+            ]
+            mock_regional.return_value = {
+                "region_key": "US-TX-AUSTIN",
+                "region_label": "Austin, TX",
+                "region_granularity": "city",
+                "sample_size": 12,
+                "learned_price": "1185.00",
+                "learned_duration_days": 5,
+                "learned_milestone_count": "4.00",
+                "confidence": "medium",
+                "reasoning": "Regional history from Austin, TX contributes 12 completed projects for this project family.",
+                "dispute_rate": "0.20",
+                "amendment_rate": "0.10",
+            }
+
+            insights = build_contractor_insights(
+                contractor_id=self.contractor.id,
+                project_family_key="kitchen_remodel",
+                project_context={
+                    "project_type": "Remodel",
+                    "project_subtype": "Kitchen Remodel",
+                    "project_scope_summary": "Kitchen cabinet installation request with removal and backsplash work.",
+                    "region_state": "TX",
+                    "region_city": "Austin",
+                },
+            )
+
+        self.assertEqual(len(insights["suggested_adjustments"]), 1)
+        self.assertEqual(insights["suggested_adjustments"][0]["suggestion_type"], "scope_clarity")
 
     def test_estimate_preview_includes_contractor_insights(self):
         agreement = self._create_completed_agreement(status=ProjectStatus.COMPLETED)
@@ -9831,6 +9930,7 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertIn("pricing_delta_vs_platform", result["contractor_insights"])
         self.assertIn("duration_delta_vs_platform", result["contractor_insights"])
         self.assertIn("explanation_strings", result["contractor_insights"])
+        self.assertIn("suggested_adjustments", result["contractor_insights"])
 
     def test_project_intelligence_orchestrator_matches_intake_and_agreement_paths(self):
         profile = ContractorPublicProfile.objects.create(
@@ -10569,6 +10669,7 @@ class ProjectEstimationEngineTests(TestCase):
         self.assertIn("pricing_delta_vs_platform", result["contractor_insights"])
         self.assertIn("duration_delta_vs_platform", result["contractor_insights"])
         self.assertIn("explanation_strings", result["contractor_insights"])
+        self.assertIn("suggested_adjustments", result["contractor_insights"])
 
     def test_milestone_suggestion_output_shape(self):
         agreement = self._agreement()
