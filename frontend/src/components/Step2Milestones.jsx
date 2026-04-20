@@ -1600,6 +1600,9 @@ export default function Step2Milestones({
     if (!suggestedPlan) return null;
     return explainPlanBenchmarkSource(suggestedPlan);
   }, [suggestedPlan]);
+  const contractorInsights = useMemo(() => estimatePreview?.contractor_insights || null, [estimatePreview]);
+  const contractorInsightsConfidence = safeStr(contractorInsights?.confidence).toLowerCase();
+  const contractorInsightsCountsVisible = contractorInsightsConfidence !== "low";
   const estimateGuidanceByMilestone = useMemo(() => {
     const rows = Array.isArray(effectiveMilestones) ? effectiveMilestones : [];
     if (!rows.length) return new Map();
@@ -3222,6 +3225,85 @@ export default function Step2Milestones({
                     <div className="mt-2 text-[11px] font-medium text-slate-600">
                       Confidence: {suggestedPlanBenchmarkSource.confidence}
                     </div>
+                  </div>
+                ) : null}
+                {contractorInsights ? (
+                  <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/70 px-3 py-3" data-testid="step2-contractor-insights-card">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-700">Contractor insights</div>
+                      <span className="rounded-full border border-sky-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-sky-700">
+                        {formatEstimateConfidence(contractorInsights?.confidence) || "Advisory"}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-xs text-slate-700">
+                      {contractorInsightsCountsVisible
+                        ? `Based on ${contractorInsights?.sample_sizes?.platform || 0} platform projects, ${contractorInsights?.sample_sizes?.regional || 0} market projects, and ${contractorInsights?.sample_sizes?.contractor || 0} of your completed jobs.`
+                        : "Broad guidance only until more completed-job data is available."}
+                    </div>
+                    <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                      <div className="rounded-lg border border-sky-100 bg-white px-3 py-2">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-700">Pricing vs platform</div>
+                        <div className="mt-1 text-sm font-semibold text-slate-900">
+                          {safeStr(contractorInsights?.pricing_delta_vs_platform?.direction) === "above"
+                            ? "Above average"
+                            : safeStr(contractorInsights?.pricing_delta_vs_platform?.direction) === "below"
+                            ? "Below average"
+                            : "Close to average"}
+                        </div>
+                        {contractorInsightsCountsVisible ? (
+                          <div className="mt-1 text-xs text-slate-600">{contractorInsights?.pricing_delta_vs_platform?.explanation}</div>
+                        ) : null}
+                      </div>
+                      <div className="rounded-lg border border-sky-100 bg-white px-3 py-2">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-700">Duration vs platform</div>
+                        <div className="mt-1 text-sm font-semibold text-slate-900">
+                          {safeStr(contractorInsights?.duration_delta_vs_platform?.direction) === "above"
+                            ? "Longer than average"
+                            : safeStr(contractorInsights?.duration_delta_vs_platform?.direction) === "below"
+                            ? "Shorter than average"
+                            : "Close to average"}
+                        </div>
+                        {contractorInsightsCountsVisible ? (
+                          <div className="mt-1 text-xs text-slate-600">{contractorInsights?.duration_delta_vs_platform?.explanation}</div>
+                        ) : null}
+                      </div>
+                      <div className="rounded-lg border border-sky-100 bg-white px-3 py-2">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-700">Milestone complexity</div>
+                        <div className="mt-1 text-sm font-semibold text-slate-900">
+                          {safeStr(contractorInsights?.milestone_count_delta?.direction) === "above"
+                            ? "More detailed than peers"
+                            : safeStr(contractorInsights?.milestone_count_delta?.direction) === "below"
+                            ? "Simpler than peers"
+                            : "Close to peers"}
+                        </div>
+                        {contractorInsightsCountsVisible ? (
+                          <div className="mt-1 text-xs text-slate-600">{contractorInsights?.milestone_count_delta?.explanation}</div>
+                        ) : null}
+                      </div>
+                      <div className="rounded-lg border border-sky-100 bg-white px-3 py-2">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-700">Dispute pattern</div>
+                        <div className="mt-1 text-sm font-semibold text-slate-900">
+                          {safeStr(contractorInsights?.dispute_rate_comparison?.direction) === "above"
+                            ? "Above market"
+                            : safeStr(contractorInsights?.dispute_rate_comparison?.direction) === "below"
+                            ? "Below market"
+                            : safeStr(contractorInsights?.dispute_rate_comparison?.direction) === "similar"
+                            ? "Similar to market"
+                            : "Not enough data yet"}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-600">{contractorInsights?.dispute_rate_comparison?.explanation}</div>
+                      </div>
+                    </div>
+                    {Array.isArray(contractorInsights?.explanation_strings) && contractorInsights.explanation_strings.length ? (
+                      <ul className="mt-3 space-y-1 text-xs text-slate-700">
+                        {contractorInsights.explanation_strings.slice(0, 3).map((point, index) => (
+                          <li key={`${point}-${index}`} className="flex gap-2">
+                            <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" aria-hidden="true" />
+                            <span>{point}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </div>
                 ) : null}
                 {Array.isArray(suggestedPlan?.explanation_points) && suggestedPlan.explanation_points.length ? (

@@ -12,6 +12,7 @@ from projects.models import Agreement, AgreementAIScope, Milestone, ProjectBench
 from projects.models_templates import SeedBenchmarkProfile
 from projects.services.benchmark_resolution import resolve_seed_benchmark_defaults
 from projects.services.contractor_benchmarks import get_blended_benchmark
+from projects.services.contractor_insights import build_contractor_insights
 from projects.services.regions import build_normalized_region_key
 from projects.services.regions import build_region_context
 from projects.services.project_plan_suggestions import build_project_plan_suggestion
@@ -1024,6 +1025,23 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
         selected_template_id=getattr(agreement, "selected_template_id", None),
         contractor_id=getattr(getattr(agreement, "contractor", None), "id", None),
     )
+    contractor_insights = build_contractor_insights(
+        contractor_id=getattr(getattr(agreement, "contractor", None), "id", None),
+        project_family_key=_safe_text(suggested_plan.get("project_family_key"))
+        or _safe_text(request_snapshot.get("project_family_key"))
+        or _safe_text(getattr(agreement, "project_type", "")),
+        project_context={
+            "project_type": getattr(agreement, "project_type", "") or "",
+            "project_subtype": getattr(agreement, "project_subtype", "") or "",
+            "project_scope_summary": project_scope_summary,
+            "description": getattr(agreement, "description", "") or "",
+            "scope_mode": _safe_text(request_snapshot.get("scope_mode")),
+            "template_name": _template_label(agreement),
+            "region_state": getattr(agreement, "project_address_state", "") or "",
+            "region_city": getattr(agreement, "project_address_city", "") or "",
+            "region_country": "US",
+        },
+    )
 
     return {
         "suggested_total_price": str(suggested_total_price),
@@ -1047,6 +1065,7 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
         "confidence_level": confidence_level,
         "confidence_reasoning": confidence_reasoning,
         "structured_result_version": STRUCTURED_RESULT_VERSION,
+        "contractor_insights": contractor_insights,
         "source_metadata": {
             "seeded_benchmark_profile_id": seeded_defaults.get("benchmark_profile_id"),
             "seeded_region_scope": seeded_defaults.get("region_scope_used"),

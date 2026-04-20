@@ -342,6 +342,10 @@ def resolve_regional_benchmark(project_context: dict[str, Any]) -> dict[str, Any
         generic_match = queryset.filter(template_used="").order_by("-sample_size", "-last_updated").first()
         if generic_match is not None:
             candidate_rows.append((generic_match, _candidate_weight(generic_match)))
+        if not candidate_rows:
+            broader_match = queryset.order_by("-sample_size", "-last_updated").first()
+            if broader_match is not None:
+                candidate_rows.append((broader_match, (_candidate_weight(broader_match) * Decimal("0.70")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)))
 
     if not candidate_rows:
         return {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -20,6 +21,27 @@ def _safe_text(value: Any) -> str:
 
 def _safe_dict(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _json_safe_value(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, (date,)):
+        return value.isoformat()
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe_value(item) for item in value]
+    if hasattr(value, "isoformat") and callable(getattr(value, "isoformat")):
+        try:
+            return value.isoformat()
+        except Exception:
+            pass
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
 
 
 def _safe_decimal(value: Any) -> Decimal | None:
@@ -262,9 +284,20 @@ def capture_project_outcome_snapshot(agreement: Agreement | int, *, trigger: str
         "completion_status": _completion_status(agreement, trigger),
     }
 
+    json_safe_payload = dict(payload)
+    for key in (
+        "original_intelligence_payload",
+        "original_suggested_plan",
+        "final_project_state",
+        "final_milestones",
+        "estimated_value_range",
+        "estimated_duration_range",
+    ):
+        json_safe_payload[key] = _json_safe_value(json_safe_payload.get(key))
+
     snapshot, _created = ProjectOutcomeSnapshot.objects.update_or_create(
         agreement=agreement,
-        defaults=payload,
+        defaults=json_safe_payload,
     )
     try:
         from projects.services.contractor_benchmarks import rebuild_contractor_benchmark_aggregates

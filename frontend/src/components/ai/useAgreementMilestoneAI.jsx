@@ -395,6 +395,10 @@ function normalizeEstimatePreview(data) {
       source?.suggested_plan && typeof source.suggested_plan === "object"
         ? source.suggested_plan
         : null,
+    contractor_insights:
+      source?.contractor_insights && typeof source.contractor_insights === "object"
+        ? source.contractor_insights
+        : null,
     source_metadata:
       source?.source_metadata && typeof source.source_metadata === "object"
         ? source.source_metadata

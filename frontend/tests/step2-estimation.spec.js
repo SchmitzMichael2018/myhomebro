@@ -314,6 +314,43 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
         seeded_normalized_region_key: 'US-TX-SAN_ANTONIO',
         learned_clarification_signature: 'abc123',
       },
+      contractor_insights: {
+        project_family_key: 'kitchen_remodel',
+        project_family_label: 'Kitchen Remodel',
+        source_type: 'blended_all',
+        confidence: 'medium',
+        sample_sizes: {
+          platform: 82,
+          regional: 14,
+          contractor: 11,
+        },
+        pricing_delta_vs_platform: {
+          value: '8.5',
+          direction: 'above',
+          explanation: 'Your pricing is 8.5% above the platform average.',
+        },
+        duration_delta_vs_platform: {
+          value: '12.5',
+          direction: 'above',
+          explanation: 'Your duration is 12.5% longer than the platform average.',
+        },
+        milestone_count_delta: {
+          value: 1,
+          direction: 'above',
+          explanation: 'Your milestone structure uses 1 more step than the platform baseline.',
+        },
+        dispute_rate_comparison: {
+          value: '2.4%',
+          market_value: '3.1%',
+          direction: 'below',
+          explanation: 'Your dispute rate is below similar projects in your market.',
+        },
+        explanation_strings: [
+          'Your pricing runs 8.5% above the platform average for this project family.',
+          'Your duration is 12.5% longer than the platform average.',
+          'Your market history includes 14 completed projects, which helps sharpen the comparison.',
+        ],
+      },
     },
   });
 
@@ -333,6 +370,15 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(page.getByTestId('step2-suggested-plan-benchmark-source')).toContainText('Based on similar projects on MyHomeBro, your market, and your past work.');
   await expect(page.getByTestId('step2-suggested-plan-benchmark-source')).toContainText('Based on 82 platform projects, 14 market projects and 11 of your completed jobs.');
   await expect(page.getByTestId('step2-suggested-plan-benchmark-source')).toContainText('Confidence: Moderate confidence');
+  await expect(page.getByTestId('step2-contractor-insights-card')).toBeVisible();
+  await expect(page.getByTestId('step2-contractor-insights-card')).toContainText('Contractor insights');
+  await expect(page.getByTestId('step2-contractor-insights-card')).toContainText('Based on 82 platform projects, 14 market projects, and 11 of your completed jobs.');
+  await expect(page.getByTestId('step2-contractor-insights-card')).toContainText('Pricing vs platform');
+  await expect(page.getByTestId('step2-contractor-insights-card')).toContainText('Above average');
+  await expect(page.getByTestId('step2-contractor-insights-card')).toContainText('Duration vs platform');
+  await expect(page.getByTestId('step2-contractor-insights-card')).toContainText('More detailed than peers');
+  await expect(page.getByTestId('step2-contractor-insights-card')).toContainText('Dispute pattern');
+  await expect(page.getByTestId('step2-contractor-insights-card')).toContainText('Below market');
   await expect(page.getByTestId('step2-suggested-plan-why')).toBeVisible();
   await expect(page.getByTestId('step2-suggested-plan-why')).toContainText('Why this plan');
   await expect(page.getByTestId('step2-suggested-plan-why')).toContainText('Materials or cabinets appear to be on site already.');

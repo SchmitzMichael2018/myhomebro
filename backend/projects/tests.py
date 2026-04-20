@@ -92,6 +92,7 @@ from projects.services.contractor_benchmarks import (
     get_blended_benchmark,
     rebuild_contractor_benchmark_aggregates,
 )
+from projects.services.contractor_insights import build_contractor_insights
 from projects.services.regional_benchmarks import rebuild_regional_benchmark_aggregates
 from projects.services.proposal_learning import (
     build_proposal_draft,
@@ -9030,7 +9031,7 @@ class ProjectLearningFoundationTests(TestCase):
         snapshot.amendment_count = amendment_count
         snapshot.completion_status = ProjectStatus.COMPLETED
         snapshot.estimated_value_range = {"low": str(total_project_value * Decimal("0.90")), "high": str(total_project_value * Decimal("1.10"))}
-        snapshot.estimated_duration_range = {"low": max(actual_duration_days - 1, 1), "high": actual_duration_days + 1}
+        snapshot.estimated_duration_range = {"low": str(max(actual_duration_days - 1, 1)), "high": str(actual_duration_days + 1)}
         snapshot.save(
             update_fields=[
                 "project_family_key",
@@ -9761,6 +9762,76 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertLessEqual(Decimal(clamped["pricing_range"]["high"]), Decimal(platform["pricing_range"]["high"]) * Decimal("1.75"))
         self.assertGreaterEqual(Decimal(clamped["pricing_range"]["low"]), Decimal(platform["pricing_range"]["low"]) * Decimal("0.60"))
 
+    def test_contractor_insights_compare_against_platform_and_market(self):
+        for idx in range(4):
+            self._seed_contractor_benchmark_snapshot(
+                template_used="Kitchen Remodel Template Insight",
+                total_project_value=Decimal("13500.00") + Decimal(str(idx * 250)),
+                actual_duration_days=8 + (idx % 2),
+                milestone_count=5,
+                dispute_flag=False,
+                amendment_count=0,
+            )
+        for idx in range(6):
+            self._seed_regional_outcome_snapshot(
+                region_state="TX",
+                region_city="Austin",
+                template_used="Kitchen Remodel Template Insight",
+                total_project_value=Decimal("11200.00") + Decimal(str(idx * 120)),
+                actual_duration_days=6 + (idx % 2),
+                milestone_count=4,
+            )
+        rebuild_contractor_benchmark_aggregates(contractor_ids=[self.contractor.id])
+        rebuild_regional_benchmark_aggregates()
+
+        insights = build_contractor_insights(
+            contractor_id=self.contractor.id,
+            project_family_key="kitchen_remodel",
+            project_context={
+                "project_type": "Remodel",
+                "project_subtype": "Kitchen Remodel",
+                "project_scope_summary": "Kitchen cabinet installation request with removal and backsplash work.",
+                "region_state": "TX",
+                "region_city": "Austin",
+            },
+        )
+
+        self.assertEqual(insights["source_type"], "blended_all")
+        self.assertEqual(insights["sample_sizes"]["contractor"], 4)
+        self.assertGreater(insights["sample_sizes"]["regional"], 0)
+        self.assertIn(insights["pricing_delta_vs_platform"]["direction"], {"above", "below", "similar"})
+        self.assertIn("platform average", insights["pricing_delta_vs_platform"]["explanation"])
+        self.assertTrue(insights["explanation_strings"])
+        self.assertIn(insights["confidence"], {"low", "medium", "high"})
+
+    def test_contractor_insights_fall_back_to_platform_without_history(self):
+        insights = build_contractor_insights(
+            contractor_id=self.other_contractor.id,
+            project_family_key="kitchen_remodel",
+            project_context={
+                "project_type": "Remodel",
+                "project_subtype": "Kitchen Remodel",
+                "project_scope_summary": "Kitchen cabinet installation request with removal and backsplash work.",
+                "region_state": "TX",
+                "region_city": "Austin",
+            },
+        )
+
+        self.assertEqual(insights["source_type"], "platform")
+        self.assertEqual(insights["confidence"], "low")
+        self.assertEqual(insights["pricing_delta_vs_platform"]["direction"], "similar")
+        self.assertGreaterEqual(len(insights["explanation_strings"]), 1)
+
+    def test_estimate_preview_includes_contractor_insights(self):
+        agreement = self._create_completed_agreement(status=ProjectStatus.COMPLETED)
+
+        result = build_project_estimate(agreement=agreement)
+
+        self.assertIn("contractor_insights", result)
+        self.assertIn("pricing_delta_vs_platform", result["contractor_insights"])
+        self.assertIn("duration_delta_vs_platform", result["contractor_insights"])
+        self.assertIn("explanation_strings", result["contractor_insights"])
+
     def test_project_intelligence_orchestrator_matches_intake_and_agreement_paths(self):
         profile = ContractorPublicProfile.objects.create(
             contractor=self.contractor,
@@ -10488,6 +10559,16 @@ class ProjectEstimationEngineTests(TestCase):
         self.assertIn("Project size", timeline_labels)
         self.assertIn("Demolition", timeline_labels)
         self.assertIn("Compressed schedule", timeline_labels)
+
+    def test_estimate_preview_includes_contractor_insights_for_current_agreement(self):
+        agreement = self._agreement()
+
+        result = build_project_estimate(agreement=agreement)
+
+        self.assertIn("contractor_insights", result)
+        self.assertIn("pricing_delta_vs_platform", result["contractor_insights"])
+        self.assertIn("duration_delta_vs_platform", result["contractor_insights"])
+        self.assertIn("explanation_strings", result["contractor_insights"])
 
     def test_milestone_suggestion_output_shape(self):
         agreement = self._agreement()
