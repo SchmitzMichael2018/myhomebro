@@ -8,7 +8,6 @@ from rest_framework.response import Response
 
 from projects.models_project_intake import ProjectIntake
 from projects.serializers.project_intake import ProjectIntakeSerializer
-from projects.services.intake_analysis import analyze_project_intake
 from projects.services.intake_conversion import convert_intake_to_agreement
 from projects.services.intake_public import send_intake_email
 from projects.services.public_lead_pipeline import (
@@ -17,6 +16,7 @@ from projects.services.public_lead_pipeline import (
 )
 from projects.models import PublicContractorLead
 from projects.services.agreements.project_create import resolve_contractor_for_user
+from projects.services.project_intelligence_orchestrator import build_project_intelligence
 
 
 class ProjectIntakeViewSet(viewsets.ModelViewSet):
@@ -52,7 +52,8 @@ class ProjectIntakeViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        result = analyze_project_intake(intake=intake)
+        intelligence = build_project_intelligence({"intake": intake})
+        result = intelligence.get("analysis", {})
 
         intake.ai_project_title = result.get("project_title", "")
         intake.ai_project_type = result.get("project_type", "")

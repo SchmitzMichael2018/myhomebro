@@ -92,6 +92,7 @@ from projects.services.project_intelligence import (
     build_project_intelligence_context,
     build_project_setup_recommendation,
 )
+from projects.services.project_intelligence_orchestrator import build_project_intelligence
 from projects.services.project_plan_suggestions import build_project_plan_suggestion
 from projects.services.agreements.create import create_agreement_from_validated
 from projects.services.agreement_fee_allocation import refresh_agreement_fee_allocations
@@ -9210,6 +9211,83 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertNotEqual(plan["suggested_budget_high"], "0.00")
         self.assertTrue(plan["explanation_points"])
         self.assertTrue(plan["milestones"])
+
+    def test_project_intelligence_orchestrator_matches_intake_and_agreement_paths(self):
+        profile = ContractorPublicProfile.objects.create(
+            contractor=self.contractor,
+            business_name_public="Unified Build Co",
+            city="Austin",
+            state="TX",
+            phone_public="512-555-0100",
+            email_public="unified@example.com",
+        )
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            public_profile=profile,
+            initiated_by="homeowner",
+            status="submitted",
+            customer_name="Unified Prospect",
+            accomplishment_text="Need kitchen cabinets installed.",
+            ai_project_title="Kitchen cabinet install",
+            ai_project_type="Installation",
+            ai_project_subtype="Kitchen Cabinet Installation",
+            ai_description="Kitchen cabinet installation request involving removal of existing cabinets and backsplash work.",
+            ai_project_timeline_days=5,
+            ai_project_budget=Decimal("6250.00"),
+            ai_clarification_answers={
+                "scope_kind": "New cabinets only",
+                "demo_removal": "Remove old cabinets too",
+                "materials_ready": "Already on site",
+                "related_work": "Yes, backsplash also included",
+            },
+            measurement_handling="site_visit_required",
+            ai_milestones=[
+                {"order": 1, "title": "Demo and Prep", "description": "Protect work area and demo existing finishes."},
+                {"order": 2, "title": "Install and Finish", "description": "Install cabinets, finishes, and fixtures."},
+            ],
+        )
+
+        intake_bundle = build_project_intelligence({"intake": intake})
+        agreement = convert_intake_to_agreement(intake=intake)
+        agreement_bundle = build_project_intelligence({"agreement": agreement})
+
+        self.assertEqual(intake_bundle["analysis"]["project_family_key"], agreement_bundle["analysis"]["project_family_key"])
+        self.assertEqual(intake_bundle["analysis"]["project_scope_summary"], agreement_bundle["analysis"]["project_scope_summary"])
+        self.assertEqual(intake_bundle["recommended_setup"], agreement_bundle["recommended_setup"])
+        self.assertEqual(intake_bundle["suggested_plan"]["project_family_key"], agreement_bundle["suggested_plan"]["project_family_key"])
+        self.assertEqual(intake_bundle["suggested_plan"]["project_scope_summary"], agreement_bundle["suggested_plan"]["project_scope_summary"])
+        self.assertEqual(intake_bundle["suggested_plan"]["recommended_project_type"], agreement_bundle["suggested_plan"]["recommended_project_type"])
+        self.assertEqual(intake_bundle["suggested_plan"]["suggested_workflow"], agreement_bundle["suggested_plan"]["suggested_workflow"])
+
+    def test_project_intelligence_orchestrator_uses_template_context(self):
+        template = ProjectTemplate.objects.create(
+            name="Kitchen Cabinet Install Template",
+            project_type="Kitchen Remodel",
+            project_subtype="Kitchen Cabinet Installation",
+            description="Remove existing cabinets and install new cabinets already on site.",
+            is_system=True,
+            is_active=True,
+            visibility=ProjectTemplate.Visibility.SYSTEM,
+            allow_discovery=True,
+        )
+
+        bundle = build_project_intelligence(
+            {
+                "template": template,
+                "project_title": template.name,
+                "project_type": template.project_type,
+                "project_subtype": template.project_subtype,
+                "description": template.description,
+                "template_id": template.id,
+                "template_name": template.name,
+            }
+        )
+
+        self.assertEqual(bundle["normalized_input"]["template_id"], template.id)
+        self.assertEqual(bundle["analysis"]["project_family_key"], "kitchen_remodel")
+        self.assertEqual(bundle["classification"]["family_key"], "kitchen_remodel")
+        self.assertEqual(bundle["analysis"]["project_type"], "Installation")
+        self.assertEqual(bundle["suggested_plan"]["project_family_key"], "kitchen_remodel")
 
     def test_brand_voice_personalizes_proposal_draft_without_breaking_fallback(self):
         ContractorPublicProfile.objects.create(

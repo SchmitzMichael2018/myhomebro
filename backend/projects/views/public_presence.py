@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 from django.db import IntegrityError
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -28,15 +26,25 @@ from projects.serializers.public_presence import (
     PublicGalleryItemSerializer,
     make_qr_svg_data,
 )
-from projects.services.intake_analysis import analyze_project_intake
 from projects.services.bid_workflow import infer_project_class, promote_public_lead_to_agreement
 from projects.services.public_lead_notifications import (
     send_public_lead_accept_email,
     send_public_lead_reject_email,
 )
+from projects.services.project_intelligence_orchestrator import build_project_intelligence
 from projects.services.public_lead_pipeline import normalize_public_lead_source
 from projects.services.agreements.project_create import resolve_contractor_for_user
 from projects.services.intake_public import send_intake_email
+
+
+def _safe_text(value) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _safe_dict(value) -> dict:
+    return dict(value) if isinstance(value, dict) else {}
 
 
 def _resolve_contractor(user):
@@ -135,15 +143,21 @@ def _ensure_homeowner_for_lead(lead):
 
 def _build_lead_analysis_payload(lead):
     source_intake = getattr(lead, "source_intake", None)
-    intake_like = SimpleNamespace(
-        contractor=lead.contractor,
-        accomplishment_text=_lead_scope_text(lead),
-        ai_project_type="",
-        ai_project_subtype="",
-        measurement_handling=getattr(source_intake, "measurement_handling", ""),
-        ai_clarification_answers=getattr(source_intake, "ai_clarification_answers", {}) or {},
+    intelligence = build_project_intelligence(
+        {
+            "lead": lead,
+            "contractor": lead.contractor,
+            "project_title": _safe_text(lead.project_type),
+            "project_type": _safe_text(lead.project_type),
+            "project_subtype": _safe_text(_safe_dict(getattr(lead, "ai_analysis", {})).get("project_subtype")),
+            "description": _lead_scope_text(lead),
+            "project_scope_summary": _lead_scope_text(lead),
+            "measurement_handling": getattr(source_intake, "measurement_handling", ""),
+            "clarification_answers": getattr(source_intake, "ai_clarification_answers", {}) or {},
+            "photo_count": int(_safe_dict(getattr(lead, "ai_analysis", {})).get("photo_count") or 0),
+        }
     )
-    result = analyze_project_intake(intake=intake_like)
+    result = intelligence.get("analysis", {})
     suggested_templates = list(result.get("template_matches") or [])
     primary_template_id = result.get("template_id")
     if primary_template_id and not any(str(item.get("id")) == str(primary_template_id) for item in suggested_templates):

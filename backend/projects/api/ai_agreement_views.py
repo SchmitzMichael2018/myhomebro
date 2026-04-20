@@ -19,7 +19,7 @@ from projects.ai.agreement_milestone_writer import (
 from projects.models import Agreement, Milestone
 from projects.services.ai_orchestrator import orchestrate_user_request
 from projects.services.ai.project_drafter import draft_project_structure
-from projects.services.estimation_engine import build_project_estimate
+from projects.services.project_intelligence_orchestrator import build_project_intelligence
 
 
 def _get_contractor_for_user(user):
@@ -289,13 +289,13 @@ def agreement_estimate_preview(request, agreement_id: int):
         return _deny("Not your agreement.", "FORBIDDEN")
 
     try:
-        out = build_project_estimate(agreement=agreement)
+        out = build_project_intelligence({"agreement": agreement})
     except Exception as e:
         return JsonResponse({"detail": str(e)}, status=HTTP_400_BAD_REQUEST)
 
     payload = {
         "detail": "OK",
-        **out,
+        **(out.get("estimate_preview") or {}),
         **_ai_access_payload(),
     }
     return JsonResponse(payload, status=HTTP_200_OK)
@@ -374,13 +374,24 @@ def ai_draft_project(request):
         return _deny("Not your agreement.", "FORBIDDEN")
 
     try:
+        intelligence = build_project_intelligence(
+            {
+                "agreement": agreement,
+                "contractor": contractor,
+                "project_title": request.data.get("project_title") or "",
+                "description": request.data.get("description") or request.data.get("current_description") or "",
+                "project_type": request.data.get("project_type") or "",
+                "project_subtype": request.data.get("project_subtype") or "",
+            }
+        )
+        analysis = intelligence.get("analysis", {})
         result = draft_project_structure(
             agreement=agreement,
             contractor=contractor,
-            project_title=request.data.get("project_title") or "",
-            description=request.data.get("description") or request.data.get("current_description") or "",
-            requested_type=request.data.get("project_type") or "",
-            requested_subtype=request.data.get("project_subtype") or "",
+            project_title=analysis.get("project_title") or request.data.get("project_title") or "",
+            description=analysis.get("description") or request.data.get("description") or request.data.get("current_description") or "",
+            requested_type=analysis.get("project_type") or request.data.get("project_type") or "",
+            requested_subtype=analysis.get("project_subtype") or request.data.get("project_subtype") or "",
         )
     except Exception as e:
         return JsonResponse({"detail": str(e)}, status=HTTP_400_BAD_REQUEST)

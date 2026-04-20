@@ -15,8 +15,8 @@ from projects.models_invite import ContractorInvite
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from projects.models import PublicContractorLead
 from projects.ai.agreement_description_writer import generate_or_improve_description
-from projects.services.intake_analysis import analyze_project_intake
 from projects.services.invites_delivery import build_invite_url
+from projects.services.project_intelligence_orchestrator import build_project_intelligence
 from projects.services.public_lead_pipeline import sync_public_lead_from_project_intake
 
 
@@ -419,7 +419,8 @@ class PublicIntakeView(APIView):
             changed.append("status")
 
         if accomplishment and not has_structured_output_edits and (has_clarification_edits or not has_ai_updates):
-            result = analyze_project_intake(intake=intake)
+            intelligence = build_project_intelligence({"intake": intake})
+            result = intelligence.get("analysis", {})
             intake.ai_project_title = result.get("project_title", "")
             intake.ai_project_type = result.get("project_type", "")
             intake.ai_project_subtype = result.get("project_subtype", "")
