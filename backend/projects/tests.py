@@ -1609,8 +1609,62 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertTrue({"scope_kind", "area_count", "layout_changes", "materials_ready"}.issubset(keys))
         self.assertLessEqual(len(keys), 4)
         self.assertNotIn("measurement_handling", keys)
-        self.assertIn("Clarifications and assumptions", result.get("description", ""))
+        self.assertEqual(result.get("project_type"), "Remodel")
+        self.assertEqual(result.get("project_subtype"), "Bathroom Remodel")
+        self.assertIn("Bathroom remodel request", result.get("description", ""))
+        self.assertIn("one bathroom", result.get("description", "").lower())
+        self.assertIn("Layout changes are planned", result.get("description", ""))
         self.assertIn("Layout changes", " ".join(result.get("clarification_assumptions", [])))
+
+    def test_public_intake_analysis_builds_kitchen_install_summary_from_answers(self):
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            initiated_by="homeowner",
+            status="submitted",
+            customer_name="Kitchen Install Prospect",
+            accomplishment_text="Need kitchen cabinets installed.",
+            ai_clarification_answers={
+                "scope_kind": "New cabinets only",
+                "demo_removal": "Remove old cabinets too",
+                "materials_ready": "Already on site",
+                "related_work": "Yes, backsplash also included",
+            },
+        )
+
+        result = analyze_project_intake(intake=intake)
+        self.assertEqual(result.get("project_type"), "Installation")
+        self.assertEqual(result.get("project_subtype"), "Kitchen Cabinet Installation")
+        self.assertEqual(result.get("project_family_key"), "kitchen_remodel")
+        self.assertIn("Kitchen cabinet installation request", result.get("description", ""))
+        self.assertIn("removal of existing cabinets", result.get("description", ""))
+        self.assertIn("installation of new cabinets already on site", result.get("description", ""))
+        self.assertIn("related backsplash work", result.get("description", ""))
+
+    def test_public_intake_analysis_builds_roof_repair_summary_from_answers(self):
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            public_profile=self.profile,
+            initiated_by="homeowner",
+            status="submitted",
+            customer_name="Roof Repair Prospect",
+            accomplishment_text="Need roof work.",
+            ai_clarification_answers={
+                "scope_kind": "Repair",
+                "area_count": "one section",
+                "damage_urgency": "No known interior damage yet",
+                "inspection_before_pricing": "Yes",
+            },
+        )
+
+        result = analyze_project_intake(intake=intake)
+        self.assertEqual(result.get("project_type"), "Repair")
+        self.assertEqual(result.get("project_subtype"), "Roof Repair")
+        self.assertEqual(result.get("project_family_key"), "roofing")
+        self.assertIn("Roof repair request", result.get("description", ""))
+        self.assertIn("one section", result.get("description", "").lower())
+        self.assertIn("no interior water damage reported yet", result.get("description", "").lower())
+        self.assertIn("Contractor inspection requested before final pricing", result.get("description", ""))
 
     def test_public_intake_analysis_skips_questions_for_already_clear_description(self):
         intake = ProjectIntake.objects.create(
@@ -1646,6 +1700,9 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertLessEqual(len(questions), 4)
         self.assertIn("scope_kind", keys)
         self.assertIn("inspection_before_pricing", keys)
+        self.assertEqual(result.get("project_type"), "Repair")
+        self.assertEqual(result.get("project_subtype"), "General Repair")
+        self.assertIn("General repair request", result.get("description", ""))
 
     @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
     def test_public_intake_photo_upload_creates_photo(self):

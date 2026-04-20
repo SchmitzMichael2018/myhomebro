@@ -64,12 +64,12 @@ def _template_clarification_payload(template: ProjectTemplate) -> list[dict[str,
     return []
 
 
-def _score_template(template: ProjectTemplate, intake: ProjectIntake) -> tuple[int, list[str]]:
+def _score_template(template: ProjectTemplate, intake: ProjectIntake, *, search_text: str = "") -> tuple[int, list[str]]:
     score = 0
     reasons: list[str] = []
 
     accomplishment = _safe_str(intake.accomplishment_text)
-    accomplishment_l = accomplishment.lower()
+    search_text_l = _safe_str(search_text or accomplishment).lower()
 
     intake_type = _safe_str(getattr(intake, "ai_project_type", ""))
     intake_subtype = _safe_str(getattr(intake, "ai_project_subtype", ""))
@@ -88,17 +88,17 @@ def _score_template(template: ProjectTemplate, intake: ProjectIntake) -> tuple[i
         reasons.append(f'exact subtype match: "{tpl_subtype}"')
 
     haystack = " ".join([tpl_name, tpl_type, tpl_subtype, tpl_desc]).lower()
-    shared = sorted(_split_words(accomplishment) & _split_words(haystack))
+    shared = sorted(_split_words(search_text_l) & _split_words(haystack))
     if shared:
         bonus = min(len(shared) * 8, 32)
         score += bonus
         reasons.append(f"shared keywords: {', '.join(shared[:6])}")
 
-    if tpl_subtype and tpl_subtype.lower() in accomplishment_l:
+    if tpl_subtype and tpl_subtype.lower() in search_text_l:
         score += 25
         reasons.append(f'subtype keyword present: "{tpl_subtype}"')
 
-    if tpl_type and tpl_type.lower() in accomplishment_l:
+    if tpl_type and tpl_type.lower() in search_text_l:
         score += 15
         reasons.append(f'type keyword present: "{tpl_type}"')
 
@@ -145,7 +145,7 @@ def _template_match_payload(
     }
 
 
-def _recommend_template(intake: ProjectIntake):
+def _recommend_template(intake: ProjectIntake, *, search_text: str = ""):
     contractor = getattr(intake, "contractor", None)
     accomplishment = _safe_str(intake.accomplishment_text)
 
@@ -162,7 +162,7 @@ def _recommend_template(intake: ProjectIntake):
     ranked: list[tuple[int, ProjectTemplate, list[str]]] = []
 
     for template in qs:
-        score, reasons = _score_template(template, intake)
+        score, reasons = _score_template(template, intake, search_text=search_text)
         ranked.append((score, template, reasons))
 
     ranked.sort(
@@ -270,6 +270,25 @@ def _generate_default_milestones(project_type: str, project_subtype: str, accomp
             },
         ]
 
+    if "kitchen" in subtype_l:
+        return [
+            {
+                "order": 1,
+                "title": "Removal and Site Preparation",
+                "description": "Protect surrounding areas, remove existing cabinets or finishes if included, and prepare the kitchen for installation work.",
+            },
+            {
+                "order": 2,
+                "title": "Cabinet and Related Work",
+                "description": "Install new cabinets and complete any related countertop, backsplash, or appliance coordination included in the scope.",
+            },
+            {
+                "order": 3,
+                "title": "Finish Details and Cleanup",
+                "description": "Complete finish details, final adjustments, and site cleanup.",
+            },
+        ]
+
     if "floor" in subtype_l:
         return [
             {
@@ -345,11 +364,21 @@ def _generate_default_clarifications(project_type: str, project_subtype: str) ->
 
 def _estimate_timeline_days(project_type: str, project_subtype: str, accomplishment: str) -> int:
     text = " ".join([project_type, project_subtype, accomplishment]).lower()
+    if "roof" in text:
+        if any(keyword in text for keyword in ["replacement", "replace", "full replacement"]):
+            return 14
+        return 7
+    if "kitchen" in text and "cabinet" in text and any(keyword in text for keyword in ["install", "installation"]):
+        return 10
+    if "kitchen" in text:
+        return 21
+    if "bathroom" in text and any(keyword in text for keyword in ["repair", "update"]):
+        return 7
+    if "bathroom" in text:
+        return 14
+    if "floor" in text and any(keyword in text for keyword in ["install", "installation"]):
+        return 5
     mapping = [
-        (["roof"], 7),
-        (["bathroom"], 14),
-        (["kitchen"], 21),
-        (["floor", "flooring"], 5),
         (["paint", "painting"], 3),
         (["drywall"], 4),
         (["electrical"], 4),
@@ -365,10 +394,21 @@ def _estimate_timeline_days(project_type: str, project_subtype: str, accomplishm
 
 def _estimate_budget(project_type: str, project_subtype: str, accomplishment: str) -> Decimal:
     text = " ".join([project_type, project_subtype, accomplishment]).lower()
+    if "roof" in text:
+        if any(keyword in text for keyword in ["replacement", "replace", "full replacement"]):
+            return Decimal("14000.00")
+        return Decimal("7000.00")
+    if "kitchen" in text and "cabinet" in text and any(keyword in text for keyword in ["install", "installation"]):
+        return Decimal("15000.00")
+    if "kitchen" in text:
+        return Decimal("25000.00")
+    if "bathroom" in text and any(keyword in text for keyword in ["repair", "update"]):
+        return Decimal("8500.00")
+    if "bathroom" in text:
+        return Decimal("18000.00")
+    if "floor" in text and any(keyword in text for keyword in ["install", "installation"]):
+        return Decimal("8000.00")
     mapping = [
-        (["roof"], Decimal("12000.00")),
-        (["bathroom"], Decimal("18000.00")),
-        (["kitchen"], Decimal("25000.00")),
         (["floor", "flooring"], Decimal("8000.00")),
         (["paint", "painting"], Decimal("4500.00")),
         (["drywall"], Decimal("3500.00")),
@@ -389,6 +429,344 @@ def _project_label(project_type: str, project_subtype: str, accomplishment: str)
         if text:
             return text.split(",")[0].strip()
     return "project"
+
+
+def _clarification_answer_text(answers: dict[str, Any]) -> str:
+    return " ".join(_safe_str(value) for value in (answers or {}).values() if _safe_str(value))
+
+
+def _answer_value(answers: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = _safe_str((answers or {}).get(key))
+        if value:
+            return value
+    return ""
+
+
+def _answer_contains(answers: dict[str, Any], *keys: str, needles: list[str]) -> bool:
+    return _contains_any(" ".join(_answer_value(answers, key) for key in keys), needles)
+
+
+def _summary_sentence(text: str) -> str:
+    cleaned = " ".join(_safe_str(text).split()).strip(" .")
+    return f"{cleaned}." if cleaned else ""
+
+
+def _build_project_classification(
+    *,
+    accomplishment: str,
+    answers: dict[str, Any],
+) -> dict[str, str]:
+    combined = _clarification_text(accomplishment, _clarification_answer_text(answers))
+    family_context = build_project_intelligence_context(
+        project_title="",
+        project_type="",
+        project_subtype="",
+        description=combined,
+    )
+    family_key = _safe_str(family_context.get("family_key")) or "general"
+    family_label = _safe_str(family_context.get("family_label") or family_context.get("family_cue_label")) or "General project"
+
+    scope = _answer_value(answers, "scope_kind").lower()
+    materials = _answer_value(answers, "materials_ready").lower()
+    layout = _answer_value(answers, "layout_changes").lower()
+    related = _answer_value(answers, "related_work").lower()
+    damage = _answer_value(answers, "damage_urgency").lower()
+    inspection = _answer_value(answers, "inspection_before_pricing").lower()
+    area_count = _answer_value(answers, "area_count")
+    task_list = _answer_value(answers, "task_list")
+
+    if family_key == "roofing":
+        if any(keyword in " ".join([scope, combined]) for keyword in ["replacement", "full replacement"]):
+            project_type, project_subtype = "Replacement", "Roof Replacement"
+        else:
+            project_type, project_subtype = "Repair", "Roof Repair"
+    elif family_key == "bathroom_remodel":
+        if any(keyword in " ".join([scope, layout, combined]) for keyword in ["smaller update", "repair", "update"]):
+            project_type, project_subtype = "Repair", "Bathroom Repair"
+        else:
+            project_type, project_subtype = "Remodel", "Bathroom Remodel"
+    elif family_key == "kitchen_remodel":
+        if any(keyword in " ".join([scope, combined]) for keyword in ["install", "installation", "new cabinets only", "cabinets only"]):
+            project_type, project_subtype = "Installation", "Kitchen Cabinet Installation"
+        elif any(keyword in " ".join([scope, layout, related, combined]) for keyword in ["remodel", "layout", "appliance", "countertop", "backsplash"]):
+            project_type, project_subtype = "Remodel", "Kitchen Remodel"
+        else:
+            project_type, project_subtype = "Installation", "Kitchen Cabinet Installation"
+    elif family_key == "flooring":
+        project_type, project_subtype = "Installation", "Flooring Installation"
+    elif family_key == "painting":
+        if "exterior" in combined and "interior" in combined:
+            project_type, project_subtype = "Painting", "Interior / Exterior Painting"
+        elif "exterior" in combined:
+            project_type, project_subtype = "Painting", "Exterior Painting"
+        else:
+            project_type, project_subtype = "Painting", "Interior Painting"
+    elif family_key == "electrical":
+        if any(keyword in " ".join([scope, combined]) for keyword in ["install", "installation", "new"]):
+            project_type, project_subtype = "Installation", "Electrical Installation"
+        else:
+            project_type, project_subtype = "Repair", "Electrical Repair"
+    elif family_key == "plumbing":
+        if any(keyword in " ".join([scope, combined]) for keyword in ["install", "installation", "new"]):
+            project_type, project_subtype = "Installation", "Plumbing Installation"
+        else:
+            project_type, project_subtype = "Repair", "Plumbing Repair"
+    elif family_key == "exterior_siding":
+        if any(keyword in " ".join([scope, combined]) for keyword in ["replacement", "replace", "new"]):
+            project_type, project_subtype = "Replacement", "Exterior / Siding Replacement"
+        else:
+            project_type, project_subtype = "Repair", "Exterior / Siding Repair"
+    elif family_key == "windows_doors":
+        if any(keyword in " ".join([scope, combined]) for keyword in ["install", "installation", "replace", "replacement", "new"]):
+            project_type, project_subtype = "Installation", "Window / Door Installation"
+        else:
+            project_type, project_subtype = "Repair", "Window / Door Repair"
+    elif family_key == "handyman":
+        project_type, project_subtype = "Repair", "General Repair"
+    else:
+        if any(keyword in " ".join([scope, combined]) for keyword in ["replacement", "replace"]):
+            project_type, project_subtype = "Replacement", "General Replacement"
+        elif any(keyword in " ".join([scope, combined]) for keyword in ["remodel", "layout"]):
+            project_type, project_subtype = "Remodel", "General Remodel"
+        elif any(keyword in " ".join([scope, combined]) for keyword in ["install", "installation", "new"]):
+            project_type, project_subtype = "Installation", "General Installation"
+        else:
+            project_type, project_subtype = "Repair", "General Repair"
+
+    return {
+        "family_key": family_key,
+        "family_label": family_label,
+        "project_type": project_type,
+        "project_subtype": project_subtype,
+        "scope": scope,
+        "materials": materials,
+        "layout": layout,
+        "related": related,
+        "damage": damage,
+        "inspection": inspection,
+        "area_count": area_count,
+        "task_list": task_list,
+        "combined_text": combined,
+    }
+
+
+def _build_project_summary(
+    *,
+    classification: dict[str, str],
+    accomplishment: str,
+    answers: dict[str, Any],
+    photo_count: int = 0,
+) -> str:
+    project_type = classification.get("project_type", "")
+    project_subtype = classification.get("project_subtype", "")
+    family_key = classification.get("family_key", "general")
+    family_label = classification.get("family_label", "project")
+    scope = classification.get("scope", "")
+    materials = classification.get("materials", "")
+    layout = classification.get("layout", "")
+    related = classification.get("related", "")
+    damage = classification.get("damage", "")
+    inspection = classification.get("inspection", "")
+    area_count = classification.get("area_count", "")
+    task_list = classification.get("task_list", "")
+
+    sentences: list[str] = []
+
+    if family_key == "roofing":
+        if any(keyword in " ".join([scope, accomplishment]).lower() for keyword in ["replacement", "full replacement"]):
+            opening = "Roof replacement request"
+        else:
+            opening = "Roof repair request"
+        if damage:
+            if any(keyword in damage for keyword in ["no"]):
+                opening = f"{opening} with no interior water damage reported yet"
+            elif any(keyword in damage for keyword in ["yes", "active", "reported", "leak", "water", "damage"]):
+                opening = f"{opening} with active leak or water damage concerns"
+        if area_count:
+            opening = f"{opening} affecting {area_count.lower()}"
+        sentences.append(f"{opening}.")
+        if inspection:
+            sentences.append("Contractor inspection requested before final pricing.")
+
+    elif family_key == "bathroom_remodel":
+        if any(keyword in " ".join([scope, layout, accomplishment]).lower() for keyword in ["smaller update", "repair", "update"]):
+            opening = "Bathroom update/repair request"
+        else:
+            opening = "Bathroom remodel request"
+        if area_count:
+            opening = f"{opening} for {area_count.lower()}"
+        sentences.append(f"{opening}.")
+        if layout and any(keyword in layout for keyword in ["some", "major"]):
+            sentences.append(f"Layout changes are planned: {layout}.")
+        if materials:
+            if any(keyword in materials for keyword in ["already selected", "already on site"]):
+                sentences.append("Fixtures or materials are already selected.")
+            elif "not yet" in materials or "not sure" in materials:
+                sentences.append("Fixtures or materials have not been selected yet.")
+
+    elif family_key == "kitchen_remodel":
+        if any(keyword in " ".join([scope, accomplishment]).lower() for keyword in ["install", "installation", "new cabinets only", "cabinets only"]):
+            opening = "Kitchen cabinet installation request"
+        else:
+            opening = "Kitchen remodel request"
+        if area_count:
+            opening = f"{opening} for {area_count.lower()}"
+        sentences.append(f"{opening}.")
+        cabinet_bits: list[str] = []
+        if any(keyword in " ".join([scope, accomplishment, _answer_value(answers, "demo_removal")]).lower() for keyword in ["remove", "removal", "demo", "tear out"]):
+            cabinet_bits.append("removal of existing cabinets")
+        if any(keyword in " ".join([scope, accomplishment]).lower() for keyword in ["install", "installation", "new cabinets", "cabinet"]):
+            if any(keyword in materials for keyword in ["already on site", "already selected"]):
+                cabinet_bits.append("installation of new cabinets already on site")
+            else:
+                cabinet_bits.append("installation of new cabinets")
+        if related:
+            if "backsplash" in related:
+                cabinet_bits.append("related backsplash work")
+            elif "countertop" in related or "countertops" in related:
+                cabinet_bits.append("related countertop work")
+            elif "appliance" in related:
+                cabinet_bits.append("related appliance moves")
+        if layout and any(keyword in layout for keyword in ["some", "major"]):
+            cabinet_bits.append(f"layout changes: {layout}")
+        if cabinet_bits:
+            sentences.append(f"Includes {', '.join(cabinet_bits)}.")
+
+    elif family_key == "flooring":
+        opening = "Flooring installation request"
+        if area_count:
+            opening = f"{opening} for {area_count.lower()}"
+        sentences.append(f"{opening}.")
+        if any(keyword in accomplishment.lower() for keyword in ["remove", "replacement", "demo", "tear out"]):
+            sentences.append("Existing flooring removal is part of the scope.")
+        if any(keyword in classification.get("combined_text", "").lower() for keyword in ["subfloor", "underlayment", "leveling", "sagging"]):
+            sentences.append("The subfloor may need review or repair.")
+        if materials:
+            sentences.append("Flooring material is already selected." if any(keyword in materials for keyword in ["already selected", "already on site"]) else "Flooring material still needs to be confirmed.")
+
+    elif family_key == "painting":
+        opening = "Painting request"
+        if "exterior" in classification.get("combined_text", "") and "interior" in classification.get("combined_text", ""):
+            opening = "Interior and exterior painting request"
+        elif "exterior" in classification.get("combined_text", ""):
+            opening = "Exterior painting request"
+        elif "interior" in classification.get("combined_text", ""):
+            opening = "Interior painting request"
+        if area_count:
+            opening = f"{opening} for {area_count.lower()}"
+        sentences.append(f"{opening}.")
+        if any(keyword in accomplishment.lower() for keyword in ["prep", "patch", "repair", "fix"]):
+            sentences.append("Prep and surface repairs may be part of the work.")
+        if materials:
+            sentences.append("Color and finish selections are already known." if any(keyword in materials for keyword in ["already selected", "picked"] ) else "Color and finish selections still need to be confirmed.")
+
+    elif family_key == "electrical":
+        opening = "Electrical request"
+        if any(keyword in " ".join([scope, accomplishment]).lower() for keyword in ["install", "installation", "new"]):
+            opening = "Electrical installation request"
+        elif any(keyword in " ".join([scope, accomplishment]).lower() for keyword in ["troubleshooting", "issue", "repair"]):
+            opening = "Electrical repair request"
+        sentences.append(f"{opening}.")
+        if any(keyword in classification.get("combined_text", "").lower() for keyword in ["panel", "outlet", "switch", "lighting"]):
+            sentences.append("The affected electrical area has been identified.")
+        if any(keyword in damage for keyword in ["yes", "safety", "urgent"]):
+            sentences.append("There may be an active safety concern or urgent issue.")
+        if inspection:
+            sentences.append("A site visit before final pricing is expected.")
+
+    elif family_key == "plumbing":
+        opening = "Plumbing request"
+        if any(keyword in " ".join([scope, accomplishment]).lower() for keyword in ["install", "installation", "new"]):
+            opening = "Plumbing installation request"
+        elif any(keyword in " ".join([scope, accomplishment]).lower() for keyword in ["repair", "leak", "replace"]):
+            opening = "Plumbing repair request"
+        sentences.append(f"{opening}.")
+        if any(keyword in classification.get("combined_text", "").lower() for keyword in ["sink", "toilet", "shower", "pipe", "drain", "faucet"]):
+            sentences.append("The affected fixture or line has been identified.")
+        if any(keyword in damage for keyword in ["yes", "urgent", "active"]):
+            sentences.append("There may be an active leak or urgent issue.")
+        if inspection:
+            sentences.append("A site visit before final pricing is expected.")
+
+    elif family_key == "exterior_siding":
+        opening = "Exterior / siding request"
+        if any(keyword in " ".join([scope, accomplishment]).lower() for keyword in ["replace", "replacement", "new"]):
+            opening = "Exterior / siding replacement request"
+        elif any(keyword in " ".join([scope, accomplishment]).lower() for keyword in ["repair", "patch", "fix"]):
+            opening = "Exterior / siding repair request"
+        sentences.append(f"{opening}.")
+        if area_count:
+            sentences.append(f"The work covers {area_count.lower()}.")
+        if damage:
+            sentences.append("Weather exposure or existing damage may need review.")
+        if inspection:
+            sentences.append("An on-site inspection is expected before final pricing.")
+
+    elif family_key == "windows_doors":
+        opening = "Window / door request"
+        if any(keyword in " ".join([scope, accomplishment]).lower() for keyword in ["install", "installation", "replace", "replacement", "new"]):
+            opening = "Window / door installation request"
+        elif any(keyword in " ".join([scope, accomplishment]).lower() for keyword in ["repair", "fix"]):
+            opening = "Window / door repair request"
+        sentences.append(f"{opening}.")
+        if area_count:
+            sentences.append(f"The work covers {area_count.lower()}.")
+        if materials:
+            sentences.append("Trim or weatherproofing details have been partly defined." if any(keyword in materials for keyword in ["already selected", "already on site"]) else "Trim and weatherproofing details still need confirmation.")
+        if inspection:
+            sentences.append("A site visit before final pricing is expected.")
+
+    elif family_key == "handyman":
+        opening = "General repair / handyman request"
+        if task_list:
+            opening = f"{opening} covering {task_list.lower()}"
+        sentences.append(f"{opening}.")
+        if materials:
+            sentences.append("Material responsibility should be confirmed before pricing.")
+
+    else:
+        vague_input = _safe_str(accomplishment).lower()
+        if any(keyword in vague_input for keyword in ["need help", "project", "quote", "estimate", "some work", "something", "need work", "general"]):
+            opening = "General repair request" if _safe_str(project_type).lower() == "repair" else f"{project_type or family_label} request"
+        else:
+            opening = _safe_str(accomplishment) or f"{project_subtype or project_type or family_label} project"
+        sentences.append(_summary_sentence(opening))
+        if area_count:
+            sentences.append(f"The work covers {area_count.lower()}.")
+        if materials:
+            sentences.append("Materials are already selected or on site." if any(keyword in materials for keyword in ["already selected", "already on site"]) else "Materials still need to be confirmed.")
+        if inspection:
+            sentences.append("Contractor inspection requested before final pricing.")
+        if damage:
+            sentences.append("There may be an active issue or urgency to review.")
+
+    if photo_count > 0:
+        sentences.append(f"{photo_count} photo{'s' if photo_count != 1 else ''} attached for reference.")
+
+    cleaned = [sentence.strip() for sentence in sentences if sentence and sentence.strip()]
+    return " ".join(cleaned).strip() or _safe_str(accomplishment) or f"{project_subtype or project_type or family_label} project"
+
+
+def _clarification_assumptions_from_answers(answers: dict[str, Any]) -> list[str]:
+    assumptions: list[str] = []
+    scope_depth = _format_answer(answers.get("scope_depth"))
+    layout_changes = _format_answer(answers.get("layout_changes"))
+    materials = _format_answer(answers.get("materials_responsibility"))
+    timeline = _format_answer(answers.get("timeline_clarity"))
+    measurement = _measurement_display(answers.get("measurement_handling"))
+
+    if scope_depth:
+        assumptions.append(f"Scope depth: {scope_depth}.")
+    if layout_changes:
+        assumptions.append(f"Layout changes: {layout_changes}.")
+    if materials:
+        assumptions.append(f"Materials responsibility: {materials}.")
+    if timeline:
+        assumptions.append(f"Timeline clarity: {timeline}.")
+    if measurement:
+        assumptions.append(f"Measurements: {measurement}.")
+    return assumptions
 
 
 def _clarification_text(*parts: Any) -> str:
@@ -740,18 +1118,28 @@ def _refine_milestones(milestones: list[dict[str, Any]], answers: dict[str, Any]
 
 def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
     accomplishment = _safe_str(intake.accomplishment_text)
+    clarification_answers = _clarification_answers_map(intake)
     photo_count = 0
     try:
         photo_count = int(getattr(getattr(intake, "clarification_photos", None), "count", lambda: 0)() or 0)
     except Exception:
         photo_count = 0
+    combined_text = _clarification_text(
+        accomplishment,
+        _clarification_answer_text(clarification_answers),
+        _safe_str(getattr(intake, "ai_project_type", "")),
+        _safe_str(getattr(intake, "ai_project_subtype", "")),
+    )
+    classification = _build_project_classification(
+        accomplishment=accomplishment,
+        answers=clarification_answers,
+    )
     clarification_questions = _clarification_questions(
         _safe_str(getattr(intake, "ai_project_type", "")),
         _safe_str(getattr(intake, "ai_project_subtype", "")),
         accomplishment,
         photo_count=photo_count,
     )
-    clarification_answers = _clarification_answers_map(intake)
     measurement_handling = _safe_str(getattr(intake, "measurement_handling", "")) or _safe_str(
         clarification_answers.get("measurement_handling", "")
     )
@@ -759,7 +1147,7 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
         clarification_answers = dict(clarification_answers)
         clarification_answers.setdefault("measurement_handling", measurement_handling)
 
-    template, confidence, reason, score, template_matches = _recommend_template(intake)
+    template, confidence, reason, score, template_matches = _recommend_template(intake, search_text=combined_text)
     match_quality = _match_quality(score)
     fallback_options = {
         "continue_without_template": True,
@@ -769,21 +1157,26 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
     if template is not None and confidence in {"recommended", "possible"}:
         project_title = _build_title(
             accomplishment=accomplishment,
-            project_type=_safe_str(template.project_type),
-            project_subtype=_safe_str(template.project_subtype),
+            project_type=classification["project_type"],
+            project_subtype=classification["project_subtype"],
         )
         timeline_days = _estimate_timeline_days(
-            _safe_str(template.project_type),
-            _safe_str(template.project_subtype),
-            accomplishment,
+            classification["project_type"],
+            classification["project_subtype"],
+            combined_text,
         )
         budget = _estimate_budget(
-            _safe_str(template.project_type),
-            _safe_str(template.project_subtype),
-            accomplishment,
+            classification["project_type"],
+            classification["project_subtype"],
+            combined_text,
         )
-        description = _safe_str(template.description) or accomplishment
-        refined_description, assumptions = _refine_description(description, clarification_answers)
+        refined_description = _build_project_summary(
+            classification=classification,
+            accomplishment=accomplishment,
+            answers=clarification_answers,
+            photo_count=photo_count,
+        )
+        assumptions = _clarification_assumptions_from_answers(clarification_answers)
         milestones = _template_milestones_payload(template)
         milestones = _refine_milestones(milestones, clarification_answers)
 
@@ -798,8 +1191,11 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
             "reason": reason,
             "template_matches": template_matches,
             "fallback_options": fallback_options,
-            "project_type": _safe_str(template.project_type),
-            "project_subtype": _safe_str(template.project_subtype),
+            "project_type": classification["project_type"],
+            "project_subtype": classification["project_subtype"],
+            "project_family_key": classification["family_key"],
+            "project_family_label": classification["family_label"],
+            "project_scope_summary": refined_description,
             "description": refined_description,
             "project_timeline_days": timeline_days,
             "project_budget": str(budget),
@@ -808,19 +1204,25 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
             "clarification_answers": clarification_answers,
             "clarification_assumptions": assumptions,
             "measurement_handling": measurement_handling,
+            "photo_count": photo_count,
         }
 
-    project_type, project_subtype = _infer_type_and_subtype(accomplishment)
+    project_type = classification["project_type"]
+    project_subtype = classification["project_subtype"]
     project_title = _build_title(
         accomplishment=accomplishment,
         project_type=project_type,
         project_subtype=project_subtype,
     )
-    timeline_days = _estimate_timeline_days(project_type, project_subtype, accomplishment)
-    budget = _estimate_budget(project_type, project_subtype, accomplishment)
-
-    description = accomplishment or f"{project_subtype} project."
-    description, assumptions = _refine_description(description, clarification_answers)
+    timeline_days = _estimate_timeline_days(project_type, project_subtype, combined_text)
+    budget = _estimate_budget(project_type, project_subtype, combined_text)
+    description = _build_project_summary(
+        classification=classification,
+        accomplishment=accomplishment,
+        answers=clarification_answers,
+        photo_count=photo_count,
+    )
+    assumptions = _clarification_assumptions_from_answers(clarification_answers)
     milestones = _generate_default_milestones(project_type, project_subtype, accomplishment)
     milestones = _refine_milestones(milestones, clarification_answers)
 
@@ -837,6 +1239,9 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
         "fallback_options": fallback_options,
         "project_type": project_type,
         "project_subtype": project_subtype,
+        "project_family_key": classification["family_key"],
+        "project_family_label": classification["family_label"],
+        "project_scope_summary": description,
         "description": description,
         "project_timeline_days": timeline_days,
         "project_budget": str(budget),
@@ -845,4 +1250,5 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
         "clarification_answers": clarification_answers,
         "clarification_assumptions": assumptions,
         "measurement_handling": measurement_handling,
+        "photo_count": photo_count,
     }
