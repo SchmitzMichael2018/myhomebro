@@ -19,6 +19,7 @@ from projects.models import Invoice, InvoiceStatus
 # ✅ canonical agreement completion recompute
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
 from projects.services.milestone_payouts import sync_payout_for_invoice
+from projects.services.project_outcome import capture_project_outcome_snapshot
 
 log = logging.getLogger(__name__)
 
@@ -496,4 +497,9 @@ def finalize_direct_pay_invoice_paid(
         log.warning("Agreement completion recompute failed for direct pay invoice %s: %s", getattr(inv, "id", None), exc)
 
     inv.refresh_from_db()
+    try:
+        if getattr(inv, "agreement_id", None):
+            capture_project_outcome_snapshot(int(inv.agreement_id), trigger="payment_released")
+    except Exception:
+        pass
     return inv

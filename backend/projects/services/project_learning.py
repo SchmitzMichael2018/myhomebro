@@ -962,6 +962,12 @@ def on_agreement_completed(agreement: Agreement | int) -> AgreementOutcomeSnapsh
         capture_agreement_proposal_snapshot(agreement, stage="finalized")
     except Exception:
         pass
+    try:
+        from projects.services.project_outcome import capture_project_outcome_snapshot
+
+        capture_project_outcome_snapshot(agreement, trigger="completed")
+    except Exception:
+        pass
     return snapshot
 
 

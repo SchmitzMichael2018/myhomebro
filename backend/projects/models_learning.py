@@ -5,6 +5,76 @@ from decimal import Decimal
 from django.db import models
 
 
+class ProjectOutcomeSnapshot(models.Model):
+    """
+    Append-only project outcome snapshot used to learn from real contractor results.
+
+    This captures the orchestrator output used to start the project, the final
+    contractor-edited agreement state, and the outcome summary that can later
+    feed recommendation learning.
+    """
+
+    agreement = models.OneToOneField(
+        "projects.Agreement",
+        on_delete=models.CASCADE,
+        related_name="project_outcome_snapshot",
+    )
+    contractor = models.ForeignKey(
+        "projects.Contractor",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="project_outcome_snapshots",
+    )
+    source_lead = models.ForeignKey(
+        "projects.PublicContractorLead",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="project_outcome_snapshots",
+    )
+    template = models.ForeignKey(
+        "projects.ProjectTemplate",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="project_outcome_snapshots",
+    )
+
+    project_family_key = models.CharField(max_length=120, blank=True, default="", db_index=True)
+    project_family_label = models.CharField(max_length=255, blank=True, default="")
+    scope_mode = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    template_used = models.CharField(max_length=255, blank=True, default="")
+
+    original_intelligence_payload = models.JSONField(default=dict, blank=True)
+    original_suggested_plan = models.JSONField(default=dict, blank=True)
+    final_project_state = models.JSONField(default=dict, blank=True)
+    final_milestones = models.JSONField(default=list, blank=True)
+
+    total_project_value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    estimated_value_range = models.JSONField(default=dict, blank=True)
+    actual_duration_days = models.PositiveIntegerField(null=True, blank=True)
+    estimated_duration_range = models.JSONField(default=dict, blank=True)
+    milestone_count = models.PositiveIntegerField(default=0)
+    dispute_flag = models.BooleanField(default=False, db_index=True)
+    amendment_count = models.PositiveIntegerField(default=0)
+    completion_status = models.CharField(max_length=64, blank=True, default="", db_index=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["project_family_key", "scope_mode"]),
+            models.Index(fields=["template_used"]),
+            models.Index(fields=["completion_status"]),
+            models.Index(fields=["contractor"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"ProjectOutcomeSnapshot(agreement={self.agreement_id}, family={self.project_family_key})"
+
+
 class AgreementOutcomeSnapshot(models.Model):
     """
     Normalized completed-project snapshot used as the durable learning layer.

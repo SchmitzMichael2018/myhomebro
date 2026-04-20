@@ -18,6 +18,7 @@ from ..serializers.invoices import InvoiceSerializer
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
 from projects.services.milestone_payouts import sync_payout_for_invoice
 from projects.services.pricing_observations import record_pricing_observation_for_invoice
+from projects.services.project_outcome import capture_project_outcome_snapshot
 from projects.services.project_email_reports import send_project_email_report
 from projects.services.activity_feed import create_activity_event
 from projects.services.contractor_onboarding import build_stripe_requirement_payload
@@ -151,6 +152,10 @@ class MagicInvoiceApproveView(APIView):
                 recompute_and_apply_agreement_completion(getattr(invoice, "agreement_id", None))
             except Exception as exc:
                 logger.warning("Agreement completion recompute failed (idempotent path): %s", exc)
+            try:
+                capture_project_outcome_snapshot(getattr(invoice, "agreement_id", None), trigger="payment_released")
+            except Exception:
+                pass
 
             return Response(
                 {
@@ -260,6 +265,10 @@ class MagicInvoiceApproveView(APIView):
                     recompute_and_apply_agreement_completion(getattr(invoice, "agreement_id", None))
                 except Exception as exc:
                     logger.warning("Agreement completion recompute failed (transfer exists path): %s", exc)
+                try:
+                    capture_project_outcome_snapshot(getattr(invoice, "agreement_id", None), trigger="payment_released")
+                except Exception:
+                    pass
                 try:
                     send_project_email_report(
                         event_type="payment_released",
@@ -372,6 +381,10 @@ class MagicInvoiceApproveView(APIView):
                 recompute_and_apply_agreement_completion(getattr(invoice, "agreement_id", None))
             except Exception as exc:
                 logger.warning("Agreement completion recompute failed (transfer created path): %s", exc)
+            try:
+                capture_project_outcome_snapshot(getattr(invoice, "agreement_id", None), trigger="payment_released")
+            except Exception:
+                pass
             try:
                 send_project_email_report(
                     event_type="payment_released",

@@ -25,6 +25,7 @@ try:
         Invoice,
         Expense,
         AgreementAmendment,
+        ProjectOutcomeSnapshot,
         AgreementOutcomeSnapshot,
         AgreementOutcomeMilestoneSnapshot,
         MilestoneBenchmarkAggregate,
@@ -36,7 +37,7 @@ except Exception:  # pragma: no cover
     Milestone = MilestoneFile = MilestoneComment = None
     PublicContractorLead = None
     Invoice = Expense = AgreementAmendment = None
-    AgreementOutcomeSnapshot = AgreementOutcomeMilestoneSnapshot = MilestoneBenchmarkAggregate = ProjectBenchmarkAggregate = None
+    ProjectOutcomeSnapshot = AgreementOutcomeSnapshot = AgreementOutcomeMilestoneSnapshot = MilestoneBenchmarkAggregate = ProjectBenchmarkAggregate = None
 
 # Optional/independent models (guarded with try so admin doesn’t break)
 try:
@@ -944,6 +945,33 @@ if AgreementOutcomeSnapshot is not None:
             "normalized_region_key",
         )
         readonly_fields = ("snapshot_created_at", "snapshot_updated_at")
+
+
+if ProjectOutcomeSnapshot is not None:
+    @admin.register(ProjectOutcomeSnapshot)
+    class ProjectOutcomeSnapshotAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "agreement",
+            "project_family_key",
+            "scope_mode",
+            "template_used",
+            "total_project_value",
+            "actual_duration_days",
+            "milestone_count",
+            "dispute_flag",
+            "completion_status",
+        )
+        list_filter = ("project_family_key", "scope_mode", "completion_status", "dispute_flag")
+        search_fields = (
+            "agreement__project__number",
+            "agreement__project__title",
+            "contractor__business_name",
+            "project_family_key",
+            "project_family_label",
+            "template_used",
+        )
+        readonly_fields = ("created_at",)
 
 
 if AgreementOutcomeMilestoneSnapshot is not None:

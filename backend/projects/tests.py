@@ -32,6 +32,7 @@ from projects.models import (
     AgreementOutcomeMilestoneSnapshot,
     AgreementOutcomeSnapshot,
     AgreementProposalSnapshot,
+    ProjectOutcomeSnapshot,
     Contractor,
     ContractorActivityEvent,
     ContractorActivationEvent,
@@ -84,6 +85,7 @@ from projects.services.project_learning import (
     rebuild_milestone_benchmarks,
     rebuild_project_benchmarks,
 )
+from projects.services.project_outcome import capture_project_outcome_snapshot
 from projects.services.proposal_learning import (
     build_proposal_draft,
     capture_agreement_proposal_snapshot,
@@ -9014,6 +9016,46 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertTrue(proposal_snapshot.is_successful)
         self.assertEqual(proposal_snapshot.project_type, "Remodel")
         self.assertIn("Kitchen Remodel", proposal_snapshot.project_title)
+
+    def test_project_outcome_snapshot_is_captured_when_agreement_becomes_completed(self):
+        agreement = self._create_completed_agreement(status=ProjectStatus.IN_PROGRESS)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            changed, check = recompute_and_apply_agreement_completion(agreement.id)
+
+        self.assertTrue(changed)
+        self.assertTrue(check.ok)
+
+        snapshot = ProjectOutcomeSnapshot.objects.get(agreement=agreement)
+        self.assertEqual(snapshot.project_family_key, "kitchen_remodel")
+        self.assertEqual(snapshot.project_family_label, "Kitchen Remodel")
+        self.assertEqual(snapshot.template_used, self.template.name)
+        self.assertEqual(snapshot.total_project_value, Decimal("12000.00"))
+        self.assertEqual(snapshot.milestone_count, 2)
+        self.assertEqual(snapshot.completion_status, ProjectStatus.COMPLETED)
+        self.assertEqual(snapshot.original_suggested_plan["project_family_key"], "kitchen_remodel")
+        self.assertEqual(snapshot.final_project_state["total_project_value"], "12000.00")
+        self.assertEqual(snapshot.final_project_state["completion_status"], ProjectStatus.COMPLETED)
+        self.assertEqual(len(snapshot.final_milestones), 2)
+        self.assertIn("analysis", snapshot.original_intelligence_payload)
+        self.assertIn("suggested_plan", snapshot.original_intelligence_payload)
+        self.assertIn("estimate_preview", snapshot.original_intelligence_payload)
+
+    def test_project_outcome_snapshot_is_captured_when_payment_is_released(self):
+        agreement = self._create_completed_agreement(status=ProjectStatus.IN_PROGRESS)
+        draw = agreement.draw_requests.first()
+        self.assertIsNotNone(draw)
+
+        finalized = finalize_draw_paid(draw_request_id=draw.id)
+        self.assertEqual(finalized.status, DrawRequestStatus.PAID)
+
+        snapshot = ProjectOutcomeSnapshot.objects.get(agreement=agreement)
+        self.assertEqual(snapshot.project_family_key, "kitchen_remodel")
+        self.assertEqual(snapshot.milestone_count, 2)
+        self.assertIn(snapshot.completion_status, {ProjectStatus.COMPLETED, "payment_released"})
+        self.assertEqual(snapshot.final_project_state["trigger_source"], "payment_released")
+        self.assertIn(snapshot.final_project_state["completion_status"], {ProjectStatus.COMPLETED, "payment_released"})
+        self.assertEqual(snapshot.final_project_state["template_used"], self.template.name)
 
     def test_proposal_snapshot_is_captured_when_agreement_is_created(self):
         payload = {

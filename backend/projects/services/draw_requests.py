@@ -15,6 +15,7 @@ from projects.models import DrawRequest, DrawRequestStatus, ExternalPaymentRecor
 from projects.services.activity_feed import create_activity_event
 from projects.services.draw_notifications import create_draw_lifecycle_notification
 from projects.services.draw_state import derive_draw_workflow_status
+from projects.services.project_outcome import capture_project_outcome_snapshot
 from payments.fees import calculate_platform_fee_cents_for_invoice
 from payments.models import Payment
 from payments.stripe_config import stripe
@@ -489,6 +490,10 @@ def finalize_draw_paid(
             )
 
     draw.refresh_from_db()
+    try:
+        capture_project_outcome_snapshot(draw.agreement_id, trigger="payment_released")
+    except Exception:
+        pass
     create_draw_activity_notification(
         draw,
         event_type="draw_paid",
@@ -658,6 +663,10 @@ def release_escrow_draw(
         )
 
     draw.refresh_from_db()
+    try:
+        capture_project_outcome_snapshot(draw.agreement_id, trigger="payment_released")
+    except Exception:
+        pass
     create_draw_activity_notification(
         draw,
         event_type="draw_released",

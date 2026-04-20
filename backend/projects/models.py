@@ -2299,6 +2299,7 @@ from .models_expense_request import ExpenseRequest  # noqa: E402,F401
 from .models_templates import ProjectTemplate, ProjectTemplateMilestone, SeedBenchmarkProfile  # noqa: E402,F401
 from .models_amendment_request import AmendmentRequest  # noqa: E402,F401
 from .models_learning import (
+    ProjectOutcomeSnapshot,
     AgreementOutcomeSnapshot,
     AgreementOutcomeMilestoneSnapshot,
     AgreementProposalSnapshot,
