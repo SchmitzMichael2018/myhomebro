@@ -9174,6 +9174,8 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertEqual(plan["suggested_budget_low"], "5000.00")
         self.assertEqual(plan["suggested_budget_high"], "7500.00")
         self.assertIn("specific enough", plan["confidence_reasoning"].lower())
+        self.assertIn("materials", " ".join(plan["explanation_points"]).lower())
+        self.assertIn("finish work", " ".join(plan["explanation_points"]).lower())
         self.assertTrue(plan["milestones"])
         self.assertAlmostEqual(sum(row["allocation_percent"] for row in plan["milestones"]), 1.0, places=2)
         self.assertIn("learning_key", plan["learning_ready"])
@@ -9206,6 +9208,7 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertEqual(plan["confidence_level"], "low")
         self.assertEqual(plan["suggested_workflow"], "General project review")
         self.assertNotEqual(plan["suggested_budget_high"], "0.00")
+        self.assertTrue(plan["explanation_points"])
         self.assertTrue(plan["milestones"])
 
     def test_brand_voice_personalizes_proposal_draft_without_breaking_fallback(self):

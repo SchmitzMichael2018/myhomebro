@@ -229,6 +229,11 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
         suggested_duration_days: 12,
         confidence_level: 'medium',
         confidence_reasoning: 'Project type and clarifications provide a practical starting plan.',
+        explanation_points: [
+          'Cabinet installation was detected with removal or replacement work.',
+          'Materials or cabinets appear to be on site already.',
+          'Related finish work was included in the scope.',
+        ],
         milestones: [
           {
             order: 1,
@@ -309,6 +314,9 @@ test('step 2 estimate summary, details, budget guidance, and milestone advisory 
   await expect(page.getByTestId('step2-suggested-plan-workflow')).toContainText('Install + removal');
   await expect(page.getByTestId('step2-suggested-plan-template')).toContainText('Kitchen Remodel Starter');
   await expect(page.getByTestId('step2-suggested-plan-confidence')).toContainText('Moderate');
+  await expect(page.getByTestId('step2-suggested-plan-why')).toBeVisible();
+  await expect(page.getByTestId('step2-suggested-plan-why')).toContainText('Why this plan');
+  await expect(page.getByTestId('step2-suggested-plan-why')).toContainText('Materials or cabinets appear to be on site already.');
   await expect(page.getByTestId('step2-suggested-plan-budget')).toContainText('$22,770.00');
   await expect(page.getByTestId('step2-suggested-plan-duration')).toContainText('10 days');
   await expect(page.getByTestId('step2-apply-suggested-plan')).toBeVisible();
@@ -400,6 +408,10 @@ test('step 2 estimate fallback messaging renders for template-only low-confidenc
         suggested_duration_days: 9,
         confidence_level: 'low',
         confidence_reasoning: 'The plan stays broad because the project details are still somewhat general.',
+        explanation_points: [
+          'The request was clear enough to recommend a practical starting plan.',
+          'Materials already on site may reduce setup work.',
+        ],
         milestones: [
           {
             order: 1,
@@ -470,6 +482,7 @@ test('step 2 estimate fallback messaging renders for template-only low-confidenc
   await expect(page.getByTestId('step2-estimate-panel')).toBeVisible();
   await expect(page.getByTestId('step2-suggested-plan-card')).toBeVisible();
   await expect(page.getByTestId('step2-suggested-plan-confidence')).toContainText('Preliminary');
+  await expect(page.getByTestId('step2-suggested-plan-why')).toBeVisible();
   await expect(
     page.getByText(
       'No strong learned benchmark is available yet, so this estimate is leaning on template baseline guidance.'

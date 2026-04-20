@@ -3146,6 +3146,19 @@ export default function Step2Milestones({
                     {suggestedPlan.confidence_reasoning}
                   </div>
                 ) : null}
+                {Array.isArray(suggestedPlan?.explanation_points) && suggestedPlan.explanation_points.length ? (
+                  <div className="mt-3 rounded-xl border border-emerald-200 bg-white px-3 py-3" data-testid="step2-suggested-plan-why">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700">Why this plan</div>
+                    <ul className="mt-2 space-y-1 text-xs text-slate-700">
+                      {suggestedPlan.explanation_points.slice(0, 4).map((point, index) => (
+                        <li key={`${point}-${index}`} className="flex gap-2">
+                          <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
+                          <span>{point}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </div>
 
               <div className="flex flex-wrap gap-2">

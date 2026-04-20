@@ -507,6 +507,82 @@ def _estimate_confidence(
     return "low", " ".join(reasons)
 
 
+def _build_explanation_points(
+    *,
+    family_key: str,
+    scope_mode: str,
+    flags: dict[str, bool],
+    project_scope_summary: str,
+    recommended_project_type: str,
+    suggested_workflow: str,
+) -> list[str]:
+    points: list[str] = []
+    family_label = _safe_text(recommended_project_type)
+    summary_text = _safe_text(project_scope_summary).lower()
+    workflow_text = _safe_text(suggested_workflow).lower()
+
+    if family_key == "kitchen_remodel":
+        if scope_mode == "install_removal" or _contains_any(summary_text, ["cabinet", "cabinets"]):
+            points.append("Cabinet installation was detected with removal or replacement work.")
+        if flags.get("materials_ready"):
+            points.append("Materials or cabinets appear to be on site already.")
+        if _contains_any(summary_text, ["backsplash", "countertop", "trim", "finish"]):
+            points.append("Related finish work was included in the scope.")
+        if "removal" in workflow_text or "install" in workflow_text:
+            points.append("The workflow starts with removal and install coordination.")
+    elif family_key == "roofing":
+        if flags.get("urgent_or_damage") or _contains_any(summary_text, ["leak", "water damage", "storm", "damage"]):
+            points.append("A leak, damage, or localized roof issue was detected.")
+        if scope_mode == "replacement" or _contains_any(summary_text, ["replace", "replacement", "new roof"]):
+            points.append("The scope points toward replacement rather than a small repair.")
+        else:
+            points.append("No full replacement signals were found, so repair remains the likely starting point.")
+        if flags.get("inspection_requested"):
+            points.append("Inspection is requested before final pricing.")
+    elif family_key == "bathroom_remodel":
+        if _contains_any(summary_text, ["layout", "move", "fixture", "fixtures"]):
+            points.append("Layout or fixture changes were mentioned in the request.")
+        if _contains_any(summary_text, ["repair", "refresh"]) and scope_mode != "remodel":
+            points.append("The request reads more like a repair or refresh than a full remodel.")
+        if _contains_any(summary_text, ["tile", "shower", "vanity", "toilet", "sink"]):
+            points.append("Core bathroom fixtures or finishes are part of the scope.")
+    elif family_key == "flooring":
+        if _contains_any(summary_text, ["square foot", "sq ft", "room", "rooms", "area"]):
+            points.append("Room or square-foot coverage was mentioned, which helps size the job.")
+        if _contains_any(summary_text, ["subfloor", "underlayment", "prep", "demo", "remove"]):
+            points.append("Prep or subfloor work is likely needed before installation.")
+        if flags.get("materials_ready"):
+            points.append("Flooring materials appear to be selected or already on site.")
+    elif family_key in {"electrical", "plumbing"}:
+        points.append("The request looks like a system-focused repair or install rather than a general remodel.")
+        if flags.get("inspection_requested") or _contains_any(summary_text, ["troubleshoot", "diagnose", "inspect"]):
+            points.append("Troubleshooting or inspection is likely needed before final pricing.")
+        if _contains_any(summary_text, ["replace", "new", "install"]):
+            points.append("The scope includes a clear install or replacement component.")
+    else:
+        if flags.get("inspection_requested"):
+            points.append("An inspection or site visit is still expected before final pricing.")
+        if flags.get("materials_ready"):
+            points.append("Materials appear to be selected or already on site.")
+        if flags.get("urgent_or_damage"):
+            points.append("Visible damage or urgency was mentioned in the intake.")
+        if scope_mode != "general":
+            points.append("The project details were specific enough to suggest a focused workflow.")
+
+    if not points:
+        if family_label:
+            points.append(f"The request was clear enough to recommend a {family_label.lower()} starting point.")
+        else:
+            points.append("The request was clear enough to recommend a practical starting plan.")
+
+    if len(points) == 1:
+        if flags.get("inspection_requested") and "inspection" not in points[0].lower():
+            points.append("An inspection before final pricing is still part of the plan.")
+        elif flags.get("materials_ready") and "materials" not in points[0].lower():
+            points.append("Materials already on site may reduce setup work.")
+    return points[:4]
+
+
 def build_project_plan_suggestion(
     *,
     project_title: str = "",
@@ -683,6 +759,15 @@ def build_project_plan_suggestion(
         ]
     )
 
+    explanation_points = _build_explanation_points(
+        family_key=family_key,
+        scope_mode=scope_mode,
+        flags=flags,
+        project_scope_summary=_safe_text(project_scope_summary) or _safe_text(description),
+        recommended_project_type=setup_project_type,
+        suggested_workflow=setup_workflow,
+    )
+
     return {
         "plan_version": 1,
         "project_family_key": family_key,
@@ -701,6 +786,7 @@ def build_project_plan_suggestion(
         "suggested_duration_days": int(total_duration_days or max(duration_high or 0, duration_low or 0, 0)),
         "confidence_level": confidence_level,
         "confidence_reasoning": " ".join(reason_bits).strip(),
+        "explanation_points": explanation_points,
         "milestones": milestone_rows,
         "flags": {
             "materials_ready": flags.get("materials_ready", False),
