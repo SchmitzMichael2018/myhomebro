@@ -9308,6 +9308,126 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertTrue(plan["explanation_points"])
         self.assertTrue(plan["milestones"])
 
+    def test_project_quantity_signals_scale_plan_ranges_deterministically(self):
+        base_kwargs = dict(
+            project_title="Need kitchen cabinets installed",
+            project_type="Kitchen Remodel",
+            project_subtype="Kitchen Cabinet Installation",
+            description="Remove old cabinets, install new cabinets already on site, and include backsplash work.",
+            project_scope_summary="Kitchen cabinet installation request involving removal of existing cabinets and backsplash work.",
+            clarification_answers={
+                "materials": "Already on site",
+                "inspection_requested": "Yes",
+            },
+            photo_count=2,
+            suggested_total_price="6250.00",
+            suggested_price_low="5000.00",
+            suggested_price_high="7500.00",
+            suggested_duration_days=5,
+            suggested_duration_low=3,
+            suggested_duration_high=6,
+            confidence_level="medium",
+            confidence_reasoning="Moderate because the project type and scope are clear.",
+            learned_benchmark_used=True,
+            seeded_benchmark_used=True,
+            benchmark_source="seeded_plus_learned",
+            benchmark_match_scope="template_linked_profile",
+            template_name="Kitchen Remodel Starter",
+            selected_template_id=55,
+        )
+
+        small_plan = build_project_plan_suggestion(
+            **base_kwargs,
+            quantity_context={
+                "quantity_type": "count",
+                "quantity_value": 6,
+                "quantity_unit": "cabinets",
+                "quantity_label": "6 cabinets",
+                "quantity_source": "clarification_answers",
+                "quantity_confidence": "high",
+                "quantity_reference_value": 12,
+                "quantity_scale_factor": "0.71",
+                "quantity_ratio": "0.50",
+                "quantity_reason": "Using 6 cabinets against a 12-cabinet kitchen baseline.",
+            },
+        )
+        large_plan = build_project_plan_suggestion(
+            **base_kwargs,
+            quantity_context={
+                "quantity_type": "count",
+                "quantity_value": 20,
+                "quantity_unit": "cabinets",
+                "quantity_label": "20 cabinets",
+                "quantity_source": "clarification_answers",
+                "quantity_confidence": "high",
+                "quantity_reference_value": 12,
+                "quantity_scale_factor": "1.29",
+                "quantity_ratio": "1.67",
+                "quantity_reason": "Using 20 cabinets against a 12-cabinet kitchen baseline.",
+            },
+        )
+
+        self.assertGreater(Decimal(large_plan["suggested_budget_high"]), Decimal(small_plan["suggested_budget_high"]))
+        self.assertGreater(large_plan["suggested_duration_high_days"], small_plan["suggested_duration_high_days"])
+        self.assertGreaterEqual(large_plan["suggested_milestone_count"], small_plan["suggested_milestone_count"])
+        self.assertTrue(small_plan["source_metadata"]["quantity_adjustment"]["applied"])
+        self.assertTrue(large_plan["source_metadata"]["quantity_adjustment"]["applied"])
+        explanation_text = " ".join(large_plan["explanation_points"]).lower()
+        self.assertIn("20 cabinets", explanation_text)
+        self.assertIn("baseline", explanation_text)
+
+    def test_project_quantity_missing_falls_back_safely(self):
+        plan = build_project_plan_suggestion(
+            project_title="Need help around the house",
+            project_type="Custom",
+            project_subtype="General",
+            description="Need help with a small project and a few questions.",
+            project_scope_summary="Small mixed repair tasks with no clear specialty trade.",
+            clarification_answers={},
+            photo_count=0,
+            suggested_total_price=None,
+            suggested_price_low=None,
+            suggested_price_high=None,
+            suggested_duration_days=None,
+            suggested_duration_low=None,
+            suggested_duration_high=None,
+            confidence_level="low",
+            confidence_reasoning="Limited details available.",
+            learned_benchmark_used=False,
+            seeded_benchmark_used=False,
+            benchmark_source="none",
+            benchmark_match_scope="none",
+        )
+
+        self.assertEqual(plan["source_metadata"]["quantity_adjustment"]["applied"], False)
+        self.assertEqual(plan["source_metadata"]["quantity_context"]["quantity_type"], "")
+        self.assertNotEqual(plan["suggested_budget_high"], "0.00")
+
+    def test_project_intelligence_orchestrator_extracts_quantity_context_and_scales_plan(self):
+        intelligence = build_project_intelligence(
+            {
+                "project_title": "Need kitchen cabinets installed",
+                "project_type": "Kitchen Remodel",
+                "project_subtype": "Primary Kitchen",
+                "description": "Remove old cabinets, install new cabinets already on site, and include backsplash work.",
+                "project_scope_summary": "Kitchen cabinet installation request involving removal of existing cabinets and backsplash work.",
+                "clarification_answers": {
+                    "cabinet_count": "12",
+                    "materials": "Already on site",
+                },
+                "photo_count": 1,
+            }
+        )
+
+        quantity_context = intelligence["quantity_context"]
+        self.assertEqual(quantity_context["quantity_type"], "count")
+        self.assertEqual(quantity_context["quantity_unit"], "cabinets")
+        self.assertEqual(quantity_context["quantity_label"], "12 cabinets")
+        self.assertIn("12 cabinets", intelligence["analysis"]["project_scope_summary"])
+        self.assertEqual(intelligence["recommended_setup"]["recommended_project_type"], "Kitchen Cabinet Installation")
+        self.assertTrue(intelligence["suggested_plan"]["source_metadata"]["quantity_adjustment"]["applied"])
+        self.assertGreater(Decimal(intelligence["suggested_plan"]["suggested_budget_high"]), Decimal("0.00"))
+
     def test_contractor_benchmark_blends_platform_and_history(self):
         context = {
             "project_family_key": "kitchen_remodel",

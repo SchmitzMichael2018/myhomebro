@@ -14,6 +14,7 @@ from projects.services.benchmark_resolution import resolve_seed_benchmark_defaul
 from projects.services.contractor_benchmarks import get_blended_benchmark
 from projects.services.regions import build_normalized_region_key
 from projects.services.project_plan_suggestions import build_project_plan_suggestion
+from projects.services.project_quantity import build_quantity_adjustment, build_quantity_context
 
 
 STRUCTURED_RESULT_VERSION = "2026-03-26-estimator-v1"
@@ -52,6 +53,10 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(value)
     except Exception:
         return default
+
+
+def _safe_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
 
 
 def _money(value: Decimal | float | int | str) -> Decimal:
@@ -377,6 +382,7 @@ def _clarification_adjustments(
     seeded_price_anchor: Decimal,
     seeded_duration_days: int,
     answers: dict[str, Any],
+    quantity_context: dict[str, Any] | None = None,
 ) -> tuple[Decimal, int, list[dict[str, Any]], list[dict[str, Any]], list[str]]:
     price_adjustments: list[dict[str, Any]] = []
     timeline_adjustments: list[dict[str, Any]] = []
@@ -414,42 +420,44 @@ def _clarification_adjustments(
         reason=f"Finish selections were treated as `{finish_value or 'standard'}`.",
     )
 
-    sqft_value = _first_matching_answer(
-        answers,
-        "square_footage",
-        "square_feet",
-        "sq_ft",
-        "project_size",
-        "size_sqft",
-    )
-    sqft = _safe_int(str(sqft_value).replace(",", ""), 0) if sqft_value not in (None, "") else 0
-    if sqft > 0 and seeded_price_anchor > 0:
-        baseline_sqft = _baseline_sqft(
-            _safe_text(getattr(agreement, "project_type", "")),
-            _safe_text(getattr(agreement, "project_subtype", "")),
+    quantity_value = _safe_decimal(_safe_dict(quantity_context).get("quantity_value"), Decimal("0.00"))
+    if quantity_value <= 0:
+        sqft_value = _first_matching_answer(
+            answers,
+            "square_footage",
+            "square_feet",
+            "sq_ft",
+            "project_size",
+            "size_sqft",
         )
-        size_factor = _clamp_decimal(
-            Decimal(str(sqft)) / Decimal(str(max(baseline_sqft, 1))),
-            Decimal("0.70"),
-            Decimal("1.80"),
-        )
-        if abs(float(size_factor - Decimal("1.00"))) >= 0.10:
-            price_delta_total += _apply_multiplier_adjustment(
-                label="Project size",
-                factor=size_factor,
-                price_anchor=seeded_price_anchor,
-                price_adjustments=price_adjustments,
-                explanation_lines=explanation_lines,
-                reason=f"Used approximately {sqft} sq ft against a {baseline_sqft} sq ft baseline.",
+        sqft = _safe_int(str(sqft_value).replace(",", ""), 0) if sqft_value not in (None, "") else 0
+        if sqft > 0 and seeded_price_anchor > 0:
+            baseline_sqft = _baseline_sqft(
+                _safe_text(getattr(agreement, "project_type", "")),
+                _safe_text(getattr(agreement, "project_subtype", "")),
             )
-            extra_days = int(round(max((sqrt(float(size_factor)) - 1.0) * float(max(seeded_duration_days, 1)), -3)))
-            day_delta_total += _apply_day_adjustment(
-                label="Project size",
-                days=extra_days,
-                timeline_adjustments=timeline_adjustments,
-                explanation_lines=explanation_lines,
-                reason="Larger scope usually extends sequencing and finish time.",
+            size_factor = _clamp_decimal(
+                Decimal(str(sqft)) / Decimal(str(max(baseline_sqft, 1))),
+                Decimal("0.70"),
+                Decimal("1.80"),
             )
+            if abs(float(size_factor - Decimal("1.00"))) >= 0.10:
+                price_delta_total += _apply_multiplier_adjustment(
+                    label="Project size",
+                    factor=size_factor,
+                    price_anchor=seeded_price_anchor,
+                    price_adjustments=price_adjustments,
+                    explanation_lines=explanation_lines,
+                    reason=f"Used approximately {sqft} sq ft against a {baseline_sqft} sq ft baseline.",
+                )
+                extra_days = int(round(max((sqrt(float(size_factor)) - 1.0) * float(max(seeded_duration_days, 1)), -3)))
+                day_delta_total += _apply_day_adjustment(
+                    label="Project size",
+                    days=extra_days,
+                    timeline_adjustments=timeline_adjustments,
+                    explanation_lines=explanation_lines,
+                    reason="Larger scope usually extends sequencing and finish time.",
+                )
 
     if _truthy_answer(_first_matching_answer(answers, "demolition_required", "demo_required", "tear_out_required")):
         price_delta_total += _apply_multiplier_adjustment(
@@ -834,12 +842,22 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
         explanation_lines.append(learned_decision.reasoning)
 
     clarification_answers = _extract_answers(agreement)
+    quantity_context = build_quantity_context(
+        project_title=_safe_text(getattr(getattr(agreement, "project", None), "title", "")),
+        project_type=_safe_text(getattr(agreement, "project_type", "")),
+        project_subtype=_safe_text(getattr(agreement, "project_subtype", "")),
+        description=_safe_text(getattr(agreement, "description", "")),
+        project_scope_summary=_safe_text(getattr(agreement, "description", "")),
+        clarification_answers=clarification_answers,
+        family_key=_safe_text(getattr(agreement, "project_type", "")),
+    )
     clarification_price_delta, clarification_day_delta, price_adjustments, timeline_adjustments, clarification_explanations = _clarification_adjustments(
         agreement=agreement,
         seeded_profile=seeded_profile,
         seeded_price_anchor=baseline_price if baseline_price > 0 else seeded_price_anchor,
         seeded_duration_days=baseline_duration,
         answers=clarification_answers,
+        quantity_context=quantity_context,
     )
     explanation_lines.extend(clarification_explanations)
 
@@ -873,6 +891,9 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
         or _safe_text(getattr(agreement, "description", ""))
     )
     photo_count = _safe_int(request_snapshot.get("photo_count"), 0)
+    snapshot_quantity_context = _safe_dict(request_snapshot.get("quantity_context"))
+    if snapshot_quantity_context:
+        quantity_context = snapshot_quantity_context
 
     blended_benchmark = get_blended_benchmark(
         {
@@ -911,6 +932,59 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
             suggested_duration_low = max(int(round(suggested_duration_days * (1 - float(range_spread)))), 1)
             suggested_duration_high = max(int(round(suggested_duration_days * (1 + float(range_spread)))), suggested_duration_low)
 
+    base_suggested_total_price = suggested_total_price
+    base_suggested_price_low = suggested_price_low
+    base_suggested_price_high = suggested_price_high
+    base_suggested_duration_days = suggested_duration_days
+    base_suggested_duration_low = suggested_duration_low
+    base_suggested_duration_high = suggested_duration_high
+
+    quantity_adjustment = build_quantity_adjustment(
+        quantity_context=quantity_context,
+        family_key=_safe_text(request_snapshot.get("project_family_key"))
+        or _safe_text(getattr(agreement, "project_type", "")),
+        project_subtype=_safe_text(getattr(agreement, "project_subtype", "")),
+    )
+    if quantity_adjustment.get("applied"):
+        price_scale = _safe_decimal(quantity_adjustment.get("price_scale"), Decimal("1.00")) or Decimal("1.00")
+        duration_scale = _safe_decimal(quantity_adjustment.get("duration_scale"), Decimal("1.00")) or Decimal("1.00")
+        milestone_scale = _safe_decimal(quantity_adjustment.get("milestone_scale"), Decimal("1.00")) or Decimal("1.00")
+        suggested_total_price = _money(suggested_total_price * price_scale) if suggested_total_price > 0 else suggested_total_price
+        suggested_price_low = _money(suggested_price_low * price_scale) if suggested_price_low > 0 else suggested_price_low
+        suggested_price_high = _money(suggested_price_high * price_scale) if suggested_price_high > 0 else suggested_price_high
+        suggested_duration_days = max(int(round(suggested_duration_days * float(duration_scale))), 1) if suggested_duration_days else suggested_duration_days
+        suggested_duration_low = max(int(round(suggested_duration_low * float(duration_scale))), 1) if suggested_duration_low else suggested_duration_low
+        suggested_duration_high = max(
+            int(round(suggested_duration_high * float(duration_scale))),
+            suggested_duration_low or 1,
+        ) if suggested_duration_high else suggested_duration_high
+        blended_milestone_count = max(int(round(blended_milestone_count * float(milestone_scale))), 3) if blended_milestone_count else blended_milestone_count
+        blended_milestone_count = max(
+            blended_milestone_count,
+            _safe_int(quantity_adjustment.get("quantity_milestone_count"), 0),
+        )
+        quantity_reason = _safe_text(quantity_adjustment.get("reason"))
+        if quantity_reason:
+            explanation_lines.append(quantity_reason)
+        price_delta = suggested_total_price - base_suggested_total_price
+        duration_delta = suggested_duration_days - base_suggested_duration_days
+        if price_delta:
+            price_adjustments.append(
+                {
+                    "label": "Project size",
+                    "amount": str(_money(price_delta)),
+                    "reason": quantity_reason or "Project size was used to adjust the baseline estimate.",
+                }
+            )
+        if duration_delta:
+            timeline_adjustments.append(
+                {
+                    "label": "Project size",
+                    "days": duration_delta,
+                    "reason": quantity_reason or "Project size was used to adjust the baseline timeline.",
+                }
+            )
+
     milestone_suggestions = _build_milestone_suggestions(
         existing_milestones=_existing_milestones(agreement),
         seeded_defaults=list(seeded_defaults.get("milestone_defaults") or []),
@@ -925,13 +999,14 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
         description=getattr(agreement, "description", "") or "",
         project_scope_summary=project_scope_summary,
         clarification_answers=clarification_answers,
+        quantity_context=quantity_context,
         photo_count=photo_count,
-        suggested_total_price=suggested_total_price,
-        suggested_price_low=suggested_price_low,
-        suggested_price_high=suggested_price_high,
-        suggested_duration_days=suggested_duration_days,
-        suggested_duration_low=suggested_duration_low,
-        suggested_duration_high=suggested_duration_high,
+        suggested_total_price=base_suggested_total_price,
+        suggested_price_low=base_suggested_price_low,
+        suggested_price_high=base_suggested_price_high,
+        suggested_duration_days=base_suggested_duration_days,
+        suggested_duration_low=base_suggested_duration_low,
+        suggested_duration_high=base_suggested_duration_high,
         confidence_level=confidence_level,
         confidence_reasoning=confidence_reasoning,
         learned_benchmark_used=bool(learned_decision.aggregate is not None and learned_weight > 0),
@@ -977,6 +1052,8 @@ def build_project_estimate(*, agreement: Agreement) -> dict[str, Any]:
             "template_weight": str(template_weight.quantize(Decimal("0.01"))),
             "learned_clarification_signature": _safe_text(getattr(learned_decision.aggregate, "clarification_signature", "")),
             "region_key_used": region_key,
+            "quantity_context": quantity_context,
+            "quantity_adjustment": quantity_adjustment,
             "blended_benchmark": blended_benchmark,
         },
     }

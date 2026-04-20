@@ -12,6 +12,7 @@ from projects.services.project_intelligence import (
     build_project_intelligence_context,
     build_project_setup_recommendation,
 )
+from projects.services.project_quantity import build_quantity_context
 
 
 def _safe_str(value: Any) -> str:
@@ -559,6 +560,7 @@ def _build_project_summary(
     classification: dict[str, str],
     accomplishment: str,
     answers: dict[str, Any],
+    quantity_context: dict[str, Any] | None = None,
     photo_count: int = 0,
 ) -> str:
     project_type = classification.get("project_type", "")
@@ -573,6 +575,8 @@ def _build_project_summary(
     inspection = classification.get("inspection", "")
     area_count = classification.get("area_count", "")
     task_list = classification.get("task_list", "")
+    quantity_label = _safe_str((quantity_context or {}).get("quantity_label"))
+    quantity_unit = _safe_str((quantity_context or {}).get("quantity_unit"))
 
     sentences: list[str] = []
 
@@ -746,6 +750,12 @@ def _build_project_summary(
 
     if photo_count > 0:
         sentences.append(f"{photo_count} photo{'s' if photo_count != 1 else ''} attached for reference.")
+    if quantity_label:
+        quantity_sentence = f"The work appears to involve about {quantity_label}."
+        if quantity_unit == "sq ft":
+            quantity_sentence = f"The work appears to cover about {quantity_label}."
+        if not any(quantity_label.lower() in sentence.lower() for sentence in sentences):
+            sentences.append(quantity_sentence)
 
     cleaned = [sentence.strip() for sentence in sentences if sentence and sentence.strip()]
     return " ".join(cleaned).strip() or _safe_str(accomplishment) or f"{project_subtype or project_type or family_label} project"
@@ -1137,6 +1147,15 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
         accomplishment=accomplishment,
         answers=clarification_answers,
     )
+    quantity_context = build_quantity_context(
+        project_title=_safe_str(getattr(intake, "ai_project_title", "")),
+        project_type=_safe_str(getattr(intake, "ai_project_type", "")),
+        project_subtype=_safe_str(getattr(intake, "ai_project_subtype", "")),
+        description=accomplishment,
+        project_scope_summary=_safe_str(getattr(intake, "ai_description", "")),
+        clarification_answers=clarification_answers,
+        family_key=classification.get("family_key", ""),
+    )
     clarification_questions = _clarification_questions(
         _safe_str(getattr(intake, "ai_project_type", "")),
         _safe_str(getattr(intake, "ai_project_subtype", "")),
@@ -1177,6 +1196,7 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
             classification=classification,
             accomplishment=accomplishment,
             answers=clarification_answers,
+            quantity_context=quantity_context,
             photo_count=photo_count,
         )
         assumptions = _clarification_assumptions_from_answers(clarification_answers)
@@ -1217,6 +1237,7 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
             "clarification_assumptions": assumptions,
             "measurement_handling": measurement_handling,
             "photo_count": photo_count,
+            "quantity_context": quantity_context,
         }
 
     project_type = classification["project_type"]
@@ -1232,6 +1253,7 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
         classification=classification,
         accomplishment=accomplishment,
         answers=clarification_answers,
+        quantity_context=quantity_context,
         photo_count=photo_count,
     )
     assumptions = _clarification_assumptions_from_answers(clarification_answers)
@@ -1270,4 +1292,5 @@ def analyze_project_intake(*, intake: ProjectIntake) -> dict[str, Any]:
         "clarification_assumptions": assumptions,
         "measurement_handling": measurement_handling,
         "photo_count": photo_count,
+        "quantity_context": quantity_context,
     }

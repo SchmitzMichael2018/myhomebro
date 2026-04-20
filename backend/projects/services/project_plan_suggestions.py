@@ -9,6 +9,7 @@ from projects.services.project_intelligence import (
     infer_project_scope_mode,
 )
 from projects.services.contractor_benchmarks import get_blended_benchmark
+from projects.services.project_quantity import build_quantity_adjustment, build_quantity_context
 
 
 def _safe_text(value: Any) -> str:
@@ -31,6 +32,10 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return max(int(value), 0)
     except (TypeError, ValueError):
         return default
+
+
+def _safe_dict(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
 
 
 def _combined_text(*parts: Any, clarification_answers: dict[str, Any] | None = None) -> str:
@@ -431,6 +436,7 @@ def _estimate_confidence(
     scope_mode: str,
     clarification_count: int,
     photo_count: int,
+    quantity_context: dict[str, Any] | None,
     has_budget: bool,
     has_timeline: bool,
     flags: dict[str, bool],
@@ -463,6 +469,9 @@ def _estimate_confidence(
     if photo_count > 0:
         score += 5
         reasons.append("Photos are available to confirm the scope.")
+    if _safe_decimal(_safe_dict(quantity_context).get("quantity_value"), Decimal("0.00")) > 0:
+        score += 5
+        reasons.append("A project size signal was provided.")
 
     if has_budget:
         score += 5
@@ -592,6 +601,7 @@ def build_project_plan_suggestion(
     description: str = "",
     project_scope_summary: str = "",
     clarification_answers: dict[str, Any] | None = None,
+    quantity_context: dict[str, Any] | None = None,
     photo_count: int = 0,
     suggested_total_price: Any = None,
     suggested_price_low: Any = None,
@@ -631,6 +641,17 @@ def build_project_plan_suggestion(
         clarification_answers=clarification_answers,
     )
     scope_mode = infer_project_scope_mode(text=scope_text, family_key=family_key)
+    quantity_context = _safe_dict(quantity_context)
+    if not quantity_context:
+        quantity_context = build_quantity_context(
+            project_title=project_title,
+            project_type=project_type,
+            project_subtype=project_subtype,
+            description=description,
+            project_scope_summary=project_scope_summary,
+            clarification_answers=clarification_answers,
+            family_key=family_key,
+        )
 
     blended_benchmark = get_blended_benchmark(
         {
@@ -722,6 +743,34 @@ def build_project_plan_suggestion(
                 1,
             )
 
+    quantity_adjustment = build_quantity_adjustment(
+        quantity_context=quantity_context,
+        family_key=family_key,
+        project_subtype=project_subtype,
+    )
+    if quantity_adjustment.get("applied"):
+        price_scale = _safe_decimal(quantity_adjustment.get("price_scale"), Decimal("1.00")) or Decimal("1.00")
+        duration_scale = _safe_decimal(quantity_adjustment.get("duration_scale"), Decimal("1.00")) or Decimal("1.00")
+        milestone_scale = _safe_decimal(quantity_adjustment.get("milestone_scale"), Decimal("1.00")) or Decimal("1.00")
+        if total_price is not None and total_price > 0:
+            total_price = _safe_decimal(total_price * price_scale, default=total_price)
+        if budget_low is not None and budget_low > 0:
+            budget_low = _safe_decimal(budget_low * price_scale, default=budget_low)
+        if budget_high is not None and budget_high > 0:
+            budget_high = _safe_decimal(budget_high * price_scale, default=budget_high)
+        if total_duration_days > 0:
+            total_duration_days = max(int(round(total_duration_days * float(duration_scale))), 1)
+        if duration_low > 0:
+            duration_low = max(int(round(duration_low * float(duration_scale))), 1)
+        if duration_high > 0:
+            duration_high = max(int(round(duration_high * float(duration_scale))), duration_low or 1)
+        if blended_milestone_count > 0:
+            blended_milestone_count = max(int(round(blended_milestone_count * float(milestone_scale))), 3)
+        blended_milestone_count = max(
+            blended_milestone_count,
+            _safe_int(quantity_adjustment.get("quantity_milestone_count"), 0),
+        )
+
     if not confidence_level:
         confidence_level = "medium" if family_key != "general" else "low"
     confidence_level, confidence_reasoning = _estimate_confidence(
@@ -729,6 +778,7 @@ def build_project_plan_suggestion(
         scope_mode=scope_mode,
         clarification_count=clarification_count,
         photo_count=photo_count,
+        quantity_context=quantity_context,
         has_budget=budget_low is not None and budget_high is not None,
         has_timeline=duration_low > 0 and duration_high > 0,
         flags=flags,
@@ -755,6 +805,10 @@ def build_project_plan_suggestion(
         reason_bits.append("The work appears to span multiple areas.")
     if photo_count > 0:
         reason_bits.append("Photos are available to confirm the scope.")
+    if quantity_adjustment.get("applied"):
+        quantity_reason = _safe_text(quantity_adjustment.get("reason"))
+        if quantity_reason:
+            reason_bits.append(quantity_reason)
 
     base_rows = _scaled_milestones(
         _milestone_rows_for_plan(family_key=family_key, scope_mode=scope_mode),
@@ -807,6 +861,10 @@ def build_project_plan_suggestion(
         recommended_project_type=setup_project_type,
         suggested_workflow=setup_workflow,
     )
+    if quantity_adjustment.get("applied"):
+        quantity_reason = _safe_text(quantity_adjustment.get("reason"))
+        if quantity_reason and quantity_reason not in explanation_points:
+            explanation_points = (explanation_points[:3] + [quantity_reason])[:4]
     if blended_benchmark.get("source_type") != "platform_only":
         blended_reason = _safe_text(blended_benchmark.get("confidence_reasoning"))
         if blended_reason:
@@ -848,6 +906,8 @@ def build_project_plan_suggestion(
             "learned_benchmark_used": bool(learned_benchmark_used),
             "clarification_count": clarification_count,
             "photo_count": int(photo_count or 0),
+            "quantity_context": quantity_context,
+            "quantity_adjustment": quantity_adjustment,
             "blended_benchmark": blended_benchmark,
         },
         "source_metadata": {
@@ -863,6 +923,8 @@ def build_project_plan_suggestion(
             "learned_benchmark_used": bool(learned_benchmark_used),
             "recommendation_basis": "deterministic_first",
             "selected_template_id": selected_template_id,
+            "quantity_context": quantity_context,
+            "quantity_adjustment": quantity_adjustment,
             "blended_benchmark": blended_benchmark,
         },
     }

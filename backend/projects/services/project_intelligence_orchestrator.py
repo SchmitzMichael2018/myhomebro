@@ -7,6 +7,7 @@ from projects.services.intake_analysis import analyze_project_intake
 from projects.services.project_intelligence import build_project_intelligence_context
 from projects.services.project_plan_suggestions import build_project_plan_suggestion
 from projects.services.estimation_engine import build_project_estimate
+from projects.services.project_quantity import build_quantity_context
 
 
 def _safe_text(value: Any) -> str:
@@ -136,6 +137,21 @@ def _normalize_project_payload(input_payload: Any) -> dict[str, Any]:
     if photo_count <= 0:
         photo_count = _safe_int(_safe_dict(source_analysis).get("photo_count"), 0)
 
+    quantity_context = _safe_dict(payload.get("quantity_context"))
+    if not quantity_context:
+        source_quantity = _safe_dict(source_analysis).get("quantity_context")
+        quantity_context = _safe_dict(source_quantity)
+    if not quantity_context:
+        quantity_context = build_quantity_context(
+            project_title=project_title,
+            project_type=project_type,
+            project_subtype=project_subtype,
+            description=description,
+            project_scope_summary=project_scope_summary,
+            clarification_answers=clarification_answers,
+            family_key=_safe_text(_safe_dict(source_analysis).get("project_family_key")),
+        )
+
     contractor = payload.get("contractor") or getattr(intake, "contractor", None) or getattr(agreement, "contractor", None) or getattr(lead, "contractor", None)
 
     return {
@@ -154,6 +170,7 @@ def _normalize_project_payload(input_payload: Any) -> dict[str, Any]:
         "project_budget": project_budget,
         "project_timeline_days": project_timeline_days,
         "photo_count": photo_count,
+        "quantity_context": quantity_context,
         "source_analysis": source_analysis,
         "template_id": payload.get("template_id") or getattr(template, "id", None) or getattr(agreement, "selected_template_id", None) or _safe_dict(source_analysis).get("template_id"),
         "template_name": _safe_text(payload.get("template_name") or getattr(template, "name", "") or _safe_dict(source_analysis).get("template_name")),
@@ -201,6 +218,7 @@ def build_project_intelligence(input_payload: Any) -> dict[str, Any]:
         project_scope_summary=analysis.get("project_scope_summary", normalized["project_scope_summary"]),
         clarification_answers=analysis.get("clarification_answers", normalized["clarification_answers"]),
         photo_count=_safe_int(analysis.get("photo_count"), normalized["photo_count"]),
+        quantity_context=_safe_dict(analysis.get("quantity_context")) or normalized["quantity_context"],
         suggested_total_price=analysis.get("project_budget"),
         suggested_price_low=None,
         suggested_price_high=None,
@@ -237,6 +255,7 @@ def build_project_intelligence(input_payload: Any) -> dict[str, Any]:
             "description": normalized["description"],
             "measurement_handling": normalized["measurement_handling"],
             "photo_count": normalized["photo_count"],
+            "quantity_context": normalized["quantity_context"],
             "template_id": normalized["template_id"],
             "template_name": normalized["template_name"],
         },
@@ -248,10 +267,12 @@ def build_project_intelligence(input_payload: Any) -> dict[str, Any]:
         "confidence": plan.get("confidence_level") if isinstance(plan, dict) else analysis.get("confidence", "none"),
         "confidence_reasoning": plan.get("confidence_reasoning") if isinstance(plan, dict) else analysis.get("reason", ""),
         "explanation_points": plan.get("explanation_points") if isinstance(plan, dict) else [],
+        "quantity_context": analysis.get("quantity_context", normalized["quantity_context"]),
         "source_metadata": {
             "entry_type": "agreement" if agreement is not None else "intake_like" if normalized.get("intake") is not None else "lead_or_template",
             "project_family_key": analysis.get("project_family_key", ""),
             "project_family_label": analysis.get("project_family_label", ""),
             "template_id": normalized["template_id"],
+            "quantity_context": normalized["quantity_context"],
         },
     }
