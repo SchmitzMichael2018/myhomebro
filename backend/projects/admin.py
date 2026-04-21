@@ -32,6 +32,7 @@ try:
         MilestoneBenchmarkAggregate,
         ProjectBenchmarkAggregate,
         RegionalBenchmarkAggregate,
+        SupportTicket,
     )
 except Exception:  # pragma: no cover
     Skill = Contractor = Homeowner = Project = Agreement = AgreementWarranty = None
@@ -40,6 +41,7 @@ except Exception:  # pragma: no cover
     PublicContractorLead = None
     Invoice = Expense = AgreementAmendment = None
     ProjectOutcomeSnapshot = ContractorBenchmarkAggregate = AgreementOutcomeSnapshot = AgreementOutcomeMilestoneSnapshot = MilestoneBenchmarkAggregate = ProjectBenchmarkAggregate = RegionalBenchmarkAggregate = None
+    SupportTicket = None
 
 # Optional/independent models (guarded with try so admin doesn’t break)
 try:
@@ -1069,6 +1071,24 @@ if RegionalBenchmarkAggregate is not None:
             "template_used",
         )
         readonly_fields = ("last_updated",)
+
+
+if SupportTicket is not None:
+    @admin.register(SupportTicket)
+    class SupportTicketAdmin(admin.ModelAdmin):
+        list_display = (
+            "ticket_number",
+            "subject",
+            "category",
+            "priority",
+            "status",
+            "submitted_by",
+            "email",
+            "created_at",
+        )
+        list_filter = ("category", "priority", "status")
+        search_fields = ("ticket_number", "subject", "email", "related_object_type", "related_object_id")
+        readonly_fields = ("ticket_number", "created_at", "updated_at", "resolved_at")
 
 
 if MilestoneBenchmarkAggregate is not None:

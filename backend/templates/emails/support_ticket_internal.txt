@@ -1,0 +1,18 @@
+New MyHomeBro support ticket submitted.
+
+Ticket number: {{ ticket_number }}
+Submitted by: {{ submitted_by_name|default:"Not provided" }}
+Email: {{ email }}
+Role: {{ user_role }}
+Subject: {{ subject }}
+Category: {{ category }}
+Priority: {{ priority }}
+Related object: {{ related_object_label|default:"None" }}
+Related object type: {{ related_object_type|default:"" }}
+Related object ID: {{ related_object_id|default:"" }}
+
+Message:
+{{ message }}
+
+Attachment: {% if attachment_url %}{{ attachment_name }} ({{ attachment_url }}){% else %}None{% endif %}
+

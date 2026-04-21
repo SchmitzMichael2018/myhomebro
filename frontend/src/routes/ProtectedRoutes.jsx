@@ -63,6 +63,7 @@ import ContractorBidsPage from "../pages/ContractorBidsPage.jsx";
 import CustomerRecordsPage from "../pages/CustomerRecordsPage.jsx";
 import ContractorPublicPresencePage from "../pages/ContractorPublicPresencePage.jsx";
 import AIAssistantPage from "../pages/AIAssistantPage.jsx";
+import SupportTicketsPage from "../pages/SupportTicketsPage.jsx";
 
 import { useWhoAmI } from "../hooks/useWhoAmI";
 
@@ -140,6 +141,8 @@ export function protectedRoutes() {
         <Route element={<RoleGate allow={["contractor", "contractor_owner"]} />}>
           <Route path="dashboard" element={<ContractorDashboard />} />
           <Route path="assistant" element={<AIAssistantPage />} />
+          <Route path="support" element={<SupportTicketsPage />} />
+          <Route path="support/:ticketNumber" element={<SupportTicketsPage />} />
           <Route path="payouts/history" element={<PayoutHistoryPage />} />
           <Route path="payouts/history/:id" element={<PayoutDetailPage />} />
           <Route path="payout-history" element={<ContractorPayoutHistoryPage />} />
@@ -201,6 +204,8 @@ export function protectedRoutes() {
           <Route path="employee/milestones" element={<EmployeeMilestones />} />
           <Route path="employee/calendar" element={<EmployeeCalendar />} />
           <Route path="employee/profile" element={<EmployeeProfile />} />
+          <Route path="support" element={<SupportTicketsPage />} />
+          <Route path="support/:ticketNumber" element={<SupportTicketsPage />} />
         </Route>
 
         <Route element={<RoleGate allow={["subcontractor"]} />}>
@@ -208,6 +213,13 @@ export function protectedRoutes() {
             path="subcontractor/assigned-work"
             element={<SubcontractorAssignedWorkPage />}
           />
+          <Route path="support" element={<SupportTicketsPage />} />
+          <Route path="support/:ticketNumber" element={<SupportTicketsPage />} />
+        </Route>
+
+        <Route element={<RoleGate allow={["admin"]} />}>
+          <Route path="support" element={<SupportTicketsPage />} />
+          <Route path="support/:ticketNumber" element={<SupportTicketsPage />} />
         </Route>
 
         <Route path="*" element={<AppHomeRedirect />} />

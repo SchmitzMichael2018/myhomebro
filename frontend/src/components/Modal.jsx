@@ -19,6 +19,7 @@ export default function Modal({
   visible = false,
   title = "",
   onClose = () => {},
+  testId = "",
   children,
 }) {
   const containerRef = useRef(null);
@@ -98,6 +99,7 @@ export default function Modal({
     >
       <div
         ref={containerRef}
+        data-testid={testId || undefined}
         className="mx-4 w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl"
       >
         <header className="flex items-center justify-between border-b px-5 py-3">

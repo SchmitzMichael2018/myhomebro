@@ -18,3 +18,8 @@ class ProjectsConfig(AppConfig):
             import projects.models_attachments  # noqa
         except Exception:
             pass
+
+        try:
+            import projects.models_support  # noqa
+        except Exception:
+            pass

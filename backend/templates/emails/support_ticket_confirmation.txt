@@ -1,0 +1,14 @@
+Hi {{ submitted_by_name|default:"there" }},
+
+We received your MyHomeBro support request and created a ticket for it.
+
+Ticket number: {{ ticket_number }}
+Subject: {{ subject }}
+Category: {{ category }}
+Priority: {{ priority }}
+
+Our support team will review your request as soon as possible. Please keep the ticket number handy when you reply or follow up.
+
+Thank you,
+{{ site_name }}
+

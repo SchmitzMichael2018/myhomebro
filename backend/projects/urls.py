@@ -40,6 +40,7 @@ from .views.calendar import MilestoneCalendarView, AgreementCalendarView
 from .views.contractors.public import ContractorPublicProfileView
 from .views.notifications import NotificationListView
 from .views.dispute_workorders import DisputeWorkOrderViewSet
+from .views.support_tickets import SupportTicketViewSet
 
 from .views.magic_invoice import (
     MagicInvoiceView,
@@ -277,6 +278,7 @@ router.register(r"project-types", ProjectTypeViewSet, basename="project-types")
 router.register(r"project-subtypes", ProjectSubtypeViewSet, basename="project-subtypes")
 router.register(r"warranties", AgreementWarrantyViewSet, basename="warranties")
 router.register(r"intakes", ProjectIntakeViewSet, basename="project-intakes")
+router.register(r"support-tickets", SupportTicketViewSet, basename="support-tickets")
 
 milestone_router = NestedDefaultRouter(
     router, r"milestones", lookup="milestone", trailing_slash="/?"

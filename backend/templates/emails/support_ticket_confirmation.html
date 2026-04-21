@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+  <body style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.5;">
+    <p>Hi {{ submitted_by_name|default:"there" }},</p>
+    <p>We received your MyHomeBro support request and created a ticket for it.</p>
+    <div style="border: 1px solid #dbe4ef; border-radius: 12px; padding: 16px; background: #f8fafc;">
+      <p style="margin: 0 0 8px;"><strong>Ticket number:</strong> {{ ticket_number }}</p>
+      <p style="margin: 0 0 8px;"><strong>Subject:</strong> {{ subject }}</p>
+      <p style="margin: 0 0 8px;"><strong>Category:</strong> {{ category }}</p>
+      <p style="margin: 0;"><strong>Priority:</strong> {{ priority }}</p>
+    </div>
+    <p style="margin-top: 16px;">Our support team will review your request as soon as possible. Please keep the ticket number handy when you reply or follow up.</p>
+    <p>Thank you,<br>{{ site_name }}</p>
+  </body>
+</html>
+

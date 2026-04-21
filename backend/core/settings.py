@@ -393,6 +393,7 @@ else:
     EMAIL_HOST_PASSWORD = POSTMARK_SERVER_TOKEN
 
 DEFAULT_FROM_EMAIL = get_env_var("DEFAULT_FROM_EMAIL", "MyHomeBro <info@myhomebro.com>")
+SUPPORT_EMAIL = get_env_var("SUPPORT_EMAIL", "support@myhomebro.com")
 PUBLIC_LOGO_URL = get_env_var("PUBLIC_LOGO_URL", "") or None
 
 POSTMARK_MESSAGE_STREAM = get_env_var("POSTMARK_MESSAGE_STREAM", "outbound")

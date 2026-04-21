@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+  <body style="font-family: Arial, sans-serif; color: #1f2937; line-height: 1.5;">
+    <p>New MyHomeBro support ticket submitted.</p>
+    <div style="border: 1px solid #dbe4ef; border-radius: 12px; padding: 16px; background: #f8fafc;">
+      <p style="margin: 0 0 8px;"><strong>Ticket number:</strong> {{ ticket_number }}</p>
+      <p style="margin: 0 0 8px;"><strong>Submitted by:</strong> {{ submitted_by_name|default:"Not provided" }}</p>
+      <p style="margin: 0 0 8px;"><strong>Email:</strong> {{ email }}</p>
+      <p style="margin: 0 0 8px;"><strong>Role:</strong> {{ user_role }}</p>
+      <p style="margin: 0 0 8px;"><strong>Subject:</strong> {{ subject }}</p>
+      <p style="margin: 0 0 8px;"><strong>Category:</strong> {{ category }}</p>
+      <p style="margin: 0 0 8px;"><strong>Priority:</strong> {{ priority }}</p>
+      <p style="margin: 0 0 8px;"><strong>Related object:</strong> {{ related_object_label|default:"None" }}</p>
+      <p style="margin: 0 0 8px;"><strong>Related object type:</strong> {{ related_object_type|default:"" }}</p>
+      <p style="margin: 0 0 8px;"><strong>Related object ID:</strong> {{ related_object_id|default:"" }}</p>
+      <p style="margin: 0;"><strong>Attachment:</strong> {% if attachment_url %}{{ attachment_name }}{% else %}None{% endif %}</p>
+    </div>
+    <div style="margin-top: 16px; white-space: pre-wrap;">{{ message }}</div>
+    {% if attachment_url %}
+      <p style="margin-top: 16px;"><a href="{{ attachment_url }}">Open attachment</a></p>
+    {% endif %}
+  </body>
+</html>
+

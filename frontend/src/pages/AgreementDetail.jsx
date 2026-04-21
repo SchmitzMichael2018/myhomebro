@@ -34,6 +34,7 @@ import PdfPreviewModal from "../components/PdfPreviewModal";
 import RefundEscrowModal from "../components/RefundEscrowModal";
 import AssignSubcontractorInline from "../components/AssignSubcontractorInline";
 import AssignReviewerInline from "../components/AssignReviewerInline";
+import SupportRequestModal from "../components/SupportRequestModal";
 
 // ✅ Assignment UI
 import AssignEmployeeInline from "../components/AssignEmployeeInline";
@@ -288,6 +289,7 @@ export default function AgreementDetail() {
 
   // Refund modal state
   const [refundOpen, setRefundOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
   const [drawRows, setDrawRows] = useState([]);
   const [drawLoading, setDrawLoading] = useState(false);
   const [drawMilestones, setDrawMilestones] = useState([]);
@@ -1360,6 +1362,15 @@ export default function AgreementDetail() {
           className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-950"
         >
           Download PDF
+        </button>
+
+        <button
+          type="button"
+          data-testid="agreement-support-button"
+          onClick={() => setSupportOpen(true)}
+          className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          Support
         </button>
 
         {isContractor && (
@@ -2922,6 +2933,16 @@ export default function AgreementDetail() {
         agreement={agreement}
         signingRole={signingRole}
         onSigned={handleSigned}
+      />
+
+      <SupportRequestModal
+        visible={supportOpen}
+        onClose={() => setSupportOpen(false)}
+        defaultEmail={user?.email || ""}
+        defaultCategory="agreement_help"
+        defaultSubject={`Help with Agreement #${id}`}
+        relatedObjectType="agreement"
+        relatedObjectId={String(id || "")}
       />
 
       {/* Escrow-only modals */}

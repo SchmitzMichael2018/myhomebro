@@ -488,4 +488,35 @@ export async function closeAndArchiveAgreement(agreementId) {
   return res.data;
 }
 
+function supportTicketPayloadToFormData(payload = {}) {
+  if (payload instanceof FormData) return payload;
+
+  const form = new FormData();
+  Object.entries(payload || {}).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return;
+    form.append(key, value);
+  });
+  return form;
+}
+
+export async function listSupportTickets() {
+  const res = await api.get("/projects/support-tickets/");
+  return res.data;
+}
+
+export async function getSupportTicket(ticketNumber) {
+  if (!ticketNumber) throw new Error("ticketNumber is required");
+  const res = await api.get(`/projects/support-tickets/${ticketNumber}/`);
+  return res.data;
+}
+
+export async function createSupportTicket(payload) {
+  const body =
+    payload instanceof FormData || payload?.attachment
+      ? supportTicketPayloadToFormData(payload)
+      : payload;
+  const res = await api.post("/projects/support-tickets/", body);
+  return res.data;
+}
+
 export default api;

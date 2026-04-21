@@ -25,6 +25,7 @@ import {
   LayoutDashboard,
   Link as LinkIcon,
   MessageSquareWarning,
+  LifeBuoy,
   SearchCheck,
   ShieldCheck,
   Sparkles,
@@ -54,6 +55,7 @@ const NAV_HINTS = {
   "/app/calendar": "View upcoming work, deadlines, and project timelines",
   "/app/expenses": "Track project expenses and job costs",
   "/app/disputes": "Manage issues, disagreements, and resolutions",
+  "/app/support": "Submit a support request and review your ticket history",
   "/app/profile": "Manage your account, preferences, and payment setup",
   "/app/onboarding": "Manage your account, preferences, and payment setup",
   "/app/onboarding/stripe": "Complete Stripe Connect onboarding inside MyHomeBro",
@@ -368,20 +370,31 @@ export default function Sidebar({ variant = "desktop" }) {
 
   const accountNav = useMemo(() => {
     if (isAdmin) {
-      return <Item to={`${APP_BASE}/admin`} label="Admin Home" icon={ShieldCheck} />;
+      return (
+        <>
+          <Item to={`${APP_BASE}/admin`} label="Admin Home" icon={ShieldCheck} />
+          <Item to={`${APP_BASE}/support`} label="Support" icon={LifeBuoy} />
+        </>
+      );
     }
 
     if (isEmployee) {
-      return <Item to={`${EMP_BASE}/profile`} label="My Profile" icon={UserRound} />;
+      return (
+        <>
+          <Item to={`${EMP_BASE}/profile`} label="My Profile" icon={UserRound} />
+          <Item to={`${APP_BASE}/support`} label="Support" icon={LifeBuoy} />
+        </>
+      );
     }
 
     if (isSubcontractor) {
-      return null;
+      return <Item to={`${APP_BASE}/support`} label="Support" icon={LifeBuoy} />;
     }
 
     return (
       <>
         <Item to={`${APP_BASE}/profile`} label="My Profile" icon={UserRound} />
+        <Item to={`${APP_BASE}/support`} label="Support" icon={LifeBuoy} />
         <Item
           to={`${APP_BASE}/onboarding/stripe`}
           icon={LinkIcon}
