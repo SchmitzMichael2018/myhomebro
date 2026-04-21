@@ -7612,6 +7612,46 @@ class BusinessDashboardPerformanceTests(TestCase):
         self.assertEqual(row["remaining_cap"], "250.00")
         self.assertIn("In Progress", row["payment_status"])
 
+    def test_business_dashboard_includes_financial_dashboard_payload(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/business/contractor/summary/?range=30")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+
+        summary = payload["financial_summary"]
+        self.assertEqual(summary["gross_revenue_total"], "10000.00")
+        self.assertEqual(summary["platform_fees_total"], "500.00")
+        self.assertEqual(summary["net_paid_total"], "9500.00")
+        self.assertEqual(summary["pending_release_total"], "0.00")
+        self.assertEqual(summary["on_hold_total"], "0.00")
+        self.assertEqual(summary["paid_events_count"], 2)
+
+        series = payload["financial_series"]
+        self.assertTrue(series)
+        self.assertIn("gross_revenue", series[0])
+        self.assertIn("platform_fees", series[0])
+        self.assertIn("net_paid", series[0])
+
+        project_rows = payload["project_financials"]
+        self.assertTrue(project_rows)
+        project_row = next(item for item in project_rows if item["agreement_id"] == self.agreement.id)
+        self.assertEqual(project_row["agreement_title"], self.project.title)
+        self.assertEqual(project_row["contract_value"], "12000.00")
+        self.assertEqual(project_row["gross_collected"], "10000.00")
+        self.assertEqual(project_row["platform_fees"], "500.00")
+        self.assertEqual(project_row["net_paid"], "9500.00")
+        self.assertEqual(project_row["fee_cap"], "750.00")
+        self.assertEqual(project_row["remaining_cap"], "250.00")
+        self.assertEqual(project_row["payment_status"], "Paid")
+
+        insights = payload["financial_insights"]
+        self.assertTrue(insights)
+
+        recent_events = payload["recent_financial_events"]
+        self.assertTrue(recent_events)
+        self.assertIn("activity_at", recent_events[0])
+
 
 class BusinessDashboardChartTests(TestCase):
     def setUp(self):

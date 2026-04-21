@@ -96,6 +96,72 @@ test('business dashboard shows payout reporting and links to full history', asyn
             last_fee_activity_at: '2026-03-16T11:30:00Z',
           },
         ],
+        financial_summary: {
+          gross_revenue_total: '12800.00',
+          platform_fees_total: '640.00',
+          net_paid_total: '12160.00',
+          pending_release_total: '900.00',
+          on_hold_total: '400.00',
+          paid_events_count: 2,
+          pending_release_count: 1,
+          on_hold_count: 1,
+        },
+        financial_series: [
+          {
+            bucket_start: '2026-03-03',
+            bucket_label: 'Mar 3-9',
+            gross_revenue: '4200.00',
+            platform_fees: '210.00',
+            net_paid: '3990.00',
+          },
+          {
+            bucket_start: '2026-03-10',
+            bucket_label: 'Mar 10-16',
+            gross_revenue: '8600.00',
+            platform_fees: '430.00',
+            net_paid: '8170.00',
+          },
+        ],
+        financial_insights: [
+          {
+            title: 'Revenue mix',
+            explanation: 'Collected revenue totals $12,800.00 with platform fees at $640.00 (5.0%).',
+            severity: 'medium',
+          },
+        ],
+        project_financials: [
+          {
+            id: 321,
+            agreement_id: 321,
+            project_id: 321,
+            agreement_title: 'Kitchen Remodel Agreement',
+            contract_value: '10000.00',
+            gross_collected: '12800.00',
+            platform_fees: '640.00',
+            net_paid: '12160.00',
+            fee_cap: '750.00',
+            remaining_cap: '110.00',
+            status: 'Paid',
+            payment_status: 'Paid',
+            open_href: '/app/agreements/321',
+            last_activity_at: '2026-03-16T11:30:00Z',
+          },
+        ],
+        recent_financial_events: [
+          {
+            id: 'invoice-71',
+            record_type: 'Invoice',
+            record_id: 71,
+            agreement_id: 321,
+            agreement_title: 'Kitchen Remodel Agreement',
+            source_label: 'INV-20260310-0001',
+            gross_amount: '8600.00',
+            platform_fee: '430.00',
+            net_paid: '8170.00',
+            status: 'paid',
+            activity_at: '2026-03-12T12:00:00Z',
+          },
+        ],
         payout_series: [
           {
             bucket_start: '2026-03-03',
@@ -300,6 +366,21 @@ test('business dashboard shows payout reporting and links to full history', asyn
 
   await page.goto('/app/business', { waitUntil: 'domcontentloaded' });
 
+  await expect(page.getByTestId('dashboard-financial-section')).toBeVisible();
+  await expect(page.getByTestId('dashboard-financial-section')).toContainText('Gross Revenue');
+  await expect(page.getByTestId('dashboard-financial-section')).toContainText('$12,800.00');
+  await expect(page.getByTestId('dashboard-financial-section')).toContainText('$640.00');
+  await expect(page.getByTestId('dashboard-financial-section')).toContainText('$12,160.00');
+  await expect(page.getByTestId('dashboard-financial-section')).toContainText('$900.00');
+  await expect(page.getByTestId('dashboard-financial-section')).toContainText('$400.00');
+  await expect(page.getByTestId('dashboard-financial-trend-chart')).toBeVisible();
+  await expect(page.getByTestId('dashboard-financial-insight-0')).toContainText('Revenue mix');
+  await expect(page.getByTestId('dashboard-financial-project-row-321')).toContainText('Kitchen Remodel Agreement');
+  await expect(page.getByTestId('dashboard-financial-project-row-321')).toContainText('$10,000.00');
+  await expect(page.getByTestId('dashboard-financial-project-row-321')).toContainText('$12,800.00');
+  await expect(page.getByTestId('dashboard-financial-project-row-321')).toContainText('$640.00');
+  await expect(page.getByTestId('dashboard-financial-project-row-321')).toContainText('$12,160.00');
+  await expect(page.getByTestId('dashboard-financial-event-invoice-71')).toContainText('Kitchen Remodel Agreement');
   await expect(page.getByTestId('dashboard-charts-section')).toBeVisible();
   await expect(page.getByTestId('dashboard-business-performance-section')).toBeVisible();
   await expect(page.getByTestId('dashboard-business-performance-step-requests_received')).toContainText('8');

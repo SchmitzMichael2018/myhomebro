@@ -608,6 +608,412 @@ def _build_progress_summary(contractor, end_dt):
     }
 
 
+def _record_effective_dt(record):
+    return (
+        getattr(record, "escrow_released_at", None)
+        or getattr(record, "direct_pay_paid_at", None)
+        or getattr(record, "paid_at", None)
+        or getattr(record, "released_at", None)
+        or getattr(record, "updated_at", None)
+        or getattr(record, "created_at", None)
+    )
+
+
+def _record_is_paid_like(record) -> bool:
+    status = str(getattr(record, "status", "") or "").lower()
+    if isinstance(record, Invoice):
+        return (
+            status == InvoiceStatus.PAID
+            or bool(getattr(record, "escrow_released", False))
+            or getattr(record, "escrow_released_at", None) is not None
+            or getattr(record, "direct_pay_paid_at", None) is not None
+        )
+    if isinstance(record, DrawRequest):
+        return status in {DrawRequestStatus.RELEASED, DrawRequestStatus.PAID} or getattr(record, "paid_at", None) is not None or getattr(record, "released_at", None) is not None
+    if isinstance(record, ExpenseRequest):
+        return status == ExpenseRequest.Status.PAID or getattr(record, "paid_at", None) is not None
+    return False
+
+
+def _record_is_pending_release(record) -> bool:
+    status = str(getattr(record, "status", "") or "").lower()
+    if isinstance(record, Invoice):
+        return status == InvoiceStatus.APPROVED and not bool(getattr(record, "escrow_released", False)) and getattr(record, "escrow_released_at", None) is None and getattr(record, "direct_pay_paid_at", None) is None
+    if isinstance(record, DrawRequest):
+        return status in {DrawRequestStatus.APPROVED, DrawRequestStatus.AWAITING_RELEASE}
+    if isinstance(record, ExpenseRequest):
+        return status == ExpenseRequest.Status.APPROVED
+    return False
+
+
+def _record_is_on_hold(record) -> bool:
+    status = str(getattr(record, "status", "") or "").lower()
+    if isinstance(record, Invoice):
+        return status == InvoiceStatus.DISPUTED or bool(getattr(record, "disputed", False))
+    if isinstance(record, DrawRequest):
+        return status in {DrawRequestStatus.REJECTED, DrawRequestStatus.CHANGES_REQUESTED}
+    if isinstance(record, ExpenseRequest):
+        return status == ExpenseRequest.Status.DISPUTED
+    return False
+
+
+def _record_gross_cents(record) -> int:
+    if isinstance(record, Invoice):
+        return _amount_to_cents(getattr(record, "amount", 0))
+    if isinstance(record, DrawRequest):
+        return _amount_to_cents(getattr(record, "gross_amount", 0))
+    if isinstance(record, ExpenseRequest):
+        return _amount_to_cents(getattr(record, "amount", 0))
+    return 0
+
+
+def _record_platform_fee_cents(record) -> int:
+    if isinstance(record, Invoice):
+        return int(getattr(record, "platform_fee_cents", 0) or 0)
+    if isinstance(record, DrawRequest):
+        return int(getattr(record, "platform_fee_cents", 0) or 0)
+    if isinstance(record, ExpenseRequest):
+        return int(getattr(record, "platform_fee_cents", 0) or 0)
+    return 0
+
+
+def _record_payout_cents(record) -> int:
+    if isinstance(record, Invoice):
+        payout_cents = int(getattr(record, "payout_cents", 0) or 0)
+        if payout_cents <= 0:
+            payout_cents = max(_record_gross_cents(record) - _record_platform_fee_cents(record), 0)
+        return payout_cents
+    if isinstance(record, DrawRequest):
+        payout_cents = int(getattr(record, "payout_cents", 0) or 0)
+        if payout_cents <= 0:
+            payout_cents = max(_record_gross_cents(record) - _record_platform_fee_cents(record), 0)
+        return payout_cents
+    if isinstance(record, ExpenseRequest):
+        payout_cents = int(getattr(record, "payout_cents", 0) or 0)
+        if payout_cents <= 0:
+            payout_cents = max(_record_gross_cents(record) - _record_platform_fee_cents(record), 0)
+        return payout_cents
+    return 0
+
+
+def _build_financial_summary(contractor, start_dt, end_dt):
+    invoice_qs = Invoice.objects.filter(agreement__contractor=contractor).select_related("agreement", "agreement__project")
+    draw_qs = DrawRequest.objects.filter(agreement__contractor=contractor).select_related("agreement", "agreement__project")
+    expense_qs = ExpenseRequest.objects.filter(agreement__contractor=contractor).select_related("agreement", "agreement__project")
+
+    paid_records = []
+    for qs in (invoice_qs, draw_qs, expense_qs):
+        for record in qs:
+            if not _record_is_paid_like(record):
+                continue
+            effective_dt = _record_effective_dt(record)
+            if effective_dt is None or effective_dt < start_dt or effective_dt > end_dt:
+                continue
+            paid_records.append(record)
+
+    gross_total_cents = sum(_record_gross_cents(record) for record in paid_records)
+    platform_fee_total_cents = sum(_record_platform_fee_cents(record) for record in paid_records)
+    net_paid_total_cents = sum(_record_payout_cents(record) for record in paid_records)
+
+    pending_release_records = []
+    on_hold_records = []
+    for qs in (invoice_qs, draw_qs, expense_qs):
+        for record in qs:
+            if _record_is_pending_release(record):
+                pending_release_records.append(record)
+            if _record_is_on_hold(record):
+                on_hold_records.append(record)
+
+    pending_release_total_cents = sum(_record_gross_cents(record) for record in pending_release_records)
+    on_hold_total_cents = sum(_record_gross_cents(record) for record in on_hold_records)
+
+    return {
+        "gross_revenue_total": _format_money(Decimal(gross_total_cents) / Decimal("100")),
+        "platform_fees_total": _format_money(Decimal(platform_fee_total_cents) / Decimal("100")),
+        "net_paid_total": _format_money(Decimal(net_paid_total_cents) / Decimal("100")),
+        "pending_release_total": _format_money(Decimal(pending_release_total_cents) / Decimal("100")),
+        "on_hold_total": _format_money(Decimal(on_hold_total_cents) / Decimal("100")),
+        "paid_events_count": len(paid_records),
+        "pending_release_count": len(pending_release_records),
+        "on_hold_count": len(on_hold_records),
+        "range_label": f"{start_dt.date().isoformat()} to {end_dt.date().isoformat()}",
+    }
+
+
+def _build_financial_series(contractor, request, start_dt, end_dt):
+    bucket_kind, buckets = _chart_buckets(start_dt, end_dt)
+    series = OrderedDict(
+        (
+            bucket_start,
+            {
+                **meta,
+                "gross_revenue": Decimal("0.00"),
+                "platform_fees": Decimal("0.00"),
+                "net_paid": Decimal("0.00"),
+            },
+        )
+        for bucket_start, meta in buckets.items()
+    )
+
+    invoice_qs = _paid_invoice_queryset(contractor, start_dt, end_dt)
+    for invoice in invoice_qs:
+        bucket_start = _bucket_start_for_dt(_effective_invoice_paid_at(invoice), bucket_kind)
+        if bucket_start not in series:
+            continue
+        series[bucket_start]["gross_revenue"] += Decimal(invoice.amount or 0)
+        series[bucket_start]["platform_fees"] += Decimal(invoice.platform_fee_cents or 0) / Decimal("100")
+        payout_cents = int(getattr(invoice, "payout_cents", 0) or 0)
+        if payout_cents <= 0:
+            payout_cents = max(_amount_to_cents(invoice.amount) - int(getattr(invoice, "platform_fee_cents", 0) or 0), 0)
+        series[bucket_start]["net_paid"] += Decimal(payout_cents) / Decimal("100")
+
+    draw_qs = DrawRequest.objects.select_related("agreement", "agreement__project").filter(
+        agreement__contractor=contractor,
+        status__in=[DrawRequestStatus.RELEASED, DrawRequestStatus.PAID],
+    )
+    for draw in draw_qs:
+        effective_dt = _effective_payout_dt(draw)
+        if effective_dt is None or effective_dt < start_dt or effective_dt > end_dt:
+            continue
+        bucket_start = _bucket_start_for_dt(effective_dt, bucket_kind)
+        if bucket_start not in series:
+            continue
+        series[bucket_start]["gross_revenue"] += Decimal(draw.gross_amount or 0)
+        series[bucket_start]["platform_fees"] += Decimal(draw.platform_fee_cents or 0) / Decimal("100")
+        payout_cents = int(getattr(draw, "payout_cents", 0) or 0)
+        if payout_cents <= 0:
+            payout_cents = max(_amount_to_cents(draw.gross_amount) - int(getattr(draw, "platform_fee_cents", 0) or 0), 0)
+        series[bucket_start]["net_paid"] += Decimal(payout_cents) / Decimal("100")
+
+    expense_qs = ExpenseRequest.objects.select_related("agreement", "agreement__project").filter(
+        agreement__contractor=contractor,
+        status=ExpenseRequest.Status.PAID,
+    )
+    for expense in expense_qs:
+        effective_dt = getattr(expense, "paid_at", None) or getattr(expense, "updated_at", None)
+        if effective_dt is None or effective_dt < start_dt or effective_dt > end_dt:
+            continue
+        bucket_start = _bucket_start_for_dt(effective_dt, bucket_kind)
+        if bucket_start not in series:
+            continue
+        series[bucket_start]["gross_revenue"] += Decimal(expense.amount or 0)
+        series[bucket_start]["platform_fees"] += Decimal(expense.platform_fee_cents or 0) / Decimal("100")
+        series[bucket_start]["net_paid"] += Decimal(expense.payout_cents or 0) / Decimal("100")
+
+    def serialize_money_series(rows, keys):
+        result = []
+        for row in rows.values():
+            serialized = dict(row)
+            for key in keys:
+                serialized[key] = str(Decimal(serialized[key]).quantize(Decimal("0.01")))
+            result.append(serialized)
+        return result
+
+    financial_series = serialize_money_series(series, ["gross_revenue", "platform_fees", "net_paid"])
+    return financial_series
+
+
+def _build_financial_insights(contractor, summary, project_rows):
+    insights = []
+
+    gross = Decimal(summary["gross_revenue_total"] or 0)
+    fees = Decimal(summary["platform_fees_total"] or 0)
+    net = Decimal(summary["net_paid_total"] or 0)
+    pending = Decimal(summary["pending_release_total"] or 0)
+    on_hold = Decimal(summary["on_hold_total"] or 0)
+    fee_rate = (fees / gross * Decimal("100")) if gross > 0 else Decimal("0")
+
+    if gross > 0:
+        insights.append(
+            {
+                "title": "Revenue mix",
+                "explanation": f"Collected revenue totals { _format_money(gross) } with platform fees at {_format_money(fees)} ({fee_rate.quantize(Decimal('0.1'))}%).",
+                "severity": "medium" if fee_rate > Decimal("10") else "low",
+            }
+        )
+    if pending > 0:
+        insights.append(
+            {
+                "title": "Cash waiting to move",
+                "explanation": f"{_format_money(pending)} is approved or ready to release, so it should turn into paid revenue soon.",
+                "severity": "medium",
+            }
+        )
+    if on_hold > 0:
+        insights.append(
+            {
+                "title": "Money on hold",
+                "explanation": f"{_format_money(on_hold)} is tied up in disputes or review states and needs follow-up.",
+                "severity": "high",
+            }
+        )
+    if project_rows:
+        top_project = max(project_rows, key=lambda row: Decimal(row.get("gross_collected", "0") or "0"))
+        top_gross = Decimal(top_project.get("gross_collected", 0) or 0)
+        if gross > 0 and top_gross / gross >= Decimal("0.4"):
+            insights.append(
+                {
+                    "title": "Revenue concentration",
+                    "explanation": f"{top_project.get('agreement_title', 'One project')} is generating a large share of current revenue, so keeping its payments moving matters.",
+                    "severity": "medium",
+                }
+            )
+
+    if net > 0 and fees > 0:
+        insights.append(
+            {
+                "title": "Net paid",
+                "explanation": f"You have {_format_money(net)} in net paid funds after {_format_money(fees)} in platform fees.",
+                "severity": "low",
+            }
+        )
+
+    return insights[:4]
+
+
+def _build_project_financial_rows(contractor):
+    agreements = Agreement.objects.select_related("project").filter(contractor=contractor).order_by("project__title", "id")
+    rows = []
+    for agreement in agreements:
+        invoice_qs = Invoice.objects.filter(agreement=agreement)
+        draw_qs = DrawRequest.objects.filter(agreement=agreement)
+        expense_qs = ExpenseRequest.objects.filter(agreement=agreement)
+
+        gross_cents = 0
+        fee_cents = 0
+        net_cents = 0
+        pending_cents = 0
+        hold_cents = 0
+        last_activity = None
+
+        for record in list(invoice_qs) + list(draw_qs) + list(expense_qs):
+            effective_dt = _record_effective_dt(record)
+            if effective_dt and (last_activity is None or effective_dt > last_activity):
+                last_activity = effective_dt
+
+            if _record_is_paid_like(record):
+                gross_cents += _record_gross_cents(record)
+                fee_cents += _record_platform_fee_cents(record)
+                net_cents += _record_payout_cents(record)
+            if _record_is_pending_release(record):
+                pending_cents += _record_gross_cents(record)
+            if _record_is_on_hold(record):
+                hold_cents += _record_gross_cents(record)
+
+        cap_total = Decimal(MAX_PLATFORM_FEE).quantize(Decimal("0.01"))
+        collected_total = Decimal(get_collected_platform_fees_for_agreement(agreement.id)).quantize(Decimal("0.01"))
+        remaining_cap = max(cap_total - collected_total, Decimal("0.00")).quantize(Decimal("0.01"))
+        total_cents = gross_cents + pending_cents + hold_cents
+        if total_cents <= 0 and fee_cents <= 0:
+            continue
+
+        status_label = "On Hold" if hold_cents > 0 else "Pending Release" if pending_cents > 0 else "Paid" if gross_cents > 0 else "Active"
+
+        rows.append(
+            {
+                "id": agreement.id,
+                "agreement_id": agreement.id,
+                "project_id": getattr(agreement, "project_id", None),
+                "agreement_title": getattr(getattr(agreement, "project", None), "title", "") or f"Agreement #{agreement.id}",
+                "contract_value": _format_money(Decimal(getattr(agreement, "total_cost", 0) or 0)),
+                "gross_collected": _format_money(Decimal(gross_cents) / Decimal("100")),
+                "platform_fees": _format_money(Decimal(fee_cents) / Decimal("100")),
+                "fees_collected_so_far": _format_money(Decimal(fee_cents) / Decimal("100")),
+                "net_paid": _format_money(Decimal(net_cents) / Decimal("100")),
+                "fee_cap": _format_money(cap_total),
+                "remaining_cap": _format_money(remaining_cap),
+                "status": status_label,
+                "status_detail": status_label,
+                "payment_status": status_label,
+                "pending_release": _format_money(Decimal(pending_cents) / Decimal("100")),
+                "on_hold": _format_money(Decimal(hold_cents) / Decimal("100")),
+                "last_activity_at": _format_dt(last_activity),
+                "open_href": f"/app/agreements/{agreement.id}",
+            }
+        )
+
+    rows.sort(
+        key=lambda row: (
+            Decimal(row.get("gross_collected", "0") or "0"),
+            row.get("last_activity_at") or "",
+        ),
+        reverse=True,
+    )
+    return rows
+
+
+def _build_recent_financial_events(contractor, start_dt, end_dt):
+    events = []
+
+    for invoice in _paid_invoice_queryset(contractor, start_dt, end_dt):
+        events.append(
+            {
+                "id": f"invoice-{invoice.id}",
+                "record_type": "Invoice",
+                "record_id": invoice.id,
+                "agreement_id": getattr(invoice, "agreement_id", None),
+                "agreement_title": getattr(getattr(invoice.agreement, "project", None), "title", "") or f"Agreement #{getattr(invoice, 'agreement_id', '')}",
+                "source_label": getattr(invoice, "invoice_number", ""),
+                "gross_amount": _format_money(invoice.amount),
+                "platform_fee": _format_money(Decimal(invoice.platform_fee_cents or 0) / Decimal("100")),
+                "net_paid": _format_money(Decimal(_record_payout_cents(invoice)) / Decimal("100")),
+                "status": "paid",
+                "activity_at": _format_dt(_record_effective_dt(invoice)),
+            }
+        )
+
+    draw_qs = DrawRequest.objects.select_related("agreement", "agreement__project").filter(
+        agreement__contractor=contractor,
+        status__in=[DrawRequestStatus.RELEASED, DrawRequestStatus.PAID],
+    )
+    for draw in draw_qs:
+        effective_dt = _effective_payout_dt(draw)
+        if effective_dt is None or effective_dt < start_dt or effective_dt > end_dt:
+            continue
+        events.append(
+            {
+                "id": f"draw-{draw.id}",
+                "record_type": "Draw",
+                "record_id": draw.id,
+                "agreement_id": getattr(draw, "agreement_id", None),
+                "agreement_title": getattr(getattr(draw.agreement, "project", None), "title", "") or f"Agreement #{getattr(draw, 'agreement_id', '')}",
+                "source_label": f"Draw #{getattr(draw, 'draw_number', draw.id)}",
+                "gross_amount": _format_money(draw.gross_amount),
+                "platform_fee": _format_money(Decimal(draw.platform_fee_cents or 0) / Decimal("100")),
+                "net_paid": _format_money(Decimal(_record_payout_cents(draw)) / Decimal("100")),
+                "status": str(getattr(draw, "status", "")).replace("_", " "),
+                "activity_at": _format_dt(effective_dt),
+            }
+        )
+
+    expense_qs = ExpenseRequest.objects.select_related("agreement", "agreement__project").filter(
+        agreement__contractor=contractor,
+        status=ExpenseRequest.Status.PAID,
+    )
+    for expense in expense_qs:
+        effective_dt = getattr(expense, "paid_at", None) or getattr(expense, "updated_at", None)
+        if effective_dt is None or effective_dt < start_dt or effective_dt > end_dt:
+            continue
+        events.append(
+            {
+                "id": f"expense-{expense.id}",
+                "record_type": "Expense",
+                "record_id": expense.id,
+                "agreement_id": getattr(expense, "agreement_id", None),
+                "agreement_title": getattr(getattr(expense.agreement, "project", None), "title", "") or f"Agreement #{getattr(expense, 'agreement_id', '')}",
+                "source_label": getattr(expense, "description", "") or f"Expense #{expense.id}",
+                "gross_amount": _format_money(expense.amount),
+                "platform_fee": _format_money(Decimal(expense.platform_fee_cents or 0) / Decimal("100")),
+                "net_paid": _format_money(Decimal(expense.payout_cents or 0) / Decimal("100")),
+                "status": "paid",
+                "activity_at": _format_dt(effective_dt),
+            }
+        )
+
+    events.sort(key=lambda row: row.get("activity_at") or "", reverse=True)
+    return events[:10]
+
+
 def _build_fee_project_rows(contractor, start_dt, end_dt):
     fee_activity: dict[int, dict] = {}
 
@@ -887,6 +1293,17 @@ class BusinessDashboardSummaryAPIView(APIView):
             "progress_summary": _build_progress_summary(contractor, end_dt),
             "fee_projects": _build_fee_project_rows(contractor, start_dt, end_dt),
         }
+        financial_summary = _build_financial_summary(contractor, start_dt, end_dt)
+        project_financials = _build_project_financial_rows(contractor)
+        payload.update(
+            {
+                "financial_summary": financial_summary,
+                "financial_series": _build_financial_series(contractor, request, start_dt, end_dt),
+                "financial_insights": _build_financial_insights(contractor, financial_summary, project_financials),
+                "project_financials": project_financials,
+                "recent_financial_events": _build_recent_financial_events(contractor, start_dt, end_dt),
+            }
+        )
         payload.update(_build_chart_series(contractor, request, start_dt, end_dt))
 
         return Response(payload)

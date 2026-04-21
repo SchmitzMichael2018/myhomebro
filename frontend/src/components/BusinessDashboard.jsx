@@ -522,6 +522,11 @@ export default function BusinessDashboard() {
   const revenueSeries = payload?.revenue_series || [];
   const feeSeries = payload?.fee_series || [];
   const feeProjects = payload?.fee_projects || [];
+  const financialSummary = payload?.financial_summary || {};
+  const financialSeries = payload?.financial_series || [];
+  const financialInsights = payload?.financial_insights || [];
+  const projectFinancials = payload?.project_financials || feeProjects;
+  const recentFinancialEvents = payload?.recent_financial_events || [];
   const payoutSeries = payload?.payout_series || [];
   const workflowSeries = payload?.workflow_series || [];
   const feeSummary = payload?.fee_summary || {};
@@ -617,6 +622,17 @@ export default function BusinessDashboard() {
         total_fee: Number(row.total_fee || 0),
       })),
     [feeSeries]
+  );
+
+  const financialTrendChart = useMemo(
+    () =>
+      financialSeries.map((row) => ({
+        ...row,
+        gross_revenue: Number(row.gross_revenue || 0),
+        platform_fees: Number(row.platform_fees || 0),
+        net_paid: Number(row.net_paid || 0),
+      })),
+    [financialSeries]
   );
 
   const payoutChart = useMemo(
@@ -964,6 +980,291 @@ export default function BusinessDashboard() {
           </div>
         )}
       </section>
+      </DashboardSection>
+
+      <DashboardSection
+        title="Financial Dashboard"
+        subtitle="A contractor-friendly view of gross revenue, platform fees, net payouts, and what is still pending."
+        className="mb-5"
+      >
+        <section
+          data-testid="dashboard-financial-section"
+          className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+        >
+          <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="text-base font-bold text-slate-900">Financial Dashboard</div>
+              <div className="mt-1 text-sm text-slate-600">
+                Selected range: {rangeLabel}. Platform fees are applied as payments are processed and stop once the project cap is reached.
+              </div>
+            </div>
+            <div className="text-xs text-slate-500">Selected range summary</div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <Stat
+              label="Gross Revenue"
+              value={money(financialSummary.gross_revenue_total)}
+              sub="Paid work in the selected range"
+              tone={Number(financialSummary.gross_revenue_total || 0) > 0 ? "good" : "default"}
+            />
+            <Stat
+              label="Platform Fees"
+              value={money(financialSummary.platform_fees_total)}
+              sub="MyHomeBro fees collected"
+              tone={Number(financialSummary.platform_fees_total || 0) > 0 ? "warn" : "default"}
+            />
+            <Stat
+              label="Net Paid to You"
+              value={money(financialSummary.net_paid_total)}
+              sub="Funds paid after platform fees"
+              tone={Number(financialSummary.net_paid_total || 0) > 0 ? "good" : "default"}
+            />
+            <Stat
+              label="Pending Release"
+              value={money(financialSummary.pending_release_total)}
+              sub="Approved but not yet released"
+              tone={Number(financialSummary.pending_release_total || 0) > 0 ? "warn" : "default"}
+            />
+            <Stat
+              label="On Hold"
+              value={money(financialSummary.on_hold_total)}
+              sub="Disputed or paused for review"
+              tone={Number(financialSummary.on_hold_total || 0) > 0 ? "bad" : "default"}
+            />
+          </div>
+
+          <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 xl:col-span-2">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-bold text-slate-900">Revenue / Fees / Net</div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    Trend view for gross revenue, platform fees, and net payouts.
+                  </div>
+                </div>
+                <div className="text-xs text-slate-500">{financialSeries.length} buckets</div>
+              </div>
+              <div className="mt-4">
+                {hasSeriesValue(financialTrendChart, ["gross_revenue", "platform_fees", "net_paid"]) ? (
+                  <div className="h-80" data-testid="dashboard-financial-trend-chart">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={financialTrendChart}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="bucket_label" tick={{ fontSize: 12 }} />
+                        <YAxis tickFormatter={axisMoney} width={70} />
+                        <Tooltip formatter={(value) => money(value)} />
+                        <Legend />
+                        <Line
+                          type="monotone"
+                          dataKey="gross_revenue"
+                          name="Gross Revenue"
+                          stroke="#0f172a"
+                          strokeWidth={2}
+                          dot={false}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="platform_fees"
+                          name="Platform Fees"
+                          stroke="#b45309"
+                          strokeWidth={2}
+                          dot={false}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="net_paid"
+                          name="Net Paid"
+                          stroke="#0f766e"
+                          strokeWidth={2}
+                          dot={false}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <ChartEmptyState text="No financial trend data in this range yet." />
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="text-sm font-bold text-slate-900">Cash Flow Status</div>
+              <div className="mt-1 text-sm text-slate-600">
+                At-a-glance view of what is already paid, what is waiting to release, and what is on hold.
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-3">
+                <Stat
+                  label="Paid Events"
+                  value={int(financialSummary.paid_events_count)}
+                  sub="Payments that have settled"
+                />
+                <Stat
+                  label="Pending Releases"
+                  value={int(financialSummary.pending_release_count)}
+                  sub="Work approved, funds not yet released"
+                  tone={Number(financialSummary.pending_release_count || 0) > 0 ? "warn" : "default"}
+                />
+                <Stat
+                  label="On Hold Events"
+                  value={int(financialSummary.on_hold_count)}
+                  sub="Needs review or resolution"
+                  tone={Number(financialSummary.on_hold_count || 0) > 0 ? "bad" : "default"}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5">
+            <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div>
+                <div className="text-sm font-bold text-slate-900">Financial Insights</div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Short reads that help you understand the money picture without digging through reports.
+                </div>
+              </div>
+            </div>
+
+            {financialInsights.length === 0 ? (
+              <div className="mt-3">
+                <Empty text="No financial insights to show yet." />
+              </div>
+            ) : (
+              <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                {financialInsights.map((insight, index) => (
+                  <div
+                    key={`${insight.title || "financial-insight"}-${index}`}
+                    data-testid={`dashboard-financial-insight-${index}`}
+                    className={`rounded-xl border p-4 shadow-sm ${insightTone(insight.severity)}`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-sm font-bold">{insight.title}</div>
+                      <div className="text-[11px] font-semibold uppercase tracking-wide opacity-75">
+                        {insight.severity || "info"}
+                      </div>
+                    </div>
+                    <div className="mt-2 text-sm leading-6">{insight.explanation}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-5">
+            <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div>
+                <div className="text-sm font-bold text-slate-900">Project Financials</div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Which projects are generating revenue, fees, and net payouts.
+                </div>
+              </div>
+              <div className="text-xs text-slate-500">{projectFinancials.length} projects</div>
+            </div>
+
+            {projectFinancials.length === 0 ? (
+              <div className="mt-3">
+                <Empty text="No project financial activity in this range yet." />
+              </div>
+            ) : (
+              <div className="mt-3 overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-xs font-semibold text-slate-600">
+                      <th className="py-2 pr-3">Project</th>
+                      <th className="py-2 pr-3">Contract Value</th>
+                      <th className="py-2 pr-3">Gross Collected</th>
+                      <th className="py-2 pr-3">Platform Fees</th>
+                      <th className="py-2 pr-3">Net Paid</th>
+                      <th className="py-2 pr-3">Fee Cap</th>
+                      <th className="py-2 pr-3">Remaining Cap</th>
+                      <th className="py-2 pr-3">Status</th>
+                      <th className="py-2">Open</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {projectFinancials.map((row) => (
+                      <tr key={row.id} data-testid={`dashboard-financial-project-row-${row.id}`}>
+                        <td className="py-3 pr-3">
+                          <div className="font-semibold text-slate-900">{row.agreement_title}</div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {row.last_activity_at ? `Last activity ${formatDateTime(row.last_activity_at)}` : "No recent activity"}
+                          </div>
+                        </td>
+                        <td className="py-3 pr-3 text-slate-700">{money(row.contract_value)}</td>
+                        <td className="py-3 pr-3 font-semibold text-slate-900">{money(row.gross_collected)}</td>
+                        <td className="py-3 pr-3 text-slate-700">{money(row.platform_fees)}</td>
+                        <td className="py-3 pr-3 text-slate-700">{money(row.net_paid)}</td>
+                        <td className="py-3 pr-3 text-slate-700">{money(row.fee_cap)}</td>
+                        <td className="py-3 pr-3 text-slate-700">{money(row.remaining_cap)}</td>
+                        <td className="py-3 pr-3 text-slate-700">{row.payment_status || row.status || "—"}</td>
+                        <td className="py-3">
+                          {row.open_href ? (
+                            <a
+                              href={row.open_href}
+                              className="inline-flex rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                              data-testid={`dashboard-financial-project-open-${row.id}`}
+                            >
+                              Open
+                            </a>
+                          ) : (
+                            <span className="text-xs text-slate-400">—</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="mt-5">
+            <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div>
+                <div className="text-sm font-bold text-slate-900">Recent Payment Events</div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Recent settled payments and releases, all in one place.
+                </div>
+              </div>
+              <div className="text-xs text-slate-500">{recentFinancialEvents.length} events</div>
+            </div>
+
+            {recentFinancialEvents.length === 0 ? (
+              <div className="mt-3">
+                <Empty text="No recent payment events in this range yet." />
+              </div>
+            ) : (
+              <div className="mt-3 overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-xs font-semibold text-slate-600">
+                      <th className="py-2 pr-3">Date</th>
+                      <th className="py-2 pr-3">Project</th>
+                      <th className="py-2 pr-3">Type</th>
+                      <th className="py-2 pr-3">Gross</th>
+                      <th className="py-2 pr-3">Fees</th>
+                      <th className="py-2 pr-3">Net</th>
+                      <th className="py-2">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {recentFinancialEvents.map((event) => (
+                      <tr key={event.id} data-testid={`dashboard-financial-event-${event.id}`}>
+                        <td className="py-3 pr-3 text-slate-700">{formatDateTime(event.activity_at)}</td>
+                        <td className="py-3 pr-3 font-semibold text-slate-900">{event.agreement_title}</td>
+                        <td className="py-3 pr-3 text-slate-700">{event.record_type}</td>
+                        <td className="py-3 pr-3 text-slate-700">{money(event.gross_amount)}</td>
+                        <td className="py-3 pr-3 text-slate-700">{money(event.platform_fee)}</td>
+                        <td className="py-3 pr-3 text-slate-700">{money(event.net_paid)}</td>
+                        <td className="py-3 text-slate-700">{event.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </section>
       </DashboardSection>
 
       <DashboardSection
