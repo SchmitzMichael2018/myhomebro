@@ -1,5 +1,36 @@
+const FIRST_PROJECT_HANDOFF_STORAGE_KEY = "mhb_first_project_assist_handoff";
+
 function safeObject(value) {
   return value && typeof value === "object" ? value : {};
+}
+
+function readSessionAssistantHandoff() {
+  try {
+    if (typeof window === "undefined" || !window.sessionStorage) return {};
+    const raw = window.sessionStorage.getItem(FIRST_PROJECT_HANDOFF_STORAGE_KEY);
+    if (!raw) return {};
+    return safeObject(JSON.parse(raw));
+  } catch {
+    return {};
+  }
+}
+
+export function writeSessionAssistantHandoff(payload = {}) {
+  try {
+    if (typeof window === "undefined" || !window.sessionStorage) return;
+    window.sessionStorage.setItem(FIRST_PROJECT_HANDOFF_STORAGE_KEY, JSON.stringify(safeObject(payload)));
+  } catch {
+    // ignore storage failures
+  }
+}
+
+export function clearSessionAssistantHandoff() {
+  try {
+    if (typeof window === "undefined" || !window.sessionStorage) return;
+    window.sessionStorage.removeItem(FIRST_PROJECT_HANDOFF_STORAGE_KEY);
+  } catch {
+    // ignore storage failures
+  }
 }
 
 export function isBlankAssistantValue(value) {
@@ -10,7 +41,10 @@ export function isBlankAssistantValue(value) {
 }
 
 export function getAssistantHandoff(locationState) {
-  const state = safeObject(locationState);
+  const storedState = readSessionAssistantHandoff();
+  const state = Object.keys(safeObject(locationState)).length
+    ? safeObject(locationState)
+    : storedState;
   return {
     prefillFields: safeObject(state.assistantPrefill),
     draftPayload: safeObject(state.assistantDraftPayload),

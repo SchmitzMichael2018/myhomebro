@@ -235,8 +235,22 @@ test("intelligent onboarding builds and saves a contractor setup", async ({ page
   });
 
   await page.getByRole("button", { name: "Looks good" }).click();
-  await expect(page.getByTestId("contractor-onboarding-finish")).toBeVisible();
+  await expect(page.getByTestId("contractor-onboarding-first-project")).toBeVisible();
 
-  await page.getByRole("button", { name: "Open Agreement Builder" }).click();
+  await page.getByRole("button", { name: "Start project" }).click();
   await expect(page).toHaveURL(/\/app\/agreements\/new\/wizard\?step=1$/);
+
+  const handoffState = await page.evaluate(() => {
+    try {
+      const raw = window.sessionStorage.getItem("mhb_first_project_assist_handoff");
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  expect(handoffState?.assistantIntent).toBe("first_project_assist");
+  expect(handoffState?.assistantDraftPayload?.project_family_key).toBe("roofing");
+  expect(handoffState?.assistantDraftPayload?.project_family_label).toBe("Roofing");
+  expect(handoffState?.assistantSuggestedMilestones?.length).toBeGreaterThan(0);
 });

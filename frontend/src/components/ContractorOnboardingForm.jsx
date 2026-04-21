@@ -6,6 +6,7 @@ import {
   normalizeProjectFamilyContext,
   useWorkspaceProjectFamilyContext,
 } from "../lib/projectFamilyContext.js";
+import { writeSessionAssistantHandoff as writeFirstProjectAssistHandoff } from "../lib/assistantHandoff.js";
 
 const EMPTY_SETUP = {
   work_description: "",
@@ -38,6 +39,15 @@ const EMPTY_SETUP = {
   completed_at: null,
 };
 
+const ONBOARDING_STEP_LABELS = [
+  "Welcome",
+  "Work description",
+  "Clarifications",
+  "Generated setup",
+  "Finish",
+  "First project",
+];
+
 function safeText(value) {
   return value == null ? "" : String(value).trim();
 }
@@ -60,6 +70,107 @@ function extractProjectFamily(value) {
 
   const firstFamily = safeArray(next.project_families)[0];
   return normalizeProjectFamilyContext(firstFamily || {});
+}
+
+function buildFirstProjectAssistState(setup = {}, workDescription = "", clarificationAnswers = {}) {
+  const family = extractProjectFamily(setup);
+  const agreementDefaults = setup?.agreement_defaults || {};
+  const pricing = setup?.pricing_baseline || {};
+  const milestones = safeArray(setup?.milestone_tendencies);
+  const summary = safeText(setup?.summary) || "Your setup is ready.";
+  const projectTitle =
+    safeText(agreementDefaults?.project_type) ||
+    safeText(family.project_family_label) ||
+    "First Project";
+  const projectSummary = safeText(workDescription) || summary;
+
+  return {
+    assistantIntent: "first_project_assist",
+    activationJourney: true,
+    assistantWizardStepTarget: 1,
+    assistantContext: {
+      source: "onboarding_first_project",
+      project_family_key: family.project_family_key,
+      project_family_label: family.project_family_label,
+      workflow_style: safeText(setup?.project_style?.workflow_style),
+      materials_behavior: safeText(setup?.project_style?.materials_behavior),
+      milestone_count: Number(pricing?.milestone_count || milestones.length || 0),
+      pricing_baseline: pricing,
+      summary,
+    },
+    assistantPrefill: {
+      project_title: projectTitle,
+      project_summary: projectSummary,
+      project_class: "residential",
+      project_type: safeText(agreementDefaults?.project_type),
+      project_subtype: safeText(agreementDefaults?.project_subtype),
+      agreement_mode: safeText(agreementDefaults?.agreement_mode) || "standard",
+      payment_mode: safeText(agreementDefaults?.payment_mode) || "escrow",
+      payment_structure: safeText(agreementDefaults?.payment_structure) || "progress",
+    },
+    assistantDraftPayload: {
+      project_family_key: family.project_family_key,
+      project_family_label: family.project_family_label,
+      project_title: projectTitle,
+      project_summary: projectSummary,
+      description: projectSummary,
+      project_class: "residential",
+      project_type: safeText(agreementDefaults?.project_type),
+      project_subtype: safeText(agreementDefaults?.project_subtype),
+      agreement_mode: safeText(agreementDefaults?.agreement_mode) || "standard",
+      payment_mode: safeText(agreementDefaults?.payment_mode) || "escrow",
+      payment_structure: safeText(agreementDefaults?.payment_structure) || "progress",
+      selected_template_id: agreementDefaults?.template_id || null,
+      selected_template_name_snapshot: safeText(
+        agreementDefaults?.suggested_template_label || agreementDefaults?.template_name
+      ),
+    },
+    assistantSuggestedMilestones: milestones.map((row, index) => ({
+      title: safeText(row?.title) || `Milestone ${index + 1}`,
+      description: safeText(row?.note),
+      amount: "",
+      start_date: "",
+      completion_date: "",
+      order: index + 1,
+    })),
+    assistantEstimatePreview: {
+      suggested_price_low: safeText(pricing?.low),
+      suggested_price_high: safeText(pricing?.high),
+      suggested_total_price: safeText(pricing?.center || pricing?.high || pricing?.low),
+      suggested_duration_days: Number(pricing?.duration_days || 0),
+      suggested_duration_low_days: Number(pricing?.duration_low_days || 0),
+      suggested_duration_high_days: Number(pricing?.duration_high_days || 0),
+      milestone_count: Number(pricing?.milestone_count || milestones.length || 0),
+      confidence_level: safeText(pricing?.confidence_level) || "medium",
+      confidence_reasoning: safeText(pricing?.confidence_reasoning) || summary,
+    },
+    assistantTemplateRecommendations: agreementDefaults?.template_id
+      ? [
+          {
+            id: agreementDefaults.template_id,
+            name: safeText(
+              agreementDefaults?.suggested_template_label || agreementDefaults?.template_name
+            ),
+            project_type: safeText(agreementDefaults?.project_type),
+            project_subtype: safeText(agreementDefaults?.project_subtype),
+          },
+        ]
+      : [],
+    assistantTopTemplatePreview: agreementDefaults?.template_id
+      ? {
+          id: agreementDefaults.template_id,
+          name: safeText(
+            agreementDefaults?.suggested_template_label || agreementDefaults?.template_name
+          ),
+        }
+      : {},
+    assistantGuidedFlow: {
+      current_step: "first_project",
+      project_family_key: family.project_family_key,
+      project_family_label: family.project_family_label,
+      clarification_answers: clarificationAnswers,
+    },
+  };
 }
 
 function normalizeSetup(value) {
@@ -230,7 +341,9 @@ export default function ContractorOnboardingForm() {
       case 4:
         return "Your Project Setup";
       case 5:
-        return "Choose your next step";
+        return "Your setup is ready";
+      case 6:
+        return "Let’s create your first project";
       default:
         return "Let’s set up how you run your projects";
     }
@@ -247,7 +360,7 @@ export default function ContractorOnboardingForm() {
       setClarificationAnswers(normalized.clarification_answers || {});
       setFinished(Boolean(normalized.completed_at));
       if (normalized.completed_at) {
-        setStep(5);
+        setStep(6);
       } else if (normalized.work_description) {
         setStep(normalized.clarification_questions.length ? 3 : 4);
       } else {
@@ -335,7 +448,7 @@ export default function ContractorOnboardingForm() {
     });
     if (!normalized) return;
     setFinished(true);
-    setStep(5);
+    setStep(6);
   };
 
   const updateAnswer = (key, value) => {
@@ -347,8 +460,12 @@ export default function ContractorOnboardingForm() {
     setStep(2);
   };
 
-  const goToAgreementBuilder = () => {
-    navigate("/app/agreements/new/wizard?step=1");
+  const startFirstProject = () => {
+    const handoff = buildFirstProjectAssistState(setup, workDescription, clarificationAnswers);
+    writeFirstProjectAssistHandoff(handoff);
+    navigate("/app/agreements/new/wizard?step=1", {
+      state: handoff,
+    });
   };
 
   const goToDashboard = () => {
@@ -394,13 +511,7 @@ export default function ContractorOnboardingForm() {
               Progress
             </div>
             <div className="mt-4 space-y-4">
-              {[
-                "Welcome",
-                "Work description",
-                "Clarifications",
-                "Generated setup",
-                "Finish",
-              ].map((label, index) => (
+              {ONBOARDING_STEP_LABELS.map((label, index) => (
                 <div key={label} className="flex items-center gap-3">
                   <StepBadge step={index + 1} current={step} />
                   <div className="min-w-0">
@@ -414,7 +525,9 @@ export default function ContractorOnboardingForm() {
                         ? "Answer a few quick questions"
                         : index + 1 === 4
                         ? "Review the generated setup"
-                        : "Pick where to go next"}
+                        : index + 1 === 5
+                        ? "Confirm your setup"
+                        : "Launch your first project"}
                     </div>
                   </div>
                 </div>
@@ -425,7 +538,7 @@ export default function ContractorOnboardingForm() {
                 Current family
               </div>
               <div className="mt-2 text-lg font-bold text-slate-900">
-                {family.label || "General project review"}
+                {family.project_family_label || "General project review"}
               </div>
               <div className="mt-1 text-sm text-slate-600">
                 {setup.project_style?.workflow_style || "We will infer this from your description."}
@@ -449,7 +562,7 @@ export default function ContractorOnboardingForm() {
 
             {!loading && step === 1 ? (
               <SectionCard
-                eyebrow={`Step 1 of 5`}
+                eyebrow={`Step 1 of 6`}
                 title={stepTitle}
                 description="You give us one sentence and we build your default setup."
                 testId="contractor-onboarding-welcome"
@@ -482,7 +595,7 @@ export default function ContractorOnboardingForm() {
 
             {!loading && step >= 2 ? (
               <SectionCard
-                eyebrow={`Step ${Math.min(step, 5)} of 5`}
+                eyebrow={`Step ${Math.min(step, 6)} of 6`}
                 title={stepTitle}
                 description="Keep it short. A sentence is enough."
                 testId="contractor-onboarding-description"
@@ -539,7 +652,7 @@ export default function ContractorOnboardingForm() {
 
             {!loading && step === 3 ? (
               <SectionCard
-                eyebrow="Step 3 of 5"
+                eyebrow="Step 3 of 6"
                 title="A few quick clarifications"
                 description="These are optional, short, and based on your work type."
                 testId="contractor-onboarding-clarifications"
@@ -582,7 +695,7 @@ export default function ContractorOnboardingForm() {
 
             {!loading && step >= 4 ? (
               <SectionCard
-                eyebrow="Step 4 of 5"
+                eyebrow="Step 4 of 6"
                 title="Your Project Setup"
                 description={setup.summary || "We generated a usable starting setup from your work type."}
                 testId="contractor-onboarding-generated-setup"
@@ -593,7 +706,7 @@ export default function ContractorOnboardingForm() {
                       Work Profile
                     </div>
                     <div className="mt-2 text-lg font-bold text-slate-900">
-                      {family.label || "General project review"}
+                      {family.project_family_label || "General project review"}
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {projectFamilyPills.length ? (
@@ -769,18 +882,73 @@ export default function ContractorOnboardingForm() {
 
             {!loading && step === 5 ? (
               <SectionCard
-                eyebrow="Step 5 of 5"
+                eyebrow="Step 5 of 6"
                 title="Your setup is ready"
-                description="You can jump into the builder or your dashboard with the same project-family context."
+                description="Confirm it now, then launch your first project."
                 testId="contractor-onboarding-finish"
               >
                 <div className="flex flex-wrap gap-3">
                   <button
                     type="button"
-                    onClick={goToAgreementBuilder}
+                    onClick={completeSetup}
+                    disabled={saving}
                     className="min-h-12 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800"
                   >
-                    Open Agreement Builder
+                    {saving ? "Saving setup..." : "Looks good"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={goToDashboard}
+                    className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Go to Dashboard
+                  </button>
+                </div>
+                <div className="mt-5 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                  {finished
+                    ? "Your setup is saved and ready to use across dashboard, agreement builder, templates, and AI context."
+                    : "Your setup is ready. Confirm it to launch your first project."}
+                </div>
+              </SectionCard>
+            ) : null}
+
+            {!loading && step === 6 ? (
+              <SectionCard
+                eyebrow="First Project Assist"
+                title="Let’s create your first project"
+                description="We already filled in the family, workflow, plan structure, and AI context from onboarding."
+                testId="contractor-onboarding-first-project"
+              >
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                      Ready to launch
+                    </div>
+                    <div className="mt-2 text-lg font-bold text-slate-900">
+                      {family.project_family_label || "General project review"}
+                    </div>
+                    <div className="mt-2 text-sm text-slate-600">
+                      {setup.project_style?.workflow_style ||
+                        "We will use your onboarding setup as the starting point."}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                      What is prefilled
+                    </div>
+                    <div className="mt-2 text-sm text-slate-700">
+                      Agreement wizard, milestone suggestions, template filtering, and AI context all start from the same setup.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={startFirstProject}
+                    className="min-h-12 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800"
+                  >
+                    Start project
                   </button>
                   <button
                     type="button"
@@ -798,9 +966,7 @@ export default function ContractorOnboardingForm() {
                   </button>
                 </div>
                 <div className="mt-5 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-                  {finished
-                    ? "Your setup is saved and ready to use across dashboard, agreement builder, templates, and AI context."
-                    : "Your setup is ready. Choose where you want to go next."}
+                  You can jump straight into the first agreement with your onboarding setup already loaded.
                 </div>
               </SectionCard>
             ) : null}
