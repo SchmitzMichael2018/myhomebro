@@ -7,6 +7,7 @@ from .views import (
     OnboardingStatus,
     OnboardingManage,
     OnboardingLoginLink,
+    OnboardingAccountSession,
 )
 
 from payments.views.escrow_refunds import AgreementEscrowRefundView
@@ -29,6 +30,7 @@ urlpatterns = [
     path("onboarding/status/", OnboardingStatus.as_view(), name="payments-onboarding-status"),
     path("onboarding/manage/", OnboardingManage.as_view(), name="payments-onboarding-manage"),
     path("onboarding/login-link/", OnboardingLoginLink.as_view(), name="payments-onboarding-login"),
+    path("onboarding/account-session/", OnboardingAccountSession.as_view(), name="payments-onboarding-account-session"),
 
     # ──────────────────────────────────────────────────────────────────
     # Escrow refunds (contractor-owner only)

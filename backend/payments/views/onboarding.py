@@ -6,6 +6,7 @@
 #   POST /api/payments/onboarding/start/
 #   POST /api/payments/onboarding/manage/
 #   POST /api/payments/onboarding/login_link/
+#   POST /api/payments/onboarding/account-session/
 
 from __future__ import annotations
 
@@ -46,7 +47,11 @@ def _get_site_urls() -> Tuple[str, str]:
 
 def _stripe_return_url() -> str:
     frontend, _site = _get_site_urls()
-    return f"{frontend}/app/onboarding"
+    return f"{frontend}/app/onboarding/stripe"
+
+
+def _stripe_embedded_resume_url() -> str:
+    return "/app/onboarding/stripe"
 
 
 def _get_user_and_profile(request) -> tuple:
@@ -115,7 +120,7 @@ def _create_or_get_connect_account_id(profile: ConnectedAccount, user) -> str:
 
     acct_country = getattr(settings, "STRIPE_CONNECT_ACCOUNT_COUNTRY", "US")
     acct = stripe.Account.create(
-        type="express",
+        type="custom",
         country=acct_country,
         email=(user.email or None),
         business_type="individual",
@@ -131,6 +136,17 @@ def _create_or_get_connect_account_id(profile: ConnectedAccount, user) -> str:
     _sync_contractor_from_connected_account(user, acct_id, acct)
 
     return acct_id
+
+
+def _create_account_session(acct_id: str) -> dict:
+    if not _stripe_enabled():
+        raise RuntimeError("Stripe is not enabled. Set STRIPE_ENABLED=1 and STRIPE_API_KEY/STRIPE_SECRET_KEY.")
+
+    session = stripe.AccountSession.create(
+        account=acct_id,
+        components={"account_onboarding": {"enabled": True}},
+    )
+    return session
 
 
 def _status_payload(acct: Optional[dict], profile: ConnectedAccount, user) -> dict:
@@ -162,7 +178,7 @@ def _status_payload(acct: Optional[dict], profile: ConnectedAccount, user) -> di
                 "disabled_reason": None,
                 "link": None,
                 "requirements_pending": False,
-                "resume_url": "/app/onboarding",
+                "resume_url": _stripe_embedded_resume_url(),
                 "onboarding": build_onboarding_snapshot(contractor),
             }
 
@@ -181,7 +197,7 @@ def _status_payload(acct: Optional[dict], profile: ConnectedAccount, user) -> di
             "disabled_reason": None,
             "link": None,
             "requirements_pending": False,
-            "resume_url": "/app/onboarding",
+            "resume_url": _stripe_embedded_resume_url(),
             "onboarding": build_onboarding_snapshot(contractor),
         }
 
@@ -221,7 +237,7 @@ def _status_payload(acct: Optional[dict], profile: ConnectedAccount, user) -> di
             severity="success",
             related_label=getattr(contractor, "business_name", "") or "Payments",
             icon_hint="stripe",
-            navigation_target="/app/onboarding",
+            navigation_target="/app/onboarding/stripe",
             metadata={"charges_enabled": charges, "payouts_enabled": payouts},
             dedupe_key=f"stripe_connected:{contractor.id}",
         )
@@ -261,7 +277,7 @@ def _status_payload(acct: Optional[dict], profile: ConnectedAccount, user) -> di
         "disabled_reason": disabled_reason,
         "link": None,
         "requirements_pending": bool(currently_due or past_due),
-        "resume_url": "/app/onboarding",
+        "resume_url": _stripe_embedded_resume_url(),
         "onboarding": build_onboarding_snapshot(contractor),
     }
 
@@ -395,3 +411,34 @@ class OnboardingLoginLink(APIView):
             return Response({"login_url": login["url"], "url": login["url"], "account_id": acct_id}, status=200)
         except Exception as exc:
             return Response({"detail": f"Stripe error: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+
+
+class OnboardingAccountSession(APIView):
+    """
+    POST /api/payments/onboarding/account-session/
+    Creates an Account Session for embedded Connect onboarding.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        if not _stripe_enabled():
+            return Response({"detail": "Stripe disabled"}, status=status.HTTP_400_BAD_REQUEST)
+
+        user, profile = _get_user_and_profile(request)
+        acct_id = _create_or_get_connect_account_id(profile, user)
+
+        try:
+            session = _create_account_session(acct_id)
+        except Exception as exc:
+            return Response({"detail": f"Stripe error: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+
+        contractor = getattr(user, "contractor_profile", None) or getattr(user, "contractor", None)
+        return Response(
+            {
+                "account_id": acct_id,
+                "client_secret": session.get("client_secret"),
+                "resume_url": _stripe_embedded_resume_url(),
+                "onboarding": build_onboarding_snapshot(contractor),
+            },
+            status=status.HTTP_200_OK,
+        )

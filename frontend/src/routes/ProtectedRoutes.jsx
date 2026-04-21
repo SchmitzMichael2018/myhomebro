@@ -47,6 +47,7 @@ import CustomerEdit from "../components/CustomerEdit.jsx";
 /* Other sections */
 import ContractorProfile from "../components/ContractorProfile.jsx";
 import ContractorOnboardingForm from "../components/ContractorOnboardingForm.jsx";
+import EmbeddedStripeOnboarding from "../components/Stripe/EmbeddedStripeOnboarding.jsx";
 import BusinessDashboard from "../components/BusinessDashboard.jsx";
 import Calendar from "../components/Calendar.jsx";
 import Expenses from "../pages/ExpensesPage.jsx";
@@ -190,6 +191,7 @@ export function protectedRoutes() {
 
           <Route path="profile" element={<ContractorProfile />} />
           <Route path="onboarding" element={<ContractorOnboardingForm />} />
+          <Route path="onboarding/stripe" element={<EmbeddedStripeOnboarding />} />
         </Route>
 
         {/* ---------------- EMPLOYEE ---------------- */}

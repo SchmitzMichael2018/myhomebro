@@ -981,7 +981,7 @@ export default function ContractorProfile() {
   const onboarding = meData?.onboarding || {};
   const showSetupReminder =
     onboarding?.status && (onboarding.status !== "complete" || onboarding?.show_soft_stripe_prompt);
-  const onboardingResumeHref = onboarding?.show_soft_stripe_prompt ? "/onboarding" : "/app/onboarding";
+  const onboardingResumeHref = onboarding?.show_soft_stripe_prompt ? "/app/onboarding/stripe" : "/app/onboarding";
   const onboardingResumeLabel = onboarding?.show_soft_stripe_prompt
     ? "Resume Stripe setup"
     : "Resume onboarding";

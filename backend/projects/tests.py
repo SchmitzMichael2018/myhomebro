@@ -11937,7 +11937,7 @@ class ContractorActivationOnboardingTests(TestCase):
         payload = response.json()
         self.assertEqual(payload["code"], "STRIPE_ONBOARDING_REQUIRED")
         self.assertEqual(payload["action_attempted"], "create_direct_pay_link")
-        self.assertEqual(payload["resume_url"], "/app/onboarding")
+        self.assertEqual(payload["resume_url"], "/app/onboarding/stripe")
         self.assertIn("onboarding", payload)
         self.assertFalse(payload["stripe_status"]["connected"])
 

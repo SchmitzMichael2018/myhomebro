@@ -957,6 +957,8 @@ def _contractor_onboarding_specialist(runtime: OrchestratorRuntimeContext) -> di
     navigation_target = "/app/onboarding"
     if next_step == "first_job":
         navigation_target = "/app/agreements/new/wizard?step=1"
+    elif next_step == "stripe":
+        navigation_target = "/app/onboarding/stripe"
     elif next_step == "complete":
         navigation_target = "/app/dashboard"
 
@@ -982,7 +984,7 @@ def _contractor_onboarding_specialist(runtime: OrchestratorRuntimeContext) -> di
         },
         "available_actions": _build_available_actions(
             [
-                {"key": "resume_onboarding", "label": "Resume Onboarding", "navigation_target": "/app/onboarding"},
+                {"key": "resume_onboarding", "label": "Resume Onboarding", "navigation_target": navigation_target},
                 {"key": "open_first_job", "label": "Start First Agreement", "navigation_target": "/app/agreements/new/wizard?step=1"},
                 {"key": "open_assistant", "label": "Start with AI", "navigation_target": "/app/assistant"},
             ]
@@ -1333,7 +1335,7 @@ def _build_proactive_recommendations(
                     "severity": "medium",
                     "source": "contractor_onboarding",
                     "recommended_action": "Resume onboarding",
-                    "navigation_target": "/app/onboarding",
+                    "navigation_target": "/app/onboarding/stripe" if step == "stripe" else "/app/onboarding",
                     "applyable_preview": onboarding_preview,
                     "dismissible": True,
                     "evidence_points": [step],

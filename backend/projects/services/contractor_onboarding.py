@@ -182,7 +182,7 @@ def build_stripe_requirement_payload(
     action_key: str,
     action_label: str,
     source: str = "",
-    return_path: str = "/app/onboarding",
+    return_path: str = "/app/onboarding/stripe",
 ) -> dict[str, Any]:
     onboarding = build_onboarding_snapshot(contractor)
     account_status = "connected" if onboarding["stripe_ready"] else "incomplete" if getattr(contractor, "stripe_account_id", "") else "not_started"
@@ -194,7 +194,7 @@ def build_stripe_requirement_payload(
         "action_label": action_label,
         "source": source or action_key,
         "message": "You can keep exploring, but this payment action requires Stripe setup.",
-        "resume_url": "/app/onboarding",
+        "resume_url": "/app/onboarding/stripe",
         "return_path": return_path,
         "stripe_status": {
             "account_status": account_status,
@@ -206,7 +206,7 @@ def build_stripe_requirement_payload(
         },
         "onboarding": onboarding,
         "available_actions": [
-            {"key": "connect_stripe", "label": "Connect Stripe", "navigation_target": "/app/onboarding"},
+            {"key": "connect_stripe", "label": "Connect Stripe", "navigation_target": "/app/onboarding/stripe"},
             {"key": "skip_for_now", "label": "Keep exploring", "navigation_target": return_path},
         ],
         "confirmation_required": True,

@@ -56,6 +56,7 @@ const NAV_HINTS = {
   "/app/disputes": "Manage issues, disagreements, and resolutions",
   "/app/profile": "Manage your account, preferences, and payment setup",
   "/app/onboarding": "Manage your account, preferences, and payment setup",
+  "/app/onboarding/stripe": "Complete Stripe Connect onboarding inside MyHomeBro",
   "/app/intake/new": "Capture new leads and start projects quickly",
 };
 
@@ -382,7 +383,7 @@ export default function Sidebar({ variant = "desktop" }) {
       <>
         <Item to={`${APP_BASE}/profile`} label="My Profile" icon={UserRound} />
         <Item
-          to={`${APP_BASE}/onboarding`}
+          to={`${APP_BASE}/onboarding/stripe`}
           icon={LinkIcon}
           label={
             <>
@@ -559,7 +560,7 @@ export default function Sidebar({ variant = "desktop" }) {
                 type="button"
                 data-testid="stripe-requirement-connect"
                 onClick={() => {
-                  const target = stripeRequirement?.resume_url || "/app/onboarding";
+                  const target = stripeRequirement?.resume_url || "/app/onboarding/stripe";
                   setStripeRequirement(null);
                   navigate(target);
                 }}
@@ -650,7 +651,7 @@ export default function Sidebar({ variant = "desktop" }) {
             <NavGroup label="Account" className="pt-1">
               <Item to={`${APP_BASE}/profile`} label="My Profile" icon={UserRound} />
               <Item
-                to={`${APP_BASE}/onboarding`}
+                to={`${APP_BASE}/onboarding/stripe`}
                 icon={LinkIcon}
                 label={
                   <>

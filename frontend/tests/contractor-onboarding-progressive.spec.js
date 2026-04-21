@@ -66,7 +66,7 @@ test('contractor onboarding supports activation-first progression and soft Strip
     onboarding_status: 'not_started',
     connected: false,
     requirements_pending: [],
-    resume_url: '/app/onboarding',
+    resume_url: '/app/onboarding/stripe',
   };
 
   await installBaseAuth(page);
@@ -397,7 +397,7 @@ test('payment-critical direct pay action shows Stripe requirement modal instead 
         action_label: 'Create Direct Pay Link',
         detail: 'Connect Stripe to receive payments.',
         message: 'You can keep exploring, but this payment action requires Stripe setup.',
-        resume_url: '/app/onboarding',
+        resume_url: '/app/onboarding/stripe',
         stripe_status: {
           connected: false,
           charges_enabled: false,
