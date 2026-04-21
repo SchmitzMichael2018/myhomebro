@@ -68,7 +68,7 @@ export default function ContractorSignUp() {
       if (access) {
         setTokens(access, refresh || null, true);
         toast.success("Account created!");
-        navigate("/onboarding");
+        navigate("/app/onboarding");
         return;
       }
 

@@ -14,7 +14,6 @@ import ForgotPassword from "./components/ForgotPassword";
 import ResetPassword from "./components/ResetPassword";
 
 import AgreementReview from "./pages/AgreementReview.jsx";
-import ContractorOnboardingForm from "./components/ContractorOnboardingForm.jsx";
 import StripeOnboarding from "./components/Stripe/StripeOnboarding.jsx";
 
 import PublicSign from "./components/PublicSign";
@@ -59,7 +58,7 @@ export default function App() {
 
           {/* Stripe onboarding */}
           <Route path="/onboarding" element={<StripeOnboarding />} />
-          <Route path="/onboarding/profile" element={<ContractorOnboardingForm />} />
+          <Route path="/onboarding/profile" element={<Navigate to="/app/onboarding" replace />} />
 
           {/* ✅ Auth-protected /app routes */}
           {protectedRoutes()}

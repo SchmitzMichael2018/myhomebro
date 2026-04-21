@@ -46,7 +46,7 @@ import CustomerEdit from "../components/CustomerEdit.jsx";
 
 /* Other sections */
 import ContractorProfile from "../components/ContractorProfile.jsx";
-import StripeOnboarding from "../components/Stripe/StripeOnboarding.jsx";
+import ContractorOnboardingForm from "../components/ContractorOnboardingForm.jsx";
 import BusinessDashboard from "../components/BusinessDashboard.jsx";
 import Calendar from "../components/Calendar.jsx";
 import Expenses from "../pages/ExpensesPage.jsx";
@@ -189,7 +189,7 @@ export function protectedRoutes() {
           <Route path="disputes" element={<Disputes />} />
 
           <Route path="profile" element={<ContractorProfile />} />
-          <Route path="onboarding" element={<StripeOnboarding />} />
+          <Route path="onboarding" element={<ContractorOnboardingForm />} />
         </Route>
 
         {/* ---------------- EMPLOYEE ---------------- */}

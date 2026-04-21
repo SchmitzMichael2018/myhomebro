@@ -981,6 +981,10 @@ export default function ContractorProfile() {
   const onboarding = meData?.onboarding || {};
   const showSetupReminder =
     onboarding?.status && (onboarding.status !== "complete" || onboarding?.show_soft_stripe_prompt);
+  const onboardingResumeHref = onboarding?.show_soft_stripe_prompt ? "/onboarding" : "/app/onboarding";
+  const onboardingResumeLabel = onboarding?.show_soft_stripe_prompt
+    ? "Resume Stripe setup"
+    : "Resume onboarding";
 
   return (
     <div className="flex justify-center">
@@ -1005,10 +1009,10 @@ export default function ContractorProfile() {
                 </div>
               </div>
               <a
-                href="/app/onboarding"
+                href={onboardingResumeHref}
                 className="rounded-lg bg-amber-900 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-950"
               >
-                {onboarding?.show_soft_stripe_prompt ? "Resume Stripe setup" : "Resume onboarding"}
+                {onboardingResumeLabel}
               </a>
             </div>
           </div>

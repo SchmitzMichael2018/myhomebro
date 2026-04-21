@@ -307,6 +307,35 @@ class ContractorWorkspaceContext(models.Model):
         return f"Workspace context for {contractor_label or self.contractor_id}"
 
 
+class ContractorOnboardingSetup(models.Model):
+    contractor = models.OneToOneField(
+        Contractor,
+        on_delete=models.CASCADE,
+        related_name="onboarding_setup",
+    )
+    work_description = models.TextField(blank=True, default="")
+    preferred_project_family_keys = models.JSONField(default=list, blank=True)
+    preferred_project_family_label = models.CharField(max_length=255, blank=True, default="")
+    workflow_style = models.CharField(max_length=255, blank=True, default="")
+    milestone_tendencies = models.JSONField(default=list, blank=True)
+    pricing_baseline = models.JSONField(default=dict, blank=True)
+    agreement_defaults = models.JSONField(default=dict, blank=True)
+    clarification_questions = models.JSONField(default=list, blank=True)
+    clarification_answers = models.JSONField(default=dict, blank=True)
+    generated_setup = models.JSONField(default=dict, blank=True)
+    quick_adjustment_notes = models.TextField(blank=True, default="")
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-id"]
+
+    def __str__(self):
+        contractor_label = getattr(self.contractor, "business_name", "") or getattr(self.contractor, "name", "")
+        return f"Onboarding setup for {contractor_label or self.contractor_id}"
+
+
 class ProposalTone(models.TextChoices):
     PROFESSIONAL = "professional", "Professional"
     FRIENDLY = "friendly", "Friendly"
