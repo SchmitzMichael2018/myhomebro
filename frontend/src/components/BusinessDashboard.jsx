@@ -9,11 +9,7 @@ import DashboardGrid from "./dashboard/DashboardGrid.jsx";
 import DashboardSection from "./dashboard/DashboardSection.jsx";
 import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 import ContractorInsightsSection from "./dashboard/ContractorInsightsSection.jsx";
-import {
-  normalizeProjectFamilyContext,
-  readStoredProjectFamilyContext,
-  writeStoredProjectFamilyContext,
-} from "../lib/projectFamilyContext.js";
+import { useWorkspaceProjectFamilyContext } from "../lib/projectFamilyContext.js";
 import {
   ResponsiveContainer,
   BarChart,
@@ -495,10 +491,10 @@ export default function BusinessDashboard() {
   const [error, setError] = useState("");
 
   const [payload, setPayload] = useState(null);
-  const [insightFamilyKey, setInsightFamilyKey] = useState(() => {
-    const stored = readStoredProjectFamilyContext();
-    return stored.project_family_key || "all";
-  });
+  const {
+    projectFamilyContext: workspaceProjectFamilyContext,
+    setProjectFamilyContext: setWorkspaceProjectFamilyContext,
+  } = useWorkspaceProjectFamilyContext();
 
   // Included AI + pricing summary
   const [meData, setMeData] = useState(null);
@@ -538,6 +534,7 @@ export default function BusinessDashboard() {
     range === "all" ? "All time" : range === "ytd" ? "Year to date" : `Last ${range} days`;
   const payoutQuery = useMemo(() => buildPayoutQuery(range), [range]);
   const recentPayouts = useMemo(() => payoutRows.slice(0, 5), [payoutRows]);
+  const insightFamilyKey = workspaceProjectFamilyContext.project_family_key || "all";
   const pendingExposure = useMemo(
     () =>
       Number(snapshot.escrow_pending || 0) +
@@ -707,24 +704,25 @@ export default function BusinessDashboard() {
     if (!availableInsightFamilies.length) return;
     if (insightFamilyOptionsByKey.has(insightFamilyKey)) return;
 
-    setInsightFamilyKey("all");
-    writeStoredProjectFamilyContext({});
-  }, [availableInsightFamilies.length, insightFamilyKey, insightFamilyOptionsByKey]);
+    setWorkspaceProjectFamilyContext({});
+  }, [
+    availableInsightFamilies.length,
+    insightFamilyKey,
+    insightFamilyOptionsByKey,
+    setWorkspaceProjectFamilyContext,
+  ]);
 
   const handleFamilyChange = (nextKey) => {
-    setInsightFamilyKey(nextKey);
     if (nextKey === "all") {
-      writeStoredProjectFamilyContext({});
+      setWorkspaceProjectFamilyContext({});
       return;
     }
 
     const selectedOption = insightFamilyOptionsByKey.get(nextKey);
-    writeStoredProjectFamilyContext(
-      normalizeProjectFamilyContext({
-        project_family_key: nextKey,
-        project_family_label: selectedOption?.label || "",
-      })
-    );
+    setWorkspaceProjectFamilyContext({
+      project_family_key: nextKey,
+      project_family_label: selectedOption?.label || "",
+    });
   };
 
   const fetchPayoutData = async () => {

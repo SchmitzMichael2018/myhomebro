@@ -34,7 +34,7 @@ import useAiFieldHighlights from "../hooks/useAiFieldHighlights.js";
 import { normalizeProjectClass } from "../utils/projectClass.js";
 import {
   normalizeProjectFamilyContext,
-  readStoredProjectFamilyContext,
+  useWorkspaceProjectFamilyContext,
 } from "../lib/projectFamilyContext.js";
 import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 
@@ -257,21 +257,46 @@ export default function AgreementWizard() {
     [assistantHandoff]
   );
   const activationJourney = Boolean(location.state?.activationJourney);
-  const storedProjectFamily = useMemo(() => readStoredProjectFamilyContext(), []);
+  const {
+    projectFamilyContext: workspaceProjectFamilyContext,
+    setProjectFamilyContext: setWorkspaceProjectFamilyContext,
+  } = useWorkspaceProjectFamilyContext();
+  const handoffProjectFamily = useMemo(
+    () =>
+      normalizeProjectFamilyContext({
+        project_family_key:
+          assistantHandoff.draftPayload?.project_family_key ||
+          assistantHandoff.context?.project_family_key ||
+          "",
+        project_family_label:
+          assistantHandoff.draftPayload?.project_family_label ||
+          assistantHandoff.context?.project_family_label ||
+          "",
+      }),
+    [assistantHandoff.context, assistantHandoff.draftPayload]
+  );
   const resolvedProjectFamily = useMemo(() => {
-    const fromHandoff = normalizeProjectFamilyContext({
-      project_family_key:
-        assistantHandoff.draftPayload?.project_family_key ||
-        assistantHandoff.context?.project_family_key ||
-        "",
-      project_family_label:
-        assistantHandoff.draftPayload?.project_family_label ||
-        assistantHandoff.context?.project_family_label ||
-        "",
-    });
-    if (fromHandoff.project_family_key) return fromHandoff;
-    return storedProjectFamily;
-  }, [assistantHandoff.context, assistantHandoff.draftPayload, storedProjectFamily]);
+    if (handoffProjectFamily.project_family_key) return handoffProjectFamily;
+    return workspaceProjectFamilyContext;
+  }, [handoffProjectFamily, workspaceProjectFamilyContext]);
+
+  useEffect(() => {
+    if (!handoffProjectFamily.project_family_key) return;
+    if (
+      handoffProjectFamily.project_family_key ===
+        workspaceProjectFamilyContext.project_family_key &&
+      handoffProjectFamily.project_family_label ===
+        workspaceProjectFamilyContext.project_family_label
+    ) {
+      return;
+    }
+    setWorkspaceProjectFamilyContext(handoffProjectFamily);
+  }, [
+    handoffProjectFamily,
+    setWorkspaceProjectFamilyContext,
+    workspaceProjectFamilyContext.project_family_key,
+    workspaceProjectFamilyContext.project_family_label,
+  ]);
 
   const [agreement, setAgreementState] = useState(null);
   const [loadingAgreement, setLoadingAgreement] = useState(false);
@@ -416,7 +441,31 @@ export default function AgreementWizard() {
 
     didInitialFetchRef.current = false;
     lastStepFetchRef.current = { step: null, at: 0 };
-  }, []);
+  }, [resolvedProjectFamily]);
+
+  useEffect(() => {
+    setDLocal((prev) => {
+      const nextFamilyKey = resolvedProjectFamily.project_family_key || "";
+      const nextFamilyLabel = resolvedProjectFamily.project_family_label || "";
+
+      if (prev.project_family_key) {
+        return prev;
+      }
+
+      if (
+        prev.project_family_key === nextFamilyKey &&
+        prev.project_family_label === nextFamilyLabel
+      ) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        project_family_key: nextFamilyKey,
+        project_family_label: nextFamilyLabel,
+      };
+    });
+  }, [resolvedProjectFamily.project_family_key, resolvedProjectFamily.project_family_label]);
 
   const goStep = (n) => {
     const next = clampStep(n);

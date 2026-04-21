@@ -287,6 +287,26 @@ class Contractor(models.Model):
         return bool(self.first_project_started_at or self.first_agreement_created_at)
 
 
+class ContractorWorkspaceContext(models.Model):
+    contractor = models.OneToOneField(
+        Contractor,
+        on_delete=models.CASCADE,
+        related_name="workspace_context",
+    )
+    default_project_family_key = models.CharField(max_length=100, blank=True, default="")
+    default_project_family_label = models.CharField(max_length=255, blank=True, default="")
+    context_updated_at = models.DateTimeField(default=timezone.now, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-id"]
+
+    def __str__(self):
+        contractor_label = getattr(self.contractor, "business_name", "") or getattr(self.contractor, "name", "")
+        return f"Workspace context for {contractor_label or self.contractor_id}"
+
+
 class ProposalTone(models.TextChoices):
     PROFESSIONAL = "professional", "Professional"
     FRIENDLY = "friendly", "Friendly"

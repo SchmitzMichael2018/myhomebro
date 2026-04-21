@@ -60,6 +60,7 @@ from .views.contractor_me import ContractorMeView
 from .views.activity_feed import ContractorActivityFeedView
 from .views.contractor_bids import ContractorBidsView
 from .views.compliance import ContractorCompliancePreviewView
+from .views.workspace_context import WorkspaceContextView
 from .views.onboarding import (
     ContractorOnboardingDismissStripePromptView,
     ContractorOnboardingEventView,
@@ -672,6 +673,7 @@ urlpatterns = [
     # -------------------------------------------------
     path("notifications/", NotificationListView.as_view()),
     path("contractors/me/", ContractorMeView.as_view()),
+    path("projects/workspace-context/", WorkspaceContextView.as_view()),
     path("contractors/onboarding/", ContractorOnboardingView.as_view()),
     path("contractors/onboarding/events/", ContractorOnboardingEventView.as_view()),
     path(

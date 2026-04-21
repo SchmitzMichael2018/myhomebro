@@ -7,6 +7,44 @@ async function installAuthAndDashboardRoutes(page) {
     window.localStorage.setItem("access", "playwright-access-token");
   });
 
+  const workspaceContextState = {
+    project_family: {
+      key: "",
+      label: "",
+    },
+    source: "server",
+    updated_at: "2026-04-20T00:00:00Z",
+  };
+
+  await page.route("**/api/projects/workspace-context/**", async (route) => {
+    const request = route.request();
+    if (request.method() === "PATCH") {
+      const body =
+        typeof request.postDataJSON === "function"
+          ? request.postDataJSON()
+          : (() => {
+              try {
+                return JSON.parse(request.postData() || "{}");
+              } catch {
+                return {};
+              }
+            })();
+      const projectFamily = body.project_family || body || {};
+      const key = String(projectFamily.key || projectFamily.project_family_key || "").trim().toLowerCase();
+      const label = String(projectFamily.label || projectFamily.project_family_label || "").trim();
+      workspaceContextState.project_family = key
+        ? { key, label: label || (key === "roofing" ? "Roofing" : "") }
+        : { key: "", label: "" };
+      workspaceContextState.updated_at = "2026-04-20T00:00:00Z";
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(workspaceContextState),
+    });
+  });
+
   await page.route("**/api/projects/whoami/", async (route) => {
     await route.fulfill({
       status: 200,
@@ -421,4 +459,37 @@ test("dashboard family selection persists into the agreement wizard and AI conte
 
   await page.getByTestId("milestones-ai-entry-toggle").click();
   await expect(page.getByTestId("start-with-ai-status-summary")).toContainText("Roofing");
+});
+
+test("stale workspace family cache is cleared during server reconciliation", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("access", "playwright-access-token");
+    window.localStorage.setItem(
+      "mhb_project_family_context",
+      JSON.stringify({
+        project_family_key: "stale_family",
+        project_family_label: "Stale Family",
+      })
+    );
+  });
+
+  await installAuthAndDashboardRoutes(page);
+
+  await page.goto("/app/business", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByTestId("dashboard-contractor-insights-section")).toBeVisible({
+    timeout: 15000,
+  });
+
+  await expect.poll(
+    async () =>
+      page.evaluate(() => {
+        try {
+          return window.localStorage.getItem("mhb_project_family_context");
+        } catch {
+          return null;
+        }
+      }),
+    { timeout: 10000 }
+  ).toBeNull();
 });
