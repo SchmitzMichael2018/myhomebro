@@ -15,6 +15,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from projects.models import Invoice, InvoiceStatus
+from payments.fees import calculate_platform_fee_cents_for_invoice
 
 # ✅ canonical agreement completion recompute
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
@@ -89,30 +90,6 @@ def _resolve_invoice_for_update(
     if inv is None:
         raise ValueError("Invoice not found for direct pay update.")
     return inv
-
-
-def _compute_direct_pay_fee_cents(amount_cents: int) -> int:
-    """
-    Direct Pay pricing is fixed for all contractors: 1% + $1.
-
-    Returns Stripe application_fee_amount in cents.
-    """
-    if amount_cents <= 0:
-        return 0
-
-    rate = Decimal("0.01")
-    pct_fee = (Decimal(amount_cents) * rate).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    flat_fee = Decimal("100")  # $1.00
-
-    total = int(pct_fee + flat_fee)
-
-    # Safety: never exceed invoice amount
-    if total > amount_cents:
-        total = amount_cents
-    if total < 0:
-        total = 0
-
-    return total
 
 
 def _get_agreement_customer(agreement) -> Tuple[Optional[object], str, str]:
@@ -200,8 +177,6 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
     except Exception:
         project_title = ""
 
-    application_fee_amount = _compute_direct_pay_fee_cents(amount_cents)
-
     try:
         import stripe  # type: ignore
     except Exception:
@@ -229,6 +204,22 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
         # ✅ Option A customer identity (from agreement)
         agreement_locked = getattr(inv, "agreement", None)
         _cust_obj, customer_email, customer_name = _get_agreement_customer(agreement_locked)
+        project_id = getattr(getattr(agreement_locked, "project", None), "id", None)
+
+        fee_cents = int(
+            calculate_platform_fee_cents_for_invoice(
+                amount_cents=amount_cents,
+                contractor=contractor,
+                agreement_id=inv.agreement_id,
+                project_id=project_id,
+                context="direct_pay",
+            )
+        )
+        if fee_cents < 0:
+            fee_cents = 0
+        if fee_cents > amount_cents:
+            fee_cents = amount_cents
+        payout_cents = max(amount_cents - fee_cents, 0)
 
         if not customer_email:
             # We can still create a session, but it will be worse UX. Fail fast for consistency.
@@ -260,15 +251,19 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
                     "invoice_id": str(inv.id),
                     "invoice_number": str(inv.invoice_number),
                     "agreement_id": str(inv.agreement_id),
+                    "project_id": str(project_id or ""),
                     "payment_mode": "DIRECT",
                     "customer_email": customer_email,
                     "customer_name": customer_name,
+                    "fee_context": "direct_pay",
+                    "platform_fee_cents": str(fee_cents),
+                    "payout_cents": str(payout_cents),
                 },
                 success_url=success_url,
                 cancel_url=cancel_url,
                 payment_intent_data={
                     "transfer_data": {"destination": contractor.stripe_account_id},
-                    "application_fee_amount": int(application_fee_amount),
+                    "application_fee_amount": int(fee_cents),
 
                     # ✅ Best-effort: makes Stripe send receipts to this email (if enabled)
                     "receipt_email": customer_email,
@@ -278,7 +273,11 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
                         "invoice_id": str(inv.id),
                         "invoice_number": str(inv.invoice_number),
                         "agreement_id": str(inv.agreement_id),
+                        "project_id": str(project_id or ""),
                         "customer_email": customer_email,
+                        "fee_context": "direct_pay",
+                        "platform_fee_cents": str(fee_cents),
+                        "payout_cents": str(payout_cents),
                     },
                 },
             )
@@ -301,11 +300,19 @@ def create_direct_pay_checkout_for_invoice(invoice: Invoice) -> str:
         inv.direct_pay_checkout_url = session_url or ""
         if hasattr(inv, "direct_pay_payment_intent_id") and payment_intent_id:
             inv.direct_pay_payment_intent_id = str(payment_intent_id)
+        if hasattr(inv, "platform_fee_cents"):
+            inv.platform_fee_cents = int(fee_cents)
+        if hasattr(inv, "payout_cents"):
+            inv.payout_cents = int(payout_cents)
         inv.status = InvoiceStatus.SENT
 
         update_fields = ["direct_pay_checkout_session_id", "direct_pay_checkout_url", "status"]
         if hasattr(inv, "direct_pay_payment_intent_id") and payment_intent_id:
             update_fields.append("direct_pay_payment_intent_id")
+        if hasattr(inv, "platform_fee_cents"):
+            update_fields.append("platform_fee_cents")
+        if hasattr(inv, "payout_cents"):
+            update_fields.append("payout_cents")
 
         inv.save(update_fields=update_fields)
 

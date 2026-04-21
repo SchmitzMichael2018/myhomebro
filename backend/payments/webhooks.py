@@ -319,39 +319,41 @@ def _handle_invoice_payment_succeeded(intent: dict) -> None:
         fee_snapshot = {}
         computed_fee_cents = 0
 
-        try:
-            agreement = getattr(inv, "agreement", None)
-            contractor = getattr(agreement, "contractor", None) if agreement else None
-            agreement_id = getattr(inv, "agreement_id", None)
+        if platform_fee_cents <= 0:
+            try:
+                agreement = getattr(inv, "agreement", None)
+                contractor = getattr(agreement, "contractor", None) if agreement else None
+                agreement_id = getattr(inv, "agreement_id", None)
 
-            if contractor is not None:
-                from payments.fees import (
-                    compute_fee_summary_for_invoice_payment,
-                    build_invoice_payment_fee_snapshot,
-                    _cents_from_money,
-                )
+                if contractor is not None:
+                    from payments.fees import (
+                        compute_fee_summary_for_invoice_payment,
+                        build_invoice_payment_fee_snapshot,
+                        _cents_from_money,
+                    )
 
-                summary = compute_fee_summary_for_invoice_payment(
-                    amount_cents=amount_received_cents,
-                    contractor=contractor,
-                    agreement_id=agreement_id,
-                    is_high_risk=False,
-                )
+                    summary = compute_fee_summary_for_invoice_payment(
+                        amount_cents=amount_received_cents,
+                        contractor=contractor,
+                        agreement_id=agreement_id,
+                        project_id=getattr(getattr(agreement, "project", None), "id", None),
+                        is_high_risk=False,
+                    )
 
-                fee_snapshot = build_invoice_payment_fee_snapshot(summary)
-                computed_fee_cents = _cents_from_money(summary.platform_fee)
-        except Exception:
-            log.exception("Fee snapshot build failed (invoice=%s, pi=%s).", getattr(inv, "id", None), pi_id)
-            fee_snapshot = {}
-            computed_fee_cents = 0
+                    fee_snapshot = build_invoice_payment_fee_snapshot(summary)
+                    computed_fee_cents = _cents_from_money(summary.platform_fee)
+            except Exception:
+                log.exception("Fee snapshot build failed (invoice=%s, pi=%s).", getattr(inv, "id", None), pi_id)
+                fee_snapshot = {}
+                computed_fee_cents = 0
 
-        if computed_fee_cents > 0:
-            platform_fee_cents = computed_fee_cents
-        elif platform_fee_cents <= 0 and hasattr(inv, "platform_fee_cents"):
+            if computed_fee_cents > 0:
+                platform_fee_cents = computed_fee_cents
+        elif hasattr(inv, "platform_fee_cents") and int(getattr(inv, "platform_fee_cents") or 0) != platform_fee_cents:
             try:
                 platform_fee_cents = int(getattr(inv, "platform_fee_cents") or 0)
             except Exception:
-                platform_fee_cents = 0
+                platform_fee_cents = platform_fee_cents
 
         if Receipt is not None:
             try:
@@ -603,12 +605,15 @@ def _handle_draw_transfer_failed(transfer_obj: dict) -> None:
             draw.save(update_fields=update_fields + ["updated_at"])
 
     try:
+        source_payment_intent_id = str(metadata.get("source_payment_intent_id") or "").strip() or None
         mark_draw_payment_issue(
-            payment_intent_id=payment_intent_id,
-            issue_message=issue_message,
+            draw_request_id=draw_request_id,
+            payment_intent_id=source_payment_intent_id,
+            issue_message=str(failure_message),
+            payment_method="stripe_transfer",
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        log.exception("Failed to sync failed transfer onto draw=%s: %s", draw_request_id, exc)
 
 
 def _handle_expense_checkout_completed(session: dict) -> None:
@@ -641,6 +646,45 @@ def _handle_expense_checkout_completed(session: dict) -> None:
         if getattr(exp, "paid_at", None):
             return
 
+        agreement = getattr(exp, "agreement", None)
+        contractor = getattr(agreement, "contractor", None) if agreement else None
+        project_id = getattr(agreement, "project_id", None) if agreement else None
+
+        stored_fee_cents = int(getattr(exp, "platform_fee_cents", 0) or 0)
+        stored_payout_cents = int(getattr(exp, "payout_cents", 0) or 0)
+        if stored_fee_cents > 0 and stored_payout_cents > 0:
+            platform_fee_cents = stored_fee_cents
+            payout_cents = stored_payout_cents
+        elif contractor is not None:
+            try:
+                from payments.fees import calculate_platform_fee  # type: ignore
+
+                amount_cents = int((Decimal(str(getattr(exp, "amount", 0) or 0)) * Decimal("100")).to_integral_value())
+                fee_result = calculate_platform_fee(
+                    amount_cents=amount_cents,
+                    contractor=contractor,
+                    project_id=project_id,
+                    context="expense_checkout",
+                )
+                platform_fee_cents = int(fee_result.platform_fee_cents)
+                payout_cents = int(fee_result.payout_cents)
+                if hasattr(exp, "platform_fee_cents"):
+                    exp.platform_fee_cents = platform_fee_cents
+                if hasattr(exp, "payout_cents"):
+                    exp.payout_cents = payout_cents
+                if hasattr(exp, "stripe_checkout_session_id") and not getattr(exp, "stripe_checkout_session_id", ""):
+                    exp.stripe_checkout_session_id = session_id
+                if hasattr(exp, "stripe_payment_intent_id") and not getattr(exp, "stripe_payment_intent_id", ""):
+                    exp.stripe_payment_intent_id = payment_intent
+                update_fields_extra = []
+                for field_name in ("platform_fee_cents", "payout_cents", "stripe_checkout_session_id", "stripe_payment_intent_id"):
+                    if hasattr(exp, field_name):
+                        update_fields_extra.append(field_name)
+                if update_fields_extra:
+                    exp.save(update_fields=list(dict.fromkeys(update_fields_extra + ["updated_at"])))
+            except Exception:
+                log.exception("Expense fee sync failed expense=%s session=%s", exp_id, session_id)
+
         try:
             exp.status = ExpenseRequest.Status.PAID
         except Exception:
@@ -653,7 +697,7 @@ def _handle_expense_checkout_completed(session: dict) -> None:
             exp.homeowner_acted_at = now()
 
         update_fields = ["status"]
-        for f in ("paid_at", "homeowner_acted_at"):
+        for f in ("paid_at", "homeowner_acted_at", "platform_fee_cents", "payout_cents", "stripe_checkout_session_id", "stripe_payment_intent_id"):
             if hasattr(exp, f):
                 update_fields.append(f)
 
@@ -694,6 +738,49 @@ def _handle_expense_payment_intent_succeeded(intent: dict) -> None:
         if getattr(exp, "paid_at", None):
             return
 
+        agreement = getattr(exp, "agreement", None)
+        contractor = getattr(agreement, "contractor", None) if agreement else None
+        project_id = getattr(agreement, "project_id", None) if agreement else None
+
+        stored_fee_cents = int(getattr(exp, "platform_fee_cents", 0) or 0)
+        stored_payout_cents = int(getattr(exp, "payout_cents", 0) or 0)
+        if stored_fee_cents > 0 and stored_payout_cents > 0:
+            pass
+        elif contractor is not None:
+            try:
+                from payments.fees import calculate_platform_fee  # type: ignore
+
+                amount_cents = int((Decimal(str(getattr(exp, "amount", 0) or 0)) * Decimal("100")).to_integral_value())
+                fee_result = calculate_platform_fee(
+                    amount_cents=amount_cents,
+                    contractor=contractor,
+                    project_id=project_id,
+                    context="expense_payment_intent",
+                )
+                if hasattr(exp, "platform_fee_cents"):
+                    exp.platform_fee_cents = int(fee_result.platform_fee_cents)
+                if hasattr(exp, "payout_cents"):
+                    exp.payout_cents = int(fee_result.payout_cents)
+                update_fields_extra = []
+                for field_name in ("platform_fee_cents", "payout_cents"):
+                    if hasattr(exp, field_name):
+                        update_fields_extra.append(field_name)
+                if update_fields_extra:
+                    exp.save(update_fields=list(dict.fromkeys(update_fields_extra + ["updated_at"])))
+            except Exception:
+                log.exception("Expense PI fee sync failed expense=%s pi=%s", exp_id, pi_id)
+
+        if hasattr(exp, "stripe_payment_intent_id") and not getattr(exp, "stripe_payment_intent_id", ""):
+            exp.stripe_payment_intent_id = pi_id
+        if hasattr(exp, "stripe_checkout_session_id") and not getattr(exp, "stripe_checkout_session_id", ""):
+            exp.stripe_checkout_session_id = str(intent.get("checkout_session_id") or "")
+        update_trace_fields = []
+        for field_name in ("stripe_payment_intent_id", "stripe_checkout_session_id"):
+            if hasattr(exp, field_name):
+                update_trace_fields.append(field_name)
+        if update_trace_fields:
+            exp.save(update_fields=list(dict.fromkeys(update_trace_fields + ["updated_at"])))
+
         try:
             exp.status = ExpenseRequest.Status.PAID
         except Exception:
@@ -706,7 +793,7 @@ def _handle_expense_payment_intent_succeeded(intent: dict) -> None:
             exp.homeowner_acted_at = now()
 
         update_fields = ["status"]
-        for f in ("paid_at", "homeowner_acted_at"):
+        for f in ("paid_at", "homeowner_acted_at", "platform_fee_cents", "payout_cents", "stripe_checkout_session_id", "stripe_payment_intent_id"):
             if hasattr(exp, f):
                 update_fields.append(f)
 
@@ -820,6 +907,7 @@ def _ensure_escrow_payment_invoice_and_receipt(ag, pi_id: str, intent: dict, pai
                 amount_cents=int(paid_cents),
                 contractor=contractor,
                 agreement_id=int(ag_id),
+                project_id=getattr(getattr(ag, "project", None), "id", None),
                 is_high_risk=False,
             )
 

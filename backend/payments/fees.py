@@ -90,6 +90,20 @@ class AgreementCapInfo:
 
 
 @dataclass
+class UnifiedPlatformFeeResult:
+    project_amount: Decimal
+    amount_cents: int
+    project_id: Optional[int]
+    context: str
+    rate_info: FeeRateInfo
+    platform_fee_uncapped: Decimal
+    platform_fee: Decimal
+    platform_fee_cents: int
+    payout_cents: int
+    cap_info: AgreementCapInfo
+
+
+@dataclass
 class InvoicePaymentFeeSummary:
     project_amount: Decimal
     rate_info: FeeRateInfo
@@ -213,13 +227,39 @@ def _draw_monthly_volume_for_contractor(contractor) -> Decimal:
     return monthly_volume
 
 
+def _expense_monthly_volume_for_contractor(contractor) -> Decimal:
+    monthly_volume = Decimal("0.00")
+    try:
+        from projects.models import ExpenseRequest  # type: ignore
+
+        month_start = _month_start_for_now()
+        qs = ExpenseRequest.objects.filter(agreement__contractor=contractor)
+        total = Decimal("0.00")
+        for expense in qs.only("amount", "status", "paid_at", "updated_at"):
+            status = getattr(expense, "status", "")
+            if str(status).lower() != "paid" and not getattr(expense, "paid_at", None):
+                continue
+            event_time = getattr(expense, "paid_at", None) or getattr(expense, "updated_at", None)
+            if event_time is not None and event_time < month_start:
+                continue
+            amt = getattr(expense, "amount", None)
+            if amt is not None:
+                total += _round_money(Decimal(str(amt)))
+        monthly_volume = _round_money(total)
+    except Exception:
+        monthly_volume = Decimal("0.00")
+    return monthly_volume
+
+
 def get_monthly_processed_volume_breakdown_for_contractor(contractor) -> dict:
     invoice_volume = _invoice_monthly_volume_for_contractor(contractor)
     draw_volume = _draw_monthly_volume_for_contractor(contractor)
-    total_volume = _round_money(invoice_volume + draw_volume)
+    expense_volume = _expense_monthly_volume_for_contractor(contractor)
+    total_volume = _round_money(invoice_volume + draw_volume + expense_volume)
     return {
         "invoice_volume": invoice_volume,
         "draw_volume": draw_volume,
+        "expense_volume": expense_volume,
         "total_volume": total_volume,
     }
 
@@ -277,7 +317,7 @@ def get_fee_rate_for_contractor(
     )
 
 
-def calculate_platform_fee(
+def _calculate_platform_fee_from_rate(
     *,
     project_amount: Decimal,
     rate_info: FeeRateInfo,
@@ -291,6 +331,20 @@ def calculate_platform_fee(
         variable_fee=variable_fee,
         total_fee=total_fee,
     )
+
+
+def _resolve_project_id_from_agreement_id(agreement_id: Optional[int]) -> Optional[int]:
+    if not agreement_id:
+        return None
+    try:
+        from projects.models import Agreement  # type: ignore
+
+        agreement = Agreement.objects.select_related("project").filter(id=agreement_id).only("project_id").first()
+        if agreement is None:
+            return None
+        return getattr(agreement, "project_id", None)
+    except Exception:
+        return None
 
 
 def split_fee_between_parties(
@@ -335,17 +389,81 @@ def split_fee_between_parties(
 
 
 # ---------------------------------------------------------------------------
-# Agreement-level cap support
+# Project-level cap support
 # ---------------------------------------------------------------------------
+
+def get_collected_platform_fees_for_project(project_id: Optional[int]) -> Decimal:
+    """
+    Best-effort project-wide fee ledger.
+
+    Counts only fees that are actually collected/settled:
+      - Invoice.platform_fee_cents for paid / released invoices
+      - DrawRequest.platform_fee_cents for paid / released draw requests
+      - ExpenseRequest.platform_fee_cents for paid expense requests
+    """
+    if not project_id:
+        return Decimal("0.00")
+
+    total_cents = 0
+
+    try:
+        from projects.models import ExpenseRequest, Invoice, DrawRequest  # type: ignore
+    except Exception:
+        return Decimal("0.00")
+
+    try:
+        invoice_qs = Invoice.objects.filter(agreement__project_id=project_id)
+        for inv in invoice_qs.only(
+            "platform_fee_cents",
+            "status",
+            "direct_pay_paid_at",
+            "escrow_released",
+            "escrow_released_at",
+        ):
+            status = str(getattr(inv, "status", "") or "").lower()
+            if not _is_paid_like_status(status) and not getattr(inv, "direct_pay_paid_at", None) and not getattr(inv, "escrow_released", False) and not getattr(inv, "escrow_released_at", None):
+                continue
+            total_cents += int(getattr(inv, "platform_fee_cents") or 0)
+    except Exception:
+        pass
+
+    try:
+        draw_qs = DrawRequest.objects.filter(agreement__project_id=project_id)
+        for draw in draw_qs.only("platform_fee_cents", "status", "paid_at", "released_at"):
+            status = str(getattr(draw, "status", "") or "").lower()
+            if not _is_paid_like_status(status) and not getattr(draw, "paid_at", None) and not getattr(draw, "released_at", None):
+                continue
+            total_cents += int(getattr(draw, "platform_fee_cents") or 0)
+    except Exception:
+        pass
+
+    try:
+        expense_qs = ExpenseRequest.objects.filter(agreement__project_id=project_id)
+        for expense in expense_qs.only("platform_fee_cents", "status", "paid_at"):
+            status = str(getattr(expense, "status", "") or "").lower()
+            if status != "paid" and not getattr(expense, "paid_at", None):
+                continue
+            total_cents += int(getattr(expense, "platform_fee_cents") or 0)
+    except Exception:
+        pass
+
+    return _money_from_cents(total_cents)
 
 def get_collected_platform_fees_for_agreement(agreement_id: Optional[int]) -> Decimal:
     """
     Best-effort:
-      - Prefer Receipt.platform_fee_cents / platform_fee_amount if present
-      - Else fall back to Invoice.platform_fee_cents (paid-like statuses)
+      - Prefer project-wide fee collection when the agreement has a project
+      - Else fall back to the legacy agreement-scoped receipt/invoice tally
     """
     if not agreement_id:
         return Decimal("0.00")
+
+    project_id = _resolve_project_id_from_agreement_id(agreement_id)
+    if project_id:
+        try:
+            return get_collected_platform_fees_for_project(project_id)
+        except Exception:
+            pass
 
     # Prefer receipts
     try:
@@ -391,11 +509,37 @@ def get_collected_platform_fees_for_agreement(agreement_id: Optional[int]) -> De
     return Decimal("0.00")
 
 
+def apply_project_cap(
+    *,
+    project_id: Optional[int],
+    uncapped_fee: Decimal,
+) -> Tuple[Decimal, AgreementCapInfo]:
+    cap_total = _round_money(MAX_PLATFORM_FEE)
+    already = _round_money(get_collected_platform_fees_for_project(project_id))
+    remaining = _round_money(cap_total - already)
+    if remaining < Decimal("0.00"):
+        remaining = Decimal("0.00")
+
+    applied = _round_money(uncapped_fee)
+    if applied > remaining:
+        applied = remaining
+
+    return applied, AgreementCapInfo(
+        cap_total=cap_total,
+        already_collected=already,
+        remaining_cap=remaining,
+    )
+
+
 def apply_agreement_cap(
     *,
     agreement_id: Optional[int],
     uncapped_fee: Decimal,
 ) -> Tuple[Decimal, AgreementCapInfo]:
+    project_id = _resolve_project_id_from_agreement_id(agreement_id)
+    if project_id:
+        return apply_project_cap(project_id=project_id, uncapped_fee=uncapped_fee)
+
     cap_total = _round_money(MAX_PLATFORM_FEE)
     already = _round_money(get_collected_platform_fees_for_agreement(agreement_id))
     remaining = _round_money(cap_total - already)
@@ -410,6 +554,87 @@ def apply_agreement_cap(
         cap_total=cap_total,
         already_collected=already,
         remaining_cap=remaining,
+    )
+
+
+def _calculate_unified_platform_fee(
+    *,
+    amount_cents: int,
+    contractor,
+    project_id: Optional[int],
+    context: str,
+    is_high_risk: bool = False,
+) -> UnifiedPlatformFeeResult:
+    contractor_created_at = (
+        getattr(contractor, "created_at", None)
+        or getattr(contractor, "created", None)
+        or getattr(getattr(contractor, "user", None), "date_joined", None)
+        or timezone.now()
+    )
+    monthly_volume = get_monthly_processed_volume_for_contractor(contractor)
+
+    rate_info = get_fee_rate_for_contractor(
+        contractor_created_at=contractor_created_at,
+        monthly_volume=monthly_volume,
+        is_high_risk=is_high_risk,
+        today=date.today(),
+    )
+
+    project_amount = _money_from_cents(int(amount_cents))
+    uncapped = _calculate_platform_fee_from_rate(project_amount=project_amount, rate_info=rate_info).total_fee
+    applied_fee, cap_info = apply_project_cap(project_id=project_id, uncapped_fee=uncapped)
+    applied_fee_cents = _cents_from_money(applied_fee)
+    payout_cents = max(int(amount_cents) - applied_fee_cents, 0)
+
+    return UnifiedPlatformFeeResult(
+        project_amount=project_amount,
+        amount_cents=int(amount_cents),
+        project_id=project_id,
+        context=str(context or "").strip() or "payment",
+        rate_info=rate_info,
+        platform_fee_uncapped=_round_money(uncapped),
+        platform_fee=applied_fee,
+        platform_fee_cents=applied_fee_cents,
+        payout_cents=payout_cents,
+        cap_info=cap_info,
+    )
+
+
+def calculate_platform_fee(
+    *,
+    project_amount: Optional[Decimal] = None,
+    rate_info: Optional[FeeRateInfo] = None,
+    amount_cents: Optional[int] = None,
+    contractor=None,
+    project_id: Optional[int] = None,
+    context: str = "",
+    is_high_risk: bool = False,
+):
+    """
+    Unified fee helper.
+
+    Legacy mode:
+      calculate_platform_fee(project_amount=..., rate_info=...)
+      -> PlatformFeeResult
+
+    Unified project mode:
+      calculate_platform_fee(amount_cents=..., contractor=..., project_id=..., context=...)
+      -> UnifiedPlatformFeeResult
+    """
+    if project_amount is not None or rate_info is not None:
+        if project_amount is None or rate_info is None or amount_cents is not None or contractor is not None:
+            raise ValueError("Legacy fee calculation requires project_amount and rate_info only.")
+        return _calculate_platform_fee_from_rate(project_amount=_round_money(Decimal(str(project_amount))), rate_info=rate_info)
+
+    if amount_cents is None or contractor is None:
+        raise ValueError("Unified fee calculation requires amount_cents and contractor.")
+
+    return _calculate_unified_platform_fee(
+        amount_cents=int(amount_cents),
+        contractor=contractor,
+        project_id=project_id,
+        context=context,
+        is_high_risk=is_high_risk,
     )
 
 
@@ -443,7 +668,7 @@ def compute_fee_summary(
         today=today,
     )
 
-    platform = calculate_platform_fee(
+    platform = _calculate_platform_fee_from_rate(
         project_amount=_round_money(Decimal(str(project_amount))),
         rate_info=rate_info,
     )
@@ -478,42 +703,30 @@ def compute_fee_summary_for_invoice_payment(
     amount_cents: int,
     contractor,
     agreement_id: Optional[int],
+    project_id: Optional[int] = None,
     is_high_risk: bool = False,
 ) -> InvoicePaymentFeeSummary:
     """
-    Computes the platform fee for a MILESTONE payment and applies $750 cap PER AGREEMENT.
+    Computes the platform fee for a payment and applies the shared project cap.
     """
-    contractor_created_at = (
-        getattr(contractor, "created_at", None)
-        or getattr(contractor, "created", None)
-        or getattr(getattr(contractor, "user", None), "date_joined", None)
-        or timezone.now()
-    )
+    if project_id is None and agreement_id is not None:
+        project_id = _resolve_project_id_from_agreement_id(agreement_id)
 
-    monthly_volume = get_monthly_processed_volume_for_contractor(contractor)
-
-    rate_info = get_fee_rate_for_contractor(
-        contractor_created_at=contractor_created_at,
-        monthly_volume=monthly_volume,
+    unified = calculate_platform_fee(
+        amount_cents=int(amount_cents),
+        contractor=contractor,
+        project_id=project_id,
+        context="invoice_payment",
         is_high_risk=is_high_risk,
-        today=date.today(),
-    )
-
-    amount = _money_from_cents(int(amount_cents))
-    uncapped = calculate_platform_fee(project_amount=amount, rate_info=rate_info).total_fee
-
-    applied_fee, cap_info = apply_agreement_cap(
-        agreement_id=agreement_id,
-        uncapped_fee=uncapped,
     )
 
     return InvoicePaymentFeeSummary(
-        project_amount=amount,
-        rate_info=rate_info,
-        platform_fee=applied_fee,
-        agreement_cap=cap_info,
-        monthly_volume_used=monthly_volume,
-        platform_fee_uncapped=uncapped,
+        project_amount=unified.project_amount,
+        rate_info=unified.rate_info,
+        platform_fee=unified.platform_fee,
+        agreement_cap=unified.cap_info,
+        monthly_volume_used=get_monthly_processed_volume_for_contractor(contractor),
+        platform_fee_uncapped=unified.platform_fee_uncapped,
     )
 
 
@@ -522,12 +735,15 @@ def calculate_platform_fee_cents_for_invoice(
     amount_cents: int,
     contractor,
     agreement_id: Optional[int],
+    project_id: Optional[int] = None,
+    context: str = "invoice_payment",
     is_high_risk: bool = False,
 ) -> int:
     summary = compute_fee_summary_for_invoice_payment(
         amount_cents=amount_cents,
         contractor=contractor,
         agreement_id=agreement_id,
+        project_id=project_id,
         is_high_risk=is_high_risk,
     )
     return _cents_from_money(summary.platform_fee)

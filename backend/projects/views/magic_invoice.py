@@ -214,6 +214,8 @@ class MagicInvoiceApproveView(APIView):
                     amount_cents=amount_cents,
                     contractor=contractor,
                     agreement_id=getattr(invoice, "agreement_id", None),
+                    project_id=getattr(getattr(invoice, "agreement", None), "project_id", None),
+                    context="invoice_release",
                     is_high_risk=False,
                 )
             )
@@ -231,6 +233,24 @@ class MagicInvoiceApproveView(APIView):
 
         if escrow_funded:
             payout_cents = amount_cents - platform_fee_cents
+            source_payment_intent_id = ""
+            source_charge_id = ""
+            try:
+                from payments.models import Payment  # type: ignore
+
+                source_payment = (
+                    Payment.objects.filter(agreement_id=invoice.agreement_id, status="succeeded")
+                    .exclude(stripe_charge_id__isnull=True)
+                    .exclude(stripe_charge_id="")
+                    .order_by("created_at", "id")
+                    .first()
+                )
+                if source_payment is not None:
+                    source_payment_intent_id = str(getattr(source_payment, "stripe_payment_intent_id", "") or "")
+                    source_charge_id = str(getattr(source_payment, "stripe_charge_id", "") or "")
+            except Exception:
+                source_payment_intent_id = ""
+                source_charge_id = ""
 
             if getattr(invoice, "stripe_transfer_id", None):
                 with transaction.atomic():
@@ -322,16 +342,20 @@ class MagicInvoiceApproveView(APIView):
                     amount=int(payout_cents),
                     currency="usd",
                     destination=str(destination_acct),
+                    **({"source_transaction": source_charge_id} if source_charge_id else {}),
                     idempotency_key=f"escrow-release-invoice:{invoice.id}",
                     metadata={
                         "kind": "milestone_escrow_release",
                         "invoice_id": str(invoice.id),
                         "invoice_number": str(getattr(invoice, "invoice_number", "")),
                         "agreement_id": str(getattr(invoice, "agreement_id", "")),
+                        "project_id": str(getattr(getattr(invoice, "agreement", None), "project_id", "") or ""),
                         "contractor_id": str(getattr(contractor, "id", "")),
                         "amount_cents": str(amount_cents),
                         "platform_fee_cents": str(platform_fee_cents),
                         "payout_cents": str(payout_cents),
+                        "source_payment_intent_id": source_payment_intent_id,
+                        "source_charge_id": source_charge_id,
                     },
                 )
             except Exception as exc:
@@ -456,16 +480,17 @@ class MagicInvoiceApproveView(APIView):
                     amount=amount_cents,
                     currency="usd",
                     payment_method_types=["card"],
-                    application_fee_amount=platform_fee_cents,
-                    transfer_data={"destination": str(destination_acct)},
-                    metadata={
-                        "kind": "milestone_card_payment",
-                        "invoice_id": str(invoice.id),
-                        "invoice_number": str(getattr(invoice, "invoice_number", "")),
-                        "agreement_id": str(getattr(invoice, "agreement_id", "")),
-                        "platform_fee_cents": str(platform_fee_cents),
-                    },
-                )
+                application_fee_amount=platform_fee_cents,
+                transfer_data={"destination": str(destination_acct)},
+                metadata={
+                    "kind": "milestone_card_payment",
+                    "invoice_id": str(invoice.id),
+                    "invoice_number": str(getattr(invoice, "invoice_number", "")),
+                    "agreement_id": str(getattr(invoice, "agreement_id", "")),
+                    "project_id": str(getattr(getattr(invoice, "agreement", None), "project_id", "") or ""),
+                    "platform_fee_cents": str(platform_fee_cents),
+                },
+            )
 
                 if hasattr(invoice, "stripe_payment_intent_id"):
                     invoice.stripe_payment_intent_id = intent.id

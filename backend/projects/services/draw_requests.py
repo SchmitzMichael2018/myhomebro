@@ -141,6 +141,8 @@ def _ensure_draw_release_financials(draw: DrawRequest) -> tuple[int, int]:
             amount_cents=gross_amount_cents,
             contractor=contractor,
             agreement_id=getattr(agreement, "id", None),
+            project_id=getattr(getattr(agreement, "project", None), "id", None),
+            context="draw_release",
             is_high_risk=False,
         )
     )
@@ -585,6 +587,8 @@ def release_escrow_draw(
     released_at=None,
 ) -> DrawRequest:
     released_at = released_at or timezone.now()
+    failure_message = ""
+    failure_draw_id = draw_request_id
 
     with transaction.atomic():
         draw = (
@@ -638,29 +642,37 @@ def release_escrow_draw(
                 },
             )
         except Exception as exc:
-            draw.transfer_failure_reason = str(exc)
-            draw.save(update_fields=["transfer_failure_reason", "updated_at"])
-            raise ValueError(f"Escrow release transfer failed: {exc}")
+            failure_message = str(exc)
+            failure_draw_id = draw.id
+            pass
 
-        draw.status = DrawRequestStatus.RELEASED
-        draw.released_at = released_at
-        draw.transfer_created_at = timezone.now()
-        draw.transfer_failure_reason = ""
-        draw.stripe_transfer_id = str(transfer.get("id") or "")
-        draw.escrow_source_payment_intent_id = str(getattr(source_payment, "stripe_payment_intent_id", "") or "")
-        draw.escrow_source_charge_id = source_charge_id
-        draw.save(
-            update_fields=[
-                "status",
-                "released_at",
-                "transfer_created_at",
-                "transfer_failure_reason",
-                "stripe_transfer_id",
-                "escrow_source_payment_intent_id",
-                "escrow_source_charge_id",
-                "updated_at",
-            ]
+        if not failure_message:
+            draw.status = DrawRequestStatus.RELEASED
+            draw.released_at = released_at
+            draw.transfer_created_at = timezone.now()
+            draw.transfer_failure_reason = ""
+            draw.stripe_transfer_id = str(transfer.get("id") or "")
+            draw.escrow_source_payment_intent_id = str(getattr(source_payment, "stripe_payment_intent_id", "") or "")
+            draw.escrow_source_charge_id = source_charge_id
+            draw.save(
+                update_fields=[
+                    "status",
+                    "released_at",
+                    "transfer_created_at",
+                    "transfer_failure_reason",
+                    "stripe_transfer_id",
+                    "escrow_source_payment_intent_id",
+                    "escrow_source_charge_id",
+                    "updated_at",
+                ]
+            )
+
+    if failure_message:
+        DrawRequest.objects.filter(id=failure_draw_id).update(
+            transfer_failure_reason=failure_message,
+            updated_at=timezone.now(),
         )
+        raise ValueError(f"Escrow release transfer failed: {failure_message}")
 
     draw.refresh_from_db()
     try:

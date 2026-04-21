@@ -41,6 +41,7 @@ from projects.models import (
     ContractorReview,
     ContractorSubAccount,
     ContractorInvite,
+    ExpenseRequest,
     DrawRequest,
     DrawRequestStatus,
     ExternalPaymentRecord,
@@ -8381,7 +8382,10 @@ class ProgressPaymentWorkflowTests(TestCase):
         self.agreement.payment_mode = "escrow"
         self.agreement.signed_by_contractor = True
         self.agreement.signed_by_homeowner = True
+        self.contractor.stripe_account_id = "acct_ready_release"
+        self.contractor.payouts_enabled = True
         self.agreement.escrow_funded_amount = Decimal("5000.00")
+        self.contractor.save(update_fields=["stripe_account_id", "payouts_enabled"])
         self.agreement.save(
             update_fields=["payment_mode", "signed_by_contractor", "signed_by_homeowner", "escrow_funded_amount"]
         )
@@ -8461,7 +8465,10 @@ class ProgressPaymentWorkflowTests(TestCase):
 
     def test_release_escrow_draw_handles_transfer_failure_gracefully(self):
         self.agreement.payment_mode = "escrow"
+        self.contractor.stripe_account_id = "acct_ready_release"
+        self.contractor.payouts_enabled = True
         self.agreement.escrow_funded_amount = Decimal("5000.00")
+        self.contractor.save(update_fields=["stripe_account_id", "payouts_enabled"])
         self.agreement.save(update_fields=["payment_mode", "escrow_funded_amount"])
         Payment.objects.create(
             agreement=self.agreement,
@@ -8527,6 +8534,62 @@ class ProgressPaymentWorkflowTests(TestCase):
         )
         draw.refresh_from_db()
         self.assertEqual(draw.transfer_failure_reason, "destination account rejected transfer")
+
+    @override_settings(STRIPE_SECRET_KEY="sk_test_expense_fee", FRONTEND_URL="https://app.myhomebro.test")
+    @patch("stripe.checkout.Session.create")
+    def test_expense_checkout_uses_project_fee_cap_and_persists_trace_fields(self, mock_session_create):
+        self.contractor.stripe_account_id = "acct_expense_ready"
+        self.contractor.save(update_fields=["stripe_account_id"])
+
+        Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("1000.00"),
+            status=InvoiceStatus.PAID,
+            platform_fee_cents=40000,
+        )
+        DrawRequest.objects.create(
+            agreement=self.agreement,
+            draw_number=18,
+            status=DrawRequestStatus.PAID,
+            title="Historical Paid Draw",
+            gross_amount=Decimal("2000.00"),
+            retainage_amount=Decimal("200.00"),
+            net_amount=Decimal("1800.00"),
+            current_requested_amount=Decimal("2000.00"),
+            platform_fee_cents=25000,
+            payout_cents=175000,
+            paid_at=timezone.now(),
+        )
+
+        expense = ExpenseRequest.objects.create(
+            agreement=self.agreement,
+            description="Fee cap expense",
+            amount=Decimal("5000.00"),
+        )
+
+        mock_session_create.return_value = {
+            "id": "cs_expense_123",
+            "url": "https://checkout.stripe.test/expense-123",
+            "payment_intent": "pi_expense_123",
+        }
+
+        from projects.services.expense_pay import create_expense_checkout_session
+
+        checkout_url = create_expense_checkout_session(expense)
+
+        self.assertEqual(checkout_url, "https://checkout.stripe.test/expense-123")
+        mock_session_create.assert_called_once()
+        session_kwargs = mock_session_create.call_args.kwargs
+        self.assertEqual(session_kwargs["payment_intent_data"]["application_fee_amount"], 10000)
+        self.assertEqual(session_kwargs["payment_intent_data"]["metadata"]["platform_fee_cents"], "10000")
+        self.assertEqual(session_kwargs["payment_intent_data"]["metadata"]["payout_cents"], "490000")
+
+        expense.refresh_from_db()
+        self.assertEqual(expense.stripe_checkout_session_id, "cs_expense_123")
+        self.assertEqual(expense.stripe_payment_intent_id, "pi_expense_123")
+        self.assertEqual(expense.platform_fee_cents, 10000)
+        self.assertEqual(expense.payout_cents, 490000)
+        self.assertEqual(expense.stripe_checkout_url, "https://checkout.stripe.test/expense-123")
 
     def test_contractor_approve_endpoint_routes_escrow_draw_to_awaiting_release(self):
         self.agreement.payment_mode = "escrow"
@@ -8664,6 +8727,8 @@ class ProgressPaymentWorkflowTests(TestCase):
     def test_invoice_direct_checkout_supports_card_and_ach(self):
         self.agreement.payment_mode = "direct"
         self.agreement.save(update_fields=["payment_mode"])
+        self.contractor.stripe_account_id = "acct_direct_ready"
+        self.contractor.save(update_fields=["stripe_account_id"])
         invoice = Invoice.objects.create(
             agreement=self.agreement,
             amount=Decimal("4250.00"),

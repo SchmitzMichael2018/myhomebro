@@ -8,6 +8,7 @@ from django.conf import settings
 from django.db import transaction
 
 from projects.models import ExpenseRequest
+from payments.fees import calculate_platform_fee
 
 log = logging.getLogger(__name__)
 
@@ -23,25 +24,6 @@ def _to_cents(amount) -> int:
 def _frontend_url() -> str:
     v = str(getattr(settings, "FRONTEND_URL", "") or "").strip()
     return v.rstrip("/") if v else ""
-
-
-def _compute_fee_cents(amount_cents: int) -> int:
-    """
-    Same pricing as Direct Pay invoices for all contractors: 1% + $1.
-    """
-    if amount_cents <= 0:
-        return 0
-
-    rate = Decimal("0.01")
-    pct_fee = (Decimal(amount_cents) * rate).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    flat_fee = Decimal("100")
-    total = int(pct_fee + flat_fee)
-
-    if total > amount_cents:
-        total = amount_cents
-    if total < 0:
-        total = 0
-    return total
 
 
 def create_expense_checkout_session(expense: ExpenseRequest, *, token: str = "") -> str:
@@ -77,8 +59,6 @@ def create_expense_checkout_session(expense: ExpenseRequest, *, token: str = "")
     if amount_cents <= 0:
         raise ValueError("Expense amount must be greater than 0.")
 
-    application_fee_amount = _compute_fee_cents(amount_cents)
-
     frontend_url = _frontend_url()
     success_url = (
         f"{frontend_url}/expense-paid?expense={expense.id}&session_id={{CHECKOUT_SESSION_ID}}"
@@ -106,11 +86,25 @@ def create_expense_checkout_session(expense: ExpenseRequest, *, token: str = "")
         if str(getattr(exp, "status", "") or "").lower() == "paid" or getattr(exp, "paid_at", None):
             raise ValueError("Expense is already PAID.")
 
+        existing_url = str(getattr(exp, "stripe_checkout_url", "") or "").strip()
+        if existing_url:
+            return existing_url
+
         project_title = ""
         try:
             project_title = getattr(getattr(exp.agreement, "project", None), "title", "") or ""
         except Exception:
             project_title = ""
+
+        project_id = getattr(exp.agreement, "project_id", None)
+        fee_result = calculate_platform_fee(
+            amount_cents=amount_cents,
+            contractor=contractor,
+            project_id=project_id,
+            context="expense_checkout",
+        )
+        application_fee_amount = int(fee_result.platform_fee_cents)
+        payout_cents = int(fee_result.payout_cents)
 
         # ✅ This metadata will be used in BOTH:
         # - checkout.session.completed (session.metadata)
@@ -118,8 +112,12 @@ def create_expense_checkout_session(expense: ExpenseRequest, *, token: str = "")
         meta = {
             "expense_request_id": str(exp.id),
             "agreement_id": str(getattr(exp, "agreement_id", "") or ""),
+            "project_id": str(project_id or ""),
             "contractor_id": str(getattr(contractor, "id", "") or ""),
             "kind": "EXPENSE_REQUEST",
+            "fee_context": "expense_checkout",
+            "platform_fee_cents": str(application_fee_amount),
+            "payout_cents": str(payout_cents),
         }
 
         session = stripe.checkout.Session.create(
@@ -152,5 +150,28 @@ def create_expense_checkout_session(expense: ExpenseRequest, *, token: str = "")
         session_url = getattr(session, "url", None) or (session.get("url") if isinstance(session, dict) else "")
         if not session_url:
             raise ValueError("Stripe did not return a checkout URL.")
+
+        session_id = getattr(session, "id", None) or (session.get("id") if isinstance(session, dict) else "")
+        payment_intent_id = getattr(session, "payment_intent", None) or (
+            session.get("payment_intent") if isinstance(session, dict) else ""
+        )
+
+        exp.stripe_checkout_session_id = str(session_id or "")
+        exp.stripe_checkout_url = str(session_url or "")
+        if hasattr(exp, "stripe_payment_intent_id") and payment_intent_id:
+            exp.stripe_payment_intent_id = str(payment_intent_id)
+        if hasattr(exp, "platform_fee_cents"):
+            exp.platform_fee_cents = int(application_fee_amount)
+        if hasattr(exp, "payout_cents"):
+            exp.payout_cents = int(payout_cents)
+
+        update_fields = ["stripe_checkout_session_id", "stripe_checkout_url"]
+        if hasattr(exp, "stripe_payment_intent_id") and payment_intent_id:
+            update_fields.append("stripe_payment_intent_id")
+        if hasattr(exp, "platform_fee_cents"):
+            update_fields.append("platform_fee_cents")
+        if hasattr(exp, "payout_cents"):
+            update_fields.append("payout_cents")
+        exp.save(update_fields=list(dict.fromkeys(update_fields + ["updated_at"])))
 
         return session_url

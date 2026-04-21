@@ -63,6 +63,15 @@ def _get_user_and_profile(request) -> tuple:
     return user, profile
 
 
+def _get_fresh_contractor(user):
+    try:
+        from projects.models import Contractor  # type: ignore
+
+        return Contractor.objects.filter(user=user).first()
+    except Exception:
+        return getattr(user, "contractor_profile", None) or getattr(user, "contractor", None)
+
+
 def _sync_flags_from_stripe(profile: ConnectedAccount, acct: Optional[dict]) -> None:
     if not acct:
         return
@@ -100,11 +109,15 @@ def _sync_contractor_from_connected_account(user, acct_id: Optional[str], acct: 
         charges = bool(acct.get("charges_enabled"))
         payouts = bool(acct.get("payouts_enabled"))
         submitted = bool(acct.get("details_submitted"))
+        req = acct.get("requirements") or {}
+        currently_due = req.get("currently_due") or []
+        requirements_due_count = len(currently_due)
 
         for field, val in [
             ("charges_enabled", charges),
             ("payouts_enabled", payouts),
             ("details_submitted", submitted),
+            ("requirements_due_count", requirements_due_count),
         ]:
             if hasattr(contractor, field) and getattr(contractor, field) != val:
                 setattr(contractor, field, val)
@@ -138,7 +151,7 @@ def _create_or_get_connect_account_id(profile: ConnectedAccount, user) -> str:
 
     # ✅ Sync to Contractor immediately
     _sync_contractor_from_connected_account(user, acct_id, acct)
-    contractor = getattr(user, "contractor_profile", None) or getattr(user, "contractor", None)
+    contractor = _get_fresh_contractor(user)
     if contractor is not None:
         update_stripe_onboarding_status(contractor, save=True)
 
@@ -167,7 +180,7 @@ def _status_payload(acct: Optional[dict], profile: ConnectedAccount, user) -> di
     """
     acct_id = profile.stripe_account_id
 
-    contractor = getattr(user, "contractor_profile", None) or getattr(user, "contractor", None)
+    contractor = _get_fresh_contractor(user)
 
     if not acct:
         if not acct_id:
@@ -225,7 +238,7 @@ def _status_payload(acct: Optional[dict], profile: ConnectedAccount, user) -> di
     # Sync flags to profile + contractor
     profile.set_flags(charges=charges, payouts=payouts, submitted=submitted)
     _sync_contractor_from_connected_account(user, acct_id, acct)
-    contractor = getattr(user, "contractor_profile", None) or getattr(user, "contractor", None)
+    contractor = _get_fresh_contractor(user)
     if fully_connected and contractor is not None:
         track_activation_event(
             contractor,
@@ -441,7 +454,7 @@ class OnboardingAccountSession(APIView):
         except Exception as exc:
             return Response({"detail": f"Stripe error: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
 
-        contractor = getattr(user, "contractor_profile", None) or getattr(user, "contractor", None)
+        contractor = _get_fresh_contractor(user)
         if contractor is not None:
             update_stripe_onboarding_status(contractor, save=True)
         return Response(

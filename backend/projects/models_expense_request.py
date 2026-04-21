@@ -43,6 +43,12 @@ class ExpenseRequest(models.Model):
 
     notes_to_homeowner = models.TextField(blank=True, default="")
 
+    stripe_checkout_session_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    stripe_checkout_url = models.URLField(blank=True, default="")
+    stripe_payment_intent_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    platform_fee_cents = models.PositiveIntegerField(default=0)
+    payout_cents = models.PositiveIntegerField(default=0)
+
     status = models.CharField(
         max_length=32,
         choices=Status.choices,

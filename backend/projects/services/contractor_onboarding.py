@@ -145,6 +145,10 @@ def update_onboarding_progress(contractor: Contractor, *, save: bool = True) -> 
         contractor.stripe_connected_at = timezone.now()
         update_fields.append("stripe_connected_at")
     update_stripe_onboarding_status(contractor, save=False)
+    if getattr(contractor, "stripe_onboarding_status", ""):
+        update_fields.append("stripe_onboarding_status")
+    if getattr(contractor, "stripe_status_updated_at", None):
+        update_fields.append("stripe_status_updated_at")
     if save and update_fields:
         contractor.save(update_fields=update_fields)
     return contractor
@@ -164,6 +168,10 @@ def mark_first_project_started(contractor: Contractor, *, save: bool = True) -> 
         update_fields.append("contractor_onboarding_status")
     if getattr(contractor, "contractor_onboarding_step", ""):
         update_fields.append("contractor_onboarding_step")
+    if getattr(contractor, "stripe_onboarding_status", ""):
+        update_fields.append("stripe_onboarding_status")
+    if getattr(contractor, "stripe_status_updated_at", None):
+        update_fields.append("stripe_status_updated_at")
     if save and update_fields:
         contractor.save(update_fields=list(dict.fromkeys(update_fields)))
     return contractor
@@ -173,12 +181,15 @@ def mark_stripe_prompt_dismissed(contractor: Contractor, *, save: bool = True) -
     contractor.stripe_prompt_dismissed_at = timezone.now()
     update_onboarding_progress(contractor, save=False)
     if save:
+        update_fields = [
+            "stripe_prompt_dismissed_at",
+            "contractor_onboarding_status",
+            "contractor_onboarding_step",
+            "stripe_onboarding_status",
+            "stripe_status_updated_at",
+        ]
         contractor.save(
-            update_fields=[
-                "stripe_prompt_dismissed_at",
-                "contractor_onboarding_status",
-                "contractor_onboarding_step",
-            ]
+            update_fields=update_fields
         )
     return contractor
 
@@ -304,6 +315,10 @@ def apply_onboarding_patch(contractor: Contractor, payload: dict[str, Any]) -> C
         update_fields.append("contractor_onboarding_status")
     if "contractor_onboarding_step" not in update_fields:
         update_fields.append("contractor_onboarding_step")
+    if "stripe_onboarding_status" not in update_fields:
+        update_fields.append("stripe_onboarding_status")
+    if "stripe_status_updated_at" not in update_fields:
+        update_fields.append("stripe_status_updated_at")
 
     if update_fields:
         contractor.save(update_fields=list(dict.fromkeys(update_fields)))
