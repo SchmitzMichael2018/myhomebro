@@ -44,6 +44,7 @@ class ContractorSerializer(serializers.ModelSerializer):
             # Stripe / Connect
             "stripe_account_id",
             "onboarding_status",
+            "stripe_onboarding_status",
             "charges_enabled",
             "payouts_enabled",
             "details_submitted",
@@ -60,6 +61,7 @@ class ContractorSerializer(serializers.ModelSerializer):
 
             "stripe_account_id",
             "onboarding_status",
+            "stripe_onboarding_status",
             "charges_enabled",
             "payouts_enabled",
             "details_submitted",

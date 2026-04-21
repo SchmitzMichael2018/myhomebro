@@ -221,6 +221,7 @@ class ContractorMeView(APIView):
             "first_agreement_created_at": onboarding_snapshot["first_agreement_created_at"],
             "stripe_prompt_dismissed_at": onboarding_snapshot["stripe_prompt_dismissed_at"],
             "stripe_connected_at": onboarding_snapshot["stripe_connected_at"],
+            "stripe_onboarding_status": onboarding_snapshot["stripe_onboarding_status"],
             "stripe_connected": bool(getattr(c, "stripe_connected", False)),
             "charges_enabled": bool(getattr(c, "charges_enabled", False)),
             "payouts_enabled": bool(getattr(c, "payouts_enabled", False)),

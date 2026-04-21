@@ -959,10 +959,10 @@ export default function ContractorOnboardingForm() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => navigate("/onboarding")}
+                    onClick={() => navigate("/app/onboarding/stripe")}
                     className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                   >
-                    Connect Stripe later
+                    Set up payments
                   </button>
                 </div>
                 <div className="mt-5 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900">

@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from payments.models import ConnectedAccount
@@ -116,3 +117,93 @@ class EmbeddedStripeOnboardingTests(TestCase):
         self.assertEqual(payload["onboarding_status"], "not_started")
         self.assertEqual(payload["resume_url"], "/app/onboarding/stripe")
         self.assertFalse(payload["connected"])
+        self.assertEqual(payload["onboarding"]["stripe_onboarding_status"], "not_started")
+
+    @override_settings(STRIPE_ENABLED=True, STRIPE_API_KEY="sk_test_embedded")
+    @patch("payments.views.onboarding.stripe.Account.retrieve")
+    def test_status_reports_in_progress_for_incomplete_account(self, mock_account_retrieve):
+        ConnectedAccount.objects.create(user=self.user, stripe_account_id="acct_incomplete_123")
+        self.contractor.stripe_account_id = "acct_incomplete_123"
+        self.contractor.save(update_fields=["stripe_account_id"])
+
+        mock_account_retrieve.return_value = {
+            "id": "acct_incomplete_123",
+            "charges_enabled": False,
+            "payouts_enabled": False,
+            "details_submitted": False,
+            "requirements": {
+                "currently_due": ["business_profile.mcc"],
+                "eventually_due": ["external_account"],
+                "past_due": [],
+                "disabled_reason": None,
+            },
+        }
+
+        response = self.client.get("/api/payments/onboarding/status/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["onboarding_status"], "in_progress")
+        self.assertFalse(payload["connected"])
+        self.assertEqual(payload["resume_url"], "/app/onboarding/stripe")
+        self.assertEqual(payload["onboarding"]["stripe_onboarding_status"], "in_progress")
+        self.assertFalse(payload["onboarding"]["stripe_ready"])
+
+    @override_settings(STRIPE_ENABLED=True, STRIPE_API_KEY="sk_test_embedded")
+    @patch("payments.views.onboarding.stripe.Account.retrieve")
+    def test_status_reports_complete_for_fully_connected_account(self, mock_account_retrieve):
+        ConnectedAccount.objects.create(user=self.user, stripe_account_id="acct_complete_123")
+        self.contractor.stripe_account_id = "acct_complete_123"
+        self.contractor.save(update_fields=["stripe_account_id"])
+
+        mock_account_retrieve.return_value = {
+            "id": "acct_complete_123",
+            "charges_enabled": True,
+            "payouts_enabled": True,
+            "details_submitted": True,
+            "requirements": {
+                "currently_due": [],
+                "eventually_due": [],
+                "past_due": [],
+                "disabled_reason": None,
+            },
+        }
+
+        response = self.client.get("/api/payments/onboarding/status/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["onboarding_status"], "completed")
+        self.assertTrue(payload["connected"])
+        self.assertEqual(payload["onboarding"]["stripe_onboarding_status"], "complete")
+        self.assertTrue(payload["onboarding"]["stripe_ready"])
+
+    @override_settings(STRIPE_ENABLED=True, STRIPE_API_KEY="sk_test_embedded")
+    @patch("payments.views.onboarding.stripe.Account.retrieve")
+    def test_status_reports_restricted_when_contractor_is_deauthorized(self, mock_account_retrieve):
+        ConnectedAccount.objects.create(user=self.user, stripe_account_id="acct_restricted_123")
+        self.contractor.stripe_account_id = "acct_restricted_123"
+        self.contractor.stripe_deauthorized_at = timezone.now()
+        self.contractor.save(update_fields=["stripe_account_id", "stripe_deauthorized_at"])
+
+        mock_account_retrieve.return_value = {
+            "id": "acct_restricted_123",
+            "charges_enabled": False,
+            "payouts_enabled": False,
+            "details_submitted": False,
+            "requirements": {
+                "currently_due": ["external_account"],
+                "eventually_due": [],
+                "past_due": [],
+                "disabled_reason": "rejected.listed",
+            },
+        }
+
+        response = self.client.get("/api/payments/onboarding/status/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["onboarding"]["stripe_onboarding_status"], "restricted")
+        self.assertEqual(payload["onboarding"]["status"], "in_progress")
+        self.contractor.refresh_from_db()
+        self.assertEqual(self.contractor.stripe_onboarding_status, "restricted")

@@ -979,12 +979,33 @@ export default function ContractorProfile() {
 
   const planBadgeActive = isAiProActive(meData);
   const onboarding = meData?.onboarding || {};
+  const stripeStatus = String(
+    onboarding?.stripe_onboarding_status ||
+      meData?.stripe_onboarding_status ||
+      meData?.stripe_status?.onboarding_status ||
+      meData?.onboarding_status ||
+      ""
+  ).toLowerCase();
+  const stripeSetupComplete = stripeStatus === "complete" || stripeStatus === "completed";
+  const stripeSetupRestricted = stripeStatus === "restricted";
+  const stripeSetupNotStarted =
+    !stripeStatus || stripeStatus === "not_started" || stripeStatus === "unknown";
+  const stripeSetupInProgress =
+    stripeStatus === "in_progress" ||
+    stripeStatus === "incomplete" ||
+    (Boolean(meData?.stripe_account_id) && !stripeSetupComplete && !stripeSetupRestricted);
   const showSetupReminder =
-    onboarding?.status && (onboarding.status !== "complete" || onboarding?.show_soft_stripe_prompt);
-  const onboardingResumeHref = onboarding?.show_soft_stripe_prompt ? "/app/onboarding/stripe" : "/app/onboarding";
-  const onboardingResumeLabel = onboarding?.show_soft_stripe_prompt
-    ? "Resume Stripe setup"
-    : "Resume onboarding";
+    !stripeSetupComplete && (stripeSetupNotStarted || stripeSetupInProgress || stripeSetupRestricted);
+  const onboardingResumeHref = stripeSetupComplete
+    ? "/app/dashboard"
+    : "/app/onboarding/stripe";
+  const onboardingResumeLabel = stripeSetupComplete
+    ? "Payments connected"
+    : stripeSetupRestricted
+    ? "Update payment setup"
+    : stripeSetupInProgress
+    ? "Resume payment setup"
+    : "Start Stripe setup";
 
   return (
     <div className="flex justify-center">
@@ -998,14 +1019,22 @@ export default function ContractorProfile() {
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
                 <div className="text-sm font-semibold text-amber-900">
-                  {onboarding?.show_soft_stripe_prompt
+                  {stripeSetupComplete
+                    ? "Payments connected"
+                    : stripeSetupRestricted
+                    ? "Payment setup needs attention"
+                    : stripeSetupInProgress
                     ? "Stripe onboarding incomplete"
-                    : "Account setup still in progress"}
+                    : "Set up payments"}
                 </div>
                 <div className="mt-1 text-sm text-amber-800">
-                  {onboarding?.show_soft_stripe_prompt
-                    ? "You are ready to explore the app, but payments require a connected Stripe account."
-                    : "Finish your trades, region, and first-job setup to unlock tailored guidance."}
+                  {stripeSetupComplete
+                    ? "Your payments are connected and ready."
+                    : stripeSetupRestricted
+                    ? "Stripe needs an update before payment workflows can continue."
+                    : stripeSetupInProgress
+                    ? "You can keep exploring, but payment workflows still need Stripe setup."
+                    : "Connect payments to unlock payment-ready workflows."}
                 </div>
               </div>
               <a

@@ -1,6 +1,134 @@
 import { expect, test } from '@playwright/test';
 
 function installBaseAuth(page) {
+  let setupState = {
+    work_description: '',
+    project_family: { key: '', label: '' },
+    project_families: [],
+    project_style: {
+      workflow_style: '',
+      materials_behavior: '',
+      project_family_cue: '',
+    },
+    milestone_tendencies: [],
+    pricing_baseline: {
+      low: '',
+      high: '',
+      center: '',
+      duration_low_days: 0,
+      duration_high_days: 0,
+      duration_days: 0,
+      milestone_count: 0,
+      confidence_level: '',
+      confidence_reasoning: '',
+    },
+    agreement_defaults: {},
+    clarification_questions: [],
+    clarification_answers: {},
+    recommended_setup: {},
+    suggested_plan: {},
+    source: 'server',
+    summary: 'Tell us what kind of work you do and we will build your setup for you.',
+    completed_at: null,
+  };
+
+  const inferFamily = (text) => {
+    const value = String(text || '').toLowerCase();
+    if (value.includes('roof')) {
+      return {
+        project_family: { key: 'roofing', label: 'Roofing' },
+        project_families: [{ key: 'roofing', label: 'Roofing' }],
+        project_style: {
+          workflow_style: 'Repair-first workflow',
+          materials_behavior: 'Materials are usually contractor-supplied with prompt install scheduling.',
+          project_family_cue: 'Roofing work usually needs a clear inspection and repair sequence.',
+        },
+        milestone_tendencies: [{ title: 'Inspection & prep', note: 'Inspect, document, and prep the roof.' }],
+        pricing_baseline: {
+          low: '16000',
+          high: '20000',
+          center: '18000',
+          duration_low_days: 5,
+          duration_high_days: 7,
+          duration_days: 6,
+          milestone_count: 4,
+          confidence_level: 'medium',
+          confidence_reasoning: 'Based on similar roofing projects.',
+        },
+        agreement_defaults: {
+          project_type: 'Roofing',
+          project_subtype: 'Roof Repair',
+          suggested_workflow: 'Inspection to completion',
+          suggested_template_label: 'Roofing Starter',
+          payment_mode: 'escrow',
+          payment_structure: 'progress',
+        },
+      };
+    }
+
+    if (value.includes('kitchen')) {
+      return {
+        project_family: { key: 'kitchen_remodel', label: 'Kitchen Remodel' },
+        project_families: [{ key: 'kitchen_remodel', label: 'Kitchen Remodel' }],
+        project_style: {
+          workflow_style: 'Remodel workflow',
+          materials_behavior: 'Materials are often coordinated in phases.',
+          project_family_cue: 'Kitchen work usually mixes install, finish, and material coordination.',
+        },
+        milestone_tendencies: [{ title: 'Demo & layout', note: 'Confirm layout before materials install.' }],
+        pricing_baseline: {
+          low: '24000',
+          high: '32000',
+          center: '28000',
+          duration_low_days: 10,
+          duration_high_days: 14,
+          duration_days: 12,
+          milestone_count: 5,
+          confidence_level: 'medium',
+          confidence_reasoning: 'Based on similar kitchen remodel projects.',
+        },
+        agreement_defaults: {
+          project_type: 'Kitchen Remodel',
+          project_subtype: 'Cabinet Install',
+          suggested_workflow: 'Plan, install, finish',
+          suggested_template_label: 'Kitchen Remodel Starter',
+          payment_mode: 'escrow',
+          payment_structure: 'progress',
+        },
+      };
+    }
+
+    return {
+      project_family: { key: 'general_handyman', label: 'General Handyman' },
+      project_families: [{ key: 'general_handyman', label: 'General Handyman' }],
+      project_style: {
+        workflow_style: 'Flexible install-and-repair workflow',
+        materials_behavior: 'Materials behavior depends on the job and stays flexible.',
+        project_family_cue: 'This work looks like a mixed handyman scope.',
+      },
+      milestone_tendencies: [{ title: 'Assess scope', note: 'Confirm scope before work begins.' }],
+      pricing_baseline: {
+        low: '800',
+        high: '2400',
+        center: '1600',
+        duration_low_days: 1,
+        duration_high_days: 3,
+        duration_days: 2,
+        milestone_count: 3,
+        confidence_level: 'medium',
+        confidence_reasoning: 'Based on similar handyman projects.',
+      },
+      agreement_defaults: {
+        project_type: 'General Handyman',
+        project_subtype: 'Repair',
+        suggested_workflow: 'Inspect, repair, finish',
+        suggested_template_label: 'General Starter',
+        payment_mode: 'escrow',
+        payment_structure: 'progress',
+      },
+    };
+  };
+
   return Promise.all([
     page.addInitScript(() => {
       window.localStorage.setItem('access', 'playwright-access-token');
@@ -17,14 +145,99 @@ function installBaseAuth(page) {
         }),
       });
     }),
+    page.route('**/api/projects/contractors/onboarding/setup/', async (route) => {
+      if (route.request().method() === 'PATCH') {
+        const payload = route.request().postDataJSON();
+        const workDescription = String(payload.work_description || setupState.work_description || '');
+        const inferred = inferFamily(workDescription);
+        setupState = {
+          ...setupState,
+          ...inferred,
+          work_description: workDescription,
+          clarification_answers: payload.clarification_answers || setupState.clarification_answers,
+          completed_at: payload.completed ? '2026-04-20T00:00:00Z' : setupState.completed_at,
+        };
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(setupState),
+      });
+    }),
+    page.route('**/api/projects/workspace-context/', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          project_family: { key: '', label: '' },
+          source: 'server',
+          updated_at: '2026-04-20T00:00:00Z',
+        }),
+      });
+    }),
   ]);
 }
 
-test('contractor onboarding supports activation-first progression and soft Stripe prompt', async ({
+async function installEmbeddedStripeMocks(page, { connected = false } = {}) {
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        onboarding_status: connected ? 'completed' : 'in_progress',
+        stripe_onboarding_status: connected ? 'complete' : 'in_progress',
+        connected,
+        account_id: 'acct_test_123',
+        resume_url: '/app/onboarding/stripe',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/account-session/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        account_id: 'acct_test_123',
+        client_secret: 'seti_client_secret_123',
+        resume_url: '/app/onboarding/stripe',
+      }),
+    });
+  });
+
+  await page.route('https://connect-js.stripe.com/v1.0/connect.js', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/javascript',
+      body: `
+        window.StripeConnect = {
+          init: function () {
+            return {
+              create: function (type) {
+                if (type !== 'account-onboarding') {
+                  return document.createElement('div');
+                }
+                const el = document.createElement('div');
+                el.setAttribute('data-testid', 'mock-stripe-account-onboarding');
+                el.textContent = 'Mock Stripe onboarding';
+                return el;
+              }
+            };
+          }
+        };
+      `,
+    });
+  });
+}
+
+test('contractor onboarding supports activation-first progression and embedded Stripe handoff', async ({
   page,
 }) => {
-  const activationEvents = [];
-  let mePayload = {
+  await installBaseAuth(page);
+  await installEmbeddedStripeMocks(page);
+
+  const mePayload = {
     id: 77,
     business_name: '',
     city: '',
@@ -36,6 +249,7 @@ test('contractor onboarding supports activation-first progression and soft Strip
       step: 'welcome',
       first_value_reached: false,
       stripe_ready: false,
+      stripe_onboarding_status: 'not_started',
       show_soft_stripe_prompt: false,
       trade_count: 0,
       service_region_label: '',
@@ -46,115 +260,14 @@ test('contractor onboarding supports activation-first progression and soft Strip
         time_spent_per_step: {},
       },
     },
+    stripe_onboarding_status: 'not_started',
   };
-  let onboardingPayload = {
-    status: 'not_started',
-    step: 'welcome',
-    first_value_reached: false,
-    stripe_ready: false,
-    show_soft_stripe_prompt: false,
-    trade_count: 0,
-    service_region_label: '',
-    step_number: 1,
-    step_total: 3,
-    activation: {
-      last_step_reached: 'welcome',
-      time_spent_per_step: {},
-    },
-  };
-  let stripeStatus = {
-    onboarding_status: 'not_started',
-    connected: false,
-    requirements_pending: [],
-    resume_url: '/app/onboarding/stripe',
-  };
-
-  await installBaseAuth(page);
 
   await page.route('**/api/projects/contractors/me/**', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(mePayload),
-    });
-  });
-
-  await page.route('**/api/projects/contractors/onboarding/', async (route) => {
-    if (route.request().method() === 'PATCH') {
-      const payload = route.request().postDataJSON();
-      mePayload = {
-        ...mePayload,
-        business_name: payload.business_name ?? mePayload.business_name,
-        city: payload.city ?? mePayload.city,
-        state: payload.state ?? mePayload.state,
-        zip: payload.zip ?? mePayload.zip,
-        skills: payload.skills ?? mePayload.skills,
-      };
-      onboardingPayload = {
-        ...onboardingPayload,
-        status: payload.contractor_onboarding_step === 'stripe' ? 'in_progress' : 'not_started',
-        step: payload.contractor_onboarding_step || onboardingPayload.step,
-        first_value_reached: Boolean(payload.mark_first_project_started),
-        show_soft_stripe_prompt: Boolean(payload.mark_first_project_started),
-        trade_count: Array.isArray(mePayload.skills) ? mePayload.skills.length : 0,
-        service_region_label: [mePayload.city, mePayload.state].filter(Boolean).join(', '),
-        step_number:
-          payload.contractor_onboarding_step === 'region'
-            ? 2
-            : payload.contractor_onboarding_step === 'stripe'
-            ? 3
-            : onboardingPayload.step_number,
-        step_total: 3,
-        activation: {
-          last_step_reached:
-            payload.contractor_onboarding_step || onboardingPayload.activation?.last_step_reached || '',
-          time_spent_per_step: {},
-        },
-      };
-      mePayload = { ...mePayload, onboarding: onboardingPayload };
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(onboardingPayload),
-      });
-      return;
-    }
-
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(onboardingPayload),
-    });
-  });
-
-  await page.route('**/api/projects/contractors/onboarding/events/', async (route) => {
-    const payload = route.request().postDataJSON();
-    activationEvents.push(payload);
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(onboardingPayload),
-    });
-  });
-
-  await page.route('**/api/projects/contractors/onboarding/dismiss-stripe-prompt/', async (route) => {
-    onboardingPayload = {
-      ...onboardingPayload,
-      show_soft_stripe_prompt: false,
-    };
-    mePayload = { ...mePayload, onboarding: onboardingPayload };
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(onboardingPayload),
-    });
-  });
-
-  await page.route('**/api/payments/onboarding/status/', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(stripeStatus),
     });
   });
 
@@ -179,84 +292,57 @@ test('contractor onboarding supports activation-first progression and soft Strip
       body: JSON.stringify({ results: [] }),
     });
   });
-  await page.route(/\/api\/projects\/agreements\/\d+\/?(\?.*)?$/, async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        id: 999,
-        agreement_id: 999,
-        title: 'AI Starter Agreement',
-        project_title: 'AI Starter Agreement',
-        status: 'draft',
-        payment_mode: 'escrow',
-      }),
-    });
-  });
 
   await page.goto('/app/onboarding', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByTestId('contractor-onboarding-page')).toBeVisible();
-  await expect(page.getByTestId('contractor-onboarding-trades')).toContainText('Pick your trades');
-  await expect(page.getByTestId('contractor-onboarding-trades')).toContainText('Step 1 of 3');
+  await expect(page.getByTestId('contractor-onboarding-welcome')).toBeVisible();
+  await expect(page.getByTestId('contractor-onboarding-welcome')).toContainText(
+    /Let.?s set up how you run your projects/
+  );
+  await page.getByRole('button', { name: 'Get started' }).click();
 
-  await page.getByRole('button', { name: 'HVAC' }).click();
-  await page.getByTestId('contractor-onboarding-save-basics').click();
-  await expect(page.getByTestId('contractor-onboarding-region')).toContainText('Set your service area');
-  await expect(page.getByTestId('contractor-onboarding-region')).toContainText('Step 2 of 3');
-  await expect(page.getByRole('button', { name: 'Back' })).toBeVisible();
-
-  await page.getByTestId('contractor-onboarding-state').selectOption('TX');
-  await page.getByTestId('contractor-onboarding-city').fill('San Antonio');
-  await page.getByTestId('contractor-onboarding-zip').fill('78205');
+  await expect(page.getByTestId('contractor-onboarding-description')).toBeVisible();
+  await page.getByPlaceholder('What kind of work do you usually do?').fill('Roofing and repairs');
   await page.getByRole('button', { name: 'Continue' }).click();
 
-  await expect(page.getByTestId('contractor-onboarding-stripe')).toContainText(
-    'Step 3 of 3'
+  await expect(page.getByTestId('contractor-onboarding-generated-setup')).toBeVisible();
+  await expect(page.getByTestId('contractor-onboarding-generated-setup')).toContainText('Roofing');
+  await expect(page.getByTestId('contractor-onboarding-generated-setup')).toContainText(
+    'Pricing + Duration Baseline'
   );
-  await expect(page.getByRole('button', { name: 'Back' })).toBeVisible();
-  await expect(page.getByTestId('contractor-onboarding-connect-stripe')).toBeVisible();
-  await expect(page.getByTestId('contractor-onboarding-skip-stripe')).toBeVisible();
-  await page.getByRole('button', { name: 'Back' }).click();
-  await expect(page.getByTestId('contractor-onboarding-region')).toContainText(
-    'Step 2 of 3'
-  );
-  await expect(page.getByTestId('contractor-onboarding-state')).toHaveValue('TX');
-  expect(activationEvents.some((item) => item.event_type === 'ai_used_for_project')).toBeFalsy();
+  await expect(page.getByRole('button', { name: 'Looks good' })).toBeVisible();
 
-  onboardingPayload = {
-    ...onboardingPayload,
-    status: 'in_progress',
-    step: 'stripe',
-    first_value_reached: true,
-    show_soft_stripe_prompt: true,
-    trade_count: 1,
-    service_region_label: 'San Antonio, TX',
-    step_number: 3,
-    step_total: 3,
-    activation: {
-      last_step_reached: 'stripe',
-      time_spent_per_step: {},
-    },
-  };
-  mePayload = {
-    ...mePayload,
-    skills: ['HVAC'],
-    city: 'San Antonio',
-    state: 'TX',
-    onboarding: onboardingPayload,
-  };
-
-  await page.goto('/app/onboarding', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('contractor-onboarding-soft-stripe-prompt')).toContainText(
-    'Set up payments now to get paid faster'
+  await page.getByRole('button', { name: 'Looks good' }).click();
+  await expect(page.getByTestId('contractor-onboarding-first-project')).toBeVisible();
+  await expect(page.getByTestId('contractor-onboarding-first-project')).toContainText(
+    /Let.?s create your first project/
   );
+
+  await page.getByRole('button', { name: 'Set up payments' }).click();
+  await expect(page).toHaveURL(/\/app\/onboarding\/stripe/);
+  await expect(page.getByTestId('embedded-stripe-onboarding-page')).toBeVisible();
+
+  await page.goBack();
+  await expect(page.getByTestId('contractor-onboarding-first-project')).toBeVisible();
+  await page.getByRole('button', { name: 'Start project' }).click();
+  await expect(page).toHaveURL(/\/app\/agreements\/new\/wizard\?step=1/);
+
+  const handoffAfter = await page.evaluate(() => {
+    try {
+      return JSON.parse(window.sessionStorage.getItem('mhb_first_project_assist_handoff') || 'null');
+    } catch {
+      return null;
+    }
+  });
+  expect(handoffAfter).toBeTruthy();
+  expect(handoffAfter?.assistantIntent).toBe('first_project_assist');
+  expect(handoffAfter?.assistantPrefill?.project_type || '').toContain('Roofing');
 });
 
-test('dashboard and profile render resumable setup reminders without blocking exploration', async ({
-  page,
-}) => {
-  const mePayload = {
+test('stripe status-aware UI shows start, resume, and connected states clearly', async ({ page }) => {
+  await installBaseAuth(page);
+
+  let meState = {
     id: 77,
     created_at: '2026-03-01T10:00:00Z',
     business_name: 'Reminder Contractor',
@@ -272,22 +358,27 @@ test('dashboard and profile render resumable setup reminders without blocking ex
       step: 'stripe',
       first_value_reached: true,
       stripe_ready: false,
+      stripe_onboarding_status: 'in_progress',
       show_soft_stripe_prompt: true,
       trade_count: 1,
       service_region_label: 'San Antonio, TX',
     },
+    stripe_onboarding_status: 'in_progress',
   };
 
-  await installBaseAuth(page);
+  let stripeStatusState = {
+    onboarding_status: 'in_progress',
+    stripe_onboarding_status: 'in_progress',
+    connected: false,
+    account_id: 'acct_test_123',
+    resume_url: '/app/onboarding/stripe',
+  };
 
   await page.route('**/api/payments/onboarding/status/', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({
-        onboarding_status: 'incomplete',
-        connected: false,
-      }),
+      body: JSON.stringify(stripeStatusState),
     });
   });
 
@@ -295,7 +386,7 @@ test('dashboard and profile render resumable setup reminders without blocking ex
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(mePayload),
+      body: JSON.stringify(meState),
     });
   });
 
@@ -319,14 +410,136 @@ test('dashboard and profile render resumable setup reminders without blocking ex
   });
 
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('dashboard-onboarding-reminder')).toContainText(
-    'Connect Stripe to get paid'
+  await expect(page.getByRole('link', { name: /Stripe Onboarding Resume/i })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Stripe Onboarding Resume/i })).toHaveAttribute(
+    'href',
+    '/app/onboarding/stripe'
   );
 
   await page.goto('/app/profile', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('profile-stripe-reminder')).toContainText(
     'Stripe onboarding incomplete'
   );
+  await expect(page.getByTestId('profile-stripe-reminder')).toContainText(
+    'Resume payment setup'
+  );
+  await expect(page.getByTestId('profile-stripe-reminder').getByRole('link')).toHaveAttribute(
+    'href',
+    '/app/onboarding/stripe'
+  );
+
+  meState = {
+    ...meState,
+    onboarding: {
+      ...meState.onboarding,
+      status: 'complete',
+      step: 'complete',
+      stripe_ready: true,
+      stripe_onboarding_status: 'complete',
+      show_soft_stripe_prompt: false,
+    },
+    stripe_onboarding_status: 'complete',
+    stripe_account_id: 'acct_test_123',
+    charges_enabled: true,
+    payouts_enabled: true,
+    details_submitted: true,
+    requirements_due_count: 0,
+  };
+  stripeStatusState = {
+    onboarding_status: 'completed',
+    stripe_onboarding_status: 'complete',
+    connected: true,
+    account_id: 'acct_test_123',
+    resume_url: '/app/onboarding/stripe',
+  };
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByText('Connected', { exact: true }).first()).toBeVisible();
+  await page.goto('/app/profile', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('profile-stripe-reminder')).toHaveCount(0);
+});
+
+test('stripe setup prompt appears for brand new contractors and a complete account clears it', async ({
+  page,
+}) => {
+  await installBaseAuth(page);
+
+  let stripeStatusState = {
+    onboarding_status: 'not_started',
+    stripe_onboarding_status: 'not_started',
+    connected: false,
+    resume_url: '/app/onboarding/stripe',
+  };
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(stripeStatusState),
+    });
+  });
+
+  let meState = {
+    id: 77,
+    created_at: '2026-03-01T10:00:00Z',
+    business_name: 'New Contractor',
+    onboarding: {
+      status: 'not_started',
+      step: 'welcome',
+      first_value_reached: false,
+      stripe_ready: false,
+      stripe_onboarding_status: 'not_started',
+      show_soft_stripe_prompt: false,
+      trade_count: 0,
+      service_region_label: '',
+    },
+    stripe_onboarding_status: 'not_started',
+  };
+
+  await page.route('**/api/projects/contractors/me/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(meState),
+    });
+  });
+
+  await page.goto('/app/profile', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('profile-stripe-reminder')).toContainText('Set up payments');
+  await expect(page.getByTestId('profile-stripe-reminder')).toContainText('Start Stripe setup');
+
+  meState = {
+    id: 77,
+    created_at: '2026-03-01T10:00:00Z',
+    business_name: 'New Contractor',
+    stripe_account_id: 'acct_test_123',
+    charges_enabled: true,
+    payouts_enabled: true,
+    details_submitted: true,
+    requirements_due_count: 0,
+    onboarding: {
+      status: 'complete',
+      step: 'complete',
+      first_value_reached: true,
+      stripe_ready: true,
+      stripe_onboarding_status: 'complete',
+      show_soft_stripe_prompt: false,
+      trade_count: 0,
+      service_region_label: '',
+    },
+    stripe_onboarding_status: 'complete',
+  };
+  stripeStatusState = {
+    onboarding_status: 'completed',
+    stripe_onboarding_status: 'complete',
+    connected: true,
+    account_id: 'acct_test_123',
+    resume_url: '/app/onboarding/stripe',
+  };
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByText('Connected', { exact: true }).first()).toBeVisible();
+  await page.goto('/app/profile', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('profile-stripe-reminder')).toHaveCount(0);
 });
 
 test('payment-critical direct pay action shows Stripe requirement modal instead of generic failure', async ({
@@ -357,8 +570,10 @@ test('payment-critical direct pay action shows Stripe requirement modal instead 
           step: 'stripe',
           first_value_reached: true,
           stripe_ready: false,
+          stripe_onboarding_status: 'in_progress',
           show_soft_stripe_prompt: true,
         },
+        stripe_onboarding_status: 'in_progress',
       }),
     });
   });
@@ -412,8 +627,6 @@ test('payment-critical direct pay action shows Stripe requirement modal instead 
   await page.getByRole('button', { name: 'Create Pay Link' }).click();
 
   await expect(page.getByTestId('stripe-requirement-modal')).toBeVisible();
-  await expect(page.getByTestId('stripe-requirement-modal')).toContainText(
-    'Create Direct Pay Link'
-  );
+  await expect(page.getByTestId('stripe-requirement-modal')).toContainText('Create Direct Pay Link');
   await expect(page.getByTestId('stripe-requirement-connect')).toContainText('Connect Stripe');
 });

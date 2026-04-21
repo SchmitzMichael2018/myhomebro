@@ -1,6 +1,6 @@
 // frontend/src/components/StripeOnboardingStatus.jsx
 // v2026-01-06 — authoritative sidebar badge for Stripe Connect onboarding
-// ✅ Green ONLY when backend says connected:true (or legacy onboarding_status==="completed")
+// ✅ Green only when backend says the Stripe setup is complete.
 
 import React, { useEffect, useState } from "react";
 import api from "../api";
@@ -23,21 +23,23 @@ export default function StripeOnboardingStatus({ className = "" }) {
     };
   }, []);
 
-  const s = String(data?.onboarding_status || "");
-  const connected = Boolean(data?.connected) || s === "completed";
-
-  // account exists?
-  const hasAccount = Boolean(data?.account_id) || Boolean(data?.linked);
-
-  const label = connected
+  const s = String(data?.stripe_onboarding_status || data?.onboarding_status || "").toLowerCase();
+  const complete = Boolean(data?.connected) || s === "complete" || s === "completed";
+  const restricted = s === "restricted";
+  const inProgress = s === "in_progress" || s === "incomplete" || (!!data?.account_id && !complete && !restricted);
+  const label = complete
     ? "Connected"
-    : hasAccount
-    ? "Pending"
-    : "Not Started";
+    : restricted
+    ? "Update"
+    : inProgress
+    ? "Resume"
+    : "Start setup";
 
-  const cls = connected
+  const cls = complete
     ? "bg-green-500 text-white"
-    : hasAccount
+    : restricted
+    ? "bg-rose-500 text-white"
+    : inProgress
     ? "bg-amber-400 text-black"
     : "bg-gray-200 text-gray-800";
 

@@ -70,7 +70,7 @@ class ContractorDetailSerializer(serializers.ModelSerializer):
             "id", "business_name", "name", "email", "phone",
             "skills", "license_number", "license_expiration",
             "logo", "license_file", "address",
-            "stripe_account_id", "onboarding_status",
+            "stripe_account_id", "onboarding_status", "stripe_onboarding_status",
         ]
         read_only_fields = fields
 
@@ -100,6 +100,7 @@ class ContractorWriteSerializer(serializers.ModelSerializer):
             "logo",
             "license_file",
             "stripe_account_id",
+            "stripe_onboarding_status",
             "onboarding_status",
             "skills",
             # write-through to User

@@ -13,6 +13,10 @@ ONBOARDING_STEP_REGION = "region"
 ONBOARDING_STEP_STRIPE = "stripe"
 ONBOARDING_STEP_COMPLETE = "complete"
 SERVICE_RADIUS_OPTIONS = {10, 25, 50, 100}
+STRIPE_STATUS_NOT_STARTED = "not_started"
+STRIPE_STATUS_IN_PROGRESS = "in_progress"
+STRIPE_STATUS_COMPLETE = "complete"
+STRIPE_STATUS_RESTRICTED = "restricted"
 
 
 def _coerce_bool(value: Any) -> bool:
@@ -53,6 +57,59 @@ def contractor_stripe_ready(contractor: Contractor | None) -> bool:
     return bool(getattr(contractor, "payouts_enabled", False) and getattr(contractor, "details_submitted", False))
 
 
+def normalize_stripe_onboarding_status(value: Any) -> str:
+    text = str(value or "").strip().lower().replace(" ", "_")
+    if text in {STRIPE_STATUS_NOT_STARTED, STRIPE_STATUS_IN_PROGRESS, STRIPE_STATUS_COMPLETE, STRIPE_STATUS_RESTRICTED}:
+        return text
+    if text in {"completed", "connected", "ready"}:
+        return STRIPE_STATUS_COMPLETE
+    if text in {"incomplete", "in_progress", "pending", "not_started"}:
+        return STRIPE_STATUS_IN_PROGRESS if text != STRIPE_STATUS_NOT_STARTED else STRIPE_STATUS_NOT_STARTED
+    return STRIPE_STATUS_NOT_STARTED
+
+
+def determine_stripe_onboarding_status(contractor: Contractor | None) -> str:
+    if contractor is None:
+        return STRIPE_STATUS_NOT_STARTED
+
+    acct_id = str(getattr(contractor, "stripe_account_id", "") or "").strip()
+    if not acct_id:
+        return STRIPE_STATUS_NOT_STARTED
+
+    if getattr(contractor, "stripe_deauthorized_at", None):
+        return STRIPE_STATUS_RESTRICTED
+
+    charges_enabled = bool(getattr(contractor, "charges_enabled", False))
+    payouts_enabled = bool(getattr(contractor, "payouts_enabled", False))
+    details_submitted = bool(getattr(contractor, "details_submitted", False))
+    requirements_due = int(getattr(contractor, "requirements_due_count", 0) or 0)
+
+    if charges_enabled and payouts_enabled and details_submitted and requirements_due <= 0:
+        return STRIPE_STATUS_COMPLETE
+
+    if charges_enabled or payouts_enabled or details_submitted or requirements_due > 0:
+        return STRIPE_STATUS_IN_PROGRESS
+
+    return STRIPE_STATUS_IN_PROGRESS
+
+
+def update_stripe_onboarding_status(contractor: Contractor, *, save: bool = True) -> Contractor:
+    update_fields: list[str] = []
+    status_value = determine_stripe_onboarding_status(contractor)
+    if getattr(contractor, "stripe_onboarding_status", "") != status_value:
+        contractor.stripe_onboarding_status = status_value
+        update_fields.append("stripe_onboarding_status")
+    if getattr(contractor, "stripe_status_updated_at", None) is None:
+        contractor.stripe_status_updated_at = timezone.now()
+        update_fields.append("stripe_status_updated_at")
+    elif status_value != STRIPE_STATUS_NOT_STARTED:
+        contractor.stripe_status_updated_at = timezone.now()
+        update_fields.append("stripe_status_updated_at")
+    if save and update_fields:
+        contractor.save(update_fields=update_fields)
+    return contractor
+
+
 def determine_onboarding_step(contractor: Contractor | None) -> str:
     if contractor is None:
         return ONBOARDING_STEP_WELCOME
@@ -87,6 +144,7 @@ def update_onboarding_progress(contractor: Contractor, *, save: bool = True) -> 
     if contractor_stripe_ready(contractor) and not getattr(contractor, "stripe_connected_at", None):
         contractor.stripe_connected_at = timezone.now()
         update_fields.append("stripe_connected_at")
+    update_stripe_onboarding_status(contractor, save=False)
     if save and update_fields:
         contractor.save(update_fields=update_fields)
     return contractor
@@ -160,6 +218,7 @@ def build_onboarding_snapshot(contractor: Contractor | None) -> dict[str, Any]:
         "profile_basics_complete": contractor_profile_basics_complete(contractor),
         "first_value_reached": first_value_reached,
         "stripe_ready": stripe_ready,
+        "stripe_onboarding_status": getattr(contractor, "stripe_onboarding_status", "") or determine_stripe_onboarding_status(contractor),
         "show_soft_stripe_prompt": bool(first_value_reached and not stripe_ready and not stripe_prompt_dismissed),
         "first_project_started_at": contractor.first_project_started_at.isoformat() if contractor.first_project_started_at else None,
         "first_agreement_created_at": contractor.first_agreement_created_at.isoformat() if contractor.first_agreement_created_at else None,
@@ -198,6 +257,7 @@ def build_stripe_requirement_payload(
         "return_path": return_path,
         "stripe_status": {
             "account_status": account_status,
+            "onboarding_status": onboarding["stripe_onboarding_status"],
             "charges_enabled": bool(getattr(contractor, "charges_enabled", False)) if contractor else False,
             "payouts_enabled": bool(getattr(contractor, "payouts_enabled", False)) if contractor else False,
             "details_submitted": bool(getattr(contractor, "details_submitted", False)) if contractor else False,

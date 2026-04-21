@@ -78,6 +78,8 @@ def _update_contractor_from_account_obj(account_obj: dict) -> int:
     reqs = account_obj.get("requirements") or {}
     currently_due = reqs.get("currently_due") or []
     requirements_due_count = len(currently_due)
+    disabled_reason = reqs.get("disabled_reason")
+    stripe_status = "restricted" if disabled_reason else "complete" if charges_enabled and payouts_enabled and details_submitted and requirements_due_count <= 0 else "in_progress"
 
     with transaction.atomic():
         return Contractor.objects.filter(stripe_account_id=acct_id).update(
@@ -85,6 +87,7 @@ def _update_contractor_from_account_obj(account_obj: dict) -> int:
             **({"payouts_enabled": payouts_enabled} if hasattr(Contractor, "payouts_enabled") else {}),
             **({"details_submitted": details_submitted} if hasattr(Contractor, "details_submitted") else {}),
             **({"requirements_due_count": requirements_due_count} if hasattr(Contractor, "requirements_due_count") else {}),
+            **({"stripe_onboarding_status": stripe_status} if hasattr(Contractor, "stripe_onboarding_status") else {}),
             **({"stripe_status_updated_at": now()} if hasattr(Contractor, "stripe_status_updated_at") else {}),
         )
 
@@ -1056,6 +1059,7 @@ def stripe_webhook(request):
                     Contractor.objects.filter(stripe_account_id=acct_id).update(
                         charges_enabled=False,
                         payouts_enabled=False,
+                        stripe_onboarding_status="restricted",
                         stripe_status_updated_at=now(),
                     )
             return HttpResponse(status=200)

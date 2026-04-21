@@ -25,7 +25,10 @@ from projects.services.contractor_activation_analytics import (
     track_activation_event,
 )
 from projects.services.activity_feed import create_activity_event
-from projects.services.contractor_onboarding import build_onboarding_snapshot
+from projects.services.contractor_onboarding import (
+    build_onboarding_snapshot,
+    update_stripe_onboarding_status,
+)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -109,6 +112,7 @@ def _sync_contractor_from_connected_account(user, acct_id: Optional[str], acct: 
 
     if dirty:
         contractor.save(update_fields=dirty)
+    update_stripe_onboarding_status(contractor, save=True)
 
 
 def _create_or_get_connect_account_id(profile: ConnectedAccount, user) -> str:
@@ -134,6 +138,9 @@ def _create_or_get_connect_account_id(profile: ConnectedAccount, user) -> str:
 
     # ✅ Sync to Contractor immediately
     _sync_contractor_from_connected_account(user, acct_id, acct)
+    contractor = getattr(user, "contractor_profile", None) or getattr(user, "contractor", None)
+    if contractor is not None:
+        update_stripe_onboarding_status(contractor, save=True)
 
     return acct_id
 
@@ -262,6 +269,8 @@ def _status_payload(acct: Optional[dict], profile: ConnectedAccount, user) -> di
             metadata={"source": "stripe_status"},
             dedupe_key=f"onboarding_completed:{contractor.id}",
         )
+    if contractor is not None:
+        update_stripe_onboarding_status(contractor, save=True)
 
     return {
         "onboarding_status": status_str,
@@ -433,6 +442,8 @@ class OnboardingAccountSession(APIView):
             return Response({"detail": f"Stripe error: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
 
         contractor = getattr(user, "contractor_profile", None) or getattr(user, "contractor", None)
+        if contractor is not None:
+            update_stripe_onboarding_status(contractor, save=True)
         return Response(
             {
                 "account_id": acct_id,

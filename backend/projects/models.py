@@ -223,6 +223,7 @@ class Contractor(models.Model):
 
     stripe_account_id = models.CharField(max_length=255, blank=True, db_index=True)
     onboarding_status = models.CharField(max_length=50, blank=True)
+    stripe_onboarding_status = models.CharField(max_length=50, blank=True, default="not_started", db_index=True)
 
     charges_enabled = models.BooleanField(default=False)
     payouts_enabled = models.BooleanField(default=False)
