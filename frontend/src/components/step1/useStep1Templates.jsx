@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import api from "../../api";
 import toast from "react-hot-toast";
 import { safeTrim, sortTemplates } from "./step1Utils";
+import { getProjectFamilyProfile, normalizeProjectFamilyKey } from "../../lib/projectIntelligence";
 
 function normalizeList(data) {
   if (Array.isArray(data)) return data;
@@ -29,39 +30,121 @@ function normalizeRecommendationLevel(value) {
   return "low";
 }
 
-function classifyTemplateMatch(template, projectType, projectSubtype) {
+function templateText(template) {
+  return [template?.name, template?.description, template?.default_scope, template?.project_type, template?.project_subtype]
+    .map((value) => safeTrim(value).toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function scoreFamilyMatch(template, familyProfile) {
+  if (!familyProfile || familyProfile.isGeneric) return { matched: false, score: 0, reason: "" };
+
+  const haystack = templateText(template);
+  const familyKey = normalizeProjectFamilyKey(familyProfile.key);
+  const familyLabel = safeTrim(familyProfile.label).toLowerCase();
+  const keywords = Array.isArray(familyProfile.keywords) ? familyProfile.keywords : [];
+
+  let score = 0;
+
+  if (familyKey && haystack.includes(familyKey)) {
+    score += 3;
+  }
+  if (familyLabel && haystack.includes(familyLabel)) {
+    score += 3;
+  }
+
+  for (const keyword of keywords) {
+    const needle = safeTrim(keyword).toLowerCase();
+    if (needle && haystack.includes(needle)) {
+      score += needle.includes(" ") ? 2 : 1;
+    }
+  }
+
+  if (!score) {
+    return { matched: false, score: 0, reason: "" };
+  }
+
+  return {
+    matched: true,
+    score,
+    reason: `${familyProfile.label} family match.`,
+  };
+}
+
+function classifyTemplateMatch(template, projectType, projectSubtype, projectFamilyContext = {}) {
   const tplType = safeTrim(template?.project_type);
   const tplSubtype = safeTrim(template?.project_subtype);
   const reqType = safeTrim(projectType);
   const reqSubtype = safeTrim(projectSubtype);
+  const familyProfile = getProjectFamilyProfile(projectFamilyContext?.project_family_key || "");
+  const familyMatch = scoreFamilyMatch(template, familyProfile);
 
   const typeMatch = !!reqType && sameText(tplType, reqType);
   const subtypeMatch = !!reqSubtype && sameText(tplSubtype, reqSubtype);
 
   if (reqSubtype) {
     if (typeMatch && subtypeMatch) {
-      return { level: "strong", rank: 3, reason: "Exact type + subtype match." };
+      return {
+        level: "strong",
+        rank: 4 + familyMatch.score,
+        reason: familyMatch.matched
+          ? `Exact type + subtype match. ${familyMatch.reason}`
+          : "Exact type + subtype match.",
+      };
     }
     if (typeMatch) {
-      return { level: "medium", rank: 2, reason: "Type matches, subtype differs." };
+      return {
+        level: familyMatch.matched ? "medium" : "medium",
+        rank: 3 + familyMatch.score,
+        reason: familyMatch.matched
+          ? `Type matches, subtype differs. ${familyMatch.reason}`
+          : "Type matches, subtype differs.",
+      };
+    }
+    if (familyMatch.matched) {
+      return {
+        level: "medium",
+        rank: 2 + familyMatch.score,
+        reason: familyMatch.reason,
+      };
     }
     return { level: "weak", rank: 1, reason: "Only loose similarity; category does not match." };
   }
 
   if (reqType) {
     if (typeMatch) {
-      return { level: "medium", rank: 2, reason: "Type matches." };
+      return {
+        level: familyMatch.matched ? "medium" : "medium",
+        rank: 3 + familyMatch.score,
+        reason: familyMatch.matched ? `Type matches. ${familyMatch.reason}` : "Type matches.",
+      };
+    }
+    if (familyMatch.matched) {
+      return {
+        level: "medium",
+        rank: 2 + familyMatch.score,
+        reason: familyMatch.reason,
+      };
     }
     return { level: "weak", rank: 1, reason: "Only loose similarity; type does not match." };
+  }
+
+  if (familyMatch.matched) {
+    return {
+      level: "medium",
+      rank: 2 + familyMatch.score,
+      reason: familyMatch.reason,
+    };
   }
 
   return { level: "weak", rank: 1, reason: "No project type/subtype context yet." };
 }
 
-function attachMatchMeta(templates, projectType, projectSubtype) {
+function attachMatchMeta(templates, projectType, projectSubtype, projectFamilyContext = {}) {
   const list = Array.isArray(templates) ? templates : [];
   return list.map((tpl) => {
-    const match = classifyTemplateMatch(tpl, projectType, projectSubtype);
+    const match = classifyTemplateMatch(tpl, projectType, projectSubtype, projectFamilyContext);
     return {
       ...tpl,
       _matchLevel: match.level,
@@ -71,11 +154,13 @@ function attachMatchMeta(templates, projectType, projectSubtype) {
   });
 }
 
-function filterTemplatesForVisibleList(templates, projectType, projectSubtype, search) {
+function filterTemplatesForVisibleList(templates, projectType, projectSubtype, search, projectFamilyContext = {}) {
   const list = Array.isArray(templates) ? templates : [];
   const q = safeTrim(search).toLowerCase();
   const typeVal = safeTrim(projectType).toLowerCase();
   const subtypeVal = safeTrim(projectSubtype).toLowerCase();
+  const familyProfile = getProjectFamilyProfile(projectFamilyContext?.project_family_key || "");
+  const familyMatch = familyProfile.isGeneric ? [] : list.filter((tpl) => scoreFamilyMatch(tpl, familyProfile).matched);
 
   let narrowed = list;
 
@@ -95,6 +180,14 @@ function filterTemplatesForVisibleList(templates, projectType, projectSubtype, s
     const sameType = list.filter((tpl) => sameText(tpl?.project_type, typeVal));
     if (sameType.length) {
       narrowed = sameType;
+    }
+  }
+
+  if (familyMatch.length) {
+    const familyIds = new Set(familyMatch.map((tpl) => String(tpl?.id)));
+    const familyNarrowed = narrowed.filter((tpl) => familyIds.has(String(tpl?.id)));
+    if (familyNarrowed.length) {
+      narrowed = familyNarrowed;
     }
   }
 
@@ -186,6 +279,7 @@ export default function useStep1Templates({
   writeCache,
   onTemplateApplied,
   refreshAgreement,
+  projectFamilyContext = {},
 }) {
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templatesErr, setTemplatesErr] = useState("");
@@ -213,6 +307,31 @@ export default function useStep1Templates({
   const currentProjectSubtype = safeTrim(dLocal?.project_subtype);
   const currentTitle = safeTrim(dLocal?.project_title);
   const currentDescription = safeTrim(dLocal?.description);
+  const resolvedProjectFamily = useMemo(
+    () => {
+      const base = getProjectFamilyProfile(projectFamilyContext?.project_family_key || "");
+      const label = safeTrim(projectFamilyContext?.project_family_label || projectFamilyContext?.label || "");
+      const derivedKey = label
+        ? normalizeProjectFamilyKey(
+            label
+              .toLowerCase()
+              .replace(/&/g, " and ")
+              .replace(/[()/,:.-]/g, " ")
+              .replace(/\s+/g, "_")
+          )
+        : "";
+
+      return {
+        ...base,
+        ...projectFamilyContext,
+        project_family_key: normalizeProjectFamilyKey(
+          projectFamilyContext?.project_family_key || projectFamilyContext?.key || derivedKey
+        ),
+        project_family_label: label || safeTrim(base.label),
+      };
+    },
+    [projectFamilyContext]
+  );
 
   const mergedTemplates = useMemo(() => {
     const base = Array.isArray(templates) ? templates : [];
@@ -253,7 +372,8 @@ export default function useStep1Templates({
     const withMeta = attachMatchMeta(
       Array.from(map.values()),
       currentProjectType,
-      currentProjectSubtype
+      currentProjectSubtype,
+      resolvedProjectFamily
     );
 
     return sortTemplates(withMeta).sort((a, b) => {
@@ -261,7 +381,13 @@ export default function useStep1Templates({
       if (rankDiff !== 0) return rankDiff;
       return 0;
     });
-  }, [templates, recommendedCandidates, currentProjectType, currentProjectSubtype]);
+  }, [
+    templates,
+    recommendedCandidates,
+    currentProjectType,
+    currentProjectSubtype,
+    resolvedProjectFamily,
+  ]);
 
   const selectedTemplate = useMemo(() => {
     return (
@@ -275,9 +401,10 @@ export default function useStep1Templates({
       mergedTemplates,
       currentProjectType,
       currentProjectSubtype,
-      templateSearch
+      templateSearch,
+      resolvedProjectFamily
     );
-  }, [mergedTemplates, currentProjectType, currentProjectSubtype, templateSearch]);
+  }, [mergedTemplates, currentProjectType, currentProjectSubtype, templateSearch, resolvedProjectFamily]);
 
   const resetRecommendationState = useCallback(() => {
     setRecommendedTemplateId(null);
@@ -334,6 +461,12 @@ export default function useStep1Templates({
 
     try {
       const params = { _ts: Date.now() };
+      if (resolvedProjectFamily.project_family_key) {
+        params.project_family_key = resolvedProjectFamily.project_family_key;
+      }
+      if (resolvedProjectFamily.project_family_label) {
+        params.project_family_label = resolvedProjectFamily.project_family_label;
+      }
 
       if (currentProjectSubtype) {
         params.project_subtype = currentProjectSubtype;
@@ -360,7 +493,14 @@ export default function useStep1Templates({
     } finally {
       setTemplatesLoading(false);
     }
-  }, [locked, currentProjectType, currentProjectSubtype, resetRecommendationState]);
+  }, [
+    locked,
+    currentProjectType,
+    currentProjectSubtype,
+    resetRecommendationState,
+    resolvedProjectFamily.project_family_key,
+    resolvedProjectFamily.project_family_label,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -373,6 +513,12 @@ export default function useStep1Templates({
 
       try {
         const params = { _ts: Date.now() };
+        if (resolvedProjectFamily.project_family_key) {
+          params.project_family_key = resolvedProjectFamily.project_family_key;
+        }
+        if (resolvedProjectFamily.project_family_label) {
+          params.project_family_label = resolvedProjectFamily.project_family_label;
+        }
 
         if (currentProjectSubtype) {
           params.project_subtype = currentProjectSubtype;
@@ -418,6 +564,8 @@ export default function useStep1Templates({
     currentProjectSubtype,
     recommendedCandidates,
     resetRecommendationState,
+    resolvedProjectFamily.project_family_key,
+    resolvedProjectFamily.project_family_label,
   ]);
 
   useEffect(() => {
@@ -439,6 +587,8 @@ export default function useStep1Templates({
           project_type: currentProjectType,
           project_subtype: currentProjectSubtype,
           description: currentDescription,
+          project_family_key: resolvedProjectFamily.project_family_key || "",
+          project_family_label: resolvedProjectFamily.project_family_label || "",
         });
 
         if (cancelled) return;
@@ -467,7 +617,8 @@ export default function useStep1Templates({
         const classifiedCandidates = attachMatchMeta(
           combinedCandidates,
           currentProjectType,
-          currentProjectSubtype
+          currentProjectSubtype,
+          resolvedProjectFamily
         );
 
         setRecommendedCandidates(classifiedCandidates);
@@ -553,6 +704,8 @@ export default function useStep1Templates({
     currentDescription,
     locked,
     resetRecommendationState,
+    resolvedProjectFamily.project_family_key,
+    resolvedProjectFamily.project_family_label,
   ]);
 
   useEffect(() => {
@@ -706,6 +859,12 @@ export default function useStep1Templates({
       toast.success("Template saved successfully.");
 
       const params = { _ts: Date.now() };
+      if (resolvedProjectFamily.project_family_key) {
+        params.project_family_key = resolvedProjectFamily.project_family_key;
+      }
+      if (resolvedProjectFamily.project_family_label) {
+        params.project_family_label = resolvedProjectFamily.project_family_label;
+      }
       if (currentProjectSubtype) {
         params.project_subtype = currentProjectSubtype;
       } else if (currentProjectType) {

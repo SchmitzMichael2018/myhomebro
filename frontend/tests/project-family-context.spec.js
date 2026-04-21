@@ -178,10 +178,96 @@ async function installWizardRoutes(page) {
   });
 
   await page.route("**/api/projects/templates/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/recommend/")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          confidence_level: "high",
+          score: 92,
+          reason: "Roofing family match for the selected project context.",
+          recommended_template: {
+            id: 101,
+            name: "Roofing Starter",
+            project_type: "Roofing",
+            project_subtype: "Roof Repair",
+          },
+          candidates: [
+            {
+              id: 101,
+              name: "Roofing Starter",
+              project_type: "Roofing",
+              project_subtype: "Roof Repair",
+              description: "A family-aligned roofing template.",
+            },
+            {
+              id: 202,
+              name: "General Starter",
+              project_type: "General",
+              project_subtype: "General",
+              description: "A generic fallback template.",
+            },
+          ],
+        }),
+      });
+      return;
+    }
+    const detailMatch = url.pathname.match(/\/api\/projects\/templates\/(\d+)\/?$/);
+    if (detailMatch) {
+      const id = Number(detailMatch[1]);
+      const detail =
+        id === 101
+          ? {
+              id: 101,
+              name: "Roofing Starter",
+              project_type: "Roofing",
+              project_subtype: "Roof Repair",
+              description: "A family-aligned roofing template.",
+              milestone_count: 4,
+              milestones: [],
+              estimated_days: 5,
+            }
+          : {
+              id: 202,
+              name: "General Starter",
+              project_type: "General",
+              project_subtype: "General",
+              description: "A generic fallback template.",
+              milestone_count: 3,
+              milestones: [],
+              estimated_days: 3,
+            };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(detail),
+      });
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ results: [] }),
+      body: JSON.stringify({
+        results: [
+          {
+            id: 101,
+            name: "Roofing Starter",
+            project_type: "Roofing",
+            project_subtype: "Roof Repair",
+            description: "A family-aligned roofing template.",
+            milestone_count: 4,
+          },
+          {
+            id: 202,
+            name: "General Starter",
+            project_type: "General",
+            project_subtype: "General",
+            description: "A generic fallback template.",
+            milestone_count: 3,
+          },
+        ],
+      }),
     });
   });
 
@@ -305,9 +391,28 @@ test("dashboard family selection persists into the agreement wizard and AI conte
     project_family_label: "Roofing",
   });
 
+  await page.evaluate((agreementId) => {
+    try {
+      window.sessionStorage.setItem(`mhb_step1_cache_${agreementId}_start_mode`, "template");
+      window.sessionStorage.setItem(`mhb_step1_cache_${agreementId}_start_mode_committed`, "1");
+      window.sessionStorage.setItem(`mhb_step1_cache_${agreementId}_start_mode_source`, "session");
+    } catch {
+      // ignore
+    }
+  }, AGREEMENT_ID);
+
   await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, { waitUntil: "domcontentloaded" });
 
   await expect(page.getByTestId("proposal-project-family-cue")).toContainText("Roofing");
+  await expect(page.getByTestId("step1-template-browser")).toBeVisible();
+  const templateSearchInput = page.getByPlaceholder(
+    'Search templates by keyword, like "bathroom", "deck", or "bedroom addition"...'
+  );
+  await templateSearchInput.click();
+  await templateSearchInput.fill("roof");
+  await expect(page.getByTestId("template-search-result-101")).toBeVisible();
+  await expect(page.getByTestId("template-search-result-202")).toHaveCount(0);
+  await expect(page.getByTestId("template-search-result-101")).toContainText("Roofing Starter");
 
   await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, { waitUntil: "domcontentloaded" });
 

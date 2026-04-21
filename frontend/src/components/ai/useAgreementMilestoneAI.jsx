@@ -19,6 +19,23 @@ function safeStr(v) {
   return v == null ? "" : String(v).trim();
 }
 
+function normalizeFamilyContext(value = {}) {
+  const label = safeStr(value?.project_family_label || value?.projectFamilyLabel || value?.label);
+  const derivedKey = label
+    ? label
+        .toLowerCase()
+        .replace(/&/g, " and ")
+        .replace(/[()/,:.-]/g, " ")
+        .replace(/\s+/g, "_")
+        .replace(/_+/g, "_")
+        .replace(/^_+|_+$/g, "")
+    : "";
+  return {
+    project_family_key: safeStr(value?.project_family_key || value?.projectFamilyKey || value?.key || derivedKey),
+    project_family_label: label,
+  };
+}
+
 function normalizePricingMode(v) {
   const raw = safeStr(v).toLowerCase();
   if (raw === "labor_only" || raw === "hybrid" || raw === "full_service") {
@@ -494,6 +511,7 @@ export default function useAgreementMilestoneAI({
   refreshMilestones,
   onCreditsUpdate,
   onMilestonesReplaced,
+  projectFamilyContext = {},
 }) {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiApplying, setAiApplying] = useState(false);
@@ -501,6 +519,7 @@ export default function useAgreementMilestoneAI({
   const [estimateRefreshing, setEstimateRefreshing] = useState(false);
   const [aiError, setAiError] = useState("");
   const [aiPreview, setAiPreview] = useState(null);
+  const resolvedProjectFamily = normalizeFamilyContext(projectFamilyContext);
 
   const getAgreementSnapshot = useCallback(async () => {
     if (!agreementId) return null;
@@ -572,6 +591,8 @@ export default function useAgreementMilestoneAI({
 
         const res = await api.post(`/projects/agreements/${agreementId}/ai/suggest-milestones/`, {
           notes: safeStr(notes),
+          project_family_key: resolvedProjectFamily.project_family_key,
+          project_family_label: resolvedProjectFamily.project_family_label,
         });
 
         const nextPreview = {
@@ -605,7 +626,15 @@ export default function useAgreementMilestoneAI({
         setAiLoading(false);
       }
     },
-    [agreementId, locked, replaceAiQuestionsOnAgreement, onCreditsUpdate, ensureNoTemplateApplied]
+    [
+      agreementId,
+      locked,
+      replaceAiQuestionsOnAgreement,
+      onCreditsUpdate,
+      ensureNoTemplateApplied,
+      resolvedProjectFamily.project_family_key,
+      resolvedProjectFamily.project_family_label,
+    ]
   );
 
   const applyAiMilestones = useCallback(
@@ -635,6 +664,8 @@ export default function useAgreementMilestoneAI({
           spread_strategy: spreadEnabled ? "equal" : "keep_existing_amounts",
           milestones: aiPreview.milestones,
           auto_schedule: !!autoSchedule,
+          project_family_key: resolvedProjectFamily.project_family_key,
+          project_family_label: resolvedProjectFamily.project_family_label,
         };
 
         const spreadValue = safeStr(spreadTotal);
@@ -692,6 +723,8 @@ export default function useAgreementMilestoneAI({
       refreshMilestones,
       onMilestonesReplaced,
       ensureNoTemplateApplied,
+      resolvedProjectFamily.project_family_key,
+      resolvedProjectFamily.project_family_label,
     ]
   );
 
@@ -705,7 +738,11 @@ export default function useAgreementMilestoneAI({
     setPricingRefreshing(true);
 
     try {
-      const res = await api.post(`/projects/agreements/${agreementId}/ai/refresh-pricing-estimate/`, {});
+      const payload = {
+        project_family_key: resolvedProjectFamily.project_family_key,
+        project_family_label: resolvedProjectFamily.project_family_label,
+      };
+      const res = await api.post(`/projects/agreements/${agreementId}/ai/refresh-pricing-estimate/`, payload);
 
       const pricingEstimates = normalizePricingEstimates(res?.data?.pricing_estimates || []);
 
@@ -732,7 +769,13 @@ export default function useAgreementMilestoneAI({
     } finally {
       setPricingRefreshing(false);
     }
-  }, [agreementId, locked, onCreditsUpdate]);
+  }, [
+    agreementId,
+    locked,
+    onCreditsUpdate,
+    resolvedProjectFamily.project_family_key,
+    resolvedProjectFamily.project_family_label,
+  ]);
 
   const estimateProject = useCallback(async () => {
     if (!agreementId) {
@@ -743,7 +786,10 @@ export default function useAgreementMilestoneAI({
     setEstimateRefreshing(true);
 
     try {
-      const res = await api.post(`/projects/agreements/${agreementId}/estimate-preview/`, {});
+      const res = await api.post(`/projects/agreements/${agreementId}/estimate-preview/`, {
+        project_family_key: resolvedProjectFamily.project_family_key,
+        project_family_label: resolvedProjectFamily.project_family_label,
+      });
 
       if (typeof onCreditsUpdate === "function") {
         onCreditsUpdate({
@@ -765,7 +811,12 @@ export default function useAgreementMilestoneAI({
     } finally {
       setEstimateRefreshing(false);
     }
-  }, [agreementId, onCreditsUpdate]);
+  }, [
+    agreementId,
+    onCreditsUpdate,
+    resolvedProjectFamily.project_family_key,
+    resolvedProjectFamily.project_family_label,
+  ]);
 
   return {
     aiLoading,

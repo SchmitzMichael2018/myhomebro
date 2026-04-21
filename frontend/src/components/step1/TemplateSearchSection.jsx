@@ -129,6 +129,7 @@ function TemplateSearchResult({
       type="button"
       onClick={() => !locked && onPick?.(template)}
       disabled={locked}
+      data-testid={`template-search-result-${template?.id || "unknown"}`}
       className={`w-full border-b last:border-b-0 px-3 py-2 text-left hover:bg-indigo-50 ${
         selected || applied ? "bg-indigo-50" : "bg-white"
       } ${locked ? "cursor-not-allowed opacity-60" : ""}`}

@@ -172,6 +172,85 @@ function fallbackRows({ description }) {
       ];
 }
 
+function familyFallbackRows(projectFamilyKey = "", projectFamilyLabel = "") {
+  const familyKey = safeStr(projectFamilyKey).toLowerCase();
+  const familyLabel = safeStr(projectFamilyLabel);
+
+  if (familyKey === "roofing") {
+    return [
+      { title: "Inspection & prep", description: "Inspect the roof, confirm the leak area, and prep the site." },
+      { title: "Repair or replacement", description: "Complete the roof repair or replacement work." },
+      { title: "Flashing & seal check", description: "Verify flashing, seal details, and weather protection." },
+      { title: "Cleanup & walkthrough", description: "Clean the area and review the finished work with the customer." },
+    ];
+  }
+
+  if (familyKey === "bathroom_remodel") {
+    return [
+      { title: "Demo & protection", description: "Protect surrounding finishes and remove existing materials." },
+      { title: "Rough plumbing / electrical", description: "Complete rough work needed for the remodel layout." },
+      { title: "Tile, fixtures & finishes", description: "Install tile, fixtures, and finish selections." },
+      { title: "Final cleanup & walkthrough", description: "Finish cleanup and review the remodeled bathroom." },
+    ];
+  }
+
+  if (familyKey === "kitchen_remodel") {
+    return [
+      { title: "Demo & prep", description: "Protect the space and remove existing finishes or fixtures." },
+      { title: "Cabinets / layout work", description: "Complete cabinet, layout, or rough-in work." },
+      { title: "Countertops & finish install", description: "Install countertops, backsplash, and finish items." },
+      { title: "Cleanup & handoff", description: "Clean the site and walk through the completed kitchen." },
+    ];
+  }
+
+  if (familyKey === "flooring") {
+    return [
+      { title: "Measure & prep", description: "Confirm square footage and prepare the rooms for install." },
+      { title: "Removal / subfloor prep", description: "Remove existing flooring and prep the subfloor." },
+      { title: "Install flooring", description: "Install the selected flooring material." },
+      { title: "Trim, cleanup & walkthrough", description: "Complete trim, cleanup, and final walkthrough." },
+    ];
+  }
+
+  if (familyKey === "painting") {
+    return [
+      { title: "Prep & protection", description: "Protect surfaces and complete prep work." },
+      { title: "Patch & repairs", description: "Fill holes, patch surfaces, and complete minor repairs." },
+      { title: "Paint application", description: "Apply primer and paint to the specified areas." },
+      { title: "Cleanup & walkthrough", description: "Clean up and review the finished paint work." },
+    ];
+  }
+
+  if (familyKey === "electrical" || familyKey === "plumbing") {
+    return [
+      { title: "Diagnose & prep", description: `Confirm the affected ${familyLabel || "system"} area and prep the work.` },
+      { title: "Repair / install", description: `Complete the ${familyLabel || "system"} work.` },
+      { title: "Test & verify", description: "Test the system and verify the repair or installation." },
+      { title: "Cleanup & walkthrough", description: "Finish cleanup and review the completed work." },
+    ];
+  }
+
+  if (familyKey === "exterior_siding" || familyKey === "windows_doors") {
+    return [
+      { title: "Assess & prep", description: "Confirm openings or elevations and prepare the site." },
+      { title: "Removal / replacement", description: "Remove existing materials and complete the new install." },
+      { title: "Seal, trim & finish", description: "Complete sealing, trim, and finish details." },
+      { title: "Cleanup & walkthrough", description: "Clean the site and review the completed exterior work." },
+    ];
+  }
+
+  if (familyKey === "handyman") {
+    return [
+      { title: "Task review", description: "Confirm the task list and priorities with the customer." },
+      { title: "Core repairs", description: "Complete the main repair tasks and needed adjustments." },
+      { title: "Finish details", description: "Complete finish work and small follow-up items." },
+      { title: "Cleanup & closeout", description: "Clean the site and review the completed tasks." },
+    ];
+  }
+
+  return [];
+}
+
 export function buildClarificationAwareMilestoneNotes(answers = {}) {
   const lines = [];
   const booleanMappings = Array.isArray(rules?.clarificationNoteMappings?.boolean)
@@ -199,6 +278,8 @@ export function buildClarificationAwareMilestoneNotes(answers = {}) {
 export function buildClarificationAwareMilestoneDraft({
   projectType = "",
   projectSubtype = "",
+  projectFamilyKey = "",
+  projectFamilyLabel = "",
   description = "",
   totalBudget = 0,
   clarificationAnswers = {},
@@ -206,7 +287,11 @@ export function buildClarificationAwareMilestoneDraft({
   baseMilestones = [],
 }) {
   const subtypeRule = findSubtypeRule({ projectType, projectSubtype });
-  let rows = subtypeRule?.baseRows?.map(cloneRow) || fallbackRows({ description });
+  const familyRows = familyFallbackRows(projectFamilyKey, projectFamilyLabel);
+  let rows =
+    subtypeRule?.baseRows?.map(cloneRow) ||
+    (Array.isArray(familyRows) && familyRows.length ? familyRows : null) ||
+    fallbackRows({ description });
 
   for (const operation of Array.isArray(subtypeRule?.operations) ? subtypeRule.operations : []) {
     if (!conditionMatches(operation?.when, clarificationAnswers)) continue;

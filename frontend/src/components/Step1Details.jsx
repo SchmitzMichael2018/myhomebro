@@ -28,6 +28,7 @@ import {
   buildProjectSetupRecommendation,
   normalizeProjectSetupRecommendation,
 } from "../lib/projectIntelligence";
+import { normalizeProjectFamilyContext } from "../lib/projectFamilyContext";
 
 import {
   safeTrim,
@@ -626,6 +627,7 @@ export default function Step1Details({
   assistantConfirmationRequiredActions = [],
   assistantLeadContext = {},
   assistantDraftPayload = {},
+  projectFamilyContext = {},
   aiHighlightKeys = {},
   isAiAssistantActive = false,
   aiSetupRequest = null,
@@ -752,6 +754,10 @@ export default function Step1Details({
       }),
     [contractorBrandVoice, leadProposalContext, leadProposalSnapshot]
   );
+  const resolvedProjectFamily = useMemo(
+    () => normalizeProjectFamilyContext(projectFamilyContext),
+    [projectFamilyContext]
+  );
   const recommendedProjectSetup = useMemo(() => {
     const draftRecommendation = normalizeProjectSetupRecommendation(
       leadProposalDraft?.summary?.recommendedSetup || {}
@@ -778,6 +784,16 @@ export default function Step1Details({
       projectType: leadProposalContext?.project_type || assistantDraftPayload?.project_type || "",
       projectSubtype:
         leadProposalContext?.project_subtype || assistantDraftPayload?.project_subtype || "",
+      projectFamilyKey:
+        assistantDraftPayload?.project_family_key ||
+        leadProposalContext?.project_family_key ||
+        resolvedProjectFamily.project_family_key ||
+        "",
+      projectFamilyLabel:
+        assistantDraftPayload?.project_family_label ||
+        leadProposalContext?.project_family_label ||
+        resolvedProjectFamily.project_family_label ||
+        "",
       description:
         leadProposalContext?.project_scope_summary ||
         leadProposalContext?.project_description ||
@@ -794,7 +810,13 @@ export default function Step1Details({
         draftRecommendation?.recommendedTemplateName ||
         "",
     });
-  }, [assistantDraftPayload, leadProposalContext, leadProposalDraft?.summary?.recommendedSetup]);
+  }, [
+    assistantDraftPayload,
+    leadProposalContext,
+    leadProposalDraft?.summary?.recommendedSetup,
+    resolvedProjectFamily.project_family_key,
+    resolvedProjectFamily.project_family_label,
+  ]);
   const hasLeadProposalContext = Boolean(
     assistantLeadContext?.lead_id ||
       assistantDraftPayload?.lead_id ||
@@ -1771,6 +1793,7 @@ export default function Step1Details({
     writeCache,
     onTemplateApplied,
     refreshAgreement,
+    projectFamilyContext: resolvedProjectFamily,
   });
 
   useEffect(() => {
@@ -1840,6 +1863,7 @@ export default function Step1Details({
     locked,
     refreshAgreement,
     refreshMilestones: null,
+    projectFamilyContext: resolvedProjectFamily,
   });
 
   async function runAiMilestonesFromScope() {
@@ -1849,6 +1873,9 @@ export default function Step1Details({
       return;
     }
     const notes = [
+      safeTrim(resolvedProjectFamily.project_family_label)
+        ? `Project Family: ${safeTrim(resolvedProjectFamily.project_family_label)}`
+        : "",
       safeTrim(dLocal?.project_title)
         ? `Project Title: ${safeTrim(dLocal.project_title)}`
         : "",
@@ -1863,7 +1890,7 @@ export default function Step1Details({
       .filter(Boolean)
       .join("\n");
 
-    await runAiSuggest({ notes });
+    await runAiSuggest({ notes: notes.filter(Boolean).join("\n") });
   }
 
   async function applyAiMilestonesFromScope(mode = "replace") {
@@ -2336,6 +2363,8 @@ export default function Step1Details({
         project_title: dLocal.project_title || "",
         project_type: dLocal.project_type || "",
         project_subtype: dLocal.project_subtype || "",
+        project_family_key: resolvedProjectFamily.project_family_key || "",
+        project_family_label: resolvedProjectFamily.project_family_label || "",
         current_description: clarificationContext,
       };
 
@@ -2357,6 +2386,8 @@ export default function Step1Details({
         project_type: suggestedSetupValues?.project_type || dLocal.project_type || "",
         project_subtype:
           suggestedSetupValues?.project_subtype || dLocal.project_subtype || "",
+        project_family_key: resolvedProjectFamily.project_family_key || "",
+        project_family_label: resolvedProjectFamily.project_family_label || "",
         description: refinedDescription,
       });
 
@@ -2404,7 +2435,9 @@ export default function Step1Details({
         (exactTypeMatch && exactSubtypeMatch
           ? "Matches the project type and subtype you selected."
           : exactTypeMatch
-          ? "Matches the project type you selected."
+          ? resolvedProjectFamily.project_family_label
+            ? `Matches the project type you selected and stays aligned with ${resolvedProjectFamily.project_family_label}.`
+            : "Matches the project type you selected."
           : "This template closely matches the job details you provided.");
 
       if (strongMatch) {

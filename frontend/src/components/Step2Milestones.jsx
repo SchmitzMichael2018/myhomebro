@@ -1546,6 +1546,7 @@ export default function Step2Milestones({
     refreshAgreement: refreshAgreementMeta,
     refreshMilestones: refreshMilestonesSafe,
     onMilestonesReplaced: null,
+    projectFamilyContext: resolvedProjectFamily,
   });
   const combinedClarificationQuestions = useMemo(
     () =>
@@ -1747,6 +1748,8 @@ export default function Step2Milestones({
       milestones: buildClarificationAwareMilestoneDraft({
         projectType,
         projectSubtype,
+        projectFamilyKey: resolvedProjectFamily.project_family_key,
+        projectFamilyLabel: resolvedProjectFamily.project_family_label,
         description:
           safeStr(agreementMeta?.description || agreementMeta?.project_description || preview.scope_text),
         clarificationAnswers: agreementMeta?.ai_scope?.answers || {},
@@ -1791,6 +1794,9 @@ export default function Step2Milestones({
       agreementMeta?.ai_scope?.answers || {}
     );
     const extraNotes = [
+      safeStr(resolvedProjectFamily.project_family_label)
+        ? `Project family: ${safeStr(resolvedProjectFamily.project_family_label)}`
+        : "",
       `Materials purchasing responsibility: ${materialsWho}.`,
       needsMeasurements
         ? `Measurements needed: YES. Notes: ${measurementNotes || "(none provided)"}.`
@@ -1805,7 +1811,7 @@ export default function Step2Milestones({
       .join("\n");
 
     const preview = await runAiSuggest({
-      notes: `${mLocal.description || ""}\n\n${extraNotes}`.trim(),
+      notes: `${mLocal.description || ""}\n\n${extraNotes.filter(Boolean).join("\n")}`.trim(),
     });
     if (preview) {
       setAiPreview(shapeAiMilestonePreview(preview));
@@ -2515,6 +2521,8 @@ export default function Step2Milestones({
         const draftRows = buildClarificationAwareMilestoneDraft({
           projectSubtype,
           projectType,
+          projectFamilyKey: resolvedProjectFamily.project_family_key,
+          projectFamilyLabel: resolvedProjectFamily.project_family_label,
           description,
           clarificationAnswers,
           totalBudget: agreementMeta?.total_cost ?? 0,

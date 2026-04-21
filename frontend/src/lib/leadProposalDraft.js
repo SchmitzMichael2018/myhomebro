@@ -143,12 +143,16 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {},
     projectType,
     projectSubtype,
     description: projectScopeSummary || refinedDescription,
+    projectFamilyKey: safeText(summary.project_family_key || snapshot.project_family_key || ""),
+    projectFamilyLabel: safeText(summary.project_family_label || snapshot.project_family_label || ""),
   });
   const projectSetupRecommendation = buildProjectSetupRecommendation({
     projectTitle,
     projectType: projectType || projectIntelligence.familyLabel,
     projectSubtype: projectSubtype || projectIntelligence.familyLabel,
     description: projectScopeSummary || refinedDescription,
+    projectFamilyKey: safeText(summary.project_family_key || snapshot.project_family_key || ""),
+    projectFamilyLabel: safeText(summary.project_family_label || snapshot.project_family_label || ""),
     templateId:
       summary?.recommended_setup?.recommended_template_id ??
       snapshot?.recommended_setup?.recommended_template_id ??

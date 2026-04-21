@@ -14,6 +14,45 @@ function containsAny(text, needles = []) {
   });
 }
 
+export function normalizeProjectFamilyKey(value = "") {
+  return safeText(value).toLowerCase();
+}
+
+function getFamilyMatchProfile(key) {
+  const normalizedKey = normalizeProjectFamilyKey(key);
+  if (!normalizedKey) return null;
+  return PROJECT_TYPE_FAMILIES.find((family) => family.key === normalizedKey) || null;
+}
+
+export function getProjectFamilyProfile(key = "") {
+  const family = getFamilyMatchProfile(key);
+  if (!family) {
+    return {
+      key: "",
+      label: "",
+      cueLabel: "",
+      keywords: [],
+      prepItems: [],
+      responseStarter: "",
+      createBidContext: "",
+      draftFocusLine: "",
+      isGeneric: true,
+    };
+  }
+
+  return {
+    key: family.key,
+    label: family.label,
+    cueLabel: family.cueLabel || "",
+    keywords: Array.isArray(family.keywords) ? [...family.keywords] : [],
+    prepItems: Array.isArray(family.prepItems) ? [...family.prepItems] : [],
+    responseStarter: safeText(family.responseStarter),
+    createBidContext: safeText(family.createBidContext),
+    draftFocusLine: safeText(family.draftFocusLine),
+    isGeneric: false,
+  };
+}
+
 const PROJECT_TYPE_FAMILIES = [
   {
     key: "roofing",
@@ -320,13 +359,20 @@ export function inferProjectIntelligence({
   projectType = "",
   projectSubtype = "",
   description = "",
+  projectFamilyKey = "",
+  projectFamilyLabel = "",
 } = {}) {
   const text = normalize([projectTitle, projectType, projectSubtype, description].filter(Boolean).join(" "));
-  let best = GENERIC_PROJECT_INTELLIGENCE;
-  let bestScore = 0;
+  const preferredFamily = getFamilyMatchProfile(projectFamilyKey);
+  let best = preferredFamily || GENERIC_PROJECT_INTELLIGENCE;
+  let bestScore = preferredFamily ? 4 : 0;
+  const familyLabelText = normalize(projectFamilyLabel);
 
   for (const family of PROJECT_TYPE_FAMILIES) {
     let score = 0;
+    if (preferredFamily && family.key === preferredFamily.key) {
+      score += 4;
+    }
     for (const keyword of family.keywords) {
       const needle = normalize(keyword);
       if (needle && text.includes(needle)) {
@@ -339,6 +385,9 @@ export function inferProjectIntelligence({
     if (normalizedType.includes(family.key) || normalizedSubtype.includes(family.key)) {
       score += 3;
     }
+    if (familyLabelText && normalize(family.label).includes(familyLabelText)) {
+      score += 2;
+    }
 
     if (score > bestScore) {
       best = family;
@@ -347,7 +396,14 @@ export function inferProjectIntelligence({
   }
 
   if (bestScore <= 0) {
+    if (preferredFamily) {
+      return { ...preferredFamily, isGeneric: false };
+    }
     return { ...GENERIC_PROJECT_INTELLIGENCE, isGeneric: true };
+  }
+
+  if (preferredFamily && best.key !== preferredFamily.key && bestScore < 3) {
+    return { ...preferredFamily, isGeneric: false };
   }
 
   return { ...best, isGeneric: best.key === "general" };
@@ -423,6 +479,8 @@ export function buildProjectSetupRecommendation({
   projectType = "",
   projectSubtype = "",
   description = "",
+  projectFamilyKey = "",
+  projectFamilyLabel = "",
   templateId = null,
   templateName = "",
 } = {}) {
@@ -431,6 +489,8 @@ export function buildProjectSetupRecommendation({
     projectType,
     projectSubtype,
     description,
+    projectFamilyKey,
+    projectFamilyLabel,
   });
   const scopeText = normalize([projectTitle, projectType, projectSubtype, description].filter(Boolean).join(" "));
   const scopeMode = inferScopeMode(scopeText, family.key);
