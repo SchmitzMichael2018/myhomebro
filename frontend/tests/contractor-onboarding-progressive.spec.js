@@ -326,6 +326,7 @@ test('contractor onboarding supports activation-first progression and embedded S
   await expect(page.getByTestId('contractor-onboarding-first-project')).toBeVisible();
   await page.getByRole('button', { name: 'Start project' }).click();
   await expect(page).toHaveURL(/\/app\/agreements\/new\/wizard\?step=1/);
+  await expect(page.getByTestId('agreement-stripe-guidance')).toBeVisible();
 
   const handoffAfter = await page.evaluate(() => {
     try {
@@ -410,11 +411,7 @@ test('stripe status-aware UI shows start, resume, and connected states clearly',
   });
 
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('link', { name: /Stripe Onboarding Resume/i })).toBeVisible();
-  await expect(page.getByRole('link', { name: /Stripe Onboarding Resume/i })).toHaveAttribute(
-    'href',
-    '/app/onboarding/stripe'
-  );
+  await expect(page.getByText('Resume', { exact: true }).first()).toBeVisible();
 
   await page.goto('/app/profile', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('profile-stripe-reminder')).toContainText(
@@ -542,7 +539,7 @@ test('stripe setup prompt appears for brand new contractors and a complete accou
   await expect(page.getByTestId('profile-stripe-reminder')).toHaveCount(0);
 });
 
-test('payment-critical direct pay action shows Stripe requirement modal instead of generic failure', async ({
+test('payment-critical direct pay action warns and blocks pay-link creation until Stripe is ready', async ({
   page,
 }) => {
   await installBaseAuth(page);
@@ -602,31 +599,24 @@ test('payment-critical direct pay action shows Stripe requirement modal instead 
     });
   });
 
+  let payLinkRequested = false;
   await page.route('**/api/projects/invoices/123/direct_pay_link/', async (route) => {
+    payLinkRequested = true;
     await route.fulfill({
-      status: 409,
+      status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        code: 'STRIPE_ONBOARDING_REQUIRED',
-        requirement_type: 'stripe_connect',
-        action_label: 'Create Direct Pay Link',
-        detail: 'Connect Stripe to receive payments.',
-        message: 'You can keep exploring, but this payment action requires Stripe setup.',
-        resume_url: '/app/onboarding/stripe',
-        stripe_status: {
-          connected: false,
-          charges_enabled: false,
-          payouts_enabled: false,
-          requirements_due_count: 2,
-        },
+        checkout_url: 'https://checkout.stripe.com/pay/test',
       }),
     });
   });
 
   await page.goto('/app/invoices/123', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Create Pay Link' }).click();
-
-  await expect(page.getByTestId('stripe-requirement-modal')).toBeVisible();
-  await expect(page.getByTestId('stripe-requirement-modal')).toContainText('Create Direct Pay Link');
-  await expect(page.getByTestId('stripe-requirement-connect')).toContainText('Connect Stripe');
+  await expect(page.getByTestId('invoice-stripe-guidance')).toBeVisible();
+  await expect(page.getByTestId('invoice-stripe-guidance')).toContainText('Payments are not set up yet.');
+  await expect(page.getByTestId('invoice-stripe-guidance')).toContainText('Start Stripe setup');
+  await expect(page.getByRole('button', { name: 'Set Up Payments' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Email' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Open Link' })).toBeDisabled();
+  expect(payLinkRequested).toBeFalsy();
 });

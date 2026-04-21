@@ -29,6 +29,7 @@ import {
   normalizeProjectSetupRecommendation,
 } from "../lib/projectIntelligence";
 import { normalizeProjectFamilyContext } from "../lib/projectFamilyContext";
+import { buildStripeOnboardingGuidance } from "../lib/stripeOnboardingStatus.js";
 
 import {
   safeTrim,
@@ -597,6 +598,7 @@ export default function Step1Details({
   isEdit,
   agreementId,
   dLocal,
+  stripeOnboardingState,
   setDLocal,
   people,
   peopleLoadedOnce,
@@ -1559,6 +1561,7 @@ export default function Step1Details({
   const isCommercialProject = projectClass === "commercial";
   const retainagePercent = safeTrim(dLocal?.retainage_percent) || "0.00";
   const agreementMode = safeTrim(dLocal?.agreement_mode) || "standard";
+  const stripeGuidance = buildStripeOnboardingGuidance(stripeOnboardingState);
   const isMaintenanceMode = agreementMode === "maintenance";
   const recurrencePattern = safeTrim(dLocal?.recurrence_pattern) || "monthly";
   const recurrenceInterval = safeTrim(dLocal?.recurrence_interval) || "1";
@@ -4230,6 +4233,25 @@ export default function Step1Details({
               className={supportSectionClass}
               highlighted={hasAiSectionHighlight("payment_structure", "retainage_percent")}
             >
+              {!stripeGuidance?.complete ? (
+                <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" data-testid="agreement-stripe-guidance">
+                  <div className="font-semibold">{stripeGuidance.label}</div>
+                  <div className="mt-1">{stripeGuidance.message}</div>
+                  {stripeGuidance.actionLabel ? (
+                    <a
+                      href={stripeGuidance.actionHref || "/app/onboarding/stripe"}
+                      className="mt-2 inline-flex rounded-lg bg-amber-900 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-950"
+                    >
+                      {stripeGuidance.actionLabel}
+                    </a>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900" data-testid="agreement-stripe-guidance">
+                  <div className="font-semibold">{stripeGuidance.label}</div>
+                  <div className="mt-1">{stripeGuidance.message}</div>
+                </div>
+              )}
               <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="text-sm font-semibold text-slate-900">Payment Structure</div>
                 <div className="mt-1 text-sm text-slate-600">

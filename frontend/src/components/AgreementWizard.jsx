@@ -36,6 +36,7 @@ import {
   normalizeProjectFamilyContext,
   useWorkspaceProjectFamilyContext,
 } from "../lib/projectFamilyContext.js";
+import { getStripeOnboardingState } from "../lib/stripeOnboardingStatus.js";
 import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 
 /* ---------------- helpers ---------------- */
@@ -279,6 +280,7 @@ export default function AgreementWizard() {
     if (handoffProjectFamily.project_family_key) return handoffProjectFamily;
     return workspaceProjectFamilyContext;
   }, [handoffProjectFamily, workspaceProjectFamilyContext]);
+  const [stripeStatusState, setStripeStatusState] = useState(() => getStripeOnboardingState({}));
 
   useEffect(() => {
     if (!handoffProjectFamily.project_family_key) return;
@@ -297,6 +299,24 @@ export default function AgreementWizard() {
     workspaceProjectFamilyContext.project_family_key,
     workspaceProjectFamilyContext.project_family_label,
   ]);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { data } = await api.get("/payments/onboarding/status/");
+        if (!active) return;
+        setStripeStatusState(getStripeOnboardingState(data));
+      } catch {
+        if (!active) return;
+        setStripeStatusState(getStripeOnboardingState({}));
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const [agreement, setAgreementState] = useState(null);
   const [loadingAgreement, setLoadingAgreement] = useState(false);
@@ -1670,6 +1690,7 @@ export default function AgreementWizard() {
           <Step1Details
             agreement={agreement}
             paymentModeValue={dLocal.payment_mode}
+            stripeOnboardingState={stripeStatusState}
             isEdit={!!agreementId}
             agreementId={agreementId}
             dLocal={dLocal}
@@ -1796,6 +1817,7 @@ export default function AgreementWizard() {
             id={agreementId}
             milestones={milestones}
             totals={totals}
+            stripeOnboardingState={stripeStatusState}
             hasPreviewed={true}
             ackReviewed={ackReviewed}
             setAckReviewed={setAckReviewed}

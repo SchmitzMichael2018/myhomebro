@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useCallback, useRef } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api, { getAgreementClosureStatus, closeAndArchiveAgreement } from "../api";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
 import SendInvoiceButton from "./SendInvoiceButton";
 import { handleStripeRequirementError } from "../lib/stripeRequirement.js";
+import { buildStripeOnboardingGuidance, getStripeOnboardingState } from "../lib/stripeOnboardingStatus.js";
 
 const money = (amount) =>
   Number(amount || 0).toLocaleString("en-US", {
@@ -75,6 +76,7 @@ export default function InvoiceDetail() {
   const [actionLoading, setActionLoading] = useState(false);
   const [directPayLoading, setDirectPayLoading] = useState(false);
   const [directPayEmailLoading, setDirectPayEmailLoading] = useState(false);
+  const [stripeStatusState, setStripeStatusState] = useState(() => getStripeOnboardingState({}));
 
   // ✅ Close-out modal state
   const [showCloseModal, setShowCloseModal] = useState(false);
@@ -104,6 +106,25 @@ export default function InvoiceDetail() {
     fetchInvoice();
   }, [fetchInvoice]);
 
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const { data } = await api.get("/payments/onboarding/status/");
+        if (!active) return;
+        setStripeStatusState(getStripeOnboardingState(data));
+      } catch {
+        if (!active) return;
+        setStripeStatusState(getStripeOnboardingState({}));
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   // ✅ FIX: use display_status if provided; fallback to status
   const rawStatus = String(invoice?.display_status || invoice?.status || "");
   const statusKey = rawStatus.toLowerCase();
@@ -131,6 +152,11 @@ export default function InvoiceDetail() {
     null;
 
   const directPayIsPaid = statusKey === "paid" || Boolean(directPayPaidAt);
+  const stripeGuidance = useMemo(
+    () => buildStripeOnboardingGuidance(stripeStatusState),
+    [stripeStatusState]
+  );
+  const directPayNeedsStripeSetup = isDirectPay && !stripeGuidance.complete && !directPayCheckoutUrl;
 
   const agreementId =
     invoice?.agreement_id ??
@@ -260,6 +286,11 @@ export default function InvoiceDetail() {
       return;
     }
 
+    if (directPayNeedsStripeSetup) {
+      toast.error(stripeGuidance.message);
+      return;
+    }
+
     // If link already exists, just copy it.
     if (directPayCheckoutUrl) {
       const ok = await copyToClipboard(directPayCheckoutUrl);
@@ -304,6 +335,10 @@ export default function InvoiceDetail() {
     if (!isDirectPay) return;
     if (directPayIsPaid) {
       toast("This invoice is already paid.");
+      return;
+    }
+    if (directPayNeedsStripeSetup) {
+      toast.error("Complete Stripe setup before emailing a new pay link.");
       return;
     }
 
@@ -444,6 +479,33 @@ export default function InvoiceDetail() {
           </button>
 
           <div className="mt-3 flex flex-col gap-3">
+            {isDirectPay ? (
+              <div
+                data-testid="invoice-stripe-guidance"
+                className={`rounded-xl border px-4 py-3 text-sm ${
+                  stripeGuidance.complete
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                    : "border-amber-200 bg-amber-50 text-amber-900"
+                }`}
+              >
+                <div className="font-semibold">{stripeGuidance.label}</div>
+                <div className="mt-1">{stripeGuidance.message}</div>
+                {stripeGuidance.actionLabel ? (
+                  <button
+                    type="button"
+                    onClick={() => navigate(stripeGuidance.actionHref || "/app/onboarding/stripe")}
+                    className={`mt-2 inline-flex rounded-lg px-3 py-2 text-sm font-semibold ${
+                      stripeGuidance.complete
+                        ? "bg-emerald-900 text-white hover:bg-emerald-950"
+                        : "bg-amber-900 text-white hover:bg-amber-950"
+                    }`}
+                  >
+                    {stripeGuidance.actionLabel}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h1
@@ -527,26 +589,32 @@ export default function InvoiceDetail() {
                   <button
                     type="button"
                     onClick={handleDirectPayCreateOrCopy}
-                    disabled={directPayLoading || directPayIsPaid}
+                    disabled={directPayLoading || directPayIsPaid || directPayNeedsStripeSetup}
                     className={`rounded-lg px-4 py-2 font-semibold text-sm transition-colors ${
                       directPayIsPaid
                         ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                        : directPayCheckoutUrl
-                          ? "bg-white text-slate-800 border border-slate-200 hover:bg-slate-50"
-                          : "bg-slate-900 text-white hover:bg-slate-800"
+                        : directPayNeedsStripeSetup
+                          ? "bg-amber-100 text-amber-800 cursor-not-allowed border border-amber-200"
+                          : directPayCheckoutUrl
+                            ? "bg-white text-slate-800 border border-slate-200 hover:bg-slate-50"
+                            : "bg-slate-900 text-white hover:bg-slate-800"
                     }`}
                     title={
                       directPayIsPaid
                         ? "Invoice is paid"
-                        : directPayCheckoutUrl
-                          ? "Copy pay link"
-                          : "Create pay link"
+                        : directPayNeedsStripeSetup
+                          ? "Complete Stripe setup to create pay links"
+                          : directPayCheckoutUrl
+                            ? "Copy pay link"
+                            : "Create pay link"
                     }
                   >
                     {directPayIsPaid
                       ? "Paid"
                       : directPayLoading
                         ? "Working…"
+                      : directPayNeedsStripeSetup
+                        ? "Set Up Payments"
                         : directPayCheckoutUrl
                           ? "Copy Pay Link"
                           : "Create Pay Link"}

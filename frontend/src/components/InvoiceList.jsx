@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import api, { getAccessToken } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { handleStripeRequirementError } from "../lib/stripeRequirement.js";
+import { buildStripeOnboardingGuidance, getStripeOnboardingState } from "../lib/stripeOnboardingStatus.js";
 
 // InvoiceList.jsx
 // v2026-03-03b — ✅ Option A alignment + milestone numbering fix + LIVE route fix
@@ -290,10 +291,34 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
   const [directPayIds, setDirectPayIds] = useState({});
   const [directPayEmailIds, setDirectPayEmailIds] = useState({});
   const [openAgreements, setOpenAgreements] = useState(() => new Set());
+  const [stripeStatusState, setStripeStatusState] = useState(() => getStripeOnboardingState({}));
 
   const uType = useMemo(() => getUserType(user), [user]);
   const hasToken = useMemo(() => tokenPresent(), []);
   const canSend = useMemo(() => uType.includes("contractor") || hasToken, [uType, hasToken]);
+
+  useEffect(() => {
+    if (!uType.includes("contractor")) return undefined;
+
+    let active = true;
+    (async () => {
+      try {
+        const { data } = await api.get("/payments/onboarding/status/");
+        if (!active) return;
+        setStripeStatusState(getStripeOnboardingState(data));
+      } catch {
+        if (!active) return;
+        setStripeStatusState(getStripeOnboardingState({}));
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [uType]);
+
+  const stripeGuidance = useMemo(() => buildStripeOnboardingGuidance(stripeStatusState), [stripeStatusState]);
+  const stripeGuidanceBannerTestId = "invoice-stripe-guidance";
 
   const normalized = useMemo(() => {
     const list = Array.isArray(initialData) ? initialData : [];
@@ -468,6 +493,10 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
     navigate(`${BASE}/milestones/${milestoneId}`);
   }
 
+  function handleStripeSetupRedirect() {
+    navigate(`${BASE}/onboarding/stripe`);
+  }
+
   async function handleSendOrResend(item) {
     const invoiceId = item.id;
     const isResend = Boolean(item.emailSentAt);
@@ -498,6 +527,11 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
 
     if (isPaid) {
       toast("This invoice is already paid.");
+      return;
+    }
+
+    if (!stripeGuidance.complete && !item.directPayCheckoutUrl) {
+      toast.error(stripeGuidance.message);
       return;
     }
 
@@ -620,6 +654,33 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
               </>
             )}
           </div>
+
+          {isDirectPay ? (
+            <div
+              data-testid={stripeGuidanceBannerTestId}
+              className={`mt-3 rounded-xl border px-4 py-3 text-sm ${
+                stripeGuidance.complete
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                  : "border-amber-200 bg-amber-50 text-amber-900"
+              }`}
+            >
+              <div className="font-semibold">{stripeGuidance.label}</div>
+              <div className="mt-1">{stripeGuidance.message}</div>
+              {stripeGuidance.actionLabel ? (
+                <button
+                  type="button"
+                  onClick={handleStripeSetupRedirect}
+                  className={`mt-2 inline-flex rounded-lg px-3 py-2 text-sm font-semibold ${
+                    stripeGuidance.complete
+                      ? "bg-emerald-900 text-white hover:bg-emerald-950"
+                      : "bg-amber-900 text-white hover:bg-amber-950"
+                  }`}
+                >
+                  {stripeGuidance.actionLabel}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
@@ -818,6 +879,7 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
                                         isPaidLike(item.status) ||
                                         String(item.status || "").toLowerCase() === "paid" ||
                                         Boolean(item.directPayPaidAt);
+                                      const needsStripeSetup = isDirectPay && !stripeGuidance.complete && !hasDirectPayLink;
 
                                       const sendLabel = item.emailSentAt ? "Resend" : "Send";
 
@@ -890,29 +952,53 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
                                                   <button
                                                     type="button"
                                                     onClick={() => handleDirectPay(item)}
-                                                    disabled={dpLoading || isDirectPaid}
+                                                    disabled={dpLoading || isDirectPaid || needsStripeSetup}
                                                     className={`h-9 rounded-xl border px-4 text-sm font-extrabold ${
                                                       isDirectPaid
                                                         ? "border-slate-200 bg-slate-100 text-slate-400"
-                                                        : hasDirectPayLink
-                                                          ? "border-slate-200 bg-white text-slate-800 hover:bg-slate-50"
-                                                          : "border-slate-900 bg-slate-900 text-white hover:bg-slate-800"
+                                                        : needsStripeSetup
+                                                          ? "border-amber-200 bg-amber-100 text-amber-800"
+                                                          : hasDirectPayLink
+                                                            ? "border-slate-200 bg-white text-slate-800 hover:bg-slate-50"
+                                                            : "border-slate-900 bg-slate-900 text-white hover:bg-slate-800"
                                                     } disabled:opacity-60`}
-                                                    title={isDirectPaid ? "Invoice is paid" : hasDirectPayLink ? "Copy pay link" : "Create pay link"}
+                                                    title={
+                                                      isDirectPaid
+                                                        ? "Invoice is paid"
+                                                        : needsStripeSetup
+                                                          ? "Complete Stripe setup to create pay links"
+                                                          : hasDirectPayLink
+                                                            ? "Copy pay link"
+                                                            : "Create pay link"
+                                                    }
                                                   >
-                                                    {isDirectPaid ? "Paid" : dpLoading ? "Working…" : hasDirectPayLink ? "Copy Link" : "Create Link"}
+                                                    {isDirectPaid
+                                                      ? "Paid"
+                                                      : dpLoading
+                                                        ? "Working…"
+                                                        : needsStripeSetup
+                                                          ? "Set Up Payments"
+                                                          : hasDirectPayLink
+                                                            ? "Copy Link"
+                                                            : "Create Link"}
                                                   </button>
 
                                                   <button
                                                     type="button"
                                                     onClick={() => handleDirectPayEmail(item)}
-                                                    disabled={dpEmailLoading || isDirectPaid || !hasDirectPayLink}
+                                                    disabled={dpEmailLoading || isDirectPaid || !hasDirectPayLink || needsStripeSetup}
                                                     className={`h-9 rounded-xl border px-4 text-sm font-extrabold ${
-                                                      isDirectPaid || !hasDirectPayLink
+                                                      isDirectPaid || !hasDirectPayLink || needsStripeSetup
                                                         ? "border-slate-200 bg-slate-100 text-slate-400"
                                                         : "border-slate-200 bg-white text-slate-800 hover:bg-slate-50"
                                                     } disabled:opacity-60`}
-                                                    title={!hasDirectPayLink ? "Create link first" : "Email pay link to customer"}
+                                                    title={
+                                                      needsStripeSetup
+                                                        ? "Complete Stripe setup before emailing a new pay link"
+                                                        : !hasDirectPayLink
+                                                          ? "Create link first"
+                                                          : "Email pay link to customer"
+                                                    }
                                                   >
                                                     {dpEmailLoading ? "Emailing…" : "Email"}
                                                   </button>

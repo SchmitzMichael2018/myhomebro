@@ -8,6 +8,7 @@
 // - Prevent duplicate/repeat clarification cards in Step 4 summary
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
 import Modal from "react-modal";
@@ -16,6 +17,7 @@ import SendFundingLinkButton from "./SendFundingLinkButton";
 import ClarificationsModal from "./ClarificationsModal";
 import { useAuth } from "../context/AuthContext";
 import { normalizeProjectClass } from "../utils/projectClass.js";
+import { buildStripeOnboardingGuidance } from "../lib/stripeOnboardingStatus.js";
 
 Modal.setAppElement("#root");
 
@@ -835,6 +837,7 @@ export default function Step4Finalize({
   const [unsigning, setUnsigning] = useState(false);
   const [paymentModeSaving, setPaymentModeSaving] = useState(false);
   const { ready: authReady, isAuthed } = useAuth();
+  const navigate = useNavigate();
 
   const paymentMode = useMemo(() => {
     const rawAgreementMode = agreement?.payment_mode || agreement?.paymentMode || "";
@@ -859,6 +862,10 @@ export default function Step4Finalize({
   const isProgressPayments = paymentStructure === "progress";
   const retainagePercent = Number(
     agreement?.retainage_percent ?? dLocal?.retainage_percent ?? 0
+  );
+  const stripeGuidance = useMemo(
+    () => buildStripeOnboardingGuidance(stripeOnboardingState),
+    [stripeOnboardingState]
   );
 
   useEffect(() => {
@@ -2303,8 +2310,35 @@ export default function Step4Finalize({
                 )}
               </div>
             ) : (
-              <div className="mt-4 text-[11px] text-gray-600">
-                Direct Pay: invoices are paid via Stripe links. No escrow deposit required.
+              <div className="mt-4 space-y-2">
+                <div
+                  data-testid="step4-stripe-guidance"
+                  className={`rounded-xl border px-4 py-3 text-sm ${
+                    stripeGuidance.complete
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                      : "border-amber-200 bg-amber-50 text-amber-900"
+                  }`}
+                >
+                  <div className="font-semibold">{stripeGuidance.label}</div>
+                  <div className="mt-1">{stripeGuidance.message}</div>
+                  {stripeGuidance.actionLabel ? (
+                    <button
+                      type="button"
+                      onClick={() => navigate(stripeGuidance.actionHref || "/app/onboarding/stripe")}
+                      className={`mt-2 inline-flex rounded-lg px-3 py-2 text-sm font-semibold ${
+                        stripeGuidance.complete
+                          ? "bg-emerald-900 text-white hover:bg-emerald-950"
+                          : "bg-amber-900 text-white hover:bg-amber-950"
+                      }`}
+                    >
+                      {stripeGuidance.actionLabel}
+                    </button>
+                  ) : null}
+                </div>
+
+                <div className="text-[11px] text-gray-600">
+                  Direct Pay: invoices are paid via Stripe links. No escrow deposit required.
+                </div>
               </div>
             )}
           </div>
