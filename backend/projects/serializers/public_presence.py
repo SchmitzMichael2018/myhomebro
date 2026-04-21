@@ -13,6 +13,7 @@ from projects.models import (
     PublicContractorLead,
 )
 from projects.services.compliance import get_public_trust_indicators
+from projects.services.contractor_profile_insights import get_contractor_profile_insights
 
 
 def _abs_media_url(request, file_field) -> str:
@@ -28,6 +29,7 @@ class ContractorPublicProfileSerializer(serializers.ModelSerializer):
     cover_image_url = serializers.SerializerMethodField()
     public_url = serializers.SerializerMethodField()
     public_trust_indicators = serializers.SerializerMethodField()
+    contractor_profile_insights = serializers.SerializerMethodField()
 
     class Meta:
         model = ContractorPublicProfile
@@ -60,6 +62,7 @@ class ContractorPublicProfileSerializer(serializers.ModelSerializer):
             "allow_public_reviews",
             "is_public",
             "public_trust_indicators",
+            "contractor_profile_insights",
             "seo_title",
             "seo_description",
             "public_url",
@@ -96,6 +99,13 @@ class ContractorPublicProfileSerializer(serializers.ModelSerializer):
             getattr(obj, "contractor", None),
             show_license_public=bool(getattr(obj, "show_license_public", False)),
         )
+
+    def get_contractor_profile_insights(self, obj):
+        contractor = getattr(obj, "contractor", None)
+        contractor_id = getattr(contractor, "id", None)
+        if not contractor_id:
+            return []
+        return get_contractor_profile_insights(contractor_id)
 
 
 class PublicGalleryItemSerializer(serializers.ModelSerializer):
@@ -342,6 +352,7 @@ class PublicContractorProfileSerializer(serializers.ModelSerializer):
     average_rating = serializers.SerializerMethodField()
     review_count = serializers.SerializerMethodField()
     public_trust_indicators = serializers.SerializerMethodField()
+    contractor_profile_insights = serializers.SerializerMethodField()
 
     class Meta:
         model = ContractorPublicProfile
@@ -376,6 +387,7 @@ class PublicContractorProfileSerializer(serializers.ModelSerializer):
             "average_rating",
             "review_count",
             "public_trust_indicators",
+            "contractor_profile_insights",
         ]
 
     def get_logo_url(self, obj):
@@ -408,6 +420,13 @@ class PublicContractorProfileSerializer(serializers.ModelSerializer):
             getattr(obj, "contractor", None),
             show_license_public=bool(getattr(obj, "show_license_public", False)),
         )
+
+    def get_contractor_profile_insights(self, obj):
+        contractor = getattr(obj, "contractor", None)
+        contractor_id = getattr(contractor, "id", None)
+        if not contractor_id:
+            return []
+        return get_contractor_profile_insights(contractor_id)
 
 
 def make_qr_svg_data(url: str) -> str:

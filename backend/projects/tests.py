@@ -93,6 +93,7 @@ from projects.services.contractor_benchmarks import (
     rebuild_contractor_benchmark_aggregates,
 )
 from projects.services.contractor_insights import build_contractor_insights
+from projects.services.contractor_profile_insights import get_contractor_profile_insights
 from projects.services.regional_benchmarks import rebuild_regional_benchmark_aggregates
 from projects.services.proposal_learning import (
     build_proposal_draft,
@@ -1042,6 +1043,108 @@ class ContractorPublicPresenceApiTests(TestCase):
         )
         self.client = APIClient()
 
+    def _create_completed_agreement(
+        self,
+        *,
+        total_cost=Decimal("12000.00"),
+        actual_total=None,
+        status=ProjectStatus.COMPLETED,
+        use_template=True,
+    ):
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title=f"Public Presence Project {Agreement.objects.count() + 1}",
+            project_city="Austin",
+            project_state="TX",
+            project_zip_code="78701",
+            status=status,
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            selected_template_name_snapshot="Kitchen Remodel Template Public Profile" if use_template else "",
+            description="Public profile agreement",
+            total_cost=total_cost,
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Demo and Prep",
+            description="Prepare the site.",
+            amount=Decimal("4000.00"),
+            start_date=timezone.localdate(),
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            order=2,
+            title="Install and Finish",
+            description="Complete the job.",
+            amount=actual_total or Decimal("8000.00"),
+            start_date=timezone.localdate() + timedelta(days=7),
+        )
+        Invoice.objects.create(
+            agreement=agreement,
+            amount=actual_total or Decimal("8000.00"),
+            status=InvoiceStatus.PAID,
+            direct_pay_paid_at=timezone.now() - timedelta(days=1),
+        )
+        return agreement
+
+    def _seed_contractor_benchmark_snapshot(
+        self,
+        *,
+        template_used: str,
+        total_project_value: Decimal,
+        actual_duration_days: int,
+        milestone_count: int,
+        dispute_flag: bool = False,
+        amendment_count: int = 0,
+    ):
+        agreement = self._create_completed_agreement(
+            total_cost=total_project_value,
+            actual_total=total_project_value,
+            status=ProjectStatus.COMPLETED,
+            use_template=True,
+        )
+        snapshot = capture_project_outcome_snapshot(agreement)
+        snapshot.project_family_key = "kitchen_remodel"
+        snapshot.project_family_label = "Kitchen Remodel"
+        snapshot.scope_mode = "install_removal"
+        snapshot.template_used = template_used
+        snapshot.total_project_value = total_project_value
+        snapshot.actual_duration_days = actual_duration_days
+        snapshot.milestone_count = milestone_count
+        snapshot.dispute_flag = dispute_flag
+        snapshot.amendment_count = amendment_count
+        snapshot.completion_status = ProjectStatus.COMPLETED
+        snapshot.estimated_value_range = {
+            "low": str(total_project_value * Decimal("0.90")),
+            "high": str(total_project_value * Decimal("1.10")),
+        }
+        snapshot.estimated_duration_range = {
+            "low": str(max(actual_duration_days - 1, 1)),
+            "high": str(actual_duration_days + 1),
+        }
+        snapshot.save(
+            update_fields=[
+                "project_family_key",
+                "project_family_label",
+                "scope_mode",
+                "template_used",
+                "total_project_value",
+                "actual_duration_days",
+                "milestone_count",
+                "dispute_flag",
+                "amendment_count",
+                "completion_status",
+                "estimated_value_range",
+                "estimated_duration_range",
+            ]
+        )
+        return snapshot
+
     def test_slug_generation_is_unique(self):
         self.assertTrue(self.profile.slug)
         self.assertTrue(self.other_profile.slug)
@@ -1053,6 +1156,39 @@ class ContractorPublicPresenceApiTests(TestCase):
 
         hidden_response = self.client.get(f"/api/projects/public/contractors/{self.other_profile.slug}/")
         self.assertEqual(hidden_response.status_code, 404)
+
+    def test_contractor_profile_insights_service_returns_short_positive_insights(self):
+        for idx in range(5):
+            self._seed_contractor_benchmark_snapshot(
+                template_used="Kitchen Remodel Template Public Profile",
+                total_project_value=Decimal("12000.00") + Decimal(str(idx * 250)),
+                actual_duration_days=6 + (idx % 2),
+                milestone_count=4,
+            )
+        rebuild_contractor_benchmark_aggregates(contractor_ids=[self.contractor.id])
+
+        insights = get_contractor_profile_insights(self.contractor.id)
+
+        self.assertGreaterEqual(len(insights), 3)
+        self.assertLessEqual(len(insights), 6)
+        self.assertTrue(any("kitchen remodel" in item.lower() for item in insights))
+        self.assertTrue(any("pricing" in item.lower() for item in insights))
+        self.assertTrue(any("timeline" in item.lower() or "timelines" in item.lower() for item in insights))
+        self.assertFalse(any(any(char.isdigit() for char in item) for item in insights))
+
+    def test_contractor_profile_insights_service_hides_low_sample_profiles(self):
+        for idx in range(3):
+            self._seed_contractor_benchmark_snapshot(
+                template_used="Kitchen Remodel Template Public Profile",
+                total_project_value=Decimal("12000.00") + Decimal(str(idx * 250)),
+                actual_duration_days=6 + (idx % 2),
+                milestone_count=4,
+            )
+        rebuild_contractor_benchmark_aggregates(contractor_ids=[self.contractor.id])
+
+        insights = get_contractor_profile_insights(self.contractor.id)
+
+        self.assertEqual(insights, [])
 
     def test_public_gallery_and_reviews_only_return_public_rows(self):
         gallery_response = self.client.get(f"/api/projects/public/contractors/{self.profile.slug}/gallery/")
@@ -2321,6 +2457,22 @@ class ContractorPublicPresenceApiTests(TestCase):
         payload = response.json()
         self.assertNotIn("internal_notes", payload)
         self.assertNotIn("email", payload)
+
+    def test_public_profile_payload_includes_contractor_profile_insights(self):
+        for idx in range(5):
+            self._seed_contractor_benchmark_snapshot(
+                template_used="Kitchen Remodel Template Public Profile",
+                total_project_value=Decimal("12000.00") + Decimal(str(idx * 250)),
+                actual_duration_days=6 + (idx % 2),
+                milestone_count=4,
+            )
+        rebuild_contractor_benchmark_aggregates(contractor_ids=[self.contractor.id])
+
+        response = self.client.get(f"/api/projects/public/contractors/{self.profile.slug}/")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("contractor_profile_insights", payload)
+        self.assertGreaterEqual(len(payload["contractor_profile_insights"]), 3)
 
 
 class ContractorBidsWorkspaceTests(TestCase):
@@ -6625,6 +6777,112 @@ class ContractorCompletedPayoutHistoryTests(TestCase):
             stripe_transfer_id="tr_draw_completed",
         )
         self.client = APIClient()
+
+    def _create_completed_agreement(
+        self,
+        *,
+        total_cost=Decimal("12000.00"),
+        actual_total=None,
+        status=ProjectStatus.COMPLETED,
+        use_template=True,
+    ):
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title=f"Public Presence Project {Agreement.objects.count() + 1}",
+            project_city="Austin",
+            project_state="TX",
+            project_zip_code="78701",
+            status=ProjectStatus.IN_PROGRESS,
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            selected_template_name_snapshot="Kitchen Remodel Template Public Profile" if use_template else "",
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            payment_mode="direct",
+            signature_policy="both_required",
+            total_cost=total_cost,
+            start_date=timezone.localdate() - timedelta(days=14),
+            completed_date=timezone.localdate() - timedelta(days=1),
+            status=status,
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            title="Demo and Prep",
+            description="Prepare the site.",
+            amount=Decimal("4000.00"),
+            due_date=timezone.localdate() + timedelta(days=7),
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            title="Install and Finish",
+            description="Complete the job.",
+            amount=actual_total or Decimal("8000.00"),
+            due_date=timezone.localdate() + timedelta(days=14),
+        )
+        Invoice.objects.create(
+            agreement=agreement,
+            amount=actual_total or Decimal("8000.00"),
+            status=InvoiceStatus.PAID,
+            direct_pay_paid_at=timezone.now() - timedelta(days=1),
+        )
+        return agreement
+
+    def _seed_contractor_benchmark_snapshot(
+        self,
+        *,
+        template_used: str,
+        total_project_value: Decimal,
+        actual_duration_days: int,
+        milestone_count: int,
+        dispute_flag: bool = False,
+        amendment_count: int = 0,
+    ):
+        agreement = self._create_completed_agreement(
+            total_cost=total_project_value,
+            actual_total=total_project_value,
+            status=ProjectStatus.COMPLETED,
+            use_template=True,
+        )
+        snapshot = capture_project_outcome_snapshot(agreement)
+        snapshot.project_family_key = "kitchen_remodel"
+        snapshot.project_family_label = "Kitchen Remodel"
+        snapshot.scope_mode = "install_removal"
+        snapshot.template_used = template_used
+        snapshot.total_project_value = total_project_value
+        snapshot.actual_duration_days = actual_duration_days
+        snapshot.milestone_count = milestone_count
+        snapshot.dispute_flag = dispute_flag
+        snapshot.amendment_count = amendment_count
+        snapshot.completion_status = ProjectStatus.COMPLETED
+        snapshot.estimated_value_range = {
+            "low": str(total_project_value * Decimal("0.90")),
+            "high": str(total_project_value * Decimal("1.10")),
+        }
+        snapshot.estimated_duration_range = {
+            "low": str(max(actual_duration_days - 1, 1)),
+            "high": str(actual_duration_days + 1),
+        }
+        snapshot.save(
+            update_fields=[
+                "project_family_key",
+                "project_family_label",
+                "scope_mode",
+                "template_used",
+                "total_project_value",
+                "actual_duration_days",
+                "milestone_count",
+                "dispute_flag",
+                "amendment_count",
+                "completion_status",
+                "estimated_value_range",
+                "estimated_duration_range",
+            ]
+        )
+        return snapshot
 
     def test_contractor_sees_completed_invoice_and_draw_payouts(self):
         self.client.force_authenticate(user=self.contractor_user)

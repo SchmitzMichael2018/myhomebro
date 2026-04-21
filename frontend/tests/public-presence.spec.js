@@ -776,6 +776,13 @@ test('public contractor profile renders gallery reviews and intake', async ({ pa
         work_types: ['Repairs'],
         review_count: 1,
         average_rating: 5,
+        contractor_profile_insights: [
+          'Frequently works on kitchen remodels and related cabinet scope.',
+          'Usually keeps pricing aligned with similar projects.',
+          'Typically keeps timelines steady and predictable for remodeling work.',
+          'Uses a balanced milestone structure for remodel projects.',
+          'Completed remodel projects show a steady, low-friction closeout pattern.',
+        ],
         gallery: [
           {
             id: 51,
@@ -823,8 +830,9 @@ test('public contractor profile renders gallery reviews and intake', async ({ pa
   await page.goto('/contractors/bright-build-co', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByRole('heading', { name: 'Bright Build Co' })).toBeVisible();
-  await expect(page.getByText('Kitchen Remodel')).toBeVisible();
+  await expect(page.getByText('Kitchen Remodel', { exact: true })).toBeVisible();
   await expect(page.getByText('Taylor Homeowner')).toBeVisible();
+  await expect(page.getByTestId('public-profile-contractor-insights')).toContainText('How this contractor works');
   await page.getByRole('link', { name: 'Leave Review' }).click();
   await page.getByPlaceholder('Your name').fill('Morgan Reviewer');
   await page.getByPlaceholder('Review title').fill('Great communication');

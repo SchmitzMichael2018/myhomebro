@@ -125,6 +125,9 @@ export default function PublicProfile() {
 
   const gallery = Array.isArray(profile.gallery) ? profile.gallery : [];
   const reviews = Array.isArray(profile.reviews) ? profile.reviews : [];
+  const contractorProfileInsights = Array.isArray(profile.contractor_profile_insights)
+    ? profile.contractor_profile_insights
+    : [];
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -176,6 +179,30 @@ export default function PublicProfile() {
             </div>
           ) : null}
         </section>
+
+        {contractorProfileInsights.length ? (
+          <section
+            data-testid="public-profile-contractor-insights"
+            className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  How this contractor works
+                </div>
+                <h2 className="mt-2 text-2xl font-bold text-slate-900">A few things to know before you reach out</h2>
+              </div>
+            </div>
+            <ul className="mt-5 space-y-3 text-sm leading-7 text-slate-700">
+              {contractorProfileInsights.slice(0, 6).map((item, index) => (
+                <li key={`${item}-${index}`} className="flex gap-3">
+                  <span className="mt-3 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" aria-hidden="true" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         {profile.bio ? (
           <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
