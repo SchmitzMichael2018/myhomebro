@@ -154,13 +154,22 @@ function buildTemplateRecommendation({
   const list = Array.isArray(milestones) ? milestones : [];
   const title = getAgreementTitle(agreement, dLocal);
   const total = getAgreementTotal(agreement, list);
+  const projectFamilyLabel = safeText(
+    dLocal?.project_family_label ||
+      agreement?.project_family_label ||
+      context?.agreement_summary?.project_family_label
+  );
 
   return {
-    title: "This agreement looks reusable",
+    title: projectFamilyLabel
+      ? `${projectFamilyLabel} looks reusable`
+      : "This agreement looks reusable",
     body: `${title || "This project"} has ${pluralize(
       list.length,
       "milestone"
-    )} and ${formatMoney(total)} in structured work. Save it as a template if you expect to reuse this setup.`,
+    )} and ${formatMoney(total)} in structured work. ${
+      projectFamilyLabel ? `${projectFamilyLabel} context is already established. ` : ""
+    }Save it as a template if you expect to reuse this setup.`,
     actionLabel: "Save as Template",
     actionKey: "save_as_template",
   };
@@ -635,6 +644,7 @@ function deriveSummaryLine(context = {}, plan = {}) {
     agreementSummary?.project_title || agreementSummary?.title || agreementSummary?.project_summary
   );
   const customer = safeText(agreementSummary?.customer_name);
+  const family = safeText(agreementSummary?.project_family_label);
   const subtype = safeText(agreementSummary?.project_subtype || agreementSummary?.project_type);
   const milestoneCount = Number(
     agreementSummary?.milestone_count ?? milestoneSummary?.count ?? 0
@@ -649,7 +659,9 @@ function deriveSummaryLine(context = {}, plan = {}) {
   if (Number.isFinite(Number(estimateTotal)) && Number(estimateTotal) > 0) {
     parts.push(formatMoney(estimateTotal));
   }
-  if (subtype) {
+  if (family) {
+    parts.push(family);
+  } else if (subtype) {
     parts.push(subtype);
   } else if (title) {
     parts.push(title);

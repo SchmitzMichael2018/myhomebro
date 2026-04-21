@@ -10,6 +10,11 @@ import DashboardSection from "./dashboard/DashboardSection.jsx";
 import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 import ContractorInsightsSection from "./dashboard/ContractorInsightsSection.jsx";
 import {
+  normalizeProjectFamilyContext,
+  readStoredProjectFamilyContext,
+  writeStoredProjectFamilyContext,
+} from "../lib/projectFamilyContext.js";
+import {
   ResponsiveContainer,
   BarChart,
   Bar,
@@ -490,7 +495,10 @@ export default function BusinessDashboard() {
   const [error, setError] = useState("");
 
   const [payload, setPayload] = useState(null);
-  const [insightFamilyKey, setInsightFamilyKey] = useState("all");
+  const [insightFamilyKey, setInsightFamilyKey] = useState(() => {
+    const stored = readStoredProjectFamilyContext();
+    return stored.project_family_key || "all";
+  });
 
   // Included AI + pricing summary
   const [meData, setMeData] = useState(null);
@@ -512,6 +520,9 @@ export default function BusinessDashboard() {
   const priorityInsights = insights.slice(0, 3);
   const contractorInsights = payload?.contractor_insights || null;
   const availableInsightFamilies = contractorInsights?.available_families || [];
+  const insightFamilyOptionsByKey = useMemo(() => {
+    return new Map((availableInsightFamilies || []).map((option) => [option.key, option]));
+  }, [availableInsightFamilies]);
   const revenueSeries = payload?.revenue_series || [];
   const feeSeries = payload?.fee_series || [];
   const payoutSeries = payload?.payout_series || [];
@@ -689,6 +700,31 @@ export default function BusinessDashboard() {
     } finally {
       setLoading(false);
     }
+  };
+
+  useEffect(() => {
+    if (!insightFamilyKey || insightFamilyKey === "all") return;
+    if (!availableInsightFamilies.length) return;
+    if (insightFamilyOptionsByKey.has(insightFamilyKey)) return;
+
+    setInsightFamilyKey("all");
+    writeStoredProjectFamilyContext({});
+  }, [availableInsightFamilies.length, insightFamilyKey, insightFamilyOptionsByKey]);
+
+  const handleFamilyChange = (nextKey) => {
+    setInsightFamilyKey(nextKey);
+    if (nextKey === "all") {
+      writeStoredProjectFamilyContext({});
+      return;
+    }
+
+    const selectedOption = insightFamilyOptionsByKey.get(nextKey);
+    writeStoredProjectFamilyContext(
+      normalizeProjectFamilyContext({
+        project_family_key: nextKey,
+        project_family_label: selectedOption?.label || "",
+      })
+    );
   };
 
   const fetchPayoutData = async () => {
@@ -1107,7 +1143,7 @@ export default function BusinessDashboard() {
         insights={contractorInsights}
         availableFamilies={availableInsightFamilies}
         selectedFamilyKey={insightFamilyKey}
-        onFamilyChange={setInsightFamilyKey}
+        onFamilyChange={handleFamilyChange}
       />
 
       <DashboardSection

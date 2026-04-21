@@ -28,6 +28,7 @@ import {
   normalizeAssistantMilestoneSuggestion,
   normalizeAssistantQuestion,
 } from "../lib/assistantHandoff.js";
+import { normalizeProjectFamilyContext } from "../lib/projectFamilyContext.js";
 
 function toDateOnly(v) {
   if (!v) return "";
@@ -707,6 +708,7 @@ export default function Step2Milestones({
   assistantProactiveRecommendations = [],
   assistantPredictiveInsights = [],
   assistantGuidedFlow = {},
+  projectFamilyContext = {},
   onAiUpdateFeedback = () => {},
 }) {
   const [overlapConfirm, setOverlapConfirm] = useState(null);
@@ -798,6 +800,10 @@ export default function Step2Milestones({
   const [assistantApplyingMilestones, setAssistantApplyingMilestones] = useState(false);
   const [aiChangeSummary, setAiChangeSummary] = useState("");
   const [autoDraftBusy, setAutoDraftBusy] = useState(false);
+  const resolvedProjectFamily = useMemo(
+    () => normalizeProjectFamilyContext(projectFamilyContext),
+    [projectFamilyContext]
+  );
   const [autoDraftBanner, setAutoDraftBanner] = useState("");
   const [aiSuggestedMilestoneIds, setAiSuggestedMilestoneIds] = useState([]);
   const { highlights: aiHighlights, markUpdated: markAiUpdated } = useAiFieldHighlights({
@@ -1325,10 +1331,18 @@ export default function Step2Milestones({
     const agreementAnswers = agreementMeta?.ai_scope?.answers || {};
     const projectType =
       safeStr(agreementMeta?.project_type) ||
-      safeStr(selectedTemplateMeta?.project_type);
+      safeStr(selectedTemplateMeta?.project_type) ||
+      safeStr(resolvedProjectFamily.project_family_label);
+    const projectFamilyLabel =
+      safeStr(agreementMeta?.project_family_label) ||
+      safeStr(resolvedProjectFamily.project_family_label);
+    const projectFamilyKey =
+      safeStr(agreementMeta?.project_family_key) ||
+      safeStr(resolvedProjectFamily.project_family_key);
     const projectSubtype =
       safeStr(agreementMeta?.project_subtype) ||
-      safeStr(selectedTemplateMeta?.project_subtype);
+      safeStr(selectedTemplateMeta?.project_subtype) ||
+      safeStr(resolvedProjectFamily.project_family_label);
     const materialsResponsibility = normalizeMaterialsResponsibilityValue(
       agreementAnswers?.materials_responsibility ||
       agreementAnswers?.materials_purchasing ||
@@ -1346,6 +1360,8 @@ export default function Step2Milestones({
     return {
       projectType,
       projectSubtype,
+      projectFamilyKey,
+      projectFamilyLabel,
       templateName: safeStr(selectedTemplateMeta?.name),
       materialsResponsibility:
         materialsResponsibility === "Contractor"
@@ -1360,18 +1376,22 @@ export default function Step2Milestones({
       hasAny:
         !!projectType ||
         !!projectSubtype ||
+        !!projectFamilyLabel ||
         !!safeStr(selectedTemplateMeta?.name) ||
         !!materialsResponsibility ||
         quantitySignals.length > 0 ||
         !!scopeSummary,
     };
-  }, [agreementMeta, materialsWho, measurementNotes, selectedTemplateMeta]);
+  }, [agreementMeta, materialsWho, measurementNotes, resolvedProjectFamily, selectedTemplateMeta]);
   const estimateContextSignature = useMemo(
     () =>
       JSON.stringify({
         agreementId,
         projectType: agreementMeta?.project_type || "",
         projectSubtype: agreementMeta?.project_subtype || "",
+        projectFamilyKey: agreementMeta?.project_family_key || resolvedProjectFamily.project_family_key || "",
+        projectFamilyLabel:
+          agreementMeta?.project_family_label || resolvedProjectFamily.project_family_label || "",
         templateId: agreementMeta?.selected_template?.id || agreementMeta?.selected_template_id || null,
         regionState: agreementMeta?.project_address_state || "",
         regionCity: agreementMeta?.project_address_city || "",
@@ -1383,7 +1403,7 @@ export default function Step2Milestones({
           amount: row?.amount ?? "",
         })),
       }),
-    [agreementId, agreementMeta, milestones]
+    [agreementId, agreementMeta, milestones, resolvedProjectFamily.project_family_key, resolvedProjectFamily.project_family_label]
   );
 
   useEffect(() => {
@@ -1713,13 +1733,20 @@ export default function Step2Milestones({
     if (!preview || !Array.isArray(preview.milestones)) return preview;
     if (preview?.raw?.clarification_shaped) return preview;
 
+    const projectType =
+      safeStr(agreementMeta?.project_type) ||
+      safeStr(selectedTemplateMeta?.project_type) ||
+      safeStr(resolvedProjectFamily.project_family_label);
+    const projectSubtype =
+      safeStr(agreementMeta?.project_subtype) ||
+      safeStr(selectedTemplateMeta?.project_subtype) ||
+      safeStr(resolvedProjectFamily.project_family_label);
+
     return {
       ...preview,
       milestones: buildClarificationAwareMilestoneDraft({
-        projectType:
-          safeStr(agreementMeta?.project_type) || safeStr(selectedTemplateMeta?.project_type),
-        projectSubtype:
-          safeStr(agreementMeta?.project_subtype) || safeStr(selectedTemplateMeta?.project_subtype),
+        projectType,
+        projectSubtype,
         description:
           safeStr(agreementMeta?.description || agreementMeta?.project_description || preview.scope_text),
         clarificationAnswers: agreementMeta?.ai_scope?.answers || {},
@@ -2469,8 +2496,13 @@ export default function Step2Milestones({
     if (effectiveMilestones.length > 0) return;
     if (milestoneUserModifiedRef.current || isCreateDraftDirty) return;
 
-    const projectSubtype = safeStr(agreementMeta?.project_subtype);
-    const projectType = safeStr(agreementMeta?.project_type);
+    const projectFamilyLabel =
+      safeStr(agreementMeta?.project_family_label) ||
+      safeStr(resolvedProjectFamily.project_family_label);
+    const projectSubtype =
+      safeStr(agreementMeta?.project_subtype) || projectFamilyLabel;
+    const projectType =
+      safeStr(agreementMeta?.project_type) || projectFamilyLabel;
     const description = safeStr(agreementMeta?.description || agreementMeta?.project_description);
     const clarificationAnswers = agreementMeta?.ai_scope?.answers || {};
     if (!projectSubtype && !projectType && !description) return;
@@ -2528,7 +2560,8 @@ export default function Step2Milestones({
     onAiUpdateFeedback,
     saveMilestone,
     templateApplied,
-  ]);
+    resolvedProjectFamily.project_family_label,
+  ]); 
 
   const assistantContext = useMemo(
     () => ({
@@ -2558,6 +2591,10 @@ export default function Step2Milestones({
           agreementMeta?.customer_name ||
           "",
         project_class: projectClass,
+        project_family_key:
+          agreementMeta?.project_family_key || resolvedProjectFamily.project_family_key || "",
+        project_family_label:
+          agreementMeta?.project_family_label || resolvedProjectFamily.project_family_label || "",
         payment_structure: agreementMeta?.payment_structure || "simple",
         milestone_count: effectiveMilestones.length,
         pending_clarifications: Array.isArray(mergedClarificationQuestions)
@@ -2598,7 +2635,16 @@ export default function Step2Milestones({
           null,
       }),
     }),
-    [agreementId, agreementMeta, effectiveMilestones, mergedClarificationQuestions, aiChangeSummary, projectClass]
+    [
+      agreementId,
+      agreementMeta,
+      effectiveMilestones,
+      mergedClarificationQuestions,
+      aiChangeSummary,
+      projectClass,
+      resolvedProjectFamily.project_family_key,
+      resolvedProjectFamily.project_family_label,
+    ]
   );
 
   async function handleAssistantAction(plan) {
@@ -2771,6 +2817,11 @@ export default function Step2Milestones({
               {projectContextSummary.projectSubtype ? (
                 <span className="rounded-full bg-white px-2 py-1 font-medium text-slate-700">
                   Subtype: {projectContextSummary.projectSubtype}
+                </span>
+              ) : null}
+              {projectContextSummary.projectFamilyLabel ? (
+                <span className="rounded-full bg-sky-50 px-2 py-1 font-medium text-sky-700">
+                  Family: {projectContextSummary.projectFamilyLabel}
                 </span>
               ) : null}
               {projectContextSummary.templateName ? (

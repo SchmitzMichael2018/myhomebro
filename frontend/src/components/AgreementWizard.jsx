@@ -32,6 +32,10 @@ import { trackOnboardingEvent } from "../lib/onboardingAnalytics.js";
 import { getAgreementWizardHint } from "../lib/workflowHints.js";
 import useAiFieldHighlights from "../hooks/useAiFieldHighlights.js";
 import { normalizeProjectClass } from "../utils/projectClass.js";
+import {
+  normalizeProjectFamilyContext,
+  readStoredProjectFamilyContext,
+} from "../lib/projectFamilyContext.js";
 import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 
 /* ---------------- helpers ---------------- */
@@ -192,33 +196,38 @@ Contractor warrants that workmanship performed under this Agreement will be free
 
 Contractor’s obligation under this warranty is limited to repair or replacement of defective workmanship, at Contractor’s discretion, and does not include incidental or consequential damages.`;
 
-const EMPTY_DLOCAL = {
-  homeowner: "",
-  project_title: "",
-  project_class: "residential",
-  project_type: "",
-  project_subtype: "",
-  agreement_mode: "standard",
-  recurring_service_enabled: false,
-  recurrence_pattern: "monthly",
-  recurrence_interval: "1",
-  recurrence_start_date: "",
-  recurrence_end_date: "",
-  maintenance_status: "active",
-  auto_generate_next_occurrence: true,
-  service_window_notes: "",
-  recurring_summary_label: "",
-  next_occurrence_date: "",
-  payment_mode: "escrow",
-  payment_structure: "simple",
-  retainage_percent: "0.00",
-  description: "",
-  address_line1: "",
-  address_line2: "",
-  address_city: "",
-  address_state: "",
-  address_postal_code: "",
-};
+function buildEmptyDLocal(projectFamilyContext = {}) {
+  const normalizedFamily = normalizeProjectFamilyContext(projectFamilyContext);
+  return {
+    homeowner: "",
+    project_title: "",
+    project_class: "residential",
+    project_type: "",
+    project_subtype: "",
+    project_family_key: normalizedFamily.project_family_key,
+    project_family_label: normalizedFamily.project_family_label,
+    agreement_mode: "standard",
+    recurring_service_enabled: false,
+    recurrence_pattern: "monthly",
+    recurrence_interval: "1",
+    recurrence_start_date: "",
+    recurrence_end_date: "",
+    maintenance_status: "active",
+    auto_generate_next_occurrence: true,
+    service_window_notes: "",
+    recurring_summary_label: "",
+    next_occurrence_date: "",
+    payment_mode: "escrow",
+    payment_structure: "simple",
+    retainage_percent: "0.00",
+    description: "",
+    address_line1: "",
+    address_line2: "",
+    address_city: "",
+    address_state: "",
+    address_postal_code: "",
+  };
+}
 
 const EMPTY_MLOCAL = {
   id: null,
@@ -248,11 +257,26 @@ export default function AgreementWizard() {
     [assistantHandoff]
   );
   const activationJourney = Boolean(location.state?.activationJourney);
+  const storedProjectFamily = useMemo(() => readStoredProjectFamilyContext(), []);
+  const resolvedProjectFamily = useMemo(() => {
+    const fromHandoff = normalizeProjectFamilyContext({
+      project_family_key:
+        assistantHandoff.draftPayload?.project_family_key ||
+        assistantHandoff.context?.project_family_key ||
+        "",
+      project_family_label:
+        assistantHandoff.draftPayload?.project_family_label ||
+        assistantHandoff.context?.project_family_label ||
+        "",
+    });
+    if (fromHandoff.project_family_key) return fromHandoff;
+    return storedProjectFamily;
+  }, [assistantHandoff.context, assistantHandoff.draftPayload, storedProjectFamily]);
 
   const [agreement, setAgreementState] = useState(null);
   const [loadingAgreement, setLoadingAgreement] = useState(false);
 
-  const [dLocal, setDLocal] = useState(EMPTY_DLOCAL);
+  const [dLocal, setDLocal] = useState(() => buildEmptyDLocal(resolvedProjectFamily));
 
   const [milestones, setMilestones] = useState([]);
   const [mLocal, setMLocal] = useState(EMPTY_MLOCAL);
@@ -363,7 +387,7 @@ export default function AgreementWizard() {
     setAgreementState(null);
     setLoadingAgreement(false);
 
-    setDLocal({ ...EMPTY_DLOCAL });
+    setDLocal(buildEmptyDLocal(resolvedProjectFamily));
     setMilestones([]);
     setMLocal({ ...EMPTY_MLOCAL });
     setEditMilestone(null);
@@ -515,6 +539,8 @@ export default function AgreementWizard() {
           project_class: normalizeProjectClass(data?.project_class ?? prev.project_class),
           project_type: data?.project_type || prev.project_type,
           project_subtype: data?.project_subtype ?? prev.project_subtype,
+          project_family_key: data?.project_family_key || prev.project_family_key,
+          project_family_label: data?.project_family_label || prev.project_family_label,
           agreement_mode: data?.agreement_mode || prev.agreement_mode || "standard",
           recurring_service_enabled:
             data?.recurring_service_enabled ?? prev.recurring_service_enabled ?? false,
@@ -1294,6 +1320,28 @@ export default function AgreementWizard() {
       wizardSessionState,
     ]
   );
+  const assistantDraftPayload = useMemo(
+    () => ({
+      ...(assistantHandoff.draftPayload || {}),
+      project_family_key:
+        dLocal.project_family_key ||
+        assistantHandoff.draftPayload?.project_family_key ||
+        resolvedProjectFamily.project_family_key ||
+        "",
+      project_family_label:
+        dLocal.project_family_label ||
+        assistantHandoff.draftPayload?.project_family_label ||
+        resolvedProjectFamily.project_family_label ||
+        "",
+    }),
+    [
+      assistantHandoff.draftPayload,
+      dLocal.project_family_key,
+      dLocal.project_family_label,
+      resolvedProjectFamily.project_family_key,
+      resolvedProjectFamily.project_family_label,
+    ]
+  );
   const assistantContext = useMemo(
     () => ({
       current_route: `/app/agreements/${agreementId || "new"}/wizard?step=${step}`,
@@ -1304,6 +1352,16 @@ export default function AgreementWizard() {
         project_summary: dLocal.description || agreement?.description || "",
         description: dLocal.description || agreement?.description || "",
         project_class: dLocal.project_class || agreement?.project_class || "residential",
+        project_family_key:
+          dLocal.project_family_key ||
+          agreement?.project_family_key ||
+          resolvedProjectFamily.project_family_key ||
+          "",
+        project_family_label:
+          dLocal.project_family_label ||
+          agreement?.project_family_label ||
+          resolvedProjectFamily.project_family_label ||
+          "",
         customer_name:
           homeownerOptions.find((option) => option.value === dLocal.homeowner)?.label || "",
         project_type: dLocal.project_type || agreement?.project_type || "",
@@ -1340,11 +1398,15 @@ export default function AgreementWizard() {
       aiPanelConfig,
       dLocal.description,
       dLocal.homeowner,
+      dLocal.project_family_key,
+      dLocal.project_family_label,
       dLocal.project_subtype,
       dLocal.project_title,
       dLocal.project_type,
       homeownerOptions,
       milestones,
+      resolvedProjectFamily.project_family_key,
+      resolvedProjectFamily.project_family_label,
       step,
       wizardSessionState,
     ]
@@ -1591,7 +1653,7 @@ export default function AgreementWizard() {
             assistantProposedActions={assistantHandoff.proposedActions}
             assistantConfirmationRequiredActions={assistantHandoff.confirmationRequiredActions}
             assistantLeadContext={assistantHandoff.context}
-            assistantDraftPayload={assistantHandoff.draftPayload}
+            assistantDraftPayload={assistantDraftPayload}
             aiHighlightKeys={step1AiHighlights}
             isAiAssistantActive={isAssistantDockOpen}
             aiSetupRequest={step1AiSetupRequest}
@@ -1631,6 +1693,7 @@ export default function AgreementWizard() {
             agreementId={agreementId}
             milestones={milestones}
             mLocal={mLocal}
+            projectFamilyContext={resolvedProjectFamily}
             onLocalChange={onLocalChange}
             onMLocalChange={onMLocalChange}
             saveMilestone={saveMilestone}

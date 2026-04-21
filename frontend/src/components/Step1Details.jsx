@@ -2087,6 +2087,8 @@ export default function Step1Details({
   const effectiveClarificationSubtype = useMemo(() => {
     return safeTrim(
       dLocal?.project_subtype ||
+        dLocal?.project_family_label ||
+        assistantDraftPayload?.project_family_label ||
         agreement?.selected_template?.project_subtype ||
         dLocal?.selected_template?.project_subtype ||
         selectedTemplate?.project_subtype ||
