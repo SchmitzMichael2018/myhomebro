@@ -167,6 +167,7 @@ test('step 4 escrow summary shows estimated net breakdown and subcontractor payo
       homeowner_escrow: 5000,
       rate: 0.05,
       flat_fee: 1,
+      fee_cap: 750,
     },
   });
 
@@ -184,10 +185,15 @@ test('step 4 escrow summary shows estimated net breakdown and subcontractor payo
     'MyHomeBro Platform Fee'
   );
   await expect(page.getByTestId('financial-row-platform-fee')).toContainText(
-    'Current rate: 5.0% + $1 (capped at $750)'
+    'Current rate: 5.0% + $1'
+  );
+  await expect(page.getByTestId('financial-row-project-fee-cap')).toContainText(
+    'Project Fee Cap'
   );
   await expect(
-    page.getByText('Estimated processing fees may vary based on payment method (card vs bank).')
+    page.getByText(
+      'This is a full-project estimate. MyHomeBro fees are applied as payments are processed, and fee charging stops once the project cap is reached.'
+    )
   ).toBeVisible();
   await expect(
     page.getByText('Subcontractor payouts are tracked separately and are not deducted from this main earnings estimate.')
@@ -239,11 +245,16 @@ test('step 4 direct pay summary hides subcontractor payouts when not applicable'
   await expect(page.getByTestId('financial-row-platform-fee')).toContainText(
     'MyHomeBro Platform Fee'
   );
+  await expect(page.getByTestId('financial-row-project-fee-cap')).toContainText(
+    'Project Fee Cap'
+  );
   await expect(page.getByTestId('financial-row-stripe-fee')).toHaveCount(0);
   await expect(page.getByTestId('financial-summary-net')).toContainText('$1,959.00');
   await expect(page.getByTestId('financial-row-subcontractor-payouts')).toHaveCount(0);
   await expect(
-    page.getByText('Estimated processing fees may vary based on payment method (card vs bank).')
+    page.getByText(
+      'This is a full-project estimate. MyHomeBro fees are applied as payments are processed, and fee charging stops once the project cap is reached.'
+    )
   ).toBeVisible();
   await expect(
     page.getByText('Customer pays invoices via Stripe links. No escrow deposit is required.')

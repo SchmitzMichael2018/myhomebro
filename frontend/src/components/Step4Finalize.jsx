@@ -710,6 +710,7 @@ export default function Step4Finalize({
   signing,
   signContractor,
   submitSign,
+  stripeOnboardingState = null,
   attachments,
   defaultWarrantyText,
   customWarranty,
@@ -1237,6 +1238,10 @@ export default function Step4Finalize({
       ? Number(fundingPreview.platform_fee)
       : Math.max(0, Math.round((projectAmount * escrowRate + escrowFlat) * 100) / 100);
 
+  const projectFeeCap =
+    fundingPreview?.fee_cap != null ? Number(fundingPreview.fee_cap) : 750;
+  const projectFeeCapLabel = fundingPreview?.fee_cap_label || "$750 per project";
+
   const homeownerEscrow =
     fundingPreview?.homeowner_escrow != null ? Number(fundingPreview.homeowner_escrow) : projectAmount;
 
@@ -1276,12 +1281,10 @@ export default function Step4Finalize({
     !isDirectPay && fundingPreview?.rate != null
       ? `${(Number(fundingPreview.rate) * 100).toFixed(1)}% + $${Number(
           fundingPreview.flat_fee ?? 1
-        ).toFixed(Number.isInteger(Number(fundingPreview.flat_fee ?? 1)) ? 0 : 2)} (capped at $750)`
+        ).toFixed(Number.isInteger(Number(fundingPreview.flat_fee ?? 1)) ? 0 : 2)}`
       : "";
   const platformFeeHelperText =
-    Number(agreement?.amendment_number || 0) > 0
-      ? "Your platform fee is tracked at the agreement level and updates cumulatively as approved amendments increase the total."
-      : "Your platform fee is fixed per agreement and does not change across milestones.";
+    "This is a full-project estimate. MyHomeBro fees are applied as payments are processed, and fee charging stops once the project cap is reached.";
   const summaryBreakdownRows = [
     {
       key: "project-total",
@@ -1296,7 +1299,14 @@ export default function Step4Finalize({
       tone: "deduction",
       help: platformFeeRateLine
         ? `Current rate: ${platformFeeRateLine}`
-        : "Cumulative per-agreement fee, capped at $750.",
+        : "Cumulative per-project fee at the current rate.",
+    },
+    {
+      key: "project-fee-cap",
+      label: "Project Fee Cap",
+      value: formatMoney(projectFeeCap),
+      tone: "default",
+      help: projectFeeCapLabel,
     },
   ];
   const readinessItems = [
@@ -2015,7 +2025,7 @@ export default function Step4Finalize({
           >
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
               <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                Estimated Contractor Earnings
+                Estimated Contractor Payout
               </div>
               <div
                 className="mt-1 text-3xl font-bold tracking-tight text-emerald-900 tabular-nums"
@@ -2054,9 +2064,6 @@ export default function Step4Finalize({
 
             <div className="mt-4 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[11px] text-slate-600">
               <div>{platformFeeHelperText}</div>
-              <div className="mt-1">
-                Estimated processing fees may vary based on payment method (card vs bank).
-              </div>
               {subcontractorPayoutTotal > 0 ? (
                 <div className="mt-1">
                   Subcontractor payouts are tracked separately and are not deducted from this main earnings estimate.

@@ -35,6 +35,7 @@ from projects.services.mailer import email_escrow_funding_request
 from payments.fees import (
     compute_fee_summary,
     INTRO_DAYS,
+    MAX_PLATFORM_FEE,
 )  # ✅ pull intro days for UI consistency
 
 logger = logging.getLogger(__name__)
@@ -599,6 +600,8 @@ class AgreementFundingPreviewView(APIView):
                 "tier_name": summary.rate_info.tier_name,
                 "tier_label": getattr(summary.rate_info, "label", ""),
                 "high_risk_applied": summary.rate_info.high_risk_applied,
+                "fee_cap": f"{MAX_PLATFORM_FEE:.2f}",
+                "fee_cap_label": "$750 per project",
                 "intro_days": INTRO_DAYS,
             },
             status=status.HTTP_200_OK,

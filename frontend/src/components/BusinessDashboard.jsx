@@ -521,6 +521,7 @@ export default function BusinessDashboard() {
   }, [availableInsightFamilies]);
   const revenueSeries = payload?.revenue_series || [];
   const feeSeries = payload?.fee_series || [];
+  const feeProjects = payload?.fee_projects || [];
   const payoutSeries = payload?.payout_series || [];
   const workflowSeries = payload?.workflow_series || [];
   const feeSummary = payload?.fee_summary || {};
@@ -1177,10 +1178,100 @@ export default function BusinessDashboard() {
             sub="Average cycle time"
           />
           <Stat
-            label="Platform Fees Paid"
+            label="Platform Fees Collected"
             value={money(snapshot.platform_fees_paid)}
             sub="Fees recorded in range"
           />
+        </div>
+      </section>
+
+      <section
+        data-testid="dashboard-fee-tracker-section"
+        className="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+      >
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="text-base font-bold text-slate-900">Platform Fee Tracker</div>
+            <div className="mt-1 text-sm text-slate-600">
+              See how much MyHomeBro fee has been collected in the selected range and which projects contributed.
+            </div>
+          </div>
+          <div className="text-xs text-slate-500">{rangeLabel}</div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Stat
+            label="Platform Fees Collected"
+            value={money(snapshot.platform_fees_paid)}
+            sub={`Fees collected in ${rangeLabel.toLowerCase()}`}
+            tone="good"
+          />
+          <Stat
+            label="Projects With Fees"
+            value={int(feeProjects.length)}
+            sub="Projects that recorded platform fees"
+          />
+        </div>
+
+        <div className="mt-5">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-sm font-bold text-slate-900">Fee Drilldown</div>
+            <div className="text-xs text-slate-500">
+              {feeProjects.length} project{feeProjects.length === 1 ? "" : "s"} with fee activity
+            </div>
+          </div>
+
+          {feeProjects.length === 0 ? (
+            <Empty text="No project fee activity in this range yet." />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-xs font-semibold text-slate-600">
+                    <th className="py-2 pr-3">Project / Agreement</th>
+                    <th className="py-2 pr-3">Contract Value</th>
+                    <th className="py-2 pr-3">Fees Collected So Far</th>
+                    <th className="py-2 pr-3">Fee Cap</th>
+                    <th className="py-2 pr-3">Remaining Cap</th>
+                    <th className="py-2 pr-3">Status</th>
+                    <th className="py-2">Open</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {feeProjects.map((row) => (
+                    <tr key={row.id} data-testid={`dashboard-fee-project-row-${row.id}`}>
+                      <td className="py-3 pr-3">
+                        <div className="font-semibold text-slate-900">{row.agreement_title}</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {row.fees_collected_in_range ? `Collected ${money(row.fees_collected_in_range)} in range` : "No recent fee activity"}
+                        </div>
+                      </td>
+                      <td className="py-3 pr-3 text-slate-700">{money(row.contract_value)}</td>
+                      <td className="py-3 pr-3 font-semibold text-slate-900">
+                        {money(row.fees_collected_so_far)}
+                      </td>
+                      <td className="py-3 pr-3 text-slate-700">{money(row.fee_cap)}</td>
+                      <td className="py-3 pr-3 text-slate-700">{money(row.remaining_cap)}</td>
+                      <td className="py-3 pr-3 text-slate-700">{row.payment_status || "—"}</td>
+                      <td className="py-3">
+                        {row.agreement_id ? (
+                          <a
+                            href={`/app/agreements/${row.agreement_id}`}
+                            className="inline-flex rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            data-testid={`dashboard-fee-project-open-${row.id}`}
+                          >
+                            Open
+                          </a>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </section>
 

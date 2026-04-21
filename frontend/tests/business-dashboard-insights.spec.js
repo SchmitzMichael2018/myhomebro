@@ -174,6 +174,7 @@ test("business dashboard shows contractor insights panel with family filter and 
     payout_series: [],
     workflow_series: [],
     fee_series: [],
+    fee_projects: [],
     revenue_series: [],
     progress_summary: {},
   };

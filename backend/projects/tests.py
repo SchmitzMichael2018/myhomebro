@@ -7596,6 +7596,22 @@ class BusinessDashboardPerformanceTests(TestCase):
         self.assertEqual(performance["revenue"]["total_pipeline_value"], "0.00")
         self.assertEqual(performance["revenue"]["average_project_value"], "0.00")
 
+    def test_business_dashboard_includes_fee_project_rows(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/business/contractor/summary/?range=30")
+
+        self.assertEqual(response.status_code, 200)
+        fee_projects = response.json()["fee_projects"]
+        self.assertTrue(fee_projects)
+
+        row = next(item for item in fee_projects if item["agreement_id"] == self.agreement.id)
+        self.assertEqual(row["agreement_title"], self.project.title)
+        self.assertEqual(row["contract_value"], "12000.00")
+        self.assertEqual(row["fees_collected_so_far"], "500.00")
+        self.assertEqual(row["fee_cap"], "750.00")
+        self.assertEqual(row["remaining_cap"], "250.00")
+        self.assertIn("In Progress", row["payment_status"])
+
 
 class BusinessDashboardChartTests(TestCase):
     def setUp(self):
@@ -9294,6 +9310,8 @@ class AgreementFundingPreviewAccessTests(TestCase):
         self.assertEqual(payload["project_amount"], "15000.00")
         self.assertIn("rate", payload)
         self.assertIn("tier_name", payload)
+        self.assertEqual(payload["fee_cap"], "750.00")
+        self.assertEqual(payload["fee_cap_label"], "$750 per project")
 
     def test_unrelated_contractor_cannot_access_funding_preview(self):
         self.client.force_authenticate(user=self.other_user)

@@ -22,6 +22,7 @@ from projects.models import (
     DrawRequestStatus,
     ExternalPaymentRecord,
     ExternalPaymentStatus,
+    ExpenseRequest,
     Invoice,
     InvoiceStatus,
     Milestone,
@@ -32,6 +33,7 @@ from projects.models import (
 from projects.models_project_intake import ProjectIntake
 from projects.services.business_insights import build_business_insights
 from projects.services.business_dashboard_insights import build_business_dashboard_contractor_insights
+from payments.fees import MAX_PLATFORM_FEE, get_collected_platform_fees_for_agreement
 from projects.views.payout_history import _apply_history_filters, _history_base_queryset, _serialize_payout_row
 
 
@@ -459,6 +461,35 @@ def _serialize_fee_drilldown_row(invoice):
     }
 
 
+def _serialize_fee_project_row(agreement, range_fee_cents, last_fee_activity_at):
+    project = getattr(agreement, "project", None)
+    collected_total = Decimal(get_collected_platform_fees_for_agreement(getattr(agreement, "id", None)))
+    cap_total = Decimal(MAX_PLATFORM_FEE).quantize(Decimal("0.01"))
+    remaining_cap = max(cap_total - collected_total, Decimal("0.00")).quantize(Decimal("0.01"))
+    total_cost = Decimal(getattr(agreement, "total_cost", 0) or 0).quantize(Decimal("0.01"))
+
+    payment_status = (
+        getattr(agreement, "get_status_display", None)() if callable(getattr(agreement, "get_status_display", None)) else getattr(agreement, "status", "")
+    )
+    payment_mode = getattr(agreement, "payment_mode", "") or ""
+    if payment_mode:
+        payment_status = f"{payment_status} / {payment_mode.replace('_', ' ')}".strip(" /")
+
+    return {
+        "id": agreement.id,
+        "agreement_id": agreement.id,
+        "project_id": getattr(agreement, "project_id", None),
+        "agreement_title": getattr(project, "title", "") or f"Agreement #{agreement.id}",
+        "contract_value": _format_money(total_cost),
+        "fees_collected_in_range": _format_money(Decimal(range_fee_cents) / Decimal("100")),
+        "fees_collected_so_far": _format_money(collected_total),
+        "fee_cap": _format_money(cap_total),
+        "remaining_cap": _format_money(remaining_cap),
+        "payment_status": payment_status or "—",
+        "last_fee_activity_at": _format_dt(last_fee_activity_at),
+    }
+
+
 def _serialize_workflow_drilldown_row(milestone):
     agreement = getattr(milestone, "agreement", None)
     project = getattr(agreement, "project", None)
@@ -575,6 +606,100 @@ def _build_progress_summary(contractor, end_dt):
         "retainage_held": str(retainage_held),
         "remaining_balance": str(remaining_balance),
     }
+
+
+def _build_fee_project_rows(contractor, start_dt, end_dt):
+    fee_activity: dict[int, dict] = {}
+
+    def mark_activity(agreement_id, fee_cents, activity_at, status_label):
+        if agreement_id is None:
+            return
+        entry = fee_activity.setdefault(
+            int(agreement_id),
+            {
+                "range_fee_cents": 0,
+                "last_fee_activity_at": None,
+                "fee_status_label": "",
+            },
+        )
+        entry["range_fee_cents"] += int(fee_cents or 0)
+        if activity_at and (
+            entry["last_fee_activity_at"] is None or activity_at > entry["last_fee_activity_at"]
+        ):
+            entry["last_fee_activity_at"] = activity_at
+        if status_label:
+            entry["fee_status_label"] = status_label
+
+    for invoice in _paid_invoice_queryset(contractor, start_dt, end_dt):
+        activity_at = _effective_invoice_paid_at(invoice)
+        mark_activity(
+            getattr(invoice, "agreement_id", None),
+            int(getattr(invoice, "platform_fee_cents", 0) or 0),
+            activity_at,
+            "Invoice paid",
+        )
+
+    draw_qs = DrawRequest.objects.select_related("agreement", "agreement__project").filter(
+        agreement__contractor=contractor,
+        status__in=[DrawRequestStatus.PAID, DrawRequestStatus.RELEASED],
+    )
+    for draw in draw_qs:
+        activity_at = getattr(draw, "paid_at", None) or getattr(draw, "released_at", None)
+        if activity_at is None or activity_at < start_dt or activity_at > end_dt:
+            continue
+        mark_activity(
+            getattr(draw, "agreement_id", None),
+            int(getattr(draw, "platform_fee_cents", 0) or 0),
+            activity_at,
+            "Draw paid",
+        )
+
+    expense_qs = ExpenseRequest.objects.select_related("agreement", "agreement__project").filter(
+        agreement__contractor=contractor,
+        status=ExpenseRequest.Status.PAID,
+    )
+    for expense in expense_qs:
+        activity_at = getattr(expense, "paid_at", None) or getattr(expense, "updated_at", None)
+        if activity_at is None or activity_at < start_dt or activity_at > end_dt:
+            continue
+        mark_activity(
+            getattr(expense, "agreement_id", None),
+            int(getattr(expense, "platform_fee_cents", 0) or 0),
+            activity_at,
+            "Expense paid",
+        )
+
+    agreements = (
+        Agreement.objects.select_related("project")
+        .filter(contractor=contractor)
+        .order_by("project__title", "id")
+    )
+    rows = []
+    for agreement in agreements:
+        entry = fee_activity.get(agreement.id)
+        if not entry:
+            continue
+
+        rows.append(
+            {
+                **_serialize_fee_project_row(
+                    agreement,
+                    entry["range_fee_cents"],
+                    entry["last_fee_activity_at"],
+                ),
+                "fee_status_label": entry["fee_status_label"] or getattr(agreement, "status", "") or "",
+            }
+        )
+
+    rows.sort(
+        key=lambda row: (
+            row.get("last_fee_activity_at") or "",
+            row.get("fees_collected_so_far") or "",
+            row.get("agreement_title") or "",
+        ),
+        reverse=True,
+    )
+    return rows
 
 
 class _CSVExportBase(APIView):
@@ -760,6 +885,7 @@ class BusinessDashboardSummaryAPIView(APIView):
             "by_category": category_rows,
             "insights": build_business_insights(contractor, start_dt, end_dt),
             "progress_summary": _build_progress_summary(contractor, end_dt),
+            "fee_projects": _build_fee_project_rows(contractor, start_dt, end_dt),
         }
         payload.update(_build_chart_series(contractor, request, start_dt, end_dt))
 

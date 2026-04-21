@@ -451,6 +451,7 @@ test.describe('funding preview smoke', () => {
         flat_fee: 1,
         is_intro: true,
         tier_name: 'INTRO',
+        fee_cap: 750,
       },
       fundingCalls
     );
@@ -462,9 +463,16 @@ test.describe('funding preview smoke', () => {
     await expect.poll(() => fundingCalls.length).toBeGreaterThan(0);
     await expect(page.getByTestId('step4-financial-summary')).toBeVisible();
     await expect(page.getByTestId('financial-row-platform-fee')).toContainText(
-      /Current rate:\s*3(?:\.0+)?% \+ \$1 \(capped at \$750\)/i
+      /Current rate:\s*3(?:\.0+)?% \+ \$1/i
     );
-    await expect(page.getByText('Loading fee & escrow summary')).toHaveCount(0);
+    await expect(page.getByTestId('financial-row-project-fee-cap')).toContainText(
+      'Project Fee Cap'
+    );
+    await expect(
+      page.getByText(
+        'This is a full-project estimate. MyHomeBro fees are applied as payments are processed, and fee charging stops once the project cap is reached.'
+      )
+    ).toBeVisible();
     await expect(page.getByText(/Unable to load fee & escrow summary/i)).toHaveCount(0);
 
     expect(fundingCalls.length).toBeLessThanOrEqual(2);
@@ -494,6 +502,7 @@ test.describe('funding preview smoke', () => {
         flat_fee: 1,
         is_intro: true,
         tier_name: 'INTRO',
+        fee_cap: 750,
       },
       fundingCalls
     );

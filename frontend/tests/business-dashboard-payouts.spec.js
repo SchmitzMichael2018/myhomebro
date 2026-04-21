@@ -81,6 +81,21 @@ test('business dashboard shows payout reporting and links to full history', asyn
           estimated_processing_fee_total: '150.00',
           total_fee: '790.00',
         },
+        fee_projects: [
+          {
+            id: 321,
+            agreement_id: 321,
+            project_id: 321,
+            agreement_title: 'Kitchen Remodel Agreement',
+            contract_value: '10000.00',
+            fees_collected_in_range: '640.00',
+            fees_collected_so_far: '640.00',
+            fee_cap: '750.00',
+            remaining_cap: '110.00',
+            payment_status: 'In Progress / direct',
+            last_fee_activity_at: '2026-03-16T11:30:00Z',
+          },
+        ],
         payout_series: [
           {
             bucket_start: '2026-03-03',
@@ -302,6 +317,14 @@ test('business dashboard shows payout reporting and links to full history', asyn
   await expect(page.getByTestId('dashboard-chart-fees')).toContainText('Fees Over Time');
   await expect(page.getByTestId('dashboard-chart-fees')).toContainText('Platform fees: $640.00');
   await expect(page.getByTestId('dashboard-chart-fees')).toContainText('Estimated processing: $150.00');
+  await expect(page.getByTestId('dashboard-fee-tracker-section')).toBeVisible();
+  await expect(page.getByTestId('dashboard-fee-tracker-section')).toContainText('Platform Fees Collected');
+  await expect(page.getByTestId('dashboard-fee-tracker-section')).toContainText('$640.00');
+  await expect(page.getByTestId('dashboard-fee-project-row-321')).toContainText('Kitchen Remodel Agreement');
+  await expect(page.getByTestId('dashboard-fee-project-row-321')).toContainText('$10,000.00');
+  await expect(page.getByTestId('dashboard-fee-project-row-321')).toContainText('$640.00');
+  await expect(page.getByTestId('dashboard-fee-project-row-321')).toContainText('$750.00');
+  await expect(page.getByTestId('dashboard-fee-project-row-321')).toContainText('$110.00');
   await expect(page.getByTestId('dashboard-chart-payouts')).toContainText('Subcontractor Payouts');
   await expect(page.getByTestId('dashboard-chart-workflow')).toContainText('Overdue Milestones Trend');
   await page.getByTestId('chart-point-revenue-2026-03-10').click();
@@ -408,6 +431,7 @@ test('business dashboard charts show empty states cleanly for low-data ranges', 
           estimated_processing_fee_total: '0.00',
           total_fee: '0.00',
         },
+        fee_projects: [],
         payout_series: [
           {
             bucket_start: '2026-03-20',
@@ -557,6 +581,7 @@ test('business dashboard drilldown invoice action navigates to invoice detail', 
           estimated_processing_fee_total: '0.00',
           total_fee: '0.00',
         },
+        fee_projects: [],
         payout_series: [],
         workflow_series: [],
         workflow_summary: {
@@ -672,6 +697,7 @@ test('business dashboard drilldown workflow action navigates to milestone detail
           estimated_processing_fee_total: '0.00',
           total_fee: '0.00',
         },
+        fee_projects: [],
         payout_series: [],
         workflow_series: [
           { bucket_start: '2026-03-18', bucket_label: 'Mar 18', overdue_milestones: 1 },
@@ -789,6 +815,7 @@ test('business dashboard payout drilldown action navigates to payout detail', as
           estimated_processing_fee_total: '0.00',
           total_fee: '0.00',
         },
+        fee_projects: [],
         payout_series: [
           {
             bucket_start: '2026-03-22',
