@@ -9,6 +9,8 @@ from projects.models import ContractorPublicProfile, PublicContractorLead
 LEGACY_SOURCE_ALIASES = {
     "profile": PublicContractorLead.SOURCE_PUBLIC_PROFILE,
     "public_profile": PublicContractorLead.SOURCE_PUBLIC_PROFILE,
+    "quote_request": PublicContractorLead.SOURCE_QUOTE_REQUEST,
+    "request_quote": PublicContractorLead.SOURCE_QUOTE_REQUEST,
     "landing_page": PublicContractorLead.SOURCE_LANDING_PAGE,
     "manual": PublicContractorLead.SOURCE_MANUAL,
     "qr": PublicContractorLead.SOURCE_QR,
@@ -82,14 +84,27 @@ def sync_public_lead_from_project_intake(intake, *, status_override=None):
         "state": (intake.project_state or "").strip(),
         "zip_code": (intake.project_postal_code or "").strip(),
         "project_type": (getattr(intake, "ai_project_type", "") or "").strip(),
-        "project_description": (intake.accomplishment_text or "").strip(),
+        "project_description": (getattr(intake, "ai_description", "") or intake.accomplishment_text or "").strip(),
         "preferred_timeline": (
-            f"{int(getattr(intake, 'ai_project_timeline_days', 0) or 0)} days"
-            if getattr(intake, "ai_project_timeline_days", None)
-            else ""
+            (getattr(intake, "desired_timing_text", "") or "").strip()
+            or (
+                f"{int(getattr(intake, 'ai_project_timeline_days', 0) or 0)} days"
+                if getattr(intake, "ai_project_timeline_days", None)
+                else ""
+            )
         ),
         "budget_text": _format_budget(getattr(intake, "ai_project_budget", None)),
-        "ai_analysis": analysis,
+        "ai_analysis": {
+            **analysis,
+            "property_type": (getattr(intake, "property_type", "") or "").strip(),
+            "budget_range_text": (getattr(intake, "budget_range_text", "") or "").strip(),
+            "desired_timing_text": (getattr(intake, "desired_timing_text", "") or "").strip(),
+            "preferred_contact_method": (getattr(intake, "preferred_contact_method", "") or "").strip(),
+            "contact_consent": bool(getattr(intake, "contact_consent", False)),
+            "request_path_label": "Request a Quote"
+            if normalized_source == PublicContractorLead.SOURCE_QUOTE_REQUEST
+            else analysis.get("request_path_label", ""),
+        },
         "status": status_override or PublicContractorLead.STATUS_NEW,
     }
 
@@ -139,6 +154,7 @@ def sync_public_lead_from_project_intake(intake, *, status_override=None):
             "project_description",
             "preferred_timeline",
             "budget_text",
+            "desired_timing_text",
             "ai_analysis",
             "status",
             "updated_at",

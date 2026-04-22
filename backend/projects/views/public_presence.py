@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from projects.models import Agreement, Contractor, ContractorPublicProfile, ContractorReview, Homeowner, Invoice, Milestone, Project, PublicContractorLead
-from projects.models_project_intake import ProjectIntake
+from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from projects.models_templates import ProjectTemplate
 from projects.serializers.public_presence import (
     ContractorManualLeadCreateSerializer,
@@ -20,6 +20,7 @@ from projects.serializers.public_presence import (
     ContractorPublicProfileSerializer,
     ContractorReviewSerializer,
     PublicContractorLeadCreateSerializer,
+    PublicContractorQuoteRequestSerializer,
     PublicContractorReviewCreateSerializer,
     PublicContractorProfileSerializer,
     PublicContractorReviewSerializer,
@@ -33,9 +34,11 @@ from projects.services.public_lead_notifications import (
 )
 from projects.services.project_intelligence_orchestrator import build_project_intelligence
 from projects.services.public_lead_pipeline import normalize_public_lead_source
+from projects.services.public_lead_pipeline import sync_public_lead_from_project_intake
 from projects.services.agreements.project_create import resolve_contractor_for_user
 from projects.services.ai.public_profile_generation import generate_contractor_public_profile
 from projects.services.intake_public import send_intake_email
+from projects.ai.agreement_description_writer import generate_or_improve_description
 
 
 def _safe_text(value) -> str:
@@ -46,6 +49,40 @@ def _safe_text(value) -> str:
 
 def _safe_dict(value) -> dict:
     return dict(value) if isinstance(value, dict) else {}
+
+
+def _parse_json_value(value, default):
+    if value in (None, ""):
+        return default
+    if isinstance(value, (dict, list)):
+        return value
+    if not isinstance(value, str):
+        return default
+    try:
+        import json
+
+        parsed = json.loads(value)
+    except Exception:
+        return default
+    return parsed if isinstance(parsed, type(default)) else default
+
+
+def _truthy(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _deterministic_refine_quote_description(description: str) -> str:
+    text = _safe_text(description)
+    if not text:
+        return ""
+    text = " ".join(text.split())
+    if text and text[0].islower():
+        text = text[0].upper() + text[1:]
+    if text and text[-1] not in ".!?":
+        text += "."
+    return text
 
 
 def _resolve_contractor(user):
@@ -116,6 +153,46 @@ def _public_rating_payload(profile):
         "review_count": review_count,
         "new_on_myhomebro": review_count == 0,
         "display_label": "New on MyHomeBro" if review_count == 0 else f"{round(average_rating or 0, 2):.2f} average rating",
+    }
+
+
+def _quote_request_payload(base_payload: dict) -> dict:
+    raw_description = _safe_text(base_payload.get("raw_description"))
+    refined_description = _safe_text(base_payload.get("refined_description"))
+    if not refined_description and raw_description:
+        try:
+            out = generate_or_improve_description(
+                mode="improve",
+                project_title=_safe_text(base_payload.get("project_type")),
+                project_type=_safe_text(base_payload.get("project_type")),
+                project_subtype=_safe_text(base_payload.get("project_subtype")),
+                current_description=raw_description,
+            )
+            refined_description = _safe_text(out.get("description"))
+        except Exception:
+            refined_description = ""
+    if not refined_description:
+        refined_description = raw_description
+
+    ai_analysis_payload = _safe_dict(base_payload.get("ai_analysis_payload"))
+    ai_analysis_payload.update(
+        {
+            "property_type": _safe_text(base_payload.get("property_type")),
+            "desired_timing_text": _safe_text(base_payload.get("desired_timing_text")),
+            "budget_range_text": _safe_text(base_payload.get("budget_range_text")),
+            "preferred_contact_method": _safe_text(base_payload.get("preferred_contact_method")),
+            "contact_consent": bool(base_payload.get("contact_consent", False)),
+            "project_class": _safe_text(base_payload.get("project_class")),
+            "project_type": _safe_text(base_payload.get("project_type")),
+            "project_subtype": _safe_text(base_payload.get("project_subtype")),
+            "project_scope_summary": refined_description or raw_description,
+            "refined_description": refined_description or raw_description,
+        }
+    )
+    return {
+        **base_payload,
+        "refined_description": refined_description or raw_description,
+        "ai_analysis_payload": ai_analysis_payload,
     }
 
 
@@ -226,6 +303,7 @@ def _lead_skips_cold_acceptance(lead) -> bool:
     return lead.source in {
         PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM,
         PublicContractorLead.SOURCE_MANUAL,
+        PublicContractorLead.SOURCE_QUOTE_REQUEST,
     }
 
 
@@ -286,6 +364,136 @@ class ContractorPublicProfileGenerateView(APIView):
         prompt = _safe_text(request.data.get("prompt"))
         generated = generate_contractor_public_profile(contractor, prompt=prompt)
         return Response(generated, status=status.HTTP_200_OK)
+
+
+class PublicContractorQuoteDescriptionImproveView(APIView):
+    permission_classes = [AllowAny]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def post(self, request, slug: str):
+        profile = _public_profile_or_404(slug)
+        if not profile.allow_public_intake:
+            return Response({"detail": "Public quote requests are not enabled for this contractor."}, status=status.HTTP_404_NOT_FOUND)
+
+        current_description = _safe_text(
+            request.data.get("current_description")
+            or request.data.get("raw_description")
+            or request.data.get("project_description")
+        )
+        if not current_description:
+            return Response({"detail": "Add a project description first."}, status=status.HTTP_400_BAD_REQUEST)
+
+        project_type = _safe_text(request.data.get("project_type"))
+        project_subtype = _safe_text(request.data.get("project_subtype"))
+        refined_description = ""
+        source = "fallback"
+        try:
+            result = generate_or_improve_description(
+                mode="improve",
+                project_title=project_type or project_subtype or profile.business_name_public or "",
+                project_type=project_type,
+                project_subtype=project_subtype,
+                current_description=current_description,
+            )
+            refined_description = _safe_text(result.get("description"))
+            if refined_description:
+                source = "ai"
+        except Exception:
+            refined_description = ""
+
+        if not refined_description:
+            refined_description = _deterministic_refine_quote_description(current_description)
+
+        return Response(
+            {
+                "detail": "Description improved.",
+                "description": refined_description or current_description,
+                "source": source,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class PublicContractorQuoteRequestView(APIView):
+    permission_classes = [AllowAny]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def post(self, request, slug: str):
+        profile = _public_profile_or_404(slug)
+        if not profile.allow_public_intake:
+            return Response({"detail": "Public quote requests are not enabled for this contractor."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = PublicContractorQuoteRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = dict(serializer.validated_data)
+        project_class = _safe_text(data.get("project_class")) or "residential"
+        raw_description = _safe_text(data.get("raw_description"))
+        refined_description = _safe_text(data.get("refined_description")) or _deterministic_refine_quote_description(raw_description)
+        budget_range_text = _safe_text(data.get("budget_range_text"))
+        ai_project_budget = data.get("ai_project_budget")
+        if ai_project_budget in (None, "") and budget_range_text:
+            ai_project_budget = None
+
+        payload = {
+            "contractor": profile.contractor,
+            "public_profile": profile,
+            "initiated_by": "homeowner",
+            "status": "submitted",
+            "lead_source": PublicContractorLead.SOURCE_QUOTE_REQUEST,
+            "customer_name": _safe_text(data.get("full_name")),
+            "customer_email": _safe_text(data.get("email")),
+            "customer_phone": _safe_text(data.get("phone")),
+            "project_class": project_class,
+            "property_type": _safe_text(data.get("property_type")),
+            "desired_timing_text": _safe_text(data.get("desired_timing_text")),
+            "budget_range_text": budget_range_text,
+            "preferred_contact_method": _safe_text(data.get("preferred_contact_method")),
+            "contact_consent": _truthy(data.get("contact_consent")),
+            "project_address_line1": _safe_text(data.get("project_address_line1")),
+            "project_address_line2": _safe_text(data.get("project_address_line2")),
+            "project_city": _safe_text(data.get("project_city")),
+            "project_state": _safe_text(data.get("project_state")),
+            "project_postal_code": _safe_text(data.get("project_postal_code")),
+            "accomplishment_text": raw_description,
+            "ai_project_title": _safe_text(data.get("project_type")) or raw_description[:120] or "Quote Request",
+            "ai_project_type": _safe_text(data.get("project_type")),
+            "ai_project_subtype": _safe_text(data.get("project_subtype")),
+            "ai_description": refined_description,
+            "ai_project_timeline_days": data.get("ai_project_timeline_days"),
+            "ai_project_budget": ai_project_budget,
+            "measurement_handling": "",
+            "ai_clarification_questions": _parse_json_value(data.get("ai_clarification_questions"), []),
+            "ai_clarification_answers": _parse_json_value(data.get("ai_clarification_answers"), {}),
+            "ai_analysis_payload": _quote_request_payload(data).get("ai_analysis_payload", {}),
+            "submitted_at": timezone.now(),
+        }
+        intake = ProjectIntake.objects.create(**payload)
+
+        uploaded_files = request.FILES.getlist("files") or request.FILES.getlist("photos")
+        single_file = request.FILES.get("file") or request.FILES.get("photo")
+        if single_file is not None:
+            uploaded_files.append(single_file)
+
+        for file_obj in uploaded_files:
+            ProjectIntakeClarificationPhoto.objects.create(
+                project_intake=intake,
+                image=file_obj,
+                original_name=getattr(file_obj, "name", "") or "",
+                caption="",
+            )
+
+        lead = sync_public_lead_from_project_intake(intake, status_override=PublicContractorLead.STATUS_NEW)
+        return Response(
+            {
+                "ok": True,
+                "message": "Your quote request was sent.",
+                "intake_id": intake.id,
+                "lead_id": getattr(lead, "id", None),
+                "status": getattr(lead, "status", "new"),
+                "request_path_label": "Request a Quote",
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class ContractorGalleryListCreateView(APIView):

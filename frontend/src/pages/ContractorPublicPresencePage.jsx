@@ -63,6 +63,7 @@ function sourceLabel(value) {
   const normalized = String(value || '').toLowerCase();
   if (normalized === 'landing_page') return 'Landing Page';
   if (normalized === 'public_profile' || normalized === 'profile') return 'Public Profile';
+  if (normalized === 'quote_request') return 'Request a Quote';
   if (normalized === 'manual') return 'Manual';
   if (normalized === 'qr') return 'QR';
   if (normalized === 'contractor_sent_form') return 'Contractor Form';
@@ -85,7 +86,7 @@ function statusLabel(value) {
 }
 
 function leadCanSkipColdAcceptance(lead) {
-  return ['contractor_sent_form', 'manual'].includes(String(lead?.source || '').toLowerCase());
+  return ['contractor_sent_form', 'manual', 'quote_request'].includes(String(lead?.source || '').toLowerCase());
 }
 
 function leadHasScopeDetails(lead) {

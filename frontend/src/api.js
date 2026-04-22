@@ -532,4 +532,16 @@ export async function generateContractorPublicProfile(prompt) {
   return res.data;
 }
 
+export async function improveContractorQuoteDescription(slug, payload = {}) {
+  if (!slug) throw new Error("slug is required");
+  const res = await api.post(`/projects/public/contractors/${slug}/request-quote/improve-description/`, payload);
+  return res.data;
+}
+
+export async function requestContractorQuote(slug, payload) {
+  if (!slug) throw new Error("slug is required");
+  const res = await api.post(`/projects/public/contractors/${slug}/request-quote/`, payload);
+  return res.data;
+}
+
 export default api;

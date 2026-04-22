@@ -20,6 +20,8 @@ export default function Modal({
   title = "",
   onClose = () => {},
   testId = "",
+  containerClassName = "",
+  bodyClassName = "",
   children,
 }) {
   const containerRef = useRef(null);
@@ -100,7 +102,11 @@ export default function Modal({
       <div
         ref={containerRef}
         data-testid={testId || undefined}
-        className="mx-4 w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className={
+          containerClassName
+            ? `w-full overflow-hidden bg-white shadow-2xl ${containerClassName}`.trim()
+            : "mx-4 w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl"
+        }
       >
         <header className="flex items-center justify-between border-b px-5 py-3">
           <h3 id={titleIdRef.current} className="text-xl font-semibold text-gray-800">
@@ -116,7 +122,13 @@ export default function Modal({
             ✕
           </button>
         </header>
-        <section className="max-h-[70vh] overflow-y-auto px-5 py-4">
+        <section
+          className={
+            bodyClassName
+              ? `overflow-y-auto ${bodyClassName}`.trim()
+              : "max-h-[70vh] overflow-y-auto px-5 py-4"
+          }
+        >
           {children}
         </section>
       </div>

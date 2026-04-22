@@ -18,6 +18,7 @@ class ProjectIntake(models.Model):
     LEAD_SOURCE_CHOICES = [
         ("landing_page", "Landing Page"),
         ("public_profile", "Public Profile"),
+        ("quote_request", "Quote Request"),
         ("manual", "Manual"),
         ("qr", "QR"),
         ("contractor_sent_form", "Contractor Sent Form"),
@@ -119,6 +120,8 @@ class ProjectIntake(models.Model):
     customer_city = models.CharField(max_length=120, blank=True, default="")
     customer_state = models.CharField(max_length=50, blank=True, default="")
     customer_postal_code = models.CharField(max_length=20, blank=True, default="")
+    preferred_contact_method = models.CharField(max_length=32, blank=True, default="")
+    contact_consent = models.BooleanField(default=False)
 
     # Project address
     same_as_customer_address = models.BooleanField(default=True)
@@ -128,6 +131,9 @@ class ProjectIntake(models.Model):
         choices=PROJECT_CLASS_CHOICES,
         default="residential",
     )
+    property_type = models.CharField(max_length=120, blank=True, default="")
+    budget_range_text = models.CharField(max_length=120, blank=True, default="")
+    desired_timing_text = models.CharField(max_length=120, blank=True, default="")
 
     project_address_line1 = models.CharField(max_length=255, blank=True, default="")
     project_address_line2 = models.CharField(max_length=255, blank=True, default="")

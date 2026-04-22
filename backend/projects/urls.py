@@ -190,6 +190,8 @@ from .views.public_presence import (
     ContractorPublicProfileQrView,
     ContractorReviewDetailView,
     ContractorReviewListCreateView,
+    PublicContractorQuoteDescriptionImproveView,
+    PublicContractorQuoteRequestView,
     PublicContractorGalleryView,
     PublicContractorIntakeView,
     PublicContractorProfileView as PublicContractorProfileBySlugView,
@@ -671,6 +673,8 @@ urlpatterns = [
     path("public/contractors/<slug:slug>/gallery/", PublicContractorGalleryView.as_view()),
     path("public/contractors/<slug:slug>/rating/", PublicContractorRatingView.as_view()),
     path("public/contractors/<slug:slug>/reviews/", PublicContractorReviewsView.as_view()),
+    path("public/contractors/<slug:slug>/request-quote/", PublicContractorQuoteRequestView.as_view()),
+    path("public/contractors/<slug:slug>/request-quote/improve-description/", PublicContractorQuoteDescriptionImproveView.as_view()),
     path("public/contractors/<slug:slug>/intake/", PublicContractorIntakeView.as_view()),
     path("public/contractors/<slug:slug>/qr/", PublicContractorQrView.as_view()),
 

@@ -1301,6 +1301,140 @@ test('qr project requests preserve qr source attribution', async ({ page }) => {
   expect(capturedSource).toBe('qr');
 });
 
+test('public profile quote wizard submits and keeps a mobile-friendly success state', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  let capturedBody = '';
+
+  await page.route('**/api/projects/public/contractors/bright-build-co/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        slug: 'bright-build-co',
+        business_name_public: 'Bright Build Co',
+        tagline: 'Trusted renovations and repairs',
+        bio: 'We help homeowners with clean, reliable project delivery.',
+        city: 'Austin',
+        state: 'TX',
+        service_area_text: 'Austin metro',
+        years_in_business: 12,
+        website_url: 'https://bright.example.com',
+        phone_public: '555-111-2222',
+        email_public: 'hello@bright.example.com',
+        specialties: ['Roofing'],
+        work_types: ['Repairs'],
+        show_license_public: true,
+        show_phone_public: true,
+        show_email_public: false,
+        allow_public_intake: true,
+        allow_public_reviews: false,
+        is_public: true,
+        preview: false,
+        seo_title: '',
+        seo_description: '',
+        public_url: 'http://localhost:4173/contractors/bright-build-co',
+        logo_url: '',
+        cover_image_url: '',
+      }),
+    });
+  });
+
+  await page.route('**/api/contractors/bright-build-co/rating/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        slug: 'bright-build-co',
+        preview: false,
+        average_rating: null,
+        review_count: 0,
+        new_on_myhomebro: true,
+        display_label: 'New on MyHomeBro',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/public/contractors/bright-build-co/request-quote/improve-description/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        detail: 'Description improved.',
+        description: 'Need a full kitchen refresh with cabinets, lighting, and new finishes.',
+        source: 'ai',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/public/contractors/bright-build-co/request-quote/', async (route) => {
+    capturedBody = route.request().postData() || '';
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        message: 'Your quote request was sent.',
+        intake_id: 402,
+        lead_id: 902,
+        status: 'new',
+        request_path_label: 'Request a Quote',
+      }),
+    });
+  });
+
+  await page.goto('/contractors/bright-build-co', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('public-profile-request-quote-cta')).toBeVisible();
+  await page.getByTestId('public-profile-request-quote-cta').click();
+  await expect(page.getByTestId('public-quote-request-wizard')).toBeVisible();
+  await expect(page.getByTestId('public-quote-request-step-title')).toContainText('Project Basics');
+
+  await page.getByTestId('public-quote-request-project-type').fill('Kitchen Remodel');
+  await page.getByTestId('public-quote-request-project-subtype').fill('Cabinet refresh');
+  await page.getByTestId('public-quote-request-description').fill(
+    'Need a full kitchen refresh with new cabinets and updated lighting.'
+  );
+  await page.getByTestId('public-quote-request-improve-description').click();
+  await expect(page.getByTestId('public-quote-request-description')).toHaveValue(
+    'Need a full kitchen refresh with cabinets, lighting, and new finishes.'
+  );
+
+  await page.getByRole('button', { name: 'Next' }).click();
+  await page.getByTestId('public-quote-request-clarifier-scope_priority').fill('Cabinet refresh and layout guidance');
+  await page.getByTestId('public-quote-request-clarifier-site_conditions').fill('Occupied home with normal access');
+  await page.getByTestId('public-quote-request-clarifier-materials_preferences').fill('Warm, durable finishes');
+
+  await page.getByRole('button', { name: 'Next' }).click();
+  await expect(page.getByTestId('public-quote-request-photos-input')).toBeVisible();
+  await page.getByRole('button', { name: 'Next' }).click();
+
+  await page.getByTestId('public-quote-request-address').fill('123 Main St');
+  await page.getByTestId('public-quote-request-property-type').fill('Single-family home');
+  await page.getByTestId('public-quote-request-city').fill('Austin');
+  await page.getByTestId('public-quote-request-state').fill('TX');
+  await page.getByTestId('public-quote-request-postal-code').fill('78701');
+  await page.getByTestId('public-quote-request-timing').selectOption('asap');
+  await page.getByTestId('public-quote-request-budget-range').selectOption('15k_to_30k');
+
+  await page.getByRole('button', { name: 'Next' }).click();
+  await page.getByTestId('public-quote-request-full-name').fill('Jordan Prospect');
+  await page.getByTestId('public-quote-request-email').fill('jordan@example.com');
+  await page.getByTestId('public-quote-request-phone').fill('555-202-3030');
+  await page.getByTestId('public-quote-request-contact-method').selectOption('email');
+  await page.getByTestId('public-quote-request-contact-consent').check();
+
+  await page.getByRole('button', { name: 'Next' }).click();
+  await expect(page.getByTestId('public-quote-request-success')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Create account' })).toBeVisible();
+  await expect(page.getByText('Reference: Lead #902')).toBeVisible();
+  expect(capturedBody).toContain('desired_timing_text');
+  expect(capturedBody).toContain('budget_range_text');
+  expect(capturedBody).toContain('contact_consent');
+});
+
 test('hidden public contractor profile renders preview mode', async ({ page }) => {
   await page.route('**/api/projects/public/contractors/hidden-builder/', async (route) => {
     await route.fulfill({

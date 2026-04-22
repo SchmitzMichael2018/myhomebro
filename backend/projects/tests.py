@@ -1214,6 +1214,69 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(self.contractor.review_count, 3)
         self.assertEqual(self.contractor.average_rating, 4.33)
 
+    def test_public_quote_request_creates_intake_and_queue_row(self):
+        response = self.client.post(
+            f"/api/projects/public/contractors/{self.profile.slug}/request-quote/",
+            {
+                "full_name": "Jordan Prospect",
+                "email": "jordan@example.com",
+                "phone": "555-202-3030",
+                "contact_consent": True,
+                "project_class": "residential",
+                "project_type": "Kitchen Remodel",
+                "project_subtype": "Cabinet Refresh",
+                "raw_description": "Need a kitchen update with new cabinets and finishes.",
+                "refined_description": "Need a kitchen update with new cabinets and finishes.",
+                "desired_timing_text": "ASAP",
+                "property_type": "Single-family home",
+                "budget_range_text": "$15k - $30k",
+                "preferred_contact_method": "email",
+                "project_address_line1": "123 Main St",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+                "ai_clarification_questions": json.dumps(
+                    [
+                        {"key": "scope_priority", "label": "What matters most right now?"},
+                    ]
+                ),
+                "ai_clarification_answers": json.dumps({"scope_priority": "Cabinet refresh"}),
+                "ai_analysis_payload": json.dumps({}),
+                "files": SimpleUploadedFile("kitchen.jpg", b"filecontent", content_type="image/jpeg"),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["request_path_label"], "Request a Quote")
+
+        intake = ProjectIntake.objects.get(pk=response.data["intake_id"])
+        lead = PublicContractorLead.objects.get(pk=response.data["lead_id"])
+
+        self.assertEqual(intake.lead_source, PublicContractorLead.SOURCE_QUOTE_REQUEST)
+        self.assertEqual(intake.desired_timing_text, "ASAP")
+        self.assertEqual(intake.property_type, "Single-family home")
+        self.assertEqual(intake.budget_range_text, "$15k - $30k")
+        self.assertEqual(intake.preferred_contact_method, "email")
+        self.assertTrue(intake.contact_consent)
+        self.assertEqual(intake.clarification_photos.count(), 1)
+
+        self.assertEqual(lead.source, PublicContractorLead.SOURCE_QUOTE_REQUEST)
+        self.assertEqual(lead.preferred_timeline, "ASAP")
+        self.assertEqual(lead.ai_analysis.get("request_path_label"), "Request a Quote")
+
+        self.client.force_authenticate(user=self.contractor_user)
+        bids_response = self.client.get("/api/projects/contractor/bids/")
+        self.assertEqual(bids_response.status_code, 200)
+        row = next((item for item in bids_response.data["results"] if item.get("source_id") == lead.id), None)
+        self.assertIsNotNone(row)
+        self.assertEqual(row["request_path_label"], "Request a Quote")
+        self.assertEqual(row["desired_timing_text"], "ASAP")
+        self.assertEqual(row["property_type"], "Single-family home")
+        self.assertEqual(row["budget_range_text"], "$15k - $30k")
+        self.assertEqual(row["preferred_contact_method"], "email")
+        self.assertTrue(row["contact_consent"])
+
     @patch("projects.views.public_presence.generate_contractor_public_profile")
     def test_generate_profile_endpoint_returns_all_fields(self, mock_generate):
         mock_generate.return_value = {

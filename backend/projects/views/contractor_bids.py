@@ -117,6 +117,8 @@ def _measurement_label(value) -> str:
 
 
 def _request_path_label(intake) -> str:
+    if _safe_text(getattr(intake, "lead_source", "")).lower() == "quote_request":
+        return "Request a Quote"
     flow = _safe_text(getattr(intake, "post_submit_flow", "")).lower()
     if flow == "multi_contractor":
         return "Multi-quote request"
@@ -167,6 +169,8 @@ def _request_signals(*, source_intake, snapshot: dict) -> list[str]:
         signals.append("Measurements Noted")
     if snapshot.get("clarification_count", 0):
         signals.append("Clarifications Answered")
+    if _request_path_label(source_intake) == "Request a Quote":
+        signals.append("Request a Quote")
     if _request_path_label(source_intake) == "Multi-quote request":
         signals.append("Multi-Quote Request")
     return signals
@@ -226,9 +230,11 @@ def _snapshot_from_intake(*, source_intake, lead=None, analysis=None, request=No
     )
     timeline_value = getattr(source_intake, "ai_project_timeline_days", None) if source_intake else None
     timeline_label = (
-        f"{int(timeline_value)} days"
-        if timeline_value not in {None, ""}
-        else _safe_text(getattr(lead, "preferred_timeline", ""))
+        _safe_text(getattr(source_intake, "desired_timing_text", "")) or (
+            f"{int(timeline_value)} days"
+            if timeline_value not in {None, ""}
+            else _safe_text(getattr(lead, "preferred_timeline", ""))
+        )
     )
     project_title = (
         _safe_text(getattr(source_intake, "ai_project_title", ""))
@@ -239,6 +245,10 @@ def _snapshot_from_intake(*, source_intake, lead=None, analysis=None, request=No
     )
     project_type = _safe_text(getattr(source_intake, "ai_project_type", "")) or _safe_text(analysis.get("project_type"))
     project_subtype = _safe_text(getattr(source_intake, "ai_project_subtype", "")) or _safe_text(analysis.get("project_subtype"))
+    property_type = _safe_text(getattr(source_intake, "property_type", "")) or _safe_text(analysis.get("property_type"))
+    budget_range_text = _safe_text(getattr(source_intake, "budget_range_text", "")) or _safe_text(analysis.get("budget_range_text"))
+    preferred_contact_method = _safe_text(getattr(source_intake, "preferred_contact_method", "")) or _safe_text(analysis.get("preferred_contact_method"))
+    contact_consent = bool(getattr(source_intake, "contact_consent", False) or analysis.get("contact_consent"))
     refined_description = (
         project_scope_summary
         or _safe_text(getattr(lead, "project_description", ""))
@@ -296,8 +306,13 @@ def _snapshot_from_intake(*, source_intake, lead=None, analysis=None, request=No
         "location": location,
         "request_path_label": request_path_label,
         "measurement_handling": measurement_handling,
+        "desired_timing_text": _safe_text(getattr(source_intake, "desired_timing_text", "")),
         "timeline": timeline_label,
         "budget": budget_label,
+        "property_type": property_type,
+        "budget_range_text": budget_range_text,
+        "preferred_contact_method": preferred_contact_method,
+        "contact_consent": contact_consent,
         "clarification_summary": clarification_summary,
         "clarification_count": clarification_count,
         "photo_count": len(photos),
@@ -421,10 +436,15 @@ def _bid_row_from_lead(lead, request=None) -> dict:
         "location": _safe_text(snapshot.get("location")) or _safe_text(lead.city) or _safe_text(lead.project_address),
         "project_type": _safe_text(snapshot.get("project_type")) or _safe_text(lead.project_type),
         "project_subtype": _safe_text(snapshot.get("project_subtype")),
+        "property_type": _safe_text(snapshot.get("property_type")),
+        "budget_range_text": _safe_text(snapshot.get("budget_range_text")),
+        "preferred_contact_method": _safe_text(snapshot.get("preferred_contact_method")),
+        "contact_consent": bool(snapshot.get("contact_consent")),
         "project_family_key": _safe_text(snapshot.get("project_family_key")),
         "project_family_label": _safe_text(snapshot.get("project_family_label")),
         "request_path_label": _safe_text(snapshot.get("request_path_label")),
         "measurement_handling": _safe_text(snapshot.get("measurement_handling")),
+        "desired_timing_text": _safe_text(snapshot.get("desired_timing_text")),
         "photo_count": int(snapshot.get("photo_count") or 0),
         "request_signals": snapshot.get("request_signals") or [],
         "request_snapshot": snapshot,
@@ -516,10 +536,15 @@ def _bid_row_from_intake(intake, request=None) -> dict:
         "location": _safe_text(snapshot.get("location")) or _safe_text(intake.project_address_display),
         "project_type": _safe_text(snapshot.get("project_type")) or _safe_text(intake.ai_project_type),
         "project_subtype": _safe_text(snapshot.get("project_subtype")) or _safe_text(intake.ai_project_subtype),
+        "property_type": _safe_text(snapshot.get("property_type")) or _safe_text(getattr(intake, "property_type", "")),
+        "budget_range_text": _safe_text(snapshot.get("budget_range_text")) or _safe_text(getattr(intake, "budget_range_text", "")),
+        "preferred_contact_method": _safe_text(snapshot.get("preferred_contact_method")) or _safe_text(getattr(intake, "preferred_contact_method", "")),
+        "contact_consent": bool(snapshot.get("contact_consent") or getattr(intake, "contact_consent", False)),
         "project_family_key": _safe_text(snapshot.get("project_family_key")),
         "project_family_label": _safe_text(snapshot.get("project_family_label")),
         "request_path_label": _safe_text(snapshot.get("request_path_label")),
         "measurement_handling": _safe_text(snapshot.get("measurement_handling")) or _safe_text(intake.measurement_handling),
+        "desired_timing_text": _safe_text(snapshot.get("desired_timing_text")) or _safe_text(getattr(intake, "desired_timing_text", "")),
         "photo_count": int(snapshot.get("photo_count") or 0),
         "request_signals": snapshot.get("request_signals") or [],
         "request_snapshot": snapshot,

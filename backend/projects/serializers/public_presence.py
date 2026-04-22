@@ -14,6 +14,7 @@ from projects.models import (
     Milestone,
     PublicContractorLead,
 )
+from projects.models_project_intake import ProjectIntake
 from projects.services.compliance import get_public_trust_indicators
 from projects.services.contractor_profile_insights import get_contractor_profile_insights
 
@@ -257,6 +258,41 @@ class PublicContractorReviewCreateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"linked_milestone": "Linked invoice and milestone must belong to the same agreement."}
                 )
+        return attrs
+
+
+class PublicContractorQuoteRequestSerializer(serializers.Serializer):
+    full_name = serializers.CharField(max_length=255)
+    email = serializers.EmailField()
+    phone = serializers.CharField(max_length=40, required=False, allow_blank=True)
+    preferred_contact_method = serializers.CharField(max_length=32, required=False, allow_blank=True)
+    contact_consent = serializers.BooleanField(required=False, default=False)
+    project_class = serializers.ChoiceField(choices=ProjectIntake.PROJECT_CLASS_CHOICES, required=False)
+    property_type = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    desired_timing_text = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    project_type = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    project_subtype = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    raw_description = serializers.CharField(required=False, allow_blank=True)
+    refined_description = serializers.CharField(required=False, allow_blank=True)
+    ai_project_timeline_days = serializers.IntegerField(required=False, allow_null=True)
+    budget_range_text = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    ai_project_budget = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, allow_null=True)
+    project_address_line1 = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    project_address_line2 = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    project_city = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    project_state = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    project_postal_code = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    ai_clarification_questions = serializers.JSONField(required=False)
+    ai_clarification_answers = serializers.JSONField(required=False)
+    ai_analysis_payload = serializers.JSONField(required=False)
+
+    def validate(self, attrs):
+        if not (attrs.get("email") or attrs.get("phone")):
+            raise serializers.ValidationError({"email": "Email or phone is required."})
+        if not bool(attrs.get("contact_consent", False)):
+            raise serializers.ValidationError(
+                {"contact_consent": "Please confirm that the contractor may contact you about this request."}
+            )
         return attrs
 
 

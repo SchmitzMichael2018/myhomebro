@@ -5,21 +5,7 @@ import toast from 'react-hot-toast';
 import api, { getContractorRating } from '../api';
 import Modal from '../components/Modal.jsx';
 import RatingDisplay from '../components/RatingDisplay.jsx';
-
-const buildEmptyLeadForm = (source = 'public_profile') => ({
-  source,
-  full_name: '',
-  email: '',
-  phone: '',
-  project_address: '',
-  city: '',
-  state: '',
-  zip_code: '',
-  project_type: '',
-  project_description: '',
-  preferred_timeline: '',
-  budget_text: '',
-});
+import PublicQuoteRequestWizard from '../components/PublicQuoteRequestWizard.jsx';
 
 const buildEmptyReviewForm = (context = {}) => ({
   customer_name: '',
@@ -33,24 +19,18 @@ const buildEmptyReviewForm = (context = {}) => ({
 export default function PublicProfile() {
   const { slug = '' } = useParams();
   const [searchParams] = useSearchParams();
-  const intakeSource = searchParams.get('source') === 'qr' ? 'qr' : 'public_profile';
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
   const [previewMode, setPreviewMode] = useState(false);
   const [ratingInfo, setRatingInfo] = useState({ average_rating: null, review_count: 0, preview: false, new_on_myhomebro: true });
   const [error, setError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
-  const [leadForm, setLeadForm] = useState(() => buildEmptyLeadForm(intakeSource));
   const [reviewForm, setReviewForm] = useState(() => buildEmptyReviewForm());
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [quoteWizardOpen, setQuoteWizardOpen] = useState(false);
   const reviewLinkedInvoice = searchParams.get('invoice') || '';
   const reviewLinkedMilestone = searchParams.get('milestone') || '';
   const reviewRequested = searchParams.get('review') === '1' || Boolean(reviewLinkedInvoice || reviewLinkedMilestone);
-
-  useEffect(() => {
-    setLeadForm((prev) => ({ ...buildEmptyLeadForm(intakeSource), ...prev, source: intakeSource }));
-  }, [intakeSource]);
 
   useEffect(() => {
     if (!reviewRequested) return;
@@ -118,21 +98,6 @@ export default function PublicProfile() {
     return [...new Set(items)];
   }, [profile]);
 
-  async function submitLead(event) {
-    event.preventDefault();
-    try {
-      setSubmitting(true);
-      await api.post(`/projects/public/contractors/${slug}/intake/`, leadForm);
-      toast.success('Project request sent. The contractor can now review your intake and follow up.');
-      setLeadForm(buildEmptyLeadForm(intakeSource));
-    } catch (err) {
-      console.error(err);
-      toast.error(err?.response?.data?.detail || 'Unable to submit your request.');
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   async function submitReview(event) {
     event.preventDefault();
     try {
@@ -177,6 +142,7 @@ export default function PublicProfile() {
   const ratingCount = Number(ratingInfo.review_count || 0);
   const ratingValue = ratingInfo.average_rating;
   const verifiedReviewCount = ratingCount;
+  const quoteRequestEnabled = Boolean(profile.allow_public_intake && !previewMode);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -222,7 +188,15 @@ export default function PublicProfile() {
               />
             </div>
             <div className="mt-6 flex flex-wrap gap-3">
-              <a href="#intake" className="rounded-xl bg-white px-5 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-100">Request Project</a>
+              <button
+                type="button"
+                onClick={() => setQuoteWizardOpen(true)}
+                disabled={!quoteRequestEnabled}
+                data-testid="public-profile-request-quote-cta"
+                className="rounded-xl bg-white px-5 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+              >
+                Request a Quote
+              </button>
               <a href="#gallery" className="rounded-xl border border-white/25 bg-white/10 px-5 py-3 text-sm font-semibold text-white hover:bg-white/20">View Gallery</a>
               {profile.allow_public_reviews ? (
                 <button
@@ -367,31 +341,45 @@ export default function PublicProfile() {
           </section>
         ) : null}
 
-        {profile.allow_public_intake ? (
-          <section id="intake" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-2xl font-bold text-slate-900">Start Your Project</h2>
-            <p className="mt-2 text-sm text-slate-600">Share a few project details and this contractor can review your request and follow up directly.</p>
-            <form onSubmit={submitLead} className="mt-6 grid gap-4 md:grid-cols-2">
-              <input value={leadForm.full_name} onChange={(e) => setLeadForm((prev) => ({ ...prev, full_name: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Full name" />
-              <input value={leadForm.email} onChange={(e) => setLeadForm((prev) => ({ ...prev, email: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Email" />
-              <input value={leadForm.phone} onChange={(e) => setLeadForm((prev) => ({ ...prev, phone: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Phone" />
-              <input value={leadForm.project_type} onChange={(e) => setLeadForm((prev) => ({ ...prev, project_type: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Project type" />
-              <input value={leadForm.project_address} onChange={(e) => setLeadForm((prev) => ({ ...prev, project_address: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2" placeholder="Project address" />
-              <input value={leadForm.city} onChange={(e) => setLeadForm((prev) => ({ ...prev, city: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="City" />
-              <input value={leadForm.state} onChange={(e) => setLeadForm((prev) => ({ ...prev, state: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="State" />
-              <input value={leadForm.zip_code} onChange={(e) => setLeadForm((prev) => ({ ...prev, zip_code: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="ZIP code" />
-              <input value={leadForm.preferred_timeline} onChange={(e) => setLeadForm((prev) => ({ ...prev, preferred_timeline: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Preferred timeline" />
-              <input value={leadForm.budget_text} onChange={(e) => setLeadForm((prev) => ({ ...prev, budget_text: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2" placeholder="Budget" />
-              <textarea value={leadForm.project_description} onChange={(e) => setLeadForm((prev) => ({ ...prev, project_description: e.target.value }))} rows={5} className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2" placeholder="Tell us about your project" />
-              <div className="md:col-span-2">
-                <button type="submit" disabled={submitting} className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60">
-                  {submitting ? 'Submitting…' : 'Submit Project Request'}
-                </button>
-              </div>
-            </form>
-          </section>
-        ) : null}
+        <section id="intake" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+            <div className="max-w-2xl">
+              <h2 className="text-2xl font-bold text-slate-900">Request a Quote</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Use the guided quote request to share the project details, photos, timing, and contact preferences in one place. The contractor will review it and follow up directly.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setQuoteWizardOpen(true)}
+              disabled={!quoteRequestEnabled}
+              className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              Request a Quote
+            </button>
+          </div>
+          <div className="mt-5 grid gap-3 text-sm text-slate-600 md:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">Project basics and a clear description</div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">Photos, timing, property, and budget</div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">A direct request goes to the contractor queue</div>
+          </div>
+          {!quoteRequestEnabled ? (
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Preview mode: this contractor profile is not public yet, so quote requests are disabled for now.
+            </div>
+          ) : null}
+        </section>
       </div>
+
+      <PublicQuoteRequestWizard
+        open={quoteWizardOpen && quoteRequestEnabled}
+        slug={slug}
+        contractorName={profile.business_name_public}
+        businessName={profile.business_name_public}
+      profile={profile}
+      onClose={() => setQuoteWizardOpen(false)}
+      onSubmitted={() => {}}
+      />
 
       <Modal
         visible={reviewModalOpen}

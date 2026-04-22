@@ -28,9 +28,14 @@ class ProjectIntakeSerializer(serializers.ModelSerializer):
             "customer_city",
             "customer_state",
             "customer_postal_code",
+            "preferred_contact_method",
+            "contact_consent",
 
             "same_as_customer_address",
             "project_class",
+            "property_type",
+            "budget_range_text",
+            "desired_timing_text",
 
             "project_address_line1",
             "project_address_line2",

@@ -8,7 +8,7 @@ function safeText(value) {
 }
 
 function sentenceList(items) {
-  return items.filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+  return items.filter(Boolean).join(" • ").replace(/\s+/g, " ").trim();
 }
 
 function bullets(items) {
@@ -60,6 +60,11 @@ function leadSummaryFromRow(row = {}) {
     city: safeText(row.city || snapshot.city || ""),
     state: safeText(row.state || snapshot.state || ""),
     zip_code: safeText(row.zip_code || snapshot.zip_code || ""),
+    property_type: safeText(snapshot.property_type || row.property_type || ""),
+    budget_range_text: safeText(snapshot.budget_range_text || row.budget_range_text || ""),
+    desired_timing_text: safeText(snapshot.desired_timing_text || row.desired_timing_text || ""),
+    preferred_contact_method: safeText(snapshot.preferred_contact_method || row.preferred_contact_method || ""),
+    contact_consent: Boolean(snapshot.contact_consent || row.contact_consent),
     status: safeText(row.status || ""),
     source_intake_id: row.source_intake_id || null,
     converted_agreement: row.linked_agreement_id || row.converted_agreement || null,
@@ -123,6 +128,12 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {},
   const budget = safeText(snapshot.budget || summary.budget_text || "");
   const timeline = safeText(snapshot.timeline || summary.preferred_timeline || "");
   const measurementHandling = safeText(snapshot.measurement_handling || summary.measurement_handling || "");
+  const propertyType = safeText(snapshot.property_type || summary.property_type || "");
+  const budgetRangeText = safeText(snapshot.budget_range_text || summary.budget_range_text || "");
+  const preferredContactMethod = safeText(
+    snapshot.preferred_contact_method || summary.preferred_contact_method || ""
+  );
+  const contactConsent = Boolean(snapshot.contact_consent || summary.contact_consent);
   const requestPath = safeText(snapshot.request_path_label || "");
   const clarificationSummary = Array.isArray(snapshot.clarification_summary) ? snapshot.clarification_summary : [];
   const milestones = Array.isArray(snapshot.milestones) ? snapshot.milestones : [];
@@ -195,6 +206,9 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {},
   if (location) {
     scopeBullets.push(`Location: ${location}.`);
   }
+  if (propertyType) {
+    scopeBullets.push(`Property type: ${propertyType}.`);
+  }
   if (photoCount > 0) {
     scopeBullets.push(
       `${photoCount} photo${photoCount === 1 ? "" : "s"} attached, which helps confirm the scope.`
@@ -206,14 +220,17 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {},
         .slice(0, 3)
         .map((item) => safeText(item.label || item.key))
         .filter(Boolean)
-        .join(", ")}.`
+        .join(" • ")}.`
     );
   }
   if (requestPath) {
     scopeBullets.push(`Request type: ${requestPath}.`);
   }
+  if (budgetRangeText && budgetRangeText !== budget) {
+    scopeBullets.push(`Budget range: ${budgetRangeText}.`);
+  }
   if (requestSignals.length) {
-    const visibleSignals = requestSignals.slice(0, 3).join(", ");
+    const visibleSignals = requestSignals.slice(0, 3).join(" • ");
     scopeBullets.push(`Helpful signals: ${visibleSignals}.`);
   }
 
@@ -234,13 +251,21 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {},
   }
   if (budget) {
     confirmationBullets.push(`Budget guidance was shared: ${budget}.`);
+  } else if (budgetRangeText) {
+    confirmationBullets.push(`Budget range noted: ${budgetRangeText}.`);
+  }
+  if (preferredContactMethod) {
+    confirmationBullets.push(`Preferred contact method: ${preferredContactMethod}.`);
+  }
+  if (contactConsent) {
+    confirmationBullets.push("Customer gave contact consent.");
   }
   if (milestones.length) {
     confirmationBullets.push(`Project phases to review: ${milestones.slice(0, 3).join(" • ")}.`);
   }
 
   const close =
-    "If this looks right, I’m happy to review the next steps and refine the bid with you.";
+    "If this looks right, I'm happy to review the next steps and refine the bid with you.";
 
   const signoff = brand.preferred_signoff || (brand.business_display_name ? `Best, ${brand.business_display_name}` : "");
 
@@ -257,7 +282,7 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {},
     "Close",
     close,
     ...(signoff ? [signoff] : []),
-  ].join("\n");
+  ].join(" • ");
 
   return {
     title: projectTitle,
@@ -272,6 +297,10 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {},
       budget,
       timeline,
       measurementHandling,
+      propertyType,
+      budgetRangeText,
+      preferredContactMethod,
+      contactConsent,
       photoCount,
       requestPath,
       requestSignals: requestSignals.slice(0, 4),
@@ -350,6 +379,11 @@ export function buildLeadAgreementAssistantState(
       project_summary: proposalDraft.text,
       project_type: safeText(summary.project_type || ""),
       project_subtype: safeText(summary.project_subtype || ""),
+      property_type: safeText(summary.property_type || ""),
+      budget_range_text: safeText(summary.budget_range_text || ""),
+      desired_timing_text: safeText(summary.desired_timing_text || snapshot.desired_timing_text || snapshot.timeline || ""),
+      preferred_contact_method: safeText(summary.preferred_contact_method || ""),
+      contact_consent: Boolean(summary.contact_consent),
       selected_template_id: recommendedTemplateId,
       selected_template_name_snapshot: recommendedTemplateName,
       request_path_label: requestPath,
@@ -366,6 +400,11 @@ export function buildLeadAgreementAssistantState(
       project_type: safeText(summary.project_type || ""),
       project_subtype: safeText(summary.project_subtype || ""),
       project_scope_summary: safeText(summary.project_scope_summary || summary.project_description || ""),
+      property_type: safeText(summary.property_type || ""),
+      budget_range_text: safeText(summary.budget_range_text || ""),
+      desired_timing_text: safeText(summary.desired_timing_text || snapshot.desired_timing_text || snapshot.timeline || ""),
+      preferred_contact_method: safeText(summary.preferred_contact_method || ""),
+      contact_consent: Boolean(summary.contact_consent),
       selected_template_id: recommendedTemplateId,
       selected_template_name_snapshot: recommendedTemplateName,
       measurement_handling: safeText(snapshot.measurement_handling || ""),
