@@ -8,6 +8,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import api from "../api";
 import toast from "react-hot-toast";
 import { useLocation, useNavigate } from "react-router-dom";
+import { normalizeProjectClass } from "../utils/projectClass.js";
 
 import MilestoneEditModal from "./MilestoneEditModal";
 import MilestoneDetailModal from "./MilestoneDetailModal";
@@ -127,6 +128,15 @@ const isReworkMilestone = (m) => {
   return t.startsWith("rework — dispute #") || (t.includes("rework") && t.includes("dispute #"));
 };
 
+function projectClassLabel(value) {
+  return normalizeProjectClass(value) === "commercial" ? "Commercial" : "Residential";
+}
+
+function normalizeProjectClassFilter(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "commercial" || normalized === "residential" ? normalized : "all";
+}
+
 const hasInvoiceLink = (m) => !!pick(m?.invoice, m?.invoice_id, m?.invoiceId);
 
 const getInvoiceIdFromMilestone = (m) => {
@@ -203,9 +213,11 @@ const API = {
 
 export default function MilestoneList() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const query = useQuery();
   const urlFilter = String(query.get("filter") || "").toLowerCase();
+  const projectClassFilter = normalizeProjectClassFilter(query.get("project_class"));
   const focusIdRaw = query.get("focus");
   const focusId = focusIdRaw ? String(focusIdRaw) : null;
 
@@ -241,6 +253,17 @@ export default function MilestoneList() {
     if (!urlFilter) return;
     if (allowedFilters.has(urlFilter)) setTab(urlFilter);
   }, [urlFilter, allowedFilters]);
+
+  const updateQueryParam = useCallback(
+    (key, value) => {
+      const params = new URLSearchParams(location.search);
+      if (!value || value === "all") params.delete(key);
+      else params.set(key, value);
+      const next = `${location.pathname}${params.toString() ? `?${params.toString()}` : ""}`;
+      navigate(next, { replace: true });
+    },
+    [location.pathname, location.search, navigate]
+  );
 
   // Keep URL in sync (tab -> URL)
   const syncUrlFilter = useCallback(
@@ -323,6 +346,7 @@ export default function MilestoneList() {
       const phaseLabel = deriveMilestonePhaseLabel(m, invoicesMap);
 
       const paymentMode = getPaymentMode(ag);
+      const agreementProjectClass = normalizeProjectClass(ag?.project_class || m?.project_class);
       const requiresEscrow = paymentMode !== "direct";
       const escrowFunded = requiresEscrow ? isEscrowFunded(ag) : true;
 
@@ -343,6 +367,8 @@ export default function MilestoneList() {
         _refunded: isRefundedMilestone(m),
         _fullySigned: isAgreementFullySigned(ag),
         _signedLike: isAgreementSigned(ag),
+        _projectClass: agreementProjectClass,
+        _projectClassLabel: projectClassLabel(agreementProjectClass),
       };
     });
   }, [rows, agreementsMap, invoicesMap]);
@@ -367,6 +393,10 @@ export default function MilestoneList() {
         break;
     }
 
+    if (projectClassFilter !== "all") {
+      r = r.filter((m) => m._projectClass === projectClassFilter);
+    }
+
     const s = q.trim().toLowerCase();
     if (s) {
       r = r.filter((m) =>
@@ -379,7 +409,7 @@ export default function MilestoneList() {
     }
 
     return r;
-  }, [enriched, tab, q]);
+  }, [enriched, tab, q, projectClassFilter]);
 
   /* ---------------- All milestones by agreement ---------------- */
   const allMilestonesByAgreement = useMemo(() => {
@@ -679,7 +709,7 @@ export default function MilestoneList() {
   const tdBase = "px-4 py-3 border-r border-slate-100 last:border-r-0";
 
   // 🔑 Determines whether we should show ONLY matching rows inside expanded agreements
-  const isFiltering = tab !== "all" || q.trim().length > 0;
+  const isFiltering = tab !== "all" || q.trim().length > 0 || projectClassFilter !== "all";
 
   return (
     <div className="p-4 md:p-6">
@@ -709,6 +739,16 @@ export default function MilestoneList() {
             placeholder="Search title, project, customer."
             className="px-3 py-2 rounded border border-white/30 bg-white/90 text-gray-900 w-72 max-w-full"
           />
+          <select
+            value={projectClassFilter}
+            onChange={(e) => updateQueryParam("project_class", e.target.value)}
+            className="rounded border border-white/30 bg-white/90 px-3 py-2 text-sm text-gray-900"
+            data-testid="milestone-list-project-class-filter"
+          >
+            <option value="all">All Projects</option>
+            <option value="residential">Residential</option>
+            <option value="commercial">Commercial</option>
+          </select>
           <button
             type="button"
             onClick={() => reload()}
@@ -852,7 +892,13 @@ export default function MilestoneList() {
                                           >
                                             <td className={tdBase}>
                                               <div className="flex items-center gap-2 flex-wrap">
-                                                <span className="font-semibold text-slate-900">{m.title}</span>
+                                                  <span className="font-semibold text-slate-900">{m.title}</span>
+                                                  <span
+                                                    className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700"
+                                                    data-testid={`milestone-project-class-${m.id}`}
+                                                  >
+                                                    {m._projectClassLabel}
+                                                  </span>
 
                                                 {m.rework_origin_milestone_id ? (
                                                   <div className="text-xs text-slate-600">

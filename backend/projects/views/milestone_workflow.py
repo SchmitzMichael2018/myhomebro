@@ -8,6 +8,7 @@ from rest_framework.response import Response
 
 from projects.models import Milestone, Notification, SubcontractorCompletionStatus
 from projects.serializers.milestone import MilestoneSerializer
+from projects.services.bid_workflow import project_class_label
 from projects.services.milestone_workflow import (
     can_user_review_submitted_work,
     can_user_submit_work,
@@ -46,6 +47,7 @@ def _serialize_queue_item(milestone: Milestone) -> dict:
     reviewer = get_effective_reviewer(milestone)
     agreement = getattr(milestone, "agreement", None)
     project = getattr(agreement, "project", None) if agreement is not None else None
+    project_class = getattr(agreement, "project_class", None) or getattr(project, "project_class", None) or ""
 
     return {
         "id": milestone.id,
@@ -60,6 +62,8 @@ def _serialize_queue_item(milestone: Milestone) -> dict:
             or getattr(agreement, "project_title_snapshot", "")
             or ""
         ),
+        "project_class": project_class,
+        "project_class_label": project_class_label(project_class),
         "project_title": (
             getattr(project, "title", "")
             or getattr(project, "name", "")
@@ -129,6 +133,8 @@ def reviewer_queue(request):
                 "agreement_id": agreement_id,
                 "agreement_title": item.get("agreement_title") or "",
                 "project_title": item.get("project_title") or "",
+                "project_class": item.get("project_class") or "",
+                "project_class_label": item.get("project_class_label") or "",
                 "milestones": [],
             },
         )

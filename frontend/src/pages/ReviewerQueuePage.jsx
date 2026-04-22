@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import React, { useEffect, useMemo, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 
 import api from "../api";
 import { useWhoAmI } from "../hooks/useWhoAmI";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
+import { normalizeProjectClass } from "../utils/projectClass.js";
 
 function formatDateTime(value) {
   if (!value) return "-";
@@ -23,12 +24,28 @@ function submissionStatusLabel(status) {
   return "Not Submitted";
 }
 
+function projectClassLabel(value) {
+  return normalizeProjectClass(value) === "commercial" ? "Commercial" : "Residential";
+}
+
+function normalizeProjectClassFilter(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "commercial" || normalized === "residential" ? normalized : "all";
+}
+
 export default function ReviewerQueuePage() {
   const { isContractor } = useWhoAmI();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [groups, setGroups] = useState([]);
+  const [queueCount, setQueueCount] = useState(0);
   const [responseNotes, setResponseNotes] = useState({});
   const [busy, setBusy] = useState({});
+  const projectClassFilter = useMemo(
+    () => normalizeProjectClassFilter(new URLSearchParams(location.search).get("project_class")),
+    [location.search]
+  );
 
   useEffect(() => {
     let active = true;
@@ -39,11 +56,13 @@ export default function ReviewerQueuePage() {
         const { data } = await api.get("/projects/milestones/reviewer-queue/");
         if (!active) return;
         setGroups(Array.isArray(data?.groups) ? data.groups : []);
+        setQueueCount(Number(data?.count || 0));
       } catch (err) {
         if (!active) return;
         console.error(err);
         toast.error("Failed to load awaiting review items.");
         setGroups([]);
+        setQueueCount(0);
       } finally {
         if (active) setLoading(false);
       }
@@ -54,6 +73,36 @@ export default function ReviewerQueuePage() {
       active = false;
     };
   }, []);
+
+  const filteredGroups = useMemo(() => {
+    if (projectClassFilter === "all") return groups;
+    return groups
+      .map((group) => ({
+        ...group,
+        milestones: (group.milestones || []).filter((milestone) => {
+          const value = normalizeProjectClass(
+            milestone?.project_class ||
+              milestone?.project_class_label ||
+              group?.project_class ||
+              group?.project_class_label
+          );
+          return value === projectClassFilter;
+        }),
+      }))
+      .filter((group) => (group.milestones || []).length > 0);
+  }, [groups, projectClassFilter]);
+
+  const visibleCount = useMemo(
+    () => filteredGroups.reduce((sum, group) => sum + (group.milestones || []).length, 0),
+    [filteredGroups]
+  );
+
+  const updateQueryParam = (key, value) => {
+    const params = new URLSearchParams(location.search);
+    if (!value || value === "all") params.delete(key);
+    else params.set(key, value);
+    navigate(`${location.pathname}${params.toString() ? `?${params.toString()}` : ""}`, { replace: true });
+  };
 
   function removeMilestone(milestoneId) {
     setGroups((prev) =>
@@ -97,18 +146,41 @@ export default function ReviewerQueuePage() {
       subtitle="Review submitted milestone work assigned to you and send it back if it needs changes."
       className="max-w-[1320px]"
     >
-      <div
-        data-testid="reviewer-queue-title"
-        className="sr-only"
-      >
-        Awaiting Review
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div
+            data-testid="reviewer-queue-title"
+            className="sr-only"
+          >
+            Awaiting Review
+          </div>
+          <div className="text-sm text-slate-600">
+            {visibleCount} pending review item{visibleCount === 1 ? "" : "s"}
+            {projectClassFilter !== "all" ? ` · ${projectClassLabel(projectClassFilter)} only` : ""}
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={projectClassFilter}
+            onChange={(e) => updateQueryParam("project_class", e.target.value)}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm"
+            data-testid="reviewer-queue-project-class-filter"
+          >
+            <option value="all">All Projects</option>
+            <option value="residential">Residential</option>
+            <option value="commercial">Commercial</option>
+          </select>
+          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm">
+            Pending: {queueCount}
+          </div>
+        </div>
       </div>
 
       {loading ? (
         <div className="rounded-2xl border border-slate-200 bg-white/90 px-6 py-10 text-center text-sm text-slate-700 shadow-sm">
           Loading review queue...
         </div>
-      ) : groups.length === 0 ? (
+      ) : filteredGroups.length === 0 ? (
         <div
           data-testid="reviewer-queue-empty"
           className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-6 py-12 text-center shadow-sm"
@@ -122,18 +194,23 @@ export default function ReviewerQueuePage() {
         </div>
       ) : (
         <div className="space-y-6">
-          {groups.map((group) => (
+          {filteredGroups.map((group) => (
             <section
               key={group.agreement_id}
               data-testid={`reviewer-queue-group-${group.agreement_id}`}
               className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
             >
               <div className="border-b border-slate-100 pb-3">
-                <h2 className="text-lg font-semibold text-slate-900">
-                  {group.project_title ||
-                    group.agreement_title ||
-                    `Agreement #${group.agreement_id}`}
-                </h2>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-lg font-semibold text-slate-900">
+                    {group.project_title ||
+                      group.agreement_title ||
+                      `Agreement #${group.agreement_id}`}
+                  </h2>
+                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                    {group.project_class_label || projectClassLabel(group.project_class)}
+                  </span>
+                </div>
                 <div className="mt-1 text-xs text-slate-500">
                   Agreement #{group.agreement_id}
                 </div>

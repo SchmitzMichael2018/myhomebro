@@ -24,6 +24,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
+import { normalizeProjectClass } from "../utils/projectClass.js";
 import {
   CheckCircle2,
   XCircle,
@@ -299,6 +300,15 @@ function prettyStatus(status) {
 
 const pick = (...vals) => vals.find((v) => v !== undefined && v !== null && v !== "") ?? "";
 
+function projectClassLabel(value) {
+  return normalizeProjectClass(value) === "commercial" ? "Commercial" : "Residential";
+}
+
+function normalizeProjectClassFilter(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "commercial" || normalized === "residential" ? normalized : "all";
+}
+
 function absUrl(url) {
   if (!url) return "";
   const s = String(url);
@@ -448,6 +458,7 @@ export default function AgreementList() {
   const routeFilter = params.get("filter") || "";
   const routeRange = params.get("range") || "";
   const statusParam = params.get("status") || "";
+  const projectClassFilter = normalizeProjectClassFilter(params.get("project_class"));
   const activeRouteFilter = useMemo(() => {
     if (routeFocus === "needs_attention") {
       if (routeFilter === "awaiting_signature") {
@@ -570,6 +581,18 @@ export default function AgreementList() {
       setStatusFilter("all");
     }
   }, [activeRouteFilter]);
+
+  const updateFilters = useCallback(
+    (updates) => {
+      const next = new URLSearchParams(location.search);
+      Object.entries(updates).forEach(([key, value]) => {
+        if (!value || value === "all") next.delete(key);
+        else next.set(key, value);
+      });
+      navigate(`${location.pathname}${next.toString() ? `?${next.toString()}` : ""}`, { replace: true });
+    },
+    [location.pathname, location.search, navigate]
+  );
 
   useEffect(() => {
     const onDown = (e) => {
@@ -856,6 +879,10 @@ export default function AgreementList() {
           return safeLower(r.status) === "draft";
         }
 
+        if (projectClassFilter !== "all" && normalizeProjectClass(r.project_class) !== projectClassFilter) {
+          return false;
+        }
+
         const status = safeLower(r.status);
         if (statusParam === "awaiting_signature") return rowIsAwaitingSignature(r);
         if (statusParam === "funding_needed") return rowIsAwaitingFunding(r);
@@ -887,7 +914,7 @@ export default function AgreementList() {
 
         return hay.includes(search);
       });
-  }, [activeRouteFilter, homeownerDisplay, q, rows, statusFilter, statusParam]);
+  }, [activeRouteFilter, homeownerDisplay, q, rows, statusFilter, statusParam, projectClassFilter]);
 
   const page = filtered.slice(0, pageSize);
 
@@ -1527,6 +1554,17 @@ export default function AgreementList() {
           <option value="cancelled">cancelled</option>
         </select>
 
+        <select
+          value={projectClassFilter}
+          onChange={(e) => updateFilters({ project_class: e.target.value })}
+          className="rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-700 shadow-sm"
+          data-testid="agreement-list-project-class-filter"
+        >
+          <option value="all">All Projects</option>
+          <option value="residential">Residential</option>
+          <option value="commercial">Commercial</option>
+        </select>
+
         <label className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-700 shadow-sm">
           <input
             type="checkbox"
@@ -1805,6 +1843,12 @@ export default function AgreementList() {
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <div className="truncate text-[15px] font-semibold text-slate-950">{renderProject(r)}</div>
+                            <span
+                              className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700"
+                              data-testid={`agreement-project-class-${r.id}`}
+                            >
+                              {projectClassLabel(r.project_class)}
+                            </span>
                             <span className="inline-flex items-center rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-slate-200">
                               #{r.id}
                             </span>

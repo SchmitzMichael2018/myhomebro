@@ -6044,6 +6044,7 @@ class ReviewerQueueTests(TestCase):
             contractor=self.contractor,
             homeowner=self.homeowner,
             description="Agreement for reviewer queue tests",
+            project_class=AgreementProjectClass.COMMERCIAL,
         )
 
         self.worker_user = user_model.objects.create_user(
@@ -6131,10 +6132,14 @@ class ReviewerQueueTests(TestCase):
         payload = response.json()
         self.assertEqual(payload["count"], 1)
         self.assertEqual(len(payload["groups"]), 1)
+        self.assertEqual(payload["groups"][0]["project_class"], AgreementProjectClass.COMMERCIAL)
+        self.assertEqual(payload["groups"][0]["project_class_label"], "Commercial")
         item = payload["groups"][0]["milestones"][0]
         self.assertEqual(item["id"], self.default_review_milestone.id)
         self.assertEqual(item["assigned_worker_display"], "Queue Worker")
         self.assertEqual(item["reviewer"]["kind"], "contractor_owner")
+        self.assertEqual(item["project_class"], AgreementProjectClass.COMMERCIAL)
+        self.assertEqual(item["project_class_label"], "Commercial")
         self.assertEqual(
             item["work_submission_note"],
             "Cabinets are installed and aligned.",
@@ -6182,6 +6187,78 @@ class ReviewerQueueTests(TestCase):
                 "count": 0,
             },
         )
+
+
+class ContractorWhoAmIReviewQueueCountTests(TestCase):
+    def setUp(self):
+        self.pdf_task_patcher = patch(
+            "projects.signals.task_generate_full_agreement_pdf.delay",
+            return_value=None,
+        )
+        self.pdf_task_patcher.start()
+        self.addCleanup(self.pdf_task_patcher.stop)
+
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="whoami-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="WhoAmI Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="WhoAmI Homeowner",
+            email="whoami-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="WhoAmI Review Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Agreement for whoami review count tests",
+            project_class=AgreementProjectClass.RESIDENTIAL,
+        )
+        self.worker_user = user_model.objects.create_user(
+            email="whoami-worker@example.com",
+            password="testpass123",
+        )
+        self.invitation = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="whoami-worker@example.com",
+            invite_name="WhoAmI Worker",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=self.worker_user,
+            accepted_at=timezone.now(),
+        )
+        self.review_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Countertop Review",
+            description="Review item for whoami count",
+            amount="450.00",
+            assigned_subcontractor_invitation=self.invitation,
+            subcontractor_completion_status=SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW,
+            subcontractor_marked_complete_at=timezone.now(),
+            subcontractor_marked_complete_by=self.worker_user,
+            subcontractor_completion_note="Countertops are ready.",
+        )
+        self.client = APIClient()
+
+    def test_whoami_includes_pending_review_queue_count(self):
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/whoami/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["type"], "contractor")
+        self.assertEqual(payload["review_queue_count"], 1)
 
 
 class ContractorOperationsDashboardTests(TestCase):

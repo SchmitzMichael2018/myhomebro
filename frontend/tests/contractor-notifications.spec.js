@@ -62,6 +62,7 @@ async function mockContractorDashboard(page, options = {}) {
   const activityFeed = options.activityFeed || [];
   const nextBestAction = options.nextBestAction || null;
   const contractorMe = options.contractorMe || {};
+  const reviewQueueCount = options.reviewQueueCount || 0;
 
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
@@ -76,6 +77,7 @@ async function mockContractorDashboard(page, options = {}) {
         type: 'contractor',
         role: 'contractor_owner',
         email: 'playwright@myhomebro.local',
+        review_queue_count: reviewQueueCount,
       }),
     });
   });
@@ -624,4 +626,75 @@ test('clicking this week schedule card opens AgreementList week filter', async (
   await expect(page.getByText('Tomorrow Tile Install')).toBeVisible();
   await expect(page.getByText('Week Window Replacement')).toBeVisible();
   await expect(page.getByText('Far Future Project')).not.toBeVisible();
+});
+
+test('agreement and milestone lists filter by project class and show project type badges', async ({ page }) => {
+  await mockContractorDashboard(page, {
+    reviewQueueCount: 4,
+    agreements: [
+      {
+        id: 1101,
+        title: 'Residential Kitchen',
+        project_title: 'Residential Kitchen',
+        status: 'draft',
+        project_class: 'residential',
+      },
+      {
+        id: 1102,
+        title: 'Commercial Lobby',
+        project_title: 'Commercial Lobby',
+        status: 'draft',
+        project_class: 'commercial',
+      },
+    ],
+    milestones: [
+      {
+        id: 2101,
+        title: 'Demo Phase',
+        description: 'Residential demo work.',
+        agreement_id: 1101,
+        agreement: {
+          id: 1101,
+          title: 'Residential Kitchen',
+          project_class: 'residential',
+        },
+      },
+      {
+        id: 2102,
+        title: 'Signage Review',
+        description: 'Commercial review work.',
+        agreement_id: 1102,
+        agreement: {
+          id: 1102,
+          title: 'Commercial Lobby',
+          project_class: 'commercial',
+        },
+      },
+    ],
+  });
+
+  await page.goto('/app/agreements', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByRole('link', { name: 'Awaiting Review 4' })).toBeVisible();
+  await expect(page.getByTestId('agreement-list-project-class-filter')).toBeVisible();
+  await expect(page.getByTestId('agreement-project-class-1101')).toContainText('Residential');
+  await expect(page.getByTestId('agreement-project-class-1102')).toContainText('Commercial');
+
+  await page.getByTestId('agreement-list-project-class-filter').selectOption('commercial');
+  await expect(page.getByTestId('agreement-project-class-1102')).toBeVisible();
+  await expect(page.getByTestId('agreement-project-class-1101')).toHaveCount(0);
+
+  await page.goto('/app/milestones?project_class=commercial', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByRole('link', { name: 'Awaiting Review 4' })).toBeVisible();
+  await expect(page.getByTestId('milestone-list-project-class-filter')).toHaveValue('commercial');
+  await expect(page.getByText('Commercial Lobby', { exact: true }).first()).toBeVisible();
+  await page.getByText('Commercial Lobby', { exact: true }).first().click();
+  await expect(page.getByTestId('milestone-project-class-2102')).toContainText('Commercial');
+
+  await page.goto('/app/milestones?project_class=residential', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('milestone-list-project-class-filter')).toHaveValue('residential');
+  await expect(page.getByText('Residential Kitchen', { exact: true }).first()).toBeVisible();
+  await page.getByText('Residential Kitchen', { exact: true }).first().click();
+  await expect(page.getByTestId('milestone-project-class-2101')).toContainText('Residential');
 });

@@ -79,7 +79,7 @@ function NavGroup({ label, children, className = "" }) {
   );
 }
 
-function Item({ to, label, icon: Icon, emoji, title, hint }) {
+function Item({ to, label, icon: Icon, emoji, title, hint, count = 0 }) {
   const location = useLocation();
   const { navHint, showNavHint, hideNavHint } = useContext(SidebarNavCtx);
   const tooltipId = React.useId();
@@ -120,6 +120,11 @@ function Item({ to, label, icon: Icon, emoji, title, hint }) {
           </span>
         </span>
         <span className="min-w-0 truncate leading-5">{label}</span>
+        {Number(count || 0) > 0 ? (
+          <span className="ml-auto inline-flex min-w-7 items-center justify-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900">
+            {Number(count)}
+          </span>
+        ) : null}
       </NavLink>
     </div>
   );
@@ -184,6 +189,7 @@ export default function Sidebar({ variant = "desktop" }) {
   }, [data]);
 
   const isOnAdminRoute = location.pathname.startsWith("/app/admin");
+  const reviewQueueCount = Number(data?.review_queue_count || 0);
 
   const handleLogout = useCallback(() => {
     try {
@@ -326,7 +332,7 @@ export default function Sidebar({ variant = "desktop" }) {
         <>
           <Item to={`${EMP_BASE}/dashboard`} label="Dashboard" icon={LayoutDashboard} />
           {canAccessReviewerQueue ? (
-            <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} />
+            <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} count={reviewQueueCount} />
           ) : null}
           <Item to={`${EMP_BASE}/agreements`} label="My Agreements" icon={FileSignature} />
           <Item to={`${EMP_BASE}/milestones`} label="Milestones" icon={SquareKanban} />
@@ -348,7 +354,7 @@ export default function Sidebar({ variant = "desktop" }) {
         <Item to={`${APP_BASE}/dashboard`} label="Dashboard" icon={LayoutDashboard} />
         <Item to={`${APP_BASE}/assistant`} label="AI Workspace" icon={Bot} />
         <Item to={`${APP_BASE}/business`} label="Business Dashboard" icon={Gauge} />
-        <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} />
+        <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} count={reviewQueueCount} />
         <Item to={`${APP_BASE}/agreements`} label="Agreements" icon={FileSignature} />
         <Item to={`${APP_BASE}/bids`} label="Leads & Bids" icon={ClipboardList} />
         <Item to={`${APP_BASE}/templates`} label="Templates" icon={ClipboardList} />
@@ -642,7 +648,7 @@ export default function Sidebar({ variant = "desktop" }) {
               <Item to={`${APP_BASE}/templates`} label="Templates" icon={ClipboardList} />
               <Item to={`${APP_BASE}/milestones`} label="Milestones" icon={SquareKanban} />
               <Item to={`${APP_BASE}/invoices`} label="Invoices" icon={CreditCard} />
-              <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} />
+              <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} count={reviewQueueCount} />
             </NavGroup>
 
             <NavGroup label="Team" className="pt-1">

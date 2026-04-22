@@ -19,6 +19,7 @@ test('contractor reviewer queue renders review items and supports approve flow',
         type: 'contractor',
         role: 'contractor_owner',
         identity_type: 'contractor_owner',
+        review_queue_count: 9,
       }),
     });
   });
@@ -47,6 +48,8 @@ test('contractor reviewer queue renders review items and supports approve flow',
                   agreement_id: 321,
                   agreement_title: 'Kitchen Remodel Agreement',
                   project_title: 'Kitchen Remodel',
+                  project_class: 'commercial',
+                  project_class_label: 'Commercial',
                   milestones: [
                     {
                       id: 901,
@@ -60,6 +63,8 @@ test('contractor reviewer queue renders review items and supports approve flow',
                       work_submitted_at: '2026-03-27T16:30:00Z',
                       work_submission_note: 'Cabinets are shimmed and leveled.',
                       agreement_id: 321,
+                      project_class: 'commercial',
+                      project_class_label: 'Commercial',
                     },
                   ],
                 },
@@ -88,13 +93,22 @@ test('contractor reviewer queue renders review items and supports approve flow',
 
   await page.goto('/app/reviewer/queue', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByRole('link', { name: 'Awaiting Review' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Awaiting Review 9' })).toBeVisible();
   await expect(page.getByTestId('reviewer-queue-title')).toBeVisible();
+  await expect(page.getByTestId('reviewer-queue-project-class-filter')).toBeVisible();
+  await expect(page.getByText('1 pending review item')).toBeVisible();
+  await expect(page.getByText('Pending: 1')).toBeVisible();
+  await expect(page.getByTestId('reviewer-queue-group-321').getByText('Commercial')).toBeVisible();
   await expect(page.getByTestId('reviewer-queue-item-901')).toContainText('Cabinet Install');
   await expect(page.getByTestId('reviewer-queue-item-901')).toContainText('Taylor Sub');
   await expect(page.getByTestId('reviewer-queue-item-901')).toContainText(
     'Cabinets are shimmed and leveled.'
   );
+
+  await page.getByTestId('reviewer-queue-project-class-filter').selectOption('residential');
+  await expect(page.getByTestId('reviewer-queue-empty')).toBeVisible();
+  await page.getByTestId('reviewer-queue-project-class-filter').selectOption('all');
+  await expect(page.getByTestId('reviewer-queue-item-901')).toBeVisible();
 
   await page
     .getByTestId('reviewer-queue-response-note-901')
@@ -125,6 +139,7 @@ test('delegated reviewer queue renders only delegated review items', async ({
         role: 'employee_supervisor',
         identity_type: 'internal_team_member',
         team_role: 'employee_supervisor',
+        review_queue_count: 9,
       }),
     });
   });
@@ -139,6 +154,8 @@ test('delegated reviewer queue renders only delegated review items', async ({
             agreement_id: 777,
             agreement_title: 'Bathroom Remodel',
             project_title: 'Bathroom Remodel',
+            project_class: 'residential',
+            project_class_label: 'Residential',
             milestones: [
               {
                 id: 902,
@@ -152,6 +169,8 @@ test('delegated reviewer queue renders only delegated review items', async ({
                 work_submitted_at: '2026-03-28T14:00:00Z',
                 work_submission_note: 'Layout is ready for inspection.',
                 agreement_id: 777,
+                project_class: 'residential',
+                project_class_label: 'Residential',
               },
             ],
           },
@@ -175,9 +194,10 @@ test('delegated reviewer queue renders only delegated review items', async ({
 
   await page.goto('/app/reviewer/queue', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByRole('link', { name: 'Awaiting Review' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Awaiting Review' })).toContainText('9');
   await expect(page.getByTestId('reviewer-queue-item-902')).toContainText('Tile Layout Review');
   await expect(page.getByTestId('reviewer-queue-item-902')).toContainText('Delegated Reviewer');
+  await expect(page.getByTestId('reviewer-queue-group-777').getByText('Residential')).toBeVisible();
 
   await page
     .getByTestId('reviewer-queue-response-note-902')

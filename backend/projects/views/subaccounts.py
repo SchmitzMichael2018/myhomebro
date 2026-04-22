@@ -13,12 +13,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
-from projects.models import ContractorSubAccount
+from projects.models import ContractorSubAccount, Milestone, SubcontractorCompletionStatus
 from projects.models_subcontractor import SubcontractorInvitation, SubcontractorInvitationStatus
 from projects.serializers.subaccounts import (
     ContractorSubAccountSerializer,
     ContractorSubAccountCreateSerializer,
 )
+from projects.services.milestone_workflow import is_effective_reviewer_user
 from projects.utils.accounts import get_contractor_for_user, get_subaccount_for_user
 from projects.permissions_subaccounts import IsContractorOrSubAccount
 
@@ -27,6 +28,27 @@ User = get_user_model()
 
 def _normalize_email(value: str | None) -> str:
     return (value or "").strip().lower()
+
+
+def _review_queue_count_for_user(user) -> int:
+    contractor = get_contractor_for_user(user)
+    subaccount = get_subaccount_for_user(user)
+
+    rows = Milestone.objects.select_related("agreement", "agreement__project").filter(
+        subcontractor_completion_status=SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+    )
+    if subaccount is not None:
+        rows = rows.filter(delegated_reviewer_subaccount__user=user)
+    elif contractor is not None:
+        rows = rows.filter(agreement__project__contractor=contractor)
+    else:
+        return 0
+
+    count = 0
+    for milestone in rows.order_by("agreement_id", "order", "id"):
+        if is_effective_reviewer_user(milestone, user):
+            count += 1
+    return count
 
 
 class ContractorSubAccountViewSet(viewsets.ModelViewSet):
@@ -138,6 +160,7 @@ class WhoAmIView(APIView):
                     "role": "admin",
                     "is_staff": True,
                     "is_superuser": bool(user.is_superuser),
+                    "review_queue_count": 0,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -156,6 +179,7 @@ class WhoAmIView(APIView):
                     "type": "contractor",
                     "role": "contractor_owner",
                     "identity_type": "contractor_owner",
+                    "review_queue_count": _review_queue_count_for_user(user),
                 },
                 status=status.HTTP_200_OK,
             )
@@ -169,6 +193,7 @@ class WhoAmIView(APIView):
                     "role": subaccount.role,
                     "identity_type": "internal_team_member",
                     "team_role": subaccount.role,
+                    "review_queue_count": _review_queue_count_for_user(user),
                 },
                 status=status.HTTP_200_OK,
             )
@@ -189,6 +214,7 @@ class WhoAmIView(APIView):
                     "type": "subcontractor",
                     "role": "subcontractor",
                     "identity_type": "subcontractor",
+                    "review_queue_count": 0,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -202,6 +228,7 @@ class WhoAmIView(APIView):
                 "email": user.email,
                 "type": "unknown",
                 "role": None,
+                "review_queue_count": 0,
             },
             status=status.HTTP_200_OK,
         )
