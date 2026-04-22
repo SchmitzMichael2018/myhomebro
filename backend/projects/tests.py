@@ -1266,6 +1266,11 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(lead.source, PublicContractorLead.SOURCE_QUOTE_REQUEST)
         self.assertEqual(lead.preferred_timeline, "ASAP")
         self.assertEqual(lead.ai_analysis.get("request_path_label"), "Request a Quote")
+        consent = SMSConsent.objects.get(phone_number_e164="+15552023030")
+        self.assertTrue(consent.can_send_sms)
+        self.assertFalse(consent.opted_out)
+        self.assertTrue(consent.consent_source_page.startswith("http"))
+        self.assertIn(self.profile.slug, consent.consent_source_page)
 
         self.client.force_authenticate(user=self.contractor_user)
         bids_response = self.client.get("/api/projects/contractor/bids/")
@@ -4173,6 +4178,42 @@ class SMSAutomationTests(TestCase):
         )
 
         self.assertEqual(decision["reason_code"], "opted_out")
+        self.assertEqual(decision["channel"], "suppressed")
+
+    def test_agreement_sent_sends_sms_when_consent_exists(self):
+        set_sms_opt_in(
+            phone_number=self.homeowner.phone_number,
+            homeowner=self.homeowner,
+            source=SMSConsent.OPT_IN_SOURCE_AGREEMENT,
+        )
+        with patch(
+            "projects.services.sms_automation.send_compliant_sms",
+            return_value={"ok": True, "twilio_sid": "SM-AGREEMENT", "status": "sent"},
+        ):
+            decision = evaluate_sms_automation(
+                "agreement_sent",
+                contractor=self.contractor,
+                homeowner=self.homeowner,
+                agreement=self.agreement,
+            )
+
+        self.assertTrue(decision["sent"])
+        self.assertEqual(decision["reason_code"], "sent_immediately")
+        self.assertEqual(
+            SMSAutomationDecision.objects.latest("id").template_key,
+            "agreement_sent_homeowner",
+        )
+
+    def test_agreement_sent_blocks_without_consent(self):
+        decision = evaluate_sms_automation(
+            "agreement_sent",
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            agreement=self.agreement,
+        )
+
+        self.assertFalse(decision["sent"])
+        self.assertEqual(decision["reason_code"], "no_consent")
         self.assertEqual(decision["channel"], "suppressed")
 
     def test_duplicate_event_within_cooldown_suppresses_sms(self):

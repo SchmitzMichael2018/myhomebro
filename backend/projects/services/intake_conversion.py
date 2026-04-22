@@ -12,6 +12,7 @@ from projects.models_ai_scope import AgreementAIScope
 from projects.models_project_intake import ProjectIntake
 from projects.models_templates import ProjectTemplate
 from projects.services.bid_workflow import infer_project_class, sync_bid_agreement_links
+from projects.services.sms_service import ensure_sms_consent
 
 
 def _safe_str(value: Any) -> str:
@@ -74,9 +75,22 @@ def _ensure_homeowner_from_intake(intake: ProjectIntake) -> Homeowner:
             if changed:
                 homeowner.save()
 
+            if _safe_str(intake.customer_phone) and bool(getattr(intake, "contact_consent", False)):
+                try:
+                    ensure_sms_consent(
+                        phone_number=intake.customer_phone,
+                        homeowner=homeowner,
+                        contractor=intake.contractor,
+                        source="agreement",
+                        consent_text_snapshot="Customer consent captured during intake.",
+                        consent_source_page=f"intake:{intake.id}",
+                    )
+                except Exception:
+                    pass
+
             return homeowner
 
-    return Homeowner.objects.create(
+    homeowner = Homeowner.objects.create(
         full_name=_safe_str(intake.customer_name) or "New Customer",
         email=_safe_str(intake.customer_email),
         phone_number=_safe_str(intake.customer_phone),
@@ -86,6 +100,19 @@ def _ensure_homeowner_from_intake(intake: ProjectIntake) -> Homeowner:
         zip_code=_safe_str(intake.customer_postal_code),
         status="active",
     )
+    if _safe_str(intake.customer_phone) and bool(getattr(intake, "contact_consent", False)):
+        try:
+            ensure_sms_consent(
+                phone_number=intake.customer_phone,
+                homeowner=homeowner,
+                contractor=intake.contractor,
+                source="agreement",
+                consent_text_snapshot="Customer consent captured during intake.",
+                consent_source_page=f"intake:{intake.id}",
+            )
+        except Exception:
+            pass
+    return homeowner
 
 
 def _build_project_title(intake: ProjectIntake) -> str:

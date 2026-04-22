@@ -274,6 +274,40 @@ def set_sms_opt_out(
     return consent
 
 
+def ensure_sms_consent(
+    *,
+    phone_number: str,
+    contractor: Contractor | None = None,
+    homeowner: Homeowner | None = None,
+    source: str = SMSConsent.OPT_IN_SOURCE_AGREEMENT,
+    consent_text_snapshot: str = "",
+    consent_source_page: str = "",
+) -> SMSConsent | None:
+    normalized = normalize_phone_to_e164(phone_number)
+    if not normalized:
+        return None
+    consent = get_sms_consent(normalized)
+    if consent is None or consent.opted_out or not consent.can_send_sms:
+        return set_sms_opt_in(
+            phone_number=normalized,
+            contractor=contractor,
+            homeowner=homeowner,
+            source=source,
+            consent_text_snapshot=consent_text_snapshot,
+            consent_source_page=consent_source_page,
+        )
+    updated_fields = []
+    if contractor is not None and consent.contractor_id != getattr(contractor, "id", None):
+        consent.contractor = contractor
+        updated_fields.append("contractor")
+    if homeowner is not None and consent.homeowner_id != getattr(homeowner, "id", None):
+        consent.homeowner = homeowner
+        updated_fields.append("homeowner")
+    if updated_fields:
+        consent.save(update_fields=updated_fields + ["updated_at"])
+    return consent
+
+
 def send_compliant_sms(
     to_phone,
     body,
@@ -293,15 +327,18 @@ def send_compliant_sms(
         "ok": False,
         "blocked": False,
         "status": "blocked",
+        "reason_code": "",
         "detail": "",
         "phone_number_e164": normalized_phone,
         "twilio_sid": "",
         "category": category,
+        "twilio_configured": bool(_twilio_ready()),
     }
 
     consent = get_sms_consent(normalized_phone)
     if not normalized_phone or not text:
         result["blocked"] = True
+        result["reason_code"] = "invalid_input"
         result["detail"] = "Phone number and message body are required."
     elif dedupe_key:
         cache_key = _sms_dedupe_cache_key(phone_number_e164=normalized_phone, dedupe_key=dedupe_key)
@@ -309,14 +346,17 @@ def send_compliant_sms(
             if cache_key and cache.get(cache_key):
                 result["blocked"] = True
                 result["status"] = "duplicate"
+                result["reason_code"] = "duplicate_recent"
                 result["detail"] = "Duplicate SMS suppressed."
         except Exception:
             pass
-    elif consent is None:
+    if not result["blocked"] and consent is None:
         result["blocked"] = True
+        result["reason_code"] = "no_consent"
         result["detail"] = "No SMS consent is on file for this phone number."
-    elif consent.opted_out or not consent.can_send_sms:
+    elif not result["blocked"] and (consent.opted_out or not consent.can_send_sms):
         result["blocked"] = True
+        result["reason_code"] = "opted_out"
         result["detail"] = "SMS cannot be sent because this phone number is opted out or not consented."
         contractor = contractor or consent.contractor or getattr(consent.homeowner, "created_by", None)
 
@@ -334,6 +374,8 @@ def send_compliant_sms(
                 "message_preview": _activity_preview(text),
                 "category": category,
                 "dedupe_key": dedupe_key,
+                "status": result["status"],
+                "reason_code": result["reason_code"],
             },
         )
         return result
@@ -341,6 +383,7 @@ def send_compliant_sms(
     contractor = contractor or consent.contractor or getattr(consent.homeowner, "created_by", None)
     if not _twilio_ready():
         result["status"] = "failed"
+        result["reason_code"] = "twilio_config_missing"
         result["detail"] = "Twilio Messaging Service is not configured."
         _log_sms_activity(
             event_type="sms_failed",
@@ -350,7 +393,13 @@ def send_compliant_sms(
             contractor=contractor,
             agreement=agreement,
             milestone=milestone,
-            metadata={"phone": normalized_phone, "message_preview": _activity_preview(text), "category": category},
+            metadata={
+                "phone": normalized_phone,
+                "message_preview": _activity_preview(text),
+                "category": category,
+                "status": result["status"],
+                "reason_code": result["reason_code"],
+            },
         )
         return result
 
@@ -361,7 +410,7 @@ def send_compliant_sms(
             messaging_service_sid=_messaging_service_sid(),
         )
         sid = str(getattr(message, "sid", "") or "")
-        result.update({"ok": True, "blocked": False, "status": "sent", "detail": "SMS queued.", "twilio_sid": sid})
+        result.update({"ok": True, "blocked": False, "status": "sent", "reason_code": "sent", "detail": "SMS queued.", "twilio_sid": sid})
         if dedupe_key:
             try:
                 cache_key = _sms_dedupe_cache_key(phone_number_e164=normalized_phone, dedupe_key=dedupe_key)
@@ -384,6 +433,8 @@ def send_compliant_sms(
                 "category": category,
                 "delivery_status": str(getattr(message, "status", "") or ""),
                 "dedupe_key": dedupe_key,
+                "status": result["status"],
+                "reason_code": result["reason_code"],
             },
             navigation_target=f"/app/agreements/{agreement.id}" if agreement is not None else "",
             dedupe_key=f"sms_sent:{sid}" if sid else "",
@@ -397,9 +448,9 @@ def send_compliant_sms(
             consent.opted_out_at = timezone.now()
             consent.opted_out_source = SMSConsent.OPT_OUT_SOURCE_TWILIO_ERROR
             consent.save(update_fields=["can_send_sms", "opted_out", "opted_out_at", "opted_out_source", "updated_at"])
-        result.update({"status": "failed", "detail": str(exc)})
+        result.update({"status": "failed", "reason_code": "twilio_error", "detail": str(exc)})
     except Exception as exc:  # pragma: no cover
-        result.update({"status": "failed", "detail": str(exc)})
+        result.update({"status": "failed", "reason_code": "twilio_error", "detail": str(exc)})
 
     _log_sms_activity(
         event_type="sms_failed",
@@ -415,6 +466,8 @@ def send_compliant_sms(
             "category": category,
             "twilio_sid": result["twilio_sid"],
             "dedupe_key": dedupe_key,
+            "status": result["status"],
+            "reason_code": result["reason_code"],
         },
     )
     return result

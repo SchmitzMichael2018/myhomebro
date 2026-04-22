@@ -39,6 +39,7 @@ from projects.services.agreement_draft_prefill import apply_conversion_prefill
 from projects.services.agreements.project_create import resolve_contractor_for_user
 from projects.services.ai.public_profile_generation import generate_contractor_public_profile
 from projects.services.intake_public import send_intake_email
+from projects.services.sms_service import ensure_sms_consent
 from projects.ai.agreement_description_writer import generate_or_improve_description
 
 
@@ -482,6 +483,18 @@ class PublicContractorQuoteRequestView(APIView):
                 original_name=getattr(file_obj, "name", "") or "",
                 caption="",
             )
+
+        if _truthy(data.get("contact_consent")) and _safe_text(data.get("phone")):
+            try:
+                ensure_sms_consent(
+                    phone_number=_safe_text(data.get("phone")),
+                    contractor=profile.contractor,
+                    source="agreement",
+                    consent_text_snapshot="Customer consent captured during public quote request.",
+                    consent_source_page=request.build_absolute_uri(profile.public_url_path),
+                )
+            except Exception:
+                pass
 
         lead = sync_public_lead_from_project_intake(intake, status_override=PublicContractorLead.STATUS_NEW)
         return Response(

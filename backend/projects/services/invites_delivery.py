@@ -117,7 +117,10 @@ def send_twilio_sms(*, to_phone: str, body: str) -> Tuple[bool, str]:
 
     sid = getattr(settings, "TWILIO_ACCOUNT_SID", "") or os.getenv("TWILIO_ACCOUNT_SID", "")
     auth = getattr(settings, "TWILIO_AUTH_TOKEN", "") or os.getenv("TWILIO_AUTH_TOKEN", "")
-    from_num = getattr(settings, "TWILIO_FROM_NUMBER", "") or os.getenv("TWILIO_FROM_NUMBER", "")
+    from_num = (
+        getattr(settings, "TWILIO_FROM_NUMBER", "") or os.getenv("TWILIO_FROM_NUMBER", "")
+        or getattr(settings, "TWILIO_PHONE_NUMBER", "") or os.getenv("TWILIO_PHONE_NUMBER", "")
+    )
 
     if not sid or not auth or not from_num:
         return False, "Twilio not configured."

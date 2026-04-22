@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from projects.models import Agreement, AgreementProjectClass, Homeowner, Project, PublicContractorLead
 from projects.models_templates import ProjectTemplate
+from projects.services.sms_service import ensure_sms_consent
 
 COMMERCIAL_HINTS = {
     "commercial",
@@ -219,7 +220,25 @@ def sync_bid_agreement_links(*, agreement, lead=None, intake=None) -> None:
 
 
 def _ensure_homeowner_for_public_lead(*, lead, homeowner=None):
+    source_intake = getattr(lead, "source_intake", None)
+    analysis = getattr(lead, "ai_analysis", None) or {}
+    consent_requested = bool(
+        getattr(source_intake, "contact_consent", False)
+        or analysis.get("contact_consent")
+    )
     if homeowner is not None:
+        if consent_requested and _safe_text(getattr(homeowner, "phone_number", "")):
+            try:
+                ensure_sms_consent(
+                    phone_number=getattr(homeowner, "phone_number", ""),
+                    homeowner=homeowner,
+                    contractor=getattr(lead, "contractor", None),
+                    source="agreement",
+                    consent_text_snapshot="Customer consent captured during quote request.",
+                    consent_source_page=getattr(getattr(lead, "public_profile", None), "public_url_path", "") or "",
+                )
+            except Exception:
+                pass
         return homeowner
     if not getattr(lead, "email", ""):
         return None
@@ -232,7 +251,7 @@ def _ensure_homeowner_for_public_lead(*, lead, homeowner=None):
     if existing is not None:
         return existing
 
-    return Homeowner.objects.create(
+    homeowner = Homeowner.objects.create(
         created_by=contractor,
         full_name=_safe_text(getattr(lead, "full_name", "")) or "Customer",
         email=_safe_text(getattr(lead, "email", "")),
@@ -243,6 +262,19 @@ def _ensure_homeowner_for_public_lead(*, lead, homeowner=None):
         zip_code=_safe_text(getattr(lead, "zip_code", "")),
         status="active",
     )
+    if consent_requested and _safe_text(getattr(homeowner, "phone_number", "")):
+        try:
+            ensure_sms_consent(
+                phone_number=getattr(homeowner, "phone_number", ""),
+                homeowner=homeowner,
+                contractor=contractor,
+                source="agreement",
+                consent_text_snapshot="Customer consent captured during quote request.",
+                consent_source_page=getattr(getattr(lead, "public_profile", None), "public_url_path", "") or "",
+            )
+        except Exception:
+            pass
+    return homeowner
 
 
 def promote_public_lead_to_agreement(*, lead, homeowner=None):

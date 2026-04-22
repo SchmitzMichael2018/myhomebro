@@ -24,7 +24,13 @@ logger = logging.getLogger(__name__)
 # Twilio client (unchanged)
 # ---------------------------------------------------------------------------
 twilio_client = None
-if all([settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN, settings.TWILIO_PHONE_NUMBER]):
+if all(
+    [
+        settings.TWILIO_ACCOUNT_SID,
+        settings.TWILIO_AUTH_TOKEN,
+        (getattr(settings, "TWILIO_PHONE_NUMBER", "") or getattr(settings, "TWILIO_FROM_NUMBER", "")),
+    ]
+):
     twilio_client = TwilioClient(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
 
 
@@ -243,9 +249,10 @@ def send_notification(recipient, subject, template_prefix, context):
                 sms_body = "You have a new notification from {}".format(_get_brand_name())
 
         try:
+            from_number = getattr(settings, "TWILIO_PHONE_NUMBER", "") or getattr(settings, "TWILIO_FROM_NUMBER", "")
             twilio_client.messages.create(
                 body=sms_body,
-                from_=settings.TWILIO_PHONE_NUMBER,
+                from_=from_number,
                 to=str(phone_number),
             )
             logger.info("Sent SMS to %s", phone_number)

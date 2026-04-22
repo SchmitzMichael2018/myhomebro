@@ -212,11 +212,12 @@ def send_agreement_invite_email(agreement: Agreement, request) -> None:
     except Exception as e:
         logging.error(f"Email error for {agreement.id}: {e}")
     phone = homeowner.phone_number
-    if phone and all([settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN, settings.TWILIO_FROM_NUMBER]):
+    from_number = getattr(settings, "TWILIO_FROM_NUMBER", "") or getattr(settings, "TWILIO_PHONE_NUMBER", "")
+    if phone and all([settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN, from_number]):
         try:
             Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN).messages.create(
                 body=f"Sign here: {link}",
-                from_=settings.TWILIO_FROM_NUMBER,
+                from_=from_number,
                 to=phone
             )
         except Exception as e:

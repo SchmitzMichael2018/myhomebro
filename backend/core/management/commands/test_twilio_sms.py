@@ -22,6 +22,8 @@ except ImportError as exc:
         "Run `pip install twilio` in your virtualenv."
     ) from exc
 
+from projects.services.sms_service import send_compliant_sms
+
 logger = logging.getLogger(__name__)
 
 
@@ -48,18 +50,38 @@ class Command(BaseCommand):
 
         account_sid = getattr(settings, "TWILIO_ACCOUNT_SID", "")
         auth_token = getattr(settings, "TWILIO_AUTH_TOKEN", "")
-        from_number = getattr(settings, "TWILIO_PHONE_NUMBER", "")
+        from_number = getattr(settings, "TWILIO_PHONE_NUMBER", "") or getattr(settings, "TWILIO_FROM_NUMBER", "")
+        messaging_service_sid = getattr(settings, "TWILIO_MESSAGING_SERVICE_SID", "")
+
+        if messaging_service_sid:
+            self.stdout.write(self.style.NOTICE("Using compliant SMS sender path (messaging service sid configured)."))
+            result = send_compliant_sms(
+                phone_number,
+                message,
+                category="customer_care",
+                dedupe_key=f"test_twilio_sms:{phone_number}",
+            )
+            self.stdout.write(f"  Status: {result.get('status')}")
+            self.stdout.write(f"  Reason: {result.get('reason_code') or 'n/a'}")
+            self.stdout.write(f"  Detail: {result.get('detail')}")
+            self.stdout.write(f"  Phone: {result.get('phone_number_e164')}")
+            if result.get("ok"):
+                self.stdout.write(self.style.SUCCESS(f"SMS sent successfully! Twilio SID: {result.get('twilio_sid')}"))
+                return
+            raise CommandError(
+                f"Compliant SMS was not sent: {result.get('detail') or result.get('reason_code') or 'unknown reason'}"
+            )
 
         # Basic sanity checks
         if not account_sid or not auth_token or not from_number:
             raise CommandError(
                 "Missing Twilio configuration. Please ensure TWILIO_ACCOUNT_SID, "
-                "TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER are set in settings/env."
+                "TWILIO_AUTH_TOKEN, and either TWILIO_MESSAGING_SERVICE_SID or TWILIO_PHONE_NUMBER/TWILIO_FROM_NUMBER are set in settings/env."
             )
 
         self.stdout.write(self.style.NOTICE("Twilio configuration:"))
         self.stdout.write(f"  TWILIO_ACCOUNT_SID: {account_sid[:6]}... (truncated)")
-        self.stdout.write(f"  TWILIO_PHONE_NUMBER: {from_number}")
+        self.stdout.write(f"  TWILIO_PHONE_NUMBER/TWILIO_FROM_NUMBER: {from_number}")
         self.stdout.write(f"  Destination: {phone_number}")
         self.stdout.write(f"  Message: {message}")
         self.stdout.write("")

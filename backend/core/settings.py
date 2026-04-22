@@ -373,7 +373,15 @@ if CELERY_BROKER_URL:
 # ──────────────────────────────────────────────────────────────────────────────
 TWILIO_ACCOUNT_SID = get_env_var("TWILIO_ACCOUNT_SID", required=False)
 TWILIO_AUTH_TOKEN = get_env_var("TWILIO_AUTH_TOKEN", required=False)
-TWILIO_PHONE_NUMBER = get_env_var("TWILIO_PHONE_NUMBER", required=False)
+TWILIO_MESSAGING_SERVICE_SID = get_env_var("TWILIO_MESSAGING_SERVICE_SID", required=False)
+TWILIO_PHONE_NUMBER = get_env_var(
+    "TWILIO_PHONE_NUMBER",
+    get_env_var("TWILIO_FROM_NUMBER", required=False),
+)
+TWILIO_FROM_NUMBER = get_env_var(
+    "TWILIO_FROM_NUMBER",
+    get_env_var("TWILIO_PHONE_NUMBER", required=False),
+)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

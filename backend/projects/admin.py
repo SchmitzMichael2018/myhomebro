@@ -207,7 +207,19 @@ if Homeowner is not None:
 if SMSConsent is not None:
     @admin.register(SMSConsent)
     class SMSConsentAdmin(admin.ModelAdmin):
-        list_display = ("id", "phone_number_e164", "contractor", "homeowner", "can_send_sms", "opted_out", "opted_in_source", "updated_at")
+        list_display = (
+            "id",
+            "phone_number_e164",
+            "contractor",
+            "homeowner",
+            "can_send_sms",
+            "opted_out",
+            "opted_in_source",
+            "opted_in_at",
+            "opted_out_at",
+            "consent_source_page",
+            "updated_at",
+        )
         search_fields = ("phone_number_e164", "contractor__business_name", "homeowner__full_name", "homeowner__email")
         list_filter = ("can_send_sms", "opted_out", "opted_in_source", "opted_out_source")
         readonly_fields = ("created_at", "updated_at")
@@ -216,7 +228,18 @@ if SMSConsent is not None:
 if SMSAutomationDecision is not None:
     @admin.register(SMSAutomationDecision)
     class SMSAutomationDecisionAdmin(admin.ModelAdmin):
-        list_display = ("id", "event_type", "phone_number_e164", "channel_decision", "priority", "reason_code", "sent", "created_at")
+        list_display = (
+            "id",
+            "event_type",
+            "phone_number_e164",
+            "channel_decision",
+            "priority",
+            "reason_code",
+            "sent",
+            "duplicate_suppressed",
+            "twilio_message_sid",
+            "created_at",
+        )
         search_fields = ("phone_number_e164", "agreement__id", "invoice__invoice_number", "milestone__title", "reason_code", "template_key")
         list_filter = ("should_send", "channel_decision", "priority", "reason_code", "template_key", "sent", "deferred")
         readonly_fields = (

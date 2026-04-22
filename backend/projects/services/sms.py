@@ -42,14 +42,23 @@ def _twilio_enabled() -> bool:
     """
     sid = getattr(settings, "TWILIO_ACCOUNT_SID", None) or os.getenv("TWILIO_ACCOUNT_SID")
     token = getattr(settings, "TWILIO_AUTH_TOKEN", None) or os.getenv("TWILIO_AUTH_TOKEN")
-    from_ = getattr(settings, "TWILIO_PHONE_NUMBER", None) or os.getenv("TWILIO_PHONE_NUMBER")
-    enabled = bool(sid and token and from_ and Client is not None)
+    messaging_service_sid = (
+        getattr(settings, "TWILIO_MESSAGING_SERVICE_SID", None) or os.getenv("TWILIO_MESSAGING_SERVICE_SID")
+    )
+    from_ = (
+        getattr(settings, "TWILIO_PHONE_NUMBER", None)
+        or os.getenv("TWILIO_PHONE_NUMBER")
+        or getattr(settings, "TWILIO_FROM_NUMBER", None)
+        or os.getenv("TWILIO_FROM_NUMBER")
+    )
+    enabled = bool(sid and token and Client is not None and (messaging_service_sid or from_))
 
     if not enabled:
         logger.info(
-            "Twilio SMS disabled: sid=%r token_present=%s from_=%r client=%r",
+            "Twilio SMS disabled: sid=%r token_present=%s messaging_service_sid=%r from_=%r client=%r",
             bool(sid),
             bool(token),
+            bool(messaging_service_sid),
             bool(from_),
             Client is not None,
         )
