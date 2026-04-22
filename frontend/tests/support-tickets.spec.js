@@ -55,11 +55,19 @@ test("authenticated user can submit a support ticket and view it in My Tickets",
     });
   });
 
-  await page.route("**/api/projects/notifications/", async (route) => {
+  await page.route("**/api/notifications**", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify([]),
+    });
+  });
+
+  await page.route("**/api/notifications/unread-count/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ count: 0 }),
     });
   });
 

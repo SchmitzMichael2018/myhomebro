@@ -22,6 +22,7 @@ from projects.services.project_outcome import capture_project_outcome_snapshot
 from projects.services.project_email_reports import send_project_email_report
 from projects.services.activity_feed import create_activity_event
 from projects.services.contractor_onboarding import build_stripe_requirement_payload
+from projects.services.notification_center import create_notification
 
 logger = logging.getLogger(__name__)
 
@@ -315,6 +316,19 @@ class MagicInvoiceApproveView(APIView):
                     )
                 except Exception:
                     pass
+                try:
+                    create_notification(
+                        contractor=getattr(invoice.agreement, "contractor", None),
+                        user=getattr(getattr(invoice.agreement, "contractor", None), "user", None),
+                        category="payment_released",
+                        title="Payment released",
+                        body=f"Funds were released for invoice {getattr(invoice, 'invoice_number', invoice.id)}.",
+                        link=f"/app/invoices/{invoice.id}",
+                        agreement=invoice.agreement,
+                        invoice=invoice,
+                    )
+                except Exception:
+                    pass
 
                 return Response(
                     {
@@ -435,6 +449,19 @@ class MagicInvoiceApproveView(APIView):
                 )
             except Exception:
                 pass
+            try:
+                create_notification(
+                    contractor=getattr(invoice.agreement, "contractor", None),
+                    user=getattr(getattr(invoice.agreement, "contractor", None), "user", None),
+                    category="payment_released",
+                    title="Payment released",
+                    body=f"Funds were released for invoice {getattr(invoice, 'invoice_number', invoice.id)}.",
+                    link=f"/app/invoices/{invoice.id}",
+                    agreement=invoice.agreement,
+                    invoice=invoice,
+                )
+            except Exception:
+                pass
 
             return Response(
                 {
@@ -456,6 +483,19 @@ class MagicInvoiceApproveView(APIView):
                     invoice.status = InvoiceStatus.APPROVED
                     invoice.approved_at = timezone.now()
                     invoice.save(update_fields=["status", "approved_at"])
+                    try:
+                        create_notification(
+                            contractor=getattr(invoice.agreement, "contractor", None),
+                            user=getattr(getattr(invoice.agreement, "contractor", None), "user", None),
+                            category="invoice_approved",
+                            title="Invoice approved",
+                            body=f"Invoice {getattr(invoice, 'invoice_number', invoice.id)} is approved and ready for the next step.",
+                            link=f"/app/invoices/{invoice.id}",
+                            agreement=invoice.agreement,
+                            invoice=invoice,
+                        )
+                    except Exception:
+                        pass
                     try:
                         create_activity_event(
                             contractor=getattr(invoice.agreement, "contractor", None),

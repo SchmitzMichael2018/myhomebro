@@ -17,6 +17,12 @@ from rest_framework_simplejwt.views import (
 from payments.webhooks import stripe_webhook  # noqa: F401  (imported elsewhere historically)
 from projects.views.sms_webhook import sms_webhook
 from projects.views.public_presence import PublicContractorRatingView
+from projects.views.notifications import (
+    NotificationListView,
+    NotificationMarkAllReadView,
+    NotificationMarkReadView,
+    NotificationUnreadCountView,
+)
 
 from .views_legal import TermsOfServiceView, PrivacyPolicyView
 from .views_frontend import spa as spa_index
@@ -91,6 +97,10 @@ urlpatterns = [
     # Primary APIs
     path("api/sms/webhook/", sms_webhook, name="sms-webhook"),
     path("api/projects/", include(("projects.urls", "projects"), namespace="projects")),
+    path("api/notifications/", NotificationListView.as_view(), name="notifications-list"),
+    path("api/notifications/unread-count/", NotificationUnreadCountView.as_view(), name="notifications-unread-count"),
+    path("api/notifications/<int:pk>/read/", NotificationMarkReadView.as_view(), name="notifications-mark-read"),
+    path("api/notifications/mark-all-read/", NotificationMarkAllReadView.as_view(), name="notifications-mark-all-read"),
     path("api/contractors/<slug:slug>/rating/", PublicContractorRatingView.as_view(), name="contractor-rating"),
 
     # ✅ FIX: mount accounts under /api/accounts/ (matches frontend calls)

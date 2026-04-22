@@ -65,6 +65,7 @@ import CustomerRecordsPage from "../pages/CustomerRecordsPage.jsx";
 import ContractorPublicPresencePage from "../pages/ContractorPublicPresencePage.jsx";
 import AIAssistantPage from "../pages/AIAssistantPage.jsx";
 import SupportTicketsPage from "../pages/SupportTicketsPage.jsx";
+import NotificationsPage from "../pages/NotificationsPage.jsx";
 
 import { useWhoAmI } from "../hooks/useWhoAmI";
 
@@ -125,6 +126,7 @@ export function protectedRoutes() {
         }
       >
         <Route index element={<AppHomeRedirect />} />
+        <Route path="notifications" element={<NotificationsPage />} />
 
         {/* ---------------- ADMIN ---------------- */}
         <Route element={<RoleGate allow={["admin"]} />}>

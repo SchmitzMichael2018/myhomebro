@@ -1791,6 +1791,12 @@ class Notification(models.Model):
     EVENT_DRAW_RELEASED = "draw_released"
     EVENT_BID_AWARDED = "bid_awarded"
     EVENT_BID_NOT_SELECTED = "bid_not_selected"
+    EVENT_QUOTE_REQUEST_RECEIVED = "quote_request_received"
+    EVENT_AGREEMENT_SIGNED = "agreement_signed"
+    EVENT_ESCROW_FUNDED = "escrow_funded"
+    EVENT_INVOICE_APPROVED = "invoice_approved"
+    EVENT_MILESTONE_PENDING_APPROVAL = "milestone_pending_approval"
+    EVENT_PAYMENT_RELEASED = "payment_released"
 
     EVENT_CHOICES = (
         (EVENT_SUBCONTRACTOR_COMMENT, "Subcontractor Comment"),
@@ -1802,13 +1808,28 @@ class Notification(models.Model):
         (EVENT_DRAW_RELEASED, "Draw Released"),
         (EVENT_BID_AWARDED, "Bid Awarded"),
         (EVENT_BID_NOT_SELECTED, "Bid Not Selected"),
+        (EVENT_QUOTE_REQUEST_RECEIVED, "Quote Request Received"),
+        (EVENT_AGREEMENT_SIGNED, "Agreement Signed"),
+        (EVENT_ESCROW_FUNDED, "Escrow Funded"),
+        (EVENT_INVOICE_APPROVED, "Invoice Approved"),
+        (EVENT_MILESTONE_PENDING_APPROVAL, "Milestone Pending Approval"),
+        (EVENT_PAYMENT_RELEASED, "Payment Released"),
     )
 
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notifications",
+    )
     contractor = models.ForeignKey(
         Contractor,
         on_delete=models.CASCADE,
         related_name="notifications",
     )
+    category = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    link = models.CharField(max_length=500, blank=True, default="")
     event_type = models.CharField(max_length=64, choices=EVENT_CHOICES, db_index=True)
     agreement = models.ForeignKey(
         Agreement,
@@ -1838,6 +1859,13 @@ class Notification(models.Model):
         null=True,
         blank=True,
     )
+    invoice = models.ForeignKey(
+        "projects.Invoice",
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        null=True,
+        blank=True,
+    )
     actor_user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -1856,7 +1884,8 @@ class Notification(models.Model):
         ordering = ["-created_at", "-id"]
 
     def __str__(self):
-        return f"{self.contractor_id}:{self.event_type}:{self.title}"
+        recipient = getattr(self.user, "email", None) or self.contractor_id or "notification"
+        return f"{recipient}:{self.event_type}:{self.title}"
 
 
 class MilestonePayout(models.Model):

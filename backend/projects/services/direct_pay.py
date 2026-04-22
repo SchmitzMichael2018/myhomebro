@@ -21,6 +21,7 @@ from payments.fees import calculate_platform_fee_cents_for_invoice
 from projects.services.agreement_completion import recompute_and_apply_agreement_completion
 from projects.services.milestone_payouts import sync_payout_for_invoice
 from projects.services.project_outcome import capture_project_outcome_snapshot
+from projects.services.notification_center import create_notification
 
 log = logging.getLogger(__name__)
 
@@ -342,9 +343,11 @@ def mark_direct_pay_invoice_payment_pending(
             return inv
 
         update_fields = []
+        approved_now = False
         if inv.status not in {InvoiceStatus.APPROVED, InvoiceStatus.DISPUTED}:
             inv.status = InvoiceStatus.APPROVED
             update_fields.append("status")
+            approved_now = True
 
         if checkout_session_id and getattr(inv, "direct_pay_checkout_session_id", "") != str(checkout_session_id):
             inv.direct_pay_checkout_session_id = str(checkout_session_id)
@@ -356,6 +359,21 @@ def mark_direct_pay_invoice_payment_pending(
 
         if update_fields:
             inv.save(update_fields=list(dict.fromkeys(update_fields)))
+
+    if approved_now:
+        try:
+            create_notification(
+                contractor=getattr(inv.agreement, "contractor", None),
+                user=getattr(getattr(inv.agreement, "contractor", None), "user", None),
+                category="invoice_approved",
+                title="Invoice approved",
+                body=f"Invoice {getattr(inv, 'invoice_number', inv.id)} is approved and ready for payment.",
+                link=f"/app/invoices/{inv.id}",
+                agreement=inv.agreement,
+                invoice=inv,
+            )
+        except Exception:
+            pass
 
     return inv
 
@@ -507,6 +525,19 @@ def finalize_direct_pay_invoice_paid(
     try:
         if getattr(inv, "agreement_id", None):
             capture_project_outcome_snapshot(int(inv.agreement_id), trigger="payment_released")
+    except Exception:
+        pass
+    try:
+        create_notification(
+            contractor=getattr(inv.agreement, "contractor", None),
+            user=getattr(getattr(inv.agreement, "contractor", None), "user", None),
+            category="payment_released",
+            title="Payment released",
+            body=f"Funds were released for invoice {getattr(inv, 'invoice_number', inv.id)}.",
+            link=f"/app/invoices/{inv.id}",
+            agreement=inv.agreement,
+            invoice=inv,
+        )
     except Exception:
         pass
     return inv

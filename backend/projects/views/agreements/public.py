@@ -16,6 +16,7 @@ from projects.services.agreements.public_sign import (
     apply_homeowner_signature,
     maybe_send_final_copy_after_homeowner_sign,
 )
+from projects.services.notification_center import create_notification
 from projects.services.agreements.pdf_stream import serve_public_pdf
 from projects.services.agreements.pdf_loader import load_pdf_services
 from projects.views.funding import send_funding_link_for_agreement
@@ -293,6 +294,18 @@ def agreement_public_sign(request):
 
     # Auto-send final copy (guarded)
     maybe_send_final_copy_after_homeowner_sign(ag, was_homeowner_signed=was_homeowner_signed)
+    try:
+        create_notification(
+            contractor=getattr(ag, "contractor", None),
+            user=getattr(getattr(ag, "contractor", None), "user", None),
+            category="agreement_signed",
+            title="Agreement signed",
+            body=f"{getattr(getattr(ag, 'homeowner', None), 'full_name', '') or 'Your customer'} signed {getattr(ag, 'title', '') or 'the agreement'}.",
+            link=f"/app/agreements/{ag.id}",
+            agreement=ag,
+        )
+    except Exception:
+        pass
 
     auto_funding = None
     try:

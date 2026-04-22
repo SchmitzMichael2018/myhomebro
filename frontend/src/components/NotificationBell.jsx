@@ -1,18 +1,13 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 
 import useNotifications from "../hooks/useNotifications.js";
-import NotificationList from "./NotificationList.jsx";
+import NotificationDropdown from "./NotificationDropdown.jsx";
 
 export default function NotificationBell() {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef(null);
-  const { notifications, count, loading, refresh } = useNotifications();
-
-  const unreadCount = useMemo(
-    () => notifications.filter((notification) => !notification.is_read).length,
-    [notifications]
-  );
+  const { notifications, unreadCount, totalCount, loading, refresh, markRead, markAllRead } = useNotifications({ limit: 10 });
 
   useEffect(() => {
     if (!open) return undefined;
@@ -68,14 +63,18 @@ export default function NotificationBell() {
 
       {open ? (
         <>
-          <NotificationList
+          <NotificationDropdown
             data-testid="notifications-panel"
             items={notifications}
+            unreadCount={unreadCount}
             onClose={() => setOpen(false)}
+            onMarkRead={markRead}
+            onMarkAllRead={markAllRead}
+            loading={loading}
             emptyLabel={loading ? "Loading notifications..." : "No notifications yet."}
           />
           <div className="sr-only" data-testid="notifications-total-count">
-            {count}
+            {totalCount}
           </div>
         </>
       ) : null}

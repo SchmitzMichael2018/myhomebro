@@ -519,6 +519,27 @@ export async function createSupportTicket(payload) {
   return res.data;
 }
 
+export async function listNotifications(limit = 10) {
+  const res = await api.get("/notifications/", { params: { limit } });
+  return res.data;
+}
+
+export async function getUnreadNotificationCount() {
+  const res = await api.get("/notifications/unread-count/");
+  return res.data;
+}
+
+export async function markNotificationRead(notificationId) {
+  if (!notificationId) throw new Error("notificationId is required");
+  const res = await api.post(`/notifications/${notificationId}/read/`);
+  return res.data;
+}
+
+export async function markAllNotificationsRead() {
+  const res = await api.post("/notifications/mark-all-read/");
+  return res.data;
+}
+
 export async function getContractorRating(slug) {
   if (!slug) throw new Error("slug is required");
   const res = await api.get(`/contractors/${slug}/rating/`);

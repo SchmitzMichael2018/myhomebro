@@ -20,6 +20,7 @@ from projects.services.milestone_payouts import sync_milestone_payout
 from projects.services.subcontractor_notifications import (
     create_subcontractor_activity_notification,
 )
+from projects.services.notification_center import create_notification
 from projects.services.activity_feed import create_activity_event
 from projects.services.project_email_reports import send_project_email_report
 from projects.utils.accounts import get_contractor_for_user, get_subaccount_for_user
@@ -211,6 +212,19 @@ def submit_work_for_review(request, milestone_id: int):
             navigation_target="/app/reviewer/queue",
             metadata={"milestone_id": milestone.id, "agreement_id": milestone.agreement_id},
             dedupe_key=f"milestone_pending_approval:{milestone.id}:{milestone.subcontractor_marked_complete_at.isoformat() if milestone.subcontractor_marked_complete_at else milestone.id}",
+        )
+    except Exception:
+        pass
+    try:
+        create_notification(
+            contractor=getattr(milestone.agreement, "contractor", None),
+            user=getattr(getattr(milestone.agreement, "contractor", None), "user", None),
+            category="milestone_pending_approval",
+            title="Milestone pending approval",
+            body=f"{milestone.title} is waiting for review.",
+            link="/app/reviewer/queue",
+            agreement=milestone.agreement,
+            milestone=milestone,
         )
     except Exception:
         pass

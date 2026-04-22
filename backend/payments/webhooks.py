@@ -34,6 +34,7 @@ from projects.services.direct_pay import (
     mark_direct_pay_invoice_payment_pending,
 )
 from projects.services.draw_requests import finalize_draw_paid, mark_draw_payment_issue
+from projects.services.notification_center import create_notification
 
 log = logging.getLogger(__name__)
 
@@ -1344,6 +1345,7 @@ def stripe_webhook(request):
             total_required = Decimal("0.00")
             if Milestone is not None:
                 total_required = _compute_total_required_for_agreement(Agreement, Milestone, ag)
+            was_escrow_funded = bool(getattr(ag, "escrow_funded", False))
 
             # If total_cost missing, backfill from milestones (best-effort)
             try:
@@ -1413,6 +1415,19 @@ def stripe_webhook(request):
                 )
             except Exception:
                 pass
+            if not was_escrow_funded and bool(getattr(ag, "escrow_funded", False)):
+                try:
+                    create_notification(
+                        contractor=getattr(ag, "contractor", None),
+                        user=getattr(getattr(ag, "contractor", None), "user", None),
+                        category="escrow_funded",
+                        title="Escrow funded",
+                        body="Escrow funds were received for this agreement.",
+                        link=f"/app/agreements/{ag.id}",
+                        agreement=ag,
+                    )
+                except Exception:
+                    pass
 
             # Upsert payments.Payment record (escrow funding)
             try:

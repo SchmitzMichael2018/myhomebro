@@ -38,7 +38,12 @@ from .views.attachments import (
 from .views.agreements_merge import MergeAgreementsView
 from .views.calendar import MilestoneCalendarView, AgreementCalendarView
 from .views.contractors.public import ContractorPublicProfileView
-from .views.notifications import NotificationListView
+from .views.notifications import (
+    NotificationListView,
+    NotificationMarkAllReadView,
+    NotificationMarkReadView,
+    NotificationUnreadCountView,
+)
 from .views.dispute_workorders import DisputeWorkOrderViewSet
 from .views.support_tickets import SupportTicketViewSet
 
@@ -682,6 +687,9 @@ urlpatterns = [
     # Misc
     # -------------------------------------------------
     path("notifications/", NotificationListView.as_view()),
+    path("notifications/unread-count/", NotificationUnreadCountView.as_view()),
+    path("notifications/<int:pk>/read/", NotificationMarkReadView.as_view()),
+    path("notifications/mark-all-read/", NotificationMarkAllReadView.as_view()),
     path("contractors/me/", ContractorMeView.as_view()),
     path("contractors/generate-profile/", ContractorPublicProfileGenerateView.as_view()),
     path("contractors/onboarding/setup/", ContractorOnboardingSetupView.as_view()),

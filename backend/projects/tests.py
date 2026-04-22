@@ -124,7 +124,10 @@ from projects.services.activity_feed import (
     create_activity_event,
     get_next_best_action,
 )
-from projects.services.direct_pay import create_direct_pay_checkout_for_invoice
+from projects.services.direct_pay import (
+    create_direct_pay_checkout_for_invoice,
+    finalize_direct_pay_invoice_paid,
+)
 from projects.services.draw_requests import finalize_draw_paid, release_escrow_draw
 from projects.services.estimation_engine import build_project_estimate, _clarification_signature_from_answers
 from projects.services.intake_analysis import analyze_project_intake
@@ -1266,6 +1269,14 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(lead.source, PublicContractorLead.SOURCE_QUOTE_REQUEST)
         self.assertEqual(lead.preferred_timeline, "ASAP")
         self.assertEqual(lead.ai_analysis.get("request_path_label"), "Request a Quote")
+        notification = Notification.objects.get(
+            contractor=self.contractor,
+            public_lead=lead,
+            category=Notification.EVENT_QUOTE_REQUEST_RECEIVED,
+        )
+        self.assertEqual(notification.user_id, self.contractor_user.id)
+        self.assertEqual(notification.link, "/app/bids")
+        self.assertFalse(notification.is_read)
         consent = SMSConsent.objects.get(phone_number_e164="+15552023030")
         self.assertTrue(consent.can_send_sms)
         self.assertFalse(consent.opted_out)
@@ -1425,6 +1436,13 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertIn("public_fund_url", response.data)
         self.agreement.refresh_from_db()
         self.assertEqual(self.agreement.status, ProjectStatus.SIGNED)
+        notification = Notification.objects.get(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            category=Notification.EVENT_AGREEMENT_SIGNED,
+        )
+        self.assertEqual(notification.user_id, self.contractor_user.id)
+        self.assertEqual(notification.link, f"/app/agreements/{self.agreement.id}")
 
     def test_public_agreement_funding_token_can_create_payment_intent(self):
         self.agreement.total_cost = Decimal("1500.00")
@@ -5199,6 +5217,8 @@ class ContractorNotificationTests(TestCase):
     def test_other_contractors_do_not_see_notifications(self):
         Notification.objects.create(
             contractor=self.contractor,
+            user=self.contractor_user,
+            category=Notification.EVENT_SUBCONTRACTOR_COMMENT,
             event_type=Notification.EVENT_SUBCONTRACTOR_COMMENT,
             agreement=self.agreement,
             milestone=self.milestone,
@@ -5210,9 +5230,63 @@ class ContractorNotificationTests(TestCase):
         )
 
         self.client.force_authenticate(user=self.other_contractor_user)
-        response = self.client.get("/api/projects/notifications/")
+        response = self.client.get("/api/notifications/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), [])
+
+    def test_notification_center_unread_count_and_mark_read(self):
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("1250.00"),
+            status=InvoiceStatus.APPROVED,
+        )
+        unread = Notification.objects.create(
+            contractor=self.contractor,
+            user=self.contractor_user,
+            category=Notification.EVENT_AGREEMENT_SIGNED,
+            event_type=Notification.EVENT_AGREEMENT_SIGNED,
+            agreement=self.agreement,
+            title="Agreement signed",
+            message="Your customer signed the agreement.",
+            link=f"/app/agreements/{self.agreement.id}",
+        )
+        Notification.objects.create(
+            contractor=self.contractor,
+            user=self.contractor_user,
+            category=Notification.EVENT_PAYMENT_RELEASED,
+            event_type=Notification.EVENT_PAYMENT_RELEASED,
+            agreement=self.agreement,
+            invoice=invoice,
+            title="Payment released",
+            message="Funds were released for invoice INV-1.",
+            link=f"/app/invoices/{invoice.id}",
+            is_read=True,
+        )
+
+        notify_client = APIClient()
+        notify_client.force_authenticate(user=self.contractor_user)
+
+        response = notify_client.get("/api/notifications/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 2)
+        self.assertEqual(response.data[0]["title"], "Payment released")
+        self.assertEqual(response.data[1]["title"], "Agreement signed")
+
+        unread_response = notify_client.get("/api/notifications/unread-count/")
+        self.assertEqual(unread_response.status_code, 200)
+        self.assertEqual(unread_response.data["count"], 1)
+
+        mark_read_response = notify_client.post(f"/api/notifications/{unread.id}/read/")
+        self.assertEqual(mark_read_response.status_code, 200)
+        self.assertTrue(mark_read_response.data["is_read"])
+
+        unread_after_response = notify_client.get("/api/notifications/unread-count/")
+        self.assertEqual(unread_after_response.status_code, 200)
+        self.assertEqual(unread_after_response.data["count"], 0)
+
+        mark_all_response = notify_client.post("/api/notifications/mark-all-read/")
+        self.assertEqual(mark_all_response.status_code, 200)
+        self.assertGreaterEqual(mark_all_response.data["updated"], 0)
 
 
 class SubcontractorCompletionReviewTests(TestCase):
@@ -9389,6 +9463,42 @@ class ProgressPaymentWorkflowTests(TestCase):
         self.assertEqual(invoice.direct_pay_checkout_session_id, "cs_test_invoice_pending")
         self.assertEqual(invoice.direct_pay_payment_intent_id, "pi_test_invoice_pending")
         self.assertIsNone(invoice.direct_pay_paid_at)
+        self.assertTrue(
+            Notification.objects.filter(
+                contractor=self.contractor,
+                agreement=self.agreement,
+                invoice=invoice,
+                category=Notification.EVENT_INVOICE_APPROVED,
+            ).exists()
+        )
+
+    def test_finalize_direct_pay_invoice_paid_creates_payment_released_notification(self):
+        self.agreement.payment_mode = "direct"
+        self.agreement.save(update_fields=["payment_mode"])
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("1900.00"),
+            status=InvoiceStatus.APPROVED,
+            direct_pay_checkout_session_id="cs_test_invoice_paid",
+            direct_pay_payment_intent_id="pi_test_invoice_paid",
+        )
+
+        finalize_direct_pay_invoice_paid(
+            invoice_id=invoice.id,
+            payment_intent_id="pi_test_invoice_paid",
+        )
+
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, InvoiceStatus.PAID)
+        self.assertIsNotNone(invoice.direct_pay_paid_at)
+        self.assertTrue(
+            Notification.objects.filter(
+                contractor=self.contractor,
+                agreement=self.agreement,
+                invoice=invoice,
+                category=Notification.EVENT_PAYMENT_RELEASED,
+            ).exists()
+        )
 
     def test_payment_intent_processing_keeps_direct_invoice_in_payment_pending(self):
         self.agreement.payment_mode = "direct"
@@ -9624,6 +9734,8 @@ class ProgressPaymentWorkflowTests(TestCase):
         )
         Notification.objects.create(
             contractor=self.contractor,
+            user=self.contractor_user,
+            category=Notification.EVENT_DRAW_APPROVED,
             event_type=Notification.EVENT_DRAW_APPROVED,
             agreement=self.agreement,
             draw_request=draw,
@@ -9631,7 +9743,7 @@ class ProgressPaymentWorkflowTests(TestCase):
             message="Draw approved for payment.",
         )
 
-        response = self.client.get("/api/projects/notifications/")
+        response = self.client.get("/api/notifications/")
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()[0]
@@ -13668,7 +13780,7 @@ class CustomerPortalAccessTests(TestCase):
 
         notify_client = APIClient()
         notify_client.force_authenticate(user=self.contractor_user)
-        notifications_response = notify_client.get("/api/projects/notifications/")
+        notifications_response = notify_client.get("/api/notifications/")
         self.assertEqual(notifications_response.status_code, 200)
         self.assertTrue(notifications_response.data)
         self.assertEqual(notifications_response.data[0]["event_type"], Notification.EVENT_BID_AWARDED)
@@ -13680,7 +13792,7 @@ class CustomerPortalAccessTests(TestCase):
         )
 
         notify_client.force_authenticate(user=self.other_contractor_user)
-        other_response = notify_client.get("/api/projects/notifications/")
+        other_response = notify_client.get("/api/notifications/")
         self.assertEqual(other_response.status_code, 200)
         self.assertTrue(other_response.data)
         self.assertEqual(other_response.data[0]["event_type"], Notification.EVENT_BID_NOT_SELECTED)
@@ -13697,7 +13809,7 @@ class CustomerPortalAccessTests(TestCase):
             business_name="Unrelated Bid Notify",
         )
         notify_client.force_authenticate(user=unrelated_user)
-        unrelated_response = notify_client.get("/api/projects/notifications/")
+        unrelated_response = notify_client.get("/api/notifications/")
         self.assertEqual(unrelated_response.status_code, 200)
         self.assertEqual(unrelated_response.json(), [])
         self.assertEqual(Notification.objects.filter(contractor=unrelated_contractor).count(), 0)
