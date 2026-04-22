@@ -333,6 +333,53 @@ test('contractor sidebar groups navigation into core work business and settings'
   await expect(sidebar).toContainText('Stripe Onboarding');
 });
 
+test('desktop contractor sidebar stays full-height and scrollable on dashboard and agreements routes', async ({
+  page,
+}) => {
+  await mockContractorDashboard(page, {
+    agreements: [
+      {
+        id: 321,
+        title: 'Kitchen Remodel Agreement',
+        project_title: 'Kitchen Remodel',
+        status: 'draft',
+        due_date: isoDateOffset(2),
+      },
+    ],
+  });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  for (const path of ['/app/dashboard', '/app/agreements']) {
+    await page.goto(path, { waitUntil: 'domcontentloaded' });
+
+    const sidebar = page.locator('aside');
+    const main = page.locator('main').first();
+    await expect(sidebar).toBeVisible();
+    await expect(sidebar).toContainText('Dashboard');
+
+    const styles = await sidebar.evaluate((el) => ({
+      overflowY: getComputedStyle(el).overflowY,
+      flexShrink: getComputedStyle(el).flexShrink,
+      height: el.getBoundingClientRect().height,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+    }));
+
+    expect(styles.overflowY).toBe('auto');
+    expect(styles.flexShrink).toBe('0');
+    expect(styles.height).toBeGreaterThanOrEqual(899);
+
+    const mainStyles = await main.evaluate((el) => ({
+      overflowY: getComputedStyle(el).overflowY,
+      height: el.getBoundingClientRect().height,
+    }));
+
+    expect(mainStyles.overflowY).toBe('auto');
+    expect(mainStyles.height).toBeGreaterThanOrEqual(899);
+  }
+});
+
 test('desktop contractor sidebar hover and click navigation stays stable', async ({
   page,
 }) => {

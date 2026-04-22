@@ -611,7 +611,7 @@ export default function Sidebar({ variant = "desktop" }) {
         </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 space-y-7 no-scrollbar">
+      <nav className="flex-1 min-h-0 overflow-x-hidden px-3 py-5 space-y-7 no-scrollbar">
         {showRefundContext && !isEmployee && (
           <RefundEscrowModal
             open={refundOpen}
@@ -749,14 +749,13 @@ export default function Sidebar({ variant = "desktop" }) {
   );
 
   if (variant === "plain") {
-    return <div className="flex min-h-screen max-w-full overflow-x-hidden flex-col">{inner}</div>;
+    return <div className="flex h-full min-h-0 max-w-full flex-col overflow-x-hidden">{inner}</div>;
   }
 
   return (
     <aside
-      className="hidden max-w-full overflow-x-hidden border-r border-slate-200/90 md:flex md:w-60 md:flex-col lg:w-64"
+      className="hidden h-screen max-w-full flex-shrink-0 overflow-y-auto overflow-x-hidden border-r border-slate-200/90 md:flex md:w-60 md:flex-col lg:w-64"
       style={{
-        minHeight: "100vh",
         background: "linear-gradient(180deg, rgba(252,253,255,0.94) 0%, rgba(246,248,251,0.92) 100%)",
         backdropFilter: "blur(12px)",
       }}

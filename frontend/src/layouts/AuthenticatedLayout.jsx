@@ -17,7 +17,6 @@ export default function AuthenticatedLayout() {
   const instanceIdRef = useRef(++authenticatedLayoutInstanceSeq);
   const instanceId = instanceIdRef.current;
   const location = useLocation();
-  const isDashboardRoute = /\/dashboard\/?$/.test(location.pathname || "");
 
   console.log(`${AUTH_LAYOUT_DEBUG_PREFIX} render`, {
     instanceId,
@@ -46,26 +45,22 @@ export default function AuthenticatedLayout() {
             <NotificationBell />
           </div>
         </div>
-        <div
-          style={
-            isDashboardRoute
-              ? { display: "flex", height: "100vh", overflow: "hidden" }
-              : { display: "flex", minHeight: "100vh" }
-          }
-        >
+        <div className="flex h-screen w-full overflow-hidden">
           <Sidebar />
           <main
             className="mhb-gradient-bg"
             style={{
               flex: 1,
-              minHeight: "100vh",
-              ...(isDashboardRoute ? { height: "100vh" } : null),
+              height: "100vh",
+              minHeight: 0,
               display: "flex",
               flexDirection: "column",
               minWidth: 0,
+              overflowY: "auto",
+              overflowX: "hidden",
             }}
           >
-            <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
+            <div style={{ flex: 1, minHeight: 0 }}>
               <div className="mhb-content-pad">
                 <ErrorBoundary>
                   <Outlet />
