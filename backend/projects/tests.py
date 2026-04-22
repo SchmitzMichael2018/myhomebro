@@ -49,6 +49,7 @@ from projects.models import (
     Homeowner,
     Invoice,
     InvoiceStatus,
+    AgreementFundingLink,
     Milestone,
     MilestoneAssignment,
     MilestoneComment,
@@ -107,6 +108,7 @@ from projects.services.project_intelligence import (
 from projects.services.project_intelligence_orchestrator import build_project_intelligence
 from projects.services.project_plan_suggestions import build_project_plan_suggestion
 from projects.services.agreements.create import create_agreement_from_validated
+from projects.services.agreements.public_sign import build_public_sign_url
 from projects.services.agreement_fee_allocation import refresh_agreement_fee_allocations
 from projects.services.benchmark_resolution import resolve_seed_benchmark_defaults
 from projects.services.compliance import (
@@ -1368,6 +1370,94 @@ class ContractorPublicPresenceApiTests(TestCase):
             sum((milestone.amount for milestone in agreement.milestones.all()), Decimal("0.00")),
             Decimal("24500.00"),
         )
+
+    def test_public_agreement_sign_preview_includes_review_fields(self):
+        attachment = AgreementAttachment.objects.create(
+            agreement=self.agreement,
+            title="Scope Photo",
+            category=AgreementAttachment.CATEGORY_EXHIBIT,
+            file=SimpleUploadedFile("scope.jpg", b"filecontent", content_type="image/jpeg"),
+            visible_to_homeowner=True,
+        )
+        AgreementFundingLink.create_for_agreement(
+            self.agreement,
+            amount=Decimal("1500.00"),
+            currency="usd",
+        )
+
+        token = build_public_sign_url(self.agreement).rsplit("/", 1)[-1]
+        response = self.client.get(f"/api/projects/agreements/public_sign/?token={token}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["project_title"], self.agreement.project.title)
+        self.assertEqual(response.data["contractor_name"], self.contractor.business_name)
+        self.assertEqual(response.data["project_summary"], self.agreement.description)
+        self.assertEqual(response.data["contractor_rating"]["review_count"], 1)
+        self.assertEqual(response.data["contractor_rating"]["average_rating"], 5.0)
+        self.assertEqual(response.data["attachments"][0]["id"], attachment.id)
+        self.assertTrue(response.data["public_fund_url"].endswith(f"/public-fund/{response.data['funding_token']}"))
+
+    def test_public_agreement_sign_updates_status_and_returns_funding_link(self):
+        self.agreement.total_cost = Decimal("1500.00")
+        self.agreement.save(update_fields=["total_cost", "updated_at"])
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_at_contractor = timezone.now()
+        self.agreement.save(update_fields=["signed_by_contractor", "signed_at_contractor", "updated_at"])
+
+        token = build_public_sign_url(self.agreement).rsplit("/", 1)[-1]
+        response = self.client.post(
+            "/api/projects/agreements/public_sign/",
+            {
+                "token": token,
+                "typed_name": "Public Customer",
+                "signature_data_url": "data:image/png;base64," + base64.b64encode(b"signature").decode(),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["funding_link_sent"])
+        self.assertIn("public_fund_url", response.data)
+        self.agreement.refresh_from_db()
+        self.assertEqual(self.agreement.status, ProjectStatus.SIGNED)
+
+    def test_public_agreement_funding_token_can_create_payment_intent(self):
+        self.agreement.total_cost = Decimal("1500.00")
+        self.agreement.save(update_fields=["total_cost", "updated_at"])
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_at_contractor = timezone.now()
+        self.agreement.save(update_fields=["signed_by_contractor", "signed_at_contractor", "updated_at"])
+
+        token = build_public_sign_url(self.agreement).rsplit("/", 1)[-1]
+        sign_response = self.client.post(
+            "/api/projects/agreements/public_sign/",
+            {
+                "token": token,
+                "typed_name": "Public Customer",
+                "signature_data_url": "data:image/png;base64," + base64.b64encode(b"signature").decode(),
+            },
+            format="multipart",
+        )
+        self.assertEqual(sign_response.status_code, 200)
+        funding_token = sign_response.data["funding_token"]
+
+        with patch("projects.views.funding.stripe.api_key", "sk_test_fake"), patch(
+            "projects.views.funding.stripe.PaymentIntent.create"
+        ) as mock_create:
+            mock_create.return_value = SimpleNamespace(
+                id="pi_test_123",
+                client_secret="pi_test_secret_123",
+            )
+            funding_response = self.client.post(
+                "/api/projects/funding/create_payment_intent/",
+                {"token": funding_token},
+                format="json",
+            )
+
+        self.assertEqual(funding_response.status_code, 200)
+        self.assertEqual(funding_response.data["client_secret"], "pi_test_secret_123")
+        self.assertEqual(funding_response.data["payment_intent_id"], "pi_test_123")
+        mock_create.assert_called_once()
 
     @patch("projects.views.public_presence.generate_contractor_public_profile")
     def test_generate_profile_endpoint_returns_all_fields(self, mock_generate):
