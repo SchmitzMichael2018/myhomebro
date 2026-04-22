@@ -2,11 +2,12 @@
 
 import logging
 from django.db import transaction
+from django.db.models import Avg, Count
 from django.db.models.signals import post_save, pre_save, post_delete
 from django.dispatch import receiver
 from django.utils import timezone
 
-from .models import Agreement, Invoice, Milestone
+from .models import Agreement, Contractor, ContractorReview, Invoice, Milestone
 from .tasks import (
     task_send_invoice_notification,
     task_generate_full_agreement_pdf,
@@ -116,3 +117,31 @@ def on_milestone_saved_touch_agreement(sender, instance: Milestone, created: boo
 @receiver(post_delete, sender=Milestone)
 def on_milestone_deleted_touch_agreement(sender, instance: Milestone, **kwargs):
     _touch_agreement_updated_at(getattr(instance, "agreement", None))
+
+
+def _refresh_contractor_review_stats(contractor_id: int | None):
+    if not contractor_id:
+        return
+    stats = ContractorReview.objects.filter(
+        contractor_id=contractor_id,
+        is_verified=True,
+        is_public=True,
+    ).aggregate(
+        review_count=Count("id"),
+        average_rating=Avg("rating"),
+    )
+    Contractor.objects.filter(pk=contractor_id).update(
+        review_count=int(stats.get("review_count") or 0),
+        average_rating=round(float(stats.get("average_rating") or 0), 2),
+        updated_at=timezone.now(),
+    )
+
+
+@receiver(post_save, sender=ContractorReview)
+def on_contractor_review_saved(sender, instance: ContractorReview, **kwargs):
+    _refresh_contractor_review_stats(getattr(instance, "contractor_id", None))
+
+
+@receiver(post_delete, sender=ContractorReview)
+def on_contractor_review_deleted(sender, instance: ContractorReview, **kwargs):
+    _refresh_contractor_review_stats(getattr(instance, "contractor_id", None))

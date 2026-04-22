@@ -10,7 +10,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from projects.models import Agreement, Contractor, ContractorPublicProfile, ContractorReview, Homeowner, Project, PublicContractorLead
+from projects.models import Agreement, Contractor, ContractorPublicProfile, ContractorReview, Homeowner, Invoice, Milestone, Project, PublicContractorLead
 from projects.models_project_intake import ProjectIntake
 from projects.models_templates import ProjectTemplate
 from projects.serializers.public_presence import (
@@ -98,6 +98,25 @@ def _public_profile_payload(request, profile):
     payload = PublicContractorProfileSerializer(profile, context={"request": request}).data
     payload["preview"] = not bool(getattr(profile, "is_public", False))
     return payload
+
+
+def _public_rating_payload(profile):
+    contractor = getattr(profile, "contractor", None)
+    review_count = int(getattr(contractor, "review_count", 0) or 0) if contractor else 0
+    average_rating = float(getattr(contractor, "average_rating", 0) or 0) if review_count else None
+    if contractor and review_count <= 0:
+        ratings = list(contractor.public_reviews.filter(is_verified=True, is_public=True).values_list("rating", flat=True))
+        if ratings:
+            review_count = len(ratings)
+            average_rating = sum(ratings) / review_count
+    return {
+        "slug": getattr(profile, "slug", ""),
+        "preview": not bool(getattr(profile, "is_public", False)),
+        "average_rating": round(average_rating, 2) if average_rating is not None else None,
+        "review_count": review_count,
+        "new_on_myhomebro": review_count == 0,
+        "display_label": "New on MyHomeBro" if review_count == 0 else f"{round(average_rating or 0, 2):.2f} average rating",
+    }
 
 
 def _qr_payload(request, profile):
@@ -610,6 +629,14 @@ class PublicContractorProfileView(APIView):
         return Response(_public_profile_payload(request, profile))
 
 
+class PublicContractorRatingView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, slug: str):
+        profile = _public_profile_preview_or_404(slug)
+        return Response(_public_rating_payload(profile))
+
+
 class LegacyPublicContractorProfileByIdView(APIView):
     permission_classes = [AllowAny]
 
@@ -641,20 +668,39 @@ class PublicContractorReviewsView(APIView):
         profile = _public_profile_or_404(slug)
         if not profile.allow_public_reviews:
             return Response({"detail": "Public reviews are not enabled for this contractor."}, status=status.HTTP_404_NOT_FOUND)
-        serializer = PublicContractorReviewCreateSerializer(data=request.data)
+        serializer = PublicContractorReviewCreateSerializer(
+            data=request.data,
+            context={"contractor": profile.contractor, "profile": profile},
+        )
         serializer.is_valid(raise_exception=True)
+        linked_invoice = serializer.validated_data.get("linked_invoice")
+        linked_milestone = serializer.validated_data.get("linked_milestone")
+        agreement = None
+        if linked_invoice is not None:
+            agreement = linked_invoice.agreement
+        if linked_milestone is not None:
+            agreement = agreement or linked_milestone.agreement
+        is_verified = bool(linked_invoice or linked_milestone)
         ContractorReview.objects.create(
             contractor=profile.contractor,
             public_profile=profile,
+            agreement=agreement,
             customer_name=serializer.validated_data["customer_name"],
             rating=serializer.validated_data["rating"],
             title=serializer.validated_data.get("title", ""),
             review_text=serializer.validated_data.get("review_text", ""),
-            is_verified=False,
-            is_public=False,
+            linked_invoice=linked_invoice,
+            linked_milestone=linked_milestone,
+            is_verified=is_verified,
+            is_public=is_verified,
+        )
+        message = (
+            "Thanks for your verified review. It will appear on the public profile."
+            if is_verified
+            else "Thanks for your review. It will appear after moderation."
         )
         return Response(
-            {"ok": True, "message": "Thanks for your review. It will appear after moderation."},
+            {"ok": True, "message": message},
             status=status.HTTP_201_CREATED,
         )
 

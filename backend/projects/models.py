@@ -250,6 +250,8 @@ class Contractor(models.Model):
 
     ai_free_agreements_total = models.PositiveIntegerField(default=5)
     ai_free_agreements_used = models.PositiveIntegerField(default=0)
+    average_rating = models.FloatField(default=0)
+    review_count = models.PositiveIntegerField(default=0)
 
     class Meta:
         ordering = ["business_name"]
@@ -655,6 +657,20 @@ class ContractorReview(models.Model):
         blank=True,
         related_name="contractor_reviews",
     )
+    linked_invoice = models.ForeignKey(
+        "projects.Invoice",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="linked_contractor_reviews",
+    )
+    linked_milestone = models.ForeignKey(
+        "projects.Milestone",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="linked_contractor_reviews",
+    )
     customer_name = models.CharField(max_length=255)
     rating = models.PositiveSmallIntegerField()
     title = models.CharField(max_length=255, blank=True, default="")
@@ -672,6 +688,13 @@ class ContractorReview(models.Model):
         super().clean()
         if self.rating < 1 or self.rating > 5:
             raise ValidationError({"rating": "Rating must be between 1 and 5."})
+        if self.linked_invoice_id and self.linked_milestone_id:
+            invoice_agreement_id = getattr(self.linked_invoice, "agreement_id", None)
+            milestone_agreement_id = getattr(self.linked_milestone, "agreement_id", None)
+            if invoice_agreement_id and milestone_agreement_id and invoice_agreement_id != milestone_agreement_id:
+                raise ValidationError(
+                    {"linked_milestone": "Linked invoice and milestone must belong to the same agreement."}
+                )
 
     def __str__(self) -> str:
         return f"{self.customer_name} ({self.rating}/5)"

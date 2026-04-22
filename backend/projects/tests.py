@@ -1160,6 +1160,60 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(hidden_response.status_code, 200)
         self.assertTrue(hidden_response.data["preview"])
 
+    def test_public_rating_endpoint_returns_verified_review_summary(self):
+        response = self.client.get(f"/api/contractors/{self.profile.slug}/rating/")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["new_on_myhomebro"])
+        self.assertEqual(response.data["review_count"], 1)
+        self.assertEqual(response.data["average_rating"], 5.0)
+
+        hidden_response = self.client.get(f"/api/contractors/{self.other_profile.slug}/rating/")
+        self.assertEqual(hidden_response.status_code, 200)
+        self.assertTrue(hidden_response.data["new_on_myhomebro"])
+        self.assertEqual(hidden_response.data["review_count"], 0)
+        self.assertIsNone(hidden_response.data["average_rating"])
+
+    def test_verified_review_creation_updates_contractor_rating(self):
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("1500.00"),
+            status=InvoiceStatus.APPROVED,
+        )
+
+        response_one = self.client.post(
+            f"/api/projects/public/contractors/{self.profile.slug}/reviews/",
+            {
+                "customer_name": "Jordan Client",
+                "rating": 5,
+                "title": "Excellent work",
+                "review_text": "Clean communication and polished work.",
+                "linked_invoice": invoice.id,
+            },
+            format="json",
+        )
+        self.assertEqual(response_one.status_code, 201)
+
+        self.contractor.refresh_from_db()
+        self.assertEqual(self.contractor.review_count, 2)
+        self.assertEqual(self.contractor.average_rating, 5.0)
+
+        response_two = self.client.post(
+            f"/api/projects/public/contractors/{self.profile.slug}/reviews/",
+            {
+                "customer_name": "Taylor Client",
+                "rating": 3,
+                "title": "Helpful team",
+                "review_text": "Finished the job, but we had a couple of small delays.",
+                "linked_invoice": invoice.id,
+            },
+            format="json",
+        )
+        self.assertEqual(response_two.status_code, 201)
+
+        self.contractor.refresh_from_db()
+        self.assertEqual(self.contractor.review_count, 3)
+        self.assertEqual(self.contractor.average_rating, 4.33)
+
     @patch("projects.views.public_presence.generate_contractor_public_profile")
     def test_generate_profile_endpoint_returns_all_fields(self, mock_generate):
         mock_generate.return_value = {

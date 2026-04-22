@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
 import re
+from urllib.parse import urlencode
 from typing import Any
 
 from django.conf import settings
@@ -112,6 +113,21 @@ def _project_url(agreement: Agreement) -> str:
     return f"{base}/app/agreements/{agreement.id}" if base else ""
 
 
+def _verified_review_url(agreement: Agreement, *, invoice: Invoice | None = None, milestone: Milestone | None = None) -> str:
+    base = _frontend_base()
+    contractor = getattr(agreement, "contractor", None)
+    profile = getattr(contractor, "public_profile", None) if contractor is not None else None
+    slug = _safe_text(getattr(profile, "slug", ""))
+    if not base or not slug:
+        return ""
+    params: dict[str, str] = {"review": "1"}
+    if invoice is not None and getattr(invoice, "id", None):
+        params["invoice"] = str(invoice.id)
+    if milestone is not None and getattr(milestone, "id", None):
+        params["milestone"] = str(milestone.id)
+    return f"{base}/contractors/{slug}?{urlencode(params)}"
+
+
 def _safe_compliance_note(message: str) -> str:
     text = _safe_text(message)
     if not text:
@@ -185,6 +201,7 @@ def build_milestone_approval_email(*, agreement: Agreement, milestone: Milestone
         "risks": [],
         "project_url": _project_url(agreement),
         **links,
+        "review_url": _verified_review_url(agreement, milestone=milestone, invoice=invoice),
         **budget,
         **_recurring_context(agreement, milestone),
     }
@@ -222,6 +239,7 @@ def build_payment_release_email(*, agreement: Agreement, invoice: Invoice) -> Pr
         "risks": [],
         "project_url": _project_url(agreement),
         **links,
+        "review_url": _verified_review_url(agreement, invoice=invoice),
         **budget,
         **_recurring_context(agreement),
     }

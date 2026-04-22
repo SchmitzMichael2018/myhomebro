@@ -519,6 +519,12 @@ export async function createSupportTicket(payload) {
   return res.data;
 }
 
+export async function getContractorRating(slug) {
+  if (!slug) throw new Error("slug is required");
+  const res = await api.get(`/contractors/${slug}/rating/`);
+  return res.data;
+}
+
 export async function generateContractorPublicProfile(prompt) {
   const res = await api.post("/contractors/generate-profile/", {
     prompt: String(prompt || "").trim(),

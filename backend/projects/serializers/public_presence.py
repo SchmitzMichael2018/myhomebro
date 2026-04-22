@@ -7,9 +7,11 @@ from django.utils.text import slugify
 from rest_framework import serializers
 
 from projects.models import (
+    Invoice,
     ContractorGalleryItem,
     ContractorPublicProfile,
     ContractorReview,
+    Milestone,
     PublicContractorLead,
 )
 from projects.services.compliance import get_public_trust_indicators
@@ -156,6 +158,9 @@ class ContractorGalleryItemSerializer(serializers.ModelSerializer):
 
 
 class PublicContractorReviewSerializer(serializers.ModelSerializer):
+    linked_invoice_id = serializers.IntegerField(read_only=True)
+    linked_milestone_id = serializers.IntegerField(read_only=True)
+
     class Meta:
         model = ContractorReview
         fields = [
@@ -165,16 +170,31 @@ class PublicContractorReviewSerializer(serializers.ModelSerializer):
             "title",
             "review_text",
             "is_verified",
+            "linked_invoice_id",
+            "linked_milestone_id",
             "submitted_at",
         ]
 
 
 class ContractorReviewSerializer(serializers.ModelSerializer):
+    linked_invoice = serializers.PrimaryKeyRelatedField(
+        queryset=Invoice.objects.select_related("agreement", "agreement__project"),
+        required=False,
+        allow_null=True,
+    )
+    linked_milestone = serializers.PrimaryKeyRelatedField(
+        queryset=Milestone.objects.select_related("agreement", "agreement__project"),
+        required=False,
+        allow_null=True,
+    )
+
     class Meta:
         model = ContractorReview
         fields = [
             "id",
             "agreement",
+            "linked_invoice",
+            "linked_milestone",
             "customer_name",
             "rating",
             "title",
@@ -194,6 +214,17 @@ class ContractorReviewSerializer(serializers.ModelSerializer):
 
 
 class PublicContractorReviewCreateSerializer(serializers.ModelSerializer):
+    linked_invoice = serializers.PrimaryKeyRelatedField(
+        queryset=Invoice.objects.select_related("agreement", "agreement__project"),
+        required=False,
+        allow_null=True,
+    )
+    linked_milestone = serializers.PrimaryKeyRelatedField(
+        queryset=Milestone.objects.select_related("agreement", "agreement__project"),
+        required=False,
+        allow_null=True,
+    )
+
     class Meta:
         model = ContractorReview
         fields = [
@@ -201,12 +232,32 @@ class PublicContractorReviewCreateSerializer(serializers.ModelSerializer):
             "rating",
             "title",
             "review_text",
+            "linked_invoice",
+            "linked_milestone",
         ]
 
     def validate_rating(self, value):
         if value < 1 or value > 5:
             raise serializers.ValidationError("Rating must be between 1 and 5.")
         return value
+
+    def validate(self, attrs):
+        linked_invoice = attrs.get("linked_invoice")
+        linked_milestone = attrs.get("linked_milestone")
+        contractor = self.context.get("contractor")
+        contractor_id = getattr(contractor, "id", None)
+        if contractor_id and linked_invoice and linked_invoice.agreement.project.contractor_id != contractor_id:
+            raise serializers.ValidationError({"linked_invoice": "Linked invoice must belong to this contractor."})
+        if contractor_id and linked_milestone and linked_milestone.agreement.project.contractor_id != contractor_id:
+            raise serializers.ValidationError({"linked_milestone": "Linked milestone must belong to this contractor."})
+        if linked_invoice and linked_milestone:
+            invoice_agreement_id = getattr(linked_invoice, "agreement_id", None)
+            milestone_agreement_id = getattr(linked_milestone, "agreement_id", None)
+            if invoice_agreement_id and milestone_agreement_id and invoice_agreement_id != milestone_agreement_id:
+                raise serializers.ValidationError(
+                    {"linked_milestone": "Linked invoice and milestone must belong to the same agreement."}
+                )
+        return attrs
 
 
 class PublicContractorLeadCreateSerializer(serializers.ModelSerializer):
@@ -407,13 +458,25 @@ class PublicContractorProfileSerializer(serializers.ModelSerializer):
         return PublicContractorReviewSerializer(items, many=True).data
 
     def get_average_rating(self, obj):
-        ratings = list(obj.reviews.filter(is_public=True).values_list("rating", flat=True))
-        if not ratings:
+        contractor = getattr(obj, "contractor", None)
+        if contractor is None:
             return None
-        return round(sum(ratings) / len(ratings), 2)
+        count = int(getattr(contractor, "review_count", 0) or 0)
+        if count <= 0:
+            ratings = list(obj.reviews.filter(is_verified=True, is_public=True).values_list("rating", flat=True))
+            if not ratings:
+                return None
+            return round(sum(ratings) / len(ratings), 2)
+        return round(float(getattr(contractor, "average_rating", 0) or 0), 2)
 
     def get_review_count(self, obj):
-        return obj.reviews.filter(is_public=True).count()
+        contractor = getattr(obj, "contractor", None)
+        if contractor is None:
+            return 0
+        count = int(getattr(contractor, "review_count", 0) or 0)
+        if count <= 0:
+            return obj.reviews.filter(is_verified=True, is_public=True).count()
+        return count
 
     def get_public_trust_indicators(self, obj):
         return get_public_trust_indicators(

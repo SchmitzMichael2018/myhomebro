@@ -195,6 +195,7 @@ from .views.public_presence import (
     PublicContractorProfileView as PublicContractorProfileBySlugView,
     PublicContractorQrView,
     PublicContractorReviewsView,
+    PublicContractorRatingView,
 )
 from .views.subcontractor_payouts import (
     ExecuteMilestonePayoutView,
@@ -668,6 +669,7 @@ urlpatterns = [
     path("contractor/bids/", ContractorBidsView.as_view()),
     path("public/contractors/<slug:slug>/", PublicContractorProfileBySlugView.as_view()),
     path("public/contractors/<slug:slug>/gallery/", PublicContractorGalleryView.as_view()),
+    path("public/contractors/<slug:slug>/rating/", PublicContractorRatingView.as_view()),
     path("public/contractors/<slug:slug>/reviews/", PublicContractorReviewsView.as_view()),
     path("public/contractors/<slug:slug>/intake/", PublicContractorIntakeView.as_view()),
     path("public/contractors/<slug:slug>/qr/", PublicContractorQrView.as_view()),
