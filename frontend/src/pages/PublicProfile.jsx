@@ -37,6 +37,7 @@ export default function PublicProfile() {
   const intakeSource = searchParams.get('source') === 'qr' ? 'qr' : 'public_profile';
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
+  const [previewMode, setPreviewMode] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
@@ -56,6 +57,7 @@ export default function PublicProfile() {
         const { data } = await api.get(`/projects/public/contractors/${slug}/`);
         if (!active) return;
         setProfile(data);
+        setPreviewMode(Boolean(data?.preview || data?.is_public === false));
       } catch (err) {
         console.error(err);
         if (!active) return;
@@ -131,6 +133,14 @@ export default function PublicProfile() {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      {previewMode ? (
+        <div
+          data-testid="public-profile-preview-banner"
+          className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-medium text-amber-800"
+        >
+          Preview mode: this contractor profile is not public yet.
+        </div>
+      ) : null}
       <section className="relative overflow-hidden border-b border-slate-200 bg-slate-900 text-white">
         {profile.cover_image_url ? (
           <img src={profile.cover_image_url} alt="" className="absolute inset-0 h-full w-full object-cover opacity-35" />

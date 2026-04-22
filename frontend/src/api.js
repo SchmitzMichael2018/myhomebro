@@ -519,4 +519,11 @@ export async function createSupportTicket(payload) {
   return res.data;
 }
 
+export async function generateContractorPublicProfile(prompt) {
+  const res = await api.post("/contractors/generate-profile/", {
+    prompt: String(prompt || "").trim(),
+  });
+  return res.data;
+}
+
 export default api;

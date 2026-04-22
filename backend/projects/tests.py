@@ -1154,9 +1154,38 @@ class ContractorPublicPresenceApiTests(TestCase):
     def test_public_profile_requires_public_flag(self):
         response = self.client.get(f"/api/projects/public/contractors/{self.profile.slug}/")
         self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["preview"])
 
         hidden_response = self.client.get(f"/api/projects/public/contractors/{self.other_profile.slug}/")
-        self.assertEqual(hidden_response.status_code, 404)
+        self.assertEqual(hidden_response.status_code, 200)
+        self.assertTrue(hidden_response.data["preview"])
+
+    @patch("projects.views.public_presence.generate_contractor_public_profile")
+    def test_generate_profile_endpoint_returns_all_fields(self, mock_generate):
+        mock_generate.return_value = {
+            "tagline": "Built for clean, calm remodels",
+            "intro": "We help homeowners plan and complete projects with clear communication and premium craftsmanship.",
+            "tone": "friendly",
+            "work_types": ["Kitchen Remodels", "Bathroom Remodels", "Repairs"],
+            "seo_title": "Bright Build Co | Austin Contractor",
+            "seo_description": "Bright Build Co helps Austin homeowners with kitchen remodels, bathroom remodels, and repairs.",
+        }
+        self.client.force_authenticate(user=self.contractor_user)
+
+        response = self.client.post(
+            "/api/projects/contractors/generate-profile/",
+            {"prompt": "Write a warm profile for a premium remodeling contractor."},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["tagline"], "Built for clean, calm remodels")
+        self.assertEqual(response.data["intro"], "We help homeowners plan and complete projects with clear communication and premium craftsmanship.")
+        self.assertEqual(response.data["tone"], "friendly")
+        self.assertEqual(response.data["work_types"], ["Kitchen Remodels", "Bathroom Remodels", "Repairs"])
+        self.assertEqual(response.data["seo_title"], "Bright Build Co | Austin Contractor")
+        self.assertTrue(response.data["seo_description"].startswith("Bright Build Co helps Austin homeowners"))
+        mock_generate.assert_called_once()
 
     def test_contractor_profile_insights_service_returns_short_positive_insights(self):
         for idx in range(5):

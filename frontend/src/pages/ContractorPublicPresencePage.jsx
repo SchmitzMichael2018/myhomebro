@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 import api from '../api';
+import Modal from '../components/Modal.jsx';
 import QuickAddLeadModal from '../components/QuickAddLeadModal.jsx';
 import { StartWithAIEntry } from '../components/StartWithAIAssistant.jsx';
 import { WorkflowHint } from '../components/WorkflowHint.jsx';
@@ -15,6 +16,7 @@ import {
   normalizeProjectSetupRecommendation,
 } from '../lib/projectIntelligence.js';
 import { getPublicLeadHint, getPublicPresenceHint } from '../lib/workflowHints.js';
+import { generateContractorPublicProfile } from '../api.js';
 
 const TABS = [
   { key: 'profile', label: 'Public Profile' },
@@ -227,6 +229,9 @@ export default function ContractorPublicPresencePage() {
   const [coverFile, setCoverFile] = useState(null);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [quickAddPrefill, setQuickAddPrefill] = useState(null);
+  const [generateProfileOpen, setGenerateProfileOpen] = useState(false);
+  const [generateProfilePrompt, setGenerateProfilePrompt] = useState('');
+  const [generatingProfile, setGeneratingProfile] = useState(false);
   const [assistantLeadBanner, setAssistantLeadBanner] = useState('');
   const assistantHandoff = useMemo(() => getAssistantHandoff(location.state), [location.state]);
   const assistantHandoffSignature = useMemo(
@@ -737,16 +742,82 @@ export default function ContractorPublicPresencePage() {
     }
   }
 
+  async function generateProfileCopy(event) {
+    event.preventDefault();
+    try {
+      setGeneratingProfile(true);
+      const generated = await generateContractorPublicProfile(generateProfilePrompt);
+      setProfile((prev) => ({
+        ...prev,
+        tagline: generated?.tagline || prev.tagline,
+        bio: generated?.intro || prev.bio,
+        proposal_tone: generated?.tone || prev.proposal_tone,
+        work_types: Array.isArray(generated?.work_types) ? generated.work_types : prev.work_types,
+        seo_title: generated?.seo_title || prev.seo_title,
+        seo_description: generated?.seo_description || prev.seo_description,
+      }));
+      toast.success('Profile draft generated.');
+      setGenerateProfilePrompt('');
+      setGenerateProfileOpen(false);
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || 'Unable to generate profile copy.');
+    } finally {
+      setGeneratingProfile(false);
+    }
+  }
+
   if (loading) {
     return <div className="p-6 text-sm text-slate-500">Loading public presence…</div>;
   }
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-4 md:p-6">
+      <Modal
+        visible={generateProfileOpen}
+        title="Generate My Profile"
+        onClose={() => setGenerateProfileOpen(false)}
+        testId="generate-profile-modal"
+      >
+        <form onSubmit={generateProfileCopy} className="space-y-4">
+          <div className="text-sm text-slate-600">
+            Tell us what you want the profile to feel like. We&apos;ll draft a tagline, intro, and SEO copy you can tweak before publishing.
+          </div>
+          <div>
+            <label className="mb-1 block text-sm font-semibold text-slate-800">Prompt</label>
+            <textarea
+              data-testid="generate-profile-prompt"
+              value={generateProfilePrompt}
+              onChange={(e) => setGenerateProfilePrompt(e.target.value)}
+              rows={6}
+              className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-900 focus:ring-2 focus:ring-slate-200"
+              placeholder="Example: Write a warm, premium profile for a kitchen and bath remodeling contractor that serves Austin homeowners."
+            />
+          </div>
+          <div className="flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setGenerateProfileOpen(false)}
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={generatingProfile}
+              data-testid="generate-profile-submit"
+              className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+            >
+              {generatingProfile ? 'Generating...' : 'Generate'}
+            </button>
+          </div>
+        </form>
+      </Modal>
       <QuickAddLeadModal
         open={quickAddOpen}
         onOpenChange={setQuickAddOpen}
         initialForm={quickAddPrefill}
+        renderFab={false}
         onCreated={(lead) => {
           setLeadsRows((prev) => [lead, ...prev.filter((row) => row.id !== lead.id)]);
           setSelectedLead(lead);
@@ -766,6 +837,14 @@ export default function ContractorPublicPresencePage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {!profile.is_public ? (
+              <span
+                data-testid="public-presence-preview-banner"
+                className="inline-flex items-center rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800"
+              >
+                Preview mode
+              </span>
+            ) : null}
             <button
               type="button"
               onClick={copyUrl}
@@ -812,6 +891,24 @@ export default function ContractorPublicPresencePage() {
 
           {activeTab === 'profile' ? (
             <div className="mt-6 space-y-4" data-testid="public-presence-profile-tab">
+              {!profile.is_public ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  Preview mode: your public profile is not live yet. Use the generator below to draft copy, then publish when you&apos;re ready.
+                </div>
+              ) : null}
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Profile copy</div>
+                  <div className="text-xs text-slate-500">Draft your tagline, intro, and search copy in one pass.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setGenerateProfileOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100"
+                >
+                  ✨ Generate My Profile
+                </button>
+              </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <input
                   value={profile.business_name_public || ''}
@@ -1088,11 +1185,28 @@ export default function ContractorPublicPresencePage() {
           ) : null}
 
           {activeTab === 'leads' ? (
-            <div className="mt-6 grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]" data-testid="public-presence-leads-tab">
+            <div className="mt-6 space-y-4" data-testid="public-presence-leads-tab">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">Public Leads</div>
+                  <div className="text-xs text-slate-500">Capture and review requests from your public profile and QR code.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setQuickAddPrefill(null);
+                    setQuickAddOpen(true);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                >
+                  Add Lead
+                </button>
+              </div>
+              <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
               <div className="space-y-3">
                 {leadsRows.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
-                    No leads yet. Use Quick Add Lead, share your public profile, or post your QR code to start collecting project requests.
+                    No leads yet. Add one manually, share your public profile, or post your QR code to start collecting project requests.
                   </div>
                 ) : leadsRows.map((lead) => (
                   <button
@@ -1401,6 +1515,7 @@ export default function ContractorPublicPresencePage() {
                   <div className="text-sm text-slate-500">Choose a lead to review its details, status, and next actions.</div>
                 )}
               </div>
+            </div>
             </div>
           ) : null}
         </div>

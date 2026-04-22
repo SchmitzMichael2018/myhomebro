@@ -154,6 +154,23 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
     });
   });
 
+  await page.route('**/api/projects/contractors/generate-profile/', async (route) => {
+    const body = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        tagline: 'Premium remodeling with clear communication',
+        intro: `We turn your vision into a calm, well-managed project. ${body.prompt || ''}`.trim(),
+        tone: 'premium',
+        work_types: ['Kitchen Remodels', 'Bathroom Remodels', 'Whole Home Renovations'],
+        seo_title: 'Bright Build Co | Austin Remodeling Contractor',
+        seo_description:
+          'Bright Build Co helps Austin homeowners with premium remodeling, renovations, and careful project management.',
+      }),
+    });
+  });
+
   await page.route('**/api/projects/contractor/public-profile/qr/', async (route) => {
     await route.fulfill({
       status: 200,
@@ -317,6 +334,29 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('public-presence-title')).toBeVisible();
+  await expect(page.getByTestId('public-presence-preview-banner')).toHaveCount(0);
+  await page.getByRole('button', { name: /Generate My Profile/ }).click();
+  await expect(page.getByTestId('generate-profile-modal')).toBeVisible();
+  await page.getByTestId('generate-profile-prompt').fill(
+    'Write a warm, premium profile for a kitchen and bath remodeling contractor serving Austin homeowners.'
+  );
+  await page.getByTestId('generate-profile-submit').click();
+  await expect(page.getByPlaceholder('Tagline')).toHaveValue(
+    'Premium remodeling with clear communication'
+  );
+  await expect(page.getByPlaceholder('Short company intro')).toHaveValue(
+    'We turn your vision into a calm, well-managed project. Write a warm, premium profile for a kitchen and bath remodeling contractor serving Austin homeowners.'
+  );
+  await expect(page.getByTestId('proposal-tone-selector')).toHaveValue('premium');
+  await expect(page.getByPlaceholder('Work types (comma separated)')).toHaveValue(
+    'Kitchen Remodels, Bathroom Remodels, Whole Home Renovations'
+  );
+  await expect(page.getByPlaceholder('SEO title')).toHaveValue(
+    'Bright Build Co | Austin Remodeling Contractor'
+  );
+  await expect(page.getByPlaceholder('SEO description')).toHaveValue(
+    'Bright Build Co helps Austin homeowners with premium remodeling, renovations, and careful project management.'
+  );
   await expect(page.getByTestId('public-presence-qr-image')).toBeVisible();
   await expect(page.getByTestId('public-presence-profile-hint')).toContainText(
     'Add project photos to strengthen your public profile'
@@ -1153,7 +1193,7 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
 
   await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Public Leads' }).click();
-  await page.getByTestId('quick-add-lead-button').click();
+  await page.getByRole('button', { name: 'Add Lead' }).click();
   await expect(page.getByTestId('quick-add-lead-sheet')).toBeVisible();
   await page.getByPlaceholder('Full name').fill('Walk Up Prospect');
   await page.getByPlaceholder('(555) 555-5555').fill('5556660000');
@@ -1261,18 +1301,29 @@ test('qr project requests preserve qr source attribution', async ({ page }) => {
   expect(capturedSource).toBe('qr');
 });
 
-test('hidden public contractor profile is not exposed', async ({ page }) => {
+test('hidden public contractor profile renders preview mode', async ({ page }) => {
   await page.route('**/api/projects/public/contractors/hidden-builder/', async (route) => {
     await route.fulfill({
-      status: 404,
+      status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ detail: 'Not found.' }),
+      body: JSON.stringify({
+        slug: 'hidden-builder',
+        business_name_public: 'Hidden Builder Co',
+        tagline: 'Hidden preview',
+        bio: 'Preview-only profile.',
+        is_public: false,
+        preview: true,
+        public_url: 'http://localhost:4173/contractors/hidden-builder',
+        gallery: [],
+        reviews: [],
+      }),
     });
   });
 
   await page.goto('/contractors/hidden-builder', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByText('This contractor profile is not available.')).toBeVisible();
+  await expect(page.getByTestId('public-profile-preview-banner')).toBeVisible();
+  await expect(page.getByText('Preview-only profile.')).toBeVisible();
 });
 
 test('contractor-sent intake flows into the same lead inbox without cold-lead accept actions', async ({

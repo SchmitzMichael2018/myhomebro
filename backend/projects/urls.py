@@ -185,6 +185,7 @@ from .views.public_presence import (
     ContractorPublicLeadListView,
     ContractorPublicLeadRejectView,
     ContractorPublicLeadSendIntakeView,
+    ContractorPublicProfileGenerateView,
     ContractorPublicProfileManageView,
     ContractorPublicProfileQrView,
     ContractorReviewDetailView,
@@ -676,6 +677,7 @@ urlpatterns = [
     # -------------------------------------------------
     path("notifications/", NotificationListView.as_view()),
     path("contractors/me/", ContractorMeView.as_view()),
+    path("contractors/generate-profile/", ContractorPublicProfileGenerateView.as_view()),
     path("contractors/onboarding/setup/", ContractorOnboardingSetupView.as_view()),
     path("projects/workspace-context/", WorkspaceContextView.as_view()),
     path("contractors/onboarding/", ContractorOnboardingView.as_view()),

@@ -34,6 +34,7 @@ from projects.services.public_lead_notifications import (
 from projects.services.project_intelligence_orchestrator import build_project_intelligence
 from projects.services.public_lead_pipeline import normalize_public_lead_source
 from projects.services.agreements.project_create import resolve_contractor_for_user
+from projects.services.ai.public_profile_generation import generate_contractor_public_profile
 from projects.services.intake_public import send_intake_email
 
 
@@ -84,12 +85,19 @@ def _public_profile_or_404(slug: str):
     return profile
 
 
+def _public_profile_preview_or_404(slug: str):
+    profile = get_object_or_404(_public_profile_qs(), slug=slug)
+    return profile
+
+
 def _legacy_public_profile_or_404(contractor_id: int):
     return get_object_or_404(_public_profile_qs(), contractor_id=contractor_id, is_public=True)
 
 
 def _public_profile_payload(request, profile):
-    return PublicContractorProfileSerializer(profile, context={"request": request}).data
+    payload = PublicContractorProfileSerializer(profile, context={"request": request}).data
+    payload["preview"] = not bool(getattr(profile, "is_public", False))
+    return payload
 
 
 def _qr_payload(request, profile):
@@ -248,6 +256,17 @@ class ContractorPublicProfileManageView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+class ContractorPublicProfileGenerateView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def post(self, request):
+        contractor = _resolve_contractor(request.user)
+        prompt = _safe_text(request.data.get("prompt"))
+        generated = generate_contractor_public_profile(contractor, prompt=prompt)
+        return Response(generated, status=status.HTTP_200_OK)
 
 
 class ContractorGalleryListCreateView(APIView):
@@ -587,7 +606,7 @@ class PublicContractorProfileView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, slug: str):
-        profile = _public_profile_or_404(slug)
+        profile = _public_profile_preview_or_404(slug)
         return Response(_public_profile_payload(request, profile))
 
 
@@ -595,7 +614,7 @@ class LegacyPublicContractorProfileByIdView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, pk: int):
-        profile = _legacy_public_profile_or_404(pk)
+        profile = get_object_or_404(_public_profile_qs(), contractor_id=pk)
         return Response(_public_profile_payload(request, profile))
 
 
