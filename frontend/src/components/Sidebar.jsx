@@ -681,7 +681,7 @@ export default function Sidebar({ variant = "desktop" }) {
               <Item to={`${APP_BASE}/public-presence`} label="Public Presence" icon={Globe} />
             </NavGroup>
 
-            <NavGroup label="Account" className="pt-1">
+            <NavGroup label="ACCOUNT" className="pt-1">
               <Item to={`${APP_BASE}/profile`} label="My Profile" icon={UserRound} />
               <Item
                 to={`${APP_BASE}/onboarding/stripe`}
@@ -693,6 +693,7 @@ export default function Sidebar({ variant = "desktop" }) {
                   </>
                 }
               />
+              <Item to={`${APP_BASE}/support`} label="Support" icon={LifeBuoy} />
             </NavGroup>
           </>
         ) : null}
@@ -724,7 +725,7 @@ export default function Sidebar({ variant = "desktop" }) {
 
         <div>
           <div className="mb-2 px-2 text-xs font-extrabold uppercase tracking-wide text-slate-600">
-            Account
+            ACCOUNT
           </div>
           <div className="space-y-2">{accountNav}</div>
         </div>

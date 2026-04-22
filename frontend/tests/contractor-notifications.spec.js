@@ -317,9 +317,9 @@ test('contractor sidebar groups navigation into core work business and settings'
 
   const sidebar = page.locator('aside');
   await expect(sidebar).toContainText('Main');
-  await expect(sidebar).toContainText('Account');
+  await expect(sidebar).toContainText('ACCOUNT');
   await expect(sidebar).toContainText('Dashboard');
-  await expect(sidebar).toContainText('Start with AI');
+  await expect(sidebar).toContainText('Ask AI');
   await expect(sidebar).toContainText('Business Dashboard');
   await expect(sidebar).toContainText('Agreements');
   await expect(sidebar).toContainText('Milestones');
@@ -331,6 +331,18 @@ test('contractor sidebar groups navigation into core work business and settings'
   await expect(sidebar).toContainText('Disputes');
   await expect(sidebar).toContainText('My Profile');
   await expect(sidebar).toContainText('Stripe Onboarding');
+  await expect(sidebar).toContainText('Support');
+
+  const profileLink = sidebar.locator('a[href="/app/profile"]').first();
+  const stripeLink = sidebar.locator('a[href="/app/onboarding/stripe"]').first();
+  const supportLink = sidebar.locator('a[href="/app/support"]').first();
+
+  const profileBox = await profileLink.boundingBox();
+  const stripeBox = await stripeLink.boundingBox();
+  const supportBox = await supportLink.boundingBox();
+
+  expect(profileBox?.y).toBeLessThan(stripeBox?.y);
+  expect(stripeBox?.y).toBeLessThan(supportBox?.y);
 });
 
 test('desktop contractor sidebar stays full-height and scrollable on dashboard and agreements routes', async ({
