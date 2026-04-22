@@ -1221,7 +1221,7 @@ export default function BusinessDashboard() {
           <div className="mt-5">
             <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
               <div>
-                <div className="text-sm font-bold text-slate-900">Recent Payment Events</div>
+                <div className="text-sm font-bold text-slate-900">Payment Records</div>
                 <div className="mt-1 text-sm text-slate-600">
                   Recent settled payments and releases, all in one place.
                 </div>
@@ -1818,7 +1818,7 @@ export default function BusinessDashboard() {
       >
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <div className="text-base font-bold text-slate-900">Subcontractor Payouts</div>
+            <div className="text-base font-bold text-slate-900">Payout Snapshot</div>
             <div className="mt-1 text-sm text-slate-600">
               Track paid, ready, failed, and pending subcontractor payouts alongside your business reporting.
             </div>

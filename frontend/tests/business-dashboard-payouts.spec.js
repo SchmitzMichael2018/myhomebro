@@ -381,6 +381,7 @@ test('business dashboard shows payout reporting and links to full history', asyn
   await expect(page.getByTestId('dashboard-financial-project-row-321')).toContainText('$640.00');
   await expect(page.getByTestId('dashboard-financial-project-row-321')).toContainText('$12,160.00');
   await expect(page.getByTestId('dashboard-financial-event-invoice-71')).toContainText('Kitchen Remodel Agreement');
+  await expect(page.getByText('Payment Records')).toBeVisible();
   await expect(page.getByTestId('dashboard-charts-section')).toBeVisible();
   await expect(page.getByTestId('dashboard-business-performance-section')).toBeVisible();
   await expect(page.getByTestId('dashboard-business-performance-step-requests_received')).toContainText('8');
@@ -417,7 +418,7 @@ test('business dashboard shows payout reporting and links to full history', asyn
   await page.getByRole('button', { name: 'Close' }).click();
   await expect(page.getByTestId('dashboard-drilldown-modal')).toBeHidden();
   await expect(page.getByTestId('dashboard-payouts-section')).toBeVisible();
-  await expect(page.getByTestId('dashboard-payouts-section')).toContainText('Subcontractor Payouts');
+  await expect(page.getByTestId('dashboard-payouts-section')).toContainText('Payout Snapshot');
   await expect(page.getByTestId('dashboard-payouts-section')).toContainText('$1,500.00');
   await expect(page.getByTestId('dashboard-payouts-section')).toContainText('$700.00');
   await expect(page.getByTestId('dashboard-payouts-section')).toContainText('$400.00');

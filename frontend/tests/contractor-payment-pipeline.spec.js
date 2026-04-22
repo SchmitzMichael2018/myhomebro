@@ -426,32 +426,24 @@ test('contractor dashboard reflects draw-request payment pipeline and actions', 
 
   await page.goto('/app', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByText('Payment Pipeline')).toBeVisible();
+  await expect(page.getByText('Work Pipeline')).toBeVisible();
+  await expect(page.getByText('Money Pipeline')).toBeVisible();
   await expect(page.getByTestId('dashboard-work-not-started')).toBeVisible();
   await expect(page.getByTestId('dashboard-work-in-progress')).toBeVisible();
   await expect(page.getByTestId('dashboard-work-completed')).toBeVisible();
-  await expect(page.getByTestId('dashboard-work-reviewed')).toBeVisible();
+  await expect(page.getByTestId('dashboard-work-awaiting-review')).toBeVisible();
   await expect(page.getByTestId('dashboard-work-invoiced')).toBeVisible();
-  await expect(page.locator('text=Total Earned').first()).toBeVisible();
-  await expect(page.locator('text=Payment Pending').first()).toBeVisible();
-  await expect(page.locator('text=Issues / Disputes').first()).toBeVisible();
+  await expect(page.getByText('Quick Actions')).toBeVisible();
+  await expect(page.getByTestId('dashboard-quick-actions-row')).toContainText('New Agreement');
+  await expect(page.getByTestId('dashboard-quick-actions-row')).toContainText('New Milestone');
+  await expect(page.getByTestId('dashboard-quick-actions-row')).toContainText('Payment');
+  await expect(page.getByTestId('dashboard-quick-actions-row')).toContainText('Expense');
   await expect(page.getByTestId('dashboard-money-awaiting-customer')).toBeVisible();
-  await expect(page.getByTestId('dashboard-money-approved')).toBeVisible();
+  await expect(page.getByTestId('dashboard-money-payment-pending')).toBeVisible();
+  await expect(page.getByTestId('dashboard-money-paid')).toBeVisible();
   await expect(page.getByTestId('dashboard-money-issues')).toBeVisible();
-  await expect(page.getByText('Send Payment Request')).toBeVisible();
-  await expect(page.getByText('Paid Work')).toHaveCount(0);
-
-  await expect(page.getByTestId('dashboard-payment-records-table')).toBeVisible();
-  await expect(page.getByText('Mobilization')).toBeVisible();
-  await expect(page.getByTestId('dashboard-payment-records-table')).toContainText('Draw Request');
-  await expect(page.getByTestId('dashboard-payment-records-table')).toContainText('Invoice');
-  await expect(page.getByTestId('dashboard-payment-records-table')).toContainText('Residential');
-  await expect(page.getByTestId('dashboard-payment-records-table')).toContainText('Commercial');
-  await expect(page.getByTestId('dashboard-payout-summary')).toBeVisible();
-  await expect(page.getByTestId('dashboard-payout-summary')).toContainText('$2,850.00');
-  await expect(page.getByTestId('dashboard-payout-summary')).toContainText('$150.00');
-  await expect(page.getByTestId('dashboard-payout-row-71')).toContainText('Kitchen Remodel Agreement');
-  await expect(page.getByTestId('dashboard-payout-row-72')).toContainText('Office Renovation');
+  await expect(page.getByTestId('dashboard-payment-records-table')).toHaveCount(0);
+  await expect(page.getByTestId('dashboard-payout-summary')).toHaveCount(0);
   await expect(page.getByTestId('dashboard-bids-summary')).toBeVisible();
   await expect(page.getByTestId('dashboard-bids-summary')).toContainText('Open Bids');
   await expect(page.getByTestId('dashboard-bids-summary')).toContainText('Under Review');
@@ -463,19 +455,20 @@ test('contractor dashboard reflects draw-request payment pipeline and actions', 
   await expect(page.getByTestId('dashboard-bids-row-lead-203')).toContainText('Convert to Agreement');
   await expect(page.getByTestId('dashboard-bids-row-lead-204')).toContainText('Not Selected');
   await expect(page.getByTestId('dashboard-money-awaiting-customer')).toContainText('Awaiting Customer Approval');
-  await expect(page.getByTestId('dashboard-money-approved')).toContainText('Payment Pending');
-  await expect(page.getByTestId('dashboard-payment-records-table').getByText('Issues / Disputes')).toBeVisible();
+  await expect(page.getByTestId('dashboard-money-payment-pending')).toContainText('Payment Pending');
+  await expect(page.getByTestId('dashboard-money-paid')).toContainText('Paid');
   await expect(page.locator('text=/awaiting payment/i').first()).toBeVisible();
-  await expect(page.getByTestId('dashboard-payment-records-table').getByText('Payment Pending')).toHaveCount(3);
   await expect(page.locator('text=/requested changes/i').first()).toBeVisible();
   await expect(page.locator('text=/failed.*follow-up/i').first()).toBeVisible();
 
-  await page.getByRole('button', { name: 'Resend Link' }).first().click();
-  await expect(page.getByText('Review email sent to owner@example.com.')).toBeVisible();
+  await page.getByTestId('dashboard-work-awaiting-review').click();
+  await expect(page).toHaveURL(/\/app\/reviewer\/queue/);
+  await page.goto('/app', { waitUntil: 'domcontentloaded' });
 
-  await page.getByRole('button', { name: 'Release Funds' }).click();
-  await expect(page.getByText('Escrow funds marked as released.')).toBeVisible();
-  await expect(page.getByTestId('dashboard-payment-records-table').getByText('Paid')).toHaveCount(3);
+  await page.getByTestId('dashboard-money-payment-pending').click();
+  await expect(page).toHaveURL(/\/app\/invoices\?money_status=payment_pending/);
+  await page.goto('/app', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('dashboard-money-paid')).toContainText('Paid');
 });
 
 test('contractor dashboard view-all bids shortcut routes to the unified bids workspace', async ({ page }) => {

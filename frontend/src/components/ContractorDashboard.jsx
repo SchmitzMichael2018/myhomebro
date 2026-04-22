@@ -18,6 +18,7 @@ import {
   WalletMinimal,
   FilePlus2,
   ListPlus,
+  HandCoins,
   Receipt,
   CalendarDays,
   AlertTriangle,
@@ -514,6 +515,42 @@ function FlowMetricButton({
       <div className={`shrink-0 pt-0.5 text-xs font-semibold uppercase tracking-[0.16em] ${emphasized ? "text-sky-100" : "text-[#5a7290]"}`}>
         Open
       </div>
+    </button>
+  );
+}
+
+function PipelineRow({ title, count, amount, description, onClick, tone = "neutral", testId }) {
+  const toneClass =
+    tone === "good"
+      ? "border-emerald-200 bg-emerald-50/75 text-emerald-900"
+      : tone === "warn"
+      ? "border-amber-200 bg-amber-50/75 text-amber-900"
+      : tone === "bad"
+      ? "border-rose-200 bg-rose-50/75 text-rose-900"
+      : tone === "active"
+      ? "border-sky-200 bg-sky-50/75 text-sky-900"
+      : "border-slate-200 bg-white text-slate-900";
+
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      onClick={onClick}
+      className={`group flex min-h-[118px] w-full items-start justify-between gap-4 rounded-2xl border p-4 text-left shadow-sm transition hover:border-slate-300 hover:shadow-md ${toneClass}`}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">{title}</div>
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <div className="text-2xl font-extrabold leading-none text-slate-900">
+            {typeof count === "number" ? `${Number(count).toLocaleString()} items` : "0 items"}
+          </div>
+          <div className="text-2xl font-extrabold leading-none text-slate-900">
+            {currency(amount)}
+          </div>
+        </div>
+        <div className="mt-3 line-clamp-1 text-sm text-slate-600">{description}</div>
+      </div>
+      <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-slate-400 transition group-hover:text-slate-600" />
     </button>
   );
 }
@@ -2059,6 +2096,104 @@ export default function ContractorDashboard() {
     nextBestAction?.title,
   ]);
   const showActivityFeed = !isEmployee && activityFeed.length > 0;
+  const workPipelineRows = [
+    {
+      key: "not-started",
+      title: "Not Started",
+      count: mStats.notStartedCount,
+      amount: mStats.notStartedAmount,
+      description: "Milestones with no recorded progress.",
+      tone: "neutral",
+      onClick: () => navigate(`/app/milestones?filter=incomplete`),
+    },
+    {
+      key: "in-progress",
+      title: "In Progress",
+      count: mStats.inProgressCount,
+      amount: mStats.inProgressAmount,
+      description: "Milestones underway but not yet complete.",
+      tone: "active",
+      onClick: () => navigate(`/app/milestones?filter=incomplete`),
+    },
+    {
+      key: "completed",
+      title: "Completed",
+      count: mStats.completedCount,
+      amount: mStats.completedAmount,
+      description: "Finished milestones waiting to move forward.",
+      tone: "good",
+      onClick: () => navigate(`/app/milestones?filter=complete_not_invoiced`),
+    },
+    {
+      key: "awaiting-review",
+      title: "Awaiting Review",
+      count: mStats.reviewedCount,
+      amount: mStats.reviewedAmount,
+      description: "Completed milestones waiting on review or approval.",
+      tone: "warn",
+      onClick: () => navigate(`/app/reviewer/queue`),
+    },
+    {
+      key: "invoiced",
+      title: "Invoiced",
+      count: mStats.invoicedCount,
+      amount: mStats.invoicedAmount,
+      description: "Milestones already tied to an invoice or payment request.",
+      tone: "neutral",
+      onClick: goInvoices,
+    },
+    ...(mStats.reworkCount > 0
+      ? [
+          {
+            key: "rework",
+            title: "Rework / Issues",
+            count: mStats.reworkCount,
+            amount: mStats.reworkAmount,
+            description: "Dispute-driven work that still needs attention.",
+            tone: "bad",
+            onClick: goReworkMilestones,
+          },
+        ]
+      : []),
+  ];
+  const moneyPipelineRows = [
+    {
+      key: "awaiting-customer",
+      title: "Awaiting Customer Approval",
+      count: paymentSummary.awaiting_customer_approval.count,
+      amount: paymentSummary.awaiting_customer_approval.amount,
+      description: "Invoices or draw requests waiting on owner or customer review.",
+      tone: "warn",
+      onClick: () => goPayments({ moneyStatus: "awaiting_customer_approval" }),
+    },
+    {
+      key: "payment-pending",
+      title: "Payment Pending",
+      count: paymentSummary.payment_pending.count,
+      amount: paymentSummary.payment_pending.amount,
+      description: "Approved work still moving through payment.",
+      tone: "active",
+      onClick: () => goPayments({ moneyStatus: "payment_pending" }),
+    },
+    {
+      key: "paid",
+      title: "Paid",
+      count: paymentSummary.paid.count,
+      amount: paymentSummary.paid.amount,
+      description: "Invoices or draw requests fully paid or released.",
+      tone: "good",
+      onClick: () => goPayments({ moneyStatus: "paid" }),
+    },
+    {
+      key: "issues",
+      title: "Disputes / Issues",
+      count: paymentSummary.issues.count,
+      amount: paymentSummary.issues.amount,
+      description: "Records with disputes, requested changes, or rejection issues.",
+      tone: "bad",
+      onClick: () => goPayments({ moneyStatus: "issues" }),
+    },
+  ];
 
   return (
     <PageShell
@@ -2137,6 +2272,52 @@ export default function ContractorDashboard() {
               ) : null}
             </div>
           </DashboardCard>
+
+          <DashboardSection
+            title="Quick Actions"
+            subtitle="Shortcuts for the next move."
+          >
+            <DashboardCard
+              testId="dashboard-quick-actions-row"
+              tone="subtle"
+              className="border-slate-200/90 bg-white p-3.5 shadow-[0_14px_32px_rgba(15,23,42,0.06)]"
+            >
+              <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+                <button
+                  type="button"
+                  onClick={goNewAgreement}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-white"
+                >
+                  <FilePlus2 className="h-4 w-4" />
+                  <span>New Agreement</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={goNewMilestone}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-white"
+                >
+                  <ListPlus className="h-4 w-4" />
+                  <span>New Milestone</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={goInvoices}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-white"
+                >
+                  <BadgeDollarSign className="h-4 w-4" />
+                  <span>Payment</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={openNewExpense}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-800 transition hover:border-slate-300 hover:bg-white"
+                >
+                  <HandCoins className="h-4 w-4" />
+                  <span>Expense</span>
+                </button>
+              </div>
+            </DashboardCard>
+          </DashboardSection>
 
           {needsAttentionItems.length ? (
             <DashboardSection
@@ -2252,6 +2433,69 @@ export default function ContractorDashboard() {
             </DashboardCard>
           </DashboardSection>
 
+          <DashboardSection
+            title="Work and Money"
+            subtitle="Track job progress on the left and payment handoffs on the right."
+          >
+            <DashboardCard
+              tone="subtle"
+              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)] md:p-5"
+            >
+              <div id="layout" className="grid gap-5 xl:grid-cols-2 xl:items-start">
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#52749a]">
+                      Work Pipeline
+                    </div>
+                    <div className="mt-1 text-lg font-semibold text-[#18395f]">
+                      Track job progress across milestones
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {workPipelineRows.map((row) => (
+                      <PipelineRow
+                        key={row.key}
+                        testId={`dashboard-work-${row.key}`}
+                        title={row.title}
+                        count={row.count}
+                        amount={row.amount}
+                        description={row.description}
+                        tone={row.tone}
+                        onClick={row.onClick}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#52749a]">
+                      Money Pipeline
+                    </div>
+                    <div className="mt-1 text-lg font-semibold text-[#18395f]">
+                      Track payments from approval to payout
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    {moneyPipelineRows.map((row) => (
+                      <PipelineRow
+                        key={row.key}
+                        testId={`dashboard-money-${row.key}`}
+                        title={row.title}
+                        count={row.count}
+                        amount={row.amount}
+                        description={row.description}
+                        tone={row.tone}
+                        onClick={row.onClick}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </DashboardCard>
+          </DashboardSection>
+
+          {false ? (<>
           <DashboardSection
             title="Work and Money"
             subtitle="Follow the handoff from completed work to payment requests, approval, and payout."
@@ -2618,6 +2862,8 @@ export default function ContractorDashboard() {
               ) : null}
             </DashboardCard>
           </DashboardSection>
+          </>
+          ) : null}
 
           <DashboardSection
             title="Bids Snapshot"
@@ -2820,6 +3066,7 @@ export default function ContractorDashboard() {
           </>
           ) : null}
 
+          {false ? (
           <DashboardSection
             title="Quick Actions"
             subtitle="Only the actions that move work and money forward."
@@ -2858,6 +3105,7 @@ export default function ContractorDashboard() {
               </div>
             </DashboardCard>
           </DashboardSection>
+          ) : null}
 
           {showActivityFeed ? (
             <DashboardSection

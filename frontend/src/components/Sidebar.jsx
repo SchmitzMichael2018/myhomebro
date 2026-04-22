@@ -359,7 +359,7 @@ export default function Sidebar({ variant = "desktop" }) {
         <Item to={`${APP_BASE}/team-overview`} label="Team Overview" icon={Gauge} />
         <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} count={reviewQueueCount} />
         <Item to={`${APP_BASE}/agreements`} label="Agreements" icon={FileSignature} />
-        <Item to={`${APP_BASE}/bids`} label="Leads & Bids" icon={ClipboardList} />
+        <Item to={`${APP_BASE}/bids`} label="Bids" icon={ClipboardList} />
         <Item to={`${APP_BASE}/templates`} label="Templates" icon={ClipboardList} />
         <Item to={`${APP_BASE}/milestones`} label="Milestones" icon={SquareKanban} />
         <Item to={`${APP_BASE}/subcontractors`} label="Subcontractors" icon={Wrench} count={Number(attentionCounts.pending_invites_count || 0)} />
