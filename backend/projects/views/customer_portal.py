@@ -10,6 +10,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers, status
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -17,10 +18,15 @@ from rest_framework.views import APIView
 from receipts.models import Receipt
 from projects.models import (
     Agreement,
+    AgreementFundingLink,
     DrawRequest,
     ExternalPaymentRecord,
     Homeowner,
     Invoice,
+    Milestone,
+    MilestoneComment,
+    Notification,
+    Project,
     PublicContractorLead,
 )
 from projects.models_attachments import AgreementAttachment
@@ -698,6 +704,545 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
     }
 
 
+def _project_customer_email(project, agreement=None) -> str:
+    homeowner = getattr(project, "homeowner", None)
+    if homeowner and getattr(homeowner, "email", None):
+        return _safe_text(getattr(homeowner, "email", "")).lower()
+    if agreement is not None:
+        agreement_homeowner = getattr(agreement, "homeowner", None)
+        if agreement_homeowner and getattr(agreement_homeowner, "email", None):
+            return _safe_text(getattr(agreement_homeowner, "email", "")).lower()
+    return ""
+
+
+def _project_agreement(project):
+    try:
+        return (
+            Agreement.objects.select_related("project", "contractor", "homeowner")
+            .filter(project=project)
+            .first()
+        )
+    except Exception:
+        return None
+
+
+def _project_photo_rows(agreement) -> list[dict]:
+    if not agreement:
+        return []
+    rows = []
+    for attachment in AgreementAttachment.objects.select_related("agreement", "uploaded_by").filter(
+        agreement=agreement,
+        visible_to_homeowner=True,
+    ).order_by("-uploaded_at", "-id"):
+        file_obj = getattr(attachment, "file", None)
+        try:
+            file_url = getattr(file_obj, "url", "") or ""
+        except Exception:
+            file_url = ""
+        rows.append(
+            {
+                "id": attachment.id,
+                "title": _safe_text(getattr(attachment, "title", "")) or "Project photo",
+                "category": _safe_text(getattr(attachment, "category", "")) or "OTHER",
+                "url": file_url,
+                "uploaded_at": _safe_dt(getattr(attachment, "uploaded_at", None)),
+                "uploaded_by": _safe_text(getattr(getattr(attachment, "uploaded_by", None), "get_full_name", lambda: "")())
+                or _safe_text(getattr(getattr(attachment, "uploaded_by", None), "email", "")),
+            }
+        )
+    return rows
+
+
+def _project_timeline_rows(agreement) -> list[dict]:
+    if not agreement:
+        return []
+    rows = []
+    milestones = Milestone.objects.filter(agreement=agreement).order_by("order", "id")
+    for milestone in milestones:
+        status = "completed" if getattr(milestone, "completed", False) else "in_progress"
+        if getattr(milestone, "subcontractor_completion_status", "") == "submitted_for_review":
+            status = "awaiting_review"
+        elif getattr(milestone, "is_invoiced", False) and not getattr(milestone, "completed", False):
+            status = "invoiced"
+        elif getattr(milestone, "is_late", False):
+            status = "overdue"
+        rows.append(
+            {
+                "id": milestone.id,
+                "order": milestone.order,
+                "title": _safe_text(getattr(milestone, "title", "")) or f"Milestone {milestone.order}",
+                "description": _safe_text(getattr(milestone, "description", "")),
+                "amount": str(getattr(milestone, "amount", "") or "0.00"),
+                "amount_label": f"${Decimal(str(getattr(milestone, 'amount', 0) or 0)):.2f}",
+                "start_date": _safe_dt(getattr(milestone, "start_date", None)),
+                "completion_date": _safe_dt(getattr(milestone, "completion_date", None)),
+                "status": status,
+                "status_label": (
+                    "Awaiting Review"
+                    if status == "awaiting_review"
+                    else "Overdue"
+                    if status == "overdue"
+                    else "Invoiced"
+                    if status == "invoiced"
+                    else "Completed"
+                    if status == "completed"
+                    else "In Progress"
+                ),
+                "completed": bool(getattr(milestone, "completed", False)),
+                "is_invoiced": bool(getattr(milestone, "is_invoiced", False)),
+                "has_comments": bool(getattr(milestone, "comments", None) and milestone.comments.exists()),
+            }
+        )
+    return rows
+
+
+def _project_payment_rows(agreement) -> tuple[dict, list[dict], list[dict]]:
+    if not agreement:
+        return {"items": [], "summary": {}}, [], []
+
+    invoices = list(
+        Invoice.objects.select_related("agreement", "agreement__project", "agreement__homeowner")
+        .filter(agreement=agreement)
+        .order_by("-created_at", "-id")
+    )
+    draws = list(
+        DrawRequest.objects.select_related("agreement", "agreement__project", "agreement__homeowner")
+        .filter(agreement=agreement)
+        .order_by("-created_at", "-id")
+    )
+
+    invoice_rows = []
+    approved_unpaid = None
+    for invoice in invoices:
+        status = _safe_text(getattr(invoice, "status", "")).lower()
+        paid = bool(getattr(invoice, "escrow_released", False) or getattr(invoice, "direct_pay_paid_at", None) or status == "paid")
+        approved = status == "approved"
+        if approved and not paid and approved_unpaid is None:
+            approved_unpaid = invoice
+        invoice_rows.append(
+            {
+                "id": invoice.id,
+                "type": "invoice",
+                "label": f"Invoice {getattr(invoice, 'invoice_number', invoice.id)}",
+                "amount": str(getattr(invoice, "amount", "") or "0.00"),
+                "amount_label": f"${Decimal(str(getattr(invoice, 'amount', 0) or 0)):.2f}",
+                "status": "paid" if paid else status or "pending",
+                "status_label": "Paid" if paid else _safe_text(getattr(invoice, "status", "")).replace("_", " ").title() or "Pending",
+                "date": _safe_dt(getattr(invoice, "escrow_released_at", None) or getattr(invoice, "direct_pay_paid_at", None) or getattr(invoice, "approved_at", None) or getattr(invoice, "created_at", None)),
+                "link": f"/invoice/{invoice.public_token}",
+                "notes": "Escrow release" if getattr(invoice, "escrow_released", False) else "Direct pay" if getattr(invoice, "direct_pay_paid_at", None) else "",
+            }
+        )
+
+    draw_rows = []
+    awaiting_review = None
+    for draw in draws:
+        status = _safe_text(getattr(draw, "status", "")).lower()
+        if status in {"submitted", "changes_requested"} and awaiting_review is None:
+            awaiting_review = draw
+        draw_rows.append(
+            {
+                "id": draw.id,
+                "type": "draw",
+                "label": f"Draw {getattr(draw, 'draw_number', draw.id)}",
+                "amount": str(getattr(draw, "net_amount", "") or "0.00"),
+                "amount_label": f"${Decimal(str(getattr(draw, 'net_amount', 0) or 0)):.2f}",
+                "status": status or "draft",
+                "status_label": _safe_text(getattr(draw, "status", "")).replace("_", " ").title() or "Pending",
+                "date": _safe_dt(getattr(draw, "released_at", None) or getattr(draw, "paid_at", None) or getattr(draw, "created_at", None)),
+                "link": f"/draws/magic/{draw.public_token}",
+                "notes": "Awaiting release" if status == "approved" else "Released" if getattr(draw, "released_at", None) else "",
+            }
+        )
+
+    escrow_total = Decimal(str(getattr(agreement, "total_cost", 0) or 0))
+    escrow_funded = bool(getattr(agreement, "escrow_funded", False))
+    paid_total = sum(
+        Decimal(str(row["amount"] or "0.00"))
+        for row in invoice_rows
+        if row.get("status") == "paid"
+    )
+    summary = {
+        "payment_mode": _safe_text(getattr(agreement, "payment_mode", "")),
+        "payment_mode_label": "Escrow" if _safe_text(getattr(agreement, "payment_mode", "")) == "escrow" else "Direct Pay",
+        "agreement_total": str(escrow_total),
+        "agreement_total_label": f"${escrow_total:,.2f}",
+        "escrow_funded": escrow_funded,
+        "escrow_funded_label": "Funded" if escrow_funded else "Waiting for funding",
+        "remaining_to_fund": str(max(Decimal("0.00"), escrow_total - paid_total if escrow_total else Decimal("0.00"))),
+        "remaining_to_fund_label": f"${max(Decimal('0.00'), escrow_total - paid_total if escrow_total else Decimal('0.00')):,.2f}",
+        "invoice_count": len(invoice_rows),
+        "draw_count": len(draw_rows),
+        "approved_unpaid_invoice_id": getattr(approved_unpaid, "id", None),
+        "awaiting_review_draw_id": getattr(awaiting_review, "id", None),
+    }
+    return summary, invoice_rows, draw_rows
+
+
+def _project_messages(agreement) -> list[dict]:
+    if not agreement:
+        return []
+    comments = (
+        MilestoneComment.objects.select_related("milestone", "author")
+        .filter(milestone__agreement=agreement)
+        .order_by("-created_at", "-id")[:6]
+    )
+    rows = []
+    for comment in comments:
+        milestone = getattr(comment, "milestone", None)
+        rows.append(
+            {
+                "id": comment.id,
+                "milestone_id": getattr(milestone, "id", None),
+                "milestone_title": _safe_text(getattr(milestone, "title", "")) or "Milestone update",
+                "author": _safe_text(getattr(getattr(comment, "author", None), "get_full_name", lambda: "")())
+                or _safe_text(getattr(getattr(comment, "author", None), "email", ""))
+                or "Team member",
+                "body": _safe_text(getattr(comment, "content", "")),
+                "created_at": _safe_dt(getattr(comment, "created_at", None)),
+            }
+        )
+    return rows
+
+
+def _project_activity(agreement, milestone_rows, payment_summary, invoice_rows, draw_rows, message_rows) -> list[dict]:
+    if not agreement:
+        return []
+
+    activity = []
+    if getattr(agreement, "signed_at_homeowner", None):
+        activity.append(
+            {
+                "id": f"agreement-signed-{agreement.id}",
+                "category": "agreement_signed",
+                "title": "Agreement signed",
+                "body": "Your agreement is signed and ready for the next project step.",
+                "tone": "emerald",
+                "created_at": _safe_dt(getattr(agreement, "signed_at_homeowner", None)),
+                "link": getattr(agreement, "homeowner_access_token", None) and f"/agreements/magic/{agreement.homeowner_access_token}" or "",
+            }
+        )
+    if payment_summary.get("escrow_funded"):
+        activity.append(
+            {
+                "id": f"escrow-funded-{agreement.id}",
+                "category": "escrow_funded",
+                "title": "Escrow funded",
+                "body": "Your funding deposit is in place.",
+                "tone": "emerald",
+                "created_at": _safe_dt(getattr(agreement, "updated_at", None)),
+                "link": "",
+            }
+        )
+    for row in milestone_rows:
+        if row.get("completed"):
+            activity.append(
+                {
+                    "id": f"milestone-completed-{row['id']}",
+                    "category": "milestone_completed",
+                    "title": f"{row['title']} completed",
+                    "body": row.get("description") or "Milestone completed.",
+                    "tone": "emerald",
+                    "created_at": row.get("completion_date") or row.get("start_date"),
+                    "link": "",
+                }
+            )
+        elif row.get("status") == "awaiting_review":
+            activity.append(
+                {
+                    "id": f"milestone-review-{row['id']}",
+                    "category": "milestone_pending_approval",
+                    "title": f"{row['title']} awaiting review",
+                    "body": "Your contractor has requested review for this milestone.",
+                    "tone": "amber",
+                    "created_at": row.get("completion_date") or row.get("start_date"),
+                    "link": "",
+                }
+            )
+    for row in invoice_rows:
+        if row.get("status") == "approved":
+            activity.append(
+                {
+                    "id": f"invoice-approved-{row['id']}",
+                    "category": "invoice_approved",
+                    "title": f"{row['label']} approved",
+                    "body": f"{row.get('amount_label')} is ready for payment.",
+                    "tone": "blue",
+                    "created_at": row.get("date"),
+                    "link": row.get("link", ""),
+                }
+            )
+        elif row.get("status") == "paid":
+            activity.append(
+                {
+                    "id": f"invoice-paid-{row['id']}",
+                    "category": "payment_released",
+                    "title": f"{row['label']} paid",
+                    "body": f"{row.get('amount_label')} has been released.",
+                    "tone": "emerald",
+                    "created_at": row.get("date"),
+                    "link": row.get("link", ""),
+                }
+            )
+    for row in draw_rows:
+        if row.get("status") in {"submitted", "changes_requested"}:
+            activity.append(
+                {
+                    "id": f"draw-review-{row['id']}",
+                    "category": "milestone_pending_approval",
+                    "title": f"{row['label']} needs review",
+                    "body": "A draw request is ready for approval.",
+                    "tone": "amber",
+                    "created_at": row.get("date"),
+                    "link": row.get("link", ""),
+                }
+            )
+        elif row.get("status") == "released":
+            activity.append(
+                {
+                    "id": f"draw-released-{row['id']}",
+                    "category": "payment_released",
+                    "title": f"{row['label']} released",
+                    "body": f"{row.get('amount_label')} has been released.",
+                    "tone": "emerald",
+                    "created_at": row.get("date"),
+                    "link": row.get("link", ""),
+                }
+            )
+
+    for row in message_rows:
+        activity.append(
+            {
+                "id": f"message-{row['id']}",
+                "category": "message",
+                "title": row.get("milestone_title") or "Project message",
+                "body": row.get("body") or "",
+                "tone": "slate",
+                "created_at": row.get("created_at"),
+                "link": "",
+            }
+        )
+
+    activity.sort(key=lambda row: row.get("created_at") or "", reverse=True)
+    return activity[:12]
+
+
+def _project_next_action(agreement, milestone_rows, payment_summary, invoice_rows, draw_rows) -> dict:
+    if not agreement:
+        return {
+            "title": "Your project is getting set up",
+            "body": "Your contractor is preparing the agreement and project details.",
+            "label": "Open Agreement",
+            "tone": "slate",
+            "url": "",
+        }
+
+    agreement_signed = bool(getattr(agreement, "is_fully_signed", False) or (
+        getattr(agreement, "signed_by_contractor", False) and getattr(agreement, "signed_by_homeowner", False)
+    ))
+    agreement_url = _safe_text(getattr(agreement, "homeowner_access_token", "")) and f"/agreements/magic/{agreement.homeowner_access_token}" or ""
+
+    if not agreement_signed:
+        return {
+            "title": "Review and sign your agreement",
+            "body": "Please review the agreement, then sign to keep the project moving.",
+            "label": "Accept & Sign",
+            "tone": "amber",
+            "url": agreement_url,
+        }
+
+    if _safe_text(getattr(agreement, "payment_mode", "")) == "escrow" and not payment_summary.get("escrow_funded"):
+        funding_link = ""
+        try:
+            funding = (
+                AgreementFundingLink.objects.filter(
+                    agreement=agreement,
+                    is_active=True,
+                    used_at__isnull=True,
+                )
+                .order_by("-created_at", "-id")
+                .first()
+            )
+            if funding:
+                funding_link = f"/public-fund/{funding.token}"
+        except Exception:
+            funding_link = ""
+        return {
+            "title": "Fund the deposit",
+            "body": "Your project is ready for escrow funding so work can begin.",
+            "label": "Fund Deposit",
+            "tone": "blue",
+            "url": funding_link,
+        }
+
+    awaiting_review = next((row for row in milestone_rows if row.get("status") == "awaiting_review"), None)
+    if awaiting_review:
+        return {
+            "title": f"Review {awaiting_review['title']}",
+            "body": "Your contractor has a milestone ready for your review.",
+            "label": "Review Milestone",
+            "tone": "amber",
+            "url": "",
+        }
+
+    approved_invoice = next((row for row in invoice_rows if row.get("status") == "approved"), None)
+    if approved_invoice:
+        return {
+            "title": f"Pay {approved_invoice['label']}",
+            "body": "An approved invoice is ready for payment.",
+            "label": "Pay Invoice",
+            "tone": "blue",
+            "url": approved_invoice.get("link", ""),
+        }
+
+    pending_draw = next((row for row in draw_rows if row.get("status") in {"submitted", "changes_requested"}), None)
+    if pending_draw:
+        return {
+            "title": f"Review {pending_draw['label']}",
+            "body": "There is a draw request waiting for review.",
+            "label": "Review Draw",
+            "tone": "amber",
+            "url": pending_draw.get("link", ""),
+        }
+
+    if all(row.get("completed") for row in milestone_rows) and milestone_rows:
+        review_url = ""
+        try:
+            contractor = getattr(agreement, "contractor", None)
+            profile = getattr(contractor, "public_profile", None) if contractor else None
+            if profile and getattr(profile, "slug", ""):
+                review_url = f"/contractors/{profile.slug}?review=1"
+        except Exception:
+            review_url = ""
+        return {
+            "title": "Your project looks complete",
+            "body": "If everything looks good, you can leave a review for your contractor.",
+            "label": "Leave Review",
+            "tone": "emerald",
+            "url": review_url,
+        }
+
+    return {
+        "title": "Track your project progress",
+        "body": "Review the timeline, messages, and recent updates at a glance.",
+        "label": "View Timeline",
+        "tone": "slate",
+        "url": "",
+    }
+
+
+def _project_dashboard_payload(project, agreement, request=None) -> dict:
+    milestones = _project_timeline_rows(agreement)
+    payment_summary, invoice_rows, draw_rows = _project_payment_rows(agreement)
+    message_rows = _project_messages(agreement)
+    photo_rows = _project_photo_rows(agreement)
+    activity_rows = _project_activity(agreement, milestones, payment_summary, invoice_rows, draw_rows, message_rows)
+    next_action = _project_next_action(agreement, milestones, payment_summary, invoice_rows, draw_rows)
+
+    contractor = getattr(project, "contractor", None)
+    profile = getattr(contractor, "public_profile", None) if contractor else None
+    contractor_rating = {
+        "average_rating": getattr(contractor, "average_rating", None),
+        "review_count": int(getattr(contractor, "review_count", 0) or 0),
+        "display_label": "New on MyHomeBro" if int(getattr(contractor, "review_count", 0) or 0) <= 0 else f"{float(getattr(contractor, 'average_rating', 0) or 0):.2f} average rating",
+    }
+
+    agreement_token = str(getattr(agreement, "homeowner_access_token", "") or "")
+    agreement_url = f"/agreements/magic/{agreement_token}" if agreement_token else ""
+    funding_link = ""
+    try:
+        funding = (
+            AgreementFundingLink.objects.filter(
+                agreement=agreement,
+                is_active=True,
+                used_at__isnull=True,
+            )
+            .order_by("-created_at", "-id")
+            .first()
+        )
+        if funding:
+            funding_link = f"/public-fund/{funding.token}"
+    except Exception:
+        funding_link = ""
+
+    return {
+        "project": {
+            "id": project.id,
+            "number": _safe_text(getattr(project, "number", "")),
+            "title": _safe_text(getattr(project, "title", "")),
+            "description": _safe_text(getattr(project, "description", "")),
+            "status": _safe_text(getattr(project, "status", "")),
+            "status_label": _safe_text(getattr(project, "status", "")).replace("_", " ").title() or "Project",
+            "address": ", ".join(
+                part
+                for part in [
+                    _safe_text(getattr(project, "project_street_address", "")),
+                    _safe_text(getattr(project, "project_address_line_2", "")),
+                    _safe_text(getattr(project, "project_city", "")),
+                    _safe_text(getattr(project, "project_state", "")),
+                    _safe_text(getattr(project, "project_zip_code", "")),
+                ]
+                if part
+            ),
+        },
+        "hero": {
+            "project_title": _safe_text(getattr(project, "title", "")),
+            "project_number": _safe_text(getattr(project, "number", "")),
+            "contractor_name": _contractor_name(contractor),
+            "contractor_email": _safe_text(getattr(getattr(contractor, "user", None), "email", ""))
+            or _safe_text(getattr(contractor, "email", "")),
+            "contractor_rating": contractor_rating,
+            "status_label": _safe_text(getattr(project, "status", "")).replace("_", " ").title() or "Project",
+            "payment_mode_label": payment_summary.get("payment_mode_label", "Escrow"),
+            "summary": _safe_text(getattr(agreement, "description", "")) or _safe_text(getattr(project, "description", "")),
+            "agreement_url": agreement_url,
+            "funding_url": funding_link,
+            "public_profile_url": (
+                request.build_absolute_uri(profile.public_url_path)
+                if request and profile and getattr(profile, "public_url_path", "")
+                else _safe_text(getattr(profile, "public_url_path", ""))
+            ),
+        },
+        "next_action": next_action,
+        "timeline": milestones,
+        "payments": {
+            "summary": payment_summary,
+            "invoice_rows": invoice_rows,
+            "draw_rows": draw_rows,
+        },
+        "messages": {
+            "items": message_rows,
+            "latest": message_rows[:3],
+        },
+        "photos": photo_rows,
+        "agreement": {
+            "id": getattr(agreement, "id", None),
+            "title": _agreement_title(agreement),
+            "status": _safe_text(getattr(agreement, "status", "")).replace("_", " ").title() or "Agreement",
+            "status_key": _safe_text(getattr(agreement, "status", "")).lower(),
+            "project_class_label": project_class_label(getattr(agreement, "project_class", "")),
+            "payment_mode_label": payment_summary.get("payment_mode_label", "Escrow"),
+            "payment_structure_label": _safe_text(getattr(agreement, "payment_structure", "")).replace("_", " ").title() or "Simple",
+            "total_cost_label": f"${Decimal(str(getattr(agreement, 'total_cost', 0) or 0)):,.2f}",
+            "agreement_url": agreement_url,
+            "pdf_url": _agreement_pdf_url(agreement),
+            "funding_url": funding_link,
+        },
+        "notifications": activity_rows,
+        "review": {
+            "eligible": bool(all(row.get("completed") for row in milestones) and milestones),
+            "message": "Leave a review when the work is finished and everything looks good.",
+            "url": (
+                request.build_absolute_uri(f"/contractors/{profile.slug}?review=1")
+                if request and profile and getattr(profile, "slug", "")
+                else _safe_text(getattr(profile, "public_url_path", "")) + "?review=1"
+                if profile and getattr(profile, "slug", "")
+                else ""
+            ),
+        },
+    }
+
+
 def _find_customer_bid_record(*, email: str, bid_key: str):
     key = _safe_text(bid_key)
     if not key:
@@ -791,6 +1336,90 @@ class CustomerPortalView(APIView):
             return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
 
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerProjectDashboardView(APIView):
+    permission_classes = [AllowAny]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def _resolve_project(self, project_id: int, token: str):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            raise PermissionError("This project link has expired.")
+        except signing.BadSignature:
+            raise PermissionError("Invalid project link.")
+
+        project = get_object_or_404(Project.objects.select_related("contractor", "homeowner"), pk=project_id)
+        agreement = _project_agreement(project)
+        customer_email = _project_customer_email(project, agreement)
+        if not customer_email or customer_email != email.lower().strip():
+            raise LookupError("This project link does not match your records.")
+        return project, agreement, email
+
+    def get(self, request, project_id: int):
+        token = _safe_text(request.query_params.get("token", ""))
+        if not token:
+            return Response({"detail": "Missing token."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            project, agreement, _email = self._resolve_project(project_id, token)
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except LookupError:
+            return Response({"detail": "Project not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response(_project_dashboard_payload(project, agreement, request=request), status=status.HTTP_200_OK)
+
+    def post(self, request, project_id: int):
+        token = _safe_text(request.query_params.get("token", ""))
+        if not token:
+            return Response({"detail": "Missing token."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            project, agreement, _email = self._resolve_project(project_id, token)
+        except PermissionError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except LookupError:
+            return Response({"detail": "Project not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if agreement is None:
+            return Response({"detail": "This project is not ready for uploads yet."}, status=status.HTTP_400_BAD_REQUEST)
+
+        files = []
+        if hasattr(request, "FILES"):
+            files = request.FILES.getlist("files") or request.FILES.getlist("file")
+            if not files:
+                files = list(request.FILES.values())
+        if not files:
+            return Response({"detail": "Please attach at least one file."}, status=status.HTTP_400_BAD_REQUEST)
+
+        uploaded = []
+        for index, uploaded_file in enumerate(files, start=1):
+            base_name = _safe_text(getattr(uploaded_file, "name", "")) or f"Photo {index}"
+            title = _safe_text(request.data.get("title", "")) or base_name.rsplit(".", 1)[0] or f"Photo {index}"
+            attachment = AgreementAttachment.objects.create(
+                agreement=agreement,
+                title=title,
+                category=AgreementAttachment.CATEGORY_OTHER,
+                file=uploaded_file,
+                visible_to_homeowner=True,
+                ack_required=False,
+                uploaded_by=None,
+            )
+            uploaded.append(
+                {
+                    "id": attachment.id,
+                    "title": attachment.title,
+                    "category": attachment.category,
+                    "url": _safe_text(getattr(getattr(attachment, "file", None), "url", "")),
+                    "uploaded_at": _safe_dt(getattr(attachment, "uploaded_at", None)),
+                }
+            )
+
+        payload = _project_dashboard_payload(project, agreement, request=request)
+        payload["uploaded"] = uploaded
+        return Response(payload, status=status.HTTP_201_CREATED)
 
 
 class CustomerPortalBidAcceptView(APIView):

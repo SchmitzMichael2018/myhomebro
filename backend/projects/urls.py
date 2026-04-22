@@ -222,6 +222,7 @@ from .views.customer_portal import (
     AgreementMagicAccessView,
     AgreementMagicPdfView,
     CustomerPortalBidAcceptView,
+    CustomerProjectDashboardView,
     CustomerPortalRequestLinkView,
     CustomerPortalView,
 )
@@ -312,6 +313,7 @@ urlpatterns = [
     path("customer-portal/request-link/", CustomerPortalRequestLinkView.as_view(), name="customer-portal-request-link"),
     path("customer-portal/<str:token>/", CustomerPortalView.as_view(), name="customer-portal-detail"),
     path("customer-portal/<str:token>/bids/<str:bid_key>/accept/", CustomerPortalBidAcceptView.as_view(), name="customer-portal-bid-accept"),
+    path("customer-portal/project/<int:project_id>/", CustomerProjectDashboardView.as_view(), name="customer-project-dashboard"),
     path("sms/automation/preview/", SMSAutomationPreviewView.as_view(), name="sms-automation-preview"),
     path("sms/opt-in/", SMSOptInView.as_view(), name="sms-opt-in"),
     path("sms/opt-out/", SMSOptOutView.as_view(), name="sms-opt-out"),

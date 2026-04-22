@@ -20,6 +20,7 @@ from projects.services.notification_center import create_notification
 from projects.services.agreements.pdf_stream import serve_public_pdf
 from projects.services.agreements.pdf_loader import load_pdf_services
 from projects.views.funding import send_funding_link_for_agreement
+from projects.views.customer_portal import _portal_token
 
 # ✅ Range support helper (fixes iOS/Safari "only first page" PDF rendering)
 from projects.services.http_range import ranged_file_response
@@ -208,6 +209,17 @@ def agreement_public_sign(request):
             }
             for m in Milestone.objects.filter(agreement=ag).order_by("order", "id")
         ]
+        customer_email = (
+            getattr(homeowner, "email", None)
+            or getattr(getattr(project, "homeowner", None), "email", None)
+            or ""
+        ).strip()
+        project_id = getattr(project, "id", None)
+        project_dashboard_url = (
+            request.build_absolute_uri(f"/app/project/{project_id}?token={_portal_token(customer_email)}")
+            if project_id and customer_email
+            else ""
+        )
 
         pdf_url = request.build_absolute_uri(
             f"/api/projects/agreements/public_pdf/?token={token}&stream=1&preview=1"
@@ -236,6 +248,7 @@ def agreement_public_sign(request):
                 or getattr(contractor, "email", "")
                 or "",
                 "contractor_rating": _contractor_rating_payload(contractor),
+                "project_dashboard_url": project_dashboard_url,
                 "status": getattr(ag, "status", "draft"),
                 "pdf_url": pdf_url,
                 "milestones": milestone_rows,

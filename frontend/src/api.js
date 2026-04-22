@@ -473,6 +473,26 @@ export async function getAgreementExternalPayments(agreementId) {
   return res.data;
 }
 
+export async function getCustomerProjectDashboard(projectId, token) {
+  if (!projectId) throw new Error("projectId is required");
+  if (!token) throw new Error("token is required");
+  const res = await api.get(`/projects/customer-portal/project/${projectId}/`, {
+    params: { token },
+  });
+  return res.data;
+}
+
+export async function uploadCustomerProjectPhotos(projectId, token, formData) {
+  if (!projectId) throw new Error("projectId is required");
+  if (!token) throw new Error("token is required");
+  const body = formData instanceof FormData ? formData : new FormData();
+  const res = await api.post(`/projects/customer-portal/project/${projectId}/`, body, {
+    params: { token },
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return res.data;
+}
+
 // ------------------------
 // ✅ Agreement Close-out / Archive API
 // ------------------------

@@ -349,6 +349,7 @@ export default function PublicSign() {
     "";
   const projectTitle = agreement?.project_title || agreement?.title || "Agreement";
   const contractorEmail = agreement?.contractor_email || "";
+  const projectDashboardUrl = agreement?.project_dashboard_url || "";
   const fundingToken = agreement?.funding_token || parseFundingToken(agreement?.public_fund_url || "");
 
   const fundingSectionTitle = isFullySigned ? "Deposit Funding" : "Deposit Step";
@@ -468,6 +469,15 @@ export default function PublicSign() {
                   >
                     Ask Question
                   </a>
+                  {projectDashboardUrl ? (
+                    <a
+                      href={projectDashboardUrl}
+                      className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                      data-testid="public-agreement-open-project-dashboard"
+                    >
+                      Open Project Dashboard
+                    </a>
+                  ) : null}
                 </div>
               </div>
             </section>
@@ -617,6 +627,16 @@ export default function PublicSign() {
                     <p className="mt-2 text-sm leading-6 text-emerald-800">
                       Next step: complete deposit funding if required. We’ll keep this agreement on file and continue with the project workflow.
                     </p>
+                    {projectDashboardUrl ? (
+                      <div className="mt-4">
+                        <a
+                          href={projectDashboardUrl}
+                          className="inline-flex items-center justify-center rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500"
+                        >
+                          Open Project Dashboard
+                        </a>
+                      </div>
+                    ) : null}
                   </section>
                 ) : null}
               </div>

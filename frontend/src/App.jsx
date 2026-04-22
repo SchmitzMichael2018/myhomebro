@@ -14,6 +14,7 @@ import ForgotPassword from "./components/ForgotPassword";
 import ResetPassword from "./components/ResetPassword";
 
 import AgreementReview from "./pages/AgreementReview.jsx";
+import ProjectDashboardPage from "./pages/ProjectDashboardPage.jsx";
 import StripeOnboarding from "./components/Stripe/StripeOnboarding.jsx";
 
 import PublicSign from "./components/PublicSign";
@@ -55,6 +56,7 @@ export default function App() {
 
           {/* 🔓 Public agreement preview */}
           <Route path="/agreements/public/:id" element={<AgreementReview />} />
+          <Route path="/app/project/:project_id" element={<ProjectDashboardPage />} />
 
           {/* Stripe onboarding */}
           <Route path="/onboarding" element={<StripeOnboarding />} />

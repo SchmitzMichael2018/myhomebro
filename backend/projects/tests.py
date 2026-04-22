@@ -111,6 +111,7 @@ from projects.services.agreements.create import create_agreement_from_validated
 from projects.services.agreements.public_sign import build_public_sign_url
 from projects.services.agreement_fee_allocation import refresh_agreement_fee_allocations
 from projects.services.benchmark_resolution import resolve_seed_benchmark_defaults
+from projects.views.customer_portal import _portal_token
 from projects.services.compliance import (
     contractor_has_required_license,
     get_agreement_compliance_warning,
@@ -1411,7 +1412,96 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(response.data["contractor_rating"]["review_count"], 1)
         self.assertEqual(response.data["contractor_rating"]["average_rating"], 5.0)
         self.assertEqual(response.data["attachments"][0]["id"], attachment.id)
+        self.assertIn(f"/app/project/{self.project.id}", response.data["project_dashboard_url"])
         self.assertTrue(response.data["public_fund_url"].endswith(f"/public-fund/{response.data['funding_token']}"))
+
+    def test_customer_project_dashboard_loads_sections_and_changes_next_action_by_state(self):
+        token = _portal_token(self.homeowner.email)
+        milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Demo and Prep",
+            description="Remove existing finishes and prep the site.",
+            amount=Decimal("2500.00"),
+        )
+        Attachment = AgreementAttachment
+        Attachment.objects.create(
+            agreement=self.agreement,
+            title="Kitchen photo",
+            category=Attachment.CATEGORY_EXHIBIT,
+            file=SimpleUploadedFile("kitchen.jpg", b"filecontent", content_type="image/jpeg"),
+            visible_to_homeowner=True,
+        )
+        MilestoneComment.objects.create(
+            milestone=milestone,
+            author=self.contractor_user,
+            content="We are ready to start prep work.",
+        )
+
+        initial_response = self.client.get(
+            f"/api/projects/customer-portal/project/{self.project.id}/",
+            {"token": token},
+        )
+        self.assertEqual(initial_response.status_code, 200)
+        self.assertEqual(initial_response.data["hero"]["project_title"], self.project.title)
+        self.assertEqual(initial_response.data["next_action"]["label"], "Accept & Sign")
+        self.assertEqual(len(initial_response.data["timeline"]), 1)
+        self.assertEqual(len(initial_response.data["messages"]["items"]), 1)
+        self.assertEqual(len(initial_response.data["photos"]), 1)
+        self.assertFalse(initial_response.data["review"]["eligible"])
+
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_at_contractor = timezone.now()
+        self.agreement.signed_by_homeowner = True
+        self.agreement.signed_at_homeowner = timezone.now()
+        self.agreement.status = ProjectStatus.SIGNED
+        self.agreement.save(
+            update_fields=[
+                "signed_by_contractor",
+                "signed_at_contractor",
+                "signed_by_homeowner",
+                "signed_at_homeowner",
+                "status",
+                "updated_at",
+            ]
+        )
+        AgreementFundingLink.create_for_agreement(
+            self.agreement,
+            amount=Decimal("1500.00"),
+            currency="usd",
+        )
+
+        funded_response = self.client.get(
+            f"/api/projects/customer-portal/project/{self.project.id}/",
+            {"token": token},
+        )
+        self.assertEqual(funded_response.status_code, 200)
+        self.assertEqual(funded_response.data["next_action"]["label"], "Fund Deposit")
+
+        self.agreement.payment_mode = "direct"
+        self.agreement.save(update_fields=["payment_mode", "updated_at"])
+        Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("1250.00"),
+            status=InvoiceStatus.APPROVED,
+        )
+
+        payment_response = self.client.get(
+            f"/api/projects/customer-portal/project/{self.project.id}/",
+            {"token": token},
+        )
+        self.assertEqual(payment_response.status_code, 200)
+        self.assertEqual(payment_response.data["next_action"]["label"], "Pay Invoice")
+        self.assertGreaterEqual(len(payment_response.data["payments"]["invoice_rows"]), 1)
+
+        upload_response = self.client.post(
+            f"/api/projects/customer-portal/project/{self.project.id}/?token={token}",
+            {"files": SimpleUploadedFile("exterior.jpg", b"filecontent", content_type="image/jpeg")},
+            format="multipart",
+        )
+        self.assertEqual(upload_response.status_code, 201)
+        self.assertGreaterEqual(len(upload_response.data["uploaded"]), 1)
+        self.assertGreaterEqual(len(upload_response.data["photos"]), 2)
 
     def test_public_agreement_sign_updates_status_and_returns_funding_link(self):
         self.agreement.total_cost = Decimal("1500.00")
