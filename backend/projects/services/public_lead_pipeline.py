@@ -115,6 +115,27 @@ def sync_public_lead_from_project_intake(intake, *, status_override=None):
         intake.save(update_fields=["public_lead", "public_profile", "updated_at"])
         return lead
 
+    update_fields = [
+        "contractor",
+        "public_profile",
+        "source",
+        "full_name",
+        "email",
+        "phone",
+        "project_address",
+        "city",
+        "state",
+        "zip_code",
+        "project_type",
+        "project_description",
+        "preferred_timeline",
+        "budget_text",
+        "desired_timing_text",
+        "ai_analysis",
+        "status",
+        "updated_at",
+    ]
+
     for key, value in payload.items():
         if key == "status" and status_override is None:
             continue
@@ -138,28 +159,7 @@ def sync_public_lead_from_project_intake(intake, *, status_override=None):
         ):
             continue
         setattr(lead, key, value)
-        lead.save(
-        update_fields=[
-            "contractor",
-            "public_profile",
-            "source",
-            "full_name",
-            "email",
-            "phone",
-            "project_address",
-            "city",
-            "state",
-            "zip_code",
-            "project_type",
-            "project_description",
-            "preferred_timeline",
-            "budget_text",
-            "desired_timing_text",
-            "ai_analysis",
-            "status",
-            "updated_at",
-        ]
-    )
+    lead.save(update_fields=update_fields)
     if intake.public_profile_id != profile.id:
         intake.public_profile = profile
         intake.save(update_fields=["public_profile", "updated_at"])

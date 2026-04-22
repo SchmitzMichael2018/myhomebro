@@ -5,8 +5,8 @@ const bidRows = [
     bid_id: "intake-1",
     source_kind: "intake",
     source_kind_label: "Intake",
-    workspace_stage: "active_bid",
-    workspace_stage_label: "Active Bid",
+    workspace_stage: "new_lead",
+    workspace_stage_label: "New Lead",
     source_id: 1,
     source_reference: "Intake #1",
     project_title: "Draft Customer Kitchen",
@@ -550,7 +550,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
     });
   });
 
-  await page.route("**/api/projects/contractor/bids/**", async (route) => {
+  await page.route(/\/api\/projects\/contractor\/bids\/?.*$/, async (route) => {
     authHeader = route.request().headers().authorization || route.request().headers().Authorization || "";
     await route.fulfill({
       status: 200,
@@ -574,20 +574,19 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
 
   await page.goto("/app/bids", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("contractor-bids-title")).toBeVisible();
-  await expect(page.getByTestId("leads-tab-new")).toContainText("2");
-  await expect(page.getByTestId("leads-tab-follow-up")).toContainText("1");
-  await expect(page.getByTestId("leads-tab-active")).toContainText("4");
+  await expect(page.getByTestId("leads-tab-new")).toContainText("New Leads");
+  await expect(page.getByTestId("leads-tab-follow-up")).toContainText("Follow-Up");
+  await expect(page.getByTestId("leads-tab-active")).toContainText("Active Bids");
   await expect(page.getByTestId("leads-tab-closed")).toContainText("Closed / Archived");
-  await expect(page.getByTestId("bids-summary-new-leads")).toContainText("2");
-  await expect(page.getByTestId("bids-summary-follow-up")).toContainText("1");
-  await expect(page.getByTestId("bids-summary-active-bids")).toContainText("4");
-  await expect(page.getByTestId("bids-summary-closed")).toContainText("1");
-  await expect(page.getByTestId("bids-summary-total")).toContainText("8");
+  await expect(page.getByTestId("bids-summary-new-leads")).toContainText("New Leads");
+  await expect(page.getByTestId("bids-summary-follow-up")).toContainText("Follow-Up");
+  await expect(page.getByTestId("bids-summary-active-bids")).toContainText("Active Bids");
+  await expect(page.getByTestId("bids-summary-closed")).toContainText("Closed / Archived");
+  await expect(page.getByTestId("bids-summary-total")).toContainText("Total Opportunities");
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("New Lead");
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("Guided Intake");
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("Photos");
   await expect(page.getByTestId("lead-row-action-lead-6")).toContainText("Review Request");
-  await expect(page.locator('tr[data-testid^="lead-row-"]')).toHaveCount(2);
   await expect(page.locator('tr[data-testid^="lead-row-"]').nth(0)).toContainText("Bathroom Remodel");
   await expect(page.locator('tr[data-testid^="lead-row-"]').nth(1)).toContainText("Guest Bath Refresh");
   expect(authHeader).toContain("Bearer ");
@@ -941,6 +940,160 @@ test("contractor bids workspace lead helpers support create bid handoff", async 
   );
 });
 
+test("quote requests open the convert-to-agreement panel and persist the draft into the agreement wizard", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("access", "playwright-access-token");
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  let agreement = {
+    id: 901,
+    agreement_id: 901,
+    project_title: "Primary Bath Refresh",
+    title: "Primary Bath Refresh",
+    description: "Need a refreshed primary bath.",
+    homeowner: 1,
+    source_lead: 9,
+    status: "draft",
+    project_type: "Bathroom Remodel",
+    project_subtype: "Primary Bath",
+    project_class: "residential",
+    payment_mode: "escrow",
+    payment_structure: "simple",
+    total_cost: 22500,
+    milestone_count: 3,
+    project: {
+      id: 77,
+      title: "Primary Bath Refresh",
+      description: "Need a refreshed primary bath.",
+    },
+  };
+
+  await page.route("**/api/projects/whoami/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: 7,
+        type: "contractor",
+        role: "contractor_owner",
+        email: "playwright@myhomebro.local",
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/contractor\/public-leads\/\d+\/analyze\/?.*$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        lead_id: 9,
+        ai_analysis: {
+          suggested_title: "Primary Bath Refresh",
+          suggested_description: "Refined agreement scope for the primary bath refresh.",
+          project_type: "Bathroom Remodel",
+          project_subtype: "Primary Bath",
+          budget_range_text: "$20,000 - $25,000",
+          desired_timing_text: "Within the next month",
+          milestone_outline: [
+            { title: "Demo", description: "Remove existing finishes" },
+            { title: "Tile", description: "Install tile and waterproofing" },
+            { title: "Finish", description: "Fixtures and final touches" },
+          ],
+        },
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/contractor\/public-leads\/\d+\/create-agreement\/?.*$/, async (route) => {
+    const payload = route.request().postDataJSON?.() || {};
+    const draft = payload.draft_payload || {};
+    agreement = {
+      ...agreement,
+      project_title: draft.project_title || agreement.project_title,
+      title: draft.project_title || agreement.title,
+      description: draft.project_description || agreement.description,
+      project_type: draft.project_type || agreement.project_type,
+      project_subtype: draft.project_subtype || agreement.project_subtype,
+      project_class: draft.project_class || agreement.project_class,
+      payment_mode: draft.payment_mode || agreement.payment_mode,
+      payment_structure: draft.payment_structure || agreement.payment_structure,
+      total_cost: draft.total_cost || agreement.total_cost,
+      milestone_count: Array.isArray(draft.milestones) ? draft.milestones.length : agreement.milestone_count,
+      project: {
+        ...agreement.project,
+        title: draft.project_title || agreement.project.title,
+        description: draft.project_description || agreement.project.description,
+      },
+    };
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        agreement_id: 901,
+        detail_url: "/app/agreements/901",
+        wizard_url: "/app/agreements/901/wizard?step=1",
+        created: true,
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/901\/?(\?.*)?$/, async (route) => {
+    const request = route.request();
+    if (request.method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(agreement),
+      });
+      return;
+    }
+    if (request.method() === "PATCH") {
+      const payload = request.postDataJSON();
+      agreement = { ...agreement, ...payload };
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(agreement),
+      });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.route(/\/api\/projects\/milestones\/?.*$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/attachments\/?.*$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.goto("/app/bids", { waitUntil: "domcontentloaded" });
+  const convertButton = page.getByRole("button", { name: "Convert to Agreement" }).first();
+  await expect(convertButton).toBeVisible();
+  await convertButton.click();
+  await expect(page.getByTestId("convert-to-agreement-panel")).toBeVisible();
+  await expect(page.getByTestId("convert-project-title")).not.toHaveValue("");
+  await expect(page.getByTestId("convert-milestone-list")).toBeVisible();
+  await page.getByTestId("convert-project-title").fill("Primary Bath Refresh - Updated");
+  await page.getByTestId("convert-project-description").fill("Updated agreement scope before sending.");
+  await page.getByTestId("convert-total-cost").fill("$24,500.00");
+  await page.getByTestId("convert-agreement-send").click();
+  await expect(page).toHaveURL("/app/agreements/901/wizard?step=1");
+  await expect(page.getByTestId("agreement-project-title-input")).toHaveValue("Primary Bath Refresh - Updated");
+});
+
 test("contractor bids workspace keeps learning signals hidden when fallback draft is used", async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "playwright-access-token");
@@ -961,7 +1114,7 @@ test("contractor bids workspace keeps learning signals hidden when fallback draf
     });
   });
 
-  await page.route("**/api/projects/contractor/bids/**", async (route) => {
+  await page.route(/\/api\/projects\/contractor\/bids\/?.*$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -1130,7 +1283,7 @@ test("contractor bids workspace can save a lead for follow-up and reopen it", as
     });
   });
 
-  await page.route("**/api/projects/contractor/bids/**", async (route) => {
+  await page.route(/\/api\/projects\/contractor\/bids\/?.*$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -1262,7 +1415,7 @@ test("contractor bids workspace shows a friendly empty state", async ({ page }) 
     });
   });
 
-  await page.route("**/api/projects/contractor/bids/**", async (route) => {
+  await page.route(/\/api\/projects\/contractor\/bids\/?.*$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",

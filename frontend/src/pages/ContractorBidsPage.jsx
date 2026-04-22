@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 
 import api from "../api";
 import { buildLeadAgreementAssistantState } from "../lib/leadProposalDraft";
+import ConvertToAgreementPanel from "../components/ConvertToAgreementPanel.jsx";
 import {
   buildProjectIntelligenceGuidance,
   buildProjectSetupRecommendation,
@@ -26,6 +27,15 @@ function fmtDate(value) {
 
 function normalize(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function isConvertToAgreementRow(row) {
+  if (!row) return false;
+  const sourceKind = normalize(row.source_kind);
+  if (sourceKind === "quote_request") return true;
+  const requestPath = normalize(row?.request_snapshot?.request_path_label);
+  if (requestPath === "request a quote") return true;
+  return false;
 }
 
 function SummaryCard({ label, value, tone = "slate", testId }) {
@@ -360,6 +370,7 @@ export default function ContractorBidsPage() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [selectedRow, setSelectedRow] = useState(null);
+  const [convertPanelOpen, setConvertPanelOpen] = useState(false);
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState("new_lead");
   const [sortBy, setSortBy] = useState("recommended");
   const [requestFilter, setRequestFilter] = useState("all");
@@ -604,22 +615,28 @@ export default function ContractorBidsPage() {
     [selectedProjectIntelligence, selectedSnapshot, selectedSignals]
   );
   const selectedProjectTypeCue = selectedSnapshot.project_family_label || selectedProjectIntelligence?.familyCueLabel || "";
+  const selectedCanConvertToAgreement = isConvertToAgreementRow(selectedRow);
   const selectedPrimaryActionLabel =
-    selectedStage === "new_lead" || selectedStage === "follow_up"
+    selectedCanConvertToAgreement
+      ? "Convert to Agreement"
+      : selectedStage === "new_lead" || selectedStage === "follow_up"
       ? "Create Bid"
       : normalize(selectedRow?.next_action?.key) === "open_agreement" && selectedRow?.linked_agreement_url
         ? "Open Agreement"
         : selectedRow?.next_action?.label || "View Details";
   const selectedPrimaryActionHint =
-    selectedStage === "new_lead"
+    selectedCanConvertToAgreement
+      ? "Review the request and adjust the draft before sending the agreement."
+      : selectedStage === "new_lead"
       ? "This starts the existing bid workflow for the reviewed request."
       : selectedStage === "follow_up"
         ? "This lead is saved for later. Create your bid when you're ready."
-      : selectedStage === "closed"
-        ? "This opportunity is closed, but you can still review the history."
-        : "Continue the current bid workflow from here.";
+        : selectedStage === "closed"
+          ? "This opportunity is closed, but you can still review the history."
+          : "Continue the current bid workflow from here.";
   const selectedCanOpenAgreement = normalize(selectedRow?.next_action?.key) === "open_agreement" && selectedRow?.linked_agreement_url;
   const rowPrimaryActionLabel = (row) => {
+    if (isConvertToAgreementRow(row)) return "Convert to Agreement";
     const stage = workspaceStageFromRow(row);
     if (stage === "new_lead") return "Review Request";
     if (stage === "follow_up") return "Review Lead";
@@ -630,6 +647,7 @@ export default function ContractorBidsPage() {
 
   const closeDrawer = () => {
     setSelectedRow(null);
+    setConvertPanelOpen(false);
     setCopiedRefId("");
   };
 
@@ -719,6 +737,11 @@ export default function ContractorBidsPage() {
 
   const handleRowPrimaryAction = (row) => {
     if (!row) return;
+    if (isConvertToAgreementRow(row)) {
+      setSelectedRow(row);
+      setConvertPanelOpen(true);
+      return;
+    }
     const stage = workspaceStageFromRow(row);
     if (stage === "new_lead") {
       setSelectedRow(row);
@@ -1339,6 +1362,16 @@ export default function ContractorBidsPage() {
                         {selectedPrimaryActionLabel}
                         <ExternalLink size={14} />
                       </button>
+                    ) : selectedCanConvertToAgreement ? (
+                      <button
+                        type="button"
+                        onClick={() => setConvertPanelOpen(true)}
+                        data-testid="convert-to-agreement-action"
+                        className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500"
+                      >
+                        {selectedPrimaryActionLabel}
+                        <ArrowRight size={14} />
+                      </button>
                     ) : (
                       <button
                         type="button"
@@ -1424,6 +1457,11 @@ export default function ContractorBidsPage() {
           </aside>
         </div>
       ) : null}
+      <ConvertToAgreementPanel
+        open={convertPanelOpen && Boolean(selectedRow)}
+        row={selectedRow}
+        onClose={() => setConvertPanelOpen(false)}
+      />
     </div>
   );
 }

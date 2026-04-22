@@ -20,14 +20,15 @@ export default function Modal({
   title = "",
   onClose = () => {},
   testId = "",
+  overlayClassName = "",
   containerClassName = "",
   bodyClassName = "",
+  hideHeader = false,
   children,
 }) {
   const containerRef = useRef(null);
   const titleIdRef = useRef(`modal-title-${Math.random().toString(36).slice(2)}`);
 
-  // Lock body scroll while open
   useEffect(() => {
     if (!visible) return;
     const prev = document.body.style.overflow;
@@ -37,7 +38,6 @@ export default function Modal({
     };
   }, [visible]);
 
-  // Escape to close + focus trap (Tab/Shift+Tab)
   useEffect(() => {
     if (!visible) return;
 
@@ -71,7 +71,6 @@ export default function Modal({
     return () => window.removeEventListener("keydown", onKey);
   }, [visible, onClose]);
 
-  // Autofocus close button (or first focusable)
   useEffect(() => {
     if (!visible || !containerRef.current) return;
     const node =
@@ -93,7 +92,7 @@ export default function Modal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 ${overlayClassName}`.trim()}
       role="dialog"
       aria-modal="true"
       aria-labelledby={title ? titleIdRef.current : undefined}
@@ -108,20 +107,22 @@ export default function Modal({
             : "mx-4 w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl"
         }
       >
-        <header className="flex items-center justify-between border-b px-5 py-3">
-          <h3 id={titleIdRef.current} className="text-xl font-semibold text-gray-800">
-            {title}
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close modal"
-            data-autofocus
-            className="rounded p-1 text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            ✕
-          </button>
-        </header>
+        {hideHeader ? null : (
+          <header className="flex items-center justify-between border-b px-5 py-3">
+            <h3 id={titleIdRef.current} className="text-xl font-semibold text-gray-800">
+              {title}
+            </h3>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close modal"
+              data-autofocus
+              className="rounded p-1 text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              ×
+            </button>
+          </header>
+        )}
         <section
           className={
             bodyClassName

@@ -35,6 +35,7 @@ from projects.services.public_lead_notifications import (
 from projects.services.project_intelligence_orchestrator import build_project_intelligence
 from projects.services.public_lead_pipeline import normalize_public_lead_source
 from projects.services.public_lead_pipeline import sync_public_lead_from_project_intake
+from projects.services.agreement_draft_prefill import apply_conversion_prefill
 from projects.services.agreements.project_create import resolve_contractor_for_user
 from projects.services.ai.public_profile_generation import generate_contractor_public_profile
 from projects.services.intake_public import send_intake_email
@@ -789,6 +790,7 @@ class ContractorPublicLeadCreateAgreementView(APIView):
                 {"email": ["An email address is required before creating an agreement from this lead."]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        apply_conversion_prefill(agreement=agreement, payload=request.data, source=lead)
         return Response(
             {
                 "agreement_id": agreement.id,

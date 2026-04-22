@@ -10,6 +10,7 @@ from projects.models_project_intake import ProjectIntake
 from projects.serializers.project_intake import ProjectIntakeSerializer
 from projects.services.intake_conversion import convert_intake_to_agreement
 from projects.services.intake_public import send_intake_email
+from projects.services.agreement_draft_prefill import apply_conversion_prefill
 from projects.services.public_lead_pipeline import (
     ensure_public_profile_for_contractor,
     sync_public_lead_from_project_intake,
@@ -174,6 +175,7 @@ class ProjectIntakeViewSet(viewsets.ModelViewSet):
             use_recommended_template=use_recommended_template,
             template_id_override=template_id_override,
         )
+        apply_conversion_prefill(agreement=agreement, payload=request.data, source=intake)
 
         return Response(
             {

@@ -1277,6 +1277,98 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(row["preferred_contact_method"], "email")
         self.assertTrue(row["contact_consent"])
 
+    def test_quote_request_conversion_persists_draft_edits_into_agreement(self):
+        quote_response = self.client.post(
+            f"/api/projects/public/contractors/{self.profile.slug}/request-quote/",
+            {
+                "full_name": "Jordan Prospect",
+                "email": "jordan@example.com",
+                "phone": "555-202-3030",
+                "contact_consent": True,
+                "project_class": "residential",
+                "project_type": "Bathroom Remodel",
+                "project_subtype": "Primary Bath",
+                "raw_description": "Need a primary bath refresh with new tile and fixtures.",
+                "refined_description": "Need a primary bath refresh with new tile and fixtures.",
+                "desired_timing_text": "Within the next month",
+                "property_type": "Single-family home",
+                "budget_range_text": "$20,000 - $25,000",
+                "preferred_contact_method": "text",
+                "project_address_line1": "123 Main St",
+                "project_address_line2": "Unit 4",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+                "ai_clarification_questions": json.dumps([]),
+                "ai_clarification_answers": json.dumps({}),
+                "ai_analysis_payload": json.dumps({}),
+            },
+            format="json",
+        )
+        self.assertEqual(quote_response.status_code, 201)
+
+        lead = PublicContractorLead.objects.get(pk=quote_response.data["lead_id"])
+
+        self.client.force_authenticate(user=self.contractor_user)
+        promote_response = self.client.patch(
+            f"/api/projects/contractor/public-leads/{lead.id}/",
+            {"status": "ready_for_review"},
+            format="json",
+        )
+        self.assertEqual(promote_response.status_code, 200)
+
+        convert_response = self.client.post(
+            f"/api/projects/contractor/public-leads/{lead.id}/create-agreement/",
+            {
+                "draft_payload": {
+                    "project_title": "Primary Bath Refresh - Updated",
+                    "project_description": "Updated agreement scope before sending.",
+                    "project_type": "Bathroom Remodel",
+                    "project_subtype": "Primary Bath",
+                    "project_class": "residential",
+                    "property_type": "Single-family home",
+                    "budget_range_text": "$20,000 - $25,000",
+                    "desired_timing_text": "Within the next month",
+                    "preferred_contact_method": "text",
+                    "contact_consent": True,
+                    "project_address_line1": "123 Main St",
+                    "project_address_line2": "Unit 4",
+                    "project_city": "Austin",
+                    "project_state": "TX",
+                    "project_postal_code": "78701",
+                    "payment_mode": "escrow",
+                    "payment_structure": "simple",
+                    "total_cost": "$24,500.00",
+                    "milestones": [
+                        {"title": "Demo", "description": "Remove existing finishes"},
+                        {"title": "Tile", "description": "Install waterproofing and tile"},
+                    ],
+                }
+            },
+            format="json",
+        )
+
+        self.assertEqual(convert_response.status_code, 201)
+        agreement = Agreement.objects.get(pk=convert_response.data["agreement_id"])
+        self.assertEqual(agreement.project.title, "Primary Bath Refresh - Updated")
+        self.assertEqual(agreement.project.description, "Updated agreement scope before sending.")
+        self.assertEqual(agreement.description, "Updated agreement scope before sending.")
+        self.assertEqual(agreement.project.project_street_address, "123 Main St")
+        self.assertEqual(agreement.project.project_address_line_2, "Unit 4")
+        self.assertEqual(agreement.project.project_city, "Austin")
+        self.assertEqual(agreement.project.project_state, "TX")
+        self.assertEqual(agreement.project.project_zip_code, "78701")
+        self.assertEqual(agreement.payment_mode, "escrow")
+        self.assertEqual(agreement.payment_structure, "simple")
+        self.assertEqual(agreement.total_cost, Decimal("24500.00"))
+        self.assertEqual(agreement.milestones.count(), 2)
+        self.assertEqual(agreement.milestone_count, 2)
+        self.assertEqual(agreement.milestones.first().title, "Demo")
+        self.assertEqual(
+            sum((milestone.amount for milestone in agreement.milestones.all()), Decimal("0.00")),
+            Decimal("24500.00"),
+        )
+
     @patch("projects.views.public_presence.generate_contractor_public_profile")
     def test_generate_profile_endpoint_returns_all_fields(self, mock_generate):
         mock_generate.return_value = {
