@@ -93,6 +93,16 @@ def _display_name(invitation: SubcontractorInvitation) -> str:
     return invitation.invite_name or invitation.invite_email or "Subcontractor"
 
 
+def _max_dt(*values):
+    chosen = None
+    for value in values:
+        if not value:
+            continue
+        if chosen is None or value > chosen:
+            chosen = value
+    return chosen
+
+
 def _assignment_status(assigned_count: int, submitted_count: int, needs_changes_count: int, approved_count: int, completed_count: int) -> str:
     if assigned_count <= 0:
         return "assigned"
@@ -274,8 +284,11 @@ def _directory_rows(contractor) -> list[dict]:
                 "agreements_count": 0,
                 "assigned_work_count": 0,
                 "submitted_for_review_count": 0,
+                "pending_review_count": 0,
+                "active_jobs_count": 0,
                 "latest_invited_at": invitation.invited_at,
                 "latest_accepted_at": invitation.accepted_at,
+                "last_activity_at": invitation.accepted_at or invitation.invited_at,
             }
             order.append(key)
         row = grouped[key]
@@ -287,11 +300,22 @@ def _directory_rows(contractor) -> list[dict]:
         )
         invitation_milestones = milestones_by_invitation.get(invitation.id, [])
         row["assigned_work_count"] += len(invitation_milestones)
-        row["submitted_for_review_count"] += sum(
+        pending_review_count = sum(
             1
             for milestone in invitation_milestones
             if milestone.subcontractor_completion_status
             == SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+        )
+        row["submitted_for_review_count"] += pending_review_count
+        row["pending_review_count"] += pending_review_count
+        row["active_jobs_count"] += len(invitation_milestones)
+        row["last_activity_at"] = _max_dt(
+            row.get("last_activity_at"),
+            invitation.accepted_at,
+            invitation.invited_at,
+            *(milestone.subcontractor_marked_complete_at for milestone in invitation_milestones),
+            *(milestone.subcontractor_reviewed_at for milestone in invitation_milestones),
+            *(milestone.subcontractor_review_requested_at for milestone in invitation_milestones),
         )
         if invitation.invited_at and (row["latest_invited_at"] is None or invitation.invited_at > row["latest_invited_at"]):
             row["latest_invited_at"] = invitation.invited_at
@@ -310,6 +334,8 @@ def _directory_rows(contractor) -> list[dict]:
             deduped_agreements.append(agreement)
         row["agreements"] = deduped_agreements
         row["agreements_count"] = len(deduped_agreements)
+        row["pending_review_count"] = int(row.get("pending_review_count", 0) or 0)
+        row["active_jobs_count"] = int(row.get("active_jobs_count", 0) or 0)
         rows.append(row)
     return rows
 

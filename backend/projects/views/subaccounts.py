@@ -20,6 +20,7 @@ from projects.serializers.subaccounts import (
     ContractorSubAccountCreateSerializer,
 )
 from projects.services.milestone_workflow import is_effective_reviewer_user
+from projects.services.team_attention import build_contractor_attention_counts
 from projects.utils.accounts import get_contractor_for_user, get_subaccount_for_user
 from projects.permissions_subaccounts import IsContractorOrSubAccount
 
@@ -49,6 +50,19 @@ def _review_queue_count_for_user(user) -> int:
         if is_effective_reviewer_user(milestone, user):
             count += 1
     return count
+
+
+def _empty_attention_counts() -> dict:
+    return {
+        "awaiting_review_count": 0,
+        "submitted_for_review_count": 0,
+        "unassigned_assignment_count": 0,
+        "assigned_work_count": 0,
+        "overdue_milestone_count": 0,
+        "pending_invites_count": 0,
+        "active_subcontractor_count": 0,
+        "total_attention_count": 0,
+    }
 
 
 class ContractorSubAccountViewSet(viewsets.ModelViewSet):
@@ -161,6 +175,7 @@ class WhoAmIView(APIView):
                     "is_staff": True,
                     "is_superuser": bool(user.is_superuser),
                     "review_queue_count": 0,
+                    "attention_counts": _empty_attention_counts(),
                 },
                 status=status.HTTP_200_OK,
             )
@@ -172,6 +187,7 @@ class WhoAmIView(APIView):
         subaccount = get_subaccount_for_user(user)
 
         if contractor and not subaccount:
+            attention_counts = build_contractor_attention_counts(contractor, user=user)
             return Response(
                 {
                     "user_id": user.id,
@@ -180,6 +196,7 @@ class WhoAmIView(APIView):
                     "role": "contractor_owner",
                     "identity_type": "contractor_owner",
                     "review_queue_count": _review_queue_count_for_user(user),
+                    "attention_counts": attention_counts,
                 },
                 status=status.HTTP_200_OK,
             )
@@ -194,6 +211,7 @@ class WhoAmIView(APIView):
                     "identity_type": "internal_team_member",
                     "team_role": subaccount.role,
                     "review_queue_count": _review_queue_count_for_user(user),
+                    "attention_counts": _empty_attention_counts(),
                 },
                 status=status.HTTP_200_OK,
             )
@@ -215,6 +233,7 @@ class WhoAmIView(APIView):
                     "role": "subcontractor",
                     "identity_type": "subcontractor",
                     "review_queue_count": 0,
+                    "attention_counts": _empty_attention_counts(),
                 },
                 status=status.HTTP_200_OK,
             )
@@ -229,6 +248,7 @@ class WhoAmIView(APIView):
                 "type": "unknown",
                 "role": None,
                 "review_queue_count": 0,
+                "attention_counts": _empty_attention_counts(),
             },
             status=status.HTTP_200_OK,
         )

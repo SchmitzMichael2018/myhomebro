@@ -39,6 +39,7 @@ const NAV_HINTS = {
   "/app/dashboard": "See what needs attention and what to do next",
   "/app/assistant": "Start new work with AI guidance across agreements, templates, leads, and setup",
   "/app/business": "View revenue, activity, and business performance",
+  "/app/team-overview": "See operational attention counts and team work at a glance",
   "/app/reviewer/queue": "Review items waiting on your action or approval",
   "/app/agreements": "Create and manage project agreements, signatures, and funding",
   "/app/templates": "Build reusable project templates and milestone structures",
@@ -190,6 +191,7 @@ export default function Sidebar({ variant = "desktop" }) {
 
   const isOnAdminRoute = location.pathname.startsWith("/app/admin");
   const reviewQueueCount = Number(data?.review_queue_count || 0);
+  const attentionCounts = data?.attention_counts || {};
 
   const handleLogout = useCallback(() => {
     try {
@@ -354,14 +356,15 @@ export default function Sidebar({ variant = "desktop" }) {
         <Item to={`${APP_BASE}/dashboard`} label="Dashboard" icon={LayoutDashboard} />
         <Item to={`${APP_BASE}/assistant`} label="AI Workspace" icon={Bot} />
         <Item to={`${APP_BASE}/business`} label="Business Dashboard" icon={Gauge} />
+        <Item to={`${APP_BASE}/team-overview`} label="Team Overview" icon={Gauge} />
         <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} count={reviewQueueCount} />
         <Item to={`${APP_BASE}/agreements`} label="Agreements" icon={FileSignature} />
         <Item to={`${APP_BASE}/bids`} label="Leads & Bids" icon={ClipboardList} />
         <Item to={`${APP_BASE}/templates`} label="Templates" icon={ClipboardList} />
         <Item to={`${APP_BASE}/milestones`} label="Milestones" icon={SquareKanban} />
-        <Item to={`${APP_BASE}/subcontractors`} label="Subcontractors" icon={Wrench} />
+        <Item to={`${APP_BASE}/subcontractors`} label="Subcontractors" icon={Wrench} count={Number(attentionCounts.pending_invites_count || 0)} />
         <Item to={`${APP_BASE}/public-presence`} label="Public Presence" icon={Globe} />
-        <Item to={`${APP_BASE}/assignments`} label="Assignments" icon={BriefcaseBusiness} />
+        <Item to={`${APP_BASE}/assignments`} label="Assignments" icon={BriefcaseBusiness} count={Number(attentionCounts.unassigned_assignment_count || 0)} />
         <Item to={`${APP_BASE}/team-schedule`} label="Team Schedule" icon={CalendarDays} />
         <Item to={`${APP_BASE}/team`} label="Team" icon={Users} />
         <Item to={`${APP_BASE}/invoices`} label="Invoices" icon={CreditCard} />
@@ -652,10 +655,21 @@ export default function Sidebar({ variant = "desktop" }) {
             </NavGroup>
 
             <NavGroup label="Team" className="pt-1">
-              <Item to={`${APP_BASE}/subcontractors`} label="Subcontractors" icon={Wrench} />
-              <Item to={`${APP_BASE}/assignments`} label="Assignments" icon={BriefcaseBusiness} />
-              <Item to={`${APP_BASE}/team-schedule`} label="Team Schedule" icon={CalendarDays} />
+              <Item to={`${APP_BASE}/team-overview`} label="Team Overview" icon={Gauge} />
               <Item to={`${APP_BASE}/team`} label="Team" icon={Users} />
+              <Item
+                to={`${APP_BASE}/subcontractors`}
+                label="Subcontractors"
+                icon={Wrench}
+                count={Number(attentionCounts.pending_invites_count || 0)}
+              />
+              <Item
+                to={`${APP_BASE}/assignments`}
+                label="Assignments"
+                icon={BriefcaseBusiness}
+                count={Number(attentionCounts.unassigned_assignment_count || 0)}
+              />
+              <Item to={`${APP_BASE}/team-schedule`} label="Team Schedule" icon={CalendarDays} />
             </NavGroup>
 
             <NavGroup label="Business" className="pt-1">

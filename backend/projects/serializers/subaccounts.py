@@ -9,12 +9,20 @@ from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from projects.models import ContractorSubAccount
+from projects.services.team_attention import build_subaccount_work_summary
 
 User = get_user_model()
 
 
 class ContractorSubAccountSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(source="user.email", read_only=True)
+    role_label = serializers.CharField(source="get_role_display", read_only=True)
+    last_login = serializers.SerializerMethodField()
+    last_activity_at = serializers.SerializerMethodField()
+    assignment_count = serializers.SerializerMethodField()
+    active_assignment_count = serializers.SerializerMethodField()
+    pending_review_count = serializers.SerializerMethodField()
+    overdue_milestone_count = serializers.SerializerMethodField()
 
     class Meta:
         model = ContractorSubAccount
@@ -23,12 +31,44 @@ class ContractorSubAccountSerializer(serializers.ModelSerializer):
             "display_name",
             "email",
             "role",
+            "role_label",
             "is_active",
             "notes",
             "created_at",
             "updated_at",
+            "last_login",
+            "last_activity_at",
+            "assignment_count",
+            "active_assignment_count",
+            "pending_review_count",
+            "overdue_milestone_count",
         ]
         read_only_fields = fields
+
+    def _summary(self, obj: ContractorSubAccount) -> dict:
+        cached = getattr(obj, "_team_summary_cache", None)
+        if cached is None:
+            cached = build_subaccount_work_summary(obj)
+            setattr(obj, "_team_summary_cache", cached)
+        return cached
+
+    def get_last_login(self, obj: ContractorSubAccount):
+        return getattr(getattr(obj, "user", None), "last_login", None)
+
+    def get_last_activity_at(self, obj: ContractorSubAccount):
+        return self._summary(obj).get("last_activity_at")
+
+    def get_assignment_count(self, obj: ContractorSubAccount) -> int:
+        return int(self._summary(obj).get("assignment_count", 0) or 0)
+
+    def get_active_assignment_count(self, obj: ContractorSubAccount) -> int:
+        return int(self._summary(obj).get("active_assignment_count", 0) or 0)
+
+    def get_pending_review_count(self, obj: ContractorSubAccount) -> int:
+        return int(self._summary(obj).get("pending_review_count", 0) or 0)
+
+    def get_overdue_milestone_count(self, obj: ContractorSubAccount) -> int:
+        return int(self._summary(obj).get("overdue_milestone_count", 0) or 0)
 
 
 class ContractorSubAccountCreateSerializer(serializers.ModelSerializer):

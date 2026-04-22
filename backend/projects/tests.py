@@ -6260,6 +6260,120 @@ class ContractorWhoAmIReviewQueueCountTests(TestCase):
         self.assertEqual(payload["type"], "contractor")
         self.assertEqual(payload["review_queue_count"], 1)
 
+    def test_whoami_includes_team_attention_counts(self):
+        self.client.force_authenticate(user=self.contractor_user)
+
+        SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="pending-invite@example.com",
+            invite_name="Pending Invite",
+            status=SubcontractorInvitationStatus.PENDING,
+        )
+
+        Milestone.objects.create(
+            agreement=self.agreement,
+            order=2,
+            title="Unassigned Interior",
+            description="Needs an owner",
+            amount="120.00",
+            completion_date=timezone.localdate() - timedelta(days=3),
+            subcontractor_completion_status=SubcontractorCompletionStatus.NOT_SUBMITTED,
+        )
+
+        response = self.client.get("/api/projects/whoami/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        attention = payload["attention_counts"]
+        self.assertEqual(attention["awaiting_review_count"], 1)
+        self.assertEqual(attention["unassigned_assignment_count"], 1)
+        self.assertEqual(attention["overdue_milestone_count"], 1)
+        self.assertEqual(attention["pending_invites_count"], 1)
+        self.assertGreaterEqual(attention["total_attention_count"], 4)
+
+
+class ContractorTeamSummaryTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="team-summary-owner@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Team Summary Owner",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Team Summary Homeowner",
+            email="team-summary-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Team Summary Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Agreement for team summary tests",
+            project_class=AgreementProjectClass.RESIDENTIAL,
+        )
+        self.worker_user = user_model.objects.create_user(
+            email="team-summary-worker@example.com",
+            password="testpass123",
+        )
+        self.subaccount = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=self.worker_user,
+            display_name="Taylor Crew",
+            role="employee_supervisor",
+            is_active=True,
+        )
+        self.invitation = SubcontractorInvitation.objects.create(
+            contractor=self.contractor,
+            agreement=self.agreement,
+            invite_email="team-summary-worker@example.com",
+            invite_name="Team Summary Worker",
+            status=SubcontractorInvitationStatus.ACCEPTED,
+            accepted_by_user=self.worker_user,
+            accepted_at=timezone.now(),
+        )
+        self.milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Team Summary Milestone",
+            description="Pending review for team summary",
+            amount="250.00",
+            assigned_subcontractor_invitation=self.invitation,
+            subcontractor_completion_status=SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW,
+            subcontractor_marked_complete_at=timezone.now(),
+            subcontractor_marked_complete_by=self.worker_user,
+            subcontractor_completion_note="Ready for review.",
+        )
+        MilestoneAssignment.objects.create(
+            milestone=self.milestone,
+            subaccount=self.subaccount,
+        )
+        self.client = APIClient()
+
+    def test_subaccount_directory_includes_work_summary_fields(self):
+        self.client.force_authenticate(user=self.contractor_user)
+
+        response = self.client.get("/api/projects/subaccounts/")
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        rows = payload if isinstance(payload, list) else payload.get("results", [])
+        self.assertEqual(len(rows), 1)
+
+        row = rows[0]
+        self.assertEqual(row["assignment_count"], 1)
+        self.assertEqual(row["active_assignment_count"], 1)
+        self.assertEqual(row["pending_review_count"], 1)
+        self.assertIn("last_activity_at", row)
+
 
 class ContractorOperationsDashboardTests(TestCase):
     def setUp(self):

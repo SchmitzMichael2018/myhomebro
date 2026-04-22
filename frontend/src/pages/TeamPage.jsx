@@ -1,6 +1,5 @@
 // src/pages/TeamPage.jsx
-// v2026-01-09 — add Supervisor role option (employee_supervisor)
-// (keeps the robust list parsing + /app/dashboard back button)
+// Team management page with work visibility and quick links into assignments/schedule.
 
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -10,16 +9,61 @@ import { useWhoAmI } from "../hooks/useWhoAmI";
 const ROLE_OPTIONS = [
   { value: "employee_readonly", label: "Read-only" },
   { value: "employee_milestones", label: "Milestones (can mark complete)" },
-  { value: "employee_supervisor", label: "Supervisor (manage assigned agreements/teams)" }, // ✅ NEW
+  { value: "employee_supervisor", label: "Supervisor (manage assigned agreements/teams)" },
 ];
 
 function normalizeListResponse(data) {
-  // Supports:
-  // 1) plain array: [...]
-  // 2) DRF pagination: { results: [...] }
   if (Array.isArray(data)) return data;
   if (data && Array.isArray(data.results)) return data.results;
   return [];
+}
+
+function formatDateTime(value) {
+  if (!value) return "—";
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return String(value);
+  }
+}
+
+function formatDate(value) {
+  if (!value) return "—";
+  try {
+    return new Date(value).toLocaleDateString();
+  } catch {
+    return String(value);
+  }
+}
+
+function CountPill({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+        {label}
+      </div>
+      <div className="mt-2 text-2xl font-bold text-slate-900">
+        {Number(value || 0).toLocaleString()}
+      </div>
+    </div>
+  );
+}
+
+function WorkBadge({ count, tone = "neutral", label }) {
+  const toneClass =
+    tone === "good"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : tone === "warn"
+        ? "border-amber-200 bg-amber-50 text-amber-800"
+        : tone === "danger"
+          ? "border-rose-200 bg-rose-50 text-rose-800"
+          : "border-slate-200 bg-slate-50 text-slate-700";
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${toneClass}`}>
+      {label}
+      {typeof count === "number" ? <span className="ml-1">{count}</span> : null}
+    </span>
+  );
 }
 
 export default function TeamPage() {
@@ -30,6 +74,8 @@ export default function TeamPage() {
     () => String(identity?.type || "").toLowerCase() === "contractor",
     [identity?.type]
   );
+
+  const attentionCounts = identity?.attention_counts || {};
 
   const [subaccounts, setSubaccounts] = useState([]);
   const [loadingSubs, setLoadingSubs] = useState(true);
@@ -43,21 +89,17 @@ export default function TeamPage() {
     notes: "",
   });
   const [creating, setCreating] = useState(false);
-
   const [deletingId, setDeletingId] = useState(null);
 
   const fetchSubaccounts = async () => {
     try {
       setLoadingSubs(true);
       setSubsError("");
-
       const res = await api.get("/projects/subaccounts/", {
         params: { page_size: 250, _ts: Date.now() },
         headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
       });
-
-      const list = normalizeListResponse(res.data);
-      setSubaccounts(list);
+      setSubaccounts(normalizeListResponse(res.data));
     } catch (err) {
       console.error("fetchSubaccounts error", err?.response || err);
       const msg =
@@ -75,7 +117,6 @@ export default function TeamPage() {
     if (whoLoading) return;
     if (whoError) return;
     if (!isContractor) return;
-
     fetchSubaccounts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [whoLoading, whoError, isContractor]);
@@ -104,9 +145,7 @@ export default function TeamPage() {
       };
 
       const res = await api.post("/projects/subaccounts/", payload);
-      const newSub = res.data;
-
-      setSubaccounts((prev) => [newSub, ...prev]);
+      setSubaccounts((prev) => [res.data, ...prev]);
       setForm({
         display_name: "",
         email: "",
@@ -114,7 +153,6 @@ export default function TeamPage() {
         password: "",
         notes: "",
       });
-
       alert("Employee created. Share the login email and temporary password.");
     } catch (err) {
       console.error("Error creating subaccount", err?.response || err);
@@ -136,8 +174,7 @@ export default function TeamPage() {
       const res = await api.patch(`/projects/subaccounts/${sub.id}/`, {
         is_active: !sub.is_active,
       });
-      const saved = res.data;
-      setSubaccounts((prev) => prev.map((s) => (s.id === sub.id ? saved : s)));
+      setSubaccounts((prev) => prev.map((row) => (row.id === sub.id ? res.data : row)));
     } catch (err) {
       console.error("Error toggling active state", err?.response || err);
       alert("Unable to update employee status.");
@@ -146,11 +183,8 @@ export default function TeamPage() {
 
   async function handleChangeRole(sub, newRole) {
     try {
-      const res = await api.patch(`/projects/subaccounts/${sub.id}/`, {
-        role: newRole,
-      });
-      const saved = res.data;
-      setSubaccounts((prev) => prev.map((s) => (s.id === sub.id ? saved : s)));
+      const res = await api.patch(`/projects/subaccounts/${sub.id}/`, { role: newRole });
+      setSubaccounts((prev) => prev.map((row) => (row.id === sub.id ? res.data : row)));
     } catch (err) {
       console.error("Error changing role", err?.response || err);
       alert("Unable to change role.");
@@ -160,14 +194,14 @@ export default function TeamPage() {
   async function handleDelete(sub) {
     const confirmed = window.confirm(
       `Permanently delete ${sub.display_name || "this employee"}?\n\n` +
-        `This cannot be undone. If deletion is blocked, deactivate instead.`
+        "This cannot be undone. If deletion is blocked, deactivate instead."
     );
     if (!confirmed) return;
 
     try {
       setDeletingId(sub.id);
       await api.delete(`/projects/subaccounts/${sub.id}/`);
-      setSubaccounts((prev) => prev.filter((s) => s.id !== sub.id));
+      setSubaccounts((prev) => prev.filter((row) => row.id !== sub.id));
     } catch (err) {
       console.error("Error deleting subaccount", err?.response || err);
       const msg =
@@ -178,6 +212,14 @@ export default function TeamPage() {
       setDeletingId(null);
     }
   }
+
+  const teamSummary = useMemo(() => {
+    const activeMembers = subaccounts.filter((row) => row.is_active).length;
+    const activeWork = subaccounts.reduce((sum, row) => sum + Number(row.active_assignment_count || 0), 0);
+    const pendingReviews = subaccounts.reduce((sum, row) => sum + Number(row.pending_review_count || 0), 0);
+    const overdue = subaccounts.reduce((sum, row) => sum + Number(row.overdue_milestone_count || 0), 0);
+    return { activeMembers, activeWork, pendingReviews, overdue };
+  }, [subaccounts]);
 
   if (whoLoading) {
     return (
@@ -190,10 +232,8 @@ export default function TeamPage() {
   if (whoError || !isContractor) {
     return (
       <div className="p-6">
-        <h1 className="text-xl font-semibold mb-2">Team Management</h1>
-        <p className="text-red-500 text-sm">
-          Only contractors can manage team members.
-        </p>
+        <h1 className="mb-2 text-xl font-semibold">Team Management</h1>
+        <p className="text-sm text-red-500">Only contractors can manage team members.</p>
       </div>
     );
   }
@@ -201,53 +241,60 @@ export default function TeamPage() {
   const contractorName = identity?.email || "Contractor";
 
   return (
-    <div className="p-4 md:p-6 space-y-6">
-      <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <div className="space-y-6 p-4 md:p-6">
+      <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold">Your Team</h1>
           <p className="mhb-helper-text mt-4">
-            Create employee logins and manage access.
+            Create employee logins, review workload, and keep the team connected to current jobs.
           </p>
-          <p className="text-xs text-gray-400 mt-1">
+          <p className="mt-1 text-xs text-gray-400">
             Signed in as <span className="font-medium">{contractorName}</span>
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => navigate("/app/team-overview")}
+            className="inline-flex items-center rounded-md border bg-white px-3 py-2 text-sm font-semibold hover:bg-gray-50"
+            type="button"
+          >
+            Team Overview
+          </button>
           <button
             onClick={fetchSubaccounts}
-            className="inline-flex items-center px-3 py-2 text-sm font-semibold rounded-md border bg-white hover:bg-gray-50"
+            className="inline-flex items-center rounded-md border bg-white px-3 py-2 text-sm font-semibold hover:bg-gray-50"
             type="button"
           >
             Refresh employees
           </button>
-
           <button
             onClick={() => navigate("/app/dashboard")}
-            className="inline-flex items-center px-3 py-2 text-sm font-semibold rounded-md bg-slate-800 text-white hover:bg-slate-900"
+            className="inline-flex items-center rounded-md bg-slate-800 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-900"
             type="button"
           >
-            ← Back to Dashboard
+            Back to Dashboard
           </button>
         </div>
       </header>
 
-      {/* Add employee */}
-      <section className="bg-white border rounded-xl shadow-sm p-4 md:p-5">
-        <h2 className="text-sm font-semibold text-gray-800 mb-3">
-          Add Employee
-        </h2>
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <CountPill label="Active Team" value={teamSummary.activeMembers || attentionCounts.active_subcontractor_count || 0} />
+        <CountPill label="Active Work" value={teamSummary.activeWork || attentionCounts.assigned_work_count || 0} />
+        <CountPill label="Awaiting Review" value={teamSummary.pendingReviews || attentionCounts.awaiting_review_count || 0} />
+        <CountPill label="Overdue" value={teamSummary.overdue || attentionCounts.overdue_milestone_count || 0} />
+      </section>
 
-        <form
-          onSubmit={handleCreate}
-          className="grid grid-cols-1 md:grid-cols-2 gap-4"
-        >
+      <section className="bg-white border rounded-xl shadow-sm p-4 md:p-5">
+        <h2 className="mb-3 text-sm font-semibold text-gray-800">Add Employee</h2>
+
+        <form onSubmit={handleCreate} className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <input
             name="display_name"
             value={form.display_name}
             onChange={handleChange}
             placeholder="Display name"
-            className="border rounded-md px-3 py-2 text-sm"
+            className="rounded-md border px-3 py-2 text-sm"
           />
           <input
             name="email"
@@ -255,13 +302,13 @@ export default function TeamPage() {
             value={form.email}
             onChange={handleChange}
             placeholder="Email"
-            className="border rounded-md px-3 py-2 text-sm"
+            className="rounded-md border px-3 py-2 text-sm"
           />
           <select
             name="role"
             value={form.role}
             onChange={handleChange}
-            className="border rounded-md px-3 py-2 text-sm"
+            className="rounded-md border px-3 py-2 text-sm"
           >
             {ROLE_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
@@ -275,7 +322,7 @@ export default function TeamPage() {
             value={form.password}
             onChange={handleChange}
             placeholder="Temporary password"
-            className="border rounded-md px-3 py-2 text-sm"
+            className="rounded-md border px-3 py-2 text-sm"
           />
           <textarea
             name="notes"
@@ -283,12 +330,12 @@ export default function TeamPage() {
             onChange={handleChange}
             rows={2}
             placeholder="Optional notes"
-            className="border rounded-md px-3 py-2 text-sm md:col-span-2"
+            className="md:col-span-2 rounded-md border px-3 py-2 text-sm"
           />
           <div className="md:col-span-2 flex justify-end">
             <button
               disabled={creating}
-              className="px-4 py-2 rounded-md bg-blue-600 text-white font-semibold disabled:opacity-50"
+              className="rounded-md bg-blue-600 px-4 py-2 font-semibold text-white disabled:opacity-50"
               type="submit"
             >
               {creating ? "Creating…" : "Create Employee"}
@@ -297,21 +344,18 @@ export default function TeamPage() {
         </form>
       </section>
 
-      {/* Team list */}
-      <section className="bg-white border rounded-xl shadow-sm">
-        <div className="px-4 py-3 border-b font-semibold">
+      <section className="rounded-xl border bg-white shadow-sm">
+        <div className="border-b px-4 py-3 font-semibold">
           Team Members ({subaccounts.length})
         </div>
 
-        {subsError ? (
-          <div className="px-4 py-3 text-sm text-red-700">{subsError}</div>
-        ) : null}
+        {subsError ? <div className="px-4 py-3 text-sm text-red-700">{subsError}</div> : null}
 
         {loadingSubs ? (
           <div className="px-4 py-4 text-sm text-gray-500">Loading…</div>
         ) : subaccounts.length === 0 ? (
           <div className="px-4 py-4 text-sm text-gray-500">
-            No employees yet. Create one above.
+            No employees yet. Add one above to assign work and keep the team moving.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -319,52 +363,99 @@ export default function TeamPage() {
               <thead className="bg-gray-50 text-xs uppercase text-gray-500">
                 <tr>
                   <th className="px-4 py-2 text-left">Name</th>
-                  <th className="px-4 py-2 text-left">Email</th>
                   <th className="px-4 py-2 text-left">Role</th>
+                  <th className="px-4 py-2 text-left">Work</th>
+                  <th className="px-4 py-2 text-left">Last Activity</th>
                   <th className="px-4 py-2 text-left">Status</th>
                   <th className="px-4 py-2 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {subaccounts.map((sub) => (
-                  <tr key={sub.id} className="border-t">
-                    <td className="px-4 py-2">{sub.display_name || "—"}</td>
-                    <td className="px-4 py-2">{sub.email || "—"}</td>
-                    <td className="px-4 py-2">
-                      <select
-                        value={sub.role}
-                        onChange={(e) => handleChangeRole(sub, e.target.value)}
-                        className="border rounded-md px-2 py-1 text-xs"
-                      >
-                        {ROLE_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-4 py-2">
-                      {sub.is_active ? "Active" : "Inactive"}
-                    </td>
-                    <td className="px-4 py-2 text-right space-x-2">
-                      <button
-                        onClick={() => handleToggleActive(sub)}
-                        className="px-3 py-1.5 text-xs rounded-md border"
-                        type="button"
-                      >
-                        {sub.is_active ? "Deactivate" : "Activate"}
-                      </button>
-                      <button
-                        onClick={() => handleDelete(sub)}
-                        disabled={deletingId === sub.id}
-                        className="px-3 py-1.5 text-xs rounded-md border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50"
-                        type="button"
-                      >
-                        {deletingId === sub.id ? "Deleting…" : "Delete"}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {subaccounts.map((sub) => {
+                  const workCount = Number(sub.active_assignment_count || 0);
+                  const pendingReviewCount = Number(sub.pending_review_count || 0);
+                  const overdueCount = Number(sub.overdue_milestone_count || 0);
+                  const statusTone = sub.is_active ? "good" : "neutral";
+
+                  return (
+                    <tr key={sub.id} data-testid={`team-member-row-${sub.id}`} className="border-t">
+                      <td className="px-4 py-3">
+                        <div className="font-semibold text-gray-900">{sub.display_name || "—"}</div>
+                        <div className="mt-1 text-xs text-gray-500">{sub.email || "—"}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="text-sm text-gray-800">{sub.role_label || sub.role || "—"}</div>
+                        <div className="mt-1 text-xs text-gray-500">
+                          Assignments: {Number(sub.assignment_count || 0)}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-2">
+                          <WorkBadge count={workCount} label="Active" tone={workCount > 0 ? "good" : "neutral"} />
+                          <WorkBadge
+                            count={pendingReviewCount}
+                            label="Awaiting Review"
+                            tone={pendingReviewCount > 0 ? "warn" : "neutral"}
+                          />
+                          <WorkBadge count={overdueCount} label="Overdue" tone={overdueCount > 0 ? "danger" : "neutral"} />
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-700">
+                        <div>{formatDateTime(sub.last_activity_at || sub.last_login)}</div>
+                        {sub.last_login ? (
+                          <div className="mt-1 text-xs text-gray-500">Last login {formatDate(sub.last_login)}</div>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                            statusTone === "good"
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                              : "border-slate-200 bg-slate-50 text-slate-700"
+                          }`}
+                        >
+                          {sub.is_active ? "Active" : "Inactive"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <button
+                            onClick={() => navigate(`/app/assignments?subaccount=${sub.id}`)}
+                            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            type="button"
+                          >
+                            View Work
+                          </button>
+                          <button
+                            onClick={() => navigate(`/app/team-schedule?subaccount=${sub.id}`)}
+                            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            type="button"
+                          >
+                            Schedule
+                          </button>
+                          <button
+                            onClick={() => handleToggleActive(sub)}
+                            className="rounded-md border px-3 py-1.5 text-xs font-semibold"
+                            type="button"
+                          >
+                            {sub.is_active ? "Deactivate" : "Activate"}
+                          </button>
+                          <button
+                            onClick={() => handleDelete(sub)}
+                            disabled={deletingId === sub.id}
+                            className="rounded-md border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                            type="button"
+                          >
+                            {deletingId === sub.id ? "Deleting…" : "Delete"}
+                          </button>
+                        </div>
+                        <div className="mt-2 text-xs text-gray-500">
+                          Role can be changed inline after creation.
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

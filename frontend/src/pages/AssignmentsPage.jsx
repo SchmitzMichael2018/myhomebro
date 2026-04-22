@@ -5,6 +5,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
+import { useLocation, useNavigate } from "react-router-dom";
 import api from "../api";
 
 import { listSubaccounts } from "../api/subaccounts";
@@ -16,6 +17,7 @@ import {
   fetchAgreementAssignmentStatus,
   fetchMilestoneAssignmentStatus,
 } from "../api/assignments";
+import { normalizeProjectClass } from "../utils/projectClass.js";
 
 // Drawer is in SAME pages directory (your current setup)
 import MilestoneAssignDrawer from "./MilestoneAssignDrawer";
@@ -42,7 +44,9 @@ const fmtDate = (d) => {
 
 function Badge({ children, tone = "neutral" }) {
   const cls =
-    tone === "warn"
+    tone === "good"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : tone === "warn"
       ? "border-amber-200 bg-amber-50 text-amber-800"
       : tone === "danger"
       ? "border-rose-200 bg-rose-50 text-rose-800"
@@ -89,10 +93,129 @@ function AssignedMiniLine({ assignees }) {
   );
 }
 
+function normalizeProjectClassFilter(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "commercial" || normalized === "residential" ? normalized : "all";
+}
+
+function normalizeAssignmentStatusFilter(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return ["all", "unassigned", "awaiting_review", "overdue", "assigned", "in_progress", "completed"].includes(normalized)
+    ? normalized
+    : "all";
+}
+
+function formatAgreementStatus(status) {
+  const normalized = String(status || "").replaceAll("_", " ").trim();
+  return normalized ? normalized.replace(/\b\w/g, (c) => c.toUpperCase()) : "Active";
+}
+
+function deriveAgreementProjectClass(agreement) {
+  return normalizeProjectClass(agreement?.project_class || agreement?.project?.project_class);
+}
+
+function projectClassLabel(value) {
+  return normalizeProjectClass(value) === "commercial" ? "Commercial" : "Residential";
+}
+
+function projectClassTone(value) {
+  return normalizeProjectClass(value) === "commercial" ? "warn" : "neutral";
+}
+
+function getMilestoneAssigneeId(milestone) {
+  return (
+    milestone?.assigned_worker?.subaccount_id ||
+    milestone?.assigned_subcontractor?.subaccount_id ||
+    milestone?.subaccount_assignment?.subaccount_id ||
+    milestone?.delegated_reviewer_subaccount?.id ||
+    null
+  );
+}
+
+function getMilestoneAssignedLabel(milestone) {
+  return (
+    milestone?.assigned_worker_display ||
+    milestone?.assigned_subcontractor_display ||
+    milestone?.assigned_worker?.display_name ||
+    milestone?.assigned_subcontractor?.display_name ||
+    "Unassigned"
+  );
+}
+
+function getMilestoneProjectClass(milestone, agreement) {
+  return normalizeProjectClass(
+    milestone?.project_class ||
+      milestone?.project_class_label ||
+      agreement?.project_class ||
+      agreement?.project?.project_class
+  );
+}
+
+function getMilestoneStatus(milestone) {
+  return String(milestone?.work_submission_status || milestone?.subcontractor_completion_status || "").toLowerCase();
+}
+
+function getAgreementStatusMeta(agreementId, milestones, assignees) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const milestoneList = Array.isArray(milestones) ? milestones : [];
+  const assignedCount = Array.isArray(assignees) ? assignees.length : 0;
+  const submittedCount = milestoneList.filter(
+    (milestone) => getMilestoneStatus(milestone) === "submitted_for_review"
+  ).length;
+  const approvedCount = milestoneList.filter((milestone) => getMilestoneStatus(milestone) === "approved").length;
+  const completedCount = milestoneList.filter(
+    (milestone) => milestone?.completed === true || ["approved", "completed", "complete", "done"].includes(getMilestoneStatus(milestone))
+  ).length;
+  const overdueCount = milestoneList.filter((milestone) => {
+    const due = milestone?.completion_date || milestone?.due_date || milestone?.end_date;
+    if (!due) return false;
+    const dueDate = new Date(due);
+    if (Number.isNaN(dueDate.getTime())) return false;
+    dueDate.setHours(0, 0, 0, 0);
+    const isComplete =
+      milestone?.completed === true ||
+      ["approved", "completed", "complete", "done"].includes(getMilestoneStatus(milestone));
+    return !isComplete && dueDate < today;
+  }).length;
+  const inProgressCount = milestoneList.filter((milestone) => {
+    const status = getMilestoneStatus(milestone);
+    return ["in_progress", "in progress", "started", "working", "pending"].includes(status);
+  }).length;
+
+  let status = "assigned";
+  if (assignedCount <= 0) {
+    status = "unassigned";
+  } else if (overdueCount > 0) {
+    status = "overdue";
+  } else if (submittedCount > 0) {
+    status = "awaiting_review";
+  } else if (completedCount > 0 && completedCount >= milestoneList.length && milestoneList.length > 0) {
+    status = "completed";
+  } else if (inProgressCount > 0) {
+    status = "in_progress";
+  }
+
+  return {
+    agreementId,
+    assignedCount,
+    submittedCount,
+    approvedCount,
+    completedCount,
+    overdueCount,
+    status,
+    hasAssignedWork: assignedCount > 0,
+    hasStartedWork: submittedCount > 0 || approvedCount > 0 || completedCount > 0 || inProgressCount > 0,
+  };
+}
+
 /* -----------------------------
    Main Page
 ----------------------------- */
 export default function AssignmentsPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
 
   // Agreements & milestones
@@ -107,8 +230,22 @@ export default function AssignmentsPage() {
   const [milestoneOverrides, setMilestoneOverrides] = useState({}); // milestoneId -> overrideSubaccount|null
 
   // UI state
+  const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const [search, setSearch] = useState("");
   const [onlyWithDates, setOnlyWithDates] = useState(false);
+  const projectClassFilter = useMemo(
+    () => normalizeProjectClassFilter(searchParams.get("project_class")),
+    [searchParams]
+  );
+  const assignmentStatusFilter = useMemo(
+    () => normalizeAssignmentStatusFilter(searchParams.get("assignment_status")),
+    [searchParams]
+  );
+  const subaccountFilter = useMemo(() => {
+    const value = searchParams.get("subaccount");
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [searchParams]);
 
   // Selection state (per agreement)
   const [selectedEmployee, setSelectedEmployee] = useState({}); // agreementId -> subaccountId (string)
@@ -204,19 +341,81 @@ export default function AssignmentsPage() {
       .filter((a) => {
         const title = (a.title || a.project_title || a.project?.title || `Agreement #${a.id}`).toLowerCase();
         const homeowner = (a.homeowner_name || a.homeowner?.full_name || "").toLowerCase();
+        const projectClass = deriveAgreementProjectClass(a);
+        const milestones = milestonesByAgreement[a.id] || [];
+        const assignees = agreementAssignees[a.id] || [];
+        const meta = getAgreementStatusMeta(a.id, milestones, assignees);
 
         const matches = !q || title.includes(q) || homeowner.includes(q);
         if (!matches) return false;
+        if (projectClassFilter !== "all" && projectClass !== projectClassFilter) return false;
+        if (assignmentStatusFilter !== "all" && meta.status !== assignmentStatusFilter) return false;
 
         if (onlyWithDates) {
           const start = a.start || a.raw?.start;
           const end = a.end || a.raw?.end;
           if (!start || !end) return false;
         }
+        if (subaccountFilter) {
+          const assigneeIds = (agreementAssignees[a.id] || []).map((sub) => Number(sub.id));
+          const milestoneMatches = (milestonesByAgreement[a.id] || []).some((milestone) => {
+            const workerId = Number(getMilestoneAssigneeId(milestone));
+            return workerId && workerId === Number(subaccountFilter);
+          });
+          if (!assigneeIds.includes(Number(subaccountFilter)) && !milestoneMatches) {
+            return false;
+          }
+        }
         return true;
       })
       .sort((a, b) => b.id - a.id);
-  }, [agreements, search, onlyWithDates]);
+  }, [
+    agreements,
+    agreementAssignees,
+    assignmentStatusFilter,
+    milestonesByAgreement,
+    onlyWithDates,
+    projectClassFilter,
+    search,
+    subaccountFilter,
+  ]);
+
+  const statusCounts = useMemo(() => {
+    const counts = {
+      all: agreements.length,
+      unassigned: 0,
+      awaiting_review: 0,
+      overdue: 0,
+      assigned: 0,
+      in_progress: 0,
+      completed: 0,
+    };
+
+    agreements.forEach((agreement) => {
+      const meta = getAgreementStatusMeta(
+        agreement.id,
+        milestonesByAgreement[agreement.id] || [],
+        agreementAssignees[agreement.id] || []
+      );
+      if (meta.status === "unassigned") counts.unassigned += 1;
+      else if (meta.status === "awaiting_review") counts.awaiting_review += 1;
+      else if (meta.status === "overdue") counts.overdue += 1;
+      else if (meta.status === "assigned") counts.assigned += 1;
+      else if (meta.status === "in_progress") counts.in_progress += 1;
+      else if (meta.status === "completed") counts.completed += 1;
+    });
+
+    return counts;
+  }, [agreementAssignees, agreements, milestonesByAgreement]);
+
+  const updateQueryParam = (key, value) => {
+    const params = new URLSearchParams(location.search);
+    if (!value || value === "all") params.delete(key);
+    else params.set(key, value);
+    navigate(`${location.pathname}${params.toString() ? `?${params.toString()}` : ""}`, {
+      replace: true,
+    });
+  };
 
   /* -----------------------------
      Conflict check (safe fallback)
@@ -403,36 +602,84 @@ export default function AssignmentsPage() {
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <div className="flex flex-col md:flex-row gap-3 md:items-center">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search agreements (title/homeowner)…"
-            className="flex-1 rounded-lg border border-gray-300 px-3 py-2"
-          />
-          <label className="flex items-center gap-2 text-sm text-gray-700">
-            <input type="checkbox" checked={onlyWithDates} onChange={(e) => setOnlyWithDates(e.target.checked)} />
-            Show only agreements with dates
-          </label>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search agreements (title/homeowner)…"
+              className="flex-1 rounded-lg border border-gray-300 px-3 py-2"
+            />
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={onlyWithDates}
+                onChange={(e) => setOnlyWithDates(e.target.checked)}
+              />
+              Show only agreements with dates
+            </label>
+          </div>
+
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={projectClassFilter}
+                onChange={(e) => updateQueryParam("project_class", e.target.value)}
+                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                data-testid="assignments-project-class-filter"
+              >
+                <option value="all">All Projects</option>
+                <option value="residential">Residential</option>
+                <option value="commercial">Commercial</option>
+              </select>
+
+              {[
+                ["all", `All (${statusCounts.all})`],
+                ["unassigned", `Unassigned (${statusCounts.unassigned})`],
+                ["awaiting_review", `Awaiting Review (${statusCounts.awaiting_review})`],
+                ["overdue", `Overdue (${statusCounts.overdue})`],
+              ].map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  data-testid={`assignments-status-filter-${key}`}
+                  onClick={() => updateQueryParam("assignment_status", key)}
+                  className={[
+                    "rounded-full border px-3 py-1.5 text-sm font-semibold transition",
+                    assignmentStatusFilter === key
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white",
+                  ].join(" ")}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="text-xs text-gray-500">
+              {subaccountFilter ? `Filtered to one team member (ID ${subaccountFilter}).` : "Use the team links to jump into a filtered work view."}
+            </div>
+          </div>
         </div>
       </div>
 
       {loading ? (
         <div className="text-gray-500">Loading…</div>
       ) : filteredAgreements.length === 0 ? (
-        <div className="text-gray-500">No agreements match your filters.</div>
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-gray-500">
+          No agreements match your filters. Clear the project type or status chips to see more work.
+        </div>
       ) : (
-        <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-          {/* header row */}
-          <div className="grid grid-cols-12 gap-3 px-4 py-3 text-xs font-semibold text-gray-500 border-b bg-gray-50">
-            <div className="col-span-4">Agreement</div>
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+          <div className="grid grid-cols-12 gap-3 border-b bg-gray-50 px-4 py-3 text-xs font-semibold text-gray-500">
+            <div className="col-span-3">Agreement</div>
             <div className="col-span-2">Dates</div>
-            <div className="col-span-2">Milestones</div>
+            <div className="col-span-1">Type</div>
+            <div className="col-span-2">Status</div>
             <div className="col-span-2">Assigned</div>
             <div className="col-span-2 text-right">Actions</div>
           </div>
 
-          {/* rows */}
           <div className="divide-y">
             {filteredAgreements.map((a) => {
               const agreementId = a.id;
@@ -440,43 +687,77 @@ export default function AssignmentsPage() {
               const homeowner = a.homeowner_name || a.homeowner?.full_name || "—";
               const start = a.start || a.raw?.start;
               const end = a.end || a.raw?.end;
-
               const ms = milestonesByAgreement[agreementId] || [];
               const assignees = agreementAssignees[agreementId] || [];
+              const meta = getAgreementStatusMeta(agreementId, ms, assignees);
+              const projectClass = deriveAgreementProjectClass(a);
+              const assignedText =
+                assignees.length > 0
+                  ? assignees
+                      .map((sub) => sub.display_name || sub.email || "Employee")
+                      .slice(0, 2)
+                      .join(", ")
+                  : "Unassigned";
+
+              const statusLabel =
+                meta.status === "unassigned"
+                  ? "Unassigned"
+                  : meta.status === "awaiting_review"
+                    ? "Awaiting Review"
+                    : meta.status === "overdue"
+                      ? "Overdue"
+                      : meta.status === "completed"
+                        ? "Completed"
+                        : "Active";
+
+              const statusTone =
+                meta.status === "overdue"
+                  ? "danger"
+                  : meta.status === "awaiting_review"
+                    ? "warn"
+                    : meta.status === "completed"
+                      ? "good"
+                      : meta.status === "unassigned"
+                        ? "neutral"
+                        : "good";
 
               return (
-                <div key={agreementId} className="grid grid-cols-12 gap-3 px-4 py-3 items-center">
-                  {/* Agreement */}
-                  <div className="col-span-4 min-w-0">
+                <div
+                  key={agreementId}
+                  data-testid={`assignment-row-${agreementId}`}
+                  className="grid grid-cols-12 gap-3 px-4 py-3 items-center"
+                >
+                  <div className="col-span-3 min-w-0">
                     <div className="font-bold truncate" title={title}>
                       {title}
                     </div>
                     <div className="text-xs text-gray-500 truncate" title={homeowner}>
-                      Homeowner: {homeowner}
+                      Customer: {homeowner}
                     </div>
                   </div>
 
-                  {/* Dates */}
                   <div className="col-span-2 text-sm text-gray-700">
                     <div className="whitespace-nowrap">{fmtDate(start)}</div>
                     <div className="whitespace-nowrap text-gray-500">{fmtDate(end)}</div>
                   </div>
 
-                  {/* Milestones */}
+                  <div className="col-span-1">
+                    <Badge tone={projectClassTone(projectClass)}>{projectClassLabel(projectClass)}</Badge>
+                  </div>
+
                   <div className="col-span-2">
-                    <div className="flex items-center gap-2">
-                      <Badge>{ms.length}</Badge>
-                      <span className="text-xs text-gray-500">total</span>
+                    <Badge tone={statusTone}>{formatAgreementStatus(statusLabel)}</Badge>
+                    <div className="mt-1 text-xs text-gray-500">
+                      {meta.assignedCount} milestone{meta.assignedCount === 1 ? "" : "s"} linked
                     </div>
                   </div>
 
-                  {/* Assigned */}
-                  <div className="col-span-2">
+                  <div className="col-span-2 space-y-1">
                     <AssignedMiniLine assignees={assignees} />
+                    <div className="text-xs text-gray-500">{assignedText}</div>
                   </div>
 
-                  {/* Actions */}
-                  <div className="col-span-2 flex flex-col gap-2 items-end">
+                  <div className="col-span-2 flex flex-col items-end gap-2">
                     <select
                       value={selectedEmployee[String(agreementId)] || ""}
                       onChange={async (e) => {
@@ -496,7 +777,7 @@ export default function AssignmentsPage() {
                       ))}
                     </select>
 
-                    <div className="flex gap-2 justify-end">
+                    <div className="flex flex-wrap justify-end gap-2">
                       <Btn
                         onClick={() => assignAgreement(agreementId)}
                         disabled={busy || !selectedEmployee[String(agreementId)]}
@@ -524,7 +805,7 @@ export default function AssignmentsPage() {
                       </Btn>
                     </div>
 
-                    <div className="mhb-helper-text">Use drawer for milestone overrides.</div>
+                    <div className="text-xs text-gray-500">Use drawer for milestone overrides.</div>
                   </div>
                 </div>
               );

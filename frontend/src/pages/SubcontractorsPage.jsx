@@ -192,19 +192,32 @@ export default function SubcontractorsPage() {
     loadMilestones();
   }, [assignForm.agreement_id, assignOpen]);
 
-  const pendingInvitesCount = useMemo(
+  const assignedNotStartedCount = useMemo(
     () =>
-      invitationRows.filter((row) => String(row.status || "").toLowerCase() === "pending")
-        .length,
-    [invitationRows]
+      assignmentRows.reduce((total, row) => {
+        const assigned = Number(row.assigned_milestones_count || 0);
+        const reviewed = Number(row.submitted_for_review_count || 0);
+        const approved = Number(row.approved_count || 0);
+        return total + Math.max(assigned - reviewed - approved, 0);
+      }, 0),
+    [assignmentRows]
   );
-  const activeSubsCount = directoryRows.length;
-  const assignedWorkCount = useMemo(
+  const activeWorkCount = useMemo(
     () =>
-      assignmentRows.reduce(
-        (total, row) => total + Number(row.assigned_milestones_count || 0),
-        0
-      ),
+      directoryRows.reduce((total, row) => total + Number(row.active_jobs_count || row.assigned_work_count || 0), 0),
+    [directoryRows]
+  );
+  const overdueWorkCount = useMemo(
+    () =>
+      assignmentRows.reduce((total, row) => {
+        const due = row.earliest_due_date ? new Date(row.earliest_due_date) : null;
+        const isCompleted = String(row.status || "").toLowerCase() === "completed";
+        if (!due || Number.isNaN(due.getTime()) || isCompleted) return total;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        due.setHours(0, 0, 0, 0);
+        return total + (due < today ? 1 : 0);
+      }, 0),
     [assignmentRows]
   );
   const submittedForReviewCount = useMemo(
@@ -212,7 +225,7 @@ export default function SubcontractorsPage() {
       submissionRows.filter(
         (row) => String(row.review_status || "").toLowerCase() === "submitted_for_review"
       ).length,
-    [submissionRows]
+      [submissionRows]
   );
   const subcontractorHint = useMemo(
     () =>
@@ -383,28 +396,28 @@ export default function SubcontractorsPage() {
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            data-testid="subcontractors-invite-button"
-            onClick={() => setInviteOpen(true)}
+            data-testid="subcontractors-new-assignment-button"
+            onClick={() => setAssignOpen(true)}
             className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
           >
-            Invite Subcontractor
+            Assign Work
           </button>
           <button
             type="button"
-            data-testid="subcontractors-new-assignment-button"
-            onClick={() => setAssignOpen(true)}
+            data-testid="subcontractors-invite-button"
+            onClick={() => setInviteOpen(true)}
             className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
           >
-            New Assignment
+            Invite Subcontractor
           </button>
         </div>
       </header>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="Pending Invites" value={pendingInvitesCount} />
-        <SummaryCard label="Active Subs" value={activeSubsCount} />
-        <SummaryCard label="Assigned Work" value={assignedWorkCount} />
-        <SummaryCard label="Submitted for Review" value={submittedForReviewCount} />
+        <SummaryCard label="Awaiting Review" value={submittedForReviewCount} />
+        <SummaryCard label="Assigned Not Started" value={assignedNotStartedCount} />
+        <SummaryCard label="Active Work" value={activeWorkCount} />
+        <SummaryCard label="Overdue Work" value={overdueWorkCount} />
       </section>
 
       <WorkflowHint
@@ -439,48 +452,85 @@ export default function SubcontractorsPage() {
           <div className="mt-6 space-y-3" data-testid="subcontractors-directory">
             {directoryRows.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500">
-                No active subcontractors yet. Send an invitation to start building your subcontractor list.
+                No subcontractors yet. Invite one to start assigning work and seeing activity here.
               </div>
             ) : (
-              directoryRows.map((row) => (
-                <div
-                  key={row.key}
-                  className="rounded-xl border border-slate-200 bg-slate-50 p-4"
-                >
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <div className="text-sm font-semibold text-slate-900">
-                        {row.display_name}
-                      </div>
-                      <div className="mt-1 text-sm text-slate-600">{row.email}</div>
-                      <div className="mt-2 text-xs text-slate-500">
-                        Agreements: {row.agreements_count} · Assigned work: {row.assigned_work_count} ·
-                        Submitted: {row.submitted_for_review_count}
-                      </div>
-                    </div>
-                    <span
-                      className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusChip(
-                        row.status
-                      )}`}
-                    >
-                      {row.status}
-                    </span>
-                  </div>
-                  {Array.isArray(row.agreements) && row.agreements.length ? (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {row.agreements.map((agreement) => (
-                        <Link
-                          key={`${row.key}-${agreement.agreement_id}`}
-                          to={`/app/agreements/${agreement.agreement_id}`}
-                          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
-                        >
-                          {agreement.agreement_title}
-                        </Link>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ))
+              <div className="overflow-x-auto" data-testid="subcontractors-directory-table">
+                <table className="min-w-full text-sm">
+                  <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3 text-left">Subcontractor</th>
+                      <th className="px-4 py-3 text-left">Status</th>
+                      <th className="px-4 py-3 text-left">Work</th>
+                      <th className="px-4 py-3 text-left">Last Activity</th>
+                      <th className="px-4 py-3 text-left">Assignments</th>
+                      <th className="px-4 py-3 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {directoryRows.map((row) => (
+                      <tr key={row.key} data-testid={`subcontractor-directory-row-${row.key}`} className="align-top">
+                        <td className="px-4 py-4">
+                          <div className="font-semibold text-slate-900">{row.display_name}</div>
+                          <div className="mt-1 text-sm text-slate-600">{row.email}</div>
+                          <div className="mt-2 text-xs text-slate-500">
+                            Agreements: {row.agreements_count} · Active jobs: {row.active_jobs_count}
+                          </div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <span
+                            className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusChip(
+                              row.status
+                            )}`}
+                          >
+                            {row.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 text-sm text-slate-700">
+                          <div>Active work: {row.assigned_work_count}</div>
+                          <div className="mt-1">Awaiting review: {row.pending_review_count}</div>
+                        </td>
+                        <td className="px-4 py-4 text-sm text-slate-700">
+                          {formatDateTime(row.last_activity_at)}
+                        </td>
+                        <td className="px-4 py-4">
+                          {Array.isArray(row.agreements) && row.agreements.length ? (
+                            <div className="flex flex-wrap gap-2">
+                              {row.agreements.map((agreement) => (
+                                <Link
+                                  key={`${row.key}-${agreement.agreement_id}`}
+                                  to={`/app/agreements/${agreement.agreement_id}`}
+                                  className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                                >
+                                  {agreement.agreement_title}
+                                </Link>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-slate-500">No linked agreements</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-4 text-right">
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <Link
+                              to={`/app/assignments?subaccount=${row.subcontractor_user_id || ""}`}
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                            >
+                              View Work
+                            </Link>
+                            <Link
+                              to={`/app/team-schedule?subaccount=${row.subcontractor_user_id || ""}`}
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                            >
+                              Schedule
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         ) : null}
@@ -489,7 +539,7 @@ export default function SubcontractorsPage() {
           <div className="mt-6 space-y-3" data-testid="subcontractors-invitations">
             {invitationRows.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500">
-                No invitations yet. Send an invite when you are ready to bring a subcontractor into a project.
+                No invitations yet. Invite a subcontractor when you are ready to bring them into a project.
               </div>
             ) : (
               invitationRows.map((row) => (
@@ -533,7 +583,7 @@ export default function SubcontractorsPage() {
           <div className="mt-6 space-y-3" data-testid="subcontractors-assignments">
             {assignmentRows.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500">
-                No subcontractor assignments yet. Accepted subcontractors will appear here once work is assigned.
+                No subcontractor assignments yet. Accepted subcontractors appear here once work is assigned.
               </div>
             ) : (
               assignmentRows.map((row) => (
@@ -591,7 +641,7 @@ export default function SubcontractorsPage() {
           <div className="mt-6 space-y-3" data-testid="subcontractors-submissions">
             {submissionRows.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-300 px-4 py-6 text-sm text-slate-500">
-                No submitted work yet. Submitted milestone work will appear here for review.
+                No submitted work yet. Milestones waiting on review will appear here automatically.
               </div>
             ) : (
               submissionRows.map((row) => {
