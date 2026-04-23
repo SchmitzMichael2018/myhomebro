@@ -890,37 +890,45 @@ test('template AI top action generates a draft from a prompt and template contex
 
   await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
 
+  const libraryCards = page.locator('[data-testid^="template-discovery-card-"]');
+  await expect(libraryCards).toHaveCount(2);
+
   await page.getByTestId('templates-new-draft-button').click();
-  await page.getByTestId('templates-ai-prompt-input').fill('Kitchen remodel with demo, cabinets, and closeout.');
+  await page.getByTestId('templates-ai-prompt-input').fill('Deck build with framing, decking, railings, and closeout.');
   await page.getByTestId('templates-generate-ai-button').click();
 
-  await expect(page.getByTestId('templates-generated-ai-summary')).toContainText('About 14 working days');
-  await expect(page.getByTestId('templates-generated-ai-summary')).toContainText('2 follow-up questions prepared');
-  await expect(page.getByTestId('templates-description-input')).toHaveValue(
-    /Reusable kitchen remodel scope/
+  await expect(page.getByTestId('templates-ai-unsaved-banner')).toContainText(
+    'Review and edit below, then click Save Template'
   );
+  await expect(page.getByTestId('templates-unsaved-draft-badge')).toContainText('Unsaved Draft');
+  await expect(page.getByTestId('templates-generated-ai-summary')).toContainText('About 12 working days');
+  await expect(page.getByTestId('templates-generated-ai-summary')).toContainText('2 follow-up questions prepared');
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(/Reusable deck scope/);
+  await expect(libraryCards).toHaveCount(2);
+  await expect(page.getByRole('button', { name: 'Deck Build Template' })).toHaveCount(0);
 
   await page.getByTestId('templates-tab-milestones').click();
-  await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue(
-    'Planning & site protection'
-  );
-  await expect(page.getByTestId('templates-milestone-title-2')).toHaveValue(
-    'Demolition & rough prep'
-  );
+  await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue('Layout & permits');
+  await expect(page.getByTestId('templates-milestone-title-2')).toHaveValue('Framing & structure');
   await page.getByTestId('templates-tab-pricing').click();
   await expect(page.getByTestId('templates-generated-pricing-guidance')).toContainText(
-    '$18,000-$28,000'
+    '$12,000-$18,000'
   );
   await expect(page.getByTestId('templates-generated-pricing-guidance')).toContainText(
-    'Planning & site protection: 15%'
+    'Layout & permits: 20%'
   );
   await page.getByTestId('templates-tab-materials').click();
   await expect(page.getByTestId('templates-generated-materials-guidance')).toContainText(
     'Project Materials'
   );
   await expect(page.getByTestId('templates-generated-materials-guidance')).toContainText(
-    'Cabinetry'
+    'Decking boards'
   );
+
+  await page.getByTestId('templates-save-button').click();
+  await expect(page.getByText('Template created.')).toBeVisible();
+  await expect(libraryCards).toHaveCount(3);
+  await expect(page.getByRole('button', { name: 'Deck Build Template' })).toBeVisible();
 });
 
 test('template inline AI can improve description field text', async ({ page }) => {

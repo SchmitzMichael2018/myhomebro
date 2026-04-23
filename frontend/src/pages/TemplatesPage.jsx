@@ -337,6 +337,7 @@ export default function TemplatesPage() {
   const [templateAiPrompt, setTemplateAiPrompt] = useState("");
   const [assistantField, setAssistantField] = useState("description");
   const [generatedAiDraft, setGeneratedAiDraft] = useState(null);
+  const saveButtonRef = React.useRef(null);
 
   const [editHeader, setEditHeader] = useState(buildBlankHeader());
   const [editMilestones, setEditMilestones] = useState([buildBlankMilestone(1)]);
@@ -532,6 +533,12 @@ export default function TemplatesPage() {
     setActiveTab("setup");
     setTemplateAiPrompt("");
   }
+
+  useEffect(() => {
+    if (!generatedAiDraft || !saveButtonRef.current) return;
+    saveButtonRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    saveButtonRef.current.focus({ preventScroll: true });
+  }, [generatedAiDraft]);
 
   useEffect(() => {
     const prefill = location.state?.templateDraftPrefill;
@@ -820,6 +827,7 @@ export default function TemplatesPage() {
         await loadTemplates();
         setSelectedId(data?.id || null);
         setSelectedDetail(data);
+        setGeneratedAiDraft(null);
         setEditMode(false);
         setCreatingNew(false);
       } else {
@@ -828,6 +836,7 @@ export default function TemplatesPage() {
           payload
         );
         setSelectedDetail(data);
+        setGeneratedAiDraft(null);
         toast.success("Template updated.");
         await loadTemplates();
         setEditMode(false);
@@ -939,7 +948,7 @@ export default function TemplatesPage() {
           : [buildBlankMilestone(1)]
       );
 
-      toast.success("AI template draft created.");
+      toast.success("AI draft generated. Review and save to add it to your template library.");
       setActiveTab("setup");
     } catch (e) {
       toast.error(
@@ -1349,8 +1358,13 @@ export default function TemplatesPage() {
                       type="button"
                       onClick={saveTemplateEdits}
                       data-testid="templates-save-button"
+                      ref={saveButtonRef}
                       disabled={savingTemplate}
-                      className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                      className={`rounded-lg px-3 py-2 text-xs font-semibold text-white shadow-sm disabled:opacity-60 ${
+                        creatingNew && generatedAiDraft
+                          ? "bg-amber-600 hover:bg-amber-700"
+                          : "bg-indigo-600 hover:bg-indigo-700"
+                      }`}
                     >
                       {savingTemplate ? "Saving…" : creatingNew ? "Create Template" : "Save Template"}
                     </button>
@@ -1410,12 +1424,32 @@ export default function TemplatesPage() {
             </div>
           ) : (
             <div className="p-4">
+              {creatingNew && generatedAiDraft ? (
+                <div
+                  data-testid="templates-ai-unsaved-banner"
+                  className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+                >
+                  <div className="font-semibold">AI draft generated</div>
+                  <div className="mt-1">
+                    Review and edit below, then click Save Template to add it to your template library.
+                  </div>
+                </div>
+              ) : null}
+
               <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 data-testid="templates-detail-name" className="text-lg font-bold text-slate-900">
                       {safeTrim(currentHeader?.name) || "Untitled Template"}
                     </h2>
+                    {creatingNew && generatedAiDraft ? (
+                      <span
+                        data-testid="templates-unsaved-draft-badge"
+                        className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800"
+                      >
+                        Unsaved Draft
+                      </span>
+                    ) : null}
                     {!creatingNew ? (
                       <OptionBadge
                         ownerType={
