@@ -695,9 +695,11 @@ test('templates route and sidebar access support creating and editing reusable t
     )
   ).toBeVisible();
   await expect(page.getByText('Select a template to edit or create a new one.')).toBeVisible();
-  await expect(page.getByText('Templates are applied when creating a new agreement.')).toBeVisible();
+  await expect(page.getByText('Start a new template')).toBeVisible();
   await expect(page.getByTestId('templates-generate-ai-button')).toBeVisible();
   await expect(page.getByTestId('templates-ai-prompt-input')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'New Template Draft' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Generate Draft with AI' })).toHaveCount(1);
 
   await page.getByTestId('templates-new-draft-button').click();
   await page.getByTestId('templates-name-input').fill('Cabinet Install Standard');
@@ -735,6 +737,7 @@ test('templates route and sidebar access support creating and editing reusable t
   await expect(page.getByText('Template updated.')).toBeVisible();
   await page.reload({ waitUntil: 'domcontentloaded' });
 
+  await page.locator('[data-testid^="template-discovery-card-"]').filter({ hasText: 'Cabinet Install Standard v2' }).click();
   await expect(page.getByRole('heading', { name: 'Cabinet Install Standard v2' })).toBeVisible();
   await page.getByTestId('templates-tab-milestones').click();
   await expect(page.getByText('2. Install, align & close out')).toBeVisible();
@@ -900,8 +903,10 @@ test('template AI top action generates a draft from a prompt and template contex
 
   const libraryCards = page.locator('[data-testid^="template-discovery-card-"]');
   await expect(libraryCards).toHaveCount(2);
-  await expect(page.getByText('Start a new template or select one from your library.')).toBeVisible();
+  await expect(page.getByText('Start a new template')).toBeVisible();
   await expect(page.getByTestId('templates-draft-editor')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'New Template Draft' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Generate Draft with AI' })).toHaveCount(1);
 
   await page.getByTestId('templates-ai-prompt-input').fill('Deck build with framing, decking, railings, and closeout.');
   await page.getByTestId('templates-generate-ai-button').click();
@@ -1011,7 +1016,7 @@ test('templates page can return to a neutral start state and top-level AI uses a
   await expect(page.getByTestId('templates-detail-name')).toContainText('Kitchen Remodel Starter');
 
   await page.getByRole('button', { name: 'Back to Start' }).click();
-  await expect(page.getByText('Start a new template or select one from your library.')).toBeVisible();
+  await expect(page.getByText('Start a new template')).toBeVisible();
   await expect(page.getByTestId('templates-draft-editor')).toHaveCount(0);
 
   await page.getByTestId('templates-ai-prompt-input').fill('Deck build with framing, decking, railings, and closeout.');

@@ -1207,52 +1207,7 @@ export default function TemplatesPage() {
       eyebrow="Core"
       title="Templates"
       subtitle="Create reusable project setups to speed up your agreements."
-      actions={
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={startNewTemplate}
-              data-testid="templates-new-draft-button"
-              className="rounded-xl border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50"
-            >
-              New Template Draft
-            </button>
-            <button
-              type="button"
-              onClick={handleGenerateTemplateWithAi}
-              data-testid="templates-generate-ai-button"
-              disabled={aiBusy}
-              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60"
-            >
-              {aiBusy
-                ? `Working… ${getAiGenerationStepLabel(aiGenerationStageIndex)}`
-                : "✨ Generate Draft with AI"}
-            </button>
-          </div>
-            <div className="flex flex-col gap-2 sm:max-w-lg">
-              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                Generate full template based on your project
-              </label>
-            <input
-              data-testid="templates-ai-prompt-input"
-              type="text"
-              value={templateAiPrompt}
-              onChange={(e) => setTemplateAiPrompt(e.target.value)}
-              placeholder="Describe the job…"
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm"
-            />
-            <div className="text-[11px] text-slate-500">
-              AI will draft the description, milestones, pricing guidance, materials, timeline, and clarifying questions.
-            </div>
-          </div>
-          <div className="text-[11px] text-slate-500">
-            <span className="font-semibold text-slate-700">New Template Draft:</span> Start with a blank template.
-            <span className="mx-2 text-slate-300">|</span>
-            <span className="font-semibold text-slate-700">Generate Draft with AI:</span> Describe the project and AI will open a draft template for you.
-          </div>
-        </div>
-      }
+      actions={null}
     >
 
       <div className="mb-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
@@ -1595,26 +1550,41 @@ export default function TemplatesPage() {
             <div className="px-4 py-6 text-sm text-red-600">{detailErr}</div>
           ) : !selectedTemplate && !creatingNew ? (
             <div className="px-4 py-6 text-sm text-slate-500">
-              <div className="text-base font-semibold text-slate-900">
-                Start a new template or select one from your library.
-              </div>
-              <div className="mt-1">
-                Use the actions below to begin with a blank draft or let AI open one for you.
-              </div>
+              <div className="text-base font-semibold text-slate-900">Start a new template</div>
+              <div className="mt-1">Start blank or describe the job and let AI create a draft.</div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={startNewTemplate}
+                  data-testid="templates-new-draft-button"
                   className="rounded-xl border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50"
                 >
                   New Template Draft
                 </button>
+              </div>
+              <div className="mt-4 flex flex-col gap-2 sm:max-w-lg">
+                <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  Describe the job
+                </label>
+                <input
+                  data-testid="templates-ai-prompt-input"
+                  type="text"
+                  value={templateAiPrompt}
+                  onChange={(e) => setTemplateAiPrompt(e.target.value)}
+                  placeholder="Describe the job…"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm"
+                />
+                <div className="text-[11px] text-slate-500">
+                  AI will draft the description, milestones, pricing guidance, materials, timeline, and clarifying questions.
+                </div>
                 <button
                   type="button"
                   onClick={handleGenerateTemplateWithAi}
-                  className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
+                  data-testid="templates-generate-ai-button"
+                  disabled={aiBusy}
+                  className="inline-flex w-fit rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60"
                 >
-                  Generate Draft with AI
+                  {aiBusy ? `Working… ${getAiGenerationStepLabel(aiGenerationStageIndex)}` : "✨ Generate Draft with AI"}
                 </button>
               </div>
             </div>
