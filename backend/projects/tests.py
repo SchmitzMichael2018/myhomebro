@@ -14223,3 +14223,37 @@ class TemplateAIGenerationTests(TestCase):
         self.assertTrue(result["default_clarifications"])
         self.assertEqual(result["milestones"][0]["payment_guidance"], "Use an initial deposit to cover setup and mobilization.")
         self.assertEqual(result["milestones"][0]["notes"], "Do not start demolition until selections are confirmed.")
+
+    def test_create_template_from_scope_falls_back_when_ai_times_out(self):
+        from projects.ai.template_builder import create_template_from_scope
+
+        def raise_timeout(**kwargs):
+            raise RuntimeError("AI timed out")
+
+        fake_client = SimpleNamespace(
+            responses=SimpleNamespace(
+                create=raise_timeout,
+            )
+        )
+
+        with patch("projects.ai.template_builder._require_openai_client", return_value=fake_client), patch(
+            "projects.ai.template_builder._model_name",
+            return_value="test-model",
+        ):
+            result = create_template_from_scope(
+                name="Kitchen Remodel Starter",
+                project_type="Remodel",
+                project_subtype="Kitchen Remodel",
+                description="Kitchen remodel with planning, install, and closeout.",
+            )
+
+        self.assertTrue(result["_partial"])
+        self.assertEqual(result["_generation_status"]["description"], "fallback")
+        self.assertEqual(result["_generation_status"]["milestones"], "fallback")
+        self.assertEqual(result["_generation_status"]["pricing"], "fallback")
+        self.assertEqual(result["_generation_status"]["materials"], "fallback")
+        self.assertEqual(result["_generation_status"]["clarifications"], "fallback")
+        self.assertTrue(result["milestones"])
+        self.assertTrue(result["pricing"]["milestone_percentages"])
+        self.assertTrue(result["materials"])
+        self.assertTrue(result["default_clarifications"])

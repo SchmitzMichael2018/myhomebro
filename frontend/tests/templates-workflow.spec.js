@@ -306,6 +306,14 @@ async function installTemplateRoutes(page, store) {
           'Confirm access to the property',
           'Are material selections already made?',
         ],
+        sections_status: {
+          description: 'generated',
+          milestones: 'generated',
+          pricing: 'generated',
+          materials: 'generated',
+          clarifications: 'generated',
+        },
+        _partial: false,
         project_materials_hint: isDeck
           ? 'Decking, framing lumber, fasteners, rail components, sealant.'
           : 'Cabinetry, trim, fasteners, sealant, and cleanup materials.',
@@ -933,6 +941,180 @@ test('template AI top action generates a draft from a prompt and template contex
   await expect(
     page.locator('[data-testid^="template-discovery-card-"]').filter({ hasText: 'Deck Build Template' })
   ).toHaveCount(1);
+});
+
+test('template AI shows section-aware progress while generation is pending', async ({ page }) => {
+  await installWorkflowMocks(page);
+
+  await page.route('**/api/projects/templates/ai/create-from-scope/', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        name: 'Slow Deck Build Template',
+        project_type: 'Outdoor',
+        project_subtype: 'Deck Build',
+        description: 'Reusable deck scope covering layout, framing, decking, railings, and closeout.',
+        estimated_days: 12,
+        default_scope: 'Reusable deck scope covering layout, framing, decking, railings, and closeout.',
+        default_clarifications: [],
+        project_materials_hint: 'Decking boards, framing lumber, rail components, fasteners.',
+        milestones: [
+          {
+            title: 'Layout & permits',
+            description: 'Confirm layout and permits.',
+            sort_order: 1,
+            normalized_milestone_type: 'site_prep',
+            suggested_amount_fixed: 1000,
+            suggested_amount_low: 800,
+            suggested_amount_high: 1200,
+            pricing_confidence: 'medium',
+            pricing_source_note: 'Initial planning allowance.',
+            recommended_days_from_start: 0,
+            recommended_duration_days: 1,
+            materials_hint: 'Protection materials',
+            is_optional: false,
+          },
+        ],
+        pricing: {
+          total_range: '$12,000-$18,000',
+          milestone_percentages: [{ milestone: 'Layout & permits', percentage: '20%', notes: '' }],
+        },
+        materials: [
+          {
+            category: 'Project Materials',
+            options: ['Decking boards', 'Framing lumber'],
+            notes: 'Exterior-rated materials',
+          },
+        ],
+        timeline: 'About 12 working days',
+        clarification_questions: ['Confirm access'],
+        sections_status: {
+          description: 'generated',
+          milestones: 'generated',
+          pricing: 'generated',
+          materials: 'generated',
+          clarifications: 'generated',
+        },
+      }),
+    });
+  });
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('templates-ai-prompt-input').fill('Deck build with framing, decking, railings, and closeout.');
+  await page.getByTestId('templates-generate-ai-button').click();
+
+  await expect(page.getByTestId('templates-ai-progress')).toBeVisible();
+  await expect(page.getByTestId('templates-ai-progress')).toContainText('Step 1 of 5');
+  await expect(page.getByTestId('templates-ai-progress')).toContainText('Generating description');
+  await expect(page.getByTestId('templates-draft-editor')).toBeVisible();
+});
+
+test('template AI failure keeps the draft editor open and shows recovery actions', async ({
+  page,
+}) => {
+  await installWorkflowMocks(page);
+
+  await page.route('**/api/projects/templates/ai/create-from-scope/', async (route) => {
+    await route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        detail: 'AI service unavailable right now.',
+      }),
+    });
+  });
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('templates-ai-prompt-input').fill('Bathroom remodel with tile, fixtures, and closeout.');
+  await page.getByTestId('templates-generate-ai-button').click();
+
+  await expect(page.getByTestId('templates-draft-editor')).toBeVisible();
+  await expect(page.getByTestId('templates-ai-error-banner')).toContainText(
+    'AI couldn’t finish this template right now. Your draft is still open.'
+  );
+  await expect(page.getByRole('button', { name: 'Retry AI Generation' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Generate Description Only' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Continue Manually' })).toBeVisible();
+  await expect(page.getByTestId('templates-unsaved-draft-badge')).toBeVisible();
+});
+
+test('template AI partial response still fills supported sections and marks recovery state', async ({
+  page,
+}) => {
+  await installWorkflowMocks(page);
+
+  await page.route('**/api/projects/templates/ai/create-from-scope/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        name: 'Partial AI Draft',
+        project_type: 'Remodel',
+        project_subtype: 'Kitchen Remodel',
+        description: 'Partial AI description',
+        estimated_days: 10,
+        default_scope: 'Partial AI description',
+        default_clarifications: [],
+        project_materials_hint: 'Cabinetry, trim, fasteners',
+        milestones: [
+          {
+            title: 'Planning',
+            description: 'Plan the work',
+            sort_order: 1,
+            normalized_milestone_type: 'site_prep',
+            suggested_amount_fixed: 1200,
+            suggested_amount_low: 1000,
+            suggested_amount_high: 1400,
+            pricing_confidence: 'medium',
+            pricing_source_note: 'Fallback plan',
+            recommended_days_from_start: 0,
+            recommended_duration_days: 1,
+            materials_hint: 'Protection materials',
+            is_optional: false,
+          },
+        ],
+        pricing: {
+          total_range: '$9,000-$14,000',
+          milestone_percentages: [
+            { milestone: 'Planning', percentage: '20%', notes: 'Initial planning' },
+          ],
+        },
+        materials: [
+          {
+            category: 'Project Materials',
+            options: ['Cabinetry', 'Trim'],
+            notes: 'Fallback materials',
+          },
+        ],
+        timeline: 'About 10 working days',
+        clarification_questions: ['Confirm access'],
+        sections_status: {
+          description: 'generated',
+          milestones: 'generated',
+          pricing: 'fallback',
+          materials: 'generated',
+          clarifications: 'fallback',
+        },
+        _partial: true,
+      }),
+    });
+  });
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('templates-ai-prompt-input').fill('Kitchen remodel with cabinets and finish work.');
+  await page.getByTestId('templates-generate-ai-button').click();
+
+  await expect(page.getByTestId('templates-draft-editor')).toBeVisible();
+  await expect(page.getByTestId('templates-ai-unsaved-banner')).toBeVisible();
+  await expect(page.getByTestId('templates-description-input')).toHaveValue('Partial AI description');
+  await page.getByTestId('templates-tab-pricing').click();
+  await expect(page.getByTestId('templates-generated-pricing-guidance')).toContainText('$9,000-$14,000');
+  await expect(page.getByTestId('templates-ai-recovery-banner')).toBeVisible();
+  await expect(page.getByTestId('templates-ai-recovery-banner')).toContainText('fallback sections');
+  await expect(page.getByTestId('templates-ai-recovery-banner')).toContainText('pricing guidance');
+  await expect(page.getByTestId('templates-ai-recovery-banner')).toContainText('clarifying questions');
 });
 
 test('new template draft opens a blank editor immediately', async ({ page }) => {

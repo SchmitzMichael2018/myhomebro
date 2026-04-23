@@ -337,6 +337,11 @@ export default function TemplatesPage() {
   const [templateAiPrompt, setTemplateAiPrompt] = useState("");
   const [assistantField, setAssistantField] = useState("description");
   const [generatedAiDraft, setGeneratedAiDraft] = useState(null);
+  const [aiGenerationStageIndex, setAiGenerationStageIndex] = useState(-1);
+  const [aiGenerationError, setAiGenerationError] = useState("");
+  const [aiGenerationPartialSections, setAiGenerationPartialSections] = useState([]);
+  const [aiGenerationRecoveryMode, setAiGenerationRecoveryMode] = useState(false);
+  const [aiGenerationRecoveryNote, setAiGenerationRecoveryNote] = useState("");
   const saveButtonRef = React.useRef(null);
   const editorPanelRef = React.useRef(null);
   const draftNameInputRef = React.useRef(null);
@@ -531,6 +536,11 @@ export default function TemplatesPage() {
     setSelectedDetail(null);
     setDetailErr("");
     setGeneratedAiDraft(null);
+    setAiGenerationError("");
+    setAiGenerationPartialSections([]);
+    setAiGenerationRecoveryMode(false);
+    setAiGenerationRecoveryNote("");
+    setAiGenerationStageIndex(-1);
     setCreatingNew(true);
     setEditMode(true);
     setActiveTab("setup");
@@ -571,6 +581,20 @@ export default function TemplatesPage() {
     saveButtonRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
     saveButtonRef.current.focus({ preventScroll: true });
   }, [generatedAiDraft]);
+
+  useEffect(() => {
+    if (!aiBusy) {
+      setAiGenerationStageIndex(-1);
+      return;
+    }
+
+    setAiGenerationStageIndex(0);
+    const interval = window.setInterval(() => {
+      setAiGenerationStageIndex((prev) => Math.min(prev + 1, AI_GENERATION_STEP_ITEMS.length - 1));
+    }, 900);
+
+    return () => window.clearInterval(interval);
+  }, [aiBusy]);
 
   useEffect(() => {
     const prefill = location.state?.templateDraftPrefill;
@@ -860,6 +884,10 @@ export default function TemplatesPage() {
         setSelectedId(data?.id || null);
         setSelectedDetail(data);
         setGeneratedAiDraft(null);
+        setAiGenerationError("");
+        setAiGenerationPartialSections([]);
+        setAiGenerationRecoveryMode(false);
+        setAiGenerationRecoveryNote("");
         setEditMode(false);
         setCreatingNew(false);
       } else {
@@ -869,6 +897,10 @@ export default function TemplatesPage() {
         );
         setSelectedDetail(data);
         setGeneratedAiDraft(null);
+        setAiGenerationError("");
+        setAiGenerationPartialSections([]);
+        setAiGenerationRecoveryMode(false);
+        setAiGenerationRecoveryNote("");
         toast.success("Template updated.");
         await loadTemplates();
         setEditMode(false);
@@ -943,6 +975,10 @@ export default function TemplatesPage() {
 
     try {
       setAiBusy(true);
+      setAiGenerationError("");
+      setAiGenerationPartialSections([]);
+      setAiGenerationRecoveryMode(false);
+      setAiGenerationRecoveryNote("");
       const { data } = await api.post("/projects/templates/ai/create-from-scope/", {
         name: nameSeed,
         project_type: headerSource?.project_type,
@@ -965,6 +1001,17 @@ export default function TemplatesPage() {
         project_materials_hint: data?.project_materials_hint || "",
       });
       setGeneratedAiDraft(data || null);
+      const partialSections = Object.entries(data?.sections_status || {})
+        .filter(([, value]) => value && value !== "generated")
+        .map(([key]) => key);
+      const hasPartialSections = !!data?._partial || partialSections.length > 0;
+      setAiGenerationPartialSections(partialSections);
+      setAiGenerationRecoveryMode(hasPartialSections);
+      setAiGenerationRecoveryNote(
+        hasPartialSections
+          ? `AI filled the draft with fallback guidance for ${formatAiGenerationSectionLabels(partialSections)}. Review those sections or retry when ready.`
+          : ""
+      );
 
       setEditMilestones(
         Array.isArray(data?.milestones) && data.milestones.length
@@ -984,10 +1031,17 @@ export default function TemplatesPage() {
       toast.success("AI draft generated. Review and save to add it to your template library.");
       setActiveTab("setup");
     } catch (e) {
+      setAiGenerationRecoveryNote("");
+      setAiGenerationError(
+        e?.response?.data?.detail ||
+          e?.response?.data?.error ||
+          "AI couldn?t finish this template right now. Your draft is still open. You can retry or continue manually."
+      );
+      setAiGenerationRecoveryMode(true);
       toast.error(
         e?.response?.data?.detail ||
           e?.response?.data?.error ||
-          "Could not generate full template with AI."
+          "AI couldn?t finish this template right now. Your draft is still open. You can retry or continue manually."
       );
     } finally {
       setAiBusy(false);
@@ -995,6 +1049,7 @@ export default function TemplatesPage() {
   }
 
   async function handleGenerateTemplateWithAi() {
+
     if (!safeTrim(templateAiPrompt) && !safeTrim(currentHeader?.description) && !safeTrim(currentHeader?.name)) {
       toast.error("Describe the job or add a template name first.");
       return;
@@ -1010,6 +1065,68 @@ export default function TemplatesPage() {
 
     openDraftForGeneration(generationSeed);
     await handleAiCreateFromScope(generationSeed);
+  }
+
+  async function handleRetryAiGeneration() {
+    await handleAiCreateFromScope({
+      name: safeTrim(currentHeader?.name),
+      project_type: currentHeader?.project_type,
+      project_subtype: currentHeader?.project_subtype,
+      description: currentHeader?.description || templateAiPrompt,
+      project_materials_hint: currentHeader?.project_materials_hint,
+    });
+  }
+
+  async function handleGenerateDescriptionOnly() {
+    if (!creatingNew) {
+      openBlankDraftEditor();
+      setEditHeader(buildBlankHeader());
+      setEditMilestones([buildBlankMilestone(1)]);
+    }
+    await handleAiImproveDescription();
+    setAiGenerationRecoveryMode(true);
+    setAiGenerationError("");
+    setAiGenerationRecoveryNote(
+      "Description updated. You can continue manually or retry the full AI draft when ready."
+    );
+  }
+
+  function handleContinueManually() {
+    setAiGenerationError("");
+    setAiGenerationPartialSections([]);
+    setAiGenerationRecoveryMode(false);
+    setAiGenerationRecoveryNote("");
+    setAiGenerationStageIndex(-1);
+  }
+
+  function renderAiRecoveryActions() {
+    return (
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={handleRetryAiGeneration}
+          disabled={aiBusy}
+          className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+        >
+          Retry AI Generation
+        </button>
+        <button
+          type="button"
+          onClick={handleGenerateDescriptionOnly}
+          disabled={aiBusy}
+          className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+        >
+          Generate Description Only
+        </button>
+        <button
+          type="button"
+          onClick={handleContinueManually}
+          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          Continue Manually
+        </button>
+      </div>
+    );
   }
 
   async function handleRefreshMaterialsFromAi() {
@@ -1099,7 +1216,9 @@ export default function TemplatesPage() {
               disabled={aiBusy}
               className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60"
             >
-              {aiBusy ? "Working…" : "✨ Generate Template with AI"}
+              {aiBusy
+                ? `Working… ${getAiGenerationStepLabel(aiGenerationStageIndex)}`
+                : "✨ Generate Draft with AI"}
             </button>
           </div>
             <div className="flex flex-col gap-2 sm:max-w-lg">
@@ -1121,7 +1240,7 @@ export default function TemplatesPage() {
           <div className="text-[11px] text-slate-500">
             <span className="font-semibold text-slate-700">New Template Draft:</span> Start with a blank template.
             <span className="mx-2 text-slate-300">|</span>
-            <span className="font-semibold text-slate-700">Generate Template with AI:</span> Describe the project and AI will open a draft template for you.
+            <span className="font-semibold text-slate-700">Generate Draft with AI:</span> Describe the project and AI will open a draft template for you.
           </div>
         </div>
       }
@@ -1480,6 +1599,80 @@ export default function TemplatesPage() {
                   <div className="mt-1">
                     Review and edit below, then click Save Template to add it to your template library.
                   </div>
+                </div>
+              ) : null}
+
+              {aiBusy ? (
+                <div
+                  data-testid="templates-ai-progress"
+                  className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold">{getAiGenerationStepLabel(aiGenerationStageIndex)}</div>
+                      <div className="mt-1 text-sm text-indigo-800">
+                        AI is drafting this template step by step. The editor stays open while it works.
+                      </div>
+                    </div>
+                    <div className="rounded-full bg-white/80 px-2.5 py-1 text-[11px] font-semibold text-indigo-700">
+                      Step {Math.max(aiGenerationStageIndex, 0) + 1} of {AI_GENERATION_STEP_ITEMS.length}
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {AI_GENERATION_STEP_ITEMS.map((step, idx) => {
+                      const active = idx === Math.max(aiGenerationStageIndex, 0);
+                      const done = idx < Math.max(aiGenerationStageIndex, 0);
+                      return (
+                        <span
+                          key={step.key}
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                            active
+                              ? "border-indigo-300 bg-indigo-600 text-white"
+                              : done
+                              ? "border-indigo-200 bg-indigo-100 text-indigo-800"
+                              : "border-slate-200 bg-white text-slate-500"
+                          }`}
+                        >
+                          {done ? "✓ " : ""}
+                          {step.label}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
+              {!aiBusy && aiGenerationRecoveryNote && !aiGenerationError ? (
+                <div
+                  data-testid="templates-ai-recovery-banner"
+                  className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+                >
+                  <div className="font-semibold">AI draft generated with fallback sections</div>
+                  <div className="mt-1">{aiGenerationRecoveryNote}</div>
+                  {aiGenerationRecoveryMode && aiGenerationPartialSections.length ? (
+                    <div className="mt-2 text-xs text-amber-700">
+                      Fallback sections: {formatAiGenerationSectionLabels(aiGenerationPartialSections)}
+                    </div>
+                  ) : null}
+                  {renderAiRecoveryActions()}
+                </div>
+              ) : null}
+
+              {aiGenerationError ? (
+                <div
+                  data-testid="templates-ai-error-banner"
+                  className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900"
+                >
+                  <div className="font-semibold">
+                    AI couldn’t finish this template right now. Your draft is still open. You can retry or continue manually.
+                  </div>
+                  <div className="mt-1 text-sm text-rose-800">{aiGenerationError}</div>
+                  {aiGenerationRecoveryMode && aiGenerationPartialSections.length ? (
+                    <div className="mt-2 text-xs text-rose-700">
+                      Partial sections: {formatAiGenerationSectionLabels(aiGenerationPartialSections)}
+                    </div>
+                  ) : null}
+                  {renderAiRecoveryActions()}
                 </div>
               ) : null}
 
@@ -2292,4 +2485,30 @@ export default function TemplatesPage() {
       </div>
     </ContractorPageSurface>
   );
+}
+
+const AI_GENERATION_STEP_ITEMS = [
+  { key: "description", label: "Generating description" },
+  { key: "milestones", label: "Building milestones" },
+  { key: "pricing", label: "Adding pricing guidance" },
+  { key: "materials", label: "Suggesting materials" },
+  { key: "clarifications", label: "Preparing clarifying questions" },
+];
+
+const AI_GENERATION_SECTION_LABELS = {
+  description: "description",
+  milestones: "milestones",
+  pricing: "pricing guidance",
+  materials: "materials",
+  clarifications: "clarifying questions",
+};
+
+function getAiGenerationStepLabel(index) {
+  return AI_GENERATION_STEP_ITEMS[Math.max(index, 0)]?.label || "Generating description";
+}
+
+function formatAiGenerationSectionLabels(keys) {
+  const unique = Array.from(new Set((keys || []).map((key) => String(key).trim()).filter(Boolean)));
+  if (!unique.length) return "some sections";
+  return unique.map((key) => AI_GENERATION_SECTION_LABELS[key] || key).join(", ");
 }

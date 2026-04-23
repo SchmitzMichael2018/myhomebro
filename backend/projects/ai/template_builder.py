@@ -193,6 +193,214 @@ def _clarification_question_objects(questions: List[str]) -> List[Dict[str, Any]
     return normalized
 
 
+def _fallback_template_milestones(project_type: str, project_subtype: str, description: str) -> List[Dict[str, Any]]:
+    seed = f"{project_type} {project_subtype} {description}".lower()
+    milestones = [
+        {
+            "title": "Planning & site preparation",
+            "description": "Confirm scope, access, and protect the work area.",
+            "sort_order": 1,
+            "normalized_milestone_type": "site_prep",
+            "suggested_amount_fixed": 0.0,
+            "suggested_amount_low": 0.0,
+            "suggested_amount_high": 0.0,
+            "pricing_confidence": "low",
+            "pricing_source_note": "Fallback estimate prepared when AI output is incomplete.",
+            "payment_guidance": "Start with a small mobilization payment if needed.",
+            "notes": "Keep selections and access details confirmed before work begins.",
+            "recommended_days_from_start": 0,
+            "recommended_duration_days": 1,
+            "materials_hint": "Protection materials, setup supplies, and basic consumables.",
+            "is_optional": False,
+        },
+        {
+            "title": "Primary work",
+            "description": "Complete the core trade work for the project.",
+            "sort_order": 2,
+            "normalized_milestone_type": "install",
+            "suggested_amount_fixed": 0.0,
+            "suggested_amount_low": 0.0,
+            "suggested_amount_high": 0.0,
+            "pricing_confidence": "low",
+            "pricing_source_note": "Fallback estimate prepared when AI output is incomplete.",
+            "payment_guidance": "Tie payment to visible progress on the main scope.",
+            "notes": "Adjust scope details after reviewing the site and selections.",
+            "recommended_days_from_start": 1,
+            "recommended_duration_days": 2,
+            "materials_hint": "Trade-specific materials, fasteners, and consumables.",
+            "is_optional": False,
+        },
+        {
+            "title": "Closeout & walkthrough",
+            "description": "Finish punch items and review the completed work.",
+            "sort_order": 3,
+            "normalized_milestone_type": "inspection",
+            "suggested_amount_fixed": 0.0,
+            "suggested_amount_low": 0.0,
+            "suggested_amount_high": 0.0,
+            "pricing_confidence": "low",
+            "pricing_source_note": "Fallback estimate prepared when AI output is incomplete.",
+            "payment_guidance": "Release the final payment after the walkthrough is complete.",
+            "notes": "Capture any final adjustments or warranty items here.",
+            "recommended_days_from_start": 3,
+            "recommended_duration_days": 1,
+            "materials_hint": "Punch list supplies and closeout materials.",
+            "is_optional": False,
+        },
+    ]
+
+    if "deck" in seed or "outdoor" in seed:
+        milestones[0]["title"] = "Layout & permitting"
+        milestones[0]["description"] = "Confirm site layout, permit needs, and work access."
+        milestones[0]["normalized_milestone_type"] = "site_prep"
+        milestones[1]["title"] = "Framing & structure"
+        milestones[1]["description"] = "Build the deck frame, supports, and structural components."
+        milestones[1]["normalized_milestone_type"] = "framing"
+        milestones[2]["title"] = "Decking & rails"
+        milestones[2]["description"] = "Install decking boards, railings, and finish details."
+        milestones[2]["normalized_milestone_type"] = "installation"
+    elif "bath" in seed:
+        milestones[0]["title"] = "Protect & demo"
+        milestones[0]["description"] = "Protect surrounding areas and remove existing finishes."
+        milestones[0]["normalized_milestone_type"] = "demolition"
+        milestones[1]["title"] = "Rough-in & waterproofing"
+        milestones[1]["description"] = "Complete rough plumbing, framing adjustments, and wet-area prep."
+        milestones[1]["normalized_milestone_type"] = "rough_in"
+        milestones[2]["title"] = "Tile & fixtures"
+        milestones[2]["description"] = "Install finishes, fixtures, and final details."
+        milestones[2]["normalized_milestone_type"] = "finishing"
+    elif "kitchen" in seed:
+        milestones[0]["title"] = "Planning & site protection"
+        milestones[0]["description"] = "Confirm scope, selections, and protect the work area."
+        milestones[1]["title"] = "Demo & rough prep"
+        milestones[1]["description"] = "Remove existing finishes and prep utilities for the new layout."
+        milestones[1]["normalized_milestone_type"] = "demolition"
+        milestones[2]["title"] = "Cabinets & finishes"
+        milestones[2]["description"] = "Install cabinets, counters, trims, and final finishes."
+        milestones[2]["normalized_milestone_type"] = "cabinetry"
+
+    return milestones
+
+
+def _fallback_template_materials(project_type: str, project_subtype: str, description: str) -> List[Dict[str, Any]]:
+    seed = f"{project_type} {project_subtype} {description}".lower()
+    if "deck" in seed or "outdoor" in seed:
+        return [
+            {
+                "category": "Project Materials",
+                "options": ["Decking boards", "Framing lumber", "Rail components", "Fasteners"],
+                "notes": "Use exterior-rated materials and weather-resistant fasteners.",
+            },
+            {
+                "category": "Closeout Materials",
+                "options": ["Sealant", "Cleanup supplies", "Protection materials"],
+                "notes": "Include finish and cleanup supplies for final delivery.",
+            },
+        ]
+    if "bath" in seed:
+        return [
+            {
+                "category": "Project Materials",
+                "options": ["Tile", "Waterproofing", "Fixtures", "Fasteners"],
+                "notes": "Use moisture-rated materials for wet areas.",
+            }
+        ]
+    if "kitchen" in seed:
+        return [
+            {
+                "category": "Project Materials",
+                "options": ["Cabinetry", "Countertops", "Trim", "Sealant"],
+                "notes": "Use cabinet-grade materials and finish supplies.",
+            }
+        ]
+    return [
+        {
+            "category": "Project Materials",
+            "options": ["Protection materials", "Trade-specific materials", "Fasteners", "Cleanup supplies"],
+            "notes": "Use reusable categories rather than exact takeoff quantities.",
+        }
+    ]
+
+
+def _fallback_template_pricing(milestones: List[Dict[str, Any]]) -> Dict[str, Any]:
+    titles = [row.get("title") for row in milestones if _safe_str(row.get("title"))]
+    if not titles:
+        titles = ["Planning & site preparation", "Primary work", "Closeout & walkthrough"]
+    count = len(titles)
+    base = round(100 / max(count, 1), 1)
+    remaining = 100.0
+    percentages = []
+    for idx, title in enumerate(titles, start=1):
+        pct = base if idx < count else remaining
+        remaining = max(0.0, remaining - pct)
+        percentages.append(
+            {
+                "milestone": title,
+                "percentage": f"{pct:.1f}%" if not float(pct).is_integer() else f"{int(pct)}%",
+                "notes": "Fallback guidance while AI output is incomplete.",
+            }
+        )
+    return {
+        "total_range": "Consult contractor for pricing",
+        "milestone_percentages": percentages,
+    }
+
+
+def _fallback_template_clarifications(project_type: str, project_subtype: str, description: str) -> List[str]:
+    seed = f"{project_type} {project_subtype} {description}".lower()
+    questions = [
+        "Confirm site access and working hours.",
+        "Are selections, measurements, and finishes already confirmed?",
+        "Who is responsible for materials and permits?",
+    ]
+    if "roof" in seed:
+        questions[0] = "Confirm roof access, staging, and weather planning."
+    elif "bath" in seed:
+        questions[1] = "Are fixture selections and tile choices already confirmed?"
+    elif "kitchen" in seed:
+        questions[1] = "Are cabinets, countertops, and appliance selections already confirmed?"
+    return questions
+
+
+def _build_fallback_template_bundle(
+    *,
+    name: str,
+    project_type: str,
+    project_subtype: str,
+    description: str,
+    estimated_days: int,
+) -> Dict[str, Any]:
+    milestones = _fallback_template_milestones(project_type, project_subtype, description)
+    pricing = _fallback_template_pricing(milestones)
+    materials = _fallback_template_materials(project_type, project_subtype, description)
+    clarification_questions = _fallback_template_clarifications(project_type, project_subtype, description)
+    default_clarifications = _clarification_question_objects(clarification_questions)
+
+    return {
+        "name": _safe_str(name) or "New Template Draft",
+        "project_type": _safe_str(project_type),
+        "project_subtype": _safe_str(project_subtype),
+        "description": _safe_str(description),
+        "estimated_days": max(_safe_int(estimated_days, 1), 1),
+        "project_materials_hint": _materials_hint_from_materials(materials),
+        "default_scope": _safe_str(description),
+        "default_clarifications": default_clarifications,
+        "milestones": milestones,
+        "pricing": pricing,
+        "materials": materials,
+        "timeline": _normalize_timeline_text("", max(_safe_int(estimated_days, 1), 1)),
+        "clarification_questions": clarification_questions,
+        "_partial": True,
+        "_generation_status": {
+            "description": "fallback",
+            "milestones": "fallback",
+            "pricing": "fallback",
+            "materials": "fallback",
+            "clarifications": "fallback",
+        },
+    }
+
+
 def _normalize_clarification_strings(raw: Any) -> List[str]:
     if not isinstance(raw, list):
         return []
@@ -731,40 +939,73 @@ def create_template_from_scope(
         },
     }
 
-    resp = client.responses.create(
-        model=model,
-        input=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": json.dumps(user_json, ensure_ascii=False)},
-        ],
-        text={
-            "format": {
-                "type": "json_schema",
-                "name": schema["name"],
-                "schema": schema["schema"],
-                "strict": True,
-            }
-        },
-    )
+    try:
+        resp = client.responses.create(
+            model=model,
+            timeout=45,
+            input=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps(user_json, ensure_ascii=False)},
+            ],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": schema["name"],
+                    "schema": schema["schema"],
+                    "strict": True,
+                }
+            },
+        )
 
-    payload = json.loads(getattr(resp, "output_text", "") or "{}")
+        payload = json.loads(getattr(resp, "output_text", "") or "{}")
+    except Exception as exc:
+        logger.warning("Template AI scope generation failed; using fallback bundle: %s", exc)
+        return _build_fallback_template_bundle(
+            name=name,
+            project_type=project_type,
+            project_subtype=project_subtype,
+            description=description,
+            estimated_days=14,
+        )
 
     milestones = _normalize_milestones(payload.get("milestones"))
-    pricing = _normalize_pricing(payload.get("pricing"), [m.get("title") for m in milestones])
+    milestone_titles = [m.get("title") for m in milestones if _safe_str(m.get("title"))]
+    pricing = _normalize_pricing(payload.get("pricing"), milestone_titles)
     materials = _normalize_materials(payload.get("materials"))
-    timeline = _normalize_timeline_text(payload.get("timeline"), max(_safe_int(payload.get("estimated_days"), 1), 1))
+    estimated_days = max(_safe_int(payload.get("estimated_days"), 1), 1)
+    timeline = _normalize_timeline_text(payload.get("timeline"), estimated_days)
     clarification_questions = _normalize_clarification_strings(payload.get("clarification_questions"))
     questions = _canonicalize_questions(payload.get("default_clarifications"))
+    sections_status = {
+        "description": "generated" if _safe_str(payload.get("description")) else "fallback",
+        "milestones": "generated" if milestones else "fallback",
+        "pricing": "generated" if pricing.get("milestone_percentages") else "fallback",
+        "materials": "generated" if materials else "fallback",
+        "clarifications": "generated" if questions or clarification_questions else "fallback",
+    }
+
+    if not milestones:
+        milestones = _fallback_template_milestones(project_type, project_subtype, description)
+        sections_status["milestones"] = "fallback"
+
+    if not pricing.get("milestone_percentages"):
+        pricing = _fallback_template_pricing(milestones)
+        sections_status["pricing"] = "fallback"
+
+    if not materials:
+        materials = _fallback_template_materials(project_type, project_subtype, description)
+        sections_status["materials"] = "fallback"
 
     if not questions:
         questions = _clarification_question_objects(clarification_questions)
-
-    if not milestones:
-        raise RuntimeError("AI returned no template milestones.")
+        if not questions:
+            questions = _clarification_question_objects(
+                _fallback_template_clarifications(project_type, project_subtype, description)
+            )
+        sections_status["clarifications"] = "fallback"
 
     project_materials_hint = _safe_str(payload.get("project_materials_hint")) or _materials_hint_from_materials(materials)
     default_scope = _safe_str(payload.get("default_scope")) or _safe_str(payload.get("description")) or _safe_str(description)
-    estimated_days = max(_safe_int(payload.get("estimated_days"), 1), 1)
 
     return {
         "name": _safe_str(payload.get("name")) or _safe_str(name) or "New Template Draft",
@@ -779,7 +1020,9 @@ def create_template_from_scope(
         "pricing": pricing,
         "materials": materials,
         "timeline": timeline,
-        "clarification_questions": clarification_questions,
+        "clarification_questions": clarification_questions or _fallback_template_clarifications(project_type, project_subtype, description),
+        "sections_status": sections_status,
+        "_partial": any(v != "generated" for v in sections_status.values()),
         "_model": model,
     }
 
