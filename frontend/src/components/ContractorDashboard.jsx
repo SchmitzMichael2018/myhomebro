@@ -522,35 +522,65 @@ function FlowMetricButton({
 function PipelineRow({ title, count, amount, description, onClick, tone = "neutral", testId }) {
   const toneClass =
     tone === "good"
-      ? "border-emerald-200 bg-emerald-50/75 text-emerald-900"
+      ? "border-emerald-200 bg-emerald-50/60"
       : tone === "warn"
-      ? "border-amber-200 bg-amber-50/75 text-amber-900"
+      ? "border-amber-200 bg-amber-50/60 ring-1 ring-amber-100"
       : tone === "bad"
-      ? "border-rose-200 bg-rose-50/75 text-rose-900"
+      ? "border-rose-200 bg-rose-50/60 ring-1 ring-rose-100"
       : tone === "active"
-      ? "border-sky-200 bg-sky-50/75 text-sky-900"
-      : "border-slate-200 bg-white text-slate-900";
+      ? "border-sky-200 bg-sky-50/60 ring-1 ring-sky-100"
+      : "border-slate-200 bg-white";
+
+  const titleClass =
+    tone === "good"
+      ? "text-emerald-900"
+      : tone === "warn"
+      ? "text-amber-950"
+      : tone === "bad"
+      ? "text-rose-950"
+      : tone === "active"
+      ? "text-sky-950"
+      : "text-slate-900";
+
+  const descriptionClass =
+    tone === "good"
+      ? "text-emerald-900/70"
+      : tone === "warn"
+      ? "text-amber-900/75"
+      : tone === "bad"
+      ? "text-rose-900/75"
+      : tone === "active"
+      ? "text-sky-900/75"
+      : "text-slate-600";
 
   return (
     <button
       type="button"
       data-testid={testId}
       onClick={onClick}
-      className={`group flex min-h-[118px] w-full items-start justify-between gap-4 rounded-2xl border p-4 text-left shadow-sm transition hover:border-slate-300 hover:shadow-md ${toneClass}`}
+      className={`group flex min-h-[128px] w-full items-start justify-between gap-4 rounded-2xl border p-5 text-left shadow-sm transition-colors transition-shadow hover:border-slate-300 hover:shadow-md ${toneClass}`}
     >
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">{title}</div>
-        <div className="mt-3 flex flex-wrap items-end gap-3">
-          <div className="text-2xl font-extrabold leading-none text-slate-900">
-            {typeof count === "number" ? `${Number(count).toLocaleString()} items` : "0 items"}
+        <div className={`text-xs font-semibold uppercase tracking-[0.14em] ${titleClass}`}>{title}</div>
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-3">
+          <div className={`text-3xl font-bold leading-none ${titleClass}`}>
+            {typeof count === "number" ? Number(count).toLocaleString() : "0"}
           </div>
-          <div className="text-2xl font-extrabold leading-none text-slate-900">
+          <div className={`pb-0.5 text-sm font-medium leading-5 ${descriptionClass}`}>
+            items
+          </div>
+          <div className={`sm:ml-auto text-2xl font-semibold leading-none ${titleClass}`}>
             {currency(amount)}
           </div>
         </div>
-        <div className="mt-3 line-clamp-1 text-sm text-slate-600">{description}</div>
+        <div className={`mt-3 text-sm leading-5 ${descriptionClass}`}>{description}</div>
       </div>
-      <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-slate-400 transition group-hover:text-slate-600" />
+      <div className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 opacity-0 transition group-hover:opacity-100">
+          View
+        </div>
+        <ChevronRight className="h-4 w-4 text-slate-400 transition group-hover:text-slate-600" />
+      </div>
     </button>
   );
 }
@@ -2443,13 +2473,14 @@ export default function ContractorDashboard() {
             >
               <div id="layout" className="grid gap-5 xl:grid-cols-2 xl:items-start">
                 <div className="space-y-3">
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#52749a]">
-                      Work Pipeline
+                  <div className="mb-4">
+                    <div className="flex items-center gap-2">
+                      <ListTodo className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                      <h2 className="text-xl font-semibold text-slate-800">Work Pipeline</h2>
                     </div>
-                    <div className="mt-1 text-lg font-semibold text-[#18395f]">
+                    <p className="mt-1 text-sm text-slate-500">
                       Track job progress across milestones
-                    </div>
+                    </p>
                   </div>
                   <div className="space-y-3">
                     {workPipelineRows.map((row) => (
@@ -2468,13 +2499,14 @@ export default function ContractorDashboard() {
                 </div>
 
                 <div className="space-y-3">
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#52749a]">
-                      Money Pipeline
+                  <div className="mb-4 mt-6 xl:mt-0">
+                    <div className="flex items-center gap-2">
+                      <WalletMinimal className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                      <h2 className="text-xl font-semibold text-slate-800">Money Pipeline</h2>
                     </div>
-                    <div className="mt-1 text-lg font-semibold text-[#18395f]">
+                    <p className="mt-1 text-sm text-slate-500">
                       Track payments from approval to payout
-                    </div>
+                    </p>
                   </div>
                   <div className="space-y-3">
                     {moneyPipelineRows.map((row) => (
