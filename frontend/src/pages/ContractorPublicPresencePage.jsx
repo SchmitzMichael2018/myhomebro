@@ -15,6 +15,7 @@ import {
   buildProjectSetupRecommendation,
   normalizeProjectSetupRecommendation,
 } from '../lib/projectIntelligence.js';
+import { FONT_THEME_OPTIONS, THEME_OPTIONS, getPublicProfileBranding } from '../lib/publicProfileBranding.js';
 import { getPublicLeadHint, getPublicPresenceHint } from '../lib/workflowHints.js';
 import { generateContractorPublicProfile } from '../api.js';
 
@@ -162,6 +163,138 @@ function getAnalysisConfidenceLabel(value) {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
+function PublicPresenceBrandPreview({ profile, galleryRows, reviewsRows }) {
+  const branding = getPublicProfileBranding(profile);
+  const showReviews = Boolean(profile.show_reviews !== false && profile.allow_public_reviews !== false);
+  const showGallery = Boolean(profile.show_gallery !== false);
+  const showQuoteCta = Boolean(profile.show_quote_cta !== false && profile.allow_public_intake !== false);
+  const heroImageUrl = profile.hero_image_url || profile.cover_image_url || '';
+  const featuredGallery = Array.isArray(galleryRows) ? galleryRows.filter((item) => item.is_public !== false) : [];
+  const featuredReviews = Array.isArray(reviewsRows) ? reviewsRows.filter((item) => item.is_public !== false) : [];
+
+  return (
+    <aside
+      data-testid="public-presence-live-preview"
+      className="rounded-3xl border border-slate-200 bg-white shadow-sm"
+    >
+      <div className="border-b border-slate-200 px-5 py-4">
+        <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+          Live Preview
+        </div>
+        <div className="mt-1 text-sm text-slate-600">
+          This preview updates as you change brand colors, theme, and visibility settings.
+        </div>
+      </div>
+      <div className="p-4">
+        <div
+          className="relative overflow-hidden rounded-[2rem] border border-slate-200 text-white shadow-sm"
+          style={{ background: branding.heroBackground, color: branding.textColor, fontFamily: branding.fontFamily }}
+        >
+          {heroImageUrl ? (
+            <img
+              src={heroImageUrl}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover opacity-25"
+            />
+          ) : null}
+          <div className="absolute inset-0 bg-black/15" />
+          <div className="relative space-y-4 p-5">
+            <div className="flex items-start gap-3">
+              {profile.logo_url ? (
+                <img
+                  src={profile.logo_url}
+                  alt="Logo preview"
+                  className="h-14 w-14 shrink-0 rounded-2xl border border-white/20 bg-white object-cover shadow-md"
+                />
+              ) : (
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/20 bg-white/10 text-lg font-bold">
+                  {(profile.business_name_public || 'C').slice(0, 1)}
+                </div>
+              )}
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.25em] text-white/75">
+                  {branding.theme} theme
+                </div>
+                <div className="mt-1 text-xl font-black tracking-tight">
+                  {profile.business_name_public || 'Contractor Profile'}
+                </div>
+                {profile.tagline ? <p className="mt-2 text-sm text-white/85">{profile.tagline}</p> : null}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 text-[11px] font-semibold uppercase tracking-[0.16em]">
+              <span className="rounded-full px-3 py-1" style={{ backgroundColor: branding.heroChipBackground, color: branding.heroChipText }}>
+                {profile.profile_theme || 'modern'}
+              </span>
+              <span className="rounded-full bg-white/15 px-3 py-1">
+                {profile.brand_font_theme || 'clean_sans'}
+              </span>
+              <span className="rounded-full bg-white/15 px-3 py-1">
+                Primary {profile.brand_primary_color || branding.primary}
+              </span>
+              <span className="rounded-full bg-white/15 px-3 py-1">
+                Accent {profile.brand_accent_color || branding.accent}
+              </span>
+            </div>
+            {showQuoteCta ? (
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="rounded-xl px-4 py-2 text-sm font-semibold shadow-sm"
+                  style={{ backgroundColor: branding.ctaBackground, color: branding.ctaText }}
+                >
+                  Request a Quote
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-white/30 bg-white/10 px-4 py-3 text-sm text-white/85">
+                Request a Quote is hidden by your visibility settings.
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Brand summary</div>
+            <div className="mt-2 grid gap-2 text-sm text-slate-700">
+              <div data-testid="public-presence-preview-theme"><span className="font-semibold text-slate-900">Theme:</span> {profile.profile_theme || 'modern'}</div>
+              <div data-testid="public-presence-preview-font"><span className="font-semibold text-slate-900">Font:</span> {profile.brand_font_theme || 'clean_sans'}</div>
+              <div data-testid="public-presence-preview-primary"><span className="font-semibold text-slate-900">Primary:</span> {profile.brand_primary_color || branding.primary}</div>
+              <div data-testid="public-presence-preview-accent"><span className="font-semibold text-slate-900">Accent:</span> {profile.brand_accent_color || branding.accent}</div>
+            </div>
+          </div>
+
+          {showGallery ? (
+            <div data-testid="public-presence-preview-gallery" className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="text-sm font-semibold text-slate-900">Gallery preview</div>
+              <div className="mt-1 text-xs text-slate-500">
+                {featuredGallery.length ? `${featuredGallery.length} public gallery item${featuredGallery.length === 1 ? '' : 's'} visible` : 'No public gallery items to preview yet.'}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+              Gallery is hidden in the public profile.
+            </div>
+          )}
+
+          {showReviews ? (
+            <div data-testid="public-presence-preview-reviews" className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="text-sm font-semibold text-slate-900">Reviews preview</div>
+              <div className="mt-1 text-xs text-slate-500">
+                {featuredReviews.length ? `${featuredReviews.length} public review${featuredReviews.length === 1 ? '' : 's'} visible` : 'No reviews to preview yet.'}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+              Reviews are hidden in the public profile.
+            </div>
+          )}
+        </div>
+      </div>
+    </aside>
+  );
+}
+
 function leadHasAnalysis(lead) {
   return Boolean(lead?.ai_analysis && Object.keys(lead.ai_analysis).length);
 }
@@ -188,6 +321,9 @@ const defaultProfile = {
   proposal_tone: '',
   preferred_signoff: '',
   brand_primary_color: '',
+  brand_accent_color: '',
+  brand_font_theme: 'clean_sans',
+  profile_theme: 'modern',
   city: '',
   state: '',
   service_area_text: '',
@@ -200,6 +336,9 @@ const defaultProfile = {
   show_license_public: true,
   show_phone_public: true,
   show_email_public: false,
+  show_reviews: true,
+  show_gallery: true,
+  show_quote_cta: true,
   allow_public_intake: true,
   allow_public_reviews: true,
   is_public: false,
@@ -208,6 +347,7 @@ const defaultProfile = {
   public_url: '',
   logo_url: '',
   cover_image_url: '',
+  hero_image_url: '',
 };
 
 const PROPOSAL_TONE_OPTIONS = [
@@ -228,6 +368,7 @@ export default function ContractorPublicPresencePage() {
   const [profileBusy, setProfileBusy] = useState(false);
   const [logoFile, setLogoFile] = useState(null);
   const [coverFile, setCoverFile] = useState(null);
+  const [heroFile, setHeroFile] = useState(null);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [quickAddPrefill, setQuickAddPrefill] = useState(null);
   const [generateProfileOpen, setGenerateProfileOpen] = useState(false);
@@ -420,6 +561,9 @@ export default function ContractorPublicPresencePage() {
         'proposal_tone',
         'preferred_signoff',
         'brand_primary_color',
+        'brand_accent_color',
+        'brand_font_theme',
+        'profile_theme',
         'city',
         'state',
         'service_area_text',
@@ -441,17 +585,22 @@ export default function ContractorPublicPresencePage() {
         'show_license_public',
         'show_phone_public',
         'show_email_public',
+        'show_reviews',
+        'show_gallery',
+        'show_quote_cta',
         'allow_public_intake',
         'allow_public_reviews',
         'is_public',
       ].forEach((field) => payload.append(field, profile[field] ? 'true' : 'false'));
       if (logoFile) payload.append('logo', logoFile);
       if (coverFile) payload.append('cover_image', coverFile);
+      if (heroFile) payload.append('hero_image', heroFile);
 
       const { data } = await api.patch('/projects/contractor/public-profile/', payload);
       setProfile({ ...defaultProfile, ...(data || {}) });
       setLogoFile(null);
       setCoverFile(null);
+      setHeroFile(null);
       const qrRes = await api.get('/projects/contractor/public-profile/qr/');
       setQrData(qrRes.data || null);
       toast.success('Public profile saved.');
@@ -891,203 +1040,292 @@ export default function ContractorPublicPresencePage() {
           </div>
 
           {activeTab === 'profile' ? (
-            <div className="mt-6 space-y-4" data-testid="public-presence-profile-tab">
+            <div className="mt-6" data-testid="public-presence-profile-tab">
               {!profile.is_public ? (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                   Preview mode: your public profile is not live yet. Use the generator below to draft copy, then publish when you&apos;re ready.
                 </div>
               ) : null}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">Profile copy</div>
-                  <div className="text-xs text-slate-500">Draft your tagline, intro, and search copy in one pass.</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setGenerateProfileOpen(true)}
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100"
-                >
-                  ✨ Generate My Profile
-                </button>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <input
-                  value={profile.business_name_public || ''}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, business_name_public: e.target.value }))}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                  placeholder="Public business name"
-                />
-                <input
-                  value={profile.slug || ''}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, slug: e.target.value }))}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                  placeholder="Public slug"
-                />
-              </div>
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">Profile copy</div>
+                      <div className="text-xs text-slate-500">Draft your tagline, intro, and search copy in one pass.</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setGenerateProfileOpen(true)}
+                      className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100"
+                    >
+                      ✨ Generate My Profile
+                    </button>
+                  </div>
 
-              <div
-                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-                data-testid="brand-voice-profile-section"
-              >
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">Brand &amp; Voice</div>
-                  <p className="mt-1 text-sm text-slate-600">
-                    These preferences help shape how proposal drafts sound and appear.
-                  </p>
-                </div>
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <input
-                    value={profile.tagline || ''}
-                    onChange={(e) => setProfile((prev) => ({ ...prev, tagline: e.target.value }))}
-                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                    placeholder="Tagline"
-                  />
-                  <select
-                    data-testid="proposal-tone-selector"
-                    value={profile.proposal_tone || ''}
-                    onChange={(e) => setProfile((prev) => ({ ...prev, proposal_tone: e.target.value }))}
-                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                  >
-                    {PROPOSAL_TONE_OPTIONS.map(([value, label]) => (
-                      <option key={value || 'default'} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                  <textarea
-                    value={profile.bio || ''}
-                    onChange={(e) => setProfile((prev) => ({ ...prev, bio: e.target.value }))}
-                    rows={4}
-                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
-                    placeholder="Short company intro"
-                  />
-                  <input
-                    data-testid="preferred-signoff-input"
-                    value={profile.preferred_signoff || ''}
-                    onChange={(e) => setProfile((prev) => ({ ...prev, preferred_signoff: e.target.value }))}
-                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                    placeholder="Preferred signoff"
-                  />
-                  <input
-                    data-testid="brand-primary-color-input"
-                    value={profile.brand_primary_color || ''}
-                    onChange={(e) => setProfile((prev) => ({ ...prev, brand_primary_color: e.target.value }))}
-                    className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                    placeholder="Brand primary color"
-                  />
-                </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <input
-                  value={profile.city || ''}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, city: e.target.value }))}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                  placeholder="City"
-                />
-                <input
-                  value={profile.state || ''}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, state: e.target.value }))}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                  placeholder="State"
-                />
-                <input
-                  value={profile.service_area_text || ''}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, service_area_text: e.target.value }))}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
-                  placeholder="Service area"
-                />
-                <input
-                  value={profile.years_in_business || ''}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, years_in_business: e.target.value }))}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                  placeholder="Years in business"
-                />
-                <input
-                  value={profile.website_url || ''}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, website_url: e.target.value }))}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                  placeholder="Website URL"
-                />
-                <input
-                  value={profile.phone_public || ''}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, phone_public: e.target.value }))}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                  placeholder="Public phone"
-                />
-                <input
-                  value={profile.email_public || ''}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, email_public: e.target.value }))}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                  placeholder="Public email"
-                />
-                <input
-                  value={specialtiesText}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, specialties: e.target.value.split(',') }))}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
-                  placeholder="Specialties (comma separated)"
-                />
-                <input
-                  value={workTypesText}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, work_types: e.target.value.split(',') }))}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
-                  placeholder="Work types (comma separated)"
-                />
-                <input
-                  value={profile.seo_title || ''}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, seo_title: e.target.value }))}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
-                  placeholder="SEO title"
-                />
-                <textarea
-                  value={profile.seo_description || ''}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, seo_description: e.target.value }))}
-                  rows={3}
-                  className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
-                  placeholder="SEO description"
-                />
-                <div className="space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Logo</div>
-                  {profile.logo_url ? <img src={profile.logo_url} alt="Logo" className="h-24 w-24 rounded-xl object-cover" /> : null}
-                  <input type="file" onChange={(e) => setLogoFile(e.target.files?.[0] || null)} />
-                </div>
-                <div className="space-y-2">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cover image</div>
-                  {profile.cover_image_url ? <img src={profile.cover_image_url} alt="Cover" className="h-24 w-full rounded-xl object-cover" /> : null}
-                  <input type="file" onChange={(e) => setCoverFile(e.target.files?.[0] || null)} />
-                </div>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {[
-                  ['is_public', 'Public profile visible'],
-                  ['allow_public_intake', 'Allow public intake'],
-                  ['allow_public_reviews', 'Show public reviews'],
-                  ['show_license_public', 'Show license status'],
-                  ['show_phone_public', 'Show phone publicly'],
-                  ['show_email_public', 'Show email publicly'],
-                ].map(([key, label]) => (
-                  <label key={key} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  <div className="grid gap-4 md:grid-cols-2">
                     <input
-                      type="checkbox"
-                      checked={Boolean(profile[key])}
-                      onChange={(e) => setProfile((prev) => ({ ...prev, [key]: e.target.checked }))}
+                      value={profile.business_name_public || ''}
+                      onChange={(e) => setProfile((prev) => ({ ...prev, business_name_public: e.target.value }))}
+                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                      placeholder="Public business name"
                     />
-                    <span>{label}</span>
-                  </label>
-                ))}
-              </div>
+                    <input
+                      value={profile.slug || ''}
+                      onChange={(e) => setProfile((prev) => ({ ...prev, slug: e.target.value }))}
+                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                      placeholder="Public slug"
+                    />
+                  </div>
 
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  data-testid="public-presence-save-profile"
-                  onClick={saveProfile}
-                  disabled={profileBusy}
-                  className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-                >
-                  {profileBusy ? 'Saving…' : 'Save Public Profile'}
-                </button>
+                  <div
+                    className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+                    data-testid="brand-voice-profile-section"
+                  >
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">Brand &amp; Voice</div>
+                      <p className="mt-1 text-sm text-slate-600">
+                        These preferences help shape how proposal drafts sound and appear.
+                      </p>
+                    </div>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <input
+                        value={profile.tagline || ''}
+                        onChange={(e) => setProfile((prev) => ({ ...prev, tagline: e.target.value }))}
+                        className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                        placeholder="Tagline"
+                      />
+                      <select
+                        data-testid="proposal-tone-selector"
+                        value={profile.proposal_tone || ''}
+                        onChange={(e) => setProfile((prev) => ({ ...prev, proposal_tone: e.target.value }))}
+                        className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                      >
+                        {PROPOSAL_TONE_OPTIONS.map(([value, label]) => (
+                          <option key={value || 'default'} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                      <textarea
+                        value={profile.bio || ''}
+                        onChange={(e) => setProfile((prev) => ({ ...prev, bio: e.target.value }))}
+                        rows={4}
+                        className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
+                        placeholder="Short company intro"
+                      />
+                      <input
+                        data-testid="preferred-signoff-input"
+                        value={profile.preferred_signoff || ''}
+                        onChange={(e) => setProfile((prev) => ({ ...prev, preferred_signoff: e.target.value }))}
+                        className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                        placeholder="Preferred signoff"
+                      />
+                    </div>
+                  </div>
+
+                  <div
+                    className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+                    data-testid="brand-appearance-profile-section"
+                  >
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">Brand &amp; Appearance</div>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Choose a controlled look that keeps the public profile polished and readable.
+                      </p>
+                    </div>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <label className="space-y-2">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Primary color</span>
+                        <input
+                          data-testid="brand-primary-color-input"
+                          type="color"
+                          value={profile.brand_primary_color || '#0f172a'}
+                          onChange={(e) => setProfile((prev) => ({ ...prev, brand_primary_color: e.target.value }))}
+                          className="h-11 w-full rounded-xl border border-slate-300 bg-white px-2 py-1"
+                        />
+                      </label>
+                      <label className="space-y-2">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Accent color</span>
+                        <input
+                          data-testid="brand-accent-color-input"
+                          type="color"
+                          value={profile.brand_accent_color || '#0ea5e9'}
+                          onChange={(e) => setProfile((prev) => ({ ...prev, brand_accent_color: e.target.value }))}
+                          className="h-11 w-full rounded-xl border border-slate-300 bg-white px-2 py-1"
+                        />
+                      </label>
+                      <label className="space-y-2 md:col-span-2">
+                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Typography</span>
+                        <select
+                          data-testid="brand-font-theme-select"
+                          value={profile.brand_font_theme || 'clean_sans'}
+                          onChange={(e) => setProfile((prev) => ({ ...prev, brand_font_theme: e.target.value }))}
+                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                        >
+                          {FONT_THEME_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="md:col-span-2">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Theme preset</div>
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                          {THEME_OPTIONS.map((option) => {
+                            const selected = String(profile.profile_theme || 'modern') === option.value;
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                data-testid={`brand-theme-${option.value}`}
+                                onClick={() => setProfile((prev) => ({ ...prev, profile_theme: option.value }))}
+                                className={`rounded-2xl border px-4 py-3 text-left transition ${
+                                  selected
+                                    ? 'border-slate-900 bg-slate-900 text-white'
+                                    : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                                }`}
+                              >
+                                <div className="text-sm font-semibold">{option.label}</div>
+                                <div className={`mt-1 text-xs ${selected ? 'text-slate-200' : 'text-slate-500'}`}>
+                                  Controlled preset with readable contrast.
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Logo</div>
+                        {profile.logo_url ? <img src={profile.logo_url} alt="Logo" className="h-24 w-24 rounded-xl object-cover" /> : null}
+                        <input type="file" onChange={(e) => setLogoFile(e.target.files?.[0] || null)} />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Hero image</div>
+                        {(profile.hero_image_url || profile.cover_image_url) ? (
+                          <img
+                            src={profile.hero_image_url || profile.cover_image_url}
+                            alt="Hero"
+                            className="h-24 w-full rounded-xl object-cover"
+                          />
+                        ) : null}
+                        <input type="file" onChange={(e) => setHeroFile(e.target.files?.[0] || null)} />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Legacy cover image</div>
+                        {profile.cover_image_url ? <img src={profile.cover_image_url} alt="Cover" className="h-24 w-full rounded-xl object-cover" /> : null}
+                        <input type="file" onChange={(e) => setCoverFile(e.target.files?.[0] || null)} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <input
+                      value={profile.city || ''}
+                      onChange={(e) => setProfile((prev) => ({ ...prev, city: e.target.value }))}
+                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                      placeholder="City"
+                    />
+                    <input
+                      value={profile.state || ''}
+                      onChange={(e) => setProfile((prev) => ({ ...prev, state: e.target.value }))}
+                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                      placeholder="State"
+                    />
+                    <input
+                      value={profile.service_area_text || ''}
+                      onChange={(e) => setProfile((prev) => ({ ...prev, service_area_text: e.target.value }))}
+                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
+                      placeholder="Service area"
+                    />
+                    <input
+                      value={profile.years_in_business || ''}
+                      onChange={(e) => setProfile((prev) => ({ ...prev, years_in_business: e.target.value }))}
+                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                      placeholder="Years in business"
+                    />
+                    <input
+                      value={profile.website_url || ''}
+                      onChange={(e) => setProfile((prev) => ({ ...prev, website_url: e.target.value }))}
+                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                      placeholder="Website URL"
+                    />
+                    <input
+                      value={profile.phone_public || ''}
+                      onChange={(e) => setProfile((prev) => ({ ...prev, phone_public: e.target.value }))}
+                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                      placeholder="Public phone"
+                    />
+                    <input
+                      value={profile.email_public || ''}
+                      onChange={(e) => setProfile((prev) => ({ ...prev, email_public: e.target.value }))}
+                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                      placeholder="Public email"
+                    />
+                    <input
+                      value={specialtiesText}
+                      onChange={(e) => setProfile((prev) => ({ ...prev, specialties: e.target.value.split(',') }))}
+                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
+                      placeholder="Specialties (comma separated)"
+                    />
+                    <input
+                      value={workTypesText}
+                      onChange={(e) => setProfile((prev) => ({ ...prev, work_types: e.target.value.split(',') }))}
+                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
+                      placeholder="Work types (comma separated)"
+                    />
+                    <input
+                      value={profile.seo_title || ''}
+                      onChange={(e) => setProfile((prev) => ({ ...prev, seo_title: e.target.value }))}
+                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
+                      placeholder="SEO title"
+                    />
+                    <textarea
+                      value={profile.seo_description || ''}
+                      onChange={(e) => setProfile((prev) => ({ ...prev, seo_description: e.target.value }))}
+                      rows={3}
+                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
+                      placeholder="SEO description"
+                    />
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {[
+                      ['is_public', 'Public profile visible'],
+                      ['allow_public_intake', 'Allow public intake'],
+                      ['allow_public_reviews', 'Allow public reviews'],
+                      ['show_reviews', 'Show reviews section'],
+                      ['show_gallery', 'Show gallery section'],
+                      ['show_quote_cta', 'Show quote CTA'],
+                      ['show_license_public', 'Show license status'],
+                      ['show_phone_public', 'Show phone publicly'],
+                      ['show_email_public', 'Show email publicly'],
+                    ].map(([key, label]) => (
+                      <label key={key} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(profile[key])}
+                          onChange={(e) => setProfile((prev) => ({ ...prev, [key]: e.target.checked }))}
+                        />
+                        <span>{label}</span>
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      data-testid="public-presence-save-profile"
+                      onClick={saveProfile}
+                      disabled={profileBusy}
+                      className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                    >
+                      {profileBusy ? 'Saving…' : 'Save Public Profile'}
+                    </button>
+                  </div>
+                </div>
+
+                <PublicPresenceBrandPreview profile={profile} galleryRows={galleryRows} reviewsRows={reviewsRows} />
               </div>
             </div>
           ) : null}

@@ -347,6 +347,22 @@ class ProposalTone(models.TextChoices):
     WARM_CONSULTATIVE = "warm_and_consultative", "Warm and Consultative"
 
 
+class ContractorPublicTheme(models.TextChoices):
+    MODERN = "modern", "Modern"
+    PROFESSIONAL = "professional", "Professional"
+    MINIMAL = "minimal", "Minimal"
+    BOLD = "bold", "Bold"
+    WARM = "warm", "Warm"
+
+
+class ContractorPublicFontTheme(models.TextChoices):
+    CLEAN_SANS = "clean_sans", "Clean Sans"
+    MODERN_SANS = "modern_sans", "Modern Sans"
+    EDITORIAL_SERIF = "editorial_serif", "Editorial Serif"
+    WARM_SERIF = "warm_serif", "Warm Serif"
+    COMPACT_SANS = "compact_sans", "Compact Sans"
+
+
 class ContractorActivationEvent(models.Model):
     contractor = models.ForeignKey(
         Contractor,
@@ -467,8 +483,22 @@ class ContractorPublicProfile(models.Model):
     proposal_tone = models.CharField(max_length=32, choices=ProposalTone.choices, blank=True, default="")
     preferred_signoff = models.CharField(max_length=120, blank=True, default="")
     brand_primary_color = models.CharField(max_length=32, blank=True, default="")
+    brand_accent_color = models.CharField(max_length=32, blank=True, default="")
+    brand_font_theme = models.CharField(
+        max_length=32,
+        choices=ContractorPublicFontTheme.choices,
+        blank=True,
+        default=ContractorPublicFontTheme.CLEAN_SANS,
+    )
+    profile_theme = models.CharField(
+        max_length=32,
+        choices=ContractorPublicTheme.choices,
+        blank=True,
+        default=ContractorPublicTheme.MODERN,
+    )
     logo = models.ImageField(upload_to=contractor_public_asset_upload_to, null=True, blank=True)
     cover_image = models.ImageField(upload_to=contractor_public_asset_upload_to, null=True, blank=True)
+    hero_image = models.ImageField(upload_to=contractor_public_asset_upload_to, null=True, blank=True)
     city = models.CharField(max_length=120, blank=True, default="")
     state = models.CharField(max_length=60, blank=True, default="")
     service_area_text = models.CharField(max_length=255, blank=True, default="")
@@ -481,6 +511,9 @@ class ContractorPublicProfile(models.Model):
     show_license_public = models.BooleanField(default=True)
     show_phone_public = models.BooleanField(default=True)
     show_email_public = models.BooleanField(default=False)
+    show_reviews = models.BooleanField(default=True)
+    show_gallery = models.BooleanField(default=True)
+    show_quote_cta = models.BooleanField(default=True)
     allow_public_intake = models.BooleanField(default=True)
     allow_public_reviews = models.BooleanField(default=True)
     is_public = models.BooleanField(default=False)

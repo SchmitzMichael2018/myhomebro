@@ -30,6 +30,7 @@ def _abs_media_url(request, file_field) -> str:
 class ContractorPublicProfileSerializer(serializers.ModelSerializer):
     logo_url = serializers.SerializerMethodField()
     cover_image_url = serializers.SerializerMethodField()
+    hero_image_url = serializers.SerializerMethodField()
     public_url = serializers.SerializerMethodField()
     public_trust_indicators = serializers.SerializerMethodField()
     contractor_profile_insights = serializers.SerializerMethodField()
@@ -45,10 +46,15 @@ class ContractorPublicProfileSerializer(serializers.ModelSerializer):
             "proposal_tone",
             "preferred_signoff",
             "brand_primary_color",
+            "brand_accent_color",
+            "brand_font_theme",
+            "profile_theme",
             "logo",
             "logo_url",
             "cover_image",
             "cover_image_url",
+            "hero_image",
+            "hero_image_url",
             "city",
             "state",
             "service_area_text",
@@ -61,6 +67,9 @@ class ContractorPublicProfileSerializer(serializers.ModelSerializer):
             "show_license_public",
             "show_phone_public",
             "show_email_public",
+            "show_reviews",
+            "show_gallery",
+            "show_quote_cta",
             "allow_public_intake",
             "allow_public_reviews",
             "is_public",
@@ -90,6 +99,9 @@ class ContractorPublicProfileSerializer(serializers.ModelSerializer):
 
     def get_cover_image_url(self, obj):
         return _abs_media_url(self.context.get("request"), obj.cover_image)
+
+    def get_hero_image_url(self, obj):
+        return _abs_media_url(self.context.get("request"), obj.hero_image)
 
     def get_public_url(self, obj):
         request = self.context.get("request")
@@ -434,6 +446,7 @@ class ContractorPublicLeadSerializer(serializers.ModelSerializer):
 class PublicContractorProfileSerializer(serializers.ModelSerializer):
     logo_url = serializers.SerializerMethodField()
     cover_image_url = serializers.SerializerMethodField()
+    hero_image_url = serializers.SerializerMethodField()
     gallery = serializers.SerializerMethodField()
     reviews = serializers.SerializerMethodField()
     average_rating = serializers.SerializerMethodField()
@@ -451,8 +464,12 @@ class PublicContractorProfileSerializer(serializers.ModelSerializer):
             "proposal_tone",
             "preferred_signoff",
             "brand_primary_color",
+            "brand_accent_color",
+            "brand_font_theme",
+            "profile_theme",
             "logo_url",
             "cover_image_url",
+            "hero_image_url",
             "city",
             "state",
             "service_area_text",
@@ -465,6 +482,9 @@ class PublicContractorProfileSerializer(serializers.ModelSerializer):
             "show_license_public",
             "show_phone_public",
             "show_email_public",
+            "show_reviews",
+            "show_gallery",
+            "show_quote_cta",
             "allow_public_intake",
             "allow_public_reviews",
             "seo_title",
@@ -482,6 +502,9 @@ class PublicContractorProfileSerializer(serializers.ModelSerializer):
 
     def get_cover_image_url(self, obj):
         return _abs_media_url(self.context.get("request"), obj.cover_image)
+
+    def get_hero_image_url(self, obj):
+        return _abs_media_url(self.context.get("request"), obj.hero_image)
 
     def get_gallery(self, obj):
         items = obj.gallery_items.filter(is_public=True).order_by("-is_featured", "sort_order", "-created_at")

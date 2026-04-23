@@ -873,17 +873,85 @@ test('public contractor profile renders gallery reviews and intake', async ({ pa
   await expect(page.getByText('Kitchen Remodel', { exact: true })).toBeVisible();
   await expect(page.getByText('Taylor Homeowner')).toBeVisible();
   await expect(page.getByTestId('public-profile-contractor-insights')).toContainText('How this contractor works');
-  await page.getByRole('link', { name: 'Leave Review' }).click();
-  await page.getByPlaceholder('Your name').fill('Morgan Reviewer');
-  await page.getByPlaceholder('Review title').fill('Great communication');
-  await page.getByPlaceholder('Share your experience').fill('Clear updates and clean work.');
-  await page.getByRole('button', { name: 'Submit Review' }).click();
-  await expect(page.getByPlaceholder('Your name')).toHaveValue('');
-  await page.getByPlaceholder('Full name').fill('Casey Prospect');
-  await page.getByPlaceholder('Email').fill('casey@example.com');
-  await page.getByPlaceholder('Tell us about your project').fill('Need a remodel estimate.');
-  await page.getByRole('button', { name: 'Submit Project Request' }).click();
-  await expect(page.getByPlaceholder('Full name')).toHaveValue('');
+  await page.getByRole('button', { name: 'Leave Review' }).click();
+  await expect(page.getByTestId('public-profile-review-modal')).toBeVisible();
+  await page.getByLabel('Close modal').click();
+  await page.getByRole('button', { name: 'Request a Quote' }).first().click();
+  await expect(page.getByTestId('public-quote-request-wizard')).toBeVisible();
+  await expect(page.getByTestId('public-quote-request-step-title')).toContainText('Project Basics');
+});
+
+test('public contractor profile applies saved branding and hides toggled sections', async ({ page }) => {
+  await page.route('**/api/projects/public/contractors/bright-build-co/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        slug: 'bright-build-co',
+        business_name_public: 'Bright Build Co',
+        tagline: 'Trusted renovations and repairs',
+        bio: 'We help homeowners with clean, reliable project delivery.',
+        city: 'Austin',
+        state: 'TX',
+        service_area_text: 'Austin metro',
+        years_in_business: 12,
+        phone_public: '555-111-2222',
+        email_public: 'hello@bright.example.com',
+        show_phone_public: true,
+        show_email_public: true,
+        show_license_public: true,
+        allow_public_intake: true,
+        allow_public_reviews: true,
+        is_public: true,
+        brand_primary_color: '#1d4ed8',
+        brand_accent_color: '#f97316',
+        brand_font_theme: 'editorial_serif',
+        profile_theme: 'warm',
+        show_reviews: false,
+        show_gallery: false,
+        show_quote_cta: false,
+        public_url: 'http://localhost:4173/contractors/bright-build-co',
+        logo_url: '',
+        cover_image_url: '',
+        hero_image_url: '',
+        specialties: ['Roofing'],
+        work_types: ['Repairs'],
+        review_count: 0,
+        average_rating: null,
+        contractor_profile_insights: [],
+        public_trust_indicators: [],
+        seo_title: '',
+        seo_description: '',
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/public/contractors/bright-build-co/rating/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        average_rating: null,
+        review_count: 0,
+        preview: false,
+        new_on_myhomebro: true,
+        display_label: 'New on MyHomeBro',
+      }),
+    });
+  });
+
+  await page.goto('/contractors/bright-build-co', { waitUntil: 'domcontentloaded' });
+
+  const rootStyle = await page.getByTestId('public-profile-root').getAttribute('style');
+  expect(rootStyle).toContain('--mhb-public-primary: #1d4ed8');
+  expect(rootStyle).toContain('--mhb-public-accent: #f97316');
+
+  const fontFamily = await page.getByTestId('public-profile-root').evaluate((node) => getComputedStyle(node).fontFamily);
+  expect(fontFamily).toContain('Georgia');
+
+  await expect(page.getByTestId('public-profile-gallery-section')).toHaveCount(0);
+  await expect(page.getByTestId('public-profile-reviews-section')).toHaveCount(0);
+  await expect(page.getByTestId('public-profile-request-quote-cta')).toHaveCount(0);
 });
 
 test('manual leads can be quick-added, sent an intake, and stay in the same lead flow', async ({

@@ -1159,7 +1159,7 @@ class ContractorPublicPresenceApiTests(TestCase):
 
     def test_public_profile_requires_public_flag(self):
         response = self.client.get(f"/api/projects/public/contractors/{self.profile.slug}/")
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 200, response.content.decode())
         self.assertFalse(response.data["preview"])
 
         hidden_response = self.client.get(f"/api/projects/public/contractors/{self.other_profile.slug}/")
@@ -1168,7 +1168,7 @@ class ContractorPublicPresenceApiTests(TestCase):
 
     def test_public_rating_endpoint_returns_verified_review_summary(self):
         response = self.client.get(f"/api/contractors/{self.profile.slug}/rating/")
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 200, response.content.decode())
         self.assertFalse(response.data["new_on_myhomebro"])
         self.assertEqual(response.data["review_count"], 1)
         self.assertEqual(response.data["average_rating"], 5.0)
@@ -1405,7 +1405,7 @@ class ContractorPublicPresenceApiTests(TestCase):
         token = build_public_sign_url(self.agreement).rsplit("/", 1)[-1]
         response = self.client.get(f"/api/projects/agreements/public_sign/?token={token}")
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 200, response.content.decode())
         self.assertEqual(response.data["project_title"], self.agreement.project.title)
         self.assertEqual(response.data["contractor_name"], self.contractor.business_name)
         self.assertEqual(response.data["project_summary"], self.agreement.description)
@@ -1665,27 +1665,64 @@ class ContractorPublicPresenceApiTests(TestCase):
 
     def test_public_profile_persists_brand_voice_fields(self):
         self.client.force_authenticate(user=self.contractor_user)
+        hero_image = SimpleUploadedFile(
+            "hero.gif",
+            base64.b64decode("R0lGODlhAQABAIABAP///wAAACwAAAAAAQABAAACAkQBADs="),
+            content_type="image/gif",
+        )
         response = self.client.patch(
             "/api/projects/contractor/public-profile/",
             {
                 "proposal_tone": "warm_and_consultative",
                 "preferred_signoff": "Warmly, Bright Build Co",
                 "brand_primary_color": "#1d4ed8",
+                "brand_accent_color": "#f97316",
+                "brand_font_theme": "editorial_serif",
+                "profile_theme": "warm",
                 "tagline": "Trusted renovations and repairs",
                 "bio": "We help homeowners with clean, reliable project delivery.",
+                "show_reviews": "false",
+                "show_gallery": "false",
+                "show_quote_cta": "false",
+                "hero_image": hero_image,
             },
-            format="json",
+            format="multipart",
         )
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 200, response.content.decode())
         self.assertEqual(response.json()["proposal_tone"], "warm_and_consultative")
         self.assertEqual(response.json()["preferred_signoff"], "Warmly, Bright Build Co")
         self.assertEqual(response.json()["brand_primary_color"], "#1d4ed8")
+        self.assertEqual(response.json()["brand_accent_color"], "#f97316")
+        self.assertEqual(response.json()["brand_font_theme"], "editorial_serif")
+        self.assertEqual(response.json()["profile_theme"], "warm")
+        self.assertFalse(response.json()["show_reviews"])
+        self.assertFalse(response.json()["show_gallery"])
+        self.assertFalse(response.json()["show_quote_cta"])
+        self.assertTrue(response.json()["hero_image_url"].endswith(".gif"))
 
         profile = ContractorPublicProfile.objects.get(contractor=self.contractor)
         self.assertEqual(profile.proposal_tone, "warm_and_consultative")
         self.assertEqual(profile.preferred_signoff, "Warmly, Bright Build Co")
         self.assertEqual(profile.brand_primary_color, "#1d4ed8")
+        self.assertEqual(profile.brand_accent_color, "#f97316")
+        self.assertEqual(profile.brand_font_theme, "editorial_serif")
+        self.assertEqual(profile.profile_theme, "warm")
+        self.assertFalse(profile.show_reviews)
+        self.assertFalse(profile.show_gallery)
+        self.assertFalse(profile.show_quote_cta)
+        self.assertTrue(bool(profile.hero_image))
+
+        public_response = self.client.get(f"/api/projects/public/contractors/{self.profile.slug}/")
+        self.assertEqual(public_response.status_code, 200)
+        public_payload = public_response.json()
+        self.assertEqual(public_payload["brand_primary_color"], "#1d4ed8")
+        self.assertEqual(public_payload["brand_accent_color"], "#f97316")
+        self.assertEqual(public_payload["brand_font_theme"], "editorial_serif")
+        self.assertEqual(public_payload["profile_theme"], "warm")
+        self.assertFalse(public_payload["show_reviews"])
+        self.assertFalse(public_payload["show_gallery"])
+        self.assertFalse(public_payload["show_quote_cta"])
 
     def test_qr_public_profile_intake_preserves_qr_source(self):
         response = self.client.post(

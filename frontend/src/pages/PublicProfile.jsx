@@ -6,6 +6,7 @@ import api, { getContractorRating } from '../api';
 import Modal from '../components/Modal.jsx';
 import RatingDisplay from '../components/RatingDisplay.jsx';
 import PublicQuoteRequestWizard from '../components/PublicQuoteRequestWizard.jsx';
+import { buildPublicProfileThemeStyle, getPublicProfileBranding } from '../lib/publicProfileBranding.js';
 
 const buildEmptyReviewForm = (context = {}) => ({
   customer_name: '',
@@ -139,13 +140,19 @@ export default function PublicProfile() {
   const contractorProfileInsights = Array.isArray(profile.contractor_profile_insights)
     ? profile.contractor_profile_insights
     : [];
+  const branding = getPublicProfileBranding(profile);
+  const brandingStyle = buildPublicProfileThemeStyle(profile);
+  const showReviews = Boolean(profile.show_reviews !== false && profile.allow_public_reviews !== false);
+  const showGallery = Boolean(profile.show_gallery !== false);
+  const showQuoteCta = Boolean(profile.show_quote_cta !== false);
   const ratingCount = Number(ratingInfo.review_count || 0);
   const ratingValue = ratingInfo.average_rating;
   const verifiedReviewCount = ratingCount;
-  const quoteRequestEnabled = Boolean(profile.allow_public_intake && !previewMode);
+  const quoteRequestEnabled = Boolean(profile.allow_public_intake && showQuoteCta && !previewMode);
+  const heroImageUrl = profile.hero_image_url || profile.cover_image_url || '';
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div data-testid="public-profile-root" className="min-h-screen bg-slate-50" style={brandingStyle}>
       {previewMode ? (
         <div
           data-testid="public-profile-preview-banner"
@@ -154,10 +161,14 @@ export default function PublicProfile() {
           Preview mode: this contractor profile is not public yet.
         </div>
       ) : null}
-      <section className="relative overflow-hidden border-b border-slate-200 bg-slate-900 text-white">
-        {profile.cover_image_url ? (
-          <img src={profile.cover_image_url} alt="" className="absolute inset-0 h-full w-full object-cover opacity-35" />
+      <section
+        className="relative overflow-hidden border-b border-slate-200 text-white"
+        style={{ background: branding.heroBackground, color: branding.textColor }}
+      >
+        {heroImageUrl ? (
+          <img src={heroImageUrl} alt="" className="absolute inset-0 h-full w-full object-cover opacity-30" />
         ) : null}
+        <div className="absolute inset-0 bg-gradient-to-br from-black/20 to-black/40" />
         <div className="relative mx-auto grid max-w-6xl gap-6 px-4 py-14 md:grid-cols-[160px_minmax(0,1fr)] md:px-6">
           <div>
             {profile.logo_url ? (
@@ -178,27 +189,34 @@ export default function PublicProfile() {
               {profile.show_phone_public && profile.phone_public ? <span>{profile.phone_public}</span> : null}
               {profile.show_email_public && profile.email_public ? <span>{profile.email_public}</span> : null}
             </div>
-            <div className="mt-5">
-              <RatingDisplay
-                testId="public-profile-rating-display"
-                rating={ratingValue}
-                count={verifiedReviewCount}
-                fallbackLabel="New on MyHomeBro"
-                inverted
-              />
-            </div>
+            {showReviews ? (
+              <div className="mt-5">
+                <RatingDisplay
+                  testId="public-profile-rating-display"
+                  rating={ratingValue}
+                  count={verifiedReviewCount}
+                  fallbackLabel="New on MyHomeBro"
+                  inverted
+                />
+              </div>
+            ) : null}
             <div className="mt-6 flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={() => setQuoteWizardOpen(true)}
-                disabled={!quoteRequestEnabled}
-                data-testid="public-profile-request-quote-cta"
-                className="rounded-xl bg-white px-5 py-3 text-sm font-semibold text-slate-900 hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
-              >
-                Request a Quote
-              </button>
-              <a href="#gallery" className="rounded-xl border border-white/25 bg-white/10 px-5 py-3 text-sm font-semibold text-white hover:bg-white/20">View Gallery</a>
-              {profile.allow_public_reviews ? (
+              {showQuoteCta ? (
+                <button
+                  type="button"
+                  onClick={() => setQuoteWizardOpen(true)}
+                  disabled={!quoteRequestEnabled}
+                  data-testid="public-profile-request-quote-cta"
+                  className="rounded-xl px-5 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                  style={{ backgroundColor: branding.ctaBackground, color: branding.ctaText }}
+                >
+                  Request a Quote
+                </button>
+              ) : null}
+              {showGallery ? (
+                <a href="#gallery" className="rounded-xl border border-white/25 bg-white/10 px-5 py-3 text-sm font-semibold text-white hover:bg-white/20">View Gallery</a>
+              ) : null}
+              {showReviews ? (
                 <button
                   type="button"
                   onClick={() => setReviewModalOpen(true)}
@@ -219,14 +237,16 @@ export default function PublicProfile() {
               {item}
             </div>
           ))}
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <RatingDisplay
-              testId="public-profile-rating-summary"
-              rating={ratingValue}
-              count={verifiedReviewCount}
-              fallbackLabel="New on MyHomeBro"
-            />
-          </div>
+          {showReviews ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+              <RatingDisplay
+                testId="public-profile-rating-summary"
+                rating={ratingValue}
+                count={verifiedReviewCount}
+                fallbackLabel="New on MyHomeBro"
+              />
+            </div>
+          ) : null}
         </section>
 
         {contractorProfileInsights.length ? (
@@ -273,7 +293,8 @@ export default function PublicProfile() {
           </section>
         ) : null}
 
-        <section id="gallery" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        {showGallery ? (
+        <section id="gallery" data-testid="public-profile-gallery-section" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between gap-4">
             <h2 className="text-2xl font-bold text-slate-900">Gallery</h2>
             <div className="text-sm text-slate-500">{gallery.length} public project photos</div>
@@ -298,9 +319,10 @@ export default function PublicProfile() {
             <div className="mt-4 text-sm text-slate-500">No public project photos yet.</div>
           )}
         </section>
+        ) : null}
 
-        {profile.allow_public_reviews ? (
-          <section id="reviews" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        {showReviews ? (
+          <section id="reviews" data-testid="public-profile-reviews-section" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex items-center justify-between gap-4">
               <h2 className="text-2xl font-bold text-slate-900">Reviews</h2>
               <RatingDisplay
@@ -341,7 +363,8 @@ export default function PublicProfile() {
           </section>
         ) : null}
 
-        <section id="intake" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        {showQuoteCta ? (
+        <section id="intake" data-testid="public-profile-quote-cta-section" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
             <div className="max-w-2xl">
               <h2 className="text-2xl font-bold text-slate-900">Request a Quote</h2>
@@ -369,6 +392,7 @@ export default function PublicProfile() {
             </div>
           ) : null}
         </section>
+        ) : null}
       </div>
 
       <PublicQuoteRequestWizard
@@ -376,9 +400,9 @@ export default function PublicProfile() {
         slug={slug}
         contractorName={profile.business_name_public}
         businessName={profile.business_name_public}
-      profile={profile}
-      onClose={() => setQuoteWizardOpen(false)}
-      onSubmitted={() => {}}
+        profile={profile}
+        onClose={() => setQuoteWizardOpen(false)}
+        onSubmitted={() => {}}
       />
 
       <Modal
