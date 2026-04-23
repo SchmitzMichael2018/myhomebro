@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
 import { StartWithAIEntry } from "../components/StartWithAIAssistant.jsx";
@@ -310,7 +310,6 @@ function buildTemplatePayload(header, milestones) {
 }
 
 export default function TemplatesPage() {
-  const navigate = useNavigate();
   const location = useLocation();
 
   const [loading, setLoading] = useState(true);
@@ -1126,7 +1125,7 @@ export default function TemplatesPage() {
     <ContractorPageSurface
       eyebrow="Core"
       title="Templates"
-      subtitle="Build reusable project templates with AI-assisted structure, pricing, schedule, and materials."
+      subtitle="Create reusable project setups to speed up your agreements."
       actions={
         <div className="flex flex-wrap gap-2">
           <button
@@ -1136,21 +1135,6 @@ export default function TemplatesPage() {
             className="rounded-xl border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50"
           >
             New Template Draft
-          </button>
-
-          <Link
-            to="/app/agreements/new/wizard?step=1"
-            className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
-          >
-            New Agreement
-          </Link>
-
-          <button
-            type="button"
-            onClick={() => navigate("/app/agreements/new/wizard?step=1")}
-            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
-          >
-            Use in Step 1
           </button>
         </div>
       }
@@ -1166,6 +1150,9 @@ export default function TemplatesPage() {
       />
 
       <div className="mb-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 text-sm text-slate-600">
+          Use templates to quickly create consistent agreements with predefined scope, milestones, and pricing.
+        </div>
         <div className="flex flex-wrap gap-2">
           <TabButton
             data-testid="templates-market-tab-mine"
@@ -1292,7 +1279,7 @@ export default function TemplatesPage() {
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
         <div className="rounded-[22px] border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-4 py-3">
             <div className="text-sm font-semibold text-slate-900">
@@ -1300,6 +1287,9 @@ export default function TemplatesPage() {
             </div>
             <div className="mt-1 text-xs text-slate-500">
               {filteredTemplates.length} template{filteredTemplates.length === 1 ? "" : "s"} found
+            </div>
+            <div className="mt-2 text-xs text-slate-500">
+              Select a template to edit or create a new one.
             </div>
           </div>
 
@@ -1494,7 +1484,7 @@ export default function TemplatesPage() {
             <div className="px-4 py-6 text-sm text-red-600">{detailErr}</div>
           ) : !selectedTemplate && !creatingNew ? (
             <div className="px-4 py-6 text-sm text-slate-500">
-              Select a template or start a new draft.
+              Choose a template from the left to start editing, or create a new template.
             </div>
           ) : (
             <div className="p-4">
@@ -1594,6 +1584,10 @@ export default function TemplatesPage() {
                 >
                   Materials
                 </TabButton>
+              </div>
+
+              <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                Templates are applied when creating a new agreement.
               </div>
 
               {!creatingNew && selectedDetail ? (

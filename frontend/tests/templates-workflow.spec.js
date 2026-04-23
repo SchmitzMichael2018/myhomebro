@@ -539,6 +539,14 @@ test('templates route and sidebar access support creating and editing reusable t
 
   await expect(page.getByRole('link', { name: 'Templates' })).toHaveAttribute('href', '/app/templates');
   await expect(page.getByRole('heading', { name: 'Templates' })).toBeVisible();
+  await expect(page.getByText('Create reusable project setups to speed up your agreements.')).toBeVisible();
+  await expect(
+    page.getByText(
+      'Use templates to quickly create consistent agreements with predefined scope, milestones, and pricing.'
+    )
+  ).toBeVisible();
+  await expect(page.getByText('Select a template to edit or create a new one.')).toBeVisible();
+  await expect(page.getByText('Templates are applied when creating a new agreement.')).toBeVisible();
 
   await page.getByTestId('templates-new-draft-button').click();
   await page.getByTestId('templates-name-input').fill('Cabinet Install Standard');
