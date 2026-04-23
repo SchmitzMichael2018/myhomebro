@@ -336,6 +336,7 @@ export default function TemplatesPage() {
   const [assistantPrefillBanner, setAssistantPrefillBanner] = useState("");
   const [templateAiPrompt, setTemplateAiPrompt] = useState("");
   const [assistantField, setAssistantField] = useState("description");
+  const [generatedAiDraft, setGeneratedAiDraft] = useState(null);
 
   const [editHeader, setEditHeader] = useState(buildBlankHeader());
   const [editMilestones, setEditMilestones] = useState([buildBlankMilestone(1)]);
@@ -419,6 +420,7 @@ export default function TemplatesPage() {
 
         if (cancelled) return;
         setSelectedDetail(data);
+        setGeneratedAiDraft(null);
         setEditHeader(normalizeHeaderForEdit(data));
         setEditMilestones(
           Array.isArray(data?.milestones) && data.milestones.length
@@ -497,10 +499,32 @@ export default function TemplatesPage() {
       { fixed: 0, low: 0, high: 0 }
     );
   }, [currentMilestones]);
+
+  const generatedPricingGuidance = generatedAiDraft?.pricing || null;
+  const generatedMaterials = Array.isArray(generatedAiDraft?.materials)
+    ? generatedAiDraft.materials
+    : [];
+  const generatedClarificationQuestions = normalizeClarifications(
+    generatedAiDraft?.clarification_questions
+  );
+  const generatedTimeline = safeTrim(generatedAiDraft?.timeline);
+
+  function formatGuidancePercentages(items) {
+    if (!Array.isArray(items) || !items.length) return "No milestone percentages provided yet.";
+    return items
+      .map((row) => {
+        const milestone = safeTrim(row?.milestone) || "Milestone";
+        const pct = safeTrim(row?.percentage) || "—";
+        const notes = safeTrim(row?.notes);
+        return `${milestone}: ${pct}${notes ? ` (${notes})` : ""}`;
+      })
+      .join(" • ");
+  }
   function startNewTemplate() {
     setSelectedId(null);
     setSelectedDetail(null);
     setDetailErr("");
+    setGeneratedAiDraft(null);
     setEditHeader(buildBlankHeader());
     setEditMilestones([buildBlankMilestone(1)]);
     setCreatingNew(true);
@@ -521,13 +545,14 @@ export default function TemplatesPage() {
     const milestoneRows = Array.isArray(prefill?.milestones) ? prefill.milestones : [];
 
     setSelectedId(null);
-      setSelectedDetail(null);
-      setDetailErr("");
-      setCreatingNew(true);
-      setEditMode(true);
-      setActiveTab("setup");
-      setTemplateAiPrompt("");
-      setEditHeader({
+    setSelectedDetail(null);
+    setDetailErr("");
+    setGeneratedAiDraft(null);
+    setCreatingNew(true);
+    setEditMode(true);
+    setActiveTab("setup");
+    setTemplateAiPrompt("");
+    setEditHeader({
       ...buildBlankHeader(),
       ...header,
       name: safeTrim(header?.name) || "New Intake Template",
@@ -608,6 +633,7 @@ export default function TemplatesPage() {
       setSelectedId(null);
       setSelectedDetail(null);
       setDetailErr("");
+      setGeneratedAiDraft(null);
       setCreatingNew(true);
       setEditMode(true);
       setActiveTab("setup");
@@ -896,6 +922,7 @@ export default function TemplatesPage() {
           : [],
         project_materials_hint: data?.project_materials_hint || "",
       });
+      setGeneratedAiDraft(data || null);
 
       setEditMilestones(
         Array.isArray(data?.milestones) && data.milestones.length
@@ -913,7 +940,7 @@ export default function TemplatesPage() {
       );
 
       toast.success("AI template draft created.");
-      setActiveTab("milestones");
+      setActiveTab("setup");
     } catch (e) {
       toast.error(
         e?.response?.data?.detail ||
@@ -1026,7 +1053,7 @@ export default function TemplatesPage() {
           </div>
           <div className="flex flex-col gap-2 sm:max-w-lg">
             <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Describe the job
+              Generate full template based on your project
             </label>
             <input
               data-testid="templates-ai-prompt-input"
@@ -1036,6 +1063,9 @@ export default function TemplatesPage() {
               placeholder="Describe the job…"
               className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm"
             />
+            <div className="text-[11px] text-slate-500">
+              AI will draft the description, milestones, pricing guidance, materials, timeline, and clarifying questions.
+            </div>
           </div>
         </div>
       }
@@ -1649,6 +1679,51 @@ export default function TemplatesPage() {
                       </ul>
                     </div>
                   ) : null}
+
+                  {generatedAiDraft ? (
+                    <div
+                      data-testid="templates-generated-ai-summary"
+                      className="mt-4 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3"
+                    >
+                      <div className="text-xs font-semibold uppercase tracking-wide text-indigo-900">
+                        Generated AI Plan
+                      </div>
+                      <div className="mt-2 grid grid-cols-1 gap-2 text-sm text-indigo-900 md:grid-cols-2">
+                        <div className="rounded-md bg-white/80 px-3 py-2">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+                            Timeline
+                          </div>
+                          <div className="mt-1">{generatedTimeline || "Estimated timeline not provided yet."}</div>
+                        </div>
+                        <div className="rounded-md bg-white/80 px-3 py-2">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+                            Pricing range
+                          </div>
+                          <div className="mt-1">{safeTrim(generatedPricingGuidance?.total_range) || "Consult contractor for pricing"}</div>
+                        </div>
+                        <div className="rounded-md bg-white/80 px-3 py-2">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+                            Materials
+                          </div>
+                          <div className="mt-1">
+                            {generatedMaterials.length
+                              ? `${generatedMaterials.length} material ${generatedMaterials.length === 1 ? "category" : "categories"} suggested.`
+                              : "Materials suggestions are available in the Materials tab."}
+                          </div>
+                        </div>
+                        <div className="rounded-md bg-white/80 px-3 py-2">
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+                            Clarifications
+                          </div>
+                          <div className="mt-1">
+                            {generatedClarificationQuestions.length
+                              ? `${generatedClarificationQuestions.length} follow-up question${generatedClarificationQuestions.length === 1 ? "" : "s"} prepared.`
+                              : "Clarification questions are ready to edit."}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                 </SectionCard>
               ) : null}
 
@@ -1802,6 +1877,23 @@ export default function TemplatesPage() {
                   <div className="mb-3 text-[11px] text-slate-500">
                     Pricing is generated as part of the full AI template build and can be refined here before saving.
                   </div>
+
+                  {generatedPricingGuidance ? (
+                    <div
+                      data-testid="templates-generated-pricing-guidance"
+                      className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900"
+                    >
+                      <div className="text-xs font-semibold uppercase tracking-wide text-indigo-900">
+                        AI Pricing Guidance
+                      </div>
+                      <div className="mt-2 text-sm">
+                        Range: <span className="font-semibold">{safeTrim(generatedPricingGuidance?.total_range) || "Consult contractor for pricing"}</span>
+                      </div>
+                      <div className="mt-2 text-sm text-indigo-800">
+                        {formatGuidancePercentages(generatedPricingGuidance?.milestone_percentages)}
+                      </div>
+                    </div>
+                  ) : null}
 
                   <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
                     <table className="w-full text-sm">
@@ -2035,6 +2127,34 @@ export default function TemplatesPage() {
                     <br />
                     Milestone Materials should describe what is typically needed for that phase of work.
                   </div>
+
+                  {generatedMaterials.length ? (
+                    <div
+                      data-testid="templates-generated-materials-guidance"
+                      className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900"
+                    >
+                      <div className="text-xs font-semibold uppercase tracking-wide text-indigo-900">
+                        AI Materials Guidance
+                      </div>
+                      <div className="mt-2 space-y-3">
+                        {generatedMaterials.map((row, idx) => (
+                          <div key={`${row?.category || "materials"}-${idx}`} className="rounded-md bg-white/80 px-3 py-2">
+                            <div className="font-semibold text-indigo-900">
+                              {safeTrim(row?.category) || `Category ${idx + 1}`}
+                            </div>
+                            {Array.isArray(row?.options) && row.options.length ? (
+                              <div className="mt-1 text-sm text-indigo-800">
+                                Options: {row.options.slice(0, 4).map((item) => safeTrim(item)).filter(Boolean).join(", ")}
+                              </div>
+                            ) : null}
+                            {safeTrim(row?.notes) ? (
+                              <div className="mt-1 text-xs text-indigo-700">{row.notes}</div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
 
                   <div className="rounded-lg border border-slate-200 bg-white p-3">
                     <label className="mb-1 block text-sm font-medium text-slate-800">

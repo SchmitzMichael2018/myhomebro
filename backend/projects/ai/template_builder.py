@@ -56,6 +56,164 @@ def _safe_float(v: Any, default: float = 0.0) -> float:
         return default
 
 
+def _coerce_percentage(value: Any) -> str:
+    text = _safe_str(value)
+    if not text:
+        return ""
+    if text.endswith("%"):
+        return text
+    try:
+        number = float(text)
+    except Exception:
+        return text
+    if number <= 1:
+        number *= 100.0
+    if float(number).is_integer():
+        return f"{int(number)}%"
+    return f"{number:.1f}%"
+
+
+def _normalize_pricing(raw: Any, milestone_titles: List[str]) -> Dict[str, Any]:
+    if not isinstance(raw, dict):
+        raw = {}
+
+    total_range = _safe_str(raw.get("total_range")) or "Consult contractor for pricing"
+    incoming = raw.get("milestone_percentages")
+    percentages: List[Dict[str, Any]] = []
+    if isinstance(incoming, list):
+        for idx, row in enumerate(incoming, start=1):
+            if isinstance(row, dict):
+                title = _safe_str(row.get("milestone") or row.get("title") or row.get("label")) or (
+                    milestone_titles[idx - 1] if idx - 1 < len(milestone_titles) else f"Milestone {idx}"
+                )
+                percentages.append(
+                    {
+                        "milestone": title,
+                        "percentage": _coerce_percentage(row.get("percentage") or row.get("value")),
+                        "notes": _safe_str(row.get("notes")),
+                    }
+                )
+            elif _safe_str(row):
+                percentages.append(
+                    {
+                        "milestone": milestone_titles[idx - 1] if idx - 1 < len(milestone_titles) else f"Milestone {idx}",
+                        "percentage": _coerce_percentage(row),
+                        "notes": "",
+                    }
+                )
+
+    if not percentages and milestone_titles:
+        count = len(milestone_titles)
+        base = round(100 / max(count, 1), 1)
+        remaining = 100.0
+        for idx, title in enumerate(milestone_titles, start=1):
+            pct = base if idx < count else remaining
+            remaining = max(0.0, remaining - pct)
+            percentages.append(
+                {
+                    "milestone": title,
+                    "percentage": f"{pct:.1f}%" if not float(pct).is_integer() else f"{int(pct)}%",
+                    "notes": "",
+                }
+            )
+
+    return {
+        "total_range": total_range,
+        "milestone_percentages": percentages,
+    }
+
+
+def _normalize_materials(raw: Any) -> List[Dict[str, Any]]:
+    if not isinstance(raw, list):
+        return []
+
+    normalized: List[Dict[str, Any]] = []
+    for row in raw[:20]:
+        if not isinstance(row, dict):
+            continue
+        options = row.get("options") if isinstance(row.get("options"), list) else []
+        normalized.append(
+            {
+                "category": _safe_str(row.get("category")) or "Materials",
+                "options": [str(item).strip() for item in options if str(item).strip()],
+                "notes": _safe_str(row.get("notes")),
+            }
+        )
+    return normalized
+
+
+def _normalize_timeline_text(value: Any, fallback_days: int) -> str:
+    text = _safe_str(value)
+    if text:
+        return text
+    if fallback_days <= 0:
+        fallback_days = 1
+    return f"About {fallback_days} working days"
+
+
+def _milestone_guidance_text(payment_guidance: Any, notes: Any) -> str:
+    parts = [_safe_str(payment_guidance), _safe_str(notes)]
+    return " ".join(part for part in parts if part).strip()
+
+
+def _materials_hint_from_materials(materials: List[Dict[str, Any]]) -> str:
+    lines: List[str] = []
+    for row in materials[:8]:
+        category = _safe_str(row.get("category"))
+        options = row.get("options") if isinstance(row.get("options"), list) else []
+        notes = _safe_str(row.get("notes"))
+        pieces = [category]
+        if options:
+            pieces.append(", ".join(str(item) for item in options[:4] if str(item).strip()))
+        if notes:
+            pieces.append(notes)
+        line = " - ".join(part for part in pieces if part)
+        if line:
+            lines.append(line)
+    return "\n".join(lines)
+
+
+def _clarification_question_objects(questions: List[str]) -> List[Dict[str, Any]]:
+    normalized = []
+    for idx, question in enumerate(questions, start=1):
+        text = _safe_str(question)
+        if not text:
+            continue
+        normalized.append(
+            {
+                "key": f"clarification_{idx}",
+                "label": text,
+                "question": text,
+                "type": "text",
+                "required": False,
+                "options": [],
+                "help": "",
+            }
+        )
+    return normalized
+
+
+def _normalize_clarification_strings(raw: Any) -> List[str]:
+    if not isinstance(raw, list):
+        return []
+
+    out: List[str] = []
+    for row in raw[:25]:
+        if isinstance(row, dict):
+            text = (
+                _safe_str(row.get("question"))
+                or _safe_str(row.get("label"))
+                or _safe_str(row.get("text"))
+                or _safe_str(row.get("prompt"))
+                or _safe_str(row.get("help"))
+            )
+        else:
+            text = _safe_str(row)
+        if text:
+            out.append(text)
+    return out
+
+
 def _normalize_keyish(value: Any) -> str:
     s = _safe_str(value).lower()
     s = s.replace("&", " and ")
@@ -223,7 +381,9 @@ def _normalize_milestones(raw: Any) -> List[Dict[str, Any]]:
         if confidence not in {"low", "medium", "high"}:
             confidence = "low" if not (low_amount or high_amount or fixed_amount) else "medium"
 
-        source_note = _safe_str(row.get("pricing_source_note"))
+        payment_guidance = _safe_str(row.get("payment_guidance"))
+        notes = _safe_str(row.get("notes"))
+        source_note = _milestone_guidance_text(payment_guidance, notes)
         if not source_note:
             source_note = "AI estimate based on typical residential contractor pricing."
 
@@ -240,6 +400,8 @@ def _normalize_milestones(raw: Any) -> List[Dict[str, Any]]:
                 "suggested_amount_high": high_amount or None,
                 "pricing_confidence": confidence,
                 "pricing_source_note": source_note,
+                "payment_guidance": payment_guidance,
+                "notes": notes,
                 "recommended_days_from_start": (
                     None if raw_start_day in (None, "") and idx > 1 else max(start_day, 0)
                 ),
@@ -446,6 +608,48 @@ def create_template_from_scope(
                 "description": {"type": "string"},
                 "estimated_days": {"type": "integer"},
                 "project_materials_hint": {"type": "string"},
+                "pricing": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "total_range": {"type": "string"},
+                        "milestone_percentages": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "milestone": {"type": "string"},
+                                    "percentage": {"type": "string"},
+                                    "notes": {"type": "string"},
+                                },
+                                "required": ["milestone", "percentage", "notes"],
+                            },
+                        },
+                    },
+                    "required": ["total_range", "milestone_percentages"],
+                },
+                "materials": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "category": {"type": "string"},
+                            "options": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "notes": {"type": "string"},
+                        },
+                        "required": ["category", "options", "notes"],
+                    },
+                },
+                "timeline": {"type": "string"},
+                "clarification_questions": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
                 "default_clarifications": {
                     "type": "array",
                     "items": {
@@ -517,6 +721,10 @@ def create_template_from_scope(
                 "description",
                 "estimated_days",
                 "project_materials_hint",
+                "pricing",
+                "materials",
+                "timeline",
+                "clarification_questions",
                 "default_clarifications",
                 "milestones",
             ],
@@ -542,21 +750,36 @@ def create_template_from_scope(
     payload = json.loads(getattr(resp, "output_text", "") or "{}")
 
     milestones = _normalize_milestones(payload.get("milestones"))
+    pricing = _normalize_pricing(payload.get("pricing"), [m.get("title") for m in milestones])
+    materials = _normalize_materials(payload.get("materials"))
+    timeline = _normalize_timeline_text(payload.get("timeline"), max(_safe_int(payload.get("estimated_days"), 1), 1))
+    clarification_questions = _normalize_clarification_strings(payload.get("clarification_questions"))
     questions = _canonicalize_questions(payload.get("default_clarifications"))
+
+    if not questions:
+        questions = _clarification_question_objects(clarification_questions)
 
     if not milestones:
         raise RuntimeError("AI returned no template milestones.")
+
+    project_materials_hint = _safe_str(payload.get("project_materials_hint")) or _materials_hint_from_materials(materials)
+    default_scope = _safe_str(payload.get("default_scope")) or _safe_str(payload.get("description")) or _safe_str(description)
+    estimated_days = max(_safe_int(payload.get("estimated_days"), 1), 1)
 
     return {
         "name": _safe_str(payload.get("name")) or _safe_str(name) or "New Template Draft",
         "project_type": _safe_str(payload.get("project_type")) or _safe_str(project_type),
         "project_subtype": _safe_str(payload.get("project_subtype")) or _safe_str(project_subtype),
         "description": _safe_str(payload.get("description")) or _safe_str(description),
-        "estimated_days": max(_safe_int(payload.get("estimated_days"), 1), 1),
-        "project_materials_hint": _safe_str(payload.get("project_materials_hint")),
-        "default_scope": _safe_str(payload.get("description")) or _safe_str(description),
+        "estimated_days": estimated_days,
+        "project_materials_hint": project_materials_hint,
+        "default_scope": default_scope,
         "default_clarifications": questions,
         "milestones": milestones,
+        "pricing": pricing,
+        "materials": materials,
+        "timeline": timeline,
+        "clarification_questions": clarification_questions,
         "_model": model,
     }
 

@@ -14126,3 +14126,100 @@ class CustomerPortalAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertIn("Invalid portal link", response.data["detail"])
+
+
+class TemplateAIGenerationTests(TestCase):
+    def test_create_template_from_scope_returns_structured_guidance_bundle(self):
+        from projects.ai.template_builder import create_template_from_scope
+
+        fake_payload = {
+            "name": "Kitchen Remodel Starter",
+            "project_type": "Remodel",
+            "project_subtype": "Kitchen Remodel",
+            "description": "Reusable kitchen remodel scope covering planning, install, and closeout phases.",
+            "estimated_days": 14,
+            "project_materials_hint": "Cabinetry, trim, fasteners, sealant, cleanup materials.",
+            "pricing": {
+                "total_range": "$18,000-$28,000",
+                "milestone_percentages": [
+                    {
+                        "milestone": "Planning & site protection",
+                        "percentage": "15%",
+                        "notes": "Mobilization and protection.",
+                    },
+                    {
+                        "milestone": "Demolition & rough prep",
+                        "percentage": "35%",
+                        "notes": "Demo and prep work.",
+                    },
+                ],
+            },
+            "materials": [
+                {
+                    "category": "Project Materials",
+                    "options": ["Cabinetry", "Trim", "Fasteners", "Sealant"],
+                    "notes": "Use cabinet-grade materials and finish supplies.",
+                }
+            ],
+            "timeline": "About 14 working days",
+            "clarification_questions": [
+                "Confirm access to the property",
+                "Are material selections already made?",
+            ],
+            "default_clarifications": [
+                {
+                    "key": "access",
+                    "label": "Confirm access to the property",
+                    "type": "text",
+                    "required": False,
+                    "options": [],
+                    "help": "Confirm access and site readiness.",
+                }
+            ],
+            "milestones": [
+                {
+                    "title": "Planning & site protection",
+                    "description": "Confirm scope and protect the work area.",
+                    "sort_order": 1,
+                    "normalized_milestone_type": "site_prep",
+                    "suggested_amount_fixed": 2500,
+                    "suggested_amount_low": 2000,
+                    "suggested_amount_high": 3000,
+                    "pricing_confidence": "medium",
+                    "pricing_source_note": "Based on typical planning and setup effort.",
+                    "payment_guidance": "Use an initial deposit to cover setup and mobilization.",
+                    "notes": "Do not start demolition until selections are confirmed.",
+                    "recommended_days_from_start": 0,
+                    "recommended_duration_days": 2,
+                    "materials_hint": "Protection materials and basic setup supplies.",
+                    "is_optional": False,
+                }
+            ],
+        }
+
+        fake_client = SimpleNamespace(
+            responses=SimpleNamespace(
+                create=lambda **kwargs: SimpleNamespace(output_text=json.dumps(fake_payload))
+            )
+        )
+
+        with patch("projects.ai.template_builder._require_openai_client", return_value=fake_client), patch(
+            "projects.ai.template_builder._model_name",
+            return_value="test-model",
+        ):
+            result = create_template_from_scope(
+                name="Kitchen Remodel Starter",
+                project_type="Remodel",
+                project_subtype="Kitchen Remodel",
+                description="Kitchen remodel with planning, install, and closeout.",
+            )
+
+        self.assertEqual(result["description"], fake_payload["description"])
+        self.assertEqual(result["timeline"], "About 14 working days")
+        self.assertEqual(result["pricing"]["total_range"], "$18,000-$28,000")
+        self.assertEqual(result["pricing"]["milestone_percentages"][0]["milestone"], "Planning & site protection")
+        self.assertEqual(result["materials"][0]["category"], "Project Materials")
+        self.assertEqual(result["clarification_questions"], fake_payload["clarification_questions"])
+        self.assertTrue(result["default_clarifications"])
+        self.assertEqual(result["milestones"][0]["payment_guidance"], "Use an initial deposit to cover setup and mobilization.")
+        self.assertEqual(result["milestones"][0]["notes"], "Do not start demolition until selections are confirmed.")

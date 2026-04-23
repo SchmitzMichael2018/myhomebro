@@ -273,6 +273,39 @@ async function installTemplateRoutes(page, store) {
         default_clarifications: [
           { key: 'access', label: 'Access to the property', help: 'Confirm access and site readiness.' },
         ],
+        pricing: {
+          total_range: isDeck ? '$12,000-$18,000' : '$18,000-$28,000',
+          milestone_percentages: isDeck
+            ? [
+                { milestone: 'Layout & permits', percentage: '20%', notes: 'Initial planning and permit coordination.' },
+                { milestone: 'Framing & structure', percentage: '45%', notes: 'Structural build and framing work.' },
+              ]
+            : [
+                { milestone: 'Planning & site protection', percentage: '15%', notes: 'Mobilization and protection.' },
+                { milestone: 'Demolition & rough prep', percentage: '35%', notes: 'Demo and prep work.' },
+                { milestone: 'Electrical rough', percentage: '50%', notes: 'Rough-in and finish readiness.' },
+              ],
+        },
+        materials: isDeck
+          ? [
+              {
+                category: 'Project Materials',
+                options: ['Decking boards', 'Framing lumber', 'Fasteners', 'Rail components'],
+                notes: 'Use exterior-rated materials and weather-resistant fasteners.',
+              },
+            ]
+          : [
+              {
+                category: 'Project Materials',
+                options: ['Cabinetry', 'Trim', 'Fasteners', 'Sealant'],
+                notes: 'Use cabinet-grade materials and finish supplies.',
+              },
+            ],
+        timeline: isDeck ? 'About 12 working days' : 'About 14 working days',
+        clarification_questions: [
+          'Confirm access to the property',
+          'Are material selections already made?',
+        ],
         project_materials_hint: isDeck
           ? 'Decking, framing lumber, fasteners, rail components, sealant.'
           : 'Cabinetry, trim, fasteners, sealant, and cleanup materials.',
@@ -861,7 +894,12 @@ test('template AI top action generates a draft from a prompt and template contex
   await page.getByTestId('templates-ai-prompt-input').fill('Kitchen remodel with demo, cabinets, and closeout.');
   await page.getByTestId('templates-generate-ai-button').click();
 
-  await expect(page.getByTestId('templates-tab-milestones')).toBeVisible();
+  await expect(page.getByTestId('templates-generated-ai-summary')).toContainText('About 14 working days');
+  await expect(page.getByTestId('templates-generated-ai-summary')).toContainText('2 follow-up questions prepared');
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+    /Reusable kitchen remodel scope/
+  );
+
   await page.getByTestId('templates-tab-milestones').click();
   await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue(
     'Planning & site protection'
@@ -869,9 +907,19 @@ test('template AI top action generates a draft from a prompt and template contex
   await expect(page.getByTestId('templates-milestone-title-2')).toHaveValue(
     'Demolition & rough prep'
   );
-  await page.getByTestId('templates-tab-setup').click();
-  await expect(page.getByTestId('templates-description-input')).toHaveValue(
-    /Reusable kitchen remodel scope/
+  await page.getByTestId('templates-tab-pricing').click();
+  await expect(page.getByTestId('templates-generated-pricing-guidance')).toContainText(
+    '$18,000-$28,000'
+  );
+  await expect(page.getByTestId('templates-generated-pricing-guidance')).toContainText(
+    'Planning & site protection: 15%'
+  );
+  await page.getByTestId('templates-tab-materials').click();
+  await expect(page.getByTestId('templates-generated-materials-guidance')).toContainText(
+    'Project Materials'
+  );
+  await expect(page.getByTestId('templates-generated-materials-guidance')).toContainText(
+    'Cabinetry'
   );
 });
 
