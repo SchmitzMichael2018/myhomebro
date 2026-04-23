@@ -378,16 +378,6 @@ export default function TemplatesPage() {
       });
       const rows = Array.isArray(data) ? data : data?.results || [];
       setTemplates(rows);
-
-      if (
-        !creatingNew &&
-        ((!selectedId || !rows.some((row) => String(row.id) === String(selectedId))) && rows.length)
-      ) {
-        setSelectedId(rows[0].id);
-      }
-      if (!rows.length && !creatingNew) {
-        setSelectedId(null);
-      }
     } catch (e) {
       setErr(
         e?.response?.data?.detail ||
@@ -565,6 +555,25 @@ export default function TemplatesPage() {
       default_clarifications: [],
       project_materials_hint: seed?.project_materials_hint ?? "",
     });
+    setEditMilestones([buildBlankMilestone(1)]);
+  }
+
+  function clearTemplateSelection() {
+    setSelectedId(null);
+    setSelectedDetail(null);
+    setDetailErr("");
+    setGeneratedAiDraft(null);
+    setAiGenerationError("");
+    setAiGenerationPartialSections([]);
+    setAiGenerationRecoveryMode(false);
+    setAiGenerationRecoveryNote("");
+    setAiGenerationStageIndex(-1);
+    setCreatingNew(false);
+    setEditMode(false);
+    setActiveTab("setup");
+    setTemplateAiPrompt("");
+    setAssistantPrefillBanner("");
+    setEditHeader(buildBlankHeader());
     setEditMilestones([buildBlankMilestone(1)]);
   }
 
@@ -815,7 +824,7 @@ export default function TemplatesPage() {
       setTemplates(next);
 
       if (String(selectedId) === String(template.id)) {
-        setSelectedId(next[0]?.id || null);
+        clearTemplateSelection();
       }
     } catch (e) {
       toast.error(
@@ -1049,18 +1058,18 @@ export default function TemplatesPage() {
   }
 
   async function handleGenerateTemplateWithAi() {
-
-    if (!safeTrim(templateAiPrompt) && !safeTrim(currentHeader?.description) && !safeTrim(currentHeader?.name)) {
-      toast.error("Describe the job or add a template name first.");
+    const prompt = safeTrim(templateAiPrompt);
+    if (!prompt) {
+      toast.error("Describe the job first.");
       return;
     }
 
     const generationSeed = {
       name: "",
-      project_type: currentHeader?.project_type,
-      project_subtype: currentHeader?.project_subtype,
-      description: currentHeader?.description || templateAiPrompt,
-      project_materials_hint: currentHeader?.project_materials_hint,
+      project_type: "",
+      project_subtype: "",
+      description: prompt,
+      project_materials_hint: "",
     };
 
     openDraftForGeneration(generationSeed);
@@ -1586,7 +1595,28 @@ export default function TemplatesPage() {
             <div className="px-4 py-6 text-sm text-red-600">{detailErr}</div>
           ) : !selectedTemplate && !creatingNew ? (
             <div className="px-4 py-6 text-sm text-slate-500">
-              Start a new template manually or generate one with AI.
+              <div className="text-base font-semibold text-slate-900">
+                Start a new template or select one from your library.
+              </div>
+              <div className="mt-1">
+                Use the actions below to begin with a blank draft or let AI open one for you.
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={startNewTemplate}
+                  className="rounded-xl border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50"
+                >
+                  New Template Draft
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGenerateTemplateWithAi}
+                  className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700"
+                >
+                  Generate Draft with AI
+                </button>
+              </div>
             </div>
           ) : (
             <div className="p-4" data-testid="templates-draft-editor" ref={editorPanelRef}>
@@ -1739,6 +1769,17 @@ export default function TemplatesPage() {
                     ) : null}
                   </div>
                 </div>
+                {!creatingNew && selectedTemplate ? (
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={clearTemplateSelection}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Back to Start
+                    </button>
+                  </div>
+                ) : null}
               </div>
 
               <div className="mb-4 flex flex-wrap gap-2">

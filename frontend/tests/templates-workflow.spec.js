@@ -900,6 +900,8 @@ test('template AI top action generates a draft from a prompt and template contex
 
   const libraryCards = page.locator('[data-testid^="template-discovery-card-"]');
   await expect(libraryCards).toHaveCount(2);
+  await expect(page.getByText('Start a new template or select one from your library.')).toBeVisible();
+  await expect(page.getByTestId('templates-draft-editor')).toHaveCount(0);
 
   await page.getByTestId('templates-ai-prompt-input').fill('Deck build with framing, decking, railings, and closeout.');
   await page.getByTestId('templates-generate-ai-button').click();
@@ -941,6 +943,89 @@ test('template AI top action generates a draft from a prompt and template contex
   await expect(
     page.locator('[data-testid^="template-discovery-card-"]').filter({ hasText: 'Deck Build Template' })
   ).toHaveCount(1);
+});
+
+test('templates page can return to a neutral start state and top-level AI uses a blank seed', async ({
+  page,
+}) => {
+  await installWorkflowMocks(page);
+
+  let observedPayload = null;
+  await page.route('**/api/projects/templates/ai/create-from-scope/', async (route) => {
+    observedPayload = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        name: 'Deck Build Template',
+        project_type: 'Outdoor',
+        project_subtype: 'Deck Build',
+        description: 'Reusable deck scope covering layout, framing, decking, railings, and closeout.',
+        estimated_days: 12,
+        default_scope: 'Reusable deck scope covering layout, framing, decking, railings, and closeout.',
+        default_clarifications: [],
+        project_materials_hint: 'Decking boards, framing lumber, rail components, fasteners.',
+        milestones: [
+          {
+            title: 'Layout & permits',
+            description: 'Confirm layout and permits.',
+            sort_order: 1,
+            normalized_milestone_type: 'site_prep',
+            suggested_amount_fixed: 1000,
+            suggested_amount_low: 800,
+            suggested_amount_high: 1200,
+            pricing_confidence: 'medium',
+            pricing_source_note: 'Initial planning allowance.',
+            recommended_days_from_start: 0,
+            recommended_duration_days: 1,
+            materials_hint: 'Protection materials',
+            is_optional: false,
+          },
+        ],
+        pricing: {
+          total_range: '$12,000-$18,000',
+          milestone_percentages: [{ milestone: 'Layout & permits', percentage: '20%', notes: '' }],
+        },
+        materials: [
+          {
+            category: 'Project Materials',
+            options: ['Decking boards', 'Framing lumber'],
+            notes: 'Exterior-rated materials',
+          },
+        ],
+        timeline: 'About 12 working days',
+        clarification_questions: ['Confirm access'],
+        sections_status: {
+          description: 'generated',
+          milestones: 'generated',
+          pricing: 'generated',
+          materials: 'generated',
+          clarifications: 'generated',
+        },
+      }),
+    });
+  });
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('template-discovery-card-88').click();
+  await expect(page.getByTestId('templates-detail-name')).toContainText('Kitchen Remodel Starter');
+
+  await page.getByRole('button', { name: 'Back to Start' }).click();
+  await expect(page.getByText('Start a new template or select one from your library.')).toBeVisible();
+  await expect(page.getByTestId('templates-draft-editor')).toHaveCount(0);
+
+  await page.getByTestId('templates-ai-prompt-input').fill('Deck build with framing, decking, railings, and closeout.');
+  await page.getByTestId('templates-generate-ai-button').click();
+
+  await expect.poll(() => observedPayload).not.toBeNull();
+  expect(observedPayload.name).toBe('');
+  expect(observedPayload.project_type).toBe('');
+  expect(observedPayload.project_subtype).toBe('');
+  expect(observedPayload.project_materials_hint ?? '').toBe('');
+  expect(observedPayload.description).toBe('Deck build with framing, decking, railings, and closeout.');
+
+  await expect(page.getByTestId('templates-draft-editor')).toBeVisible();
+  await expect(page.getByTestId('templates-detail-name')).toContainText('Deck Build Template');
 });
 
 test('template AI shows section-aware progress while generation is pending', async ({ page }) => {
