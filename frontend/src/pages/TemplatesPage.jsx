@@ -521,17 +521,36 @@ export default function TemplatesPage() {
       })
       .join(" • ");
   }
-  function startNewTemplate() {
+  function openBlankDraftEditor() {
     setSelectedId(null);
     setSelectedDetail(null);
     setDetailErr("");
     setGeneratedAiDraft(null);
-    setEditHeader(buildBlankHeader());
-    setEditMilestones([buildBlankMilestone(1)]);
     setCreatingNew(true);
     setEditMode(true);
     setActiveTab("setup");
+  }
+
+  function startNewTemplate() {
+    openBlankDraftEditor();
+    setEditHeader(buildBlankHeader());
+    setEditMilestones([buildBlankMilestone(1)]);
     setTemplateAiPrompt("");
+  }
+
+  function openDraftForGeneration(seed = {}) {
+    openBlankDraftEditor();
+    setEditHeader({
+      ...buildBlankHeader(),
+      name: safeTrim(seed?.name) || "",
+      project_type: seed?.project_type ?? "",
+      project_subtype: seed?.project_subtype ?? "",
+      description: seed?.description ?? "",
+      default_scope: seed?.description ?? "",
+      default_clarifications: [],
+      project_materials_hint: seed?.project_materials_hint ?? "",
+    });
+    setEditMilestones([buildBlankMilestone(1)]);
   }
 
   useEffect(() => {
@@ -898,10 +917,11 @@ export default function TemplatesPage() {
     }
   }
 
-  async function handleAiCreateFromScope() {
+  async function handleAiCreateFromScope(seed = null) {
     const prompt = safeTrim(templateAiPrompt);
-    const descriptionSeed = safeTrim(currentHeader?.description || prompt);
-    const nameSeed = safeTrim(currentHeader?.name);
+    const headerSource = seed || currentHeader || {};
+    const descriptionSeed = safeTrim(headerSource?.description || prompt);
+    const nameSeed = safeTrim(headerSource?.name);
 
     if (!descriptionSeed && !nameSeed) {
       toast.error("Add a template name or describe the job first.");
@@ -912,15 +932,15 @@ export default function TemplatesPage() {
       setAiBusy(true);
       const { data } = await api.post("/projects/templates/ai/create-from-scope/", {
         name: nameSeed,
-        project_type: currentHeader?.project_type,
-        project_subtype: currentHeader?.project_subtype,
+        project_type: headerSource?.project_type,
+        project_subtype: headerSource?.project_subtype,
         description: descriptionSeed,
         prompt,
       });
 
       setEditHeader({
-        ...currentHeader,
-        name: data?.name || currentHeader?.name || "",
+        ...headerSource,
+        name: data?.name || headerSource?.name || "",
         project_type: data?.project_type || "",
         project_subtype: data?.project_subtype || "",
         description: data?.description || "",
@@ -967,7 +987,25 @@ export default function TemplatesPage() {
       return;
     }
 
-    await handleAiCreateFromScope();
+    const generationSeed = {
+      name: "",
+      project_type: currentHeader?.project_type,
+      project_subtype: currentHeader?.project_subtype,
+      description: currentHeader?.description || templateAiPrompt,
+      project_materials_hint: currentHeader?.project_materials_hint,
+    };
+
+    if (!creatingNew) {
+      openDraftForGeneration(generationSeed);
+    }
+
+    if (creatingNew && !selectedDetail && !safeTrim(currentHeader?.name)) {
+      openBlankDraftEditor();
+    }
+
+    await handleAiCreateFromScope(
+      creatingNew ? null : generationSeed
+    );
   }
 
   async function handleRefreshMaterialsFromAi() {
@@ -1060,10 +1098,10 @@ export default function TemplatesPage() {
               {aiBusy ? "Working…" : "✨ Generate Template with AI"}
             </button>
           </div>
-          <div className="flex flex-col gap-2 sm:max-w-lg">
-            <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-              Generate full template based on your project
-            </label>
+            <div className="flex flex-col gap-2 sm:max-w-lg">
+              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                Generate full template based on your project
+              </label>
             <input
               data-testid="templates-ai-prompt-input"
               type="text"
@@ -1075,6 +1113,11 @@ export default function TemplatesPage() {
             <div className="text-[11px] text-slate-500">
               AI will draft the description, milestones, pricing guidance, materials, timeline, and clarifying questions.
             </div>
+          </div>
+          <div className="text-[11px] text-slate-500">
+            <span className="font-semibold text-slate-700">New Template Draft:</span> Start with a blank template.
+            <span className="mx-2 text-slate-300">|</span>
+            <span className="font-semibold text-slate-700">Generate Template with AI:</span> Describe the project and AI will open a draft template for you.
           </div>
         </div>
       }
@@ -1420,7 +1463,7 @@ export default function TemplatesPage() {
             <div className="px-4 py-6 text-sm text-red-600">{detailErr}</div>
           ) : !selectedTemplate && !creatingNew ? (
             <div className="px-4 py-6 text-sm text-slate-500">
-              Choose a template from the left to start editing, or create a new template.
+              Start a new template manually or generate one with AI.
             </div>
           ) : (
             <div className="p-4">
@@ -1442,7 +1485,7 @@ export default function TemplatesPage() {
                     <h2 data-testid="templates-detail-name" className="text-lg font-bold text-slate-900">
                       {safeTrim(currentHeader?.name) || "Untitled Template"}
                     </h2>
-                    {creatingNew && generatedAiDraft ? (
+                    {creatingNew ? (
                       <span
                         data-testid="templates-unsaved-draft-badge"
                         className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800"

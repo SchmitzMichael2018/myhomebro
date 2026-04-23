@@ -893,7 +893,6 @@ test('template AI top action generates a draft from a prompt and template contex
   const libraryCards = page.locator('[data-testid^="template-discovery-card-"]');
   await expect(libraryCards).toHaveCount(2);
 
-  await page.getByTestId('templates-new-draft-button').click();
   await page.getByTestId('templates-ai-prompt-input').fill('Deck build with framing, decking, railings, and closeout.');
   await page.getByTestId('templates-generate-ai-button').click();
 
@@ -901,6 +900,7 @@ test('template AI top action generates a draft from a prompt and template contex
     'Review and edit below, then click Save Template'
   );
   await expect(page.getByTestId('templates-unsaved-draft-badge')).toContainText('Unsaved Draft');
+  await expect(page.getByTestId('templates-save-button')).toBeVisible();
   await expect(page.getByTestId('templates-generated-ai-summary')).toContainText('About 12 working days');
   await expect(page.getByTestId('templates-generated-ai-summary')).toContainText('2 follow-up questions prepared');
   await expect(page.getByTestId('templates-description-input')).toHaveValue(/Reusable deck scope/);
@@ -928,7 +928,23 @@ test('template AI top action generates a draft from a prompt and template contex
   await page.getByTestId('templates-save-button').click();
   await expect(page.getByText('Template created.')).toBeVisible();
   await expect(libraryCards).toHaveCount(3);
-  await expect(page.getByRole('button', { name: 'Deck Build Template' })).toBeVisible();
+  await expect(
+    page.locator('[data-testid^="template-discovery-card-"]').filter({ hasText: 'Deck Build Template' })
+  ).toHaveCount(1);
+});
+
+test('new template draft opens a blank editor immediately', async ({ page }) => {
+  await installWorkflowMocks(page);
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('templates-new-draft-button').click();
+
+  await expect(page.getByTestId('templates-unsaved-draft-badge')).toBeVisible();
+  await expect(page.getByTestId('templates-save-button')).toBeVisible();
+  await expect(page.getByTestId('templates-name-input')).toHaveValue('');
+  await expect(page.getByTestId('templates-description-input')).toHaveValue('');
+  await expect(page.getByText('Unsaved Draft')).toBeVisible();
 });
 
 test('template inline AI can improve description field text', async ({ page }) => {
