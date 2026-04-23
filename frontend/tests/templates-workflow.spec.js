@@ -1258,37 +1258,7 @@ test('template inline AI can suggest type and subtype from the current scope', a
   await expect(page.getByTestId('templates-project-subtype-input')).toHaveValue('Deck Build');
 });
 
-test('template milestone types use the canonical select vocabulary during manual editing', async ({
-  page,
-}) => {
-  await installWorkflowMocks(page);
-
-  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
-
-  await page.getByTestId('templates-new-draft-button').click();
-  await page.getByTestId('templates-name-input').fill('Canonical Type Template');
-  await page.getByTestId('templates-project-type-input').fill('Remodel');
-  await page.getByTestId('templates-project-subtype-input').fill('Kitchen Remodel');
-  await page.getByTestId('templates-tab-milestones').click();
-
-  await expect(page.getByTestId('templates-milestone-type-1')).toHaveValue('');
-  await page.getByTestId('templates-milestone-type-1').selectOption('cabinetry');
-  await expect(page.getByTestId('templates-milestone-type-1')).toHaveValue('cabinetry');
-
-  const optionValues = await page
-    .getByTestId('templates-milestone-type-1')
-    .locator('option')
-    .evaluateAll((options) => options.map((option) => option.getAttribute('value')));
-
-  expect(optionValues).toContain('cabinetry');
-  expect(optionValues).toContain('site_prep');
-  expect(optionValues).toContain('inspection');
-  expect(optionValues).not.toContain('cabinet_installation');
-  expect(optionValues).not.toContain('site_preparation');
-  expect(optionValues).not.toContain('final_walkthrough');
-});
-
-test('template milestone preview shows human-friendly type labels while saved values remain canonical', async ({
+test('template milestone editor no longer shows a type dropdown and still saves milestones', async ({
   page,
 }) => {
   const { store } = await installWorkflowMocks(page);
@@ -1296,33 +1266,60 @@ test('template milestone preview shows human-friendly type labels while saved va
   await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
 
   await page.getByTestId('templates-new-draft-button').click();
-  await page.getByTestId('templates-name-input').fill('Friendly Type Preview Template');
+  await page.getByTestId('templates-name-input').fill('Milestone Draft Template');
   await page.getByTestId('templates-project-type-input').fill('Remodel');
   await page.getByTestId('templates-project-subtype-input').fill('Kitchen Remodel');
-  await page.getByTestId('templates-description-input').fill(
-    'Reusable kitchen template with planning and finish milestones.'
-  );
   await page.getByTestId('templates-tab-milestones').click();
+
+  await expect(page.getByTestId('templates-milestone-type-1')).toHaveCount(0);
+
   await page.getByTestId('templates-milestone-title-1').fill('Project setup');
   await page.getByTestId('templates-milestone-description-1').fill(
     'Prepare the site and confirm the work sequence.'
   );
-  await page.getByTestId('templates-milestone-type-1').selectOption('site_prep');
+  await page.getByTestId('templates-add-milestone-button').click();
+  await page.getByTestId('templates-milestone-title-2').fill('Closeout');
+  await page.getByTestId('templates-milestone-description-2').fill(
+    'Review the work and finalize the template scope.'
+  );
 
   await page.getByTestId('templates-save-button').click();
 
   await expect(page.getByText('Template created.')).toBeVisible();
-  await expect(page.getByTestId('templates-preview-milestone-type-1')).toContainText(
-    'Type: Site Prep'
-  );
-  await expect(page.getByTestId('templates-preview-milestone-type-1')).not.toContainText(
-    'site_prep'
-  );
   await expect
-    .poll(() => store.templates.find((row) => row.name === 'Friendly Type Preview Template'))
+    .poll(() => store.templates.find((row) => row.name === 'Milestone Draft Template'))
     .toMatchObject({
-      milestones: [{ normalized_milestone_type: 'site_prep' }],
+      name: 'Milestone Draft Template',
+      milestones: [
+        { title: 'Project setup' },
+        { title: 'Closeout' },
+      ],
     });
+  await expect(page.getByTestId('templates-detail-name')).toContainText(
+    'Milestone Draft Template'
+  );
+});
+
+test('template AI-generated milestones still render while type controls stay hidden', async ({
+  page,
+}) => {
+  await installWorkflowMocks(page);
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('templates-ai-prompt-input').fill(
+    'Kitchen remodel with cabinets, trim, and finish work.'
+  );
+  await page.getByTestId('templates-generate-ai-button').click();
+
+  await expect(page.getByTestId('templates-draft-editor')).toBeVisible();
+  await expect(page.getByTestId('templates-milestone-type-1')).toHaveCount(0);
+  await page.getByTestId('templates-tab-milestones').click();
+  await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue(
+    'Planning & site protection'
+  );
+  await expect(page.getByTestId('templates-milestone-description-1')).toHaveValue(
+    'Confirm reusable kitchen scope and protect the work area.'
+  );
 });
 
 test('wizard save as template stores the current setup and supports reuse in a later wizard visit', async ({

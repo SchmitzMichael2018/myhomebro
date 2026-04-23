@@ -10,8 +10,6 @@ import {
 } from "../lib/assistantHandoff.js";
 import {
   canonicalizeTemplateMilestoneType,
-  labelForTemplateMilestoneType,
-  TEMPLATE_MILESTONE_TYPE_OPTIONS,
 } from "../lib/milestoneTypes.js";
 
 function safeTrim(v) {
@@ -89,6 +87,10 @@ function normalizeClarifications(items) {
 
 function normalizeTitleForMatch(value) {
   return safeTrim(value).toLowerCase().replace(/\s+/g, " ");
+}
+
+function standardizeTemplateMilestoneType(value = "", fallbackText = "") {
+  return canonicalizeTemplateMilestoneType(value, fallbackText) || "";
 }
 
 function OptionBadge({ ownerType }) {
@@ -233,7 +235,10 @@ function normalizeMilestoneForEdit(m, idx) {
     title: m?.title ?? "",
     description: m?.description ?? "",
     sort_order: m?.sort_order ?? idx + 1,
-    normalized_milestone_type: m?.normalized_milestone_type ?? "",
+    normalized_milestone_type: standardizeTemplateMilestoneType(
+      m?.normalized_milestone_type ?? "",
+      `${m?.title ?? ""} ${m?.description ?? ""}`
+    ),
     suggested_amount_fixed: m?.suggested_amount_fixed ?? "",
     suggested_amount_low: m?.suggested_amount_low ?? "",
     suggested_amount_high: m?.suggested_amount_high ?? "",
@@ -285,7 +290,10 @@ function buildTemplatePayload(header, milestones) {
       title: m?.title ?? "",
       description: m?.description ?? "",
       sort_order: Number(m?.sort_order || idx + 1) || idx + 1,
-      normalized_milestone_type: m?.normalized_milestone_type ?? "",
+      normalized_milestone_type: standardizeTemplateMilestoneType(
+        m?.normalized_milestone_type ?? "",
+        `${m?.title ?? ""} ${m?.description ?? ""}`
+      ),
       suggested_amount_fixed:
         m?.suggested_amount_fixed === "" ? null : m?.suggested_amount_fixed,
       suggested_amount_low:
@@ -2073,25 +2081,6 @@ export default function TemplatesPage() {
                                 />
                               </div>
 
-                              <div>
-                                <label className="mb-1 block text-xs font-semibold text-slate-700">Type</label>
-                                <select
-                                  data-testid={`templates-milestone-type-${idx + 1}`}
-                                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                                  value={m?.normalized_milestone_type || ""}
-                                  onChange={(e) =>
-                                    updateMilestone(idx, { normalized_milestone_type: e.target.value })
-                                  }
-                                  onFocus={() => setAssistantField("milestones")}
-                                >
-                                  {TEMPLATE_MILESTONE_TYPE_OPTIONS.map((option) => (
-                                    <option key={option.value || "blank"} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-
                               <div className="md:col-span-4">
                                 <label className="mb-1 block text-xs font-semibold text-slate-700">Description</label>
                                 <textarea
@@ -2134,16 +2123,6 @@ export default function TemplatesPage() {
                             <div className="mt-1 text-xs text-slate-600">{m.description}</div>
                           ) : null}
                           <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-600">
-                            {safeTrim(m?.normalized_milestone_type) ? (
-                              <span
-                                className="rounded bg-slate-100 px-2 py-1"
-                                data-testid={`templates-preview-milestone-type-${idx + 1}`}
-                              >
-                                Type:{" "}
-                                {labelForTemplateMilestoneType(m.normalized_milestone_type) ||
-                                  m.normalized_milestone_type}
-                              </span>
-                            ) : null}
                             {m?.is_optional ? (
                               <span className="rounded bg-slate-100 px-2 py-1">Optional</span>
                             ) : null}
