@@ -23,6 +23,7 @@ from projects.models import (
     ExternalPaymentRecord,
     ExternalPaymentStatus,
     ExpenseRequest,
+    ExpenseStatus,
     Invoice,
     InvoiceStatus,
     Milestone,
@@ -631,8 +632,20 @@ def _record_is_paid_like(record) -> bool:
     if isinstance(record, DrawRequest):
         return status in {DrawRequestStatus.RELEASED, DrawRequestStatus.PAID} or getattr(record, "paid_at", None) is not None or getattr(record, "released_at", None) is not None
     if isinstance(record, ExpenseRequest):
-        return status == ExpenseRequest.Status.PAID or getattr(record, "paid_at", None) is not None
+        return _expense_request_status_is(record, "PAID") or getattr(record, "paid_at", None) is not None
     return False
+
+
+def _expense_request_status_is(record, *status_names) -> bool:
+    status = str(getattr(record, "status", "") or "").lower()
+    values = {str(name).lower() for name in status_names}
+    status_enum = getattr(ExpenseRequest, "Status", None)
+    for name in status_names:
+        if status_enum is not None and hasattr(status_enum, name):
+            values.add(str(getattr(status_enum, name)).lower())
+        if hasattr(ExpenseStatus, name):
+            values.add(str(getattr(ExpenseStatus, name)).lower())
+    return status in values
 
 
 def _record_is_pending_release(record) -> bool:
@@ -642,7 +655,7 @@ def _record_is_pending_release(record) -> bool:
     if isinstance(record, DrawRequest):
         return status in {DrawRequestStatus.APPROVED, DrawRequestStatus.AWAITING_RELEASE}
     if isinstance(record, ExpenseRequest):
-        return status == ExpenseRequest.Status.APPROVED
+        return _expense_request_status_is(record, "HOMEOWNER_ACCEPTED", "APPROVED")
     return False
 
 
@@ -653,7 +666,7 @@ def _record_is_on_hold(record) -> bool:
     if isinstance(record, DrawRequest):
         return status in {DrawRequestStatus.REJECTED, DrawRequestStatus.CHANGES_REQUESTED}
     if isinstance(record, ExpenseRequest):
-        return status == ExpenseRequest.Status.DISPUTED
+        return _expense_request_status_is(record, "HOMEOWNER_REJECTED", "DISPUTED")
     return False
 
 

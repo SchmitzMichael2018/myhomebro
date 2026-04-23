@@ -8413,6 +8413,24 @@ class BusinessDashboardPerformanceTests(TestCase):
         self.assertTrue(recent_events)
         self.assertIn("activity_at", recent_events[0])
 
+    def test_business_dashboard_handles_expense_request_statuses_without_enum_crash(self):
+        ExpenseRequest.objects.create(
+            agreement=self.agreement,
+            description="Approved expense",
+            amount=Decimal("125.00"),
+            status=ExpenseRequest.Status.HOMEOWNER_ACCEPTED,
+            platform_fee_cents=0,
+            payout_cents=12500,
+        )
+
+        self.client.force_authenticate(user=self.contractor_user)
+        response = self.client.get("/api/projects/business/contractor/summary/?range=30")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["financial_summary"]["pending_release_count"], 1)
+        self.assertEqual(payload["financial_summary"]["pending_release_total"], "125.00")
+
 
 class BusinessDashboardChartTests(TestCase):
     def setUp(self):
