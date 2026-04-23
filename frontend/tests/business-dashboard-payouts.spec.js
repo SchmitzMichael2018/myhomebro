@@ -366,22 +366,33 @@ test('business dashboard shows payout reporting and links to full history', asyn
 
   await page.goto('/app/business', { waitUntil: 'domcontentloaded' });
 
+  await expect(page.getByTestId('dashboard-business-alerts-section')).toBeVisible();
+  await expect(page.getByTestId('dashboard-business-alerts-section')).toContainText('Overdue milestones');
+  await expect(page.getByTestId('dashboard-business-alerts-section')).toContainText('Pending release');
+  await expect(page.getByTestId('dashboard-business-alerts-section')).toContainText('Projects at risk');
+  await expect(page.getByTestId('dashboard-kpi-strip')).toBeVisible();
+  await expect(page.getByTestId('dashboard-kpi-gross-revenue')).toContainText('$12,800.00');
+  await expect(page.getByTestId('dashboard-kpi-net-paid')).toContainText('$12,160.00');
+  await expect(page.getByTestId('dashboard-kpi-pending-release-total')).toContainText('$900.00');
+  await expect(page.getByTestId('dashboard-kpi-on-hold-total')).toContainText('$400.00');
+  await expect(page.getByTestId('dashboard-kpi-active-projects')).toContainText('2');
+
   await expect(page.getByTestId('dashboard-financial-section')).toBeVisible();
-  await expect(page.getByTestId('dashboard-financial-section')).toContainText('Gross Revenue');
-  await expect(page.getByTestId('dashboard-financial-section')).toContainText('$12,800.00');
-  await expect(page.getByTestId('dashboard-financial-section')).toContainText('$640.00');
-  await expect(page.getByTestId('dashboard-financial-section')).toContainText('$12,160.00');
-  await expect(page.getByTestId('dashboard-financial-section')).toContainText('$900.00');
-  await expect(page.getByTestId('dashboard-financial-section')).toContainText('$400.00');
+  await expect(page.getByTestId('dashboard-financial-section')).toContainText('Revenue / Cash Flow');
   await expect(page.getByTestId('dashboard-financial-trend-chart')).toBeVisible();
-  await expect(page.getByTestId('dashboard-financial-insight-0')).toContainText('Revenue mix');
+  await expect(page.getByTestId('dashboard-operational-health-section')).toBeVisible();
+  await expect(page.getByTestId('dashboard-operational-health-section')).toContainText('Awaiting approval');
+  await expect(page.getByTestId('dashboard-operational-health-section')).toContainText('Agreements out for signature');
+  await expect(page.getByTestId('dashboard-operational-health-section')).toContainText('Quote requests / new leads');
+  await expect(page.getByTestId('dashboard-project-financials-section')).toBeVisible();
+  await expect(page.getByTestId('dashboard-project-financials-section')).toContainText('Project Financials');
   await expect(page.getByTestId('dashboard-financial-project-row-321')).toContainText('Kitchen Remodel Agreement');
   await expect(page.getByTestId('dashboard-financial-project-row-321')).toContainText('$10,000.00');
   await expect(page.getByTestId('dashboard-financial-project-row-321')).toContainText('$12,800.00');
-  await expect(page.getByTestId('dashboard-financial-project-row-321')).toContainText('$640.00');
-  await expect(page.getByTestId('dashboard-financial-project-row-321')).toContainText('$12,160.00');
+  await expect(page.getByTestId('dashboard-financial-project-row-321')).toContainText('$0.00');
   await expect(page.getByTestId('dashboard-financial-event-invoice-71')).toContainText('Kitchen Remodel Agreement');
-  await expect(page.getByText('Payment Records')).toBeVisible();
+  await expect(page.getByTestId('dashboard-payment-records-section')).toBeVisible();
+  await expect(page.getByTestId('dashboard-payment-records-section')).toContainText('Payment Records');
   await expect(page.getByTestId('dashboard-charts-section')).toBeVisible();
   await expect(page.getByTestId('dashboard-business-performance-section')).toBeVisible();
   await expect(page.getByTestId('dashboard-business-performance-step-requests_received')).toContainText('8');
@@ -423,10 +434,6 @@ test('business dashboard shows payout reporting and links to full history', asyn
   await expect(page.getByTestId('dashboard-payouts-section')).toContainText('$700.00');
   await expect(page.getByTestId('dashboard-payouts-section')).toContainText('$400.00');
   await expect(page.getByTestId('dashboard-payouts-section')).toContainText('$250.00');
-  await expect(page.getByTestId('dashboard-ai-insights-section')).toBeVisible();
-  await expect(page.getByTestId('dashboard-ai-insight-0')).toContainText('Awaiting review');
-  await expect(page.getByTestId('dashboard-ai-insight-0')).toContainText('may delay invoicing');
-  await expect(page.getByRole('link', { name: 'View Review Queue' })).toBeVisible();
   await expect(page.getByTestId('dashboard-payout-row-1')).toContainText('Taylor Sub');
   await expect(page.getByTestId('dashboard-payout-row-2')).toContainText('Morgan Failed');
   await expect(page.getByTestId('dashboard-payouts-export')).toBeVisible();

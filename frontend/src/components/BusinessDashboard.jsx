@@ -71,6 +71,62 @@ function Stat({ label, value, sub, tone = "default" }) {
   );
 }
 
+function dashboardToneClass(tone) {
+  if (tone === "good") return "border-emerald-200 bg-emerald-50/70";
+  if (tone === "warn") return "border-amber-200 bg-amber-50/70";
+  if (tone === "bad") return "border-rose-200 bg-rose-50/70";
+  if (tone === "info") return "border-sky-200 bg-sky-50/70";
+  return "border-slate-200 bg-white";
+}
+
+function KpiCard({ label, value, sub, tone = "default", testId }) {
+  return (
+    <div
+      data-testid={testId}
+      className={`rounded-2xl border p-5 shadow-sm ${dashboardToneClass(tone)}`}
+    >
+      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</div>
+      <div className="mt-2 text-3xl font-bold leading-none text-slate-900">{value}</div>
+      {sub ? <div className="mt-2 text-sm leading-5 text-slate-600">{sub}</div> : null}
+    </div>
+  );
+}
+
+function ActionCard({ label, count, amount, description, href, tone = "default", testId }) {
+  const Wrapper = href ? "a" : "div";
+  return (
+    <Wrapper
+      data-testid={testId}
+      href={href || undefined}
+      className={`group rounded-2xl border p-5 shadow-sm transition hover:-translate-y-px hover:border-slate-300 hover:shadow-sm ${dashboardToneClass(
+        tone
+      )} ${href ? "cursor-pointer" : ""}`}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</div>
+          <div className="mt-3 flex flex-wrap items-end gap-x-3 gap-y-1">
+            <span className="text-3xl font-bold leading-none text-slate-900">{int(count)}</span>
+            <span className="pb-0.5 text-sm font-medium text-slate-500">items</span>
+            {amount ? (
+              <span className="ml-auto text-2xl font-semibold leading-none text-slate-800">{amount}</span>
+            ) : null}
+          </div>
+          <div className="mt-3 text-sm leading-5 text-slate-600">{description}</div>
+        </div>
+        {href ? (
+          <span
+            aria-hidden="true"
+            className="mt-1 text-lg font-semibold leading-none text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-slate-600"
+          >
+            →
+          </span>
+        ) : null}
+      </div>
+    </Wrapper>
+  );
+}
+
 function insightTone(severity) {
   if (severity === "high") {
     return "border-rose-200 bg-rose-50 text-rose-900";
@@ -547,10 +603,168 @@ export default function BusinessDashboard() {
       Number(payoutSummary?.total_ready_amount || 0),
     [payoutSummary?.total_ready_amount, snapshot.escrow_pending]
   );
+  const overdueMilestoneCount = useMemo(() => {
+    return workflowSeries.reduce((sum, row) => sum + Number(row?.overdue_milestones || 0), 0);
+  }, [workflowSeries]);
   const latestWorkflowRisk = useMemo(() => {
     if (!workflowSeries.length) return 0;
     return Number(workflowSeries[workflowSeries.length - 1]?.overdue_milestones || 0);
   }, [workflowSeries]);
+  const unsignedAgreementCount = useMemo(
+    () =>
+      Math.max(
+        Number(funnel.agreements_created || 0) - Number(funnel.paid_projects || 0),
+        0
+      ),
+    [funnel.agreements_created, funnel.paid_projects]
+  );
+  const quoteFollowUpCount = useMemo(
+    () =>
+      Math.max(
+        Number(funnel.requests_received || 0) - Number(funnel.bids_submitted || 0),
+        0
+      ),
+    [funnel.bids_submitted, funnel.requests_received]
+  );
+  const awaitingApprovalCount = useMemo(
+    () =>
+      Math.max(
+        Number(funnel.agreements_created || 0) - Number(funnel.paid_projects || 0),
+        0
+      ),
+    [funnel.agreements_created, funnel.paid_projects]
+  );
+  const activeProjectsCount = Number(snapshot.active_jobs || 0);
+  const openDisputesCount = Number(snapshot.disputes_open || 0);
+  const onHoldCount = Number(financialSummary.on_hold_count || 0);
+  const onHoldTotal = Number(financialSummary.on_hold_total || 0);
+  const pendingReleaseTotal = Number(financialSummary.pending_release_total || 0);
+  const pendingReleaseCount = Number(financialSummary.pending_release_count || 0);
+  const topAlertCards = useMemo(() => {
+    const cards = [
+      {
+        key: "overdue-milestones",
+        label: "Overdue milestones",
+        count: overdueMilestoneCount,
+        amount: "",
+        description: "Milestones that need a decision or follow-up.",
+        href: "/app/reviewer/queue",
+        tone: overdueMilestoneCount > 0 ? "bad" : "default",
+      },
+      {
+        key: "pending-release",
+        label: "Pending release",
+        count: pendingReleaseCount,
+        amount: money(pendingReleaseTotal),
+        description: "Approved work waiting to move into paid revenue.",
+        href: "/app/payouts/history?status=ready_for_payout",
+        tone: pendingReleaseCount > 0 ? "warn" : "default",
+      },
+      {
+        key: "projects-at-risk",
+        label: "Projects at risk",
+        count: Math.max(onHoldCount, openDisputesCount),
+        amount: money(onHoldTotal),
+        description: "Disputes or holds that need a closer look.",
+        href: "/app/disputes",
+        tone: onHoldTotal > 0 || openDisputesCount > 0 ? "bad" : "default",
+      },
+    ];
+
+    return cards.filter((card) => Number(card.count || 0) > 0);
+  }, [onHoldCount, onHoldTotal, openDisputesCount, overdueMilestoneCount, pendingReleaseCount, pendingReleaseTotal]);
+
+  const operationalHealthCards = useMemo(
+    () => [
+      {
+        key: "awaiting-approval",
+        label: "Awaiting approval",
+        count: awaitingApprovalCount,
+        description: "Invoices or draw requests waiting on customer approval.",
+        href: "/app/invoices?money_status=payment_pending",
+        tone: awaitingApprovalCount > 0 ? "warn" : "default",
+      },
+      {
+        key: "active-projects",
+        label: "Active projects",
+        count: activeProjectsCount,
+        description: "Projects currently moving forward.",
+        href: "/app/agreements",
+        tone: activeProjectsCount > 0 ? "info" : "default",
+      },
+      {
+        key: "unsigned-agreements",
+        label: "Agreements out for signature",
+        count: unsignedAgreementCount,
+        description: "Draft agreements waiting on customer signature.",
+        href: "/app/agreements?status=awaiting_signature",
+        tone: unsignedAgreementCount > 0 ? "info" : "default",
+      },
+      {
+        key: "quote-requests",
+        label: "Quote requests / new leads",
+        count: quoteFollowUpCount,
+        description: "New project requests that need follow-up.",
+        href: "/app/bids",
+        tone: quoteFollowUpCount > 0 ? "info" : "default",
+      },
+      {
+        key: "open-disputes",
+        label: "Open disputes",
+        count: openDisputesCount,
+        description: "Items that need a closer look or resolution.",
+        href: "/app/disputes",
+        tone: openDisputesCount > 0 ? "bad" : "default",
+      },
+    ],
+    [activeProjectsCount, awaitingApprovalCount, openDisputesCount, quoteFollowUpCount, unsignedAgreementCount]
+  );
+  const kpiCards = useMemo(
+    () => [
+      {
+        key: "gross-revenue",
+        label: "Gross Revenue",
+        value: money(financialSummary.gross_revenue_total),
+        sub: "Paid work in the selected range",
+        tone: Number(financialSummary.gross_revenue_total || 0) > 0 ? "good" : "default",
+      },
+      {
+        key: "net-paid",
+        label: "Net Paid to You",
+        value: money(financialSummary.net_paid_total),
+        sub: "Funds paid after platform fees",
+        tone: Number(financialSummary.net_paid_total || 0) > 0 ? "good" : "default",
+      },
+      {
+        key: "pending-release-total",
+        label: "Pending Release",
+        value: money(financialSummary.pending_release_total),
+        sub: "Approved but not yet released",
+        tone: Number(financialSummary.pending_release_total || 0) > 0 ? "warn" : "default",
+      },
+      {
+        key: "on-hold-total",
+        label: "On Hold / At Risk",
+        value: money(financialSummary.on_hold_total),
+        sub: "Disputed or paused for review",
+        tone: Number(financialSummary.on_hold_total || 0) > 0 ? "bad" : "default",
+      },
+      {
+        key: "active-projects",
+        label: "Active Projects",
+        value: int(snapshot.active_jobs),
+        sub: "Projects currently moving",
+        tone: Number(snapshot.active_jobs || 0) > 0 ? "info" : "default",
+      },
+    ],
+    [
+      financialSummary.gross_revenue_total,
+      financialSummary.net_paid_total,
+      financialSummary.on_hold_total,
+      financialSummary.pending_release_total,
+      snapshot.active_jobs,
+    ]
+  );
 
   const funnelEntries = useMemo(() => {
     const steps = [
@@ -875,7 +1089,7 @@ export default function BusinessDashboard() {
     <ContractorPageSurface
       eyebrow="Business"
       title="Business Dashboard"
-      subtitle="Business health snapshot for jobs, revenue, categories, timing, escrow, and fees."
+      subtitle="Track revenue, payouts, project health, and risks."
       actions={
         <div className="flex items-center gap-2">
           <label className="text-xs font-semibold text-slate-700">Range</label>
@@ -902,89 +1116,85 @@ export default function BusinessDashboard() {
 
       <DashboardSection
         title="Business Alerts"
-        subtitle="High-priority work and payout signals should stand out before deeper reporting."
+        subtitle="Review the items that need a decision first."
         className="mb-5"
       >
-      <div className="rounded-xl border border-slate-200 bg-slate-50/55 p-4 shadow-sm">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <div className="text-sm font-extrabold text-slate-900">Payout Automation</div>
-            <div className="mt-2 text-sm text-slate-700">
-              Automatically pay subcontractors when payouts are ready.
+        <section
+          data-testid="dashboard-business-alerts-section"
+          className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+        >
+          {topAlertCards.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
+              No urgent alerts right now. Review the sections below for the full business picture.
             </div>
-            <div className="mt-2 text-xs text-slate-600">
-              Failed payouts are not retried automatically and can still be reviewed manually.
+          ) : (
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+              {topAlertCards.map((card) => (
+                <ActionCard
+                  key={card.key}
+                  testId={`dashboard-business-alert-${card.key}`}
+                  label={card.label}
+                  count={card.count}
+                  amount={card.amount}
+                  description={card.description}
+                  href={card.href}
+                  tone={card.tone}
+                />
+              ))}
             </div>
-          </div>
+          )}
 
-          <label className="flex items-center gap-3 text-sm font-semibold text-slate-800">
-            <span data-testid="auto-payout-setting-label">
-              {meData?.auto_subcontractor_payouts_enabled ? "On" : "Off"}
-            </span>
-            <input
-              data-testid="auto-payout-setting-toggle"
-              type="checkbox"
-              checked={!!meData?.auto_subcontractor_payouts_enabled}
-              disabled={meLoading || autoPayoutBusy}
-              onChange={(e) => toggleAutoPayouts(e.target.checked)}
-            />
-          </label>
-        </div>
-      </div>
-
-      <section
-        data-testid="dashboard-ai-insights-section"
-        className="mb-6 rounded-2xl border border-amber-200 bg-white p-5 shadow-sm"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-base font-bold text-slate-900">Needs Attention</div>
-            <div className="mt-1 text-sm text-slate-600">
-              Awaiting review, overdue work, payout blockers, and related contractor risk signals.
-            </div>
-          </div>
-        </div>
-
-        {priorityInsights.length === 0 ? (
-          <div
-            data-testid="dashboard-ai-insights-empty"
-            className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600"
-          >
-            No business insights need attention right now.
-          </div>
-        ) : (
-          <div className="mt-4 grid gap-3 lg:grid-cols-3">
-            {priorityInsights.map((insight, index) => (
-              <div
-                key={`${insight.category || "insight"}-${index}`}
-                data-testid={`dashboard-ai-insight-${index}`}
-                className={`rounded-xl border p-4 shadow-sm ${insightTone(insight.severity)}`}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm font-bold">{insight.title}</div>
-                  <div className="text-[11px] font-semibold uppercase tracking-wide opacity-75">
-                    {insight.severity || "info"}
-                  </div>
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Payout Automation</div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Automatically pay subcontractors when payouts are ready.
                 </div>
-                <div className="mt-2 text-sm leading-6">{insight.explanation}</div>
-                {insight.action_href ? (
-                  <a
-                    href={insight.action_href}
-                    className="mt-3 inline-flex rounded-lg border border-current px-3 py-2 text-xs font-semibold hover:bg-white/60"
-                  >
-                    {insight.action_label || "Review"}
-                  </a>
-                ) : null}
+                <div className="mt-1 text-xs text-slate-500">
+                  Failed payouts are not retried automatically and can still be reviewed manually.
+                </div>
               </div>
-            ))}
+
+              <label className="flex items-center gap-3 text-sm font-semibold text-slate-800">
+                <span data-testid="auto-payout-setting-label">
+                  {meData?.auto_subcontractor_payouts_enabled ? "On" : "Off"}
+                </span>
+                <input
+                  data-testid="auto-payout-setting-toggle"
+                  type="checkbox"
+                  checked={!!meData?.auto_subcontractor_payouts_enabled}
+                  disabled={meLoading || autoPayoutBusy}
+                  onChange={(e) => toggleAutoPayouts(e.target.checked)}
+                />
+              </label>
+            </div>
           </div>
-        )}
-      </section>
+        </section>
       </DashboardSection>
 
       <DashboardSection
-        title="Financial Dashboard"
-        subtitle="A contractor-friendly view of gross revenue, platform fees, net payouts, and what is still pending."
+        title="At a Glance"
+        subtitle="The handful of numbers that should shape your next decision."
+        className="mb-5"
+      >
+        <div data-testid="dashboard-kpi-strip" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {kpiCards.map((card) => (
+            <KpiCard
+              key={card.key}
+              label={card.label}
+              value={card.value}
+              sub={card.sub}
+              tone={card.tone}
+              testId={`dashboard-kpi-${card.key}`}
+            />
+          ))}
+        </div>
+      </DashboardSection>
+
+      <DashboardSection
+        title="Money in Motion"
+        subtitle="Track revenue, platform fees, and what is still waiting to move."
         className="mb-5"
       >
         <section
@@ -993,45 +1203,12 @@ export default function BusinessDashboard() {
         >
           <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <div>
-              <div className="text-base font-bold text-slate-900">Financial Dashboard</div>
+              <div className="text-base font-bold text-slate-900">Revenue / Cash Flow</div>
               <div className="mt-1 text-sm text-slate-600">
                 Selected range: {rangeLabel}. Platform fees are applied as payments are processed and stop once the project cap is reached.
               </div>
             </div>
             <div className="text-xs text-slate-500">Selected range summary</div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <Stat
-              label="Gross Revenue"
-              value={money(financialSummary.gross_revenue_total)}
-              sub="Paid work in the selected range"
-              tone={Number(financialSummary.gross_revenue_total || 0) > 0 ? "good" : "default"}
-            />
-            <Stat
-              label="Platform Fees"
-              value={money(financialSummary.platform_fees_total)}
-              sub="MyHomeBro fees collected"
-              tone={Number(financialSummary.platform_fees_total || 0) > 0 ? "warn" : "default"}
-            />
-            <Stat
-              label="Net Paid to You"
-              value={money(financialSummary.net_paid_total)}
-              sub="Funds paid after platform fees"
-              tone={Number(financialSummary.net_paid_total || 0) > 0 ? "good" : "default"}
-            />
-            <Stat
-              label="Pending Release"
-              value={money(financialSummary.pending_release_total)}
-              sub="Approved but not yet released"
-              tone={Number(financialSummary.pending_release_total || 0) > 0 ? "warn" : "default"}
-            />
-            <Stat
-              label="On Hold"
-              value={money(financialSummary.on_hold_total)}
-              sub="Disputed or paused for review"
-              tone={Number(financialSummary.on_hold_total || 0) > 0 ? "bad" : "default"}
-            />
           </div>
 
           <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-3">
@@ -1115,7 +1292,7 @@ export default function BusinessDashboard() {
             </div>
           </div>
 
-          <div className="mt-5">
+          <div data-testid="dashboard-financial-insights-section" className="mt-5">
             <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
               <div>
                 <div className="text-sm font-bold text-slate-900">Financial Insights</div>
@@ -1150,7 +1327,7 @@ export default function BusinessDashboard() {
             )}
           </div>
 
-          <div className="mt-5">
+          <div data-testid="dashboard-project-financials-section" className="mt-5">
             <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
               <div>
                 <div className="text-sm font-bold text-slate-900">Project Financials</div>
@@ -1172,11 +1349,9 @@ export default function BusinessDashboard() {
                     <tr className="border-b border-slate-200 text-left text-xs font-semibold text-slate-600">
                       <th className="py-2 pr-3">Project</th>
                       <th className="py-2 pr-3">Contract Value</th>
-                      <th className="py-2 pr-3">Gross Collected</th>
-                      <th className="py-2 pr-3">Platform Fees</th>
-                      <th className="py-2 pr-3">Net Paid</th>
-                      <th className="py-2 pr-3">Fee Cap</th>
-                      <th className="py-2 pr-3">Remaining Cap</th>
+                      <th className="py-2 pr-3">Paid</th>
+                      <th className="py-2 pr-3">Pending</th>
+                      <th className="py-2 pr-3">On Hold</th>
                       <th className="py-2 pr-3">Status</th>
                       <th className="py-2">Open</th>
                     </tr>
@@ -1192,11 +1367,23 @@ export default function BusinessDashboard() {
                         </td>
                         <td className="py-3 pr-3 text-slate-700">{money(row.contract_value)}</td>
                         <td className="py-3 pr-3 font-semibold text-slate-900">{money(row.gross_collected)}</td>
-                        <td className="py-3 pr-3 text-slate-700">{money(row.platform_fees)}</td>
-                        <td className="py-3 pr-3 text-slate-700">{money(row.net_paid)}</td>
-                        <td className="py-3 pr-3 text-slate-700">{money(row.fee_cap)}</td>
-                        <td className="py-3 pr-3 text-slate-700">{money(row.remaining_cap)}</td>
-                        <td className="py-3 pr-3 text-slate-700">{row.payment_status || row.status || "—"}</td>
+                        <td className="py-3 pr-3 text-slate-700">{money(row.pending_release)}</td>
+                        <td className="py-3 pr-3 text-slate-700">{money(row.on_hold)}</td>
+                        <td className="py-3 pr-3 text-slate-700">
+                          <span
+                            className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                              String(row.status || "").toLowerCase() === "on hold"
+                                ? "border-rose-200 bg-rose-50 text-rose-800"
+                                : String(row.status || "").toLowerCase() === "pending release"
+                                ? "border-amber-200 bg-amber-50 text-amber-800"
+                                : String(row.status || "").toLowerCase() === "paid"
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                : "border-slate-200 bg-slate-50 text-slate-700"
+                            }`}
+                          >
+                            {row.status || row.payment_status || "?"}
+                          </span>
+                        </td>
                         <td className="py-3">
                           {row.open_href ? (
                             <a
@@ -1218,7 +1405,7 @@ export default function BusinessDashboard() {
             )}
           </div>
 
-          <div className="mt-5">
+          <div data-testid="dashboard-payment-records-section" className="mt-5">
             <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
               <div>
                 <div className="text-sm font-bold text-slate-900">Payment Records</div>
@@ -1268,7 +1455,27 @@ export default function BusinessDashboard() {
       </DashboardSection>
 
       <DashboardSection
-        title="Performance Snapshot"
+        title="Operational Health"
+        subtitle="The work and money signals that help you understand what needs action."
+        className="mb-5"
+      >
+        <div data-testid="dashboard-operational-health-section" className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {operationalHealthCards.map((card) => (
+            <ActionCard
+              key={card.key}
+              testId={`dashboard-operational-health-${card.key}`}
+              label={card.label}
+              count={card.count}
+              description={card.description}
+              href={card.href}
+              tone={card.tone}
+            />
+          ))}
+        </div>
+      </DashboardSection>
+
+      <DashboardSection
+        title="Business Snapshot"
         subtitle="The top contractor business metrics worth scanning first."
         className="mb-5"
       >
@@ -1447,7 +1654,7 @@ export default function BusinessDashboard() {
       />
 
       <DashboardSection
-        title="Deep Dive"
+        title="Reports & Trends"
         subtitle="Supporting reporting stays available here once the top metrics and alerts have been reviewed."
         className="mb-5"
       >
