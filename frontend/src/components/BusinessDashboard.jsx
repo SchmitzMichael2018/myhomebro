@@ -127,6 +127,53 @@ function ActionCard({ label, count, amount, description, href, tone = "default",
   );
 }
 
+function ViewSelectorCard({ title, subtitle, preview, selected, onClick, testId }) {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      aria-pressed={selected}
+      onClick={onClick}
+      className={`group min-h-[126px] rounded-2xl border p-4 text-left shadow-sm transition ${
+        selected
+          ? "border-slate-900 bg-slate-900 text-white shadow-md"
+          : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div
+            className={`text-sm font-semibold ${
+              selected ? "text-white/70" : "text-slate-500"
+            }`}
+          >
+            {title}
+          </div>
+          <div
+            className={`mt-1 text-lg font-bold leading-tight ${
+              selected ? "text-white" : "text-slate-900"
+            }`}
+          >
+            {subtitle}
+          </div>
+        </div>
+        <span
+          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${
+            selected
+              ? "border-white/20 bg-white/10 text-white"
+              : "border-slate-200 bg-slate-50 text-slate-600"
+          }`}
+        >
+          {selected ? "Selected" : "View"}
+        </span>
+      </div>
+      <div className={`mt-3 text-sm leading-5 ${selected ? "text-slate-200" : "text-slate-600"}`}>
+        {preview}
+      </div>
+    </button>
+  );
+}
+
 function insightTone(severity) {
   if (severity === "high") {
     return "border-rose-200 bg-rose-50 text-rose-900";
@@ -543,6 +590,7 @@ function DrilldownModal({ open, selection, loading, error, data, onClose }) {
 
 export default function BusinessDashboard() {
   const [range, setRange] = useState("90"); // backend supports: 30 | 90 | ytd | all
+  const [activeBusinessView, setActiveBusinessView] = useState("at-a-glance");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -876,6 +924,50 @@ export default function BusinessDashboard() {
     workflow: "Overdue Milestones Trend",
   };
 
+  const businessViewCards = useMemo(
+    () => [
+      {
+        key: "at-a-glance",
+        title: "At a Glance",
+        subtitle: "Core business health",
+        preview: `${topAlertCards.length} alerts · ${kpiCards.length} KPIs`,
+      },
+      {
+        key: "contractor-insights",
+        title: "Contractor Insights",
+        subtitle: "Benchmarks and recommendations",
+        preview: `${availableInsightFamilies.length || 0} insight families`,
+      },
+      {
+        key: "reports-trends",
+        title: "Reports & Trends",
+        subtitle: "Charts and exports",
+        preview: `${Object.keys(chartTitles).length} charts · exports`,
+      },
+      {
+        key: "payouts",
+        title: "Payouts",
+        subtitle: "Subcontractor payout status",
+        preview: `${payoutSummary?.record_count ?? payoutRows.length} payout records`,
+      },
+      {
+        key: "operations",
+        title: "Operations",
+        subtitle: "Approvals, disputes, active jobs",
+        preview: `${operationalHealthCards.filter((card) => Number(card.count || 0) > 0).length} action items`,
+      },
+    ],
+    [
+      availableInsightFamilies.length,
+      chartTitles,
+      kpiCards.length,
+      operationalHealthCards,
+      payoutRows.length,
+      payoutSummary?.record_count,
+      topAlertCards.length,
+    ]
+  );
+
   const fetchMe = async () => {
     setMeLoading(true);
     try {
@@ -1114,15 +1206,34 @@ export default function BusinessDashboard() {
       }
     >
 
-      <DashboardSection
-        title="Business Alerts"
-        subtitle="Review the items that need a decision first."
-        className="mb-5"
+      <section
+        data-testid="dashboard-view-selector-row"
+        className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5"
       >
-        <section
-          data-testid="dashboard-business-alerts-section"
-          className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-        >
+        {businessViewCards.map((card) => (
+          <ViewSelectorCard
+            key={card.key}
+            testId={`dashboard-view-selector-${card.key}`}
+            title={card.title}
+            subtitle={card.subtitle}
+            preview={card.preview}
+            selected={activeBusinessView === card.key}
+            onClick={() => setActiveBusinessView(card.key)}
+          />
+        ))}
+      </section>
+
+      {activeBusinessView === "at-a-glance" ? (
+        <div data-testid="dashboard-view-at-a-glance">
+          <DashboardSection
+            title="Business Alerts"
+            subtitle="Review the items that need a decision first."
+            className="mb-5"
+          >
+            <section
+              data-testid="dashboard-business-alerts-section"
+              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+            >
           {topAlertCards.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
               No urgent alerts right now. Review the sections below for the full business picture.
@@ -1170,37 +1281,37 @@ export default function BusinessDashboard() {
               </label>
             </div>
           </div>
-        </section>
-      </DashboardSection>
+            </section>
+          </DashboardSection>
 
-      <DashboardSection
-        title="At a Glance"
-        subtitle="The handful of numbers that should shape your next decision."
-        className="mb-5"
-      >
-        <div data-testid="dashboard-kpi-strip" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          {kpiCards.map((card) => (
-            <KpiCard
-              key={card.key}
-              label={card.label}
-              value={card.value}
-              sub={card.sub}
-              tone={card.tone}
-              testId={`dashboard-kpi-${card.key}`}
-            />
-          ))}
-        </div>
-      </DashboardSection>
+          <DashboardSection
+            title="At a Glance"
+            subtitle="The handful of numbers that should shape your next decision."
+            className="mb-5"
+          >
+            <div data-testid="dashboard-kpi-strip" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              {kpiCards.map((card) => (
+                <KpiCard
+                  key={card.key}
+                  label={card.label}
+                  value={card.value}
+                  sub={card.sub}
+                  tone={card.tone}
+                  testId={`dashboard-kpi-${card.key}`}
+                />
+              ))}
+            </div>
+          </DashboardSection>
 
-      <DashboardSection
-        title="Money in Motion"
-        subtitle="Track revenue, platform fees, and what is still waiting to move."
-        className="mb-5"
-      >
-        <section
-          data-testid="dashboard-financial-section"
-          className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
-        >
+          <DashboardSection
+            title="Money in Motion"
+            subtitle="Track revenue, platform fees, and what is still waiting to move."
+            className="mb-5"
+          >
+            <section
+              data-testid="dashboard-financial-section"
+              className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+            >
           <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <div>
               <div className="text-base font-bold text-slate-900">Revenue / Cash Flow</div>
@@ -1454,31 +1565,65 @@ export default function BusinessDashboard() {
         </section>
       </DashboardSection>
 
-      <DashboardSection
-        title="Operational Health"
-        subtitle="The work and money signals that help you understand what needs action."
-        className="mb-5"
-      >
-        <div data-testid="dashboard-operational-health-section" className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {operationalHealthCards.map((card) => (
-            <ActionCard
-              key={card.key}
-              testId={`dashboard-operational-health-${card.key}`}
-              label={card.label}
-              count={card.count}
-              description={card.description}
-              href={card.href}
-              tone={card.tone}
-            />
-          ))}
+          <DashboardSection
+            title="Operational Health"
+            subtitle="The work and money signals that help you understand what needs action."
+            className="mb-5"
+          >
+            <div
+              data-testid="dashboard-operational-health-section"
+              className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3"
+            >
+              {operationalHealthCards.map((card) => (
+                <ActionCard
+                  key={card.key}
+                  testId={`dashboard-operational-health-${card.key}`}
+                  label={card.label}
+                  count={card.count}
+                  description={card.description}
+                  href={card.href}
+                  tone={card.tone}
+                />
+              ))}
+            </div>
+          </DashboardSection>
         </div>
-      </DashboardSection>
+      ) : null}
 
-      <DashboardSection
-        title="Business Snapshot"
-        subtitle="The top contractor business metrics worth scanning first."
-        className="mb-5"
-      >
+      {activeBusinessView === "operations" ? (
+        <div data-testid="dashboard-view-operations">
+          <DashboardSection
+            title="Operations"
+            subtitle="Approvals, signatures, leads, and risk signals that need attention."
+            className="mb-5"
+          >
+            <div
+              data-testid="dashboard-operational-health-section"
+              className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3"
+            >
+              {operationalHealthCards.map((card) => (
+                <ActionCard
+                  key={card.key}
+                  testId={`dashboard-operational-health-${card.key}`}
+                  label={card.label}
+                  count={card.count}
+                  description={card.description}
+                  href={card.href}
+                  tone={card.tone}
+                />
+              ))}
+            </div>
+          </DashboardSection>
+        </div>
+      ) : null}
+
+      {activeBusinessView === "reports-trends" ? (
+        <div data-testid="dashboard-view-reports-summary">
+          <DashboardSection
+            title="Business Snapshot"
+            subtitle="The top contractor business metrics worth scanning first."
+            className="mb-5"
+          >
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat
           label="Revenue"
@@ -1556,7 +1701,7 @@ export default function BusinessDashboard() {
           tone={Number(snapshot.disputes_open || 0) > 0 ? "bad" : "default"}
         />
       </DashboardGrid>
-      </DashboardSection>
+          </DashboardSection>
 
       <DashboardSection
         title="Business Performance"
@@ -1646,18 +1791,27 @@ export default function BusinessDashboard() {
         </section>
       </DashboardSection>
 
-      <ContractorInsightsSection
-        insights={contractorInsights}
-        availableFamilies={availableInsightFamilies}
-        selectedFamilyKey={insightFamilyKey}
-        onFamilyChange={handleFamilyChange}
-      />
+        </div>
+      ) : null}
 
-      <DashboardSection
-        title="Reports & Trends"
-        subtitle="Supporting reporting stays available here once the top metrics and alerts have been reviewed."
-        className="mb-5"
-      >
+      {activeBusinessView === "contractor-insights" ? (
+        <div data-testid="dashboard-view-contractor-insights">
+          <ContractorInsightsSection
+            insights={contractorInsights}
+            availableFamilies={availableInsightFamilies}
+            selectedFamilyKey={insightFamilyKey}
+            onFamilyChange={handleFamilyChange}
+          />
+        </div>
+      ) : null}
+
+      {activeBusinessView === "reports-trends" ? (
+        <div data-testid="dashboard-view-reports-trends">
+          <DashboardSection
+            title="Reports & Trends"
+            subtitle="Supporting reporting stays available here once the top metrics and alerts have been reviewed."
+            className="mb-5"
+          >
       <section className="rounded-xl border border-slate-200 bg-white/95 p-5 shadow-sm">
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
@@ -2019,131 +2173,6 @@ export default function BusinessDashboard() {
         </div>
       </section>
 
-      <div
-        data-testid="dashboard-payouts-section"
-        className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
-      >
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <div className="text-base font-bold text-slate-900">Payout Snapshot</div>
-            <div className="mt-1 text-sm text-slate-600">
-              Track paid, ready, failed, and pending subcontractor payouts alongside your business reporting.
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              data-testid="dashboard-payouts-export"
-              onClick={exportPayoutCsv}
-              disabled={payoutExporting}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-            >
-              {payoutExporting ? "Exporting..." : "Export CSV"}
-            </button>
-            <a
-              data-testid="dashboard-payouts-full-history"
-              href="/app/payouts/history"
-              className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-            >
-              View Full Payout History
-            </a>
-          </div>
-        </div>
-
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Stat
-            label="Paid to Subs"
-            value={money(payoutSummary?.total_paid_amount)}
-            sub="Completed subcontractor payouts"
-            tone="good"
-          />
-          <Stat
-            label="Ready for Payout"
-            value={money(payoutSummary?.total_ready_amount)}
-            sub="Can be paid now"
-            tone="warn"
-          />
-          <Stat
-            label="Failed Payouts"
-            value={money(payoutSummary?.total_failed_amount)}
-            sub="Needs contractor follow-up"
-            tone="bad"
-          />
-          <Stat
-            label="Pending Payouts"
-            value={money(payoutSummary?.total_pending_amount)}
-            sub="Not ready yet"
-          />
-        </div>
-
-        <div className="mt-5">
-          <div className="mb-2 flex items-center justify-between">
-            <div className="text-sm font-bold text-slate-900">Recent Payout Activity</div>
-            <div className="text-xs text-slate-500">
-              {payoutSummary?.record_count ?? payoutRows.length} payout records in range
-            </div>
-          </div>
-
-          {payoutLoading ? (
-            <div className="text-sm text-slate-500">Loading payout reporting...</div>
-          ) : payoutError ? (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-              {payoutError}
-            </div>
-          ) : recentPayouts.length === 0 ? (
-            <Empty text="No subcontractor payouts in this range yet." />
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-left text-xs font-semibold text-slate-600">
-                    <th className="py-2 pr-3">Agreement / Milestone</th>
-                    <th className="py-2 pr-3">Subcontractor</th>
-                    <th className="py-2 pr-3">Amount</th>
-                    <th className="py-2 pr-3">Status</th>
-                    <th className="py-2 pr-3">Activity</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {recentPayouts.map((row) => (
-                    <tr key={row.id} data-testid={`dashboard-payout-row-${row.id}`}>
-                      <td className="py-3 pr-3">
-                        <div className="font-semibold text-slate-900">{row.agreement_title}</div>
-                        <div className="mt-1 text-slate-600">{row.milestone_title}</div>
-                      </td>
-                      <td className="py-3 pr-3 text-slate-700">
-                        {row.subcontractor_display_name || row.subcontractor_email}
-                      </td>
-                      <td className="py-3 pr-3 font-semibold text-slate-900">
-                        {money(row.payout_amount)}
-                      </td>
-                      <td className="py-3 pr-3">
-                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">
-                          {String(row.payout_status || "").replaceAll("_", " ")}
-                        </span>
-                      </td>
-                      <td className="py-3 pr-3 text-slate-600">
-                        {row.paid_at ? <div>Paid {formatDateTime(row.paid_at)}</div> : null}
-                        {!row.paid_at && row.ready_for_payout_at ? (
-                          <div>Ready {formatDateTime(row.ready_for_payout_at)}</div>
-                        ) : null}
-                        {row.failed_at ? <div>Failed {formatDateTime(row.failed_at)}</div> : null}
-                        {row.execution_mode ? (
-                          <div className="mt-1 text-xs uppercase tracking-wide text-slate-500">
-                            {row.execution_mode}
-                          </div>
-                        ) : null}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-
       <section
         data-testid="dashboard-reports-exports-section"
         className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
@@ -2162,37 +2191,37 @@ export default function BusinessDashboard() {
             type="button"
             data-testid="export-revenue-report"
             onClick={() => exportDashboardReport("revenue")}
-            className="rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:bg-slate-50"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm hover:border-slate-300 hover:shadow-sm"
           >
-            <div className="text-sm font-bold text-slate-900">Revenue Report</div>
-            <div className="mt-1 text-xs text-slate-600">Gross revenue and paid invoice rows.</div>
+            <div className="text-sm font-semibold text-slate-900">Revenue Report</div>
+            <div className="mt-1 text-xs text-slate-500">Paid invoices and revenue detail.</div>
           </button>
           <button
             type="button"
             data-testid="export-fee-report"
             onClick={() => exportDashboardReport("fees")}
-            className="rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:bg-slate-50"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm hover:border-slate-300 hover:shadow-sm"
           >
-            <div className="text-sm font-bold text-slate-900">Fee Report</div>
-            <div className="mt-1 text-xs text-slate-600">Platform fee rows for bookkeeping review.</div>
+            <div className="text-sm font-semibold text-slate-900">Fee Report</div>
+            <div className="mt-1 text-xs text-slate-500">Platform fee detail by invoice.</div>
           </button>
           <button
             type="button"
             data-testid="export-payout-report"
             onClick={() => exportDashboardReport("payouts")}
-            className="rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:bg-slate-50"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm hover:border-slate-300 hover:shadow-sm"
           >
-            <div className="text-sm font-bold text-slate-900">Subcontractor Payout Report</div>
-            <div className="mt-1 text-xs text-slate-600">Payout status, failures, and payout audit rows.</div>
+            <div className="text-sm font-semibold text-slate-900">Payout Report</div>
+            <div className="mt-1 text-xs text-slate-500">Subcontractor payout history.</div>
           </button>
           <button
             type="button"
             data-testid="export-jobs-report"
             onClick={() => exportDashboardReport("jobs")}
-            className="rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm hover:bg-slate-50"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm hover:border-slate-300 hover:shadow-sm"
           >
-            <div className="text-sm font-bold text-slate-900">Completed Jobs Report</div>
-            <div className="mt-1 text-xs text-slate-600">Completed agreement rows for operations review.</div>
+            <div className="text-sm font-semibold text-slate-900">Jobs Report</div>
+            <div className="mt-1 text-xs text-slate-500">Job, category, and completion summary.</div>
           </button>
         </div>
       </section>
@@ -2272,7 +2301,138 @@ export default function BusinessDashboard() {
         </div>
       </div>
 
-      </DashboardSection>
+          </DashboardSection>
+        </div>
+      ) : null}
+
+      {activeBusinessView === "payouts" ? (
+        <div data-testid="dashboard-view-payouts">
+          <div
+            data-testid="dashboard-payouts-section"
+            className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+          >
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <div className="text-base font-bold text-slate-900">Payout Snapshot</div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Track paid, ready, failed, and pending subcontractor payouts alongside your business reporting.
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  data-testid="dashboard-payouts-export"
+                  onClick={exportPayoutCsv}
+                  disabled={payoutExporting}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  {payoutExporting ? "Exporting..." : "Export CSV"}
+                </button>
+                <a
+                  data-testid="dashboard-payouts-full-history"
+                  href="/app/payouts/history"
+                  className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                >
+                  View Full Payout History
+                </a>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <Stat
+                label="Paid to Subs"
+                value={money(payoutSummary?.total_paid_amount)}
+                sub="Completed subcontractor payouts"
+                tone="good"
+              />
+              <Stat
+                label="Ready for Payout"
+                value={money(payoutSummary?.total_ready_amount)}
+                sub="Can be paid now"
+                tone="warn"
+              />
+              <Stat
+                label="Failed Payouts"
+                value={money(payoutSummary?.total_failed_amount)}
+                sub="Needs contractor follow-up"
+                tone="bad"
+              />
+              <Stat
+                label="Pending Payouts"
+                value={money(payoutSummary?.total_pending_amount)}
+                sub="Not ready yet"
+              />
+            </div>
+
+            <div className="mt-5">
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-sm font-bold text-slate-900">Recent Payout Activity</div>
+                <div className="text-xs text-slate-500">
+                  {payoutSummary?.record_count ?? payoutRows.length} payout records in range
+                </div>
+              </div>
+
+              {payoutLoading ? (
+                <div className="text-sm text-slate-500">Loading payout reporting...</div>
+              ) : payoutError ? (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                  {payoutError}
+                </div>
+              ) : recentPayouts.length === 0 ? (
+                <Empty text="No subcontractor payouts in this range yet." />
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-left text-xs font-semibold text-slate-600">
+                        <th className="py-2 pr-3">Agreement / Milestone</th>
+                        <th className="py-2 pr-3">Subcontractor</th>
+                        <th className="py-2 pr-3">Amount</th>
+                        <th className="py-2 pr-3">Status</th>
+                        <th className="py-2 pr-3">Activity</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {recentPayouts.map((row) => (
+                        <tr key={row.id} data-testid={`dashboard-payout-row-${row.id}`}>
+                          <td className="py-3 pr-3">
+                            <div className="font-semibold text-slate-900">{row.agreement_title}</div>
+                            <div className="mt-1 text-slate-600">{row.milestone_title}</div>
+                          </td>
+                          <td className="py-3 pr-3 text-slate-700">
+                            {row.subcontractor_display_name || row.subcontractor_email}
+                          </td>
+                          <td className="py-3 pr-3 font-semibold text-slate-900">
+                            {money(row.payout_amount)}
+                          </td>
+                          <td className="py-3 pr-3">
+                            <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">
+                              {String(row.payout_status || "").replaceAll("_", " ")}
+                            </span>
+                          </td>
+                          <td className="py-3 pr-3 text-slate-600">
+                            {row.paid_at ? <div>Paid {formatDateTime(row.paid_at)}</div> : null}
+                            {!row.paid_at && row.ready_for_payout_at ? (
+                              <div>Ready {formatDateTime(row.ready_for_payout_at)}</div>
+                            ) : null}
+                            {row.failed_at ? <div>Failed {formatDateTime(row.failed_at)}</div> : null}
+                            {row.execution_mode ? (
+                              <div className="mt-1 text-xs uppercase tracking-wide text-slate-500">
+                                {row.execution_mode}
+                              </div>
+                            ) : null}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Footer note */}
       <div className="mhb-helper-text rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">

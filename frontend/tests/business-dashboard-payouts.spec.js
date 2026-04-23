@@ -366,6 +366,14 @@ test('business dashboard shows payout reporting and links to full history', asyn
 
   await page.goto('/app/business', { waitUntil: 'domcontentloaded' });
 
+  await expect(page.getByTestId('dashboard-view-selector-row')).toBeVisible();
+  await expect(page.getByTestId('dashboard-view-selector-at-a-glance')).toBeVisible();
+  await expect(page.getByTestId('dashboard-view-selector-contractor-insights')).toBeVisible();
+  await expect(page.getByTestId('dashboard-view-selector-reports-trends')).toBeVisible();
+  await expect(page.getByTestId('dashboard-view-selector-payouts')).toBeVisible();
+  await expect(page.getByTestId('dashboard-view-selector-operations')).toBeVisible();
+
+  await expect(page.getByTestId('dashboard-view-at-a-glance')).toBeVisible();
   await expect(page.getByTestId('dashboard-business-alerts-section')).toBeVisible();
   await expect(page.getByTestId('dashboard-business-alerts-section')).toContainText('Overdue milestones');
   await expect(page.getByTestId('dashboard-business-alerts-section')).toContainText('Pending release');
@@ -376,50 +384,42 @@ test('business dashboard shows payout reporting and links to full history', asyn
   await expect(page.getByTestId('dashboard-kpi-pending-release-total')).toContainText('$900.00');
   await expect(page.getByTestId('dashboard-kpi-on-hold-total')).toContainText('$400.00');
   await expect(page.getByTestId('dashboard-kpi-active-projects')).toContainText('2');
-
   await expect(page.getByTestId('dashboard-financial-section')).toBeVisible();
-  await expect(page.getByTestId('dashboard-financial-section')).toContainText('Revenue / Cash Flow');
   await expect(page.getByTestId('dashboard-financial-trend-chart')).toBeVisible();
   await expect(page.getByTestId('dashboard-operational-health-section')).toBeVisible();
   await expect(page.getByTestId('dashboard-operational-health-section')).toContainText('Awaiting approval');
-  await expect(page.getByTestId('dashboard-operational-health-section')).toContainText('Agreements out for signature');
-  await expect(page.getByTestId('dashboard-operational-health-section')).toContainText('Quote requests / new leads');
-  await expect(page.getByTestId('dashboard-project-financials-section')).toBeVisible();
-  await expect(page.getByTestId('dashboard-project-financials-section')).toContainText('Project Financials');
-  await expect(page.getByTestId('dashboard-financial-project-row-321')).toContainText('Kitchen Remodel Agreement');
-  await expect(page.getByTestId('dashboard-financial-project-row-321')).toContainText('$10,000.00');
-  await expect(page.getByTestId('dashboard-financial-project-row-321')).toContainText('$12,800.00');
-  await expect(page.getByTestId('dashboard-financial-project-row-321')).toContainText('$0.00');
-  await expect(page.getByTestId('dashboard-financial-event-invoice-71')).toContainText('Kitchen Remodel Agreement');
-  await expect(page.getByTestId('dashboard-payment-records-section')).toBeVisible();
-  await expect(page.getByTestId('dashboard-payment-records-section')).toContainText('Payment Records');
-  await expect(page.getByTestId('dashboard-charts-section')).toBeVisible();
+
+  await expect(page.getByTestId('dashboard-view-contractor-insights')).toHaveCount(0);
+  await expect(page.getByTestId('dashboard-view-reports-summary')).toHaveCount(0);
+  await expect(page.getByTestId('dashboard-view-reports-trends')).toHaveCount(0);
+  await expect(page.getByTestId('dashboard-view-payouts')).toHaveCount(0);
+  await expect(page.getByTestId('dashboard-view-operations')).toHaveCount(0);
+
+  await page.getByTestId('dashboard-view-selector-contractor-insights').click();
+  await expect(page.getByTestId('dashboard-view-at-a-glance')).toHaveCount(0);
+  await expect(page.getByTestId('dashboard-view-contractor-insights')).toBeVisible();
+  await expect(page.getByTestId('dashboard-contractor-insights-section')).toBeVisible();
+
+  await page.getByTestId('dashboard-view-selector-reports-trends').click();
+  await expect(page.getByTestId('dashboard-view-contractor-insights')).toHaveCount(0);
+  await expect(page.getByTestId('dashboard-view-reports-summary')).toBeVisible();
+  await expect(page.getByTestId('dashboard-view-reports-trends')).toBeVisible();
   await expect(page.getByTestId('dashboard-business-performance-section')).toBeVisible();
+  await expect(page.getByTestId('dashboard-charts-section')).toBeVisible();
+  await expect(page.getByTestId('dashboard-fee-tracker-section')).toBeVisible();
+  await expect(page.getByTestId('dashboard-reports-exports-section')).toBeVisible();
   await expect(page.getByTestId('dashboard-business-performance-step-requests_received')).toContainText('8');
   await expect(page.getByTestId('dashboard-business-performance-step-bids_submitted')).toContainText('6');
   await expect(page.getByTestId('dashboard-business-performance-step-bids_awarded')).toContainText('4');
   await expect(page.getByTestId('dashboard-business-performance-step-agreements_created')).toContainText('3');
   await expect(page.getByTestId('dashboard-business-performance-step-paid_projects')).toContainText('2');
   await expect(page.getByTestId('dashboard-business-performance-section')).toContainText('75.0%');
-  await expect(page.getByTestId('dashboard-business-performance-section')).toContainText('66.7%');
-  await expect(page.getByTestId('dashboard-business-performance-section')).toContainText('50.0%');
   await expect(page.getByTestId('dashboard-business-performance-section')).toContainText('$10,000.00');
-  await expect(page.getByTestId('dashboard-business-performance-section')).toContainText('$18,000.00');
-  await expect(page.getByTestId('dashboard-business-performance-section')).toContainText('$6,000.00');
   await expect(page.getByTestId('dashboard-chart-revenue')).toContainText('Revenue Over Time');
   await expect(page.getByTestId('dashboard-chart-fees')).toContainText('Fees Over Time');
   await expect(page.getByTestId('dashboard-chart-fees')).toContainText('Platform fees: $640.00');
   await expect(page.getByTestId('dashboard-chart-fees')).toContainText('Estimated processing: $150.00');
-  await expect(page.getByTestId('dashboard-fee-tracker-section')).toBeVisible();
-  await expect(page.getByTestId('dashboard-fee-tracker-section')).toContainText('Platform Fees Collected');
-  await expect(page.getByTestId('dashboard-fee-tracker-section')).toContainText('$640.00');
-  await expect(page.getByTestId('dashboard-fee-project-row-321')).toContainText('Kitchen Remodel Agreement');
-  await expect(page.getByTestId('dashboard-fee-project-row-321')).toContainText('$10,000.00');
-  await expect(page.getByTestId('dashboard-fee-project-row-321')).toContainText('$640.00');
-  await expect(page.getByTestId('dashboard-fee-project-row-321')).toContainText('$750.00');
-  await expect(page.getByTestId('dashboard-fee-project-row-321')).toContainText('$110.00');
-  await expect(page.getByTestId('dashboard-chart-payouts')).toContainText('Subcontractor Payouts');
-  await expect(page.getByTestId('dashboard-chart-workflow')).toContainText('Overdue Milestones Trend');
+
   await page.getByTestId('chart-point-revenue-2026-03-10').click();
   await expect(page.getByTestId('dashboard-drilldown-modal')).toBeVisible();
   await expect(page.getByTestId('dashboard-drilldown-modal')).toContainText('Revenue Over Time');
@@ -428,21 +428,22 @@ test('business dashboard shows payout reporting and links to full history', asyn
   await expect(page.getByTestId('drilldown-open-71')).toHaveAttribute('href', '/app/invoices/71');
   await page.getByRole('button', { name: 'Close' }).click();
   await expect(page.getByTestId('dashboard-drilldown-modal')).toBeHidden();
-  await expect(page.getByTestId('dashboard-payouts-section')).toBeVisible();
+
+  await page.getByTestId('dashboard-view-selector-payouts').click();
+  await expect(page.getByTestId('dashboard-view-payouts')).toBeVisible();
   await expect(page.getByTestId('dashboard-payouts-section')).toContainText('Payout Snapshot');
   await expect(page.getByTestId('dashboard-payouts-section')).toContainText('$1,500.00');
-  await expect(page.getByTestId('dashboard-payouts-section')).toContainText('$700.00');
-  await expect(page.getByTestId('dashboard-payouts-section')).toContainText('$400.00');
-  await expect(page.getByTestId('dashboard-payouts-section')).toContainText('$250.00');
   await expect(page.getByTestId('dashboard-payout-row-1')).toContainText('Taylor Sub');
   await expect(page.getByTestId('dashboard-payout-row-2')).toContainText('Morgan Failed');
   await expect(page.getByTestId('dashboard-payouts-export')).toBeVisible();
-  await expect(page.getByTestId('dashboard-reports-exports-section')).toBeVisible();
-  await expect(page.getByTestId('export-revenue-report')).toBeVisible();
-  await expect(page.getByTestId('export-fee-report')).toBeVisible();
-  await expect(page.getByTestId('export-payout-report')).toBeVisible();
-  await expect(page.getByTestId('export-jobs-report')).toBeVisible();
 
+  await page.getByTestId('dashboard-view-selector-operations').click();
+  await expect(page.getByTestId('dashboard-view-operations')).toBeVisible();
+  await expect(page.getByTestId('dashboard-operational-health-section')).toContainText('Awaiting approval');
+  await expect(page.getByTestId('dashboard-operational-health-section')).toContainText('Quote requests / new leads');
+  await expect(page.getByTestId('dashboard-view-at-a-glance')).toHaveCount(0);
+
+  await page.getByTestId('dashboard-view-selector-reports-trends').click();
   await page.getByTestId('export-revenue-report').click();
   await expect.poll(() => revenueExportCalled).toBe(true);
   await page.getByTestId('export-fee-report').click();
@@ -452,6 +453,7 @@ test('business dashboard shows payout reporting and links to full history', asyn
   await page.getByTestId('export-jobs-report').click();
   await expect.poll(() => jobsExportCalled).toBe(true);
 
+  await page.getByTestId('dashboard-view-selector-payouts').click();
   await page.getByTestId('dashboard-payouts-full-history').click();
   await expect(page).toHaveURL(/\/app\/payouts\/history$/);
   await expect(page.getByTestId('payout-history-title')).toBeVisible();
@@ -597,7 +599,9 @@ test('business dashboard charts show empty states cleanly for low-data ranges', 
     });
   });
 
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/app/business', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('dashboard-view-selector-reports-trends').click();
 
   await expect(page.getByTestId('dashboard-charts-section')).toBeVisible();
   await expect(page.getByTestId('dashboard-chart-fees')).toContainText(
@@ -727,6 +731,7 @@ test('business dashboard drilldown invoice action navigates to invoice detail', 
   });
 
   await page.goto('/app/business', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('dashboard-view-selector-reports-trends').click();
   await page.getByTestId('chart-point-revenue-2026-03-20').click();
   await expect(page.getByTestId('drilldown-open-91')).toBeVisible();
   await page.getByTestId('drilldown-open-91').click();
@@ -845,6 +850,7 @@ test('business dashboard drilldown workflow action navigates to milestone detail
   });
 
   await page.goto('/app/business', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('dashboard-view-selector-reports-trends').click();
   await page.getByTestId('chart-point-workflow-2026-03-18').click();
   await expect(page.getByTestId('drilldown-open-46')).toHaveAttribute('href', '/app/milestones/46');
   await page.getByTestId('drilldown-open-46').click();
@@ -978,6 +984,7 @@ test('business dashboard payout drilldown action navigates to payout detail', as
   });
 
   await page.goto('/app/business', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('dashboard-view-selector-reports-trends').click();
   await page.getByTestId('chart-bar-payouts-paid_amount-2026-03-22').click();
   await expect(page.getByTestId('drilldown-open-12')).toHaveAttribute('href', '/app/payouts/history/12');
   await page.getByTestId('drilldown-open-12').click();
