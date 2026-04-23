@@ -896,11 +896,13 @@ test('template AI top action generates a draft from a prompt and template contex
   await page.getByTestId('templates-ai-prompt-input').fill('Deck build with framing, decking, railings, and closeout.');
   await page.getByTestId('templates-generate-ai-button').click();
 
+  await expect(page.getByTestId('templates-draft-editor')).toBeVisible();
   await expect(page.getByTestId('templates-ai-unsaved-banner')).toContainText(
     'Review and edit below, then click Save Template'
   );
   await expect(page.getByTestId('templates-unsaved-draft-badge')).toContainText('Unsaved Draft');
   await expect(page.getByTestId('templates-save-button')).toBeVisible();
+  await expect(page.getByTestId('templates-detail-name')).toContainText('Deck Build Template');
   await expect(page.getByTestId('templates-generated-ai-summary')).toContainText('About 12 working days');
   await expect(page.getByTestId('templates-generated-ai-summary')).toContainText('2 follow-up questions prepared');
   await expect(page.getByTestId('templates-description-input')).toHaveValue(/Reusable deck scope/);
@@ -940,6 +942,7 @@ test('new template draft opens a blank editor immediately', async ({ page }) => 
 
   await page.getByTestId('templates-new-draft-button').click();
 
+  await expect(page.getByTestId('templates-draft-editor')).toBeVisible();
   await expect(page.getByTestId('templates-unsaved-draft-badge')).toBeVisible();
   await expect(page.getByTestId('templates-save-button')).toBeVisible();
   await expect(page.getByTestId('templates-name-input')).toHaveValue('');

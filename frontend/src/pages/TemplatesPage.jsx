@@ -338,6 +338,8 @@ export default function TemplatesPage() {
   const [assistantField, setAssistantField] = useState("description");
   const [generatedAiDraft, setGeneratedAiDraft] = useState(null);
   const saveButtonRef = React.useRef(null);
+  const editorPanelRef = React.useRef(null);
+  const draftNameInputRef = React.useRef(null);
 
   const [editHeader, setEditHeader] = useState(buildBlankHeader());
   const [editMilestones, setEditMilestones] = useState([buildBlankMilestone(1)]);
@@ -372,7 +374,10 @@ export default function TemplatesPage() {
       const rows = Array.isArray(data) ? data : data?.results || [];
       setTemplates(rows);
 
-      if ((!selectedId || !rows.some((row) => String(row.id) === String(selectedId))) && rows.length) {
+      if (
+        !creatingNew &&
+        ((!selectedId || !rows.some((row) => String(row.id) === String(selectedId))) && rows.length)
+      ) {
         setSelectedId(rows[0].id);
       }
       if (!rows.length && !creatingNew) {
@@ -552,6 +557,14 @@ export default function TemplatesPage() {
     });
     setEditMilestones([buildBlankMilestone(1)]);
   }
+
+  useEffect(() => {
+    if (!creatingNew || !editorPanelRef.current) return;
+    editorPanelRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (draftNameInputRef.current) {
+      draftNameInputRef.current.focus({ preventScroll: true });
+    }
+  }, [creatingNew]);
 
   useEffect(() => {
     if (!generatedAiDraft || !saveButtonRef.current) return;
@@ -995,17 +1008,8 @@ export default function TemplatesPage() {
       project_materials_hint: currentHeader?.project_materials_hint,
     };
 
-    if (!creatingNew) {
-      openDraftForGeneration(generationSeed);
-    }
-
-    if (creatingNew && !selectedDetail && !safeTrim(currentHeader?.name)) {
-      openBlankDraftEditor();
-    }
-
-    await handleAiCreateFromScope(
-      creatingNew ? null : generationSeed
-    );
+    openDraftForGeneration(generationSeed);
+    await handleAiCreateFromScope(generationSeed);
   }
 
   async function handleRefreshMaterialsFromAi() {
@@ -1466,7 +1470,7 @@ export default function TemplatesPage() {
               Start a new template manually or generate one with AI.
             </div>
           ) : (
-            <div className="p-4">
+            <div className="p-4" data-testid="templates-draft-editor" ref={editorPanelRef}>
               {creatingNew && generatedAiDraft ? (
                 <div
                   data-testid="templates-ai-unsaved-banner"
@@ -1612,6 +1616,7 @@ export default function TemplatesPage() {
                       <label className="mb-1 block text-sm font-medium">Template Name</label>
                       <input
                         data-testid="templates-name-input"
+                        ref={draftNameInputRef}
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                         value={currentHeader?.name || ""}
                         onChange={(e) => updateHeader("name", e.target.value)}
