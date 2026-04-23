@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
-import { StartWithAIEntry } from "../components/StartWithAIAssistant.jsx";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import {
   buildAssistantHandoffSignature,
@@ -335,6 +334,7 @@ export default function TemplatesPage() {
   const [creatingNew, setCreatingNew] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [assistantPrefillBanner, setAssistantPrefillBanner] = useState("");
+  const [templateAiPrompt, setTemplateAiPrompt] = useState("");
   const [assistantField, setAssistantField] = useState("description");
 
   const [editHeader, setEditHeader] = useState(buildBlankHeader());
@@ -497,91 +497,6 @@ export default function TemplatesPage() {
       { fixed: 0, low: 0, high: 0 }
     );
   }, [currentMilestones]);
-  const assistantContext = useMemo(
-    () => ({
-      current_route: "/app/templates",
-      page: "templates",
-      field: assistantField,
-      template_name:
-        currentHeader?.name || selectedDetail?.name || selectedTemplate?.name || "",
-      project_type:
-        currentHeader?.project_type ||
-        selectedDetail?.project_type ||
-        selectedTemplate?.project_type ||
-        "",
-      project_subtype:
-        currentHeader?.project_subtype ||
-        selectedDetail?.project_subtype ||
-        selectedTemplate?.project_subtype ||
-        "",
-      description:
-        currentHeader?.description ||
-        currentHeader?.default_scope ||
-        selectedDetail?.description ||
-        selectedDetail?.default_scope ||
-        selectedTemplate?.description ||
-        selectedTemplate?.default_scope ||
-        "",
-      exclusions_text:
-        currentHeader?.exclusions_text ||
-        selectedDetail?.exclusions_text ||
-        selectedTemplate?.exclusions_text ||
-        "",
-      assumptions_text:
-        currentHeader?.assumptions_text ||
-        selectedDetail?.assumptions_text ||
-        selectedTemplate?.assumptions_text ||
-        "",
-      default_scope:
-        currentHeader?.default_scope ||
-        currentHeader?.description ||
-        selectedDetail?.default_scope ||
-        selectedDetail?.description ||
-        selectedTemplate?.default_scope ||
-        selectedTemplate?.description ||
-        "",
-      template_id: selectedDetail?.id || selectedTemplate?.id || null,
-      template_summary: {
-        name: currentHeader?.name || selectedDetail?.name || selectedTemplate?.name || "",
-        project_type:
-          currentHeader?.project_type ||
-          selectedDetail?.project_type ||
-          selectedTemplate?.project_type ||
-          "",
-        project_subtype:
-          currentHeader?.project_subtype ||
-          selectedDetail?.project_subtype ||
-          selectedTemplate?.project_subtype ||
-          "",
-        description:
-          currentHeader?.description || selectedDetail?.description || selectedTemplate?.description || "",
-        exclusions_text:
-          currentHeader?.exclusions_text ||
-          selectedDetail?.exclusions_text ||
-          selectedTemplate?.exclusions_text ||
-          "",
-        assumptions_text:
-          currentHeader?.assumptions_text ||
-          selectedDetail?.assumptions_text ||
-          selectedTemplate?.assumptions_text ||
-          "",
-        default_scope:
-          currentHeader?.default_scope ||
-          currentHeader?.description ||
-          selectedDetail?.default_scope ||
-          selectedDetail?.description ||
-          selectedTemplate?.default_scope ||
-          selectedTemplate?.description ||
-          "",
-      },
-      milestone_summary: {
-        count: currentMilestones.length,
-        suggested_titles: currentMilestones.map((row) => row?.title).filter(Boolean),
-      },
-    }),
-    [assistantField, currentHeader, currentMilestones, selectedDetail, selectedTemplate]
-  );
-
   function startNewTemplate() {
     setSelectedId(null);
     setSelectedDetail(null);
@@ -591,6 +506,7 @@ export default function TemplatesPage() {
     setCreatingNew(true);
     setEditMode(true);
     setActiveTab("setup");
+    setTemplateAiPrompt("");
   }
 
   useEffect(() => {
@@ -605,12 +521,13 @@ export default function TemplatesPage() {
     const milestoneRows = Array.isArray(prefill?.milestones) ? prefill.milestones : [];
 
     setSelectedId(null);
-    setSelectedDetail(null);
-    setDetailErr("");
-    setCreatingNew(true);
-    setEditMode(true);
-    setActiveTab("setup");
-    setEditHeader({
+      setSelectedDetail(null);
+      setDetailErr("");
+      setCreatingNew(true);
+      setEditMode(true);
+      setActiveTab("setup");
+      setTemplateAiPrompt("");
+      setEditHeader({
       ...buildBlankHeader(),
       ...header,
       name: safeTrim(header?.name) || "New Intake Template",
@@ -694,6 +611,7 @@ export default function TemplatesPage() {
       setCreatingNew(true);
       setEditMode(true);
       setActiveTab("setup");
+      setTemplateAiPrompt("");
       setEditHeader((prev) => ({
         ...prev,
         name: safeTrim(prev.name) || headerPatch.name || prev.name,
@@ -751,61 +669,6 @@ export default function TemplatesPage() {
 
   function updateHeader(field, value) {
     setEditHeader((prev) => ({ ...prev, [field]: value }));
-  }
-
-  function handleTemplatesAssistantAction(payload) {
-    const actionKey = safeTrim(
-      payload?.assistant_action_key || payload?.action_key || payload?.next_action?.action_key
-    );
-
-    if (actionKey === "apply_template_description") {
-      const nextDescription = safeTrim(payload?.value);
-      if (!nextDescription) return false;
-
-      updateHeader("description", nextDescription);
-      updateHeader("default_scope", nextDescription);
-      setAssistantField("description");
-      toast.success("Description applied.");
-      return true;
-    }
-
-    if (actionKey === "apply_template_milestones") {
-      const incomingRows = Array.isArray(payload?.value) ? payload.value : [];
-      if (!incomingRows.length) return false;
-
-      setEditMilestones(
-        incomingRows.map((row, idx) =>
-          normalizeMilestoneForEdit(
-            {
-              title: safeTrim(row?.title),
-              description: safeTrim(row?.description),
-              normalized_milestone_type: canonicalizeTemplateMilestoneType(
-                row?.normalized_milestone_type,
-                `${safeTrim(row?.title)} ${safeTrim(row?.description)}`
-              ),
-              sort_order: idx + 1,
-            },
-            idx
-          )
-        )
-      );
-      setActiveTab("milestones");
-      setAssistantField("milestones");
-      toast.success("Milestones applied.");
-      return true;
-    }
-
-    if (actionKey === "apply_template_exclusions") {
-      const nextExclusions = Array.isArray(payload?.exclusions) ? payload.exclusions : [];
-      const nextAssumptions = Array.isArray(payload?.assumptions) ? payload.assumptions : [];
-      updateHeader("exclusions_text", nextExclusions.join("\n"));
-      updateHeader("assumptions_text", nextAssumptions.join("\n"));
-      setAssistantField("exclusions");
-      toast.success("Exclusions applied.");
-      return true;
-    }
-
-    return false;
   }
 
   function updateMilestone(index, patch) {
@@ -1001,18 +864,23 @@ export default function TemplatesPage() {
   }
 
   async function handleAiCreateFromScope() {
-    if (!safeTrim(currentHeader?.description) && !safeTrim(currentHeader?.name)) {
-      toast.error("Add a template name or a rough project description first.");
+    const prompt = safeTrim(templateAiPrompt);
+    const descriptionSeed = safeTrim(currentHeader?.description || prompt);
+    const nameSeed = safeTrim(currentHeader?.name);
+
+    if (!descriptionSeed && !nameSeed) {
+      toast.error("Add a template name or describe the job first.");
       return;
     }
 
     try {
       setAiBusy(true);
       const { data } = await api.post("/projects/templates/ai/create-from-scope/", {
-        name: currentHeader?.name,
+        name: nameSeed,
         project_type: currentHeader?.project_type,
         project_subtype: currentHeader?.project_subtype,
-        description: currentHeader?.description,
+        description: descriptionSeed,
+        prompt,
       });
 
       setEditHeader({
@@ -1055,6 +923,15 @@ export default function TemplatesPage() {
     } finally {
       setAiBusy(false);
     }
+  }
+
+  async function handleGenerateTemplateWithAi() {
+    if (!safeTrim(templateAiPrompt) && !safeTrim(currentHeader?.description) && !safeTrim(currentHeader?.name)) {
+      toast.error("Describe the job or add a template name first.");
+      return;
+    }
+
+    await handleAiCreateFromScope();
   }
 
   async function handleRefreshMaterialsFromAi() {
@@ -1127,27 +1004,42 @@ export default function TemplatesPage() {
       title="Templates"
       subtitle="Create reusable project setups to speed up your agreements."
       actions={
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={startNewTemplate}
-            data-testid="templates-new-draft-button"
-            className="rounded-xl border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50"
-          >
-            New Template Draft
-          </button>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={startNewTemplate}
+              data-testid="templates-new-draft-button"
+              className="rounded-xl border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50"
+            >
+              New Template Draft
+            </button>
+            <button
+              type="button"
+              onClick={handleGenerateTemplateWithAi}
+              data-testid="templates-generate-ai-button"
+              disabled={aiBusy}
+              className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60"
+            >
+              {aiBusy ? "Working…" : "✨ Generate Template with AI"}
+            </button>
+          </div>
+          <div className="flex flex-col gap-2 sm:max-w-lg">
+            <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              Describe the job
+            </label>
+            <input
+              data-testid="templates-ai-prompt-input"
+              type="text"
+              value={templateAiPrompt}
+              onChange={(e) => setTemplateAiPrompt(e.target.value)}
+              placeholder="Describe the job…"
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm"
+            />
+          </div>
         </div>
       }
     >
-
-      <StartWithAIEntry
-        className="mb-4"
-        testId="templates-ai-entry"
-        title="Ask AI in templates"
-        description="Use the current template and field context to draft or refine reusable template content."
-        context={assistantContext}
-        onAction={handleTemplatesAssistantAction}
-      />
 
       <div className="mb-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
         <div className="mb-3 text-sm text-slate-600">
@@ -1638,30 +1530,58 @@ export default function TemplatesPage() {
 
                     <div>
                       <label className="mb-1 block text-sm font-medium">Project Type</label>
-                      <input
-                        data-testid="templates-project-type-input"
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                        value={currentHeader?.project_type || ""}
-                        onChange={(e) => updateHeader("project_type", e.target.value)}
-                        disabled={!editMode && !creatingNew}
-                        placeholder="e.g., Remodel, Outdoor, Addition"
-                      />
+                      <div className="flex items-start gap-2">
+                        <input
+                          data-testid="templates-project-type-input"
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                          value={currentHeader?.project_type || ""}
+                          onChange={(e) => updateHeader("project_type", e.target.value)}
+                          disabled={!editMode && !creatingNew}
+                          placeholder="e.g., Remodel, Outdoor, Addition"
+                        />
+                        {(editMode || creatingNew) ? (
+                          <button
+                            type="button"
+                            onClick={handleAiSuggestTypeSubtype}
+                            disabled={aiBusy}
+                            data-testid="templates-ai-suggest-button"
+                            className="shrink-0 rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60"
+                          >
+                            {aiBusy ? "Working…" : "✨ Suggest Type / Subtype"}
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
 
                     <div>
                       <label className="mb-1 block text-sm font-medium">Project Subtype</label>
-                      <input
-                        data-testid="templates-project-subtype-input"
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                        value={currentHeader?.project_subtype || ""}
-                        onChange={(e) => updateHeader("project_subtype", e.target.value)}
-                        disabled={!editMode && !creatingNew}
-                        placeholder="e.g., Bathroom Remodel, Deck Build"
-                      />
+                      <div className="flex items-start gap-2">
+                        <input
+                          data-testid="templates-project-subtype-input"
+                          className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                          value={currentHeader?.project_subtype || ""}
+                          onChange={(e) => updateHeader("project_subtype", e.target.value)}
+                          disabled={!editMode && !creatingNew}
+                          placeholder="e.g., Bathroom Remodel, Deck Build"
+                        />
+                      </div>
                     </div>
 
                     <div className="md:col-span-2">
-                      <label className="mb-1 block text-sm font-medium">Description / Scope</label>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <label className="block text-sm font-medium">Description / Scope</label>
+                        {(editMode || creatingNew) ? (
+                          <button
+                            type="button"
+                            onClick={handleAiImproveDescription}
+                            disabled={aiBusy}
+                            data-testid="templates-ai-improve-description-button"
+                            className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60"
+                          >
+                            {aiBusy ? "Working…" : "✨ Improve Description"}
+                          </button>
+                        ) : null}
+                      </div>
                       <textarea
                         data-testid="templates-description-input"
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
@@ -1716,59 +1636,6 @@ export default function TemplatesPage() {
                       </div>
                     </div>
                   </div>
-
-                  {(editMode || creatingNew) ? (
-                    <>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={handleAiImproveDescription}
-                          disabled={aiBusy}
-                          className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60"
-                        >
-                          {aiBusy ? "Working…" : "✨ Improve Description"}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={handleAiSuggestTypeSubtype}
-                          disabled={aiBusy}
-                          className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60"
-                        >
-                          {aiBusy ? "Working…" : "✨ Suggest Type / Subtype"}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={handleAiCreateFromScope}
-                          disabled={aiBusy}
-                          className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
-                        >
-                          {aiBusy ? "Working…" : "✨ Generate Full Template with AI"}
-                        </button>
-                      </div>
-
-                      <div className="mt-2 text-[11px] text-slate-500">
-                        • Improve Description: rewrites your scope into a clean, professional template
-                        <br />
-                        • Suggest Type/Subtype: classifies this project for better pricing + analytics
-                        <br />
-                        • Generate Full Template with AI: generates milestones, pricing, schedule, materials, and clarifications automatically
-                      </div>
-
-                      <div className="mt-3 rounded border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
-                        AI will:
-                        <br />• Break your scope into milestones
-                        <br />• Suggest pricing ranges
-                        <br />• Estimate timeline
-                        <br />• Suggest project-level materials
-                        <br />• Suggest materials by milestone
-                        <br />• Generate clarification questions
-                        <br />
-                        <br />You can review and edit everything before saving.
-                      </div>
-                    </>
-                  ) : null}
 
                   {previewClarifications.length ? (
                     <div className="mt-4">

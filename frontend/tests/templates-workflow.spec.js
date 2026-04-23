@@ -207,6 +207,114 @@ async function installCommonRoutes(page) {
 }
 
 async function installTemplateRoutes(page, store) {
+  await page.route('**/api/projects/templates/ai/improve-description/', async (route) => {
+    const payload = route.request().postDataJSON();
+    const projectType = String(payload?.project_type || '').trim();
+    const projectSubtype = String(payload?.project_subtype || '').trim();
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        description: `${projectSubtype || projectType || 'Project'} scope with clear milestones and reusable language. Includes the work commonly expected by the customer.`,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/ai/suggest-type-subtype/', async (route) => {
+    const payload = route.request().postDataJSON();
+    const text = `${payload?.name || ''} ${payload?.description || ''}`.toLowerCase();
+
+    let project_type = 'Remodel';
+    let project_subtype = 'Kitchen Remodel';
+    if (text.includes('deck')) {
+      project_type = 'Outdoor';
+      project_subtype = 'Deck Build';
+    } else if (text.includes('bathroom')) {
+      project_type = 'Remodel';
+      project_subtype = 'Bathroom Remodel';
+    } else if (text.includes('cabinet')) {
+      project_type = 'Cabinetry';
+      project_subtype = 'Cabinet Installation';
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ project_type, project_subtype }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/ai/create-from-scope/', async (route) => {
+    const payload = route.request().postDataJSON();
+    const text = `${payload?.name || ''} ${payload?.description || ''} ${payload?.prompt || ''}`.toLowerCase();
+    const isDeck = text.includes('deck');
+    const isBath = text.includes('bathroom');
+
+    const project_type = isDeck ? 'Outdoor' : isBath ? 'Remodel' : payload?.project_type || 'Remodel';
+    const project_subtype = isDeck ? 'Deck Build' : isBath ? 'Bathroom Remodel' : payload?.project_subtype || 'Kitchen Remodel';
+    const name = payload?.name || (isDeck ? 'Deck Build Template' : isBath ? 'Bathroom Remodel Template' : 'Kitchen Remodel Starter');
+    const description = isDeck
+      ? 'Reusable deck scope covering layout, framing, decking, rails, and closeout.'
+      : isBath
+      ? 'Reusable bathroom remodel scope covering demo, waterproofing, tile, fixtures, and closeout.'
+      : 'Reusable kitchen remodel scope covering planning, install, and closeout phases.';
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        name,
+        project_type,
+        project_subtype,
+        description,
+        estimated_days: isDeck ? 12 : 14,
+        default_scope: description,
+        default_clarifications: [
+          { key: 'access', label: 'Access to the property', help: 'Confirm access and site readiness.' },
+        ],
+        project_materials_hint: isDeck
+          ? 'Decking, framing lumber, fasteners, rail components, sealant.'
+          : 'Cabinetry, trim, fasteners, sealant, and cleanup materials.',
+        milestones: isDeck
+          ? [
+              {
+                title: 'Layout & permits',
+                description: 'Confirm scope, site access, and any permit needs.',
+                normalized_milestone_type: 'site_prep',
+                sort_order: 1,
+              },
+              {
+                title: 'Framing & structure',
+                description: 'Build the structural deck frame and supports.',
+                normalized_milestone_type: 'framing',
+                sort_order: 2,
+              },
+            ]
+          : [
+              {
+                title: 'Planning & site protection',
+                description: 'Confirm reusable kitchen scope and protect the work area.',
+                normalized_milestone_type: 'site_prep',
+                sort_order: 1,
+              },
+              {
+                title: 'Demolition & rough prep',
+                description: 'Remove existing finishes and prep the space for the next phase.',
+                normalized_milestone_type: 'demolition',
+                sort_order: 2,
+              },
+              {
+                title: 'Electrical rough',
+                description: 'Complete rough electrical work before finish phases.',
+                normalized_milestone_type: 'electrical_rough',
+                sort_order: 3,
+              },
+            ],
+      }),
+    });
+  });
+
   await page.route('**/api/projects/templates/discover/**', async (route) => {
     const url = new URL(route.request().url());
     const source = url.searchParams.get('source') || 'mine';
@@ -547,6 +655,8 @@ test('templates route and sidebar access support creating and editing reusable t
   ).toBeVisible();
   await expect(page.getByText('Select a template to edit or create a new one.')).toBeVisible();
   await expect(page.getByText('Templates are applied when creating a new agreement.')).toBeVisible();
+  await expect(page.getByTestId('templates-generate-ai-button')).toBeVisible();
+  await expect(page.getByTestId('templates-ai-prompt-input')).toBeVisible();
 
   await page.getByTestId('templates-new-draft-button').click();
   await page.getByTestId('templates-name-input').fill('Cabinet Install Standard');
@@ -740,7 +850,7 @@ test('AI can recommend and apply a matching template in step 1 while keeping the
   await expect(page.getByText('Cabinets & surfaces')).toBeVisible();
 });
 
-test('template copilot can generate and explicitly apply description field text', async ({
+test('template AI top action generates a draft from a prompt and template context', async ({
   page,
 }) => {
   await installWorkflowMocks(page);
@@ -748,220 +858,57 @@ test('template copilot can generate and explicitly apply description field text'
   await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
 
   await page.getByTestId('templates-new-draft-button').click();
-  await page.getByTestId('templates-name-input').fill('Kitchen Remodel Starter');
-  await page.getByTestId('templates-project-type-input').fill('Remodel');
-  await page.getByTestId('templates-project-subtype-input').fill('Kitchen Remodel');
+  await page.getByTestId('templates-ai-prompt-input').fill('Kitchen remodel with demo, cabinets, and closeout.');
+  await page.getByTestId('templates-generate-ai-button').click();
 
-  await expect(page.getByTestId('templates-description-input')).toHaveValue('');
-
-  await page.getByTestId('templates-ai-entry-toggle').click();
-  await expect(page.getByTestId('start-with-ai-field-context')).toContainText(
-    'Kitchen Remodel Starter'
-  );
-  await expect(page.getByTestId('start-with-ai-title')).toContainText(
-    'Generate description text for this template'
-  );
-
-  await page.getByTestId('start-with-ai-submit').click();
-
-  await expect(page.getByTestId('start-with-ai-description-draft')).toBeVisible();
-  await expect(page.getByTestId('start-with-ai-description-draft')).toContainText(
-    'Reusable kitchen remodel scope'
-  );
-  await expect(page.getByTestId('templates-description-input')).toHaveValue('');
-
-  await page.getByTestId('start-with-ai-apply-description').click();
-  await expect(page.getByTestId('templates-description-input')).not.toHaveValue('');
-  await expect(page.getByTestId('templates-description-input')).toContainText(
-    'Includes the work commonly expected by the customer'
-  );
-});
-
-test('template copilot can generate and explicitly apply exclusions and assumptions', async ({
-  page,
-}) => {
-  await installWorkflowMocks(page);
-
-  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
-
-  await page.getByTestId('templates-new-draft-button').click();
-  await page.getByTestId('templates-name-input').fill('Kitchen Remodel Starter');
-  await page.getByTestId('templates-project-type-input').fill('Remodel');
-  await page.getByTestId('templates-project-subtype-input').fill('Kitchen Remodel');
-  await page
-    .getByTestId('templates-description-input')
-    .fill('Reusable kitchen remodel scope covering demo, rough-ins, cabinetry, fixtures, and closeout.');
-  await expect(page.getByTestId('templates-exclusions-input')).toHaveValue('');
-  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue('');
-
-  await page.getByTestId('templates-exclusions-input').focus();
-  await page.getByTestId('templates-ai-entry-toggle').click();
-  await expect(page.getByTestId('start-with-ai-title')).toContainText(
-    'Generate exclusions and assumptions for this template'
-  );
-
-  await page.getByTestId('start-with-ai-submit').click();
-
-  await expect(page.getByTestId('start-with-ai-exclusions-draft')).toBeVisible();
-  await expect(page.getByTestId('start-with-ai-exclusions-draft')).toContainText('Exclusions');
-  await expect(page.getByTestId('start-with-ai-exclusions-draft')).toContainText('Assumptions');
-  await expect(page.getByTestId('start-with-ai-exclusions-draft')).toContainText(
-    'Permit fees, specialty inspections'
-  );
-  await expect(page.getByTestId('templates-exclusions-input')).toHaveValue('');
-  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue('');
-
-  await page.getByTestId('start-with-ai-apply-exclusions').click();
-  await expect(page.getByTestId('templates-exclusions-input')).toHaveValue(
-    /Permit fees, specialty inspections/
-  );
-  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue(
-    /The existing kitchen is accessible/
-  );
-});
-
-test('template copilot exclusions generation does not overwrite text until apply', async ({
-  page,
-}) => {
-  await installWorkflowMocks(page);
-
-  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
-
-  await page.getByTestId('templates-new-draft-button').click();
-  await page.getByTestId('templates-name-input').fill('Deck Build Starter');
-  await page.getByTestId('templates-project-type-input').fill('Outdoor');
-  await page.getByTestId('templates-project-subtype-input').fill('Deck Build');
-  await page
-    .getByTestId('templates-description-input')
-    .fill('Reusable deck scope covering layout, framing, decking, rails, and closeout.');
-  await page
-    .getByTestId('templates-exclusions-input')
-    .fill('Existing exclusions text');
-  await page
-    .getByTestId('templates-assumptions-input')
-    .fill('Existing assumptions text');
-
-  await page.getByTestId('templates-exclusions-input').focus();
-  await page.getByTestId('templates-ai-entry-toggle').click();
-  await page.getByTestId('start-with-ai-submit').click();
-
-  await expect(page.getByTestId('start-with-ai-exclusions-draft')).toContainText(
-    'Surveying, engineering, soil correction'
-  );
-  await expect(page.getByTestId('templates-exclusions-input')).toHaveValue('Existing exclusions text');
-  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue('Existing assumptions text');
-
-  await page.getByTestId('start-with-ai-apply-exclusions').click();
-  await expect(page.getByTestId('templates-exclusions-input')).toHaveValue(
-    /Surveying, engineering, soil correction/
-  );
-  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue(
-    /The site has standard access/
-  );
-});
-
-test('template copilot can generate and explicitly apply milestone details', async ({
-  page,
-}) => {
-  await installWorkflowMocks(page);
-
-  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
-
-  await page.getByTestId('templates-new-draft-button').click();
-  await page.getByTestId('templates-name-input').fill('Kitchen Remodel Starter');
-  await page.getByTestId('templates-project-type-input').fill('Remodel');
-  await page.getByTestId('templates-project-subtype-input').fill('Kitchen Remodel');
-  await page
-    .getByTestId('templates-description-input')
-    .fill('Reusable kitchen remodel scope covering demo, rough work, install, finish work, and closeout.');
-
+  await expect(page.getByTestId('templates-tab-milestones')).toBeVisible();
   await page.getByTestId('templates-tab-milestones').click();
-  await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue('');
-
-  await page.getByTestId('templates-ai-entry-toggle').click();
-  await expect(page.getByTestId('start-with-ai-field-context')).toContainText(
-    'Kitchen Remodel Starter'
-  );
-  await expect(page.getByTestId('start-with-ai-title')).toContainText(
-    'Generate milestone sequence for this template'
-  );
-
-  await page.getByTestId('start-with-ai-submit').click();
-
-  await expect(page.getByTestId('start-with-ai-milestone-drafts')).toBeVisible();
-  await expect(page.getByTestId('start-with-ai-milestone-drafts')).toContainText(
-    'Demolition & rough prep'
-  );
-  await expect(page.getByTestId('start-with-ai-milestone-drafts')).toContainText(
-    'Remove existing finishes and prep the space for the next phase'
-  );
-  await expect(page.getByTestId('start-with-ai-milestone-drafts')).toContainText(
-    'Electrical Rough'
-  );
-  await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue('');
-  await expect(page.getByTestId('templates-milestone-description-1')).toHaveValue('');
-  await expect(page.getByTestId('templates-milestone-type-1')).toHaveValue('');
-
-  await page.getByTestId('start-with-ai-apply-milestones').click();
   await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue(
     'Planning & site protection'
   );
   await expect(page.getByTestId('templates-milestone-title-2')).toHaveValue(
     'Demolition & rough prep'
   );
-  await expect(page.getByTestId('templates-milestone-description-1')).toHaveValue(
-    /Confirm the reusable kitchen scope/
+  await page.getByTestId('templates-tab-setup').click();
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+    /Reusable kitchen remodel scope/
   );
-  await expect(page.getByTestId('templates-milestone-description-2')).toHaveValue(
-    /Remove existing finishes and prep the space/
-  );
-  await expect(page.getByTestId('templates-milestone-type-1')).toHaveValue('site_prep');
-  await expect(page.getByTestId('templates-milestone-type-2')).toHaveValue('demolition');
-  await expect(page.getByTestId('templates-milestone-type-3')).toHaveValue('electrical_rough');
-  await expect(page.getByTestId('templates-milestone-type-4')).toHaveValue('cabinetry');
-  await expect(page.getByTestId('templates-milestone-type-6')).toHaveValue('inspection');
 });
 
-test('template copilot milestone generation does not overwrite rows until apply', async ({
-  page,
-}) => {
+test('template inline AI can improve description field text', async ({ page }) => {
+  await installWorkflowMocks(page);
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('templates-new-draft-button').click();
+  await page.getByTestId('templates-name-input').fill('Kitchen Remodel Starter');
+  await page.getByTestId('templates-project-type-input').fill('Remodel');
+  await page.getByTestId('templates-project-subtype-input').fill('Kitchen Remodel');
+
+  await expect(page.getByTestId('templates-description-input')).toHaveValue('');
+
+  await page.getByTestId('templates-ai-improve-description-button').click();
+
+  await expect(page.getByTestId('templates-description-input')).toHaveValue(
+    /Includes the work commonly expected by the customer/
+  );
+});
+
+test('template inline AI can suggest type and subtype from the current scope', async ({ page }) => {
   await installWorkflowMocks(page);
 
   await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
 
   await page.getByTestId('templates-new-draft-button').click();
   await page.getByTestId('templates-name-input').fill('Deck Build Starter');
-  await page.getByTestId('templates-project-type-input').fill('Outdoor');
-  await page.getByTestId('templates-project-subtype-input').fill('Deck Build');
   await page
     .getByTestId('templates-description-input')
     .fill('Reusable deck build scope covering layout, framing, decking, rails, and closeout.');
 
-  await page.getByTestId('templates-tab-milestones').click();
-  await page.getByTestId('templates-milestone-title-1').fill('Existing kickoff milestone');
+  await page.getByTestId('templates-ai-suggest-button').click();
 
-  await page.getByTestId('templates-ai-entry-toggle').click();
-  await page.getByTestId('start-with-ai-submit').click();
-
-  await expect(page.getByTestId('start-with-ai-milestone-drafts')).toContainText(
-    'Footings, framing & structural build'
-  );
-  await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue(
-    'Existing kickoff milestone'
-  );
-  await expect(page.getByTestId('templates-milestone-description-1')).toHaveValue('');
-  await expect(page.getByTestId('templates-milestone-type-1')).toHaveValue('');
-
-  await page.getByTestId('start-with-ai-apply-milestones').click();
-  await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue(
-    'Layout, permits & material staging'
-  );
-  await expect(page.getByTestId('templates-milestone-description-1')).toHaveValue(
-    /Review layout assumptions, coordinate approvals/
-  );
-  await expect(page.getByTestId('templates-milestone-type-1')).toHaveValue('site_prep');
-  await expect(page.getByTestId('templates-milestone-type-3')).toHaveValue('framing');
-  await expect(page.getByTestId('templates-milestone-type-5')).toHaveValue('inspection');
+  await expect(page.getByTestId('templates-project-type-input')).toHaveValue('Outdoor');
+  await expect(page.getByTestId('templates-project-subtype-input')).toHaveValue('Deck Build');
 });
 
 test('template milestone types use the canonical select vocabulary during manual editing', async ({
