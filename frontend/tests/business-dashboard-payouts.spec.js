@@ -386,8 +386,23 @@ test('business dashboard shows payout reporting and links to full history', asyn
   await expect(page.getByTestId('dashboard-kpi-active-projects')).toContainText('2');
   await expect(page.getByTestId('dashboard-financial-section')).toBeVisible();
   await expect(page.getByTestId('dashboard-financial-trend-chart')).toBeVisible();
+  await expect(page.getByTestId('dashboard-summary-actions')).toBeVisible();
+  await expect(page.getByTestId('dashboard-summary-projects')).toBeVisible();
+  await expect(page.getByTestId('dashboard-summary-approvals')).toBeVisible();
+  await expect(page.getByTestId('dashboard-summary-payouts')).toBeVisible();
+  await expect(page.getByTestId('dashboard-summary-projects')).toHaveAttribute('href', '/app/agreements');
+  await expect(page.getByTestId('dashboard-summary-approvals')).toHaveAttribute(
+    'href',
+    '/app/invoices?money_status=payment_pending'
+  );
+  await expect(page.getByTestId('dashboard-summary-payouts')).toHaveAttribute(
+    'href',
+    '/app/payouts/history'
+  );
   await expect(page.getByTestId('dashboard-operational-health-section')).toBeVisible();
   await expect(page.getByTestId('dashboard-operational-health-section')).toContainText('Awaiting approval');
+  await expect(page.getByTestId('dashboard-project-financials-section')).toHaveCount(0);
+  await expect(page.getByTestId('dashboard-payment-records-section')).toHaveCount(0);
 
   await expect(page.getByTestId('dashboard-view-contractor-insights')).toHaveCount(0);
   await expect(page.getByTestId('dashboard-view-reports-summary')).toHaveCount(0);
@@ -433,8 +448,9 @@ test('business dashboard shows payout reporting and links to full history', asyn
   await expect(page.getByTestId('dashboard-view-payouts')).toBeVisible();
   await expect(page.getByTestId('dashboard-payouts-section')).toContainText('Payout Snapshot');
   await expect(page.getByTestId('dashboard-payouts-section')).toContainText('$1,500.00');
-  await expect(page.getByTestId('dashboard-payout-row-1')).toContainText('Taylor Sub');
-  await expect(page.getByTestId('dashboard-payout-row-2')).toContainText('Morgan Failed');
+  await expect(page.getByTestId('dashboard-summary-payout-activity')).toBeVisible();
+  await expect(page.getByTestId('dashboard-payout-row-1')).toHaveCount(0);
+  await expect(page.getByTestId('dashboard-payout-row-2')).toHaveCount(0);
   await expect(page.getByTestId('dashboard-payouts-export')).toBeVisible();
 
   await page.getByTestId('dashboard-view-selector-operations').click();

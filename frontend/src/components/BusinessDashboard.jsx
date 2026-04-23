@@ -174,6 +174,84 @@ function ViewSelectorCard({ title, subtitle, preview, selected, onClick, testId 
   );
 }
 
+function SummaryActionCard({
+  title,
+  subtitle,
+  headline,
+  headlineLabel,
+  metrics = [],
+  href,
+  actionLabel = "View Details",
+  tone = "default",
+  testId,
+}) {
+  const Wrapper = href ? "a" : "div";
+  return (
+    <Wrapper
+      data-testid={testId}
+      href={href || undefined}
+      className={`group rounded-2xl border p-5 shadow-sm transition hover:-translate-y-px hover:border-slate-300 hover:shadow-sm ${dashboardToneClass(
+        tone
+      )} ${href ? "cursor-pointer" : ""}`}
+    >
+      <div className="flex flex-col gap-3">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{title}</div>
+            <div className="mt-1 text-sm leading-5 text-slate-600">{subtitle}</div>
+          </div>
+          {href ? (
+            <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 transition group-hover:border-slate-300 group-hover:text-slate-800">
+              View Details
+            </span>
+          ) : null}
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white/80 p-4 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+            {headlineLabel || "Total"}
+          </div>
+          <div className="mt-2 text-3xl font-bold leading-none text-slate-900">{headline}</div>
+        </div>
+
+        {metrics.length > 0 ? (
+          <div className={`grid grid-cols-1 gap-3 ${metrics.length > 1 ? "sm:grid-cols-2" : ""}`}>
+            {metrics.map((metric) => (
+              <div key={`${title}-${metric.label}`} className="rounded-xl border border-slate-200 bg-white p-3">
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  {metric.label}
+                </div>
+                <div className="mt-2 flex items-end justify-between gap-3">
+                  <div>
+                    <div className="text-2xl font-bold leading-none text-slate-900">
+                      {int(metric.count)}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">items</div>
+                  </div>
+                  {metric.amount ? (
+                    <div className="text-lg font-semibold text-slate-800">{metric.amount}</div>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {href ? (
+          <div className="pt-1">
+            <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
+              <span>{actionLabel}</span>
+              <span aria-hidden="true" className="transition group-hover:translate-x-0.5">
+                â†’
+              </span>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </Wrapper>
+  );
+}
+
 function insightTone(severity) {
   if (severity === "high") {
     return "border-rose-200 bg-rose-50 text-rose-900";
@@ -629,8 +707,6 @@ export default function BusinessDashboard() {
   const financialSummary = payload?.financial_summary || {};
   const financialSeries = payload?.financial_series || [];
   const financialInsights = payload?.financial_insights || [];
-  const projectFinancials = payload?.project_financials || feeProjects;
-  const recentFinancialEvents = payload?.recent_financial_events || [];
   const payoutSeries = payload?.payout_series || [];
   const workflowSeries = payload?.workflow_series || [];
   const feeSummary = payload?.fee_summary || {};
@@ -643,7 +719,21 @@ export default function BusinessDashboard() {
   const rangeLabel =
     range === "all" ? "All time" : range === "ytd" ? "Year to date" : `Last ${range} days`;
   const payoutQuery = useMemo(() => buildPayoutQuery(range), [range]);
-  const recentPayouts = useMemo(() => payoutRows.slice(0, 5), [payoutRows]);
+  const payoutStatusCounts = useMemo(
+    () => ({
+      paid: payoutRows.filter((row) => String(row?.payout_status || "").toLowerCase() === "paid").length,
+      ready: payoutRows.filter((row) =>
+        String(row?.payout_status || "").toLowerCase().includes("ready")
+      ).length,
+      failed: payoutRows.filter((row) =>
+        String(row?.payout_status || "").toLowerCase().includes("failed")
+      ).length,
+      pending: payoutRows.filter((row) =>
+        String(row?.payout_status || "").toLowerCase().includes("pending")
+      ).length,
+    }),
+    [payoutRows]
+  );
   const insightFamilyKey = workspaceProjectFamilyContext.project_family_key || "all";
   const pendingExposure = useMemo(
     () =>
@@ -1438,133 +1528,57 @@ export default function BusinessDashboard() {
             )}
           </div>
 
-          <div data-testid="dashboard-project-financials-section" className="mt-5">
-            <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-              <div>
-                <div className="text-sm font-bold text-slate-900">Project Financials</div>
-                <div className="mt-1 text-sm text-slate-600">
-                  Which projects are generating revenue, fees, and net payouts.
-                </div>
-              </div>
-              <div className="text-xs text-slate-500">{projectFinancials.length} projects</div>
-            </div>
+          <div data-testid="dashboard-summary-actions" className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <SummaryActionCard
+              testId="dashboard-summary-projects"
+              title="Projects"
+              subtitle="Work underway and the revenue tied to it."
+              headline={money(snapshot.total_revenue)}
+              headlineLabel="Revenue in range"
+              metrics={[
+                { label: "Active", count: activeProjectsCount, amount: money(revenueMetrics.total_pipeline_value) },
+                { label: "Paid", count: Number(funnel.paid_projects || 0), amount: money(financialSummary.net_paid_total) },
+                { label: "At Risk", count: openDisputesCount, amount: money(onHoldTotal) },
+              ]}
+              href="/app/agreements"
+              actionLabel="View Agreements"
+              tone={activeProjectsCount > 0 ? "info" : "default"}
+            />
 
-            {projectFinancials.length === 0 ? (
-              <div className="mt-3">
-                <Empty text="No project financial activity in this range yet." />
-              </div>
-            ) : (
-              <div className="mt-3 overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-xs font-semibold text-slate-600">
-                      <th className="py-2 pr-3">Project</th>
-                      <th className="py-2 pr-3">Contract Value</th>
-                      <th className="py-2 pr-3">Paid</th>
-                      <th className="py-2 pr-3">Pending</th>
-                      <th className="py-2 pr-3">On Hold</th>
-                      <th className="py-2 pr-3">Status</th>
-                      <th className="py-2">Open</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {projectFinancials.map((row) => (
-                      <tr key={row.id} data-testid={`dashboard-financial-project-row-${row.id}`}>
-                        <td className="py-3 pr-3">
-                          <div className="font-semibold text-slate-900">{row.agreement_title}</div>
-                          <div className="mt-1 text-xs text-slate-500">
-                            {row.last_activity_at ? `Last activity ${formatDateTime(row.last_activity_at)}` : "No recent activity"}
-                          </div>
-                        </td>
-                        <td className="py-3 pr-3 text-slate-700">{money(row.contract_value)}</td>
-                        <td className="py-3 pr-3 font-semibold text-slate-900">{money(row.gross_collected)}</td>
-                        <td className="py-3 pr-3 text-slate-700">{money(row.pending_release)}</td>
-                        <td className="py-3 pr-3 text-slate-700">{money(row.on_hold)}</td>
-                        <td className="py-3 pr-3 text-slate-700">
-                          <span
-                            className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                              String(row.status || "").toLowerCase() === "on hold"
-                                ? "border-rose-200 bg-rose-50 text-rose-800"
-                                : String(row.status || "").toLowerCase() === "pending release"
-                                ? "border-amber-200 bg-amber-50 text-amber-800"
-                                : String(row.status || "").toLowerCase() === "paid"
-                                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                                : "border-slate-200 bg-slate-50 text-slate-700"
-                            }`}
-                          >
-                            {row.status || row.payment_status || "?"}
-                          </span>
-                        </td>
-                        <td className="py-3">
-                          {row.open_href ? (
-                            <a
-                              href={row.open_href}
-                              className="inline-flex rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                              data-testid={`dashboard-financial-project-open-${row.id}`}
-                            >
-                              Open
-                            </a>
-                          ) : (
-                            <span className="text-xs text-slate-400">—</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <SummaryActionCard
+              testId="dashboard-summary-approvals"
+              title="Approvals"
+              subtitle="Things waiting on a customer decision."
+              headline={money(pendingReleaseTotal)}
+              headlineLabel="Pending release"
+              metrics={[
+                { label: "Awaiting approval", count: awaitingApprovalCount, amount: money(pendingReleaseTotal) },
+                { label: "Unsigned", count: unsignedAgreementCount, amount: money(revenueMetrics.total_pipeline_value) },
+                { label: "Quote follow-up", count: quoteFollowUpCount, amount: money(snapshot.total_revenue) },
+              ]}
+              href="/app/invoices?money_status=payment_pending"
+              actionLabel="View Approvals"
+              tone={awaitingApprovalCount > 0 ? "warn" : "default"}
+            />
+
+            <SummaryActionCard
+              testId="dashboard-summary-payouts"
+              title="Payouts"
+              subtitle="What is ready, pending, or stuck."
+              headline={money(payoutSummary?.total_ready_amount)}
+              headlineLabel="Ready to pay"
+              metrics={[
+                { label: "Ready", count: payoutStatusCounts.ready, amount: money(payoutSummary?.total_ready_amount) },
+                { label: "Pending", count: payoutStatusCounts.pending, amount: money(payoutSummary?.total_pending_amount) },
+                { label: "Failed", count: payoutStatusCounts.failed, amount: money(payoutSummary?.total_failed_amount) },
+              ]}
+              href="/app/payouts/history"
+              actionLabel="View Payouts"
+              tone={payoutStatusCounts.ready > 0 ? "warn" : "default"}
+            />
           </div>
-
-          <div data-testid="dashboard-payment-records-section" className="mt-5">
-            <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-              <div>
-                <div className="text-sm font-bold text-slate-900">Payment Records</div>
-                <div className="mt-1 text-sm text-slate-600">
-                  Recent settled payments and releases, all in one place.
-                </div>
-              </div>
-              <div className="text-xs text-slate-500">{recentFinancialEvents.length} events</div>
-            </div>
-
-            {recentFinancialEvents.length === 0 ? (
-              <div className="mt-3">
-                <Empty text="No recent payment events in this range yet." />
-              </div>
-            ) : (
-              <div className="mt-3 overflow-x-auto">
-                <table className="min-w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-left text-xs font-semibold text-slate-600">
-                      <th className="py-2 pr-3">Date</th>
-                      <th className="py-2 pr-3">Project</th>
-                      <th className="py-2 pr-3">Type</th>
-                      <th className="py-2 pr-3">Gross</th>
-                      <th className="py-2 pr-3">Fees</th>
-                      <th className="py-2 pr-3">Net</th>
-                      <th className="py-2">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {recentFinancialEvents.map((event) => (
-                      <tr key={event.id} data-testid={`dashboard-financial-event-${event.id}`}>
-                        <td className="py-3 pr-3 text-slate-700">{formatDateTime(event.activity_at)}</td>
-                        <td className="py-3 pr-3 font-semibold text-slate-900">{event.agreement_title}</td>
-                        <td className="py-3 pr-3 text-slate-700">{event.record_type}</td>
-                        <td className="py-3 pr-3 text-slate-700">{money(event.gross_amount)}</td>
-                        <td className="py-3 pr-3 text-slate-700">{money(event.platform_fee)}</td>
-                        <td className="py-3 pr-3 text-slate-700">{money(event.net_paid)}</td>
-                        <td className="py-3 text-slate-700">{event.status}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </section>
-      </DashboardSection>
-
+            </section>
+          </DashboardSection>
           <DashboardSection
             title="Operational Health"
             subtitle="The work and money signals that help you understand what needs action."
@@ -2366,74 +2380,25 @@ export default function BusinessDashboard() {
             </div>
 
             <div className="mt-5">
-              <div className="mb-2 flex items-center justify-between">
-                <div className="text-sm font-bold text-slate-900">Recent Payout Activity</div>
-                <div className="text-xs text-slate-500">
-                  {payoutSummary?.record_count ?? payoutRows.length} payout records in range
-                </div>
-              </div>
-
-              {payoutLoading ? (
-                <div className="text-sm text-slate-500">Loading payout reporting...</div>
-              ) : payoutError ? (
-                <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-                  {payoutError}
-                </div>
-              ) : recentPayouts.length === 0 ? (
-                <Empty text="No subcontractor payouts in this range yet." />
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-left text-xs font-semibold text-slate-600">
-                        <th className="py-2 pr-3">Agreement / Milestone</th>
-                        <th className="py-2 pr-3">Subcontractor</th>
-                        <th className="py-2 pr-3">Amount</th>
-                        <th className="py-2 pr-3">Status</th>
-                        <th className="py-2 pr-3">Activity</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {recentPayouts.map((row) => (
-                        <tr key={row.id} data-testid={`dashboard-payout-row-${row.id}`}>
-                          <td className="py-3 pr-3">
-                            <div className="font-semibold text-slate-900">{row.agreement_title}</div>
-                            <div className="mt-1 text-slate-600">{row.milestone_title}</div>
-                          </td>
-                          <td className="py-3 pr-3 text-slate-700">
-                            {row.subcontractor_display_name || row.subcontractor_email}
-                          </td>
-                          <td className="py-3 pr-3 font-semibold text-slate-900">
-                            {money(row.payout_amount)}
-                          </td>
-                          <td className="py-3 pr-3">
-                            <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">
-                              {String(row.payout_status || "").replaceAll("_", " ")}
-                            </span>
-                          </td>
-                          <td className="py-3 pr-3 text-slate-600">
-                            {row.paid_at ? <div>Paid {formatDateTime(row.paid_at)}</div> : null}
-                            {!row.paid_at && row.ready_for_payout_at ? (
-                              <div>Ready {formatDateTime(row.ready_for_payout_at)}</div>
-                            ) : null}
-                            {row.failed_at ? <div>Failed {formatDateTime(row.failed_at)}</div> : null}
-                            {row.execution_mode ? (
-                              <div className="mt-1 text-xs uppercase tracking-wide text-slate-500">
-                                {row.execution_mode}
-                              </div>
-                            ) : null}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              <SummaryActionCard
+                testId="dashboard-summary-payout-activity"
+                title="Payout Activity"
+                subtitle="Recent payout mix without the long list."
+                headline={money(payoutSummary?.total_paid_amount)}
+                headlineLabel="Paid out"
+                metrics={[
+                  { label: "Ready", count: payoutStatusCounts.ready, amount: money(payoutSummary?.total_ready_amount) },
+                  { label: "Pending", count: payoutStatusCounts.pending, amount: money(payoutSummary?.total_pending_amount) },
+                  { label: "Failed", count: payoutStatusCounts.failed, amount: money(payoutSummary?.total_failed_amount) },
+                ]}
+                href="/app/payouts/history"
+                actionLabel="View Payout Details"
+                tone={payoutStatusCounts.ready > 0 ? "warn" : "default"}
+              />
             </div>
           </div>
         </div>
       ) : null}
-
       {/* Footer note */}
       <div className="mhb-helper-text rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
         Data reflects your completed agreements and paid invoices within the selected range.
