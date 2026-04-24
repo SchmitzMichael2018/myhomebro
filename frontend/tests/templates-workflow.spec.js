@@ -72,6 +72,21 @@ function buildTemplateStore() {
 
   const templates = [
     buildTemplate({
+      id: 1,
+      name: 'System Roof Replacement',
+      owner_type: 'system',
+      is_system: true,
+      visibility: 'system',
+      project_type: 'Roofing',
+      project_subtype: 'Roof Replacement',
+      description: 'Built-in roof replacement template with planning, tear-off, install, and closeout phases.',
+      milestones: [
+        buildMilestone(101, 'Planning & protection', 'Review scope, protect the work area, and prep access.', 1),
+        buildMilestone(102, 'Tear-off & prep', 'Remove existing materials and prep the roof deck.', 2),
+        buildMilestone(103, 'Install & closeout', 'Install roofing materials and finish the job.', 3),
+      ],
+    }),
+    buildTemplate({
       id: 88,
       name: 'Kitchen Remodel Starter',
       project_type: 'Remodel',
@@ -954,6 +969,54 @@ test('template AI top action generates a draft from a prompt and template contex
   await expect(libraryCards).toHaveCount(3);
   await expect(
     page.locator('[data-testid^="template-discovery-card-"]').filter({ hasText: 'Deck Build Template' })
+  ).toHaveCount(1);
+});
+
+test('system templates stay read-only and can be duplicated into my templates', async ({ page }) => {
+  await installWorkflowMocks(page);
+
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('templates-market-tab-system').click();
+
+  await expect(page.getByTestId('templates-system-empty-state')).toContainText(
+    'Select a system template to preview it.'
+  );
+  await expect(page.getByTestId('templates-system-empty-state')).toContainText(
+    'duplicated into My Templates'
+  );
+  await expect(page.getByTestId('templates-new-draft-button')).toHaveCount(0);
+  await expect(page.getByTestId('templates-generate-ai-button')).toHaveCount(0);
+  await expect(page.getByTestId('templates-ai-prompt-input')).toHaveCount(0);
+
+  await page.getByTestId('template-discovery-card-1').click();
+  await expect(page.getByTestId('templates-detail-name')).toContainText('System Roof Replacement');
+  await expect(page.getByTestId('template-discovery-card-1')).toContainText('System / Built-in');
+  await expect(page.getByText('Marketplace Signals')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Edit Template' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Delete' })).toHaveCount(0);
+  await expect(page.getByTestId('template-visibility-private')).toHaveCount(0);
+  await expect(page.getByTestId('template-visibility-regional')).toHaveCount(0);
+  await expect(page.getByTestId('template-visibility-public')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Use Template' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Duplicate to My Templates' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Back to Start' })).toBeVisible();
+  await expect(page.getByTestId('templates-template-insights')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Duplicate to My Templates' }).click();
+  await expect(page.getByTestId('templates-draft-editor')).toBeVisible();
+  await expect(page.getByTestId('templates-unsaved-draft-badge')).toBeVisible();
+  await expect(page.getByTestId('templates-new-draft-button')).toHaveCount(0);
+  await expect(page.getByTestId('templates-generate-ai-button')).toHaveCount(0);
+  await expect(page.getByTestId('templates-ai-prompt-input')).toHaveCount(0);
+  await expect(page.getByTestId('templates-detail-name')).toContainText('System Roof Replacement');
+  await expect(page.getByTestId('template-visibility-private')).toHaveCount(0);
+  await expect(page.getByTestId('template-discovery-card-1')).toHaveCount(0);
+
+  await page.getByTestId('templates-save-button').click();
+  await expect(page.getByText('Template created.')).toBeVisible();
+  await expect(page.locator('[data-testid^="template-discovery-card-"]')).toHaveCount(3);
+  await expect(
+    page.locator('[data-testid^="template-discovery-card-"]').filter({ hasText: 'System Roof Replacement' })
   ).toHaveCount(1);
 });
 

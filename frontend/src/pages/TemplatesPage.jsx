@@ -98,7 +98,7 @@ function standardizeTemplateMilestoneType(value = "", fallbackText = "") {
 }
 
 function OptionBadge({ ownerType }) {
-  const text = ownerType === "system" ? "Built-in" : "Custom";
+  const text = ownerType === "system" ? "System / Built-in" : "Custom";
   return (
     <span
       className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
@@ -371,6 +371,7 @@ export default function TemplatesPage() {
     () => buildAssistantHandoffSignature(assistantHandoff),
     [assistantHandoff]
   );
+  const isSystemDiscovery = discoverySource === "system";
 
   async function loadTemplates() {
     try {
@@ -593,6 +594,35 @@ export default function TemplatesPage() {
       project_materials_hint: seed?.project_materials_hint ?? "",
     });
     setEditMilestones([buildBlankMilestone(1)]);
+  }
+
+  function openDraftFromExistingTemplate(template, bannerText = "") {
+    if (!template) return;
+
+    setDiscoverySource("mine");
+    setSelectedId(null);
+    setSelectedDetail(null);
+    setDetailErr("");
+    setGeneratedAiDraft(null);
+    setAiGenerationError("");
+    setAiGenerationPartialSections([]);
+    setAiGenerationRecoveryMode(false);
+    setAiGenerationRecoveryNote("");
+    setAiGenerationStageIndex(-1);
+    setCreatingNew(true);
+    setEditMode(true);
+    setActiveTab("setup");
+    setTemplateAiPrompt("");
+    setEditHeader(normalizeHeaderForEdit(template));
+    setEditMilestones(
+      Array.isArray(template?.milestones) && template.milestones.length
+        ? template.milestones.map((m, idx) => normalizeMilestoneForEdit(m, idx))
+        : [buildBlankMilestone(1)]
+    );
+    setAssistantPrefillBanner(
+      bannerText ||
+        "Copied from a system template. Review and save it to add it to your template library."
+    );
   }
 
   function clearTemplateSelection() {
@@ -1427,7 +1457,9 @@ export default function TemplatesPage() {
                               {tpl?.name || "Template"}
                             </div>
                             <OptionBadge ownerType={ownerType} />
-                            <VisibilityBadge visibility={tpl?.visibility || tpl?.source_label} />
+                            {ownerType !== "system" ? (
+                              <VisibilityBadge visibility={tpl?.visibility || tpl?.source_label} />
+                            ) : null}
                           </div>
 
                           <div className="mt-1 text-xs text-slate-500">
@@ -1467,7 +1499,9 @@ export default function TemplatesPage() {
                               {tpl?.name || "Template"}
                             </div>
                             <OptionBadge ownerType={ownerType} />
-                            <VisibilityBadge visibility={tpl?.visibility || tpl?.source_label} />
+                            {ownerType !== "system" ? (
+                              <VisibilityBadge visibility={tpl?.visibility || tpl?.source_label} />
+                            ) : null}
                           </div>
 
                           <div className="mt-1 text-xs text-slate-500">
@@ -1577,6 +1611,35 @@ export default function TemplatesPage() {
                     </button>
                   </>
                 ) : null}
+
+                {selectedDetail && isSelectedBuiltIn ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openDraftFromExistingTemplate(
+                          selectedDetail,
+                          "Using this built-in template as the starting point for a new draft in My Templates."
+                        )
+                      }
+                      className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                    >
+                      Use Template
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openDraftFromExistingTemplate(
+                          selectedDetail,
+                          "Copied from a built-in template. Review, edit, and save it to your template library."
+                        )
+                      }
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Duplicate to My Templates
+                    </button>
+                  </>
+                ) : null}
               </div>
             </div>
           </div>
@@ -1587,43 +1650,56 @@ export default function TemplatesPage() {
             <div className="px-4 py-6 text-sm text-red-600">{detailErr}</div>
           ) : !selectedTemplate && !creatingNew ? (
             <div className="px-4 py-6 text-sm text-slate-500">
-              <div className="text-base font-semibold text-slate-900">Start a new template</div>
-              <div className="mt-1">Start blank or describe the job and let AI create a draft.</div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={startNewTemplate}
-                  data-testid="templates-new-draft-button"
-                  className="rounded-xl border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50"
-                >
-                  New Template Draft
-                </button>
-              </div>
-              <div className="mt-4 flex flex-col gap-2 sm:max-w-lg">
-                <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                  Describe the job
-                </label>
-                <input
-                  data-testid="templates-ai-prompt-input"
-                  type="text"
-                  value={templateAiPrompt}
-                  onChange={(e) => setTemplateAiPrompt(e.target.value)}
-                  placeholder="Describe the job…"
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm"
-                />
-                <div className="text-[11px] text-slate-500">
-                  AI will draft the description, milestones, pricing guidance, materials, timeline, and clarifying questions.
+              {isSystemDiscovery ? (
+                <div data-testid="templates-system-empty-state">
+                  <div className="text-base font-semibold text-slate-900">
+                    Select a system template to preview it.
+                  </div>
+                  <div className="mt-1">
+                    System templates are built by MyHomeBro and can be used as-is or duplicated into My Templates.
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleGenerateTemplateWithAi}
-                  data-testid="templates-generate-ai-button"
-                  disabled={aiBusy}
-                  className="inline-flex w-fit rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60"
-                >
-                  {aiBusy ? `Working… ${getAiGenerationStepLabel(aiGenerationStageIndex)}` : "✨ Generate Draft with AI"}
-                </button>
-              </div>
+              ) : (
+                <div>
+                  <div className="text-base font-semibold text-slate-900">Start a new template</div>
+                  <div className="mt-1">Start blank or describe the job and let AI create a draft.</div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={startNewTemplate}
+                      data-testid="templates-new-draft-button"
+                      className="rounded-xl border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 shadow-sm hover:bg-indigo-50"
+                    >
+                      New Template Draft
+                    </button>
+                  </div>
+                  <div className="mt-4 flex flex-col gap-2 sm:max-w-lg">
+                    <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                      Describe the job
+                    </label>
+                    <input
+                      data-testid="templates-ai-prompt-input"
+                      type="text"
+                      value={templateAiPrompt}
+                      onChange={(e) => setTemplateAiPrompt(e.target.value)}
+                      placeholder="Describe the job…"
+                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm"
+                    />
+                    <div className="text-[11px] text-slate-500">
+                      AI will draft the description, milestones, pricing guidance, materials, timeline, and clarifying questions.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleGenerateTemplateWithAi}
+                      data-testid="templates-generate-ai-button"
+                      disabled={aiBusy}
+                      className="inline-flex w-fit rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60"
+                    >
+                      {aiBusy ? `Working… ${getAiGenerationStepLabel(aiGenerationStageIndex)}` : "✨ Generate Draft with AI"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="p-4" data-testid="templates-draft-editor" ref={editorPanelRef}>
@@ -1759,12 +1835,12 @@ export default function TemplatesPage() {
                         : 1}{" "}
                       day{Number(currentHeader?.estimated_days || 0) === 1 ? "" : "s"}
                     </span>
-                    {!creatingNew ? (
+                    {!creatingNew && !isSelectedBuiltIn ? (
                       <span className="rounded bg-slate-100 px-2 py-1">
                         Visibility: {safeTrim(selectedDetail?.visibility || selectedDetail?.source_label) || "private"}
                       </span>
                     ) : null}
-                    {!creatingNew && safeTrim(selectedDetail?.normalized_region_key) ? (
+                    {!creatingNew && !isSelectedBuiltIn && safeTrim(selectedDetail?.normalized_region_key) ? (
                       <span className="rounded bg-slate-100 px-2 py-1">
                         Region: {formatRegionLabel(selectedDetail.normalized_region_key)}
                       </span>
