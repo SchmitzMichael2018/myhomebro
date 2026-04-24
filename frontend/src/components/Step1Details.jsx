@@ -628,14 +628,16 @@ export default function Step1Details({
   assistantProposedActions = [],
   assistantConfirmationRequiredActions = [],
   assistantLeadContext = {},
-  assistantDraftPayload = {},
-  projectFamilyContext = {},
-  aiHighlightKeys = {},
-  isAiAssistantActive = false,
-  aiSetupRequest = null,
-  onAiModeActiveChange = null,
-  onAiSetupReviewReady = null,
-}) {
+    assistantDraftPayload = {},
+    projectFamilyContext = {},
+    aiHighlightKeys = {},
+    isAiAssistantActive = false,
+    aiSetupRequest = null,
+    onStep1AiSetupRequest = null,
+    onStep1Continue = null,
+    onAiModeActiveChange = null,
+    onAiSetupReviewReady = null,
+  }) {
   void setQaBusy;
 
   const empty = (people?.length || 0) === 0;
@@ -1814,10 +1816,6 @@ export default function Step1Details({
     ) {
       return;
     }
-    setSelectedTemplateId(String(nextRecommendedTemplateId));
-    if (matchedTemplate?.name) {
-      setTemplateSearch(matchedTemplate.name);
-    }
   }, [
     assistantDraftPayload?.selected_template_id,
     filteredTemplates,
@@ -1833,7 +1831,7 @@ export default function Step1Details({
   }, [startMode, recommendedTemplateId, assistantTemplateRecommendations.length]);
 
   useEffect(() => {
-    if (!aiSetupRequest?.nonce || startMode !== "ai") return;
+    if (!aiSetupRequest?.nonce) return;
     runAiRefineAndSetup(aiSetupRequest.prompt);
   }, [aiSetupRequest?.nonce]);
 
@@ -2452,6 +2450,10 @@ export default function Step1Details({
           reason: recommendationReason,
           setupFieldKeys,
         });
+        if (recommendedTemplate?.id) {
+          setSelectedTemplateId(String(recommendedTemplate.id));
+          setTemplateSearch(recommendedTemplate.name || "");
+        }
         queueProjectDetailsReview(["description", ...setupFieldKeys]);
       } else if (optionalMatch) {
         setAiSetupResult({
@@ -2462,6 +2464,10 @@ export default function Step1Details({
           reason: recommendationReason,
           setupFieldKeys,
         });
+        if (recommendedTemplate?.id) {
+          setSelectedTemplateId(String(recommendedTemplate.id));
+          setTemplateSearch(recommendedTemplate.name || "");
+        }
         queueProjectDetailsReview(["description", ...setupFieldKeys]);
       } else {
         setAiSetupResult({
@@ -2471,6 +2477,7 @@ export default function Step1Details({
             "No matching template found. We added the refined description and you can continue.",
           setupFieldKeys,
         });
+        setSelectedTemplateId(null);
         queueProjectDetailsReview(["description", ...setupFieldKeys]);
       }
     } catch (e) {
@@ -3230,6 +3237,14 @@ export default function Step1Details({
                 setAiMilestonePreview={setAiMilestonePreview}
                 runAiMilestonesFromScope={runAiMilestonesFromScope}
                 applyAiMilestonesFromScope={applyAiMilestonesFromScope}
+                startMode={startMode}
+                onStartModeChange={activateStartMode}
+                onGenerateAiDraft={(prompt) => {
+                  if (typeof onStep1AiSetupRequest === "function") {
+                    onStep1AiSetupRequest({ prompt, nonce: Date.now() });
+                  }
+                }}
+                onContinueToStep2={onStep1Continue}
                 spreadEnabled={spreadEnabled}
                 setSpreadEnabled={setSpreadEnabled}
                 spreadTotal={spreadTotal}

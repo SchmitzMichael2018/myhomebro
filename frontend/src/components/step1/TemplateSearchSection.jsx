@@ -270,6 +270,11 @@ export default function TemplateSearchSection({
   setAiMilestonePreview,
   runAiMilestonesFromScope,
   applyAiMilestonesFromScope,
+  startMode = "manual",
+  onStartModeChange = null,
+  onGenerateAiDraft = null,
+  onContinueToStep2 = null,
+  onStartFromScratch = null,
   spreadEnabled,
   setSpreadEnabled,
   spreadTotal,
@@ -288,6 +293,7 @@ export default function TemplateSearchSection({
   const [selectedPreviewOpen, setSelectedPreviewOpen] = useState(true);
   const [estimatedDaysInput, setEstimatedDaysInput] = useState("");
   const [savingTemplateDays, setSavingTemplateDays] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState("");
 
   const typeOptions = useMemo(
     () => (Array.isArray(projectTypeOptions) ? projectTypeOptions : []),
@@ -414,6 +420,28 @@ export default function TemplateSearchSection({
       ? templateDetail
       : selectedTemplate;
 
+  const detailTemplate = previewTemplate || selectedTemplate || null;
+
+  const templateSections = useMemo(() => {
+    const list = Array.isArray(filteredTemplates) ? filteredTemplates : [];
+    const system = [];
+    const mine = [];
+
+    list.forEach((template) => {
+      const isSystem =
+        !!template?.is_system_template ||
+        !!template?.is_system ||
+        safeTrim(template?.owner_type).toLowerCase() === "system";
+      if (isSystem) system.push(template);
+      else mine.push(template);
+    });
+
+    return {
+      system,
+      mine,
+    };
+  }, [filteredTemplates]);
+
   const previewMilestones = Array.isArray(previewTemplate?.milestones)
     ? previewTemplate.milestones
     : [];
@@ -476,6 +504,7 @@ export default function TemplateSearchSection({
   const showNoStrongMatchPanel = !!noTemplateMatch;
   const showRelatedContext = showNoStrongMatchPanel && hasTemplateMatches;
   const canGenerateFromScope = hasType || hasSubtype || hasTitle || hasDescription;
+  const canUseGeneratedPrompt = !!safeTrim(aiPrompt);
 
   const aiMilestoneQuestions = Array.isArray(aiMilestonePreview?.questions)
     ? aiMilestonePreview.questions
@@ -524,11 +553,46 @@ export default function TemplateSearchSection({
 
     setTemplateDropdownOpen(false);
     setSelectedPreviewOpen(false);
+    return payload;
+  }
+
+  async function handleContinueToStep2() {
+    if (!detailTemplate || locked) return;
+
+    if (!isTemplateApplied && selectedTemplate?.id) {
+      const applied = await onApplySelectedTemplate();
+      if (!applied) return;
+    }
+
+    onContinueToStep2?.();
   }
 
   function handleTemplateResultPick(picked) {
     handleTemplatePick?.(picked);
     setTemplateDropdownOpen(false);
+  }
+
+  function clearStartState() {
+    setSelectedTemplateId?.(null);
+    setTemplateSearch("");
+    setAiPreview("");
+    setAiMilestonePreview(null);
+    setAiPrompt("");
+    setTemplateDropdownOpen(false);
+    setSelectedPreviewOpen(true);
+  }
+
+  function handleStartFromScratch() {
+    clearStartState();
+    onStartModeChange?.("template");
+    onStartFromScratch?.();
+  }
+
+  function handleGenerateWithAi() {
+    const prompt = safeTrim(aiPrompt) || safeTrim(templateSearch);
+    clearStartState();
+    onStartModeChange?.("template");
+    onGenerateAiDraft?.(prompt);
   }
 
   function clearTemplateSearchOnly() {
@@ -555,698 +619,366 @@ export default function TemplateSearchSection({
         </div>
       </div>
 
-      <div className="relative" ref={dropdownRef}>
-        <label className="mb-1 block text-sm font-medium">Template Search</label>
-        <input
-          className="w-full rounded border px-3 py-2 text-sm"
-          value={templateSearch}
-          onChange={(e) => {
-            const v = e.target.value;
-            setTemplateSearch(v);
-            setTemplateDropdownOpen(true);
-            if (!v.trim() && !isTemplateApplied) {
-              setSelectedTemplateId(null);
-            }
-          }}
-          onFocus={() => setTemplateDropdownOpen(true)}
-          onKeyDown={onSearchKeyDown}
-          placeholder='Search templates by keyword, like "bathroom", "deck", or "bedroom addition"...'
-          disabled={locked}
-        />
-
-        <div className="mt-1 text-[11px] text-gray-500">
-          If a matching template exists, choose it first and MyHomeBro will
-          populate the project details, milestones, and clarification questions.
-        </div>
-
-        {templateDropdownOpen ? (
-          <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-md border bg-white shadow-lg">
-            {templatesLoading ? (
-              <div className="px-3 py-3 text-sm text-gray-500">
-                Loading templates…
-              </div>
-            ) : templatesErr ? (
-              <div className="px-3 py-3 text-sm text-red-600">{templatesErr}</div>
-            ) : hasTemplateMatches ? (
-              <>
-                {!hasTemplateSearch ? (
-                  <SearchHintRow
-                    onUseScratch={() => setTemplateDropdownOpen(false)}
-                  />
-                ) : null}
-
-                {filteredTemplates.map((tpl, idx) => {
-                  const isRecommended =
-                    String(recommendedTemplateId || "") === String(tpl.id);
-                  const isPossible =
-                    !isRecommended &&
-                    (tpl?._matchLevel === "medium" ||
-                      recommendationConfidence === "medium");
-                  const isApplied =
-                    String(effectiveAppliedTemplateId || "") ===
-                    String(tpl.id || "");
-
-                  return (
-                    <div
-                      key={tpl.id}
-                      className={idx === templateHighlightedIndex ? "bg-indigo-50" : ""}
-                    >
-                      <TemplateSearchResult
-                        template={tpl}
-                        selected={String(selectedTemplateId || "") === String(tpl.id)}
-                        applied={isApplied}
-                        recommended={isRecommended && recommendationConfidence !== "medium"}
-                        possible={isPossible}
-                        onPick={handleTemplateResultPick}
-                        locked={locked}
-                      />
-                    </div>
-                  );
-                })}
-              </>
-            ) : hasTemplateSearch ? (
-              <>
-                <div className="px-3 py-3 text-sm text-gray-500">
-                  No matching templates found.
-                </div>
-                <SearchHintRow
-                  onUseScratch={() => setTemplateDropdownOpen(false)}
-                />
-              </>
-            ) : (
-              <>
-                <div className="px-3 py-3 text-sm text-gray-500">
-                  Start typing to search your templates and built-in templates.
-                </div>
-                <SearchHintRow
-                  onUseScratch={() => setTemplateDropdownOpen(false)}
-                />
-              </>
-            )}
-          </div>
-        ) : null}
-      </div>
-
-      <div className="mt-4 rounded-lg border border-indigo-100 bg-indigo-50/40 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="text-sm font-semibold text-gray-900">
-              {selectionHeaderTitle}
-            </div>
-            <div className="mt-1 text-xs text-gray-600">{selectionHeaderText}</div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {!agreementId ? (
-              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-800">
-                Save Draft first to apply
-              </span>
-            ) : null}
-
-            {agreementId ? (
-              <button
-                type="button"
-                onClick={() => setShowSaveTemplateModal(true)}
-                disabled={locked}
-                className="rounded border border-indigo-200 bg-white px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-60"
-              >
-                Save Agreement as Template
-              </button>
-            ) : null}
-          </div>
-        </div>
-
-        {recommendationLoading ? (
-          <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-            Finding best template match…
-          </div>
-        ) : !isTemplateApplied &&
-          selectedTemplateIsRecommended &&
-          templateRecommendationReason ? (
-          <div
-            className={`mt-3 rounded border px-3 py-2 text-xs ${
-              recommendationConfidence === "medium"
-                ? "border-amber-200 bg-amber-50 text-amber-800"
-                : "border-emerald-200 bg-emerald-50 text-emerald-800"
-            }`}
-          >
-            <span className="font-semibold">
-              {recommendationConfidence === "medium"
-                ? "Optional match"
-                : "Recommended"}
-            </span>
-            {templateRecommendationScore != null
-              ? ` (score ${templateRecommendationScore})`
-              : ""}
-            : {templateRecommendationReason}
-            <div className="mt-2 text-[11px]">
-              {recommendationConfidence === "medium"
-                ? "This could help, but compare it with the other templates below before you apply it."
-                : "Use this template to carry the project into milestones, clarifications, and pricing faster."}
-            </div>
-          </div>
-        ) : null}
-
-        {showNoStrongMatchPanel && !isTemplateApplied ? (
-          <div className="mt-3 rounded border border-dashed border-amber-300 bg-white px-3 py-3 text-sm text-amber-800">
-            <div className="font-medium">No strong match yet.</div>
-            <div className="mt-1 text-xs text-amber-700">
-              {noTemplateReason ||
-                "You can continue with a blank agreement, review related templates below, or generate milestones from the project scope."}
+      <div className="grid gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
+        <aside className="space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="text-sm font-semibold text-slate-900">Start a template</div>
+            <div className="mt-1 text-xs text-slate-600">
+              Start blank or describe the job and let AI create a draft.
             </div>
 
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={runAiMilestonesFromScope}
-                disabled={
-                  locked ||
-                  !agreementId ||
-                  !canGenerateFromScope ||
-                  aiMilestoneBusy ||
-                  blockScopeGeneration
-                }
-                className="rounded border border-amber-300 bg-white px-3 py-1.5 text-xs text-amber-800 hover:bg-amber-50 disabled:opacity-60"
+                onClick={handleStartFromScratch}
+                disabled={locked}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                data-testid="step1-start-blank-button"
               >
-                {aiMilestoneBusy ? "Working…" : "⚡ Generate Milestones from Scope"}
+                Start from Scratch
               </button>
 
               <button
                 type="button"
-                onClick={runAiMilestonesFromScope}
-                disabled={
-                  locked ||
-                  !agreementId ||
-                  !canGenerateFromScope ||
-                  aiMilestoneBusy ||
-                  blockScopeGeneration
-                }
-                className="rounded border border-amber-300 bg-white px-3 py-1.5 text-xs text-amber-800 hover:bg-amber-50 disabled:opacity-60"
+                onClick={handleGenerateWithAi}
+                disabled={locked || (!canUseGeneratedPrompt && !hasSomeContext)}
+                className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
+                data-testid="step1-generate-ai-button"
               >
-                {aiMilestoneBusy
-                  ? "Working…"
-                  : "⚡ Generate Clarification Questions"}
+                Generate with AI
               </button>
             </div>
 
-            {!agreementId ? (
-              <div className="mt-2 text-[11px] text-amber-700">
-                Save Draft first so AI can attach milestones and clarification
-                questions to this agreement.
-              </div>
-            ) : null}
+            <input
+              className="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              placeholder="Describe the job..."
+              disabled={locked}
+              data-testid="step1-ai-prompt-input"
+            />
 
-            {!canGenerateFromScope ? (
-              <div className="mt-2 text-[11px] text-amber-700">
-                Add at least a Type, Subtype, Title, or Description so AI has
-                enough context.
-              </div>
-            ) : null}
+            <div className="mt-2 text-[11px] text-slate-500">
+              AI will open a draft template for you to review and edit.
+            </div>
+          </div>
 
-            {blockScopeGeneration ? (
-              <div className="mt-2 text-[11px] text-amber-700">
-                A template is already applied. Use the template’s milestones and
-                clarification questions instead of generating a new structure from
-                scratch.
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="mb-3">
+              <label className="mb-1 block text-sm font-medium">Template Search</label>
+              <input
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                value={templateSearch}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setTemplateSearch(v);
+                  if (!v.trim() && !isTemplateApplied) {
+                    setSelectedTemplateId(null);
+                  }
+                }}
+                placeholder='Search templates by keyword, like "bathroom", "deck", or "bedroom addition"...'
+                disabled={locked}
+              />
+              <div className="mt-1 text-[11px] text-gray-500">
+                Search system templates or your saved templates.
               </div>
-            ) : null}
+            </div>
 
-            {aiMilestoneErr ? (
-              <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                {aiMilestoneErr}
-              </div>
-            ) : null}
-
-            {showRelatedContext ? (
-              <div className="mt-3 text-[11px] text-amber-700">
-                Related templates may still help as inspiration, but they are not
-                strong matches for this project.
-              </div>
-            ) : null}
-
-            {aiMilestonePreview ? (
-              <div className="mt-4 rounded-md border border-indigo-200 bg-indigo-50 p-3">
-                <div className="text-sm font-semibold text-indigo-900">
-                  AI Scope-to-Milestones Preview
+            <div className="space-y-3">
+              <div data-testid="step1-system-templates-list" className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  System Templates
                 </div>
+                <div className="mt-2 space-y-2">
+                  {templateSections.system.length ? (
+                    templateSections.system.map((tpl) => {
+                      const isRecommended =
+                        String(recommendedTemplateId || "") === String(tpl.id);
+                      const isPossible =
+                        !isRecommended &&
+                        (tpl?._matchLevel === "medium" || recommendationConfidence === "medium");
+                      const isApplied =
+                        String(effectiveAppliedTemplateId || "") === String(tpl.id || "");
 
-                {safeTrim(aiMilestonePreview.scope_text) ? (
-                  <div className="mt-2">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-900/80">
-                      Scope Summary
+                      return (
+                        <TemplateSearchResult
+                          key={tpl.id}
+                          template={tpl}
+                          selected={String(selectedTemplateId || "") === String(tpl.id)}
+                          applied={isApplied}
+                          recommended={isRecommended && recommendationConfidence !== "medium"}
+                          possible={isPossible}
+                          onPick={(picked) => {
+                            handleTemplateResultPick(picked);
+                            onStartModeChange?.("template");
+                          }}
+                          locked={locked}
+                        />
+                      );
+                    })
+                  ) : (
+                    <div className="rounded border border-dashed border-slate-200 bg-white px-3 py-3 text-xs text-slate-500">
+                      No system templates match your search yet.
                     </div>
-                    <div className="mt-1 whitespace-pre-wrap text-sm text-indigo-900">
-                      {aiMilestonePreview.scope_text}
-                    </div>
-                  </div>
-                ) : null}
-
-                {Array.isArray(aiMilestonePreview.milestones) &&
-                aiMilestonePreview.milestones.length ? (
-                  <div className="mt-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-900/80">
-                      Suggested Milestones
-                    </div>
-
-                    <div className="mt-2 space-y-2">
-                      {aiMilestonePreview.milestones.map((m, idx) => (
-                        <div
-                          key={`${m.title || "milestone"}-${idx}`}
-                          className="rounded border border-indigo-100 bg-white px-3 py-2"
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="text-sm font-medium text-gray-900">
-                              {idx + 1}. {m.title || `Milestone ${idx + 1}`}
-                            </div>
-                            <div className="text-xs font-semibold text-indigo-800">
-                              ${Number(m.amount || 0).toFixed(2)}
-                            </div>
-                          </div>
-
-                          {safeTrim(m.description) ? (
-                            <div className="mt-1 whitespace-pre-wrap text-xs text-gray-600">
-                              {m.description}
-                            </div>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                {aiMilestoneQuestions.length ? (
-                  <div className="mt-3">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-900/80">
-                      Suggested Clarification Questions
-                    </div>
-
-                    <div className="mt-2 space-y-2">
-                      {aiMilestoneQuestions.map((q, idx) => {
-                        const questionText =
-                          safeTrim(q?.label) ||
-                          safeTrim(q?.question) ||
-                          safeTrim(q?.text) ||
-                          safeTrim(q?.prompt) ||
-                          safeTrim(q?.key) ||
-                          `Question ${idx + 1}`;
-
-                        const renderedOptions = Array.isArray(q.options)
-                          ? q.options
-                              .map((opt) =>
-                                typeof opt === "string"
-                                  ? opt
-                                  : safeTrim(opt?.label) || safeTrim(opt?.value)
-                              )
-                              .filter(Boolean)
-                          : [];
-
-                        return (
-                          <div
-                            key={`${q.key || "q"}-${idx}`}
-                            className="rounded border border-indigo-100 bg-white px-3 py-2"
-                          >
-                            <div className="flex flex-wrap items-center gap-2">
-                              <div className="text-sm font-medium text-gray-900">
-                                {questionText}
-                              </div>
-
-                              {q.required ? (
-                                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-800">
-                                  Recommended
-                                </span>
-                              ) : null}
-
-                              {safeTrim(q.type || q.inputType) ? (
-                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700">
-                                  {q.type || q.inputType}
-                                </span>
-                              ) : null}
-                            </div>
-
-                            {safeTrim(q.help) ? (
-                              <div className="mt-1 text-xs text-gray-600">
-                                {q.help}
-                              </div>
-                            ) : null}
-
-                            {renderedOptions.length ? (
-                              <div className="mt-1 text-[11px] text-gray-500">
-                                Options: {renderedOptions.join(", ")}
-                              </div>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className="mt-3 rounded border bg-white p-3">
-                  <label className="flex items-center gap-2 text-xs text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={spreadEnabled}
-                      onChange={(e) => setSpreadEnabled(e.target.checked)}
-                      disabled={locked || aiMilestoneApplying}
-                    />
-                    Auto-spread total across milestones
-                  </label>
-
-                  <div className="mt-2 flex items-center gap-2">
-                    <span className="text-xs text-gray-600">Total ($)</span>
-                    <input
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      className="w-40 rounded border px-2 py-2 text-sm"
-                      placeholder="e.g., 1250.00"
-                      value={spreadTotal}
-                      onChange={(e) => setSpreadTotal(e.target.value)}
-                      disabled={!spreadEnabled || locked || aiMilestoneApplying}
-                    />
-                  </div>
-
-                  <div className="mt-1 text-[11px] text-gray-500">
-                    Leave blank to keep AI amounts as returned.
-                  </div>
-
-                  <label className="mt-3 flex items-center gap-2 text-xs text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={autoSchedule}
-                      onChange={(e) => setAutoSchedule(e.target.checked)}
-                      disabled={locked || aiMilestoneApplying}
-                    />
-                    Auto-schedule milestones (requires Agreement start/end)
-                  </label>
+                  )}
                 </div>
+              </div>
 
+              <div data-testid="step1-my-templates-list" className="rounded-lg border border-slate-100 bg-white p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                  My Templates
+                </div>
+                <div className="mt-2 space-y-2">
+                  {templateSections.mine.length ? (
+                    templateSections.mine.map((tpl) => {
+                      const isRecommended =
+                        String(recommendedTemplateId || "") === String(tpl.id);
+                      const isPossible =
+                        !isRecommended &&
+                        (tpl?._matchLevel === "medium" || recommendationConfidence === "medium");
+                      const isApplied =
+                        String(effectiveAppliedTemplateId || "") === String(tpl.id || "");
+
+                      return (
+                        <TemplateSearchResult
+                          key={tpl.id}
+                          template={tpl}
+                          selected={String(selectedTemplateId || "") === String(tpl.id)}
+                          applied={isApplied}
+                          recommended={isRecommended && recommendationConfidence !== "medium"}
+                          possible={isPossible}
+                          onPick={(picked) => {
+                            handleTemplateResultPick(picked);
+                            onStartModeChange?.("template");
+                          }}
+                          locked={locked}
+                        />
+                      );
+                    })
+                  ) : (
+                    <div className="rounded border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-500">
+                      Your saved templates will appear here after you create or save one.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <section className="space-y-4">
+          <div
+            data-testid="step1-template-detail-panel"
+            className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+          >
+            {!detailTemplate ? (
+              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+                <div className="text-base font-semibold text-slate-900">
+                  Start a new template
+                </div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Start blank or describe the job and let AI create a draft.
+                </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => applyAiMilestonesFromScope("replace")}
-                    disabled={locked || aiMilestoneApplying}
-                    className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-700 disabled:opacity-60"
+                    onClick={handleStartFromScratch}
+                    disabled={locked}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
                   >
-                    {aiMilestoneApplying
-                      ? "Applying…"
-                      : "Apply Milestones (Replace Existing)"}
+                    New Template Draft
                   </button>
-
                   <button
                     type="button"
-                    onClick={() => applyAiMilestonesFromScope("append")}
-                    disabled={locked || aiMilestoneApplying}
-                    className="rounded border px-3 py-1.5 text-xs hover:bg-gray-50 disabled:opacity-60"
+                    onClick={handleGenerateWithAi}
+                    disabled={locked || (!canUseGeneratedPrompt && !hasSomeContext)}
+                    className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
                   >
-                    {aiMilestoneApplying
-                      ? "Applying…"
-                      : "Apply Milestones (Append)"}
+                    Generate with AI
                   </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setAiMilestonePreview(null)}
-                    disabled={aiMilestoneApplying}
-                    className="rounded border px-3 py-1.5 text-xs"
-                  >
-                    Cancel
-                  </button>
-
-                  {agreementId ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowSaveTemplateModal(true)}
-                      disabled={locked}
-                      className="rounded border border-indigo-200 bg-white px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-60"
-                    >
-                      Save Agreement as Template
-                    </button>
-                  ) : null}
                 </div>
               </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {selectedTemplate ? (
-          <div className="mt-3 rounded-md border bg-white p-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium text-gray-900">
-                    {selectedTemplate.name}
-                  </span>
-
-                  <OptionBadge
-                    ownerType={
-                      selectedTemplate?.owner_type ||
-                      (selectedTemplate?.is_system ? "system" : "contractor")
-                    }
-                  />
-
-                  {isTemplateApplied ? (
-                    <span className="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-800">
-                      Applied to Agreement
-                    </span>
-                  ) : selectedTemplateIsRecommended &&
-                    recommendationConfidence !== "medium" ? (
-                    <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
-                      Recommended
-                    </span>
-                  ) : null}
-
-                  {!isTemplateApplied &&
-                  (selectedTemplate?._matchLevel === "medium" ||
-                    recommendationConfidence === "medium") ? (
-                    <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-                      Optional match
-                    </span>
-                  ) : null}
-                </div>
-
-                <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-gray-600">
-                  {safeTrim(selectedTemplate.project_type) ? (
-                    <span className="rounded bg-slate-100 px-2 py-1">
-                      {selectedTemplate.project_type}
-                    </span>
-                  ) : null}
-
-                  {safeTrim(selectedTemplate.project_subtype) ? (
-                    <span className="rounded bg-slate-100 px-2 py-1">
-                      {selectedTemplate.project_subtype}
-                    </span>
-                  ) : null}
-
-                  <span className="rounded bg-slate-100 px-2 py-1">
-                    {getMilestoneCount(previewTemplate || selectedTemplate)} milestones
-                  </span>
-
-                  <span className="rounded bg-slate-100 px-2 py-1">
-                    {getSafeEstimatedDays(previewTemplate || selectedTemplate)} day
-                    {getSafeEstimatedDays(previewTemplate || selectedTemplate) === 1
-                      ? ""
-                      : "s"}
-                  </span>
-                </div>
-
-                {safeTrim(selectedTemplate?._matchReason) && !isTemplateApplied ? (
-                  <div className="mt-2 text-[11px] text-slate-500">
-                    {selectedTemplate._matchReason}
-                  </div>
-                ) : null}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSelectedPreviewOpen((prev) => !prev)}
-                className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-              >
-                {selectedPreviewOpen
-                  ? "Collapse Preview"
-                  : isTemplateApplied
-                  ? "Preview Selected Template"
-                  : "Expand Preview"}
-              </button>
-            </div>
-
-            {templateDetailLoading ? (
-              <div className="mt-3 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                Loading template preview…
-              </div>
-            ) : null}
-
-            {templateDetailErr ? (
-              <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                {templateDetailErr}
-              </div>
-            ) : null}
-
-            <PreviewSection title="Template Insights" testId="step1-template-insights-card">
-              <ul className="space-y-1 text-xs text-slate-700">
-                {templateInsightLines.map((line, idx) => (
-                  <li key={`${line}-${idx}`} className="flex gap-2">
-                    <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" aria-hidden="true" />
-                    <span>{line}</span>
-                  </li>
-                ))}
-              </ul>
-            </PreviewSection>
-
-            {selectedPreviewOpen ? (
+            ) : (
               <>
-                {safeTrim(previewTemplate?.description) ? (
-                  <PreviewSection title="Description">
-                    <div className="whitespace-pre-wrap text-xs text-gray-700">
-                      {previewTemplate.description}
-                    </div>
-                  </PreviewSection>
-                ) : null}
-
-                <PreviewSection title="Estimated Project Duration">
-                  <div className="flex flex-wrap items-end gap-3">
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-slate-700">
-                        Total Days
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={estimatedDaysInput}
-                        onChange={(e) => setEstimatedDaysInput(e.target.value)}
-                        disabled={locked}
-                        className="w-32 rounded border px-3 py-2 text-sm"
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Template Details
+                      </span>
+                      <OptionBadge
+                        ownerType={
+                          detailTemplate?.owner_type ||
+                          (detailTemplate?.is_system_template || detailTemplate?.is_system
+                            ? "system"
+                            : "contractor")
+                        }
                       />
                     </div>
-
-                    {handleUpdateTemplateDays ? (
-                      <button
-                        type="button"
-                        onClick={onSaveDaysToTemplate}
-                        disabled={
-                          locked ||
-                          savingTemplateDays ||
-                          !Number(estimatedDaysInput || 0) ||
-                          Number(estimatedDaysInput || 0) < 1
-                        }
-                        className="rounded border border-indigo-200 bg-white px-3 py-2 text-xs font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-60"
-                      >
-                        {savingTemplateDays ? "Saving..." : "Save Days to Template"}
-                      </button>
+                    <h3
+                      data-testid="step1-template-detail-name"
+                      className="mt-1 text-xl font-semibold text-slate-900"
+                    >
+                      {detailTemplate.name}
+                    </h3>
+                    <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-600">
+                      {safeTrim(detailTemplate.project_type) ? (
+                        <span className="rounded bg-slate-100 px-2 py-1">
+                          {detailTemplate.project_type}
+                        </span>
+                      ) : null}
+                      {safeTrim(detailTemplate.project_subtype) ? (
+                        <span className="rounded bg-slate-100 px-2 py-1">
+                          {detailTemplate.project_subtype}
+                        </span>
+                      ) : null}
+                      <span className="rounded bg-slate-100 px-2 py-1">
+                        {getMilestoneCount(detailTemplate)} milestone
+                        {getMilestoneCount(detailTemplate) === 1 ? "" : "s"}
+                      </span>
+                      <span className="rounded bg-slate-100 px-2 py-1">
+                        {getSafeEstimatedDays(detailTemplate)} day
+                        {getSafeEstimatedDays(detailTemplate) === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    {safeTrim(detailTemplate?._matchReason) ? (
+                      <div className="mt-2 text-xs text-slate-500">
+                        {detailTemplate._matchReason}
+                      </div>
                     ) : null}
                   </div>
 
-                  <div className="mt-2 text-[11px] text-slate-500">
-                    This is a suggested duration for this type of project.
-                    Contractors can still update milestone dates after applying the
-                    template.
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleContinueToStep2}
+                      disabled={locked || (!selectedTemplate && !detailTemplate)}
+                      className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                      data-testid="step1-continue-to-step2-button"
+                    >
+                      Continue → Step 2
+                    </button>
                   </div>
+                </div>
+
+                {templateDetailLoading ? (
+                  <div className="mt-3 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                    Loading template preview…
+                  </div>
+                ) : null}
+
+                {templateDetailErr ? (
+                  <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                    {templateDetailErr}
+                  </div>
+                ) : null}
+
+                <PreviewSection title="Template Insights" testId="step1-template-insights-card">
+                  <ul className="space-y-1 text-xs text-slate-700">
+                    {templateInsightLines.map((line, idx) => (
+                      <li key={`${line}-${idx}`} className="flex gap-2">
+                        <span
+                          className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400"
+                          aria-hidden="true"
+                        />
+                        <span>{line}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </PreviewSection>
 
-                {previewMilestones.length ? (
-                  <PreviewSection title="Milestone Preview">
-                    <div className="space-y-2">
-                      {previewMilestones.map((m, idx) => {
-                        const suggestedDay = buildSuggestedDayLabel(
-                          idx,
-                          previewMilestones.length,
-                          Number(estimatedDaysInput || 0) || previewEstimatedDays
-                        );
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+                  <div className="space-y-4">
+                    {safeTrim(detailTemplate?.description) ? (
+                      <PreviewSection title="Description">
+                        <div className="whitespace-pre-wrap text-xs text-gray-700">
+                          {detailTemplate.description}
+                        </div>
+                      </PreviewSection>
+                    ) : null}
 
-                        return (
-                          <div
-                            key={m.id || `${m.title}-${idx}`}
-                            className="rounded border border-slate-200 bg-white px-3 py-2"
-                          >
-                            <div className="text-xs font-medium text-gray-900">
-                              {idx + 1}. {m.title || "Untitled milestone"}
-                            </div>
-
-                            {suggestedDay ? (
-                              <div className="mt-1 text-[11px] font-medium text-indigo-700">
-                                Suggested target: {suggestedDay}
+                    <PreviewSection title="Mini Preview">
+                      <div className="space-y-2">
+                        {previewMilestones.length ? (
+                          <div className="space-y-2">
+                            {previewMilestones.slice(0, 4).map((m, idx) => (
+                              <div
+                                key={m.id || `${m.title}-${idx}`}
+                                className="rounded border border-slate-200 bg-white px-3 py-2"
+                              >
+                                <div className="text-xs font-medium text-gray-900">
+                                  {idx + 1}. {m.title || "Untitled milestone"}
+                                </div>
+                                {safeTrim(m.description) ? (
+                                  <div className="mt-1 text-[11px] text-gray-600">
+                                    {m.description}
+                                  </div>
+                                ) : null}
                               </div>
-                            ) : null}
-
-                            {safeTrim(m.description) ? (
-                              <div className="mt-1 text-[11px] text-gray-600">
-                                {m.description}
-                              </div>
-                            ) : null}
+                            ))}
                           </div>
-                        );
-                      })}
+                        ) : (
+                          <div className="text-xs text-slate-500">
+                            No milestones yet. Use AI or continue to Step 2 to shape them.
+                          </div>
+                        )}
+
+                        {safeTrim(detailTemplate?.project_materials_hint) ? (
+                          <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                            <div className="font-semibold text-slate-900">Materials Summary</div>
+                            <div className="mt-1">{detailTemplate.project_materials_hint}</div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </PreviewSection>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="text-sm font-semibold text-slate-900">Smart Actions</div>
+                      <div className="mt-1 text-xs text-slate-600">
+                        Keep these optional. You can ignore suggestions and continue manually.
+                      </div>
+                      <div className="mt-3 flex flex-col gap-2">
+                        <button
+                          type="button"
+                          onClick={runAiMilestonesFromScope}
+                          disabled={locked || !agreementId || !canGenerateFromScope || aiMilestoneBusy || blockScopeGeneration}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                        >
+                          {aiMilestoneBusy ? "Working…" : "Generate Suggested Milestones"}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={onApplySelectedTemplate}
+                          disabled={locked || !agreementId || applyingTemplateId === selectedTemplate?.id}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+                        >
+                          {applyingTemplateId === selectedTemplate?.id ? "Applying…" : "Apply Pricing Guidance"}
+                        </button>
+                      </div>
+
+                      {aiMilestoneErr ? (
+                        <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                          {aiMilestoneErr}
+                        </div>
+                      ) : null}
                     </div>
-                  </PreviewSection>
-                ) : null}
+                  </div>
+                </div>
 
-                {previewClarifications.length ? (
-                  <PreviewSection title="Clarifications">
-                    <ul className="list-disc space-y-1 pl-4 text-xs text-gray-700">
-                      {previewClarifications.map((item, idx) => (
-                        <li key={`${item}-${idx}`}>{item}</li>
-                      ))}
-                    </ul>
-                  </PreviewSection>
-                ) : null}
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {!agreementId ? (
+                    <div className="text-[11px] text-amber-700">
+                      Save Draft first so template milestones can be attached to this agreement.
+                    </div>
+                  ) : null}
+                </div>
               </>
-            ) : null}
-
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              {!isTemplateApplied ? (
-                <button
-                  type="button"
-                  onClick={onApplySelectedTemplate}
-                  disabled={
-                    locked ||
-                    !agreementId ||
-                    applyingTemplateId === selectedTemplate.id
-                  }
-                  className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-700 disabled:opacity-60"
-                >
-                  {applyingTemplateId === selectedTemplate.id
-                    ? "Applying…"
-                    : "Apply Selected Template"}
-                </button>
-              ) : null}
-
-              {!isTemplateApplied ? (
-                <button
-                  type="button"
-                  onClick={clearTemplateSearchOnly}
-                  disabled={locked}
-                  className="rounded border px-3 py-1.5 text-xs disabled:opacity-60"
-                >
-                  Clear
-                </button>
-              ) : null}
-
-              {!selectedTemplate?.is_system && !isTemplateApplied ? (
-                <button
-                  type="button"
-                  onClick={handleDeleteTemplate}
-                  disabled={locked}
-                  className="rounded border border-red-200 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-60"
-                >
-                  Delete Template
-                </button>
-              ) : null}
-            </div>
-
-            {!agreementId ? (
-              <div className="mt-2 text-[11px] text-amber-700">
-                Create/save the agreement first, then apply the template so
-                milestones can be generated on the backend.
-              </div>
-            ) : null}
+            )}
           </div>
-        ) : !showNoStrongMatchPanel ? (
-          <div className="mt-3 rounded border border-dashed border-gray-300 bg-white px-3 py-3 text-sm text-gray-600">
-            No template selected yet. Search for a template above, or continue
-            below and build the project from scratch.
-          </div>
-        ) : null}
+        </section>
       </div>
 
       {showProjectFields ? (

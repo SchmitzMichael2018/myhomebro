@@ -639,7 +639,7 @@ test('agreement wizard step 1 shows subtype clarifications, saves answers, and a
 test('agreement wizard step 1 respects explicit mode switching when a template is already applied', async ({
   page,
 }) => {
-  const agreement = {
+  let agreement = {
     id: AGREEMENT_ID,
     agreement_id: AGREEMENT_ID,
     project_title: 'Template Draft',
@@ -1478,13 +1478,19 @@ test('agreement wizard step 1 shows clarifications after template application an
 
   await page.getByRole('button', { name: 'Use Template' }).click();
   await expect(page.getByTestId('step1-template-browser')).toBeVisible();
+  await expect(page.getByTestId('step1-system-templates-list')).toBeVisible();
+  await expect(page.getByTestId('step1-my-templates-list')).toBeVisible();
+  await expect(page.getByTestId('step1-template-detail-name')).toHaveCount(0);
+  await expect(page.getByText('Start a new template')).toBeVisible();
 
   await page.locator('input[placeholder*="Search templates by keyword"]').fill('kitchen');
   await page.getByRole('button', { name: /Kitchen Remodel Template/ }).click();
-  await page.getByRole('button', { name: 'Apply Selected Template' }).click();
-
-  await expect(page.getByText('Applied to Agreement')).toBeVisible();
+  await expect(page.getByTestId('step1-template-detail-name')).toContainText(
+    'Kitchen Remodel Template'
+  );
   await expect(page.getByTestId('step1-template-insights-card')).toBeVisible();
+  await page.getByTestId('step1-continue-to-step2-button').click();
+
   await expect(page.getByTestId('step1-template-insights-card')).toContainText(
     '5 milestones is within the expected range for this template.'
   );
@@ -1511,6 +1517,270 @@ test('agreement wizard step 1 shows clarifications after template application an
   await page.getByTestId('agreement-clarification-skip').click();
   await expect(page.getByTestId('agreement-clarification-skipped')).toContainText(
     'You can skip these for now and still keep moving'
+  );
+});
+
+test('agreement wizard step 1 can generate a template draft from the start panel and open the detail view', async ({
+  page,
+}) => {
+  let agreement = {
+    id: AGREEMENT_ID,
+    agreement_id: AGREEMENT_ID,
+    project_title: '',
+    title: '',
+    project_type: '',
+    project_subtype: '',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    description: '',
+    homeowner: null,
+    status: 'draft',
+    compliance_warning: {
+      warning_level: 'none',
+      message: '',
+    },
+  };
+
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        onboarding_status: 'not_started',
+        connected: false,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-types/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          { id: 7, value: 'Remodel', label: 'Remodel', owner_type: 'system' },
+          { id: 8, value: 'Roofing', label: 'Roofing', owner_type: 'system' },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/project-subtypes/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 17,
+            value: 'Bathroom Remodel',
+            label: 'Bathroom Remodel',
+            owner_type: 'system',
+            project_type: 'Remodel',
+          },
+          {
+            id: 18,
+            value: 'Kitchen Remodel',
+            label: 'Kitchen Remodel',
+            owner_type: 'system',
+            project_type: 'Remodel',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/homeowners**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{ id: 1, company_name: 'Demo Customer', full_name: 'Jordan Demo' }],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractors/me/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 77,
+        ai: { access: 'included', enabled: true, unlimited: true },
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/recommend/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        confidence: 'high',
+        recommended_template: {
+          id: 44,
+          name: 'Kitchen Remodel Template',
+          project_type: 'Remodel',
+          project_subtype: 'Kitchen Remodel',
+          milestone_count: 5,
+          description: 'Reusable kitchen remodel starting point.',
+          owner_type: 'system',
+        },
+        candidates: [
+          {
+            id: 44,
+            name: 'Kitchen Remodel Template',
+            project_type: 'Remodel',
+            project_subtype: 'Kitchen Remodel',
+            milestone_count: 5,
+            description: 'Reusable kitchen remodel starting point.',
+            owner_type: 'system',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/agreements/ai/description/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        project_title: 'Kitchen Remodel',
+        project_type: 'Remodel',
+        project_subtype: 'Kitchen Remodel',
+        description: 'Kitchen remodel with cabinet updates and finish work.',
+        ai_access: 'included',
+        ai_enabled: true,
+        ai_unlimited: true,
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/templates/**', async (route) => {
+    if (route.request().url().includes('/templates/recommend/')) {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 44,
+            name: 'Kitchen Remodel Template',
+            project_type: 'Remodel',
+            project_subtype: 'Kitchen Remodel',
+            milestone_count: 5,
+            description: 'Reusable kitchen remodel starting point.',
+            owner_type: 'system',
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/templates\/44\/?(\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 44,
+        name: 'Kitchen Remodel Template',
+        project_type: 'Remodel',
+        project_subtype: 'Kitchen Remodel',
+        milestone_count: 5,
+        estimated_days: 7,
+        description: 'Reusable kitchen remodel starting point.',
+        milestones: [
+          { id: 1, title: 'Demo', description: 'Protect space and remove old finishes.' },
+          { id: 2, title: 'Cabinets', description: 'Install cabinets and hardware.' },
+        ],
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/123\/apply-template\/$/, async (route) => {
+    agreement = {
+      ...agreement,
+      selected_template_id: 44,
+      selected_template: {
+        id: 44,
+        name: 'Kitchen Remodel Template',
+        project_type: 'Remodel',
+        project_subtype: 'Kitchen Remodel',
+      },
+      selected_template_name_snapshot: 'Kitchen Remodel Template',
+      project_type: '',
+      project_subtype: '',
+    };
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        agreement,
+      }),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${AGREEMENT_ID}/?(\\?.*)?$`),
+    async (route) => {
+      const request = route.request();
+      if (request.method() === 'GET' || request.method() === 'PATCH') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(agreement),
+        });
+        return;
+      }
+
+      await route.fallback();
+    }
+  );
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=1`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await page.getByRole('button', { name: 'Use Template' }).click();
+  await expect(page.getByTestId('step1-template-browser')).toBeVisible();
+  await expect(page.getByTestId('step1-template-detail-name')).toHaveCount(0);
+  await page.getByTestId('step1-ai-prompt-input').fill(
+    'Kitchen remodel with layout updates, new cabinets, and finish work'
+  );
+  await page.getByTestId('step1-generate-ai-button').click();
+
+  await expect(page.getByTestId('step1-template-detail-name')).toContainText(
+    'Kitchen Remodel Template'
+  );
+  await expect(page.getByTestId('step1-template-insights-card')).toBeVisible();
+  await page.getByTestId('step1-continue-to-step2-button').click();
+
+  await expect(page.locator('select[name="project_subtype"]')).toHaveValue('Kitchen Remodel');
+  await expect(page.getByTestId('agreement-clarification-section')).toBeVisible();
+  await expect(page.getByTestId('agreement-clarification-question-layout_changes')).toContainText(
+    'Does the kitchen layout or appliance placement change?'
   );
 });
 

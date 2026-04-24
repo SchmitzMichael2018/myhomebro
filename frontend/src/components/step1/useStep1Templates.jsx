@@ -650,14 +650,10 @@ export default function useStep1Templates({
                 ? data.reason
                 : chosen?._matchReason || "Exact type and subtype match."
             );
-
-            setSelectedTemplateId((prev) => prev || chosenId);
           } else if (backendConfidence === "medium") {
             setTemplateRecommendationReason(
               data?.reason || chosen?._matchReason || "This template could fit, but review it before applying."
             );
-
-            setSelectedTemplateId((prev) => prev || null);
           } else {
             setTemplateRecommendationReason("");
           }

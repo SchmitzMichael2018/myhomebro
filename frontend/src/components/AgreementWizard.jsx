@@ -1723,15 +1723,17 @@ export default function AgreementWizard() {
             assistantProposedActions={assistantHandoff.proposedActions}
             assistantConfirmationRequiredActions={assistantHandoff.confirmationRequiredActions}
             assistantLeadContext={assistantHandoff.context}
-            assistantDraftPayload={assistantDraftPayload}
-            aiHighlightKeys={step1AiHighlights}
-            isAiAssistantActive={isAssistantDockOpen}
-            aiSetupRequest={step1AiSetupRequest}
-            onAiModeActiveChange={setStep1AiEntryOpen}
-            onAiSetupReviewReady={({ message = "", changedKeys = [] } = {}) => {
-              if (changedKeys.length) {
-                markStep1AiUpdated(changedKeys, { label: "AI suggested" });
-              }
+              assistantDraftPayload={assistantDraftPayload}
+              aiHighlightKeys={step1AiHighlights}
+              isAiAssistantActive={isAssistantDockOpen}
+              aiSetupRequest={step1AiSetupRequest}
+              onStep1AiSetupRequest={setStep1AiSetupRequest}
+              onStep1Continue={() => goStep(2)}
+              onAiModeActiveChange={setStep1AiEntryOpen}
+              onAiSetupReviewReady={({ message = "", changedKeys = [] } = {}) => {
+                if (changedKeys.length) {
+                  markStep1AiUpdated(changedKeys, { label: "AI suggested" });
+                }
               const reviewTargets = changedKeys
                 .map((key) =>
                   key === "project_type"
