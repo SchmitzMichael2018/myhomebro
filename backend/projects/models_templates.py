@@ -69,6 +69,16 @@ class ProjectTemplate(models.Model):
     project_materials_hint = models.TextField(blank=True, default="")
 
     is_system = models.BooleanField(default=False, db_index=True)
+    is_system_template = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Marks this template as a system-owned starter template.",
+    )
+    is_published = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Whether this system template is visible to contractors.",
+    )
     is_active = models.BooleanField(default=True, db_index=True)
     visibility = models.CharField(
         max_length=24,
@@ -142,6 +152,20 @@ class ProjectTemplate(models.Model):
     @property
     def milestone_count(self) -> int:
         return self.milestones.count()
+
+    def save(self, *args, **kwargs):
+        if self.is_system or self.is_system_template:
+            self.is_system = True
+            self.is_system_template = True
+            if self.contractor_id is not None:
+                self.contractor = None
+        else:
+            self.is_system = False
+            self.is_system_template = False
+            self.is_published = False
+            self.published_at = None
+            self.published_by = None
+        super().save(*args, **kwargs)
 
 
 class ProjectTemplateMilestone(models.Model):

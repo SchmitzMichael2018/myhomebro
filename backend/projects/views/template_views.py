@@ -69,7 +69,7 @@ class TemplateListCreateView(APIView):
             request.query_params.get("include_inactive", "false").lower() == "true"
         )
 
-        qs = _template_queryset().filter(Q(is_system=True) | Q(contractor=contractor))
+        qs = _template_queryset().filter(Q(is_system_template=True, is_published=True) | Q(contractor=contractor))
 
         if not include_inactive:
             qs = qs.filter(is_active=True)
@@ -80,7 +80,7 @@ class TemplateListCreateView(APIView):
         if project_subtype:
             qs = qs.filter(project_subtype__iexact=project_subtype)
 
-        qs = qs.order_by("-is_system", "name")
+        qs = qs.order_by("-is_system_template", "name")
 
         serializer = ProjectTemplateListSerializer(qs, many=True)
         return Response(serializer.data)
@@ -129,7 +129,7 @@ class TemplateDetailView(APIView):
     def patch(self, request, pk: int):
         template = self.get_object(request, pk)
 
-        if template.is_system:
+        if template.is_system_template:
             raise PermissionDenied("System templates cannot be edited here.")
 
         serializer = ProjectTemplateCreateUpdateSerializer(
@@ -146,7 +146,7 @@ class TemplateDetailView(APIView):
     def delete(self, request, pk: int):
         template = self.get_object(request, pk)
 
-        if template.is_system:
+        if template.is_system_template:
             raise PermissionDenied("System templates cannot be deleted here.")
 
         template.delete()
@@ -482,7 +482,7 @@ class TemplateApplyPricingView(APIView):
         except ProjectTemplate.DoesNotExist:
             raise ValidationError("Template not found.")
 
-        if template.is_system:
+        if template.is_system_template:
             raise PermissionDenied("System templates cannot be modified.")
 
         if contractor is None or template.contractor_id != contractor.id:
@@ -667,7 +667,7 @@ class TemplateVisibilityUpdateView(APIView):
         except ProjectTemplate.DoesNotExist:
             raise ValidationError("Template not found.")
 
-        if template.is_system:
+        if template.is_system_template:
             raise PermissionDenied("System templates are managed through the system seed/admin path.")
         if template.contractor_id != contractor.id:
             raise PermissionDenied("You do not have permission to update this template.")

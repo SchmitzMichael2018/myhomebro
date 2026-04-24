@@ -59,6 +59,8 @@ class ProjectTemplateListSerializer(serializers.ModelSerializer):
             "default_clarifications",
             "project_materials_hint",
             "is_system",
+            "is_system_template",
+            "is_published",
             "is_active",
             "visibility",
             "allow_discovery",
@@ -96,15 +98,15 @@ class ProjectTemplateListSerializer(serializers.ModelSerializer):
             return 0
 
     def get_owner_type(self, obj):
-        return "system" if obj.is_system else "contractor"
+        return "system" if obj.is_system_template or obj.is_system else "contractor"
 
     def get_source_label(self, obj):
-        if obj.is_system or obj.visibility == ProjectTemplate.Visibility.SYSTEM:
+        if obj.is_system_template or obj.is_system or obj.visibility == ProjectTemplate.Visibility.SYSTEM:
             return "system"
         return obj.visibility or "private"
 
     def get_discoverable(self, obj):
-        return bool(obj.is_system or obj.allow_discovery)
+        return bool((obj.is_system_template and obj.is_published) or obj.allow_discovery)
 
     def get_usage_count(self, obj):
         return int(getattr(obj, "usage_count", 0) or 0)
@@ -183,6 +185,8 @@ class ProjectTemplateDetailSerializer(serializers.ModelSerializer):
             "default_clarifications",
             "project_materials_hint",
             "is_system",
+            "is_system_template",
+            "is_published",
             "is_active",
             "visibility",
             "allow_discovery",
@@ -217,15 +221,15 @@ class ProjectTemplateDetailSerializer(serializers.ModelSerializer):
             return 0
 
     def get_owner_type(self, obj):
-        return "system" if obj.is_system else "contractor"
+        return "system" if obj.is_system_template or obj.is_system else "contractor"
 
     def get_source_label(self, obj):
-        if obj.is_system or obj.visibility == ProjectTemplate.Visibility.SYSTEM:
+        if obj.is_system_template or obj.is_system or obj.visibility == ProjectTemplate.Visibility.SYSTEM:
             return "system"
         return obj.visibility or "private"
 
     def get_discoverable(self, obj):
-        return bool(obj.is_system or obj.allow_discovery)
+        return bool((obj.is_system_template and obj.is_published) or obj.allow_discovery)
 
     def get_created_from_system_template(self, obj):
         return bool(getattr(obj, "source_system_template_id", None))
@@ -294,6 +298,9 @@ class ProjectTemplateCreateUpdateSerializer(serializers.ModelSerializer):
             try:
                 source_template = ProjectTemplate.objects.prefetch_related("milestones").get(pk=source_template_id)
             except ProjectTemplate.DoesNotExist:
+                raise serializers.ValidationError({"source_template_id": "Template not found."})
+
+            if source_template.is_system_template and not source_template.is_published:
                 raise serializers.ValidationError({"source_template_id": "Template not found."})
 
             if not source_template.is_system and (

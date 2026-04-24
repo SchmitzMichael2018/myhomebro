@@ -37,7 +37,7 @@ class TemplateListCreateView(APIView):
         qs = ProjectTemplate.objects.annotate(
             template_milestone_count=Count("milestones")
         ).filter(
-            Q(is_system=True) | Q(contractor=contractor)
+            Q(is_system_template=True, is_published=True) | Q(contractor=contractor)
         )
 
         if not include_inactive:
@@ -55,7 +55,7 @@ class TemplateListCreateView(APIView):
             else:
                 qs = qs.filter(Q(project_subtype__isnull=True) | Q(project_subtype=""))
 
-        qs = qs.order_by("-is_system", "name")
+        qs = qs.order_by("-is_system_template", "name")
 
         serializer = ProjectTemplateListSerializer(qs, many=True)
         return Response(serializer.data)
@@ -90,7 +90,7 @@ class TemplateDetailView(APIView):
         except ProjectTemplate.DoesNotExist:
             raise ValidationError("Template not found.")
 
-        if template.is_system:
+        if template.is_system_template:
             return template
 
         if contractor is None or template.contractor_id != contractor.id:
@@ -106,7 +106,7 @@ class TemplateDetailView(APIView):
     def patch(self, request, pk: int):
         template = self.get_object(request, pk)
 
-        if template.is_system:
+        if template.is_system_template:
             raise PermissionDenied("System templates cannot be edited here.")
 
         serializer = ProjectTemplateCreateUpdateSerializer(
@@ -122,7 +122,7 @@ class TemplateDetailView(APIView):
     def delete(self, request, pk: int):
         template = self.get_object(request, pk)
 
-        if template.is_system:
+        if template.is_system_template:
             raise PermissionDenied("System templates cannot be deleted here.")
 
         template.delete()
@@ -157,7 +157,7 @@ class ApplyTemplateToAgreementView(APIView):
         except ProjectTemplate.DoesNotExist:
             raise ValidationError("Template not found.")
 
-        if not template.is_system and template.contractor_id != contractor.id:
+        if not template.is_system_template and template.contractor_id != contractor.id:
             raise PermissionDenied("You do not have access to this template.")
 
         try:

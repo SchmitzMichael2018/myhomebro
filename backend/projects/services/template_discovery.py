@@ -47,7 +47,7 @@ def _region_match_scope(template_region_key: str, requested_region_key: str) -> 
 
 
 def _template_is_regionally_visible(template: ProjectTemplate, requested_region_key: str) -> bool:
-    if template.is_system:
+    if template.is_system_template:
         return True
     if template.visibility == ProjectTemplate.Visibility.PUBLIC:
         return bool(template.allow_discovery)
@@ -73,6 +73,10 @@ def _template_matches_query(template: ProjectTemplate, query: str) -> bool:
         ]
     ).lower()
     return q in haystack
+
+
+def _is_public_system_template(template: ProjectTemplate) -> bool:
+    return bool(getattr(template, "is_system_template", False) and getattr(template, "is_published", False))
 
 
 @dataclass(frozen=True)
@@ -104,7 +108,7 @@ def get_template_detail_queryset():
 
 
 def can_access_template(template: ProjectTemplate, contractor: Contractor | None, *, region_key: str = "") -> bool:
-    if template.is_system:
+    if _is_public_system_template(template):
         return True
     if contractor is not None and template.contractor_id == contractor.id:
         return True
@@ -122,7 +126,7 @@ def _candidate_queryset(contractor: Contractor | None):
     owned_filter = Q(contractor=contractor) if contractor is not None else Q(pk__in=[])
     return (
         get_template_detail_queryset()
-        .filter(Q(is_system=True) | owned_filter | visibility_filter)
+        .filter(Q(is_system_template=True, is_published=True) | owned_filter | visibility_filter)
         .filter(is_active=True)
     )
 
@@ -137,13 +141,13 @@ def _apply_primary_filters(
     benchmark_match_key: str,
 ):
     if source == "mine":
-        queryset = queryset.filter(is_system=False, contractor=contractor)
+        queryset = queryset.filter(is_system_template=False, contractor=contractor)
     elif source == "system":
-        queryset = queryset.filter(is_system=True)
+        queryset = queryset.filter(is_system_template=True, is_published=True)
     elif source == "regional":
-        queryset = queryset.filter(is_system=False, visibility=ProjectTemplate.Visibility.REGIONAL, allow_discovery=True)
+        queryset = queryset.filter(is_system_template=False, visibility=ProjectTemplate.Visibility.REGIONAL, allow_discovery=True)
     elif source == "public":
-        queryset = queryset.filter(is_system=False, visibility=ProjectTemplate.Visibility.PUBLIC, allow_discovery=True)
+        queryset = queryset.filter(is_system_template=False, visibility=ProjectTemplate.Visibility.PUBLIC, allow_discovery=True)
 
     if project_type:
         queryset = queryset.filter(project_type__iexact=project_type)
@@ -186,7 +190,7 @@ def _rank_template(template: ProjectTemplate, context: DiscoveryContext) -> None
         score += 250
         reasons.append("owned_by_you")
 
-    if template.is_system:
+    if _is_public_system_template(template):
         score += 180
         reasons.append("system_template")
     elif template.visibility == ProjectTemplate.Visibility.PUBLIC:

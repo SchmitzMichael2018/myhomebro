@@ -613,6 +613,8 @@ if ProjectTemplate is not None and ProjectTemplateMilestone is not None:
             "project_type",
             "project_subtype",
             "is_system",
+            "is_system_template",
+            "is_published",
             "visibility",
             "allow_discovery",
             "normalized_region_key",
@@ -626,6 +628,8 @@ if ProjectTemplate is not None and ProjectTemplateMilestone is not None:
         )
         list_filter = (
             "is_system",
+            "is_system_template",
+            "is_published",
             "is_active",
             "visibility",
             "allow_discovery",
@@ -652,6 +656,8 @@ if ProjectTemplate is not None and ProjectTemplateMilestone is not None:
                         "name",
                         "contractor",
                         "is_system",
+                        "is_system_template",
+                        "is_published",
                         "is_active",
                     )
                 },
@@ -703,6 +709,26 @@ if ProjectTemplate is not None and ProjectTemplateMilestone is not None:
                 return obj.milestones.count()
             except Exception:
                 return 0
+
+        def save_model(self, request, obj, form, change):
+            if obj.is_system_template:
+                obj.is_system = True
+                obj.contractor = None
+            elif obj.is_system:
+                obj.is_system_template = True
+
+            if obj.is_system_template:
+                obj.visibility = ProjectTemplate.Visibility.SYSTEM
+                obj.allow_discovery = bool(obj.is_published)
+                if obj.is_published:
+                    obj.published_at = obj.published_at or timezone.now()
+                    if obj.published_by_id is None:
+                        obj.published_by = request.user
+                else:
+                    obj.published_at = None
+                    obj.published_by = None
+
+            super().save_model(request, obj, form, change)
 
     @admin.register(ProjectTemplateMilestone)
     class ProjectTemplateMilestoneAdmin(admin.ModelAdmin):

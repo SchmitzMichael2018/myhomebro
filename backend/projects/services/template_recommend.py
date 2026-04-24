@@ -555,13 +555,14 @@ def score_template(
     if (
         _norm(project_subtype)
         and _norm(template.project_subtype or "") == _norm(project_subtype)
-        and getattr(template, "is_system", False)
+        and getattr(template, "is_system_template", False)
+        and getattr(template, "is_published", False)
     ):
         total_score += 5
         reasons.append("built-in subtype starter")
 
     # Small boost to contractor custom templates when score is already decent
-    if not getattr(template, "is_system", False) and total_score >= 35:
+    if not getattr(template, "is_system_template", False) and total_score >= 35:
         total_score += 4
         reasons.append("custom contractor template")
 
@@ -604,7 +605,7 @@ def recommend_template(
     ranked.sort(
         key=lambda row: (
             row["score"],
-            1 if not getattr(row["template"], "is_system", False) else 0,
+            1 if not getattr(row["template"], "is_system_template", False) else 0,
             len(getattr(row["template"], "description", "") or ""),
             len(getattr(row["template"], "project_subtype", "") or ""),
         ),
@@ -628,6 +629,8 @@ def recommend_template(
             "project_type": row["template"].project_type,
             "project_subtype": row["template"].project_subtype,
             "is_system": row["template"].is_system,
+            "is_system_template": bool(getattr(row["template"], "is_system_template", False)),
+            "is_published": bool(getattr(row["template"], "is_published", False)),
             "score": row["score"],
             "reason": row["reason"],
         }

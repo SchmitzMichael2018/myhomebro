@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Q
 
 from projects.models_templates import (
     ProjectTemplate,
@@ -628,7 +629,10 @@ def seed_system_benchmark_foundation() -> dict[str, int]:
         else:
             updated_profiles += 1
 
-        template = ProjectTemplate.objects.filter(is_system=True, benchmark_match_key=spec.key).first()
+        template = ProjectTemplate.objects.filter(
+            Q(is_system_template=True, is_published=True, benchmark_match_key=spec.key)
+            | Q(is_system=True, benchmark_match_key=spec.key)
+        ).first()
         template_defaults = {
             "name": spec.name,
             "project_type": spec.project_type,
@@ -643,6 +647,8 @@ def seed_system_benchmark_foundation() -> dict[str, int]:
             "region_tags": _regional_template_tags(spec.key),
             "project_materials_hint": spec.project_materials_hint,
             "is_system": True,
+            "is_system_template": True,
+            "is_published": True,
             "is_active": True,
             "visibility": ProjectTemplate.Visibility.SYSTEM,
             "allow_discovery": True,
@@ -835,7 +841,7 @@ def seed_system_benchmark_foundation() -> dict[str, int]:
         else:
             updated_profiles += 1
 
-    generic_defaults = {
+        generic_defaults = {
         "benchmark_match_key": "generic",
         "project_type": "",
         "project_subtype": "",

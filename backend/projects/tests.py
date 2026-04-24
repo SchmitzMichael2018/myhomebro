@@ -9,12 +9,13 @@ import tempfile
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.contrib.admin.sites import AdminSite
 from django.core import signing
 from django.core.cache import cache
 from django.core.management import call_command
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase, override_settings
+from django.test import TestCase, RequestFactory, override_settings
 from django.urls import resolve
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -24,6 +25,7 @@ from projects.ai.agreement_milestone_writer import (
     _shape_milestone_rows_for_clarifications,
     suggest_scope_and_milestones,
 )
+from projects.admin import ProjectTemplateAdmin
 from projects.models import (
     Agreement,
     AgreementAIScope,
@@ -11698,7 +11700,11 @@ class SeededBenchmarkFoundationTests(TestCase):
 
         system_templates = {
             row.name: row
-            for row in ProjectTemplate.objects.filter(is_system=True, name__in=expected_templates).prefetch_related("milestones")
+            for row in ProjectTemplate.objects.filter(
+                is_system_template=True,
+                is_published=True,
+                name__in=expected_templates,
+            ).prefetch_related("milestones")
         }
 
         self.assertEqual(set(system_templates.keys()), expected_templates)
@@ -11726,7 +11732,11 @@ class SeededBenchmarkFoundationTests(TestCase):
         self.assertEqual(result["source_metadata"]["location_multiplier"], "1.1200")
 
     def test_system_template_regional_linkage_remains_intact(self):
-        template = ProjectTemplate.objects.get(is_system=True, benchmark_match_key="remodel:kitchen_remodel")
+        template = ProjectTemplate.objects.get(
+            is_system_template=True,
+            is_published=True,
+            benchmark_match_key="remodel:kitchen_remodel",
+        )
 
         self.assertIsNotNone(template.benchmark_profile_id)
         self.assertEqual(template.project_type, "Remodel")
@@ -11745,12 +11755,15 @@ class SeededBenchmarkFoundationTests(TestCase):
         self.assertTrue(result["source_metadata"]["template_linked"])
 
     def test_seed_command_is_idempotent_with_regional_profiles(self):
-        first_template_count = ProjectTemplate.objects.filter(is_system=True).count()
+        first_template_count = ProjectTemplate.objects.filter(is_system_template=True, is_published=True).count()
         first_profile_count = SeedBenchmarkProfile.objects.count()
 
         call_command("seed_project_templates")
 
-        self.assertEqual(ProjectTemplate.objects.filter(is_system=True).count(), first_template_count)
+        self.assertEqual(
+            ProjectTemplate.objects.filter(is_system_template=True, is_published=True).count(),
+            first_template_count,
+        )
         self.assertEqual(SeedBenchmarkProfile.objects.count(), first_profile_count)
         self.assertEqual(
             SeedBenchmarkProfile.objects.get(benchmark_key="remodel:kitchen_remodel:tx").normalized_region_key,
@@ -11758,7 +11771,11 @@ class SeededBenchmarkFoundationTests(TestCase):
         )
 
     def test_contractor_custom_template_behavior_remains_intact(self):
-        system_template = ProjectTemplate.objects.get(is_system=True, benchmark_match_key="remodel:kitchen_remodel")
+        system_template = ProjectTemplate.objects.get(
+            is_system_template=True,
+            is_published=True,
+            benchmark_match_key="remodel:kitchen_remodel",
+        )
         agreement = Agreement.objects.create(
             project=self.project,
             contractor=self.contractor,
@@ -11809,6 +11826,61 @@ class SeededBenchmarkFoundationTests(TestCase):
         self.assertIn("clarification_defaults", result)
         self.assertIn("multipliers_available", result)
         self.assertIn("region_key_used", result)
+
+
+class ProjectTemplateAdminTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.admin_user = user_model.objects.create_superuser(
+            email="project-template-admin@example.com",
+            password="testpass123",
+        )
+        self.factory = RequestFactory()
+        self.admin = ProjectTemplateAdmin(ProjectTemplate, AdminSite())
+
+    def _request(self):
+        request = self.factory.post("/admin/projects/projecttemplate/")
+        request.user = self.admin_user
+        return request
+
+    def test_admin_can_create_edit_publish_and_unpublish_system_template(self):
+        template = ProjectTemplate(
+            name="Admin Managed Starter",
+            project_type="Remodel",
+            project_subtype="Kitchen Remodel",
+            description="Admin managed starter template.",
+            contractor=None,
+            is_system_template=True,
+            is_published=True,
+            visibility=ProjectTemplate.Visibility.PRIVATE,
+            allow_discovery=False,
+        )
+
+        self.admin.save_model(self._request(), template, form=None, change=False)
+        template.refresh_from_db()
+
+        self.assertTrue(template.is_system_template)
+        self.assertTrue(template.is_published)
+        self.assertIsNone(template.contractor_id)
+        self.assertEqual(template.visibility, ProjectTemplate.Visibility.SYSTEM)
+        self.assertTrue(template.allow_discovery)
+        self.assertEqual(template.published_by_id, self.admin_user.id)
+        self.assertIsNotNone(template.published_at)
+
+        template.description = "Updated admin-managed starter template."
+        self.admin.save_model(self._request(), template, form=None, change=True)
+        template.refresh_from_db()
+        self.assertEqual(template.description, "Updated admin-managed starter template.")
+        self.assertTrue(template.is_published)
+        self.assertTrue(template.allow_discovery)
+
+        template.is_published = False
+        self.admin.save_model(self._request(), template, form=None, change=True)
+        template.refresh_from_db()
+        self.assertFalse(template.is_published)
+        self.assertFalse(template.allow_discovery)
+        self.assertIsNone(template.published_at)
+        self.assertIsNone(template.published_by_id)
 
 
 class ProjectEstimationEngineTests(TestCase):
@@ -12223,6 +12295,38 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         self.assertIn("Bathroom Remodel", names)
         self.assertIn("Kitchen Remodel", names)
         self.assertIn("Roof Replacement", names)
+
+    def test_unpublished_system_templates_do_not_appear_in_discovery(self):
+        hidden_template = ProjectTemplate.objects.create(
+            name="Hidden System Starter",
+            project_type="Remodel",
+            project_subtype="Hidden System Starter",
+            description="Hidden system-only starter.",
+            is_system_template=True,
+            is_published=False,
+            visibility=ProjectTemplate.Visibility.SYSTEM,
+            allow_discovery=False,
+        )
+
+        response = self.client.get("/api/projects/templates/discover/", {"source": "system"})
+        self.assertEqual(response.status_code, 200)
+        names = {row["name"] for row in response.json()["results"]}
+        self.assertNotIn(hidden_template.name, names)
+
+    def test_contractor_cannot_edit_system_template(self):
+        system_template = ProjectTemplate.objects.get(
+            is_system_template=True,
+            is_published=True,
+            benchmark_match_key="remodel:kitchen_remodel",
+        )
+
+        response = self.client.patch(
+            f"/api/projects/templates/{system_template.id}/",
+            {"description": "Attempted contractor edit"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
 
     def test_recommend_endpoint_can_return_seeded_starter_template(self):
         response = self.client.post(

@@ -158,9 +158,9 @@ def _recommend_template(intake: ProjectIntake, *, search_text: str = ""):
 
     qs = (
         ProjectTemplate.objects.filter(is_active=True)
-        .filter(Q(is_system=True) | Q(contractor=contractor))
+        .filter(Q(is_system_template=True, is_published=True) | Q(contractor=contractor))
         .prefetch_related("milestones")
-        .order_by("-is_system", "name")
+        .order_by("-is_system_template", "name")
     )
 
     ranked: list[tuple[int, ProjectTemplate, list[str]]] = []

@@ -311,7 +311,12 @@ def promote_public_lead_to_agreement(*, lead, homeowner=None):
     if template_id:
         selected_template = (
             ProjectTemplate.objects.filter(pk=template_id, contractor=contractor, is_active=True).first()
-            or ProjectTemplate.objects.filter(pk=template_id, is_system=True, is_active=True).first()
+            or ProjectTemplate.objects.filter(
+                pk=template_id,
+                is_system_template=True,
+                is_published=True,
+                is_active=True,
+            ).first()
         )
 
     with transaction.atomic():

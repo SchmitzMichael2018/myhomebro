@@ -520,7 +520,7 @@ def _score_template(template: ProjectTemplate, *, project_type: str, project_sub
         score += min(token_hits * 4, 24)
         reasons.append(f"{token_hits} keyword hit(s)")
 
-    if template.is_system:
+    if template.is_system_template:
         score += 2
         reasons.append("system template")
 
@@ -538,9 +538,9 @@ def find_best_template(
     qs = ProjectTemplate.objects.filter(is_active=True)
 
     if contractor is not None:
-        qs = qs.filter(Q(is_system=True) | Q(contractor=contractor))
+        qs = qs.filter(Q(is_system_template=True, is_published=True) | Q(contractor=contractor))
     else:
-        qs = qs.filter(is_system=True)
+        qs = qs.filter(is_system_template=True, is_published=True)
 
     candidates = list(qs.prefetch_related("milestones")[:200])
 
@@ -864,6 +864,8 @@ def draft_project_structure(
             "estimated_days": matched_template.estimated_days,
             "milestone_count": matched_template.milestone_count,
             "is_system": bool(matched_template.is_system),
+            "is_system_template": bool(getattr(matched_template, "is_system_template", False)),
+            "is_published": bool(getattr(matched_template, "is_published", False)),
         }
 
     taxonomy_warning = None

@@ -50,9 +50,9 @@ class TemplateRecommendView(APIView):
             ProjectTemplate.objects.annotate(
                 template_milestone_count=Count("milestones")
             )
-            .filter(Q(is_system=True) | Q(contractor=contractor))
+            .filter(Q(is_system_template=True, is_published=True) | Q(contractor=contractor))
             .filter(is_active=True)
-            .order_by("-is_system", "name")
+            .order_by("-is_system_template", "name")
         )
 
         templates = list(base_qs)
