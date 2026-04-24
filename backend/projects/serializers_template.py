@@ -258,6 +258,7 @@ class ProjectTemplateDetailSerializer(serializers.ModelSerializer):
 
 class ProjectTemplateCreateUpdateSerializer(serializers.ModelSerializer):
     milestones = ProjectTemplateMilestoneSerializer(many=True, required=False)
+    source_template_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
 
     class Meta:
         model = ProjectTemplate
@@ -277,11 +278,37 @@ class ProjectTemplateCreateUpdateSerializer(serializers.ModelSerializer):
             "project_materials_hint",
             "is_active",
             "normalized_region_key",
+            "source_template_id",
             "milestones",
         ]
 
     def create(self, validated_data):
         milestones_data = validated_data.pop("milestones", [])
+        source_template_id = validated_data.pop("source_template_id", None)
+        contractor = validated_data.get("contractor")
+
+        if source_template_id:
+            from projects.models_templates import ProjectTemplate
+            from projects.services.template_apply import duplicate_template_for_contractor
+
+            try:
+                source_template = ProjectTemplate.objects.prefetch_related("milestones").get(pk=source_template_id)
+            except ProjectTemplate.DoesNotExist:
+                raise serializers.ValidationError({"source_template_id": "Template not found."})
+
+            if not source_template.is_system and (
+                contractor is None or source_template.contractor_id != getattr(contractor, "id", None)
+            ):
+                raise serializers.ValidationError({"source_template_id": "You cannot duplicate this template."})
+
+            template = duplicate_template_for_contractor(
+                contractor=contractor,
+                source_template=source_template,
+                template_data={**validated_data, "milestones": milestones_data},
+                is_active=validated_data.get("is_active", True),
+            )
+            return template
+
         template = ProjectTemplate.objects.create(**validated_data)
 
         for idx, row in enumerate(milestones_data, start=1):
@@ -307,6 +334,7 @@ class ProjectTemplateCreateUpdateSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         milestones_data = validated_data.pop("milestones", None)
+        validated_data.pop("source_template_id", None)
 
         for field, value in validated_data.items():
             setattr(instance, field, value)

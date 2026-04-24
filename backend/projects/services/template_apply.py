@@ -460,6 +460,103 @@ def _copy_template_text_fields(agreement: Agreement, template: ProjectTemplate) 
     _save_model_if_needed(scope_obj, scope_update_fields)
 
 
+@transaction.atomic
+def duplicate_template_for_contractor(
+    *,
+    contractor: Contractor,
+    source_template: ProjectTemplate,
+    template_data: dict[str, Any] | None = None,
+    is_active: bool = True,
+) -> ProjectTemplate:
+    """
+    Create a contractor-owned copy of a source template.
+
+    The caller can pass edited template_data from an open draft. Any fields not
+    supplied fall back to the source template so system templates can be copied
+    cleanly into the contractor's library.
+    """
+    template_data = template_data or {}
+
+    milestone_rows = template_data.get("milestones")
+    if not isinstance(milestone_rows, list) or not milestone_rows:
+        milestone_rows = [
+            {
+                "title": m.title,
+                "description": m.description or "",
+                "sort_order": m.sort_order,
+                "recommended_days_from_start": m.recommended_days_from_start,
+                "recommended_duration_days": m.recommended_duration_days,
+                "suggested_amount_percent": m.suggested_amount_percent,
+                "suggested_amount_fixed": m.suggested_amount_fixed,
+                "normalized_milestone_type": m.normalized_milestone_type or "",
+                "suggested_amount_low": m.suggested_amount_low,
+                "suggested_amount_high": m.suggested_amount_high,
+                "pricing_confidence": m.pricing_confidence or "",
+                "pricing_source_note": m.pricing_source_note or "",
+                "materials_hint": m.materials_hint or "",
+                "is_optional": m.is_optional,
+            }
+            for m in source_template.milestones.all().order_by("sort_order", "id")
+        ]
+
+    template = ProjectTemplate.objects.create(
+        contractor=contractor,
+        name=(str(template_data.get("name") or "").strip() or source_template.name).strip(),
+        project_type=str(template_data.get("project_type") or source_template.project_type or "").strip(),
+        project_subtype=str(template_data.get("project_subtype") or source_template.project_subtype or "").strip(),
+        description=str(template_data.get("description") or source_template.description or "").strip(),
+        estimated_days=int(template_data.get("estimated_days") or source_template.estimated_days or 1),
+        payment_structure=str(template_data.get("payment_structure") or source_template.payment_structure or "simple"),
+        retainage_percent=_safe_decimal(
+            template_data.get("retainage_percent", source_template.retainage_percent),
+            Decimal("0.00"),
+        ),
+        default_scope=str(template_data.get("default_scope") or source_template.default_scope or "").strip(),
+        exclusions_text=str(template_data.get("exclusions_text") or source_template.exclusions_text or "").strip(),
+        assumptions_text=str(template_data.get("assumptions_text") or source_template.assumptions_text or "").strip(),
+        default_clarifications=template_data.get("default_clarifications")
+        if isinstance(template_data.get("default_clarifications"), list)
+        else list(source_template.default_clarifications or []),
+        project_materials_hint=str(
+            template_data.get("project_materials_hint") or source_template.project_materials_hint or ""
+        ).strip(),
+        is_system=False,
+        is_active=is_active,
+        visibility=ProjectTemplate.Visibility.PRIVATE,
+        allow_discovery=False,
+        source_system_template=source_template,
+        created_from_agreement=None,
+        benchmark_profile=getattr(source_template, "benchmark_profile", None),
+        benchmark_match_key=str(source_template.benchmark_match_key or "").strip(),
+        normalized_region_key=str(source_template.normalized_region_key or "").strip(),
+        region_tags=list(template_data.get("region_tags") or source_template.region_tags or []),
+    )
+
+    ProjectTemplateMilestone = template.milestones.model
+    for idx, row in enumerate(milestone_rows, start=1):
+        if not isinstance(row, dict):
+            continue
+        ProjectTemplateMilestone.objects.create(
+            template=template,
+            sort_order=row.get("sort_order") or idx,
+            title=str(row.get("title") or "").strip(),
+            description=str(row.get("description") or "").strip(),
+            recommended_days_from_start=row.get("recommended_days_from_start"),
+            recommended_duration_days=row.get("recommended_duration_days"),
+            suggested_amount_percent=row.get("suggested_amount_percent"),
+            suggested_amount_fixed=row.get("suggested_amount_fixed"),
+            normalized_milestone_type=str(row.get("normalized_milestone_type") or "").strip(),
+            suggested_amount_low=row.get("suggested_amount_low"),
+            suggested_amount_high=row.get("suggested_amount_high"),
+            pricing_confidence=str(row.get("pricing_confidence") or "").strip(),
+            pricing_source_note=str(row.get("pricing_source_note") or "").strip(),
+            materials_hint=str(row.get("materials_hint") or "").strip(),
+            is_optional=bool(row.get("is_optional", False)),
+        )
+
+    return template
+
+
 def _extract_agreement_scope_text(agreement: Agreement) -> str:
     try:
         scope_obj = getattr(agreement, "ai_scope", None)

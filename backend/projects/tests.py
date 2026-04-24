@@ -12179,6 +12179,42 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         detail = self.client.get(f"/api/projects/templates/{self.private_template.id}/")
         self.assertEqual(detail.status_code, 403)
 
+    def test_system_template_can_be_cloned_into_private_contractor_template(self):
+        system_template = ProjectTemplate.objects.get(
+            is_system=True,
+            benchmark_match_key="remodel:kitchen_remodel",
+        )
+        source_milestone_count = system_template.milestones.count()
+
+        response = self.client.post(
+            "/api/projects/templates/",
+            {
+                "source_template_id": system_template.id,
+                "name": system_template.name,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        created = ProjectTemplate.objects.get(pk=response.json()["id"])
+
+        self.assertFalse(created.is_system)
+        self.assertEqual(created.contractor_id, self.contractor.id)
+        self.assertEqual(created.visibility, ProjectTemplate.Visibility.PRIVATE)
+        self.assertFalse(created.allow_discovery)
+        self.assertEqual(created.source_system_template_id, system_template.id)
+        self.assertEqual(created.name, system_template.name)
+        self.assertEqual(created.project_type, system_template.project_type)
+        self.assertEqual(created.project_subtype, system_template.project_subtype)
+        self.assertEqual(created.description, system_template.description)
+        self.assertEqual(created.default_scope, system_template.default_scope)
+        self.assertEqual(created.default_clarifications, system_template.default_clarifications)
+        self.assertEqual(created.project_materials_hint, system_template.project_materials_hint)
+        self.assertEqual(created.milestones.count(), source_milestone_count)
+        system_template.refresh_from_db()
+        self.assertTrue(system_template.is_system)
+        self.assertEqual(system_template.milestones.count(), source_milestone_count)
+
     def test_system_templates_appear_in_discovery(self):
         response = self.client.get("/api/projects/templates/discover/", {"source": "system"})
         self.assertEqual(response.status_code, 200)

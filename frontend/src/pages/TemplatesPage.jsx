@@ -274,7 +274,7 @@ function normalizeHeaderForEdit(detail) {
   };
 }
 
-function buildTemplatePayload(header, milestones) {
+function buildTemplatePayload(header, milestones, extras = {}) {
   return {
     name: header?.name ?? "",
     project_type: header?.project_type ?? "",
@@ -289,6 +289,7 @@ function buildTemplatePayload(header, milestones) {
       : [],
     project_materials_hint: header?.project_materials_hint ?? "",
     is_active: header?.is_active ?? true,
+    source_template_id: extras?.source_template_id,
     milestones: milestones.map((m, idx) => ({
       ...(m?.id ? { id: m.id } : {}),
       title: m?.title ?? "",
@@ -349,6 +350,8 @@ export default function TemplatesPage() {
   const [templateAiPrompt, setTemplateAiPrompt] = useState("");
   const [assistantField, setAssistantField] = useState("description");
   const [generatedAiDraft, setGeneratedAiDraft] = useState(null);
+  const [draftSourceTemplateId, setDraftSourceTemplateId] = useState(null);
+  const [keepEditorOpenAfterSave, setKeepEditorOpenAfterSave] = useState(false);
   const [aiGenerationStageIndex, setAiGenerationStageIndex] = useState(-1);
   const [aiGenerationError, setAiGenerationError] = useState("");
   const [aiGenerationPartialSections, setAiGenerationPartialSections] = useState([]);
@@ -373,14 +376,15 @@ export default function TemplatesPage() {
   );
   const isSystemDiscovery = discoverySource === "system";
 
-  async function loadTemplates() {
+  async function loadTemplates(options = {}) {
     try {
       setLoading(true);
       setErr("");
+      const source = options?.source || discoverySource;
 
       const { data } = await api.get("/projects/templates/discover/", {
         params: {
-          source: discoverySource,
+          source,
           q: search || undefined,
           project_type: projectTypeFilter || undefined,
           project_subtype: projectSubtypeFilter || undefined,
@@ -441,8 +445,11 @@ export default function TemplatesPage() {
             ? data.milestones.map((m, idx) => normalizeMilestoneForEdit(m, idx))
             : [buildBlankMilestone(1)]
         );
-        setEditMode(false);
+        setEditMode(keepEditorOpenAfterSave);
         setCreatingNew(false);
+        if (keepEditorOpenAfterSave) {
+          setKeepEditorOpenAfterSave(false);
+        }
       } catch (e) {
         if (cancelled) return;
         setSelectedDetail(null);
@@ -461,7 +468,7 @@ export default function TemplatesPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedId, creatingNew]);
+  }, [selectedId, creatingNew, keepEditorOpenAfterSave]);
 
   const filteredTemplates = useMemo(() => templates, [templates]);
 
@@ -572,6 +579,7 @@ export default function TemplatesPage() {
     setCreatingNew(true);
     setEditMode(true);
     setActiveTab("setup");
+    setDraftSourceTemplateId(null);
   }
 
   function startNewTemplate() {
@@ -579,6 +587,7 @@ export default function TemplatesPage() {
     setEditHeader(buildBlankHeader());
     setEditMilestones([buildBlankMilestone(1)]);
     setTemplateAiPrompt("");
+    setDraftSourceTemplateId(null);
   }
 
   function openDraftForGeneration(seed = {}) {
@@ -594,12 +603,12 @@ export default function TemplatesPage() {
       project_materials_hint: seed?.project_materials_hint ?? "",
     });
     setEditMilestones([buildBlankMilestone(1)]);
+    setDraftSourceTemplateId(null);
   }
 
   function openDraftFromExistingTemplate(template, bannerText = "") {
     if (!template) return;
 
-    setDiscoverySource("mine");
     setSelectedId(null);
     setSelectedDetail(null);
     setDetailErr("");
@@ -623,6 +632,7 @@ export default function TemplatesPage() {
       bannerText ||
         "Copied from a system template. Review and save it to add it to your template library."
     );
+    setDraftSourceTemplateId(template?.is_system ? template.id : null);
   }
 
   function clearTemplateSelection() {
@@ -640,6 +650,7 @@ export default function TemplatesPage() {
     setActiveTab("setup");
     setTemplateAiPrompt("");
     setAssistantPrefillBanner("");
+    setDraftSourceTemplateId(null);
     setEditHeader(buildBlankHeader());
     setEditMilestones([buildBlankMilestone(1)]);
   }
@@ -820,6 +831,7 @@ export default function TemplatesPage() {
       setEditMilestones([buildBlankMilestone(1)]);
       setEditMode(false);
       setCreatingNew(false);
+      setDraftSourceTemplateId(null);
       return;
     }
 
@@ -951,12 +963,19 @@ export default function TemplatesPage() {
 
     try {
       setSavingTemplate(true);
-      const payload = buildTemplatePayload(currentHeader, currentMilestones);
+      const payload = buildTemplatePayload(currentHeader, currentMilestones, {
+        source_template_id: draftSourceTemplateId || undefined,
+      });
 
       if (creatingNew) {
         const { data } = await api.post("/projects/templates/", payload);
-        toast.success("Template created.");
-        await loadTemplates();
+        const copiedFromSystem = !!draftSourceTemplateId;
+        toast.success(copiedFromSystem ? "Template saved to your templates" : "Template created.");
+        await loadTemplates({ source: copiedFromSystem ? "mine" : discoverySource });
+        if (copiedFromSystem) {
+          setDiscoverySource("mine");
+          setKeepEditorOpenAfterSave(true);
+        }
         setSelectedId(data?.id || null);
         setSelectedDetail(data);
         setGeneratedAiDraft(null);
@@ -964,8 +983,10 @@ export default function TemplatesPage() {
         setAiGenerationPartialSections([]);
         setAiGenerationRecoveryMode(false);
         setAiGenerationRecoveryNote("");
-        setEditMode(false);
+        setAssistantPrefillBanner("");
+        setDraftSourceTemplateId(null);
         setCreatingNew(false);
+        setEditMode(copiedFromSystem);
       } else {
         const { data } = await api.patch(
           `/projects/templates/${selectedDetail.id}/`,
@@ -980,6 +1001,7 @@ export default function TemplatesPage() {
         toast.success("Template updated.");
         await loadTemplates();
         setEditMode(false);
+        setDraftSourceTemplateId(null);
       }
     } catch (e) {
       toast.error(
@@ -1636,7 +1658,7 @@ export default function TemplatesPage() {
                       }
                       className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                     >
-                      Duplicate to My Templates
+                      Save to My Templates
                     </button>
                   </>
                 ) : null}

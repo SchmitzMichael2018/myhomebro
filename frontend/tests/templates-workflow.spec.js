@@ -998,11 +998,11 @@ test('system templates stay read-only and can be duplicated into my templates', 
   await expect(page.getByTestId('template-visibility-regional')).toHaveCount(0);
   await expect(page.getByTestId('template-visibility-public')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Use Template' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Duplicate to My Templates' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save to My Templates' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Back to Start' })).toBeVisible();
   await expect(page.getByTestId('templates-template-insights')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Duplicate to My Templates' }).click();
+  await page.getByRole('button', { name: 'Save to My Templates' }).click();
   await expect(page.getByTestId('templates-draft-editor')).toBeVisible();
   await expect(page.getByTestId('templates-unsaved-draft-badge')).toBeVisible();
   await expect(page.getByTestId('templates-new-draft-button')).toHaveCount(0);
@@ -1010,10 +1010,11 @@ test('system templates stay read-only and can be duplicated into my templates', 
   await expect(page.getByTestId('templates-ai-prompt-input')).toHaveCount(0);
   await expect(page.getByTestId('templates-detail-name')).toContainText('System Roof Replacement');
   await expect(page.getByTestId('template-visibility-private')).toHaveCount(0);
-  await expect(page.getByTestId('template-discovery-card-1')).toHaveCount(0);
 
   await page.getByTestId('templates-save-button').click();
-  await expect(page.getByText('Template created.')).toBeVisible();
+  await expect(page.getByText('Template saved to your templates')).toBeVisible();
+  await expect(page.getByTestId('templates-market-tab-mine')).toHaveClass(/bg-indigo-600/);
+  await expect(page.getByTestId('template-discovery-card-1')).toHaveCount(0);
   await expect(page.locator('[data-testid^="template-discovery-card-"]')).toHaveCount(3);
   await expect(
     page.locator('[data-testid^="template-discovery-card-"]').filter({ hasText: 'System Roof Replacement' })
