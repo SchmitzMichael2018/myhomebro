@@ -1834,22 +1834,6 @@ export default function TemplatesPage() {
                 Templates are applied when creating a new agreement.
               </div>
 
-              {!creatingNew && selectedDetail ? (
-                <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                  <div className="font-semibold text-slate-900">Marketplace Signals</div>
-                  <div className="mt-1 flex flex-wrap gap-3 text-xs text-slate-600">
-                    <span>Benchmark support: {safeTrim(selectedDetail?.benchmark_support_label) || "none"}</span>
-                    <span>Region match: {safeTrim(selectedTemplate?.region_match_scope) || "global"}</span>
-                    <span>Completed projects: {Number(selectedDetail?.completed_project_count || 0)}</span>
-                  </div>
-                  {Array.isArray(selectedTemplate?.rank_reasons) && selectedTemplate.rank_reasons.length ? (
-                    <div className="mt-2 text-xs text-slate-500">
-                      Ranked for: {selectedTemplate.rank_reasons.join(", ").replaceAll("_", " ")}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-
               {activeTab === "setup" ? (
                 <SectionCard title="Project Setup">
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

@@ -1021,6 +1021,11 @@ test('templates page can return to a neutral start state and top-level AI uses a
   await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('template-discovery-card-88').click();
   await expect(page.getByTestId('templates-detail-name')).toContainText('Kitchen Remodel Starter');
+  await expect(page.getByTestId('templates-template-insights')).toBeVisible();
+  await expect(page.getByTestId('templates-template-insights')).toContainText(
+    'Pricing guidance could benefit from review.'
+  );
+  await expect(page.getByText('Marketplace Signals')).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Back to Start' }).click();
   await expect(page.getByText('Start a new template')).toBeVisible();
@@ -1038,6 +1043,11 @@ test('templates page can return to a neutral start state and top-level AI uses a
 
   await expect(page.getByTestId('templates-draft-editor')).toBeVisible();
   await expect(page.getByTestId('templates-detail-name')).toContainText('Deck Build Template');
+  await expect(page.getByTestId('templates-template-insights')).toBeVisible();
+  await expect(page.getByTestId('templates-template-insights')).toContainText(
+    'Pricing guidance is included.'
+  );
+  await expect(page.getByText('Marketplace Signals')).toHaveCount(0);
 });
 
 test('template AI shows section-aware progress while generation is pending', async ({ page }) => {
