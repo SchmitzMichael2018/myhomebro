@@ -1484,6 +1484,13 @@ test('agreement wizard step 1 shows clarifications after template application an
   await page.getByRole('button', { name: 'Apply Selected Template' }).click();
 
   await expect(page.getByText('Applied to Agreement')).toBeVisible();
+  await expect(page.getByTestId('step1-template-insights-card')).toBeVisible();
+  await expect(page.getByTestId('step1-template-insights-card')).toContainText(
+    '5 milestones is within the expected range for this template.'
+  );
+  await expect(page.getByTestId('step1-template-insights-card')).toContainText(
+    'Pricing guidance could benefit from review.'
+  );
   await expect(page.locator('select[name="project_subtype"]')).toHaveValue('');
   await expect(page.getByTestId('agreement-clarification-section')).toBeVisible();
   await expect(page.getByTestId('agreement-clarification-question-layout_changes')).toContainText(

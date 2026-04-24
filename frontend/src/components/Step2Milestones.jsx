@@ -21,6 +21,10 @@ import { getAiPanelConfigForStep } from "../lib/agreementWizardAiPanel.js";
 import { labelForTemplateMilestoneType } from "../lib/milestoneTypes.js";
 import { normalizeProjectClass } from "../utils/projectClass.js";
 import {
+  buildActionableTemplateInsightCards,
+  deriveTemplateInsights,
+} from "../lib/templateInsights.js";
+import {
   buildClarificationAwareMilestoneDraft,
   buildClarificationAwareMilestoneNotes,
 } from "../lib/milestoneDraftShaping.js";
@@ -182,6 +186,37 @@ function formatDurationDays(days) {
   const n = Number(days);
   if (!Number.isFinite(n) || n <= 0) return "";
   return `${n} day${n === 1 ? "" : "s"}`;
+}
+
+function InsightCard({
+  title,
+  body,
+  actionLabel,
+  onAction,
+  actionTestId,
+  dataTestId,
+  disabled = false,
+}) {
+  return (
+    <div
+      className="rounded-xl border border-sky-200 bg-sky-50/80 px-3 py-3 shadow-sm"
+      data-testid={dataTestId}
+    >
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-sky-700">{title}</div>
+      <div className="mt-2 text-sm text-slate-800">{body}</div>
+      {actionLabel ? (
+        <button
+          type="button"
+          onClick={onAction}
+          disabled={disabled}
+          data-testid={actionTestId}
+          className="mt-3 rounded-lg border border-sky-200 bg-white px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-60"
+        >
+          {actionLabel}
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 function formatPercent(value, digits = 0) {
@@ -1608,6 +1643,42 @@ export default function Step2Milestones({
       variabilityMessage: explainRangeVariability(estimatePreview),
     };
   }, [estimatePreview]);
+  const contractorInsights = useMemo(() => estimatePreview?.contractor_insights || null, [estimatePreview]);
+  const step2TemplateInsights = useMemo(
+    () =>
+      deriveTemplateInsights({
+        milestones: effectiveMilestones,
+        estimated_days: estimatePreview?.suggested_duration_days || agreementMeta?.estimated_days || 0,
+        pricing:
+          estimatePreview?.suggested_price_low && estimatePreview?.suggested_price_high
+            ? {
+                total_range: `${formatCurrency(estimatePreview.suggested_price_low)}–${formatCurrency(
+                  estimatePreview.suggested_price_high
+                )}`,
+              }
+            : {},
+        timeline: estimatePreview?.suggested_duration_days
+          ? `About ${estimatePreview.suggested_duration_days} working days`
+          : "",
+      }),
+    [
+      agreementMeta?.estimated_days,
+      effectiveMilestones,
+      estimatePreview?.suggested_duration_days,
+      estimatePreview?.suggested_price_high,
+      estimatePreview?.suggested_price_low,
+    ]
+  );
+  const step2InsightCards = useMemo(
+    () =>
+      buildActionableTemplateInsightCards({
+        currentMilestoneCount: effectiveMilestones.length,
+        contractorInsights,
+        estimatePreview,
+        templateInsights: step2TemplateInsights,
+      }),
+    [contractorInsights, effectiveMilestones.length, estimatePreview, step2TemplateInsights]
+  );
   const suggestedPlan = useMemo(() => {
     const plan = estimatePreview?.suggested_plan;
     if (!plan || typeof plan !== "object") return null;
@@ -1621,7 +1692,6 @@ export default function Step2Milestones({
     if (!suggestedPlan) return null;
     return explainPlanBenchmarkSource(suggestedPlan);
   }, [suggestedPlan]);
-  const contractorInsights = useMemo(() => estimatePreview?.contractor_insights || null, [estimatePreview]);
   const contractorInsightsConfidence = safeStr(contractorInsights?.confidence).toLowerCase();
   const contractorInsightsCountsVisible = contractorInsightsConfidence !== "low";
   const estimateGuidanceByMilestone = useMemo(() => {
@@ -3523,6 +3593,32 @@ export default function Step2Milestones({
                   Apply Suggested Timeline
                 </button>
               </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+              <InsightCard
+                title={step2InsightCards.milestones.title}
+                body={step2InsightCards.milestones.body}
+                actionLabel={step2InsightCards.milestones.actionLabel}
+                onAction={handleRunAiSuggest}
+                actionTestId="step2-generate-suggested-milestones"
+                dataTestId={step2InsightCards.milestones.testId}
+                disabled={milestonesLocked}
+              />
+              <InsightCard
+                title={step2InsightCards.pricing.title}
+                body={step2InsightCards.pricing.body}
+                actionLabel={step2InsightCards.pricing.actionLabel}
+                onAction={applyEstimateSuggestedAmounts}
+                actionTestId="step2-apply-pricing-guidance"
+                dataTestId={step2InsightCards.pricing.testId}
+                disabled={milestonesLocked}
+              />
+              <InsightCard
+                title={step2InsightCards.timeline.title}
+                body={step2InsightCards.timeline.body}
+                dataTestId={step2InsightCards.timeline.testId}
+              />
             </div>
 
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">

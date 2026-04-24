@@ -920,6 +920,13 @@ test('template AI top action generates a draft from a prompt and template contex
   await expect(page.getByTestId('templates-detail-name')).toContainText('Deck Build Template');
   await expect(page.getByTestId('templates-generated-ai-summary')).toContainText('About 12 working days');
   await expect(page.getByTestId('templates-generated-ai-summary')).toContainText('2 follow-up questions prepared');
+  await expect(page.getByTestId('templates-template-insights')).toBeVisible();
+  await expect(page.getByTestId('templates-template-insights')).toContainText(
+    '2 milestones is within the expected range'
+  );
+  await expect(page.getByTestId('templates-template-insights')).toContainText(
+    'Pricing guidance is included.'
+  );
   await expect(page.getByTestId('templates-description-input')).toHaveValue(/Reusable deck scope/);
   await expect(libraryCards).toHaveCount(2);
   await expect(page.getByRole('button', { name: 'Deck Build Template' })).toHaveCount(0);

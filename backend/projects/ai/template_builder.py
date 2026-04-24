@@ -193,6 +193,96 @@ def _clarification_question_objects(questions: List[str]) -> List[Dict[str, Any]
     return normalized
 
 
+def _range_bounds(value: Any, spread: int = 1) -> List[int]:
+    base = max(_safe_int(value, 0), 0)
+    if base <= 0:
+        return [1, max(2, spread + 1)]
+    step = max(1, spread)
+    low = max(1, base - step)
+    high = max(low, base + step)
+    return [low, high]
+
+
+def _timeline_range_text(estimated_days: int) -> str:
+    estimated_days = max(_safe_int(estimated_days, 1), 1)
+    low = max(1, estimated_days - 2)
+    high = max(low, estimated_days + 2)
+    return f"{low}-{high} working days"
+
+
+def _pricing_has_guidance(pricing: Dict[str, Any], milestones: List[Dict[str, Any]]) -> bool:
+    total_range = _safe_str(pricing.get("total_range"))
+    if total_range and total_range.lower() not in {"consult contractor for pricing", "consult contractor"}:
+        return True
+    for row in milestones:
+        if _safe_float(row.get("suggested_amount_fixed")) > 0:
+            return True
+        if _safe_float(row.get("suggested_amount_low")) > 0 and _safe_float(row.get("suggested_amount_high")) > 0:
+            return True
+    return False
+
+
+def _build_template_insights(
+    *,
+    milestones: List[Dict[str, Any]],
+    pricing: Dict[str, Any],
+    materials: List[Dict[str, Any]],
+    timeline: str,
+    estimated_days: int,
+    project_materials_hint: str,
+    clarification_questions: List[str],
+    default_clarifications: List[Dict[str, Any]],
+    source_insights: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    raw_insights = source_insights if isinstance(source_insights, dict) else {}
+    milestone_count = len(milestones)
+
+    raw_milestone = raw_insights.get("milestone_count", {})
+    milestone_value = _safe_int(raw_milestone.get("value"), milestone_count)
+    milestone_range = raw_milestone.get("typical_range")
+    if not isinstance(milestone_range, list) or len(milestone_range) != 2:
+        milestone_range = _range_bounds(milestone_value or milestone_count, 1)
+
+    raw_timeline = raw_insights.get("timeline", {}) if isinstance(raw_insights.get("timeline"), dict) else {}
+    timeline_value = _safe_str(raw_timeline.get("value")) or _safe_str(timeline)
+    timeline_typical_range = _safe_str(raw_timeline.get("typical_range")) or _timeline_range_text(estimated_days)
+
+    raw_pricing = raw_insights.get("pricing", {}) if isinstance(raw_insights.get("pricing"), dict) else {}
+    pricing_range = _safe_str(raw_pricing.get("range")) or _safe_str(pricing.get("total_range"))
+    if not pricing_range:
+        pricing_range = "Consult contractor for pricing"
+
+    completeness = raw_insights.get("completeness", {}) if isinstance(raw_insights.get("completeness"), dict) else {}
+    has_pricing = completeness.get("has_pricing")
+    if not isinstance(has_pricing, bool):
+        has_pricing = _pricing_has_guidance(pricing, milestones)
+    has_materials = completeness.get("has_materials")
+    if not isinstance(has_materials, bool):
+        has_materials = bool(materials) or bool(_safe_str(project_materials_hint))
+    has_clarifications = completeness.get("has_clarifications")
+    if not isinstance(has_clarifications, bool):
+        has_clarifications = bool(clarification_questions or default_clarifications)
+
+    return {
+        "milestone_count": {
+            "value": milestone_value or milestone_count,
+            "typical_range": milestone_range,
+        },
+        "timeline": {
+            "value": timeline_value,
+            "typical_range": timeline_typical_range,
+        },
+        "pricing": {
+            "range": pricing_range,
+        },
+        "completeness": {
+            "has_pricing": has_pricing,
+            "has_materials": has_materials,
+            "has_clarifications": has_clarifications,
+        },
+    }
+
+
 def _fallback_template_milestones(project_type: str, project_subtype: str, description: str) -> List[Dict[str, Any]]:
     seed = f"{project_type} {project_subtype} {description}".lower()
     milestones = [
@@ -375,6 +465,18 @@ def _build_fallback_template_bundle(
     materials = _fallback_template_materials(project_type, project_subtype, description)
     clarification_questions = _fallback_template_clarifications(project_type, project_subtype, description)
     default_clarifications = _clarification_question_objects(clarification_questions)
+    project_materials_hint = _materials_hint_from_materials(materials)
+    insights = _build_template_insights(
+        milestones=milestones,
+        pricing=pricing,
+        materials=materials,
+        timeline="",
+        estimated_days=estimated_days,
+        project_materials_hint=project_materials_hint,
+        clarification_questions=clarification_questions,
+        default_clarifications=default_clarifications,
+        source_insights=None,
+    )
 
     return {
         "name": _safe_str(name) or "New Template Draft",
@@ -382,7 +484,7 @@ def _build_fallback_template_bundle(
         "project_subtype": _safe_str(project_subtype),
         "description": _safe_str(description),
         "estimated_days": max(_safe_int(estimated_days, 1), 1),
-        "project_materials_hint": _materials_hint_from_materials(materials),
+        "project_materials_hint": project_materials_hint,
         "default_scope": _safe_str(description),
         "default_clarifications": default_clarifications,
         "milestones": milestones,
@@ -390,6 +492,7 @@ def _build_fallback_template_bundle(
         "materials": materials,
         "timeline": _normalize_timeline_text("", max(_safe_int(estimated_days, 1), 1)),
         "clarification_questions": clarification_questions,
+        "insights": insights,
         "_partial": True,
         "_generation_status": {
             "description": "fallback",
@@ -1006,6 +1109,17 @@ def create_template_from_scope(
 
     project_materials_hint = _safe_str(payload.get("project_materials_hint")) or _materials_hint_from_materials(materials)
     default_scope = _safe_str(payload.get("default_scope")) or _safe_str(payload.get("description")) or _safe_str(description)
+    insights = _build_template_insights(
+        milestones=milestones,
+        pricing=pricing,
+        materials=materials,
+        timeline=timeline,
+        estimated_days=estimated_days,
+        project_materials_hint=project_materials_hint,
+        clarification_questions=clarification_questions,
+        default_clarifications=questions,
+        source_insights=payload.get("insights"),
+    )
 
     return {
         "name": _safe_str(payload.get("name")) or _safe_str(name) or "New Template Draft",
@@ -1021,6 +1135,7 @@ def create_template_from_scope(
         "materials": materials,
         "timeline": timeline,
         "clarification_questions": clarification_questions or _fallback_template_clarifications(project_type, project_subtype, description),
+        "insights": insights,
         "sections_status": sections_status,
         "_partial": any(v != "generated" for v in sections_status.values()),
         "_model": model,

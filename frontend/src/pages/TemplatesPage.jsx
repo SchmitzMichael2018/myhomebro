@@ -11,6 +11,10 @@ import {
 import {
   canonicalizeTemplateMilestoneType,
 } from "../lib/milestoneTypes.js";
+import {
+  buildTemplateInsightLines,
+  deriveTemplateInsights,
+} from "../lib/templateInsights.js";
 
 function safeTrim(v) {
   return v == null ? "" : String(v).trim();
@@ -517,6 +521,31 @@ export default function TemplatesPage() {
     generatedAiDraft?.clarification_questions
   );
   const generatedTimeline = safeTrim(generatedAiDraft?.timeline);
+  const templateInsights = useMemo(
+    () =>
+      deriveTemplateInsights({
+        ...currentHeader,
+        milestones: currentMilestones,
+        pricing: generatedPricingGuidance,
+        materials: generatedMaterials,
+        timeline: generatedTimeline,
+        clarification_questions: generatedClarificationQuestions,
+        insights: generatedAiDraft?.insights,
+      }),
+    [
+      currentHeader,
+      currentMilestones,
+      generatedAiDraft?.insights,
+      generatedMaterials,
+      generatedPricingGuidance,
+      generatedTimeline,
+      generatedClarificationQuestions,
+    ]
+  );
+  const templateInsightLines = useMemo(
+    () => buildTemplateInsightLines(templateInsights, { context: "template" }),
+    [templateInsights]
+  );
 
   function formatGuidancePercentages(items) {
     if (!Array.isArray(items) || !items.length) return "No milestone percentages provided yet.";
@@ -2018,6 +2047,23 @@ export default function TemplatesPage() {
                       </div>
                     </div>
                   ) : null}
+
+                  <div
+                    data-testid="templates-template-insights"
+                    className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3"
+                  >
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+                      Template Insights
+                    </div>
+                    <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                      {templateInsightLines.map((line, idx) => (
+                        <li key={`template-insight-${idx}`} className="flex gap-2">
+                          <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" aria-hidden="true" />
+                          <span>{line}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 </SectionCard>
               ) : null}
 

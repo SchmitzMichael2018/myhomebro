@@ -10,6 +10,10 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { safeTrim } from "./step1Utils";
+import {
+  buildTemplateInsightLines,
+  deriveTemplateInsights,
+} from "../../lib/templateInsights.js";
 
 function OptionBadge({ ownerType }) {
   const text = ownerType === "system" ? "Built-in" : "Custom";
@@ -49,9 +53,9 @@ function MatchBadge({ template, recommended, possible }) {
   return null;
 }
 
-function PreviewSection({ title, children }) {
+function PreviewSection({ title, children, testId }) {
   return (
-    <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-3">
+    <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-3" data-testid={testId}>
       <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-700">
         {title}
       </div>
@@ -434,6 +438,21 @@ export default function TemplateSearchSection({
     const value = Number(previewTemplate?.estimated_days || 0);
     return value > 0 ? value : 1;
   }, [previewTemplate]);
+
+  const templateInsights = useMemo(
+    () =>
+      deriveTemplateInsights({
+        ...previewTemplate,
+        milestones: previewMilestones,
+        estimated_days: previewEstimatedDays,
+      }),
+    [previewEstimatedDays, previewTemplate, previewMilestones]
+  );
+
+  const templateInsightLines = useMemo(
+    () => buildTemplateInsightLines(templateInsights, { context: "template" }),
+    [templateInsights]
+  );
 
   useEffect(() => {
     setEstimatedDaysInput(String(previewEstimatedDays || 1));
@@ -1062,6 +1081,17 @@ export default function TemplateSearchSection({
                 {templateDetailErr}
               </div>
             ) : null}
+
+            <PreviewSection title="Template Insights" testId="step1-template-insights-card">
+              <ul className="space-y-1 text-xs text-slate-700">
+                {templateInsightLines.map((line, idx) => (
+                  <li key={`${line}-${idx}`} className="flex gap-2">
+                    <span className="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" aria-hidden="true" />
+                    <span>{line}</span>
+                  </li>
+                ))}
+              </ul>
+            </PreviewSection>
 
             {selectedPreviewOpen ? (
               <>
